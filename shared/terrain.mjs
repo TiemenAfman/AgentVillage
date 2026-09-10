@@ -7,7 +7,13 @@ export const SEA_LEVEL = 0;
 export const BEACH_MAX = 0.35;
 export const BUILD_SLOPE_MAX = 0.6;
 export const BUILD_HEIGHT_MAX = 4.2;
-export const POLDER_H = 80 / 256;   // reclaimed land sits just above the water
+// Reclaimed land sits just above the water - but it must sit *above* BEACH_MAX, not
+// below it. At 80/256 every corner of a fresh polder was under the beach threshold, so
+// `isBeach` called the new land sand, `isBuildable` refused it, and the whole escape
+// valve produced ground nobody could build on. 96/256 is the first multiple of the
+// heightfield's own 1/256 quantum that clears 0.35, so a polder is the lowest meadow on
+// the island rather than the highest beach.
+export const POLDER_H = 96 / 256;
 export const DIKE_H = 224 / 256;
 
 // 16 unit vectors at 22.5 degree steps, written out as literals because the
