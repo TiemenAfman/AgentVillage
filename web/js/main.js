@@ -798,6 +798,39 @@ function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
   return start <= t;
 }
+// How much of the island the village had built by a given moment. Until now the only
+// thing the chronicle rewound was the buildings: scrub back to the founding day and every
+// house went, while the polders, their dikes and the mill they earned all stayed - ground
+// that would not exist for another six weeks. This is the landscape's side of `visibleAt`.
+//
+// Polders are the exact case, and the only one handled here. The ladder is a pure
+// function of the settler count, the list is append-only, and the scanner now stamps each
+// one with the moment it was drained - so the coast at time t is a prefix of the list.
+function poldersAt(t) {
+  const list = (state.village && state.village.polders) || [];
+  let n = 0;
+  for (const p of list) {
+    // `unlockedAt` is absent only for a polder the scanner could not date, which cannot
+    // happen for one that exists - it was earned by a settler who has arrived.
+    if (p.unlockedAt && new Date(p.unlockedAt).getTime() > t) break;
+    n++;
+  }
+  return n;
+}
+
+// Scrubbing fires on every pointer move, so this has to be free when nothing changed.
+// Rebuilding the heightfield is not free, and it is needed at most a handful of times
+// across the whole timeline - once per polder.
+let shownPolders = null;
+function applyLandscape() {
+  const n = poldersAt(timeNow());
+  if (n === shownPolders) return;
+  shownPolders = n;
+  if (!state.world || !state.village) return;
+  const v = state.village;
+  state.world.reshape(makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, n) }));
+}
+
 function applyVisibility() {
   const t = timeNow();
   for (const rec of state.byId.values()) {
@@ -1467,6 +1500,7 @@ function setChronicleTime(t) {
   state.chronicle.t = clamp(t, start, end);
   state.live = 'replay';
   state.ui.setLive('replay');
+  applyLandscape();
   applyVisibility();
   state.ui.setChronicle({
     fraction: (state.chronicle.t - start) / Math.max(1, end - start),
@@ -1479,6 +1513,7 @@ function setLiveMode() {
   state.chronicle.playing = false;
   state.live = 'live';
   state.ui.setLive('live');
+  applyLandscape();
   applyVisibility();
   state.ui.setChronicle({ fraction: 1, date: 'Now', playing: false, live: true });
 }
