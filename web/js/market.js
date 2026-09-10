@@ -8,6 +8,25 @@ import { CROPS, CROP_KINDS, priceMood } from 'shared/crops.mjs';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// What the island said, or why it could not be read.
+//
+// The garden always answers JSON - except when the request never reaches it. An island
+// serves its page off disk on every request but keeps its routes in memory from the
+// moment it started, so a server that was already running when this page was written
+// hands /api/garden to the static file handler instead, and that answers with the plain
+// word "Not found". Asking JSON.parse about it produces "Unexpected token 'N'", which
+// tells the reader nothing. So the body is read once as text and only then parsed, and a
+// 404 says the one thing worth doing about it.
+export async function answerOf(r) {
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { /* not JSON, which is itself the news */ }
+  if (r.ok) return body || {};
+  if (body && body.error) throw new Error(body.error);
+  if (r.status === 404) throw new Error('this island has no seed stall yet: the page is newer than the server serving it. Restart the island.');
+  throw new Error(`the island said ${r.status}`);
+}
+
 function grownIn(minutes) {
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60), m = minutes % 60;
@@ -41,9 +60,7 @@ export function createMarket(root, { onChange, onClose }) {
 
   async function load() {
     try {
-      const r = await fetch('/api/garden', { cache: 'no-store' });
-      if (!r.ok) throw new Error((await r.json()).error || `the island said ${r.status}`);
-      garden = await r.json();
+      garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
     } catch (e) {
       el.innerHTML = `<div class="handover-panel wide"><button class="x" id="mk-close">✕</button>
         <p class="ho-warn">The stall could not be reached: ${esc(e.message)}</p></div>`;
@@ -60,14 +77,14 @@ export function createMarket(root, { onChange, onClose }) {
     if (busy) return;
     busy = true;
     try {
-      const r = await fetch('/api/garden', {
+      const answer = await answerOf(await fetch('/api/garden', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      const answer = await r.json();
-      if (!r.ok) { said = `<span class="bad">${esc(answer.error || 'that did not work')}</span>`; }
-      else { said = done ? done(answer) : ''; garden = answer.garden; onChange && onChange(garden); }
+      }));
+      said = done ? done(answer) : '';
+      garden = answer.garden;
+      onChange && onChange(garden);
     } catch (e) {
       said = `<span class="bad">${esc(e.message)}</span>`;
     } finally {

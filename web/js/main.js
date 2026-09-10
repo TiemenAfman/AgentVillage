@@ -25,7 +25,7 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
 import { createCrops } from './crops.js';
-import { createMarket } from './market.js';
+import { createMarket, answerOf } from './market.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { createWaitingFlags } from './waiting.js';
@@ -424,20 +424,27 @@ async function refreshProps({ animate = true } = {}) {
 // --------------------------------------------------------------- market gardening
 // The purse and the pouch belong to whoever lives here, so the keeper reads the whole
 // garden and a visitor reads only the beds - shapes and places, like the props.
+let gardenComplaint = false;
 async function refreshGarden({ animate = true } = {}) {
   if (!state.crops) return;
   try {
     if (state.guest) {
-      const body = await fetch('/api/crops', { cache: 'no-store' }).then((r) => r.json());
+      const body = await answerOf(await fetch('/api/crops', { cache: 'no-store' }));
       state.crops.apply(body.crops || [], { animate });
     } else {
-      const garden = await fetch('/api/garden', { cache: 'no-store' }).then((r) => r.json());
+      const garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
       state.garden = garden;
       state.crops.apply(garden.beds || [], { animate });
     }
     if (state.mode === 'walk') state.walk.setInteractables(interactables());
   } catch (e) {
+    // Said once. A page whose island cannot answer for the garden would otherwise
+    // repeat itself on every update, and the thing to do about it does not change.
     console.warn('the garden could not be read', e);
+    if (!gardenComplaint) {
+      gardenComplaint = true;
+      state.ui.toast(escapeHtml(e.message || 'the garden could not be read'));
+    }
   }
 }
 
@@ -447,13 +454,11 @@ async function refreshGarden({ animate = true } = {}) {
 async function tend(body, said) {
   if (keeperOnly('do the farming here')) return null;
   try {
-    const r = await fetch('/api/garden', {
+    const answer = await answerOf(await fetch('/api/garden', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
-    const answer = await r.json();
-    if (!r.ok) { state.ui.toast(escapeHtml(answer.error || 'that did not work')); return null; }
+    }));
     state.garden = answer.garden;
     state.crops.apply(answer.garden.beds || [], { animate: true });
     if (state.mode === 'walk') state.walk.setInteractables(interactables());
