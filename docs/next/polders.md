@@ -1,5 +1,11 @@
 # Polders
 
+> **This is done, and it is not here.** The work described below was carried out on
+> `develop_martijn` and has never been merged into `main`: the `POLDER_H` fix, the
+> reclaiming, the dike, the causeway and the polder mill. Read this for the reasoning,
+> not as a task - and see `loose-ends.md` for what merging it would take. The rest of
+> this page is left as it was written, before any of it existed.
+
 The island's escape valve for running out of land. It is fully plumbed and has never
 been finished: **nothing ever creates a polder.**
 
