@@ -1,0 +1,13 @@
+node_modules/
+web/vendor/
+data/*
+!data/.gitkeep
+
+# per-machine settings; config.example.json is the template
+config.json
+
+# never publish credentials or local traces
+.env
+.env.*
+*.log
+*.log.1

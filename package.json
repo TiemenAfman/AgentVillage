@@ -1,0 +1,19 @@
+{
+  "name": "settlers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "scan": "node scan.mjs",
+    "scan:all": "node scan.mjs --all",
+    "serve": "node serve.mjs",
+    "dev": "node serve.mjs --open",
+    "vendor": "node scripts/vendor.mjs",
+    "postinstall": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "three": "0.170.0"
+  }
+}

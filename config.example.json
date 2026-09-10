@@ -1,0 +1,10 @@
+{
+  "islandName": "Promptholm",
+  "foundedAt": null,
+  "founders": [],
+  "seed": 1337,
+  "port": 4747,
+  "gridSize": 80,
+  "rescanIntervalMs": 60000,
+  "visitorGraceMs": 1800000
+}

@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "settlers",
+      "url": "http://localhost:4747",
+      "autoPort": false
+    }
+  ]
+}

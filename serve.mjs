@@ -1,0 +1,432 @@
+#!/usr/bin/env node
+// Serves the island and keeps it up to date: a rescan on a timer (which is how Cowork
+// tasks are noticed) and a server-sent-events stream so an open page updates itself.
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { ROOT, DATA, WEB, SHARED, loadConfig, readJson } from './lib/paths.mjs';
+import { scan, filesFor } from './scan.mjs';
+import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
+import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
+import { banish, unbanish } from './lib/banish.mjs';
+import { readTranscript, talk } from './lib/chat.mjs';
+import os from 'node:os';
+
+const argv = process.argv.slice(2);
+const has = (f) => argv.includes(f);
+const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
+
+const config = loadConfig();
+const ALL = has('--all');
+const PORT = Number(argOf('--port', config.port || 4747));
+const OPEN = has('--open') && !has('--no-open');
+const RESCAN = has('--no-rescan') ? 0 : (config.rescanIntervalMs || 60000);
+const VILLAGE_FILE = filesFor({ all: ALL }).village;
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+};
+
+const clients = new Set();
+const LOG = path.join(DATA, 'server.log');
+
+// Everything the server says ends up in a file as well, so a crash at three in the
+// afternoon can still be explained at five.
+function log(line) {
+  const msg = `${new Date().toISOString()} ${line}\n`;
+  process.stderr.write(msg);
+  try {
+    fs.mkdirSync(DATA, { recursive: true });
+    if (fs.existsSync(LOG) && fs.statSync(LOG).size > 2 * 1024 * 1024) fs.renameSync(LOG, `${LOG}.1`);
+    fs.appendFileSync(LOG, msg);
+  } catch { /* logging must never be the thing that breaks */ }
+}
+
+// A bad request must never take the island down.
+process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
+process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
+function shutdown(why) {
+  const stopped = stopAllAgents();
+  const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
+  log(`stopping on ${why}${tail}`);
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+function sendFile(res, file, { noStore = false } = {}) {
+  fs.readFile(file, (err, buf) => {
+    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    const headers = { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' };
+    // three.js is pinned by package.json and never changes under the same name, so let
+    // the browser keep it instead of re-downloading 1.2 MB on every open.
+    headers['Cache-Control'] = noStore ? 'no-store' : 'public, max-age=31536000, immutable';
+    res.writeHead(200, headers);
+    res.end(buf);
+  });
+}
+
+function safeJoin(base, rel) {
+  const p = path.normalize(path.join(base, rel));
+  // the separator matters: without it, a sibling folder named web-x would pass
+  return p === base || p.startsWith(base + path.sep) ? p : null;
+}
+
+function json(res, status, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(body);
+}
+
+function readBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > limit) { reject(new Error('body too large')); req.destroy(); }
+    });
+    req.on('end', () => {
+      if (!data) return resolve({});
+      try { resolve(JSON.parse(data)); } catch { reject(new Error('body is not JSON')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+// Everywhere Claude has been used on this machine, newest first, with a note about
+// which of them carry the Jira workflow skill.
+function projectFolders() {
+  const out = new Map();
+  const add = (dir, source) => {
+    if (!dir) return;
+    const clean = path.resolve(String(dir));
+    const key = clean.toLowerCase();
+    if (out.has(key)) return;
+    if (clean === path.parse(clean).root) return;   // a drive root is nobody's project
+    let ok = false;
+    try { ok = fs.statSync(clean).isDirectory(); } catch { ok = false; }
+    if (!ok) return;
+    let jira = false;
+    try { jira = fs.statSync(path.join(clean, '.claude', 'skills', 'jira-ticket-oppakken', 'SKILL.md')).isFile(); } catch { jira = false; }
+    out.set(key, { path: clean, name: path.basename(clean), jira, source, worktree: /[\\/]worktrees?[\\/]|[\\/]_wt[\\/]/i.test(clean) });
+  };
+
+  const village = readJson(VILLAGE_FILE, null);
+  for (const d of (village && village.districts) || []) add(d.root, 'island');
+  const global = readJson(path.join(os.homedir(), '.claude.json'), null);
+  for (const dir of Object.keys((global && global.projects) || {})) add(dir, 'claude');
+
+  return [...out.values()].sort((a, b) => {
+    if (a.jira !== b.jira) return a.jira ? -1 : 1;          // repos that know the workflow first
+    if (a.worktree !== b.worktree) return a.worktree ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+let scanning = null;
+let pending = false;
+async function rescan(reason) {
+  if (scanning) { pending = true; return scanning; }
+  scanning = (async () => {
+    try { await scan({ all: ALL, quiet: true }); } catch (e) {
+      process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
+    }
+  })();
+  await scanning;
+  scanning = null;
+  if (pending) { pending = false; return rescan('coalesced'); }
+  return null;
+}
+
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((e) => {
+    log(`request failed ${req.method} ${req.url}: ${e && e.stack ? e.stack : e}`);
+    try { if (!res.headersSent) json(res, 500, { error: 'the island stumbled on that one' }); else res.end(); } catch { /* client gone */ }
+  });
+});
+
+// This server can start an unattended agent in any folder on the machine, so it only
+// ever answers this computer, and only pages it served itself.
+//
+// Host check: blocks DNS rebinding, where a site resolves its own name to 127.0.0.1 and
+// then talks to us as if it were local.
+// Origin check: blocks a page on another site from posting here. A cross-origin JSON
+// POST is stopped by CORS anyway, but a plain form post is not, and our body reader
+// does not care about the content type.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function fromThisMachine(req) {
+  const host = String(req.headers.host || '').split(':')[0].toLowerCase();
+  if (!LOCAL_HOSTS.has(host)) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;                       // curl, the scheduled task, a same-origin GET
+  try {
+    const o = new URL(origin);
+    return LOCAL_HOSTS.has(o.hostname.toLowerCase()) && o.port === String(PORT);
+  } catch { return false; }
+}
+
+async function handle(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const p = decodeURIComponent(url.pathname);
+
+  if (!fromThisMachine(req)) {
+    log(`refused ${req.method} ${p} from host "${req.headers.host}" origin "${req.headers.origin || '-'}"`);
+    return json(res, 403, { error: 'the island only answers this computer' });
+  }
+
+  // What the page reports when it hits trouble, so a crash leaves a trace.
+  if (p === '/api/log' && req.method === 'POST') {
+    let body = {};
+    try { body = await readBody(req, 16 * 1024); } catch { /* keep going */ }
+    log(`page: ${String(body.message || '').slice(0, 500)}${body.stack ? ` | ${String(body.stack).slice(0, 800)}` : ''}`);
+    return json(res, 200, { ok: true });
+  }
+
+  if (p === '/events') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 2000\n\n');
+    res.write('event: hello\ndata: {}\n\n');
+    clients.add(res);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
+    req.on('close', () => { clearInterval(ping); clients.delete(res); });
+    return;
+  }
+
+  if (p === '/api/rescan' && req.method === 'POST') {
+    if (scanning) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"skipped":true}'); return; }
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end('{"started":true}');
+    rescan('api');
+    return;
+  }
+
+  if (p === '/village.json') { sendFile(res, VILLAGE_FILE, { noStore: true }); return; }
+
+  // ---- the sprint board ----------------------------------------------------
+  if (p === '/api/sprint') {
+    const force = url.searchParams.get('refresh') === '1';
+    let sprint;
+    try { sprint = await refreshSprint({ force }); } catch (e) { sprint = { ...loadSprint(), note: String(e.message || e) }; }
+    return json(res, 200, {
+      ...sprint,
+      configured: jiraConfig().configured,
+      assignments: readAssignments().slice(0, 60),
+    });
+  }
+
+  // The folders a newcomer could be sent to work in: every project this machine has
+  // seen Claude used in, plus the districts already on the island.
+  if (p === '/api/folders') return json(res, 200, { folders: projectFolders() });
+
+  if (p === '/api/agents') return json(res, 200, { agents: liveAgents() });
+
+  // Hands a card to a settler and starts the agent that works it.
+  if (p === '/api/assign' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { issueKey, buildingId, cwd, model, dryRun } = body || {};
+    if (!issueKey) return json(res, 400, { error: 'issueKey is required' });
+    if (!buildingId && !cwd) return json(res, 400, { error: 'name a settler or a folder for a newcomer' });
+
+    const sprint = loadSprint();
+    const issue = (sprint.issues || []).find((i) => i.key === issueKey);
+    if (!issue) return json(res, 404, { error: `${issueKey} is not on the board` });
+
+    let settler;
+    if (buildingId) {
+      const village = readJson(VILLAGE_FILE, null);
+      settler = village && (village.buildings || []).find((b) => b.id === buildingId);
+      if (!settler) return json(res, 404, { error: 'no such settler' });
+      if (!settler.cwd) return json(res, 400, { error: `${settler.name} has no project folder to work in` });
+    } else {
+      const dir = path.resolve(String(cwd));
+      let ok = false;
+      try { ok = fs.statSync(dir).isDirectory(); } catch { ok = false; }
+      if (!ok) return json(res, 400, { error: `no such folder: ${dir}` });
+      settler = newcomer({ cwd: dir, model: model || null });
+    }
+
+    try {
+      const r = dispatch({ issue, settler, cwd: settler.cwd, dryRun: !!dryRun });
+      process.stderr.write(`[settlers] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
+      setTimeout(() => rescan('assignment'), 1500);
+      return json(res, 202, r);
+    } catch (e) {
+      return json(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  // Sends a settler off the island, or asks them back. The transcript is never touched.
+  if (p === '/api/banish' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { buildingId, undo } = body || {};
+    if (!buildingId) return json(res, 400, { error: 'buildingId is required' });
+    if (String(buildingId).startsWith('civic:')) return json(res, 400, { error: 'the village keeps its own buildings' });
+
+    if (undo) {
+      unbanish(buildingId);
+      log(`${buildingId} welcomed back`);
+    } else {
+      const village = readJson(VILLAGE_FILE, null);
+      const b = village && (village.buildings || []).find((x) => x.id === buildingId);
+      banish({ id: buildingId, sessionId: b && b.sessionId, name: b && b.name, kind: b && b.kind });
+      log(`${(b && b.name) || buildingId} sent off the island`);
+    }
+    await rescan('banish');
+    return json(res, 200, { ok: true, buildingId, undo: !!undo });
+  }
+
+  // Founding a settler: a new session, started because you asked for one.
+  if (p === '/api/found' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { cwd, model, prompt } = body || {};
+    if (!cwd) return json(res, 400, { error: 'pick a folder for them to live in' });
+    try {
+      const r = found({ cwd: path.resolve(String(cwd)), model: model || null, prompt });
+      setTimeout(() => rescan('founded'), 1500);
+      return json(res, 202, r);
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
+  }
+
+  // ---- talking to a settler --------------------------------------------------
+  if (p === '/api/transcript') {
+    const session = url.searchParams.get('session') || '';
+    const agentId = url.searchParams.get('agent') || null;
+    const limit = Math.min(300, Number(url.searchParams.get('limit') || 80) || 80);
+    try { return json(res, 200, readTranscript(session, { limit, agentId })); }
+    catch (e) { return json(res, 500, { ok: false, reason: String(e.message || e), messages: [] }); }
+  }
+
+  // Carries the conversation on and streams the answer back as it arrives.
+  if (p === '/api/say' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { sessionId, text, cwd, mode, model } = body || {};
+
+    let started;
+    try { started = talk({ sessionId, cwd, text, mode, model }); }
+    catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    log(`chat ${sessionId} in ${started.cwd}: ${String(text).replace(/\s+/g, ' ').slice(0, 120)}`);
+
+    const { child } = started;
+    let carry = '';
+    child.stdout.on('data', (chunk) => {
+      carry += chunk;
+      const lines = carry.split('\n');
+      carry = lines.pop();
+      for (const line of lines) if (line.trim()) res.write(line.trim() + '\n');
+    });
+    let stderr = '';
+    child.stderr.on('data', (c) => { stderr += c; });
+    child.on('error', (e) => {
+      try { res.write(JSON.stringify({ type: 'settlers_error', error: String(e.message || e) }) + '\n'); } catch { /* client gone */ }
+    });
+    child.on('close', (code) => {
+      if (carry.trim()) { try { res.write(carry.trim() + '\n'); } catch { /* client gone */ } }
+      if (code !== 0) {
+        log(`chat ${sessionId} exited ${code}: ${stderr.slice(0, 400)}`);
+        try { res.write(JSON.stringify({ type: 'settlers_error', error: stderr.trim().slice(0, 400) || `claude exited with ${code}` }) + '\n'); } catch { /* gone */ }
+      }
+      try { res.end(); } catch { /* gone */ }
+      setTimeout(() => rescan('chat'), 1200);
+    });
+    req.on('close', () => { if (!child.killed) child.kill(); });
+    return;
+  }
+
+  if (p === '/api/agent-log') {
+    const file = url.searchParams.get('file') || '';
+    const safe = path.normalize(file).startsWith(path.join(DATA, 'agents'));
+    if (!safe) return json(res, 400, { error: 'not an agent log' });
+    return json(res, 200, { tail: agentLogTail(file) });
+  }
+
+  if (p.startsWith('/shared/')) {
+    const f = safeJoin(SHARED, p.slice('/shared/'.length));
+    if (f) return sendFile(res, f);
+  }
+
+  const rel = p === '/' ? 'index.html' : p.replace(/^\//, '');
+  const f = safeJoin(WEB, rel);
+  if (!f) { res.writeHead(400); res.end('Bad path'); return; }
+  sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
+}
+
+function broadcast(payload) {
+  const msg = `event: update\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const c of clients) { try { c.write(msg); } catch { clients.delete(c); } }
+}
+
+// The scanner replaces village.json by rename, so watch the directory, not the file.
+let debounce = null;
+function watchData() {
+  try {
+    fs.watch(DATA, (_e, filename) => {
+      if (!filename || path.basename(String(filename)) !== path.basename(VILLAGE_FILE)) return;
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        let generatedAt = null;
+        try { generatedAt = JSON.parse(fs.readFileSync(VILLAGE_FILE, 'utf8')).generatedAt; } catch {}
+        broadcast({ generatedAt });
+      }, 300);
+    });
+  } catch {
+    fs.watchFile(VILLAGE_FILE, { interval: 1000 }, () => broadcast({ generatedAt: null }));
+  }
+}
+
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    process.stderr.write(`[settlers] the island is already being served at http://localhost:${PORT}\n`);
+    if (OPEN) openBrowser(`http://localhost:${PORT}/`);
+    process.exit(0);
+  }
+  log(`server error: ${e && e.stack ? e.stack : e}`);
+});
+
+function openBrowser(url) {
+  try {
+    spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } catch { /* the user can open it themselves */ }
+}
+
+// Bound to the loopback address on purpose: nobody else on the network gets to start
+// agents on this machine.
+server.listen(PORT, '127.0.0.1', async () => {
+  process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
+  fs.mkdirSync(DATA, { recursive: true });
+  watchData();
+  await rescan('startup');
+  if (RESCAN) setInterval(() => rescan('timer'), RESCAN).unref?.();
+  if (OPEN) openBrowser(`http://localhost:${PORT}/`);
+});

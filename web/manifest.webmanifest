@@ -1,0 +1,17 @@
+{
+  "name": "Promptholm",
+  "short_name": "Promptholm",
+  "description": "A 3D island where the Claude agents you work with live.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0d1420",
+  "theme_color": "#0d1420",
+  "categories": ["productivity", "developer"],
+  "icons": [
+    { "src": "/icons/island-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/island-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/island-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
