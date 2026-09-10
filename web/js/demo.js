@@ -10,7 +10,7 @@ import {
 } from './buildings.js';
 import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
-import { buildBorders, buildFieldDecals, orchardTrees, variantOf, NONE } from './hamlets.js';
+import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -286,9 +286,10 @@ line([
   tag(x, z + 1.3, text, `hue ${hue}${sc < 1 ? ', 0.6x' : ''}`);
 }, 'Hamlet signs');
 
-// Boundaries: the three variants, each as a straight run, a corner, and a run with a gate
-// in it. Built from a synthetic ownership grid so the real buildBorders does the work -
-// which is the whole point of having a model sheet.
+// Boundaries: the ladder from post and rail to dry stone, each as a straight run, a
+// corner, and a run with a gate in it. Built from a synthetic ownership grid with houses
+// standing on it, so the real buildBorders weighs the real houses - which is the whole
+// point of having a model sheet.
 {
   const z = row * ROW;
   heading('Boundaries', z);
@@ -298,7 +299,10 @@ line([
     { name: 'corner', cells: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2]], roads: [] },
     { name: 'with a gate', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], roads: [[2, -1], [2, 0]] },
   ];
-  ['hedge', 'rail', 'wall'].forEach((want, vi) => {
+  // One row per rung of the ladder. Nothing here names a variant: each row puts a
+  // different house on the same five cells and lets the rule pick what goes round them.
+  const LADDER = [['hut', 'post and rail'], ['cottage', 'hedge'], ['keep', 'dry stone']];
+  LADDER.forEach(([tier, what], vi) => {
     CASES.forEach((c, ci) => {
       const cells = 26, mid = cells / 2;
       const ox = (ci - 1) * PITCH * 2.1;
@@ -307,11 +311,10 @@ line([
       const owner = new Int16Array(cells * cells).fill(NONE);
       for (const [cx, cz] of c.cells) owner[(mid + cx) + (mid + cz) * cells] = 0;
       const roads = new Set(c.roads.map(([cx, cz]) => (mid + cx) + (mid + cz) * cells));
-      // The variant comes from the district id's hash, so find an id that lands on the
-      // one we want to show rather than reaching past the real rule.
-      let id = 'a';
-      for (let n = 0; n < 500 && variantOf(id).kind !== want; n++) id = `a${n}`;
-      const fake = { districts: [{ id, hue: 30 + vi * 100 }] };
+      const fake = {
+        districts: [{ id: `d${vi}`, hue: 30 + vi * 100 }],
+        buildings: c.cells.map(([cx, cz]) => ({ tier, plot: { gx: mid + cx, gz: mid + cz, w: 1, d: 1 } })),
+      };
       const g = buildBorders(fake, t, owner, roads);
       if (g) {
         const m = new THREE.Mesh(g, dressMat());
@@ -320,10 +323,11 @@ line([
         m.receiveShadow = true;
         scene.add(m);
       }
+      if (ci === 0) tag(ox - PITCH * 1.5, oz, what, `a hamlet of ${tier}s`);
       if (vi === 2) tag(ox, oz + 1.5, c.name, '');
     });
   });
-  tag(HEADING_X + PITCH * 1.1, z, 'hedge / rail / wall', 'one per hamlet, by hash');
+  tag(HEADING_X + PITCH * 1.1, z, 'rail / hedge / wall', 'by the houses inside');
   row += 2;
 }
 
