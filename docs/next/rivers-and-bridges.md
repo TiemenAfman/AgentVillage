@@ -5,6 +5,22 @@ A second way to close off a hamlet, next to the hedge: a river the road has to c
 Nothing is built yet. This note is here so the reasoning does not have to be found
 again.
 
+## A river should take over part of the hedge's job
+
+The hamlet hedges do the wrong job, and counting says why: of the 1400 border segments,
+**all 1400 face open countryside and none faces another hamlet.** That is forced by the
+parcel rule — parcels may never touch — so every hedge is a village fencing itself off
+from an empty field. It has been softened into a broken hedgerow (`GAP` and the per-variant
+heights in `web/js/hamlets.js`), but the underlying oddity stands.
+
+A river is the boundary the hedge was pretending to be: there is something on the other
+side of it. So where a river runs along a parcel edge, **the hedge should step back and
+let the water be the boundary.** `buildBorders` already skips a segment whose outward
+neighbour is not land, which is how the coast is handled — a river makes that same test
+true for free, so this may need no new code at all. Check it, and if it works, say so in
+`web/js/hamlets.js` next to the `GAP` constant, because it is not obvious that the two
+features meet there.
+
 ## Why it fits
 
 `lib/layout.mjs` only calls a super-cell usable when all sixteen of its ground cells are
