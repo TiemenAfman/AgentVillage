@@ -10,7 +10,7 @@ import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
 import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { readBanished } from './lib/banish.mjs';
-import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY } from './lib/layout.mjs';
+import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
@@ -302,10 +302,21 @@ function assemble({ config, model, layout, terrain, size, all }) {
       foundedAt: config.foundedAt,
       terrainHash: terrain.hash,
       landing: layout.landing,
-      town: { ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2 },
+      town: {
+        ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2,
+        // When the square reached each of its widths. The chronicle needs this to lay the
+        // plaza as it was rather than as it is, and the thresholds belong here with the
+        // rule that applies them.
+        sizeSteps: [{ size: 3, at: 1 }, ...SQUARE_STEPS]
+          .map(({ size, at }) => ({ size, at, unlockedAt: iso(model.arrivals[at - 1] || null) }))
+          .filter((s) => s.unlockedAt),
+      },
       lattice: layout.lattice,
     },
     grid: { size },
+    // How many sessions earn a project a green and a sign. The viewer needs it to know
+    // that a hamlet was still a lone farmstead at some earlier moment.
+    hamletAt: MIN_HAMLET,
     districts,
     // One number that changes whenever the land register does, so the viewer can tell in
     // a single comparison that a parcel grew - a length check cannot, because growth

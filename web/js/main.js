@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
@@ -197,7 +198,7 @@ const buildingMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
-  village: null, terrain: null, world: null, settlers: null, ui: null,
+  village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
@@ -629,6 +630,12 @@ function buildScene(village) {
   scene.add(state.flags);
 
   syncHamlets(village);
+  // The world has just been built for the island as it is, which is what the chronicle
+  // calls "live" - so record that as already drawn. Without it the first `setLiveMode` of
+  // every page load re-lays the whole landscape it has this moment finished laying.
+  shownKey = 'live';
+  shownPolders = (village.polders || []).length;
+  state.shot = village;
   frameIsland();
 }
 
@@ -806,29 +813,49 @@ function visibleAt(spec, t) {
 // Polders are the exact case, and the only one handled here. The ladder is a pure
 // function of the settler count, the list is append-only, and the scanner now stamps each
 // one with the moment it was drained - so the coast at time t is a prefix of the list.
-function poldersAt(t) {
-  const list = (state.village && state.village.polders) || [];
-  let n = 0;
-  for (const p of list) {
-    // `unlockedAt` is absent only for a polder the scanner could not date, which cannot
-    // happen for one that exists - it was earned by a settler who has arrived.
-    if (p.unlockedAt && new Date(p.unlockedAt).getTime() > t) break;
-    n++;
+// `history.js` projects the village onto the cursor's moment; this lays that projection
+// out with the same functions that build the landscape from a live village, so there is
+// no second description of what a hamlet looks like.
+//
+// Two costs to respect. Moving the coast means rebuilding the heightfield, because a
+// polder is stamped into it rather than drawn on top - but the coast changes only once
+// per polder, so it is keyed separately and touched almost never. Re-laying the land is
+// the heavy one: `setOwnership` re-decodes ownership over the whole grid, re-plans the
+// fields, re-tints the ground and rebuilds the hedges. That cannot run per pointer move,
+// so the projection's key says what would actually be drawn and the work is throttled -
+// with a trailing pass, so the last position the slider stops at is always the one drawn.
+const LANDSCAPE_MS = 120;
+let shownKey = null, shownPolders = null, landscapePending = null, landscapeRan = 0;
+
+function layLandscape(shot) {
+  const w = state.world;
+  if (shot.polders !== shownPolders) {
+    shownPolders = shot.polders;
+    const v = state.village;
+    w.reshape(makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) }));
   }
-  return n;
+  state.shot = shot.village;
+  w.setOwnership(shot.village);
+  w.buildPaths(shot.village.paths, w.squareCells(shot.village));
+  if (state.settlers) state.settlers.setRoads(roadCells(shot.village));
+  syncHamlets(shot.village);
 }
 
-// Scrubbing fires on every pointer move, so this has to be free when nothing changed.
-// Rebuilding the heightfield is not free, and it is needed at most a handful of times
-// across the whole timeline - once per polder.
-let shownPolders = null;
-function applyLandscape() {
-  const n = poldersAt(timeNow());
-  if (n === shownPolders) return;
-  shownPolders = n;
+function applyLandscape(force = false) {
   if (!state.world || !state.village) return;
-  const v = state.village;
-  state.world.reshape(makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, n) }));
+  const shot = projectVillage(state.village, state.chronicle.t ?? NaN);
+  if (shot.key === shownKey) return;
+  const now = performance.now();
+  if (!force && now - landscapeRan < LANDSCAPE_MS) {
+    clearTimeout(landscapePending);
+    landscapePending = setTimeout(() => applyLandscape(true), LANDSCAPE_MS - (now - landscapeRan));
+    return;
+  }
+  clearTimeout(landscapePending);
+  landscapePending = null;
+  landscapeRan = now;
+  shownKey = shot.key;
+  layLandscape(shot);
 }
 
 function applyVisibility() {
@@ -1032,6 +1059,9 @@ function applyVillage(next, { animate }) {
   }
 
   assignFlags();
+  // The key is computed from the village, so a new one from the server invalidates it;
+  // without this a changed island would keep the landscape drawn for the old one.
+  shownKey = null;
   applyVisibility();
   refreshUI();
   if (state.walk && state.mode === 'walk') {
@@ -1440,7 +1470,7 @@ function updateLabels() {
 // Names over the greens, crossfaded against the wooden boards: readable from the air,
 // gone by the time you can read the sign itself.
 function hamletCaptions() {
-  const v = state.village;
+  const v = state.shot || state.village;
   if (!v || !state.terrain) return [];
   const dist = camera.position.distanceTo(controls.target);
   const t = clamp((dist - 30) / 16, 0, 1);
