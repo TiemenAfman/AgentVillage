@@ -7,6 +7,8 @@ session does. Subagents become apprentices with their own sheds in the yard.
 Nothing is invented: every building is read from the session records already on this
 machine. No network calls, no API keys, no data leaves the computer.
 
+![The island seen from the air](docs/screenshots/island.png)
+
 ## Getting started
 
 Windows, Node 20 or newer, Claude Code installed:
@@ -248,6 +250,18 @@ Sessions that started before the island was founded are ignored, so the village 
 empty and grows from the founding session onward. `npm run scan:all` shows what the
 island would look like with the entire history on it, written to separate files so it
 never disturbs the real village.
+
+## A look around
+
+| | |
+|---|---|
+| ![The town centre](docs/screenshots/village.png) | ![Walking up to the sprint board](docs/screenshots/walking.png) |
+| The town centre. Every settler is a session; every civic building is a milestone the village passed. | On foot at the sprint board, where the open Jira tickets are pinned. |
+| ![The island at night](docs/screenshots/night.png) | |
+| After dark the windows light up and the lighthouse sweeps the water. | |
+
+These were taken with `npm run scan:all`, which puts every session this machine has ever
+recorded on the island at once. A village that starts today looks emptier for a while.
 
 ## What you are looking at
 

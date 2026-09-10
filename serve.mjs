@@ -189,6 +189,24 @@ async function handle(req, res) {
     return json(res, 403, { error: 'the island only answers this computer' });
   }
 
+  // Saves a picture the page took of itself, for the readme. Names are strict and the
+  // destination is fixed, so this can only ever write a png into docs/screenshots.
+  if (p === '/api/shot' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 24 * 1024 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const name = String(body.name || '');
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) return json(res, 400, { error: 'name must be lowercase letters, digits and dashes' });
+    const prefix = 'data:image/png;base64,';
+    if (typeof body.dataUrl !== 'string' || !body.dataUrl.startsWith(prefix)) return json(res, 400, { error: 'expected a png data url' });
+    const dir = path.join(ROOT, 'docs', 'screenshots');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${name}.png`);
+    const buf = Buffer.from(body.dataUrl.slice(prefix.length), 'base64');
+    fs.writeFileSync(file, buf);
+    log(`saved screenshot ${name}.png (${Math.round(buf.length / 1024)} kB)`);
+    return json(res, 200, { ok: true, file: path.relative(ROOT, file), bytes: buf.length });
+  }
+
   // What the page reports when it hits trouble, so a crash leaves a trace.
   if (p === '/api/log' && req.method === 'POST') {
     let body = {};
