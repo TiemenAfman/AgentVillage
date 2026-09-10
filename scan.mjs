@@ -248,6 +248,10 @@ function assemble({ config, model, layout, terrain, size, all }) {
       center: l ? l.centre : null, square: l ? l.square : null, pier: (l && l.pier) || [],
       firstSeenAt: iso(d.firstSeenAt), population: d.population,
       outposts: d.outposts || [],
+      // One district per repository means the subfolder a session worked in is no longer
+      // visible from where its house stands, so it travels with the district instead.
+      folders: d.folders || {},
+      branches: d.branches || {},
     };
   }).filter((d) => d.center);
 

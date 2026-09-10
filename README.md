@@ -262,6 +262,28 @@ A session hook is installed in `~/.claude/settings.json`. It fires on `SessionSt
 always exits 0, so it can never disturb a session. The server also rescans every 60
 seconds, which is how Cowork tasks are noticed (their sandbox may not run user hooks).
 
+### Districts and git
+
+A working directory is not a project. `D:\git\Sybolt_PLC`, `...\TrayMagazijn` and
+`...\_Scam\SCM_TrayFill_Coordinator` are three folders and one piece of work, so the
+island walks up from a session's cwd to the repository the folder lives in and keys the
+district on that. A `.git` file rather than a directory is followed: a linked worktree
+becomes an outpost of its repository, a submodule folds into its superproject.
+
+Plenty of real projects have no `.git` at all, so two rules pick up the leftovers. A
+plain folder with exactly one repository just below it belongs to that repository
+(`D:\git\plclab` has none, `D:\git\plclab\src` has one). A plain folder under another
+plain folder is absorbed by it - *unless* that parent holds two or more separate
+projects, in which case it is a shelf, not a place, and never absorbs anyone. Without
+that guard `D:\git\Martijn`, which is not a repository, swallows Claude, HomeAssistant,
+WhatsappBot and five others into one meaningless block of sixty houses.
+
+The answers are cached in `data/cache.json` under `repoRoots`, and **a positive answer is
+never checked again**. Folders get renamed and deleted long after their sessions are over
+- `D:\git\PlcLabNet` already has - and a district that loses its folder should keep its
+name rather than quietly turn into somewhere else. That map survives a parse-format
+change for the same reason.
+
 Sessions that started before the island was founded are ignored, so the village begins
 empty and grows from the founding session onward. `npm run scan:all` shows what the
 island would look like with the entire history on it, written to separate files so it
@@ -285,7 +307,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 |---|---|
 | Town Hall and founding stone | The session that founded the island |
 | A house | One Claude Code session |
-| A district with a plaque and a well | One project folder |
+| A district with a plaque | One git repository, or a folder that has none |
+| The Outlands | Sessions whose folder is not a project: System32, a downloads folder, a shelf full of other repositories |
 | The town square, growing 3 -> 5 -> 7 -> 9 cells across | 1, 30, 80 and 160 settlers |
 | An outpost | A session in a git worktree |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
