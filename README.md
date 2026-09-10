@@ -128,6 +128,20 @@ They are a resident, not a visitor: no ticket is attached and they stay until yo
 them away. Sessions you start the ordinary way, in the desktop app, in VS Code or from a
 terminal, arrive on the island by themselves through the session hook.
 
+## Inviting a session that already exists
+
+Walk up to the town hall and press **E**, or use **New settler** in the top right. The
+register lists every session this machine remembers, with the name the island would give
+it, what it worked on and how big its house would be. **Invite** gives it a plot, and it
+builds according to what it actually did.
+
+This is how sessions from before the island was founded get in. **Release** takes one back
+out of the register; that is not the same as sending a settler away, and an invited
+settler can always be invited again. Sessions that arrived on their own, through the
+hook, need no invitation and cannot be released this way.
+
+The same panel has **Send for a newcomer instead**, which starts a brand new session.
+
 ## Who gets a house, and who is only visiting
 
 Not every session that starts becomes a settler. Plenty of them begin and end within

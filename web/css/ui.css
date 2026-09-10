@@ -285,3 +285,31 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .btn.danger.armed { background: rgba(232,112,92,.22); border-color: #e8705c; color: #ffd9d2; }
 .tag.visiting { border-color: rgba(127,199,217,.45); color: var(--accent-2); }
 textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
+
+/* --- the town hall register -------------------------------------------- */
+.handover-panel.wide { width: min(720px, calc(100vw - 32px)); }
+.th-controls { display: flex; gap: 10px; align-items: center; margin: 14px 0 10px; flex-wrap: wrap; }
+.th-controls .ho-input { flex: 1; min-width: 200px; font-family: inherit; }
+.th-list { max-height: 46vh; overflow: auto; display: grid; gap: 6px; padding-right: 4px; }
+.th-row { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto; gap: 2px 12px;
+  align-items: center; padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.th-row:hover { background: rgba(255,255,255,.07); }
+.th-row.here { border-color: rgba(127,199,217,.3); }
+.th-who { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.th-who b { font-size: 13px; }
+.th-title { grid-column: 1; margin: 0; font-size: 12px; color: var(--ink-dim); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.th-meta { grid-column: 1; display: flex; gap: 12px; font-size: 10.5px; color: #8d7f6c; }
+.th-row .btn { grid-column: 2; grid-row: 1 / span 3; }
+.btn.tiny { font-size: 11px; padding: 4px 10px; }
+.muted.tiny { grid-column: 2; grid-row: 1 / span 3; font-size: 10.5px; }
+.th-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge); flex-wrap: wrap; }
+.th-foot .muted { font-size: 12px; }
+.th-foot .good { color: #7fd08a; }
+.th-foot .bad { color: #e8705c; }
+.tag.ok { border-color: rgba(127,208,138,.4); color: #7fd08a; }
+.tag.style-fable { border-color: rgba(207,196,230,.5); color: #cfc4e6; }
+.tag.style-opus { border-color: rgba(168,165,158,.5); color: #c9c6bf; }
+.tag.style-sonnet { border-color: rgba(240,226,200,.5); color: #f0e2c8; }
+.tag.style-haiku { border-color: rgba(217,185,140,.5); color: #d9b98c; }

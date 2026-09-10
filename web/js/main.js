@@ -17,6 +17,7 @@ import { createWalkMode } from './walk.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createNewSettler } from './newsettler.js';
+import { createTownHall } from './townhall.js';
 import { createGamepad, BTN } from './gamepad.js';
 
 const params = new URLSearchParams(location.search);
@@ -276,7 +277,7 @@ function enterWalk() {
     interactables: interactables(),
     onInteract: (it) => {
       if (it.kind === 'board') { state.walk.setPaused(true); state.board.open(); }
-      else if (it.kind === 'townhall') foundSettler();
+      else if (it.kind === 'townhall') openTownHall();
       else talkTo(it.id);
     },
     onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall') askToSendAway(it.id); },
@@ -287,6 +288,12 @@ function enterWalk() {
 function foundSettler() {
   if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.newSettler.open();
+}
+
+// The town hall keeps the register of every session this machine remembers.
+function openTownHall() {
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.townHall.open();
 }
 
 // --------------------------------------------------------------- sending someone away
@@ -1293,7 +1300,18 @@ async function boot() {
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
-    onFoundSettler: () => foundSettler(),
+    onFoundSettler: () => openTownHall(),
+  });
+
+  state.townHall = createTownHall(document.body, {
+    onInvited: (r) => {
+      state.ui.toast(r.adopted
+        ? `<b>${r.name || 'A settler'}</b> is moving in.`
+        : `<b>${r.name || 'A settler'}</b> left the register.`);
+      fetchVillage().then((v) => applyVillage(v, { animate: true })).catch(() => {});
+    },
+    onFound: () => foundSettler(),
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
   });
 
   state.newSettler = createNewSettler(document.body, {
