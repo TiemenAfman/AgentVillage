@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "setup:remove": "node scripts/setup.mjs --uninstall",
     "scan": "node scan.mjs",
     "scan:all": "node scan.mjs --all",
     "serve": "node serve.mjs",
@@ -15,5 +19,9 @@
   },
   "devDependencies": {
     "three": "0.170.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TiemenAfman/AgentVillage.git"
   }
 }

@@ -7,6 +7,29 @@ session does. Subagents become apprentices with their own sheds in the yard.
 Nothing is invented: every building is read from the session records already on this
 machine. No network calls, no API keys, no data leaves the computer.
 
+## Getting started
+
+Windows, Node 20 or newer, Claude Code installed:
+
+```bash
+git clone https://github.com/TiemenAfman/AgentVillage.git
+cd AgentVillage
+npm install
+npm run setup
+npm run dev
+```
+
+`npm run setup` founds your island as of now, so it starts empty and grows, and adds the
+session hook to `~/.claude/settings.json` after backing that file up. It leaves every
+other setting, including your own hooks, alone. `npm run setup:remove` takes it back out.
+
+Your island is your own: `seed` in `config.json` decides the shape of the land and
+`islandName` names it. `config.json` is not in the repository, so nobody inherits anyone
+else's village.
+
+[docs/getting-started.md](docs/getting-started.md) has the longer version, including how
+to work on the code.
+
 ## Running it
 
 Best as its own window rather than a browser tab: double-click `start-island-app.cmd`, or
@@ -205,6 +228,7 @@ never disturbs the real village.
 | Stone walls, slate roof | Opus |
 | Timber frame, green roof | Sonnet |
 | Small house under thatch | Haiku |
+| A yard sign | The session's own name (its title), e.g. "Sybolt digital twin" |
 | Tent → hut → cottage → house → manor → keep | 1, 3, 9, 21, 51 and 121 human turns |
 | Scaffolding and hammering | That session is running right now |
 | Campfire and tent | A settler just arrived; no transcript yet |

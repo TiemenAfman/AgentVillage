@@ -11,6 +11,7 @@ import {
   buildPlaqueGeometry, createFlagMesh, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
+import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
 import { createBoard } from './board.js';
@@ -536,11 +537,23 @@ function attachExtras(rec) {
   }
   if (built.anchors && built.anchors.flag) rec.flagAnchor = built.anchors.flag;
   if (built.anchors && built.anchors.smoke) rec.smokeAnchor = built.anchors.smoke;
+
+  // A yard sign with the session's own name, for the houses that have one.
+  if (spec.kind === 'house' || spec.kind === 'camp') {
+    const label = spec.title || spec.name;
+    const plate = createNameplate(label, { small: spec.kind === 'camp' });
+    // front-left of the plot, clear of the door, facing the street like the house does
+    plate.group.position.set(-0.52, 0, 0.66);
+    plate.group.rotation.y = -0.22;
+    group.add(plate.group);
+    rec.nameplate = plate;
+  }
 }
 function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fire) n++; return n; }
 
 function disposeRecord(rec) {
   rec.mesh.geometry.dispose();
+  if (rec.nameplate) rec.nameplate.dispose();
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);

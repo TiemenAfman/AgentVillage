@@ -5,12 +5,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
+import { catalog } from './lib/catalog.mjs';
 import os from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -306,6 +307,37 @@ async function handle(req, res) {
       const r = found({ cwd: path.resolve(String(cwd)), model: model || null, prompt });
       setTimeout(() => rescan('founded'), 1500);
       return json(res, 202, r);
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
+  }
+
+  // ---- calling an existing session to the island ---------------------------
+  // Every session this machine has recorded, so the town hall can adopt one that
+  // started before the island was founded (the way Sybolt digital twin was added).
+  if (p === '/api/sessions') {
+    const q = String(url.searchParams.get('q') || '').toLowerCase().trim();
+    const village = readJson(VILLAGE_FILE, null);
+    const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
+    let rows = catalog({ config: loadConfig(), onIslandIds: onIsland });
+    if (q) {
+      rows = rows.filter((r) => [r.name, r.title, r.project, r.cwd, r.sessionId, r.model]
+        .some((f) => f && String(f).toLowerCase().includes(q)));
+    }
+    return json(res, 200, { sessions: rows.slice(0, 200), total: rows.length });
+  }
+
+  // Adopt (or release) a session: adds its id to config.founders and rescans, so a
+  // session from before the founding gets a house. No process is started.
+  if (p === '/api/adopt' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { sessionId, remove } = body || {};
+    try {
+      const founders = setFounder(sessionId, !remove);
+      log(`${remove ? 'released' : 'adopted'} ${sessionId}; founders now ${founders.length}`);
+      await rescan('adopt');
+      return json(res, 200, { ok: true, sessionId, adopted: !remove, founders: founders.length });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
     }
