@@ -222,6 +222,7 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   islandName: config.islandName,
   seed: config.seed,
   gridSize: config.gridSize,
+  announcing: access.open,
   settlers: () => {
     const v = readJson(VILLAGE_FILE, null);
     return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
