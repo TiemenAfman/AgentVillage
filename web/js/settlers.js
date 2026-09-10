@@ -8,6 +8,9 @@ import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 const tmpObj = new THREE.Object3D();
 const SKIN = 0xf1c9a5;
 const CAPACITY = 420;
+const MAX_STROLL = 36;      // settlers out on an errand at the same time
+// Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
+const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 export function figureGeometry(style, { sailor = false } = {}) {
   const pal = PALETTE[style] || PALETTE.unknown;
@@ -101,7 +104,9 @@ export function createSettlers(scene, material, terrain) {
       m.count = 0;
       m.frustumCulled = false;
       scene.add(m);
-      meshes[`${s}:${kind}`] = { mesh: m, slots: 0 };
+      const bucket = { mesh: m, slots: 0, figs: [] };
+      m.userData.bucket = bucket;      // so a ray hit can be traced back to a person
+      meshes[`${s}:${kind}`] = bucket;
     }
   }
   const hammerGeo = mergeGeometries([
@@ -126,16 +131,25 @@ export function createSettlers(scene, material, terrain) {
     if (slot >= CAPACITY) return null;
     bucket.mesh.count = bucket.slots;
     const rng = makeRng(hash32(id + ':walk'));
+    // Stand outside the door, not in the middle of the floor. A settler placed on its
+    // own plot centre spends its life inside its own walls, and an apprentice, whose
+    // shed is barely wider than it is, walks straight through them.
+    const rot = (spec.plot ? spec.plot.rot : 0) | 0;
+    const [ox, oz] = DOOR_DIR[rot] || DOOR_DIR[0];
+    const reach = spec.kind === 'shed' ? 0.46 : 0.85;
+    const home = [worldPos[0] + ox * reach, worldPos[2] + oz * reach];
     const f = {
       id, bucket, slot, spec,
-      home: [worldPos[0], worldPos[2]],
-      pos: [worldPos[0] + rng.range(-0.3, 0.3), worldPos[2] + rng.range(-0.3, 0.3)],
+      home,
+      pos: [home[0] + rng.range(-0.12, 0.12), home[1] + rng.range(-0.12, 0.12)],
       target: null, yaw: rng.range(0, 6.28), pause: rng.range(0, 3),
       mode: opts.mode || 'idle', speed: 0.34, rng, phase: rng.range(0, 6.28),
-      radius: spec.kind === 'shed' ? 0.3 : 0.5, visible: true, path: null, pathI: 0, onDone: null,
+      radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
       hammerSlot: -1, y: 0,
+      strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined,
     };
     figures.set(id, f);
+    bucket.figs[slot] = f;
     return f;
   }
 
@@ -162,6 +176,111 @@ export function createSettlers(scene, material, terrain) {
   function setMode(id, mode) {
     const f = figures.get(id);
     if (f && f.mode !== 'walk' && f.mode !== 'sail') f.mode = mode;
+  }
+
+  // ---- errands ---------------------------------------------------------------
+  // Once there are streets there is somewhere to go, so settlers leave the yard now
+  // and then, walk the road network to somewhere else in town, stand about for a bit
+  // and walk home again. Everything below is bookkeeping on top of the walk mode that
+  // already existed: no new movement code, only a reason to move.
+  let roads = null;
+  let strolling = 0;
+
+  function setRoads(paths, squares) {
+    const cells = new Set();
+    for (const p of paths || []) for (const [gx, gz] of p.cells) cells.add(gx + gz * terrain.size);
+    for (const [gx, gz] of squares || []) cells.add(gx + gz * terrain.size);
+    roads = cells.size ? { cells, list: [...cells] } : null;
+    for (const f of figures.values()) f.gate = undefined;   // streets moved; look again
+  }
+
+  // The road cell a figure steps out onto, cached: its front path by construction.
+  function gateOf(f) {
+    if (f.gate !== undefined) return f.gate;
+    f.gate = null;
+    if (roads) {
+      const hx = Math.round(f.home[0] + terrain.half - 0.5);
+      const hz = Math.round(f.home[1] + terrain.half - 0.5);
+      let best = null, bd = Infinity;
+      for (let dz = -3; dz <= 3; dz++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          const k = (hx + dx) + (hz + dz) * terrain.size;
+          if (!roads.cells.has(k)) continue;
+          const d = dx * dx + dz * dz;
+          if (d < bd) { bd = d; best = k; }
+        }
+      }
+      f.gate = best;
+    }
+    return f.gate;
+  }
+
+  // Breadth first over road cells only. Roads are a thin network, so this stays small.
+  function roadRoute(from, to) {
+    if (!roads || from == null || to == null || from === to) return null;
+    const size = terrain.size;
+    const prev = new Map([[from, -1]]);
+    const queue = [from];
+    let head = 0;
+    while (head < queue.length && head < 6000) {
+      const cur = queue[head++];
+      if (cur === to) {
+        const out = [];
+        for (let k = cur; k !== -1; k = prev.get(k)) out.push(terrain.cellWorld(k % size, (k - (k % size)) / size));
+        out.reverse();
+        return out;
+      }
+      const cx = cur % size, cz = (cur - cx) / size;
+      for (const [nx, nz] of [[cx + 1, cz], [cx - 1, cz], [cx, cz + 1], [cx, cz - 1]]) {
+        const k = nx + nz * size;
+        if (!roads.cells.has(k) || prev.has(k)) continue;
+        prev.set(k, cur);
+        queue.push(k);
+      }
+    }
+    return null;
+  }
+
+  function walkRoute(f, points, onDone) {
+    f.path = [[f.pos[0], f.pos[1]], ...points];
+    f.pathI = 0;
+    f.mode = 'walk';
+    f.keepHome = true;
+    f.speed = 0.42 + f.rng.range(0, 0.14);
+    f.onDone = onDone;
+  }
+
+  function startStroll(f) {
+    const gate = gateOf(f);
+    if (gate == null) { f.strollIn = f.rng.range(20, 60); return; }
+    const size = terrain.size;
+    const gx = gate % size, gz = (gate - (gate % size)) / size;
+    let dest = null;
+    for (let tries = 0; tries < 6 && dest === null; tries++) {
+      const k = roads.list[f.rng.int(roads.list.length)];
+      const kx = k % size, kz = (k - (k % size)) / size;
+      const d = Math.hypot(kx - gx, kz - gz);
+      if (d > 5 && d < 42) dest = k;
+    }
+    const out = dest === null ? null : roadRoute(gate, dest);
+    if (!out || out.length < 3) { f.strollIn = f.rng.range(15, 50); return; }
+
+    strolling++;
+    const home = [f.home[0], f.home[1]];
+    walkRoute(f, out, () => {
+      f.mode = 'idle';
+      f.target = null;
+      f.pause = f.rng.range(3, 11);          // stand about wherever the errand led
+      f.strollHome = () => {
+        walkRoute(f, [...out].reverse().concat([home]), () => {
+          f.mode = 'idle';
+          f.keepHome = false;
+          f.home = home;
+          f.strollIn = f.rng.range(40, 160);
+          strolling--;
+        });
+      };
+    });
   }
 
   // Walk in from the shore to a plot.
@@ -194,7 +313,7 @@ export function createSettlers(scene, material, terrain) {
           f.pathI++;
           if (f.pathI >= f.path.length - 1) {
             f.mode = 'idle'; f.path = null;
-            f.home = [f.pos[0], f.pos[1]];
+            if (!f.keepHome) f.home = [f.pos[0], f.pos[1]];   // an arrival settles here; an errand does not
             if (f.onDone) { const cb = f.onDone; f.onDone = null; cb(); }
           }
         } else {
@@ -225,6 +344,17 @@ export function createSettlers(scene, material, terrain) {
         }
       } else {
         f.pause -= dt;
+        if (f.strollHome && f.pause <= 0) {
+          const go = f.strollHome; f.strollHome = null; go();
+          continue;
+        }
+        // Fewer errands after dark, and never more at once than the eye can follow.
+        f.strollIn -= dt;
+        if (f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
+          if (nightAmount > 0.55 && f.rng.next() < nightAmount) f.strollIn = f.rng.range(20, 70);
+          else startStroll(f);
+          if (f.mode === 'walk') continue;
+        }
         if (!f.target && f.pause <= 0) {
           const a = f.rng.range(0, 6.283), r = f.rng.range(0.1, f.radius);
           f.target = [f.home[0] + Math.cos(a) * r, f.home[1] + Math.sin(a) * r];
@@ -252,10 +382,23 @@ export function createSettlers(scene, material, terrain) {
     }
     hammers.count = hammerCount;
     hammers.instanceMatrix.needsUpdate = true;
-    void nightAmount;
   }
 
-  return { add, remove, setMode, setVisible, walkIn, update, figures, findPath: (a, b) => findPath(terrain, a, b, null) };
+  // The people are instanced, so a ray hit comes back as a mesh plus an instance
+  // number. These two turn that back into the settler standing there, which is what
+  // lets you hover someone halfway down a street and read who it is.
+  const pickables = () => Object.values(meshes).filter((b) => b.mesh.count > 0).map((b) => b.mesh);
+  const figureAt = (mesh, i) => {
+    const b = mesh && mesh.userData && mesh.userData.bucket;
+    const f = b && i != null ? b.figs[i] : null;
+    return f && f.visible ? f : null;
+  };
+
+  return {
+    add, remove, setMode, setVisible, setRoads, walkIn, update, figures,
+    pickables, figureAt,
+    findPath: (a, b) => findPath(terrain, a, b, null),
+  };
 }
 
 function lerpAngle(a, b, t) {
