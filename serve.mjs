@@ -472,7 +472,7 @@ async function handle(req, res) {
 
   if (p.startsWith('/shared/')) {
     const f = safeJoin(SHARED, p.slice('/shared/'.length));
-    if (f) return sendFile(res, f);
+    if (f) return sendFile(res, f, { noStore: true });   // our own code: never cached
   }
 
   const rel = p === '/' ? 'index.html' : p.replace(/^\//, '');

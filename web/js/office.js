@@ -125,21 +125,23 @@ export function createOffice(root, { onClose }) {
     const others = data.branches || [];
     if (!others.length) { m.hidden = true; m.innerHTML = ''; return; }
     m.hidden = false;
-    if (!data.clean) {
-      m.innerHTML = `<span class="office-merge-note">Working tree has changes — commit or stash them before merging.</span>`;
-      return;
-    }
-    // A repository can have hundreds of branches, so this is a text box with
+    // A dirty tree blocks a merge, but hiding the controls hides the feature. They stay
+    // on screen, disabled, with the reason beside them.
+    //
+    // A repository can have hundreds of branches, so the picker is a text box with
     // suggestions rather than a list you scroll: type a few letters and pick.
+    const blocked = data.clean ? null : 'commit or stash your changes first';
     m.innerHTML = `
       <span class="office-merge-lead">Merge</span>
       <input id="office-merge-ref" list="office-merge-list" spellcheck="false" autocomplete="off"
-             placeholder="branch" value="${esc(others[0] || '')}" size="22">
+             placeholder="branch" value="${esc(others[0] || '')}" size="22"${blocked ? ' disabled' : ''}>
       <datalist id="office-merge-list">${others.map((b) => `<option value="${esc(b)}"></option>`).join('')}</datalist>
       <span class="office-merge-lead">into <b>${esc(data.branch)}</b></span>
-      <label class="office-merge-noff" title="Always record a merge commit, even when a fast-forward would do"><input type="checkbox" id="office-merge-noff"> merge commit</label>
-      <button class="chip" id="office-merge-go">Merge</button>
+      <label class="office-merge-noff" title="Always record a merge commit, even when a fast-forward would do"><input type="checkbox" id="office-merge-noff"${blocked ? ' disabled' : ''}> merge commit</label>
+      <button class="chip" id="office-merge-go"${blocked ? ' disabled' : ''}>Merge</button>
+      ${blocked ? `<span class="office-merge-note">${esc(blocked)}</span>` : ''}
       ${data.branchesTruncated ? `<span class="office-merge-note">showing the ${others.length} most recent of ${others.length + data.branchesTruncated}; type any other name in full</span>` : ''}`;
+    if (blocked) return;
     const go = $('office-merge-go');
     const sel = $('office-merge-ref');
     // Typing a different name must cancel a merge you already armed.
