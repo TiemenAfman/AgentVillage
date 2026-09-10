@@ -25,6 +25,7 @@ const RIVER_W1 = 0.95;             // and at the mouth: a river widens as it goe
 const RIVER_PULL = 0.45;           // pull toward the mouth, per cell of ground gained
 const RIVER_WOBBLE = 0.16;         // hashed per cell, so the course meanders
 const RIVER_CENTRE_KEEP = 11;      // world units of the island centre a river leaves alone
+const RIVER_MOUTH_REACH = 2;       // how near the sea has to be for the beach to be a mouth
 
 // 16 unit vectors at 22.5 degree steps, written out as literals because the
 // trigonometric functions are not allowed in this module.
@@ -81,6 +82,17 @@ function riverCourse(H, N, size, start, mouth) {
     const [x, z] = world(gx, gz);
     return Math.sqrt(x * x + z * z) < RIVER_CENTRE_KEEP;
   };
+  // Is there real water within `r` cells, judged on the ground as it was before any of
+  // this was cut? Off the grid counts: that is open sea.
+  const seaWithin = (gx, gz, r) => {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = gx + dx, nz = gz + dz;
+        if (!inGrid(nx, nz) || cellH(nx, nz) < SEA_LEVEL) return true;
+      }
+    }
+    return false;
+  };
 
   const course = [];
   const seen = new Uint8Array(size * size);
@@ -90,6 +102,12 @@ function riverCourse(H, N, size, start, mouth) {
     course.push(cur);
     seen[cur[0] + cur[1] * size] = 1;
     if (cellH(cur[0], cur[1]) < SEA_LEVEL) break;
+    // Stop where the beach begins and let the sea do the rest, rather than gouging an
+    // estuary across the coastal flat: that widest stretch is the one nothing can bridge
+    // anyway - `MAX_SPAN` refuses it - and it eats the most buildable coast. But only
+    // where the water is near enough for the valley to reach it. Stopping on a flat that
+    // is merely low leaves a pond with no way out, measured on one island in eight.
+    if (cellH(cur[0], cur[1]) < BEACH_MAX && seaWithin(cur[0], cur[1], RIVER_MOUTH_REACH)) break;
     const d0 = toMouth(cur[0], cur[1]);
     let best = null, bestScore = Infinity;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
