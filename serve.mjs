@@ -16,6 +16,11 @@ import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
+import { createAccess, isPublicPath, KEY_COOKIE } from './lib/access.mjs';
+import { createWsServer } from './lib/ws.mjs';
+import { createRoster } from './lib/players.mjs';
+import { createNeighbours } from './lib/neighbours.mjs';
+import { guestVillage } from './lib/guestview.mjs';
 import os from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -23,6 +28,11 @@ const has = (f) => argv.includes(f);
 const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 
 const config = loadConfig();
+// The flags win over the file, so you can open an island for an afternoon, or run a
+// second one beside the first to test with, without editing config.json for it.
+if (has('--public')) config.network = { ...config.network, public: true };
+if (argOf('--name', null)) config.multiplayer = { ...config.multiplayer, name: argOf('--name', null) };
+if (argOf('--seed', null)) config.seed = Number(argOf('--seed', config.seed));
 const ALL = has('--all');
 const PORT = Number(argOf('--port', config.port || 4747));
 const OPEN = has('--open') && !has('--no-open');
@@ -64,6 +74,8 @@ function log(line) {
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
 function shutdown(why) {
+  try { ws && ws.close(); } catch { /* the sockets go with the process anyway */ }
+  try { neighbours && neighbours.stop(); } catch { /* the beacon dies with us regardless */ }
   const stopped = stopAllAgents();
   const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
   log(`stopping on ${why}${tail}`);
@@ -72,13 +84,13 @@ function shutdown(why) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-function sendFile(res, file, { noStore = false } = {}) {
+function sendFile(res, file, { noStore = false, cache = null } = {}) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
     const headers = { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' };
     // three.js is pinned by package.json and never changes under the same name, so let
     // the browser keep it instead of re-downloading 1.2 MB on every open.
-    headers['Cache-Control'] = noStore ? 'no-store' : 'public, max-age=31536000, immutable';
+    headers['Cache-Control'] = cache || (noStore ? 'no-store' : 'public, max-age=31536000, immutable');
     res.writeHead(200, headers);
     res.end(buf);
   });
@@ -141,6 +153,18 @@ function projectFolders() {
   });
 }
 
+// The visitors' copy of the island, rebuilt only when the island itself changes. A room
+// full of guests refetches this on every scan; redacting it once per scan is enough.
+let guestCache = { at: null, body: null };
+function guestIsland() {
+  const v = readJson(VILLAGE_FILE, null);
+  if (!v) return null;
+  if (guestCache.at !== v.generatedAt || !guestCache.body) {
+    guestCache = { at: v.generatedAt, body: JSON.stringify(guestVillage(v)) };
+  }
+  return guestCache.body;
+}
+
 let scanning = null;
 let pending = false;
 async function rescan(reason) {
@@ -163,34 +187,78 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// This server can start an unattended agent in any folder on the machine, so it only
-// ever answers this computer, and only pages it served itself.
-//
-// Host check: blocks DNS rebinding, where a site resolves its own name to 127.0.0.1 and
-// then talks to us as if it were local.
-// Origin check: blocks a page on another site from posting here. A cross-origin JSON
-// POST is stopped by CORS anyway, but a plain form post is not, and our body reader
-// does not care about the content type.
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+// This server can start an unattended agent in any folder on the machine, so the
+// dangerous half of it only ever answers this computer. Visitors, when the island is
+// open, get the island and each other and nothing else. The reasoning behind the three
+// checks that decide this lives in lib/access.mjs.
+const access = createAccess({ port: PORT, config });
 
-function fromThisMachine(req) {
-  const host = String(req.headers.host || '').split(':')[0].toLowerCase();
-  if (!LOCAL_HOSTS.has(host)) return false;
-  const origin = req.headers.origin;
-  if (!origin) return true;                       // curl, the scheduled task, a same-origin GET
-  try {
-    const o = new URL(origin);
-    return LOCAL_HOSTS.has(o.hostname.toLowerCase()) && o.port === String(PORT);
-  } catch { return false; }
-}
+// Everyone who opens the page gets a body to walk around in. The upgrade event is a
+// second front door - handle() below never sees it - so the same classification has to
+// be made again here, by hand, or the socket would be the way around the whole gate.
+const roster = createRoster({ maxPlayers: config.multiplayer.maxPlayers, log });
+const whoFor = (req) => {
+  try { return access.classify(req, new URL(req.url, `http://localhost:${PORT}`)); } catch { return { role: 'refused' }; }
+};
+const ws = config.multiplayer.enabled ? createWsServer(server, {
+  path: '/ws',
+  maxSockets: Math.max(8, Number(config.multiplayer.maxPlayers || 16) * 2),
+  isAllowed: (req) => whoFor(req).role !== 'refused',
+  onOpen: (conn, req) => roster.attach(conn, { keeper: whoFor(req).role === 'islander' }),
+  onMessage: (conn, text) => roster.message(conn, text),
+  onClose: (conn) => roster.detach(conn),
+  log,
+}) : null;
+if (ws) setInterval(() => roster.tick(), Math.max(33, Number(config.multiplayer.tickMs) || 66)).unref?.();
+
+// Who else is out there. Only the keeper is told: a list of the other machines on your
+// network is not a visitor's to read, so the event goes to local listeners only.
+const islanderName = config.multiplayer.name || (() => {
+  try { return os.userInfo().username; } catch { return os.hostname(); }
+})();
+const neighbours = config.multiplayer.discovery ? createNeighbours({
+  port: PORT,
+  name: islanderName,
+  islandName: config.islandName,
+  seed: config.seed,
+  gridSize: config.gridSize,
+  settlers: () => {
+    const v = readJson(VILLAGE_FILE, null);
+    return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
+  },
+  log,
+  onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
+}) : null;
 
 async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = decodeURIComponent(url.pathname);
 
-  if (!fromThisMachine(req)) {
-    log(`refused ${req.method} ${p} from host "${req.headers.host}" origin "${req.headers.origin || '-'}"`);
+  const who = access.classify(req, url);
+  if (who.role === 'refused') {
+    log(`refused ${req.method} ${p} from ${req.socket.remoteAddress} (${who.why})`);
     return json(res, 403, { error: 'the island only answers this computer' });
+  }
+  if (who.role !== 'islander' && !isPublicPath(p)) {
+    log(`visitor refused ${req.method} ${p} from ${req.socket.remoteAddress}`);
+    return json(res, 403, { error: 'only the keeper of the island can do that' });
+  }
+  // A visitor who arrived with a valid code should not have to carry it in every URL.
+  if (access.inviteInUrl(req, url)) {
+    res.setHeader('Set-Cookie', `${KEY_COOKIE}=${encodeURIComponent(access.invite)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+  }
+
+  // What the page needs to know about itself before it draws anything.
+  if (p === '/api/hello') {
+    return json(res, 200, {
+      role: who.role,
+      islandName: config.islandName,
+      multiplayer: {
+        enabled: !!config.multiplayer.enabled,
+        maxPlayers: config.multiplayer.maxPlayers,
+        tickMs: config.multiplayer.tickMs,
+      },
+    });
   }
 
   // Saves a picture the page took of itself, for the readme. Names are strict and the
@@ -268,6 +336,8 @@ async function handle(req, res) {
   }
 
   if (p === '/events') {
+    // Unbounded this would be a way to eat the memory of an open island from a loop.
+    if (clients.size >= 64) return json(res, 503, { error: 'too many open islands' });
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -276,9 +346,12 @@ async function handle(req, res) {
     });
     res.write('retry: 2000\n\n');
     res.write('event: hello\ndata: {}\n\n');
-    clients.add(res);
+    // Whether this listener is the keeper matters: some events, the list of neighbouring
+    // islands above all, name other machines on the network and are not a visitor's to see.
+    const client = { res, local: who.role === 'islander' };
+    clients.add(client);
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
-    req.on('close', () => { clearInterval(ping); clients.delete(res); });
+    req.on('close', () => { clearInterval(ping); clients.delete(client); });
     return;
   }
 
@@ -299,7 +372,17 @@ async function handle(req, res) {
     return;
   }
 
-  if (p === '/village.json') { sendFile(res, VILLAGE_FILE, { noStore: true }); return; }
+  if (p === '/village.json') {
+    if (who.role === 'islander' || config.multiplayer.guestView === 'full') {
+      sendFile(res, VILLAGE_FILE, { noStore: true });
+      return;
+    }
+    const body = guestIsland();
+    if (!body) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(body);
+    return;
+  }
 
   // ---- the sprint board ----------------------------------------------------
   if (p === '/api/sprint') {
@@ -318,6 +401,10 @@ async function handle(req, res) {
   if (p === '/api/folders') return json(res, 200, { folders: projectFolders() });
 
   if (p === '/api/agents') return json(res, 200, { agents: liveAgents() });
+
+  if (p === '/api/neighbours') {
+    return json(res, 200, { me: neighbours ? neighbours.me() : null, neighbours: neighbours ? neighbours.list() : [] });
+  }
 
   // Hands a card to a settler and starts the agent that works it.
   if (p === '/api/assign' && req.method === 'POST') {
@@ -588,15 +675,22 @@ async function handle(req, res) {
     if (f) return sendFile(res, f, { noStore: true });   // our own code: never cached
   }
 
+  // The service worker wants revalidation rather than no-store: browsers refuse to
+  // register a worker they were told never to keep at all.
+  if (p === '/sw.js') return sendFile(res, path.join(WEB, 'sw.js'), { cache: 'no-cache' });
+
   const rel = p === '/' ? 'index.html' : p.replace(/^\//, '');
   const f = safeJoin(WEB, rel);
   if (!f) { res.writeHead(400); res.end('Bad path'); return; }
   sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
 }
 
-function broadcast(payload, event = 'update') {
+function broadcast(payload, event = 'update', { localOnly = false } = {}) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const c of clients) { try { c.write(msg); } catch { clients.delete(c); } }
+  for (const c of clients) {
+    if (localOnly && !c.local) continue;
+    try { c.res.write(msg); } catch { clients.delete(c); }
+  }
 }
 
 // The scanner replaces village.json by rename, so watch the directory, not the file.
@@ -632,12 +726,29 @@ function openBrowser(url) {
   } catch { /* the user can open it themselves */ }
 }
 
-// Bound to the loopback address on purpose: nobody else on the network gets to start
-// agents on this machine.
-server.listen(PORT, '127.0.0.1', async () => {
+// Shut, the island is bound to the loopback address: nobody else on the network gets to
+// start agents on this machine. Open, the host is left out entirely rather than set to
+// 0.0.0.0 - no host binds dual-stack, while 0.0.0.0 refuses IPv6, and Windows resolves
+// localhost to ::1 first, so the keeper's own browser would take a fallback delay on
+// every single load.
+if (access.open) {
+  server.headersTimeout = 10000;
+  server.requestTimeout = 30000;
+  server.maxConnections = 128;
+}
+server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
+  if (access.open) {
+    log(`the island is OPEN. Visitors can reach it at:`);
+    for (const a of access.addresses()) log(`    http://${a.includes(':') ? `[${a}]` : a}:${PORT}/`);
+    log(`    visitors see a ${config.multiplayer.guestView === 'full' ? 'complete' : 'redacted'} island and can walk it;`);
+    log(`    tickets, chat and git stay with this computer.`);
+    log(`    ${access.invite ? 'From outside your network a key is required.' : 'Nobody outside your own network can get in: no invite code is set.'}`);
+    log(`    Windows Firewall will ask about this port the first time.`);
+  }
   fs.mkdirSync(DATA, { recursive: true });
   watchData();
+  if (neighbours) neighbours.start();
   await rescan('startup');
   if (RESCAN) setInterval(() => rescan('timer'), RESCAN).unref?.();
   if (OPEN) openBrowser(`http://localhost:${PORT}/`);

@@ -7,6 +7,19 @@
   "gridSize": 80,
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
+  "network": {
+    "public": false,
+    "inviteCode": null,
+    "hosts": []
+  },
+  "multiplayer": {
+    "enabled": true,
+    "maxPlayers": 16,
+    "tickMs": 66,
+    "guestView": "redacted",
+    "name": null,
+    "discovery": true
+  },
   "dispatch": {
     "opening": "Pick up {key}",
     "skill": null,
