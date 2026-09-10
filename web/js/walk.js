@@ -13,6 +13,11 @@ const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
 const CAM_UP = 1.6;
 const EYE = 0.9;
+// A settler is about 1.1 units tall, so a jump of a third of that clears a doorstep and
+// a low hedge without turning the island into a platform game. Gravity is tuned to that
+// height rather than to reality: it puts the player back on the ground in about 0.6 s.
+const JUMP_V = 3.1;
+const GRAVITY = 12.5;
 const BODY_R = 0.3;
 
 // The player is a settler like any other, with a satchel and a wide hat so you can
@@ -47,6 +52,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     camYaw: 0,       // where the camera looks from
     camPitch: 0.28,
     bob: 0,
+    vy: 0,           // vertical speed; zero whenever the feet are down
+    grounded: true,
     blockers: [],
     interactables: [],
     near: null,
@@ -63,6 +70,11 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
       keys.add(k);
       e.preventDefault();
+    }
+    // Only from the ground, so holding space does not climb the sky.
+    if (k === ' ') {
+      e.preventDefault();
+      if (state.grounded) { state.vy = JUMP_V; state.grounded = false; }
     }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
@@ -111,6 +123,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     // step back until we are standing somewhere legal
     for (let i = 0; i < 40 && blocked(x, z); i++) { x += 0.4; z += 0.25; }
     state.pos.set(x, groundAt(x, z), z);
+    state.vy = 0;
+    state.grounded = true;
     // look at whatever we were dropped in front of, so the camera stays behind us
     state.yaw = state.camYaw = facing ? Math.atan2(facing[0] - x, facing[1] - z) : 0;
     state.camPitch = 0.44;   // high enough to look over the treetops
@@ -185,8 +199,17 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
       state.bob += dt * 1.5;
     }
 
-    state.pos.y = groundAt(state.pos.x, state.pos.z);
-    const bobY = state.moving ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
+    // Off the ground the height is the jump's; on it, the terrain's. Walking off a ledge
+    // mid-jump therefore falls the rest of the way instead of snapping down.
+    const ground = groundAt(state.pos.x, state.pos.z);
+    if (state.grounded) {
+      state.pos.y = ground;
+    } else {
+      state.vy -= GRAVITY * dt;
+      state.pos.y += state.vy * dt;
+      if (state.pos.y <= ground) { state.pos.y = ground; state.vy = 0; state.grounded = true; }
+    }
+    const bobY = state.moving && state.grounded ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
     avatar.position.set(state.pos.x, state.pos.y + bobY, state.pos.z);
     avatar.rotation.set(0, state.yaw, state.moving ? Math.sin(state.bob) * 0.045 : 0);
 
