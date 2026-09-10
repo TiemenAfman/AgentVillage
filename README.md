@@ -128,6 +128,27 @@ They are a resident, not a visitor: no ticket is attached and they stay until yo
 them away. Sessions you start the ordinary way, in the desktop app, in VS Code or from a
 terminal, arrive on the island by themselves through the session hook.
 
+## Telling an agent how your team works
+
+The island does not know your workflow, so it does not carry one. What a dispatched
+agent is told comes from `config.json`:
+
+```json
+"dispatch": {
+  "opening": "Pick up {key}",
+  "skill": null,
+  "language": "en"
+}
+```
+
+The `opening` is the first line of the prompt, so make it the phrase your own project
+skill triggers on. Name that skill in `skill` and the agent is told to follow it from
+beginning to end; leave it `null` and the agent is simply asked to work the ticket the
+way the project does. `{key}`, `{summary}`, `{settler}` and `{island}` are filled in.
+
+The skill itself belongs in the repository the agent works in, next to the code it
+describes, not here. That is also where it stays private.
+
 ## Inviting a session that already exists
 
 Walk up to the town hall and press **E**, or use **New settler** in the top right. The
