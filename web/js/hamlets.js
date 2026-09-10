@@ -72,10 +72,33 @@ export function decodeOwnership(village, size) {
 // solves this for footpaths by sampling the ground per corner; a hedge does the same one
 // level up, chaining collinear edges into runs and following the ground along each.
 const VARIANTS = [
-  { kind: 'hedge', h: 0.55, t: 0.20, jitter: 0.06, base: 0x4a6b39, top: 0x5d8347 },
-  { kind: 'rail', h: 0.45, t: 0.09, jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
-  { kind: 'wall', h: 0.38, t: 0.26, jitter: 0.11, base: 0x8a857c, top: 0x9a958c },
+  { kind: 'hedge', h: 0.38, t: 0.20, jitter: 0.06, base: 0x4a6b39, top: 0x5d8347 },
+  { kind: 'rail', h: 0.34, t: 0.09, jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
+  { kind: 'wall', h: 0.30, t: 0.26, jitter: 0.11, base: 0x8a857c, top: 0x9a958c },
 ];
+
+// A closed outline around every hamlet is what turns the island into a set of pens, and
+// measuring it says why: because parcels may never touch, *every* border faces open
+// countryside and none of them faces a neighbour. So each hedge was a village fencing
+// itself off from an empty field, in unbroken runs up to twenty cells long.
+//
+// Broken into lengths with gaps between them the same boundary reads as hedgerow: you
+// can still see where a hamlet's land ends, but nothing is enclosed. `GAP` is the share
+// of the outline left open; lengths are three to seven cells so the gaps are openings
+// rather than dashes.
+const GAP = 34;
+function lengths(k, axis, fixed, from, to) {
+  const out = [];
+  let a = from;
+  while (a < to) {
+    const h = hash32(`${k}:${axis}:${fixed}:${a}`);
+    const len = 3 + (h % 5);
+    const b = Math.min(to, a + len);
+    if ((h >> 8) % 100 >= GAP) out.push([a, b]);
+    a = b;
+  }
+  return out;
+}
 export const variantOf = (id) => VARIANTS[hash32(String(id)) % VARIANTS.length];
 
 export function buildBorders(village, terrain, owner, roadCells) {
@@ -118,8 +141,10 @@ export function buildBorders(village, terrain, owner, roadCells) {
     let start = null, prev = null;
     const flush = () => {
       if (start === null) return;
-      const g = strip(terrain, run.axis, run.fixed, start, prev + 1, v, hueOf(run.k));
-      if (g) parts.push(g);
+      for (const [a, b] of lengths(run.k, run.axis, run.fixed, start, prev + 1)) {
+        const g = strip(terrain, run.axis, run.fixed, a, b, v, hueOf(run.k));
+        if (g) parts.push(g);
+      }
     };
     for (const a of run.at) {
       if (prev !== null && a !== prev + 1) { flush(); start = a; }
