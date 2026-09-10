@@ -177,8 +177,12 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   addEventListener('pointermove', onMove);
   dom.addEventListener('dblclick', () => { if (state.active) dom.requestPointerLock?.(); });
 
-  // A bridge deck is the ground as far as walking is concerned; without this you walk
-  // out over a river and drop into it.
+  // A bridge deck is the ground as far as walking is concerned; without this you walk out
+  // over a river and drop into it. This is also where the decks meet the wading rule,
+  // which is not obvious from either end: a deck is never below WATER_Y, so `blocked`
+  // does not treat a crossing as open water, `inWater` below stays false and you walk
+  // over rather than swim across. Step off the side of one and you are wading again,
+  // with the deck itself counting as the shore within reach.
   let deckAt = new Map();
   function groundAt(x, z) {
     const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
