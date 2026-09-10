@@ -384,6 +384,15 @@ gets a lone farmhouse in the countryside, or a place on the town commons if the 
 no room for one. When it reaches its third session it founds a hamlet, and the houses
 already standing keep their plots: they stay where they are for good.
 
+Every session of one project stands on that project's own land, and the boundary is what
+says so: it runs all the way round the parcel and opens only where a road crosses, with a
+gatepost either side. What it is made of is the district's own standing rather than a die
+roll - average the houses inside, tent 0 through keep 5, and the answer is post and rail
+below a hut, a hedge around cottages, and dry stone from a house upward. Thickness is the
+one number that only ever grows: sevenfold from a rail round a camp of tents to the wall
+of a village of keeps, and never doubling back where one material hands over to the next.
+Sheds and civic lots do not count - neither is anybody's house.
+
 **`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
 owned, and a change to how it is divided means re-planning every house and shed at once -
 so that is a numbered, deliberate act, separate from `LAYOUT_VERSION`, which would also
@@ -423,7 +432,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Town Hall and founding stone | The session that founded the island |
 | A house | One Claude Code session |
 | A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
-| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land; it opens where a road crosses it |
+| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
+| How stout that edge is | The houses inside it: a rail round tents and huts, a hedge round cottages, dry stone round houses and manors - and the grander the houses the thicker the stone |
 | A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the hedge steps back and the water does the job |
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
