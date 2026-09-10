@@ -286,6 +286,7 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Town Hall and founding stone | The session that founded the island |
 | A house | One Claude Code session |
 | A district with a plaque and a well | One project folder |
+| The town square, growing 3 -> 5 -> 7 -> 9 cells across | 1, 30, 80 and 160 settlers |
 | An outpost | A session in a git worktree |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
@@ -304,7 +305,9 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, clock tower, windmill, lighthouse, castle | 5, 10, 20, 30, 50 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 40, 45, 50, 70 and 100 settlers |
+| The school | 25 apprentices: it is where they are taught |
+| Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
 The day and night follow the real clock; the season follows the month. Windows light up
 after dark, campfires flicker, the lighthouse sweeps the water and fireflies come out.
@@ -335,6 +338,15 @@ a lower pixel ratio.
 Transcripts are append-only, so the scanner remembers how far it read and only folds in
 new bytes. A first scan of a few hundred megabytes takes a second or two; every scan
 after that takes a fraction of one.
+
+## The model sheet
+
+`http://localhost:4747/demo` draws every object the island can build on one field:
+each house tier in each model's colours, the sheds, the ornaments, every civic
+building and everything that stands on the square, with a night slider so the lit
+windows and the street lamps can be judged, and a wireframe toggle. Nothing on it
+reads the village, so a piece that no village has unlocked yet still shows up. Edit
+`web/js/buildings.js` and reload.
 
 ## Layout
 

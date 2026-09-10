@@ -369,24 +369,47 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // ---- footpaths -----------------------------------------------------------
   let pathMesh = null;
-  function buildPaths(paths) {
+  // Only the town square is laid in stone. A district square is a green with a plaque
+  // and a well on it, not a plaza, and paving three by three of them across the island
+  // reads as a rash of empty patios. Roads meet them at a doorstep instead.
+  function squareCells(v) {
+    const out = [];
+    const town = v.island && v.island.town;
+    if (!town) return out;
+    if (town.paved) return town.paved;          // the plaza as it actually came out
+    if (!town.square) return out;
+    const n = town.size || 3;
+    for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.push([town.square[0] + x, town.square[1] + z]);
+    return out;
+  }
+
+  function buildPaths(paths, squares = squareCells(village)) {
     if (pathMesh) { group.remove(pathMesh); pathMesh.geometry.dispose(); pathMesh = null; }
     const positions = [], colors = [], indices = [];
     let v = 0;
     // A track half a cell wide, widened towards whichever neighbours continue the path,
-    // so a run of cells joins up into one continuous footpath.
+    // so a run of cells joins up into one continuous footpath. Squares are laid the same
+    // way in a paler stone, which is what makes a road meet a plaza instead of stopping
+    // a cell short of it.
     const seen = new Set();
-    for (const p of paths || []) for (const [gx, gz] of p.cells) seen.add(gx + gz * terrain.size);
+    const tiles = [];
+    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, 0xcbb691]); }
+    for (const c of squares || []) {
+      const k = c[0] + c[1] * terrain.size;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      tiles.push([c, 0xd6cbb2]);
+    }
     const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
     const H = 0.26;
-    for (const p of paths || []) {
-      for (const [gx, gz] of p.cells) {
+    {
+      for (const [[gx, gz], hex] of tiles) {
         const [x, z] = terrain.cellWorld(gx, gz);
         const x0 = x - (hasCell(gx - 1, gz) ? 0.5 : H), x1 = x + (hasCell(gx + 1, gz) ? 0.5 : H);
         const z0 = z - (hasCell(gx, gz - 1) ? 0.5 : H), z1 = z + (hasCell(gx, gz + 1) ? 0.5 : H);
         for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
           positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
-          tmpColor.setHex(0xcbb691);
+          tmpColor.setHex(hex);
           colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
         }
         indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
@@ -565,7 +588,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   // anything already cleared at load time is simply not planted, so nothing to do here
 
-  return { group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees, buildPaths, state, season: () => currentSeason };
+  return { group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees, buildPaths, squareCells, state, season: () => currentSeason };
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------

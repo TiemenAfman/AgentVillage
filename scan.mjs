@@ -219,8 +219,22 @@ function assemble({ config, model, layout, terrain, size, all }) {
     if (!m.unlocked || !p) continue;
     civics.push({
       id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(p),
-      name: m.label, title: `Unlocked at ${m.at} settlers`, label: m.label,
+      name: m.label, title: `Unlocked at ${m.at} ${m.on === 'apprentices' ? 'apprentices' : 'settlers'}`, label: m.label,
       startedAt: iso(m.unlockedAt), lastAt: null, style: 'unknown', model: null, models: {},
+      tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // what stands on the square: earned by the apprentices, not the settlers
+  for (const f of model.furniture || []) {
+    const p = plot(f.id);
+    if (!p) continue;
+    civics.push({
+      id: f.id, kind: 'civic', civicType: f.kind, district: null, plot: p, door: null,
+      name: f.label, title: `Unlocked at ${f.at} apprentices`, label: f.label,
+      startedAt: config.foundedAt, lastAt: null, style: 'unknown', model: null, models: {},
       tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
       tools: {}, sheds: [],
@@ -259,7 +273,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),
-    stats: { ...model.stats, nextMilestone: nextMilestone(model.stats.settlers) },
+    stats: { ...model.stats, nextMilestone: nextMilestone(model.stats) },
   };
 }
 
@@ -274,9 +288,18 @@ function hasJiraSkill(cwd) {
   return has;
 }
 
-function nextMilestone(count) {
-  const m = MILESTONES.find((x) => x.at > count);
-  return m ? { id: m.id, at: m.at, label: m.label, remaining: m.at - count } : null;
+// Milestones no longer all count the same heads, so the nearest one wins rather than
+// the first one in the list.
+function nextMilestone(stats) {
+  let best = null;
+  for (const m of MILESTONES) {
+    const on = m.on === 'apprentices' ? 'apprentices' : 'settlers';
+    const have = on === 'apprentices' ? stats.apprentices : stats.settlers;
+    if (m.at <= have) continue;
+    const remaining = m.at - have;
+    if (!best || remaining < best.remaining) best = { id: m.id, at: m.at, on, label: m.label, remaining };
+  }
+  return best;
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(path.join(ROOT, 'scan.mjs'));
