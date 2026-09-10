@@ -12,7 +12,9 @@ import path from 'node:path';
 import { DATA, loadConfig, readJson } from '../lib/paths.mjs';
 import { listProps, addProp, removeProp, clearProps } from '../lib/props.mjs';
 import { whereIsPlayer } from '../lib/player.mjs';
+import { cropsView, gardenView } from '../lib/garden.mjs';
 import { catalogueLines } from '../shared/shapes.mjs';
+import { CROPS, growthOf, ripeIn } from '../shared/crops.mjs';
 
 const PORT = Number(process.env.SETTLERS_PORT || loadConfig().port || 4747);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -39,6 +41,10 @@ const USAGE = `The island's command line - ${BASE}
       --length <n>        how far a bridge or a fence reaches
       --label "<text>"    a name for it
       --note "<text>"     why it is there
+
+  node tools/island.mjs garden
+      The purse, the seed in the pouch, the basket, and every bed that is
+      growing. Read only: the sowing and the selling are the walker's to do.
 
   node tools/island.mjs list
   node tools/island.mjs remove <id>
@@ -166,10 +172,49 @@ async function main() {
       if (d > range) continue;
       rows.push({ d, line: `${d.toFixed(1).padStart(5)} away  ${p.x.toFixed(1)}, ${p.z.toFixed(1)}  ${p.kind.padEnd(9)} ${p.label || '(built by hand)'}  ${p.id}` });
     }
+    let crops = [];
+    try { crops = (await api('/api/crops')).crops; } catch (e) { if (!offline(e)) throw e; crops = cropsView(); }
+    for (const c of crops) {
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d > range) continue;
+      const grown = growthOf(c);
+      const what = CROPS[c.kind] ? CROPS[c.kind].plural : c.kind;
+      rows.push({ d, line: `${d.toFixed(1).padStart(5)} away  ${c.x.toFixed(1)}, ${c.z.toFixed(1)}  ${'bed'.padEnd(9)} `
+        + `${what}, ${grown.ripe ? 'ready to pull' : `${grown.stage}, ${ripeIn(grown.leftMs)} to go`}  ${c.id}` });
+    }
     rows.sort((a, b) => a.d - b.d);
     process.stdout.write(rows.length
       ? `Around ${x.toFixed(1)}, ${z.toFixed(1)}, out to ${range}:\n${rows.map((r) => `  ${r.line}`).join('\n')}\n`
       : `Nothing within ${range} of ${x.toFixed(1)}, ${z.toFixed(1)}. Open ground.\n`);
+    return;
+  }
+
+  // What the market gardener has. Read only on purpose: buying, sowing and selling are
+  // the game, and the game is played on foot.
+  if (cmd === 'garden') {
+    let g;
+    try { g = await api('/api/garden'); } catch (e) { if (!offline(e)) throw e; g = gardenView(); }
+    const pouch = Object.entries(g.seeds || {});
+    const basket = Object.entries(g.basket || {});
+    // "seed" is a mass noun, so a pouch never has to count; a basket does.
+    const seedOf = (k) => (CROPS[k] ? `${CROPS[k].name.toLowerCase()} seed` : `${k} seed`);
+    const some = (k, n) => (CROPS[k] ? (n === 1 ? CROPS[k].name.toLowerCase() : CROPS[k].plural) : k);
+    const lines = [
+      `${g.purse} coins in the purse`,
+      pouch.length
+        ? `pouch: ${pouch.map(([k, n]) => `${n} ${seedOf(k)}${k === g.held ? ' (in hand)' : ''}`).join(', ')}`
+        : 'pouch: empty - the seed stall at the market sells seed',
+      basket.length
+        ? `basket: ${basket.map(([k, n]) => `${n} ${some(k, n)} at ${g.prices[k]} each`).join(', ')} - ${g.worth} coins at today's prices`
+        : 'basket: empty',
+    ];
+    for (const b of g.beds || []) {
+      const grown = growthOf(b);
+      lines.push(`  ${b.x.toFixed(1).padStart(6)}, ${b.z.toFixed(1).padStart(6)}  ${some(b.kind, 2).padEnd(10)} `
+        + `${grown.ripe ? 'ready to pull' : `${grown.stage}, ${ripeIn(grown.leftMs)} to go`}${b.salt ? '  (salt air)' : ''}`);
+    }
+    if (!(g.beds || []).length) lines.push('  nothing is in the ground');
+    process.stdout.write(`${lines.join('\n')}\n`);
     return;
   }
 

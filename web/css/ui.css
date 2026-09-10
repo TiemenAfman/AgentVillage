@@ -444,3 +444,41 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 @media (max-width: 900px) {
   .think-panel { width: calc(100vw - 28px); }
 }
+
+/* --- the seed stall, and the pouch you carry round the island ---------- */
+.market .ho-sum { max-width: 62ch; }
+.mk-purse { display: flex; align-items: baseline; gap: 12px; margin: 14px 0 2px;
+  padding: 9px 13px; border: 1px solid var(--edge); border-radius: 11px; background: rgba(232,180,92,.08); }
+.mk-coins { font-family: var(--font); font-size: 22px; color: var(--accent); }
+.mk-coins i { font-style: normal; font-size: 11px; color: var(--ink-dim); margin-left: 5px; letter-spacing: .06em; text-transform: uppercase; }
+.mk-purse .muted { margin: 0; }
+.mk-rows { display: grid; gap: 6px; }
+.mk-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 11px; align-items: center;
+  padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.mk-row.held { border-color: rgba(232,180,92,.5); background: rgba(232,180,92,.09); }
+.mk-swatch { width: 15px; height: 15px; border-radius: 50%; border: 2px solid; }
+.mk-what b { font-size: 13px; }
+.mk-what p { margin: 2px 0 3px; font-size: 12px; line-height: 1.4; color: var(--ink); opacity: .82; max-width: 56ch; }
+.mk-what small { display: block; font-size: 11px; color: var(--ink-dim); }
+.mk-what small b { color: var(--accent); font-size: 11px; }
+.mk-what small i { font-style: italic; }
+.mk-buy { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.mk-buy .btn.tiny { margin-left: 0; }
+.btn.off { opacity: .38; cursor: default; }
+.mk-sellall { margin-top: 10px; }
+.mk-empty { margin-top: 4px; }
+.mk-empty kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.mk-ledger { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--edge); }
+.ho-out kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* What is in the purse and the pouch, while walking. Sits above the key strip. */
+.walk-pouch { padding: 5px 13px; font-size: 12px; border-radius: 99px; display: flex; gap: 10px; align-items: center; }
+.walk-pouch .coins { color: var(--accent); font-weight: 600; }
+.walk-pouch .held { color: var(--ink); }
+.walk-pouch .held b { color: var(--accent-2); }
+.walk-pouch .none { color: var(--ink-dim); }
+.walk-pouch .ripe { color: #7fd08a; }
+.walk-pouch kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }

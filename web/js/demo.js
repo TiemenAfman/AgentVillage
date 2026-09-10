@@ -11,6 +11,8 @@ import {
 import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, variantOf, NONE } from './hamlets.js';
+import { bedGeometry } from './crops.js';
+import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -233,6 +235,27 @@ line(['sailor', 'plaque'], (what, x, z) => {
     tag(x, z + 1.1, 'District plaque', 'retired — see Hamlet signs');
   }
 }, 'Odds');
+
+// ---- the market garden ---------------------------------------------------------
+// Every vegetable at the stage you would buy it for, and then one crop through all
+// four of its looks, which is the row that says whether growing reads as growing.
+function placeMesh(geometry, x, z, name, note) {
+  const m = new THREE.Mesh(geometry, material);
+  m.position.set(x, 0, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  scene.add(m);
+  tag(x, z + 1.0, name, note);
+}
+
+line(CROP_KINDS, (kind, x, z) => {
+  const c = CROPS[kind];
+  placeMesh(bedGeometry(kind, 'ripe'), x, z, c.name, `${c.seed} coins · ${c.grow} min`);
+}, 'Vegetable beds');
+
+line(STAGES, (stage, x, z) => {
+  placeMesh(bedGeometry('turnip', stage), x, z, stage, stage === 'ripe' ? 'ready to pull' : 'coming on');
+}, 'Turnip, growing');
 
 // ---- hamlet pieces -------------------------------------------------------------
 // A hedge and a field decal both follow the ground, and on a flat plane you cannot tell

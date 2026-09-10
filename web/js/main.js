@@ -23,8 +23,11 @@ import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
+import { createCrops } from './crops.js';
+import { createMarket } from './market.js';
 import { createThink } from './think.js';
 import { createGamepad, BTN } from './gamepad.js';
+import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -234,6 +237,7 @@ const state = {
   walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   props: null, think: null,
+  crops: null, market: null, garden: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -310,8 +314,22 @@ function interactables() {
       out.push({ id: rec.id, kind: 'office', x: p.x, z: p.z, r: 2.4, label: rec.spec.name });
     } else if (rec.spec.civicType === 'townhall') {
       out.push({ id: rec.id, kind: 'townhall', x: p.x, z: p.z, r: 3.2, label: 'the town hall' });
+    } else if (rec.spec.civicType === 'market') {
+      out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
+    }
+  }
+  // The vegetable beds. `label` names the place, for the panel and for "where am I";
+  // the prompt above the keys counts the last minutes down on its own.
+  if (state.crops) {
+    for (const bed of state.crops.list()) {
+      const c = CROPS[bed.kind];
+      out.push({
+        id: bed.id, kind: 'bed', crop: bed.kind, ripeAt: bed.ripeAt,
+        x: bed.x, z: bed.z, r: 1.1,
+        label: `a bed of ${c ? c.plural : bed.kind}`,
+      });
     }
   }
   return out;
@@ -360,7 +378,10 @@ function whatIsNear(w) {
   }
   if (best) return best;
   const p = state.props && state.props.nearest(w.pos.x, w.pos.z, 5);
-  return p ? (p.label || `a ${p.kind}`) : null;
+  if (p) return p.label || `a ${p.kind}`;
+  const bed = state.crops && state.crops.nearest(w.pos.x, w.pos.z, 4);
+  if (bed) return `a bed of ${(CROPS[bed.kind] || {}).plural || bed.kind}`;
+  return null;
 }
 
 // --------------------------------------------------------------- having a thought
@@ -394,6 +415,120 @@ async function refreshProps({ animate = true } = {}) {
   }
 }
 
+// --------------------------------------------------------------- market gardening
+// The purse and the pouch belong to whoever lives here, so the keeper reads the whole
+// garden and a visitor reads only the beds - shapes and places, like the props.
+async function refreshGarden({ animate = true } = {}) {
+  if (!state.crops) return;
+  try {
+    if (state.guest) {
+      const body = await fetch('/api/crops', { cache: 'no-store' }).then((r) => r.json());
+      state.crops.apply(body.crops || [], { animate });
+    } else {
+      const garden = await fetch('/api/garden', { cache: 'no-store' }).then((r) => r.json());
+      state.garden = garden;
+      state.crops.apply(garden.beds || [], { animate });
+    }
+    if (state.mode === 'walk') state.walk.setInteractables(interactables());
+  } catch (e) {
+    console.warn('the garden could not be read', e);
+  }
+}
+
+// Every button and key that changes the garden comes through here, so a refusal is
+// worded once and the beds, the purse and the prompts are brought back into line
+// together.
+async function tend(body, said) {
+  if (keeperOnly('do the farming here')) return null;
+  try {
+    const r = await fetch('/api/garden', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const answer = await r.json();
+    if (!r.ok) { state.ui.toast(escapeHtml(answer.error || 'that did not work')); return null; }
+    state.garden = answer.garden;
+    state.crops.apply(answer.garden.beds || [], { animate: true });
+    if (state.mode === 'walk') state.walk.setInteractables(interactables());
+    if (said) state.ui.toast(said(answer));
+    return answer;
+  } catch (e) {
+    state.ui.toast(escapeHtml(e.message || 'the island did not answer'));
+    return null;
+  }
+}
+
+// A bed goes in under the gardener's feet. Walk mode already refuses to let anyone
+// stand inside a wall, so the only thing left to check here is that a bed - which is
+// wider than a person - still fits; the island itself judges the ground.
+function sowHere() {
+  if (state.mode !== 'walk') return;
+  if (keeperOnly('sow a bed on this island')) return;
+  const w = state.walk.state;
+  const g = state.garden;
+  if (!g || !g.held) {
+    state.ui.toast(g && Object.keys(g.seeds || {}).length
+      ? 'No seed in hand. <b>Q</b> takes the next kind out of the pouch.'
+      : 'Nothing to sow. The seed stall at the market sells turnip seed.');
+    return;
+  }
+  const x = w.pos.x, z = w.pos.z;
+  if (!state.walk.roomFor(x, z, BED_SIZE / 2 + 0.1)) {
+    state.ui.toast('There is no room for a bed here. Try a step into the open.');
+    return;
+  }
+  const c = CROPS[g.held];
+  tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
+}
+
+// Which seed is in hand, one press at a time, in the order the stall lists them.
+function nextSeed() {
+  if (keeperOnly('go through this island’s seed pouch')) return;
+  const g = state.garden;
+  const have = g ? CROP_KINDS.filter((k) => (g.seeds || {})[k]) : [];
+  if (!have.length) { state.ui.toast('The pouch is empty. The stall at the market sells seed.'); return; }
+  const next = have[(have.indexOf(g.held) + 1) % have.length];
+  tend({ op: 'hold', kind: next }, () => `<b>${escapeHtml(CROPS[next].name)}</b> seed in hand — ${(g.seeds || {})[next]} left.`);
+}
+
+function pullBed(id) {
+  const bed = state.crops && state.crops.list().find((b) => b.id === id);
+  if (!bed) return;
+  if (!bed.ripe) { state.ui.toast(`Another ${escapeHtml(ripeIn(bed.leftMs))} for those.`); return; }
+  tend({ op: 'harvest', id }, (a) => {
+    const c = CROPS[a.kind];
+    return `${a.count} ${escapeHtml(a.count === 1 ? c.name.toLowerCase() : c.plural)} in the basket. The stall at the market buys them.`;
+  });
+}
+
+function digBed(id) {
+  tend({ op: 'dig', id }, (a) => `The ${escapeHtml(CROPS[a.kind].name.toLowerCase())} bed is turned back over.`);
+}
+
+// What the strip along the bottom says while you walk. The ripe count is recounted
+// here rather than taken from the island: beds come ready while you are standing in
+// the field, and nothing needs to be asked of the server when they do.
+function pouch() {
+  const g = state.garden;
+  if (!g) return null;
+  const c = CROPS[g.held];
+  return {
+    purse: g.purse,
+    seeds: g.seeds || {},
+    held: g.held,
+    heldName: c ? c.name : g.held,
+    ripe: state.crops ? state.crops.list().filter((b) => b.ripe).length : 0,
+  };
+}
+
+function openMarket() {
+  if (keeperOnly('trade at the seed stall')) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.market.open();
+}
+
 function enterWalk() {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
@@ -423,10 +558,17 @@ function enterWalk() {
       if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open(); }
       else if (it.kind === 'office') openOffice(it.id);
       else if (it.kind === 'townhall') openTownHall();
+      else if (it.kind === 'market') openMarket();
+      else if (it.kind === 'bed') pullBed(it.id);
       else talkTo(it.id);
     },
-    onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall' && it.kind !== 'office') askToSendAway(it.id); },
+    onSendAway: (it) => {
+      if (it.kind === 'bed') { digBed(it.id); return; }
+      if (!['board', 'townhall', 'office', 'market'].includes(it.kind)) askToSendAway(it.id);
+    },
     onThink: () => openThink(),
+    onPlant: () => sowHere(),
+    onNextSeed: () => nextSeed(),
     onExit: () => exitWalk(),
   });
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
@@ -1561,6 +1703,7 @@ function frame(nowMs) {
   if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
   }
 
@@ -1599,6 +1742,7 @@ function frame(nowMs) {
   if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
   if (state.props) state.props.update(dt);
+  if (state.crops) state.crops.update(dt);
 
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
@@ -1825,6 +1969,16 @@ async function boot() {
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
+    onMarket: () => openMarket(),
+  });
+
+  state.market = createMarket(document.body, {
+    onChange: (g) => {
+      state.garden = g;
+      if (state.crops) state.crops.apply(g.beds || [], { animate: true });
+      if (state.mode === 'walk') state.walk.setInteractables(interactables());
+    },
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
   });
 
   state.townHall = createTownHall(document.body, {
@@ -1924,6 +2078,8 @@ async function boot() {
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   refreshProps({ animate: false });
+  state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });
+  refreshGarden({ animate: false });
   applyVillage(village, { animate: false });
   setLiveMode();
   // Arriving from a neighbour replaces the usual opening sweep with a landing.
@@ -1949,6 +2105,8 @@ function connect() {
     es.addEventListener('open', () => { if (state.chronicle.t == null) state.ui.setLive('live'); });
     // Something was built by hand, most likely by a thought somebody had while walking.
     es.addEventListener('props', debounce(() => refreshProps({ animate: true }), 150));
+    // A bed was sown, pulled or dug up - by another open page, or by whoever is walking.
+    es.addEventListener('garden', debounce(() => refreshGarden({ animate: true }), 150));
     // The server can ask for a reload after its own code changed underneath us.
     es.addEventListener('reload', () => location.reload());
     // Somebody on the network raised or struck their flag. Only the keeper is sent this.

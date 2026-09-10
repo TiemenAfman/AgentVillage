@@ -12,6 +12,9 @@ import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } fr
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
 import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
+import {
+  cropsView, gardenView, buySeed, sellCrop, sellEverything, holdSeed, plantBed, harvestBed, digUpBed,
+} from './lib/garden.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
@@ -609,6 +612,54 @@ async function handle(req, res) {
       broadcast({ at: Date.now(), id: removed.id }, 'props');
     }
     return json(res, 200, { ok: true, removed });
+  }
+
+  // ---- the market garden -------------------------------------------------------
+  // Two paths, and the split is the point. The beds are scenery, so anyone walking the
+  // island is shown them; the purse, the pouch and every way of changing them belong to
+  // whoever lives here, and live at a path a visitor cannot reach at all.
+  if (p === '/api/crops') {
+    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
+    return json(res, 200, { crops: cropsView() });
+  }
+
+  if (p === '/api/garden') {
+    if (req.method === 'GET') return json(res, 200, gardenView());
+    if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+    let body;
+    try { body = await readBody(req, 8 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const op = String(body.op || '');
+    try {
+      let done;
+      if (op === 'buy') {
+        done = buySeed(body.kind, body.count);
+        log(`bought ${done.count} ${done.kind} seed for ${done.paid} coins, ${done.purse} left`);
+      } else if (op === 'hold') {
+        done = holdSeed(body.kind === null ? null : body.kind);
+      } else if (op === 'plant') {
+        done = plantBed(body);
+        log(`sowed ${done.bed.kind} at ${done.bed.x}, ${done.bed.z}${done.salt ? ' (salt air)' : ''}`);
+      } else if (op === 'harvest') {
+        done = harvestBed(body.id);
+        log(`pulled ${done.count} ${done.kind}`);
+      } else if (op === 'dig') {
+        done = digUpBed(body.id);
+        log(`dug up the ${done.kind} bed`);
+      } else if (op === 'sell') {
+        done = sellCrop(body.kind, body.count == null ? 'all' : body.count);
+        log(`sold ${done.count} ${done.kind} for ${done.paid} coins, purse now ${done.purse}`);
+      } else if (op === 'sellAll') {
+        done = sellEverything();
+        log(`sold ${done.count} vegetable(s) for ${done.paid} coins, purse now ${done.purse}`);
+      } else {
+        return json(res, 400, { error: 'op is one of buy, hold, plant, harvest, dig, sell, sellAll' });
+      }
+      // Only the beds are anybody else's business, and only they change the picture.
+      if (['plant', 'harvest', 'dig'].includes(op)) broadcast({ at: Date.now(), op }, 'garden');
+      return json(res, 200, { ok: true, ...done, garden: gardenView() });
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
   }
 
   // ---- a thought, had while standing somewhere ---------------------------------
