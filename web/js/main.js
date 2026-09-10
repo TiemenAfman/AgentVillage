@@ -188,7 +188,7 @@ const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 14
 const controls = new OrbitControls(camera, renderer.domElement);
 Object.assign(controls, {
   enableDamping: true, dampingFactor: 0.075, screenSpacePanning: false,
-  minDistance: 5, maxDistance: 95, minPolarAngle: 0.12, maxPolarAngle: 1.34,
+  minDistance: 5, maxDistance: 200, minPolarAngle: 0.12, maxPolarAngle: 1.34,
   rotateSpeed: 0.62, panSpeed: 0.85, zoomSpeed: 0.9, zoomToCursor: true,
 });
 controls.target.set(0, 1, 0);
@@ -198,6 +198,7 @@ const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
   village: null, terrain: null, world: null, settlers: null, ui: null,
+  bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
@@ -660,10 +661,15 @@ function frameIsland() {
     minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
   }
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  // Measured once, here, so the fit above and the pan clamps below read one place rather
+  // than three numbers that each have to be remembered when the island changes size.
+  state.bounds = { minX, maxX, minZ, maxZ };
   // fit the wider of the two spans, then pull in a little so the island fills the frame
   const r = 0.5 * Math.max(maxX - minX, maxZ - minZ) + 2;
   const fov = camera.fov * Math.PI / 180;
-  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, 88);
+  // The ceiling of 88 was sized for a 64 grid. On this island the computed fit is about
+  // 122, so the coast was being cropped at boot.
+  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, 175);
   const az = 0.6, el = 0.72;
   controls.target.set(cx, 1, cz);
   camera.position.set(
@@ -1175,8 +1181,9 @@ function frame(nowMs) {
         const pan = radius * 0.5 * dt;
         controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
         controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
-        controls.target.x = clamp(controls.target.x, -40, 40);
-        controls.target.z = clamp(controls.target.z, -40, 40);
+        const wb = state.bounds;
+        controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
+        controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
         camera.position.set(
           controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
           controls.target.y + r2 * Math.cos(phi),
@@ -1256,8 +1263,10 @@ function frame(nowMs) {
     controls.update();
     const y = state.terrain ? state.terrain.worldHeight(camera.position.x, camera.position.z) + 0.9 : 0;
     if (camera.position.y < y) camera.position.y = y;
-    controls.target.x = clamp(controls.target.x, -34, 34);
-    controls.target.z = clamp(controls.target.z, -34, 34);
+    const b = state.bounds;
+    controls.target.x = clamp(controls.target.x, b.minX - 3, b.maxX + 3);
+    controls.target.z = clamp(controls.target.z, b.minZ - 3, b.maxZ + 3);
+    if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
   }
 
   if (state.mode !== 'walk') updateLabels();

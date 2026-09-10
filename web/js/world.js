@@ -247,7 +247,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
   group.add(sunDisc, moonDisc);
 
-  scene.fog = new THREE.Fog(0xdcefff, 85, 235);
+  // Scaled to the island rather than fixed: 85/235 was chosen for a 64 grid, and at the
+  // distance this one has to be viewed from, the far coast sat in full fog.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.2, terrain.half * 3.9);
 
   // ---- lights --------------------------------------------------------------
   const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8a9a6a, 0.85);
@@ -492,6 +494,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   let time = 0;
   let currentSeason = season;
   const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
+  // The shadow frustum follows what you are looking at. It is 84 units across and the
+  // island is about 120, so anchored at the origin the far half of the coast cast no
+  // shadow at all. Widening it instead would take the shadow map from 24 pixels per unit
+  // down to 15 and soften every roof edge, so it moves. Eased, not snapped, or shadows
+  // pop in and out along the frustum edge while you pan.
+  const shadowFocus = new THREE.Vector3();
+  const followShadow = (x, z) => shadowFocus.set(x, 0, z);
 
   function update(dt, hour, month) {
     time += dt;
@@ -500,7 +509,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     state.sun.copy(dir);
     state.night = d.night;
 
-    key.position.copy(dir).multiplyScalar(90);
+    key.target.position.lerp(shadowFocus, Math.min(1, dt * 4));
+    key.position.copy(key.target.position).addScaledVector(dir, 90);
     key.color.copy(d.key);
     key.intensity = d.int;
     hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
@@ -588,7 +598,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   // anything already cleared at load time is simply not planted, so nothing to do here
 
-  return { group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees, buildPaths, squareCells, state, season: () => currentSeason };
+  return {
+    group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
+    buildPaths, squareCells, followShadow, state, season: () => currentSeason,
+  };
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------
