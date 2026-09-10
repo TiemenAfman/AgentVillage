@@ -399,8 +399,22 @@ export function createUI(handlers) {
 
   // --- walking -------------------------------------------------------------
   let padConnected = false;
+  // Indoors most of the keys mean nothing - there is nothing to sow in a tavern and nobody
+  // to send off the island from a bar stool - so the row says what there is instead.
+  let indoors = false;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
+  function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
   function renderWalkKeys() {
+    if (indoors) {
+      el('walk-keys').innerHTML = padConnected
+        ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
+          + `<span class="lit"><kbd>A</kbd> sit down</span><span><kbd>B</kbd> step outside</span>`
+        : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
+          + `<span>drag to look, double-click to hold the mouse</span>`
+          + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
+          + `<span><kbd>Esc</kbd> step outside</span>`;
+      return;
+    }
     el('walk-keys').innerHTML = padConnected
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
         + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span>`
@@ -414,6 +428,7 @@ export function createUI(handlers) {
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;
     walking = !!on;
+    if (!on) indoors = false;
     if (!on) { setConfirm(null); setPouch(null); }
     el('walk-hud').hidden = !on;
     // Nothing drives the label layer on foot - `updateLabels` is skipped in walk mode -
@@ -441,7 +456,10 @@ export function createUI(handlers) {
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
     const key = padConnected ? 'A' : 'E';
-    once('walk-prompt', near.kind === 'board' ? `<b>${key}</b> read the sprint board`
+    // Anything that carries its own wording says it itself. The rooms indoors do that: what
+    // a bar stool offers depends on whether you are already sitting on it.
+    once('walk-prompt', near.prompt ? `<b>${key}</b> ${esc(near.prompt)}`
+      : near.kind === 'board' ? `<b>${key}</b> read the sprint board`
       : near.kind === 'issues' ? `<b>${key}</b> read the island board`
         : near.kind === 'market' ? `<b>${key}</b> the seed stall`
           : near.kind === 'bed' ? bedPrompt(near, key)
@@ -487,7 +505,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm,
+    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
   };
 }
