@@ -12,6 +12,8 @@ const files = [
   ['build/three.core.js', 'three.core.js'],                 // only exists in newer three versions
   ['examples/jsm/controls/OrbitControls.js', 'addons/controls/OrbitControls.js'],
   ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],
+  ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page only
+
   ['LICENSE', 'LICENSE'],
 ];
 

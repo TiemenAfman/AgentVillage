@@ -4,6 +4,7 @@
 // no village has unlocked yet.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
   buildBridgeGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
@@ -506,6 +507,44 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
     tag(ox, z + 2.0, v === 'upland' ? 'upland' : String(strength), v === 'upland' ? 'at 0.11' : (strength === 0.11 ? 'shipped' : ''));
   });
   row++;
+}
+
+// ---- a real building, for scale -------------------------------------------------
+// Everything above is drawn by code and sized by eye. This one is a surveyed shape:
+// the new BOIKON office at Leeksterveld, exported straight out of Onshape as glTF.
+// It stands here only to answer "how big is a real building next to our houses" --
+// nothing on the island places it, and nothing reads this row.
+//
+// The island has no stated metre. A settler is about one world unit tall, so a person
+// of 1.8 m fixes the rest: METRE below is that conversion. Change it and the building
+// grows or shrinks against the huts, which is the comparison this row exists for.
+const METRE = 1 / 1.8;
+const REAL = [
+  ['/models/boikon.glb', 'BOIKON', 'Leeksterveld · 30 × 10 × 12,5 m'],
+];
+{
+  // a row and a half of clearance: at 12,5 m this thing is deeper than one ROW
+  const z = (row + 1) * ROW;
+  heading('Surveyed', z);
+  REAL.forEach(([url, name, note], i) => {
+    const x = (i - (REAL.length - 1) / 2) * PITCH * 6;
+    tag(x, z + 4.0, name, note);
+    new GLTFLoader().load(url, (gltf) => {
+      const model = gltf.scene;
+      // Onshape ships one grey material; give it the island's daylight response so the
+      // night slider still means something here.
+      model.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.85 });
+        o.castShadow = true;
+        o.receiveShadow = true;
+      });
+      model.scale.setScalar(METRE);
+      model.position.set(x, 0, z);
+      scene.add(model);
+    }, undefined, (err) => console.warn('model sheet: could not load', url, err));
+  });
+  row += 4;
 }
 
 // ---- camera --------------------------------------------------------------------
