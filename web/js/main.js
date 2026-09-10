@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { clamp, hash32 } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
@@ -1052,6 +1053,11 @@ function buildScene(village) {
   scene.add(state.flags);
 
   syncHamlets(village);
+  // The world has just been built for the island as it is, which is what the chronicle
+  // calls "live" - so record that as already drawn. Without it the first `setLiveMode` of
+  // every page load re-lays the whole landscape it has this moment finished laying.
+  shownKey = 'live';
+  state.shot = village;
   frameIsland();
 }
 
@@ -1221,6 +1227,43 @@ function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
   return start <= t;
 }
+// `history.js` projects the village onto the cursor's moment; this lays that projection
+// out with the same functions that build the landscape from a live village, so there is
+// no second description of what a hamlet looks like.
+//
+// `setOwnership` is the heavy one - it re-decodes ownership over the whole grid, re-plans
+// the fields, re-tints the ground and rebuilds the hedges - so it cannot run per pointer
+// move. The projection's key says what would actually be drawn, and the work is throttled
+// with a trailing pass, so the last position the slider stops at is always the one drawn.
+const LANDSCAPE_MS = 120;
+let shownKey = null, landscapePending = null, landscapeRan = 0;
+
+function layLandscape(shot) {
+  const w = state.world;
+  state.shot = shot.village;
+  w.setOwnership(shot.village);
+  w.buildPaths(shot.village.paths, w.squareCells(shot.village));
+  if (state.settlers) state.settlers.setRoads(roadCells(shot.village));
+  syncHamlets(shot.village);
+}
+
+function applyLandscape(force = false) {
+  if (!state.world || !state.village) return;
+  const shot = projectVillage(state.village, state.chronicle.t ?? NaN);
+  if (shot.key === shownKey) return;
+  const now = performance.now();
+  if (!force && now - landscapeRan < LANDSCAPE_MS) {
+    clearTimeout(landscapePending);
+    landscapePending = setTimeout(() => applyLandscape(true), LANDSCAPE_MS - (now - landscapeRan));
+    return;
+  }
+  clearTimeout(landscapePending);
+  landscapePending = null;
+  landscapeRan = now;
+  shownKey = shot.key;
+  layLandscape(shot);
+}
+
 function applyVisibility() {
   const t = timeNow();
   for (const rec of state.byId.values()) {
@@ -1422,6 +1465,9 @@ function applyVillage(next, { animate }) {
   }
 
   assignFlags();
+  // The key is computed from the village, so a new one from the server invalidates it;
+  // without this a changed island would keep the landscape drawn for the old one.
+  shownKey = null;
   applyVisibility();
   refreshWaitingFlags();
   refreshUI();
@@ -1886,7 +1932,7 @@ function updateLabels() {
 // Names over the greens, crossfaded against the wooden boards: readable from the air,
 // gone by the time you can read the sign itself.
 function hamletCaptions() {
-  const v = state.village;
+  const v = state.shot || state.village;
   if (!v || !state.terrain) return [];
   const dist = camera.position.distanceTo(controls.target);
   const t = clamp((dist - 30) / 16, 0, 1);
@@ -1946,6 +1992,7 @@ function setChronicleTime(t) {
   state.chronicle.t = clamp(t, start, end);
   state.live = 'replay';
   state.ui.setLive('replay');
+  applyLandscape();
   applyVisibility();
   state.ui.setChronicle({
     fraction: (state.chronicle.t - start) / Math.max(1, end - start),
@@ -1958,6 +2005,7 @@ function setLiveMode() {
   state.chronicle.playing = false;
   state.live = 'live';
   state.ui.setLive('live');
+  applyLandscape();
   applyVisibility();
   state.ui.setChronicle({ fraction: 1, date: 'Now', playing: false, live: true });
 }
