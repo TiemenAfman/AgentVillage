@@ -82,22 +82,37 @@ function wrap(g, words, maxW) {
 }
 
 // A staked yard sign carrying `text`, its face toward local +z (the door/street side).
+// `arch` turns the sign into a gateway: the posts stand a road's width apart and carry a
+// beam, and the board hangs beneath it, so you read the name as you walk under it rather
+// than passing a placard in a field. Signs are not blockers, so walking through needs no
+// collision work - the arch only has to be tall enough to look walkable.
 export function createNameplate(text, {
   small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
-  height0 = 0.42, posts = 1,
+  height0 = 0.42, posts = 1, arch = 0,
 } = {}) {
   const s = small ? 0.7 : 1;
   const group = new THREE.Group();
   const boardY = height0 * s;
 
   const grow = Math.sqrt(width / BOARD_W);
+  const span = arch ? arch / 2 : width * s * 0.42;
+  const legH = arch ? boardY + height * s + 0.12 : boardY + 0.04;
   const legs = [];
-  for (let i = 0; i < posts; i++) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022 * grow, 0.028 * grow, boardY + 0.04, 6), postMat);
-    leg.position.set(posts === 1 ? 0 : (i === 0 ? -1 : 1) * width * s * 0.42, (boardY + 0.04) / 2, 0);
+  const n = arch ? 2 : posts;
+  for (let i = 0; i < n; i++) {
+    const r = arch ? 0.045 : 0.022 * grow;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.25, legH, 6), postMat);
+    leg.position.set(n === 1 ? 0 : (i === 0 ? -1 : 1) * span, legH / 2, 0);
     leg.castShadow = true;
     group.add(leg);
     legs.push(leg);
+  }
+  if (arch) {
+    // The beam overhangs its posts a little, the way a real one is pegged on top.
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(arch + 0.22, 0.1, 0.13), postMat);
+    beam.position.y = legH + 0.05;
+    beam.castShadow = true;
+    group.add(beam);
   }
 
 

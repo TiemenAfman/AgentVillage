@@ -1113,6 +1113,32 @@ function titleCaseName(s) {
     .join(' ');
 }
 
+// Where a hamlet's road leaves its land - the gate the welcome sign stands over. Derived
+// rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
+// on the wire, and the parcel says which of them are still on the hamlet's own ground.
+// Deriving it also means the chronicle gets it for nothing, because it filters the roads
+// it hands down and the gate follows whatever road is there.
+function gateOf(village, d, li, lobe) {
+  const lat = village.island && village.island.lattice;
+  const road = (village.paths || []).find((r) => r.id === `road:${d.id}:${li}`);
+  if (!lat || !road || road.cells.length < 2 || !lobe.parcel) return null;
+  const own = new Set();
+  const p = lobe.parcel;
+  for (let r = 0; r < p.h; r++) {
+    for (let c = 0; c < p.w; c++) if ((p.rows[r] || '')[c] === '1') own.add(`${p.i0 + c},${p.j0 + r}`);
+  }
+  const mine = ([gx, gz]) => own.has(
+    `${Math.floor((gx - lat.anchor[0]) / lat.pitch)},${Math.floor((gz - lat.anchor[1]) / lat.pitch)}`);
+  // The road starts inside and walks out, so the gate is the step where that stops
+  // being true - and if it never was, the first cell is close enough to the edge.
+  for (let i = 0; i < road.cells.length - 1; i++) {
+    if (mine(road.cells[i]) && !mine(road.cells[i + 1])) {
+      return { at: road.cells[i], next: road.cells[i + 1] };
+    }
+  }
+  return { at: road.cells[0], next: road.cells[1] };
+}
+
 function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
@@ -1135,22 +1161,29 @@ function syncHamlets(village) {
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
       live.add(key);
-      const [gx, gz] = lobe.green || d.center;
+      // Over the road where it leaves the hamlet's land, square to it, so you read the
+      // name walking through rather than passing a placard in a field. The green it used
+      // to stand on is gone.
+      const gate = gateOf(village, d, li, lobe);
+      const [gx, gz] = gate ? gate.at : (lobe.green || d.center);
       const [x, z] = terrain.cellWorld(gx, gz);
-      const half = ((lobe.size || 3) - 1) / 2;
-      // On the green's edge facing away from its own middle, so it does not stand in the
-      // way of the well and the settlers who gather there.
-      const sx = x, sz = z + half + 0.2;
+      const sx = x, sz = z;
+      const along = gate ? Math.abs(gate.next[0] - gate.at[0]) > Math.abs(gate.next[1] - gate.at[1]) : false;
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name) { have.group.position.y = groundAt(sx, sz); continue; }
+      if (have && have.text === d.name && have.along === along) {
+        have.group.position.set(sx, groundAt(sx, sz), sz);
+        continue;
+      }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
-        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 0.95, posts: 2,
+        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
       });
+      // The arch straddles the road: its posts sit either side of the way through.
+      sign.group.rotation.y = along ? Math.PI / 2 : 0;
       sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, along, popped: !have });
     }
   }
   for (const [key, rec] of [...hamletSigns]) {
