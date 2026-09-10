@@ -305,6 +305,14 @@ throw away the town square and everything civic. If you delete `data/layout.json
 a completely different-looking island: the town is tied to the terrain, but which hamlet
 sits where is not.
 
+The **ground itself** can move a house too, and that one is not a version number: the
+layout records `terrainHash`, and if a scan finds a different one it plans the island
+again from nothing, town square included. That is not a courtesy, it is the only correct
+answer - the land a plot was chosen on no longer exists, and left alone some of those
+plots are now in the water. Anything that changes `shared/terrain.mjs` therefore costs the
+whole island once, so it is worth getting the terrain right before the village grows on
+it. Rivers cost exactly this when they landed.
+
 Sessions that started before the island was founded are ignored, so the village begins
 empty and grows from the founding session onward. `npm run scan:all` shows what the
 island would look like with the entire history on it, written to separate files so it
@@ -330,6 +338,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | A house | One Claude Code session |
 | A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
 | A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land; it opens where a road crosses it |
+| A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the hedge steps back and the water does the job |
+| A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
 | Houses around the town square with no hedge | The commons: whoever the island had no room for elsewhere |
 | Ploughed fields and orchards | Countryside - buildable land no project has claimed |

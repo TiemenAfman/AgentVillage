@@ -975,46 +975,56 @@ export function buildPierGeometry(cells, terrain, from) {
   return parts.length ? merge(parts) : null;
 }
 
-// How far a deck rides above the water it crosses, when both banks are at sea level. The
-// settlers and the walk mode read this to stand on a bridge rather than wade under it.
-export const BRIDGE_RAIL = 0.34;
+// How high a rail stands over the deck, and how far a deck rides above the water when
+// both its banks are at sea level. The settlers and the walk mode read the deck height
+// so they cross a river rather than wade under it.
+export const BRIDGE_RAIL = 0.3;
 export const DECK_MIN = 0.26;
 
-// A plank bridge over a river. `cells` is the run the layout recorded, in order, and the
-// two cells just outside it are the banks it lands on - so the deck is a ramp between
-// those two ground heights rather than a level slab standing proud of the lower one. A
-// trestle goes down into the water under every cell, a rail runs along both sides, and
-// the ends overhang half a cell onto the bank so there is no seam where road meets deck.
-// The run a deck actually covers, and how high it is at each stop along it. Shared, so
-// what a settler stands on and what is drawn under their feet come from one calculation.
-// The height is taken from the two banks only: the ground in between is the riverbed.
+// Where a deck runs and how high it is along it. `cells` is the crossing the layout
+// recorded, in order; the deck covers those cells and reaches a little way onto the bank
+// at each end, so there is no seam where the road meets the planks. The height comes from
+// the two banks alone - the ground between them is the riverbed - and ramps between them,
+// which is what makes a deck meet the ground at both ends instead of standing proud of
+// the lower one.
+const DECK_LIP = 0.6;             // how far onto the bank each end reaches
 function bridgeStops(cells, terrain, axis) {
   const n = cells.length;
-  const k = axis === 'x' ? 0 : 1;                 // the coordinate the run moves along
+  const k = axis === 'x' ? 0 : 1;                    // the coordinate the run moves along
   const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) : 1;
   const abut = (end, sign) => { const c = [...end]; c[k] += sign * dir; return c; };
-  const stops = [abut(cells[0], -1), ...cells, abut(cells[n - 1], 1)];
-  const world = stops.map((c) => terrain.cellWorld(c[0], c[1]));
-  const y0 = terrain.worldHeight(world[0][0], world[0][1]) + 0.12;
-  const y1 = terrain.worldHeight(world[stops.length - 1][0], world[stops.length - 1][1]) + 0.12;
-  // Never lower than DECK_MIN, so a crossing between two banks that are both at sea
-  // level still rides over the water rather than in it.
-  const deckY = (i) => Math.max(DECK_MIN, y0 + (y1 - y0) * (i / (stops.length - 1)));
-  return { stops, world, deckY, k };
+  const at = (c) => terrain.cellWorld(c[0], c[1]);
+  const a = at(abut(cells[0], -1)), b = at(abut(cells[n - 1], 1));
+  const y0 = terrain.worldHeight(a[0], a[1]) + 0.08, y1 = terrain.worldHeight(b[0], b[1]) + 0.08;
+
+  const centres = cells.map(at);
+  const first = [...centres[0]], last = [...centres[n - 1]];
+  first[k] -= DECK_LIP * dir;
+  last[k] += DECK_LIP * dir;
+  const world = [first, ...centres, last];
+  // Height by where a stop actually is between the two banks, not by its index: the two
+  // lip stops are closer to their neighbours than the cell centres are to each other.
+  const t = (p) => (b[k] === a[k] ? 0 : (p[k] - a[k]) / (b[k] - a[k]));
+  const deckY = (i) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(world[i]));
+  return { world, centres, deckY, k };
 }
 
-// Which cell of the crossing is at what height, for standing figures on it.
+// Which cell of the crossing carries its deck at what height, for standing figures on it.
 export function bridgeDeckHeights(cells, terrain, axis) {
   if (!cells || !cells.length) return [];
-  const { stops, deckY } = bridgeStops(cells, terrain, axis);
-  return stops.slice(1, -1).map((c, i) => [c[0], c[1], deckY(i + 1)]);
+  const { centres, deckY } = bridgeStops(cells, terrain, axis);
+  return cells.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
+// A plank bridge: a deck, a post-and-rail down each side, and a trestle in the water
+// under every cell of the crossing. The rail is posts and a beam rather than a solid
+// parapet - as a wall the right height for a settler to hold it hides the planking from
+// every angle you would actually look at the island from.
 export function buildBridgeGeometry(cells, terrain, from, axis) {
   if (!cells || !cells.length) return null;
   const { world, deckY, k } = bridgeStops(cells, terrain, axis);
   const at = world.map(([x, z]) => [x - from[0], z - from[1]]);
-  const W = 0.46;                                 // half the deck's width
+  const W = 0.44;                                    // half the deck's width
   const parts = [];
   const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
 
@@ -1023,22 +1033,25 @@ export function buildBridgeGeometry(cells, terrain, from, axis) {
     const yp = deckY(i), yq = deckY(i + 1);
     const pl = across(p, -W), pr = across(p, W), ql = across(q, -W), qr = across(q, W);
     parts.push(quad([[pl[0], yp, pl[1]], [pr[0], yp, pr[1]], [qr[0], yq, qr[1]], [ql[0], yq, ql[1]]], C.plank));
-    // The rails, as a low wall on each side rather than a post-and-beam: at this scale a
-    // beam thin enough to be right is thinner than a pixel from the air.
+    // A beam along each side, hanging from the tops of the posts.
     for (const s of [-1, 1]) {
       const e0 = across(p, s * W), e1 = across(q, s * W);
+      const t0 = yp + BRIDGE_RAIL, t1 = yq + BRIDGE_RAIL;
       parts.push(quad([
-        [e0[0], yp + 0.02, e0[1]], [e1[0], yq + 0.02, e1[1]],
-        [e1[0], yq + BRIDGE_RAIL, e1[1]], [e0[0], yp + BRIDGE_RAIL, e0[1]],
+        [e0[0], t0 - 0.07, e0[1]], [e1[0], t1 - 0.07, e1[1]], [e1[0], t1, e1[1]], [e0[0], t0, e0[1]],
       ], C.darkWood));
     }
   }
-  // A trestle under every cell of the crossing, but not under the two bank ends.
-  for (let i = 1; i < at.length - 1; i++) {
+  // Posts at every stop, trestles only where there is water under the deck.
+  for (let i = 0; i < at.length; i++) {
     const y = deckY(i);
+    const inWater = i > 0 && i < at.length - 1;
     for (const s of [-1, 1]) {
-      const c = across(at[i], s * (W - 0.08));
-      parts.push(cylinder(0.055, 0.055, y + 0.85, 6, C.darkWood, { x: c[0], y: -0.85, z: c[1] }));
+      const c = across(at[i], s * (W - 0.03));
+      parts.push(box(0.075, BRIDGE_RAIL, 0.075, C.darkWood, { x: c[0], y, z: c[1] }));
+      if (!inWater) continue;
+      const t = across(at[i], s * (W - 0.09));
+      parts.push(cylinder(0.05, 0.05, y + 0.8, 6, C.darkWood, { x: t[0], y: -0.8, z: t[1] }));
     }
   }
   return merge(parts);

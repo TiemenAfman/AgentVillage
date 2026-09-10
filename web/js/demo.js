@@ -380,10 +380,13 @@ line([
 // the layout works them out - the run of cells between two banks that is not land.
 const RIVER_BED = -0.55, RIVER_RISE = 1.5;
 
+// The channel runs along x, so it is seen across from where the model sheet's camera
+// stands rather than end on, and the deck that crosses it runs along z - the other of the
+// two axes a recorded crossing can have.
 function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   const half = cells / 2;
-  const land = (x, z) => base + tilt * x + 0.1 * Math.sin(z / 2.3);
-  const wh = (x, z) => Math.min(land(x, z), RIVER_BED + RIVER_RISE * Math.max(0, Math.abs(x) - w));
+  const land = (x, z) => base + tilt * z + 0.1 * Math.sin(x / 2.3);
+  const wh = (x, z) => Math.min(land(x, z), RIVER_BED + RIVER_RISE * Math.max(0, Math.abs(z) - w));
   const corner = (i, j) => wh(i - half, j - half);
   const corners = (gx, gz) => [corner(gx, gz), corner(gx + 1, gz), corner(gx, gz + 1), corner(gx + 1, gz + 1)];
   const t = {
@@ -411,7 +414,7 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
 
   // and the water in it, a flat sheet at sea level, which is all the island does either
   const reach = w - RIVER_BED / RIVER_RISE;
-  const wg = new THREE.PlaneGeometry(reach * 2, cells);
+  const wg = new THREE.PlaneGeometry(cells, reach * 2);
   wg.rotateX(-Math.PI / 2);
   const wm = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({
     color: 0x4d95b0, roughness: 0.3, transparent: true, opacity: 0.85,
@@ -422,7 +425,7 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   // the run the layout would have recorded: the cells across the middle that are not land
   const mid = Math.floor(half);
   const run = [];
-  for (let gx = 0; gx < cells; gx++) if (!t.isLand(gx, mid)) run.push([gx, mid]);
+  for (let gz = 0; gz < cells; gz++) if (!t.isLand(mid, gz)) run.push([mid, gz]);
   return { t, run };
 }
 
@@ -435,10 +438,13 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
     ['uneven banks', { w: 0.8, tilt: 0.075, base: 0.9 }, 'the deck ramps'],
   ];
   CASES.forEach(([name, opts, note], i) => {
-    const ox = (i - 1) * PITCH * 2.6;
-    const { t, run } = riverPatch(ox, z, 16, opts);
+    // The patches are as wide apart as they are deep; any closer and two of them overlap
+    // and the ground z-fights along the seam.
+    const CELLS = 13;
+    const ox = (i - 1) * CELLS;
+    const { t, run } = riverPatch(ox, z, CELLS, opts);
     const [cx, cz] = t.cellWorld(run[0][0], run[0][1]);
-    const g = buildBridgeGeometry(run, t, [cx, cz], 'x');
+    const g = buildBridgeGeometry(run, t, [cx, cz], 'z');
     if (g) {
       const m = new THREE.Mesh(g, material);
       m.position.set(ox + cx, 0, z + cz);
