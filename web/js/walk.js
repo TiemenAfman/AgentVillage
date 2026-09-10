@@ -18,6 +18,17 @@ const EYE = 0.9;
 // height rather than to reality: it puts the player back on the ground in about 0.6 s.
 const JUMP_V = 3.1;
 const GRAVITY = 12.5;
+// Wading, not open-water swimming: the shore has to stay within reach, so you can stand
+// in the surf and cross a stream but you cannot set out to sea. The sea surface is y = 0,
+// matching the water plane in world.js, and the body sits a little way into it.
+const SWIM_SPEED = 1.9;
+const SWIM_REACH = 2.0;
+const WATER_Y = 0;
+const SWIM_SINK = 0.07;
+const PROBE = Array.from({ length: 8 }, (_, i) => {
+  const a = (i / 8) * Math.PI * 2;
+  return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
+});
 const BODY_R = 0.3;
 
 // The player is a settler like any other, with a satchel and a wide hat so you can
@@ -40,6 +51,10 @@ function playerGeometry() {
 
 export function createWalkMode({ scene, camera, terrain, material, dom }) {
   const avatar = new THREE.Mesh(playerGeometry(), material);
+  // Yaw first, then the swimmer's pitch about its own axis. The default XYZ order would
+  // tip the body in world space and then spin it. With x = 0 both orders agree, so the
+  // walk animation is untouched.
+  avatar.rotation.order = 'YXZ';
   avatar.castShadow = true;
   avatar.visible = false;
   scene.add(avatar);
@@ -54,6 +69,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     bob: 0,
     vy: 0,           // vertical speed; zero whenever the feet are down
     grounded: true,
+    swimming: false,
     blockers: [],
     interactables: [],
     near: null,
@@ -74,7 +90,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') {
       e.preventDefault();
-      if (state.grounded) { state.vy = JUMP_V; state.grounded = false; }
+      if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
     }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
@@ -104,8 +120,16 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
 
   function groundAt(x, z) { return terrain.worldHeight(x, z); }
 
+  // Is there dry land within arm's reach? This is what keeps a swim to the coast and a
+  // stream, and refuses the open sea, without needing to know where either of them is.
+  function shoreWithinReach(x, z) {
+    for (const [dx, dz] of PROBE) if (groundAt(x + dx, z + dz) >= 0.06) return true;
+    return false;
+  }
+
   function blocked(x, z) {
-    if (groundAt(x, z) < 0.06) return true;                    // no walking into the sea
+    // You may wade in as long as the shore stays close; the open water is still a wall.
+    if (groundAt(x, z) < 0.06 && !shoreWithinReach(x, z)) return true;
     for (const b of state.blockers) {
       const dx = x - b.x, dz = z - b.z;
       if (dx * dx + dz * dz < (b.r + BODY_R) * (b.r + BODY_R)) return true;
@@ -168,7 +192,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     if (!state.active) return null;
     if (state.paused) { stick.x = 0; stick.z = 0; return { near: state.near, pos: state.pos, distance: 0 }; }
 
-    const run = keys.has('shift') || stick.run;
+    const run = (keys.has('shift') || stick.run) && !state.swimming;
     let ix = 0, iz = 0;
     if (keys.has('w') || keys.has('arrowup')) iz += 1;
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
@@ -178,7 +202,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
     const push = Math.min(1, Math.hypot(ix, iz));
-    const speed = (run ? RUN_SPEED : WALK_SPEED) * push * dt;
+    const speed = (state.swimming ? SWIM_SPEED : run ? RUN_SPEED : WALK_SPEED) * push * dt;
     state.moving = push > 0.02;
     if (state.moving) {
       const len = Math.hypot(ix, iz);
@@ -199,19 +223,37 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
       state.bob += dt * 1.5;
     }
 
-    // Off the ground the height is the jump's; on it, the terrain's. Walking off a ledge
-    // mid-jump therefore falls the rest of the way instead of snapping down.
+    // Off the ground the height is the jump's; on it, whatever is underfoot - the terrain,
+    // or the water surface where the terrain is below it. A jump keeps its arc out over
+    // the water and only starts swimming when it comes down, which is what lets you clear
+    // a stream instead of paddling across it.
     const ground = groundAt(state.pos.x, state.pos.z);
+    const inWater = ground < 0;
+    const underfoot = inWater ? WATER_Y - SWIM_SINK : ground;
     if (state.grounded) {
-      state.pos.y = ground;
+      state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
       state.pos.y += state.vy * dt;
-      if (state.pos.y <= ground) { state.pos.y = ground; state.vy = 0; state.grounded = true; }
+      if (state.pos.y <= underfoot) { state.pos.y = underfoot; state.vy = 0; state.grounded = true; }
     }
-    const bobY = state.moving && state.grounded ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
-    avatar.position.set(state.pos.x, state.pos.y + bobY, state.pos.z);
-    avatar.rotation.set(0, state.yaw, state.moving ? Math.sin(state.bob) * 0.045 : 0);
+    state.swimming = state.grounded && inWater;
+
+    if (state.swimming) {
+      // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
+      // limbs to animate - the whole body leans into it instead, which at this scale is
+      // what reads as swimming.
+      state.bob += dt * (state.moving ? 6.5 : 1.4);
+      avatar.position.set(state.pos.x, state.pos.y + Math.sin(state.bob) * 0.03, state.pos.z);
+      // Positive pitch, so the head goes forward: rotating about local x maps +y (up,
+      // towards the head) onto +z, which is the direction yaw points along. The other
+      // sign swims feet first.
+      avatar.rotation.set(1.32 + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
+    } else {
+      const bobY = state.moving && state.grounded ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
+      avatar.position.set(state.pos.x, state.pos.y + bobY, state.pos.z);
+      avatar.rotation.set(0, state.yaw, state.moving ? Math.sin(state.bob) * 0.045 : 0);
+    }
 
     // camera sits behind and above, and never dips under the ground
     const cx = state.pos.x - Math.sin(state.camYaw) * CAM_BACK * Math.cos(state.camPitch);
