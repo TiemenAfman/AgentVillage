@@ -22,6 +22,8 @@ import { createChat } from './chat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
+import { createProps } from './props.js';
+import { createThink } from './think.js';
 import { createGamepad, BTN } from './gamepad.js';
 
 const params = new URLSearchParams(location.search);
@@ -230,6 +232,7 @@ const state = {
   queue: [], running: false, flags: null, particles: null,
   walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
   peers: null, net: null, guest: false, horizon: null, sailing: null,
+  props: null, think: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -280,6 +283,8 @@ function walkableBlockers() {
     const r = Math.max(0.45, Math.max(b.max.x - b.min.x, b.max.z - b.min.z) * 0.5);
     out.push({ x: rec.group.position.x, z: rec.group.position.z, r, id: rec.id });
   }
+  // A tree somebody asked for is as solid as a house. A bridge is not: it is walked over.
+  if (state.props) out.push(...state.props.blockers());
   return out;
 }
 
@@ -299,6 +304,83 @@ function interactables() {
     }
   }
   return out;
+}
+
+// --------------------------------------------------------------- where you are
+// The village is a picture of the sessions; this is the one thing the island knows
+// about the reader. It is kept so that "here" means something: a thought asked to put
+// a bridge here has to be able to find out where here is.
+let whereSentAt = 0;
+let whereLastX = null, whereLastZ = null;
+
+function reportWhere({ final = false } = {}) {
+  // Where the keeper stands is written down so an agent at the command line can find
+  // them. A visitor is not who that is about, and the server refuses them anyway.
+  if (state.guest) return;
+  const w = state.walk && state.walk.state;
+  if (!w || !w.pos) return;
+  const now = performance.now();
+  const moved = whereLastX == null || Math.hypot(w.pos.x - whereLastX, w.pos.z - whereLastZ) > 0.4;
+  if (!final && (!moved || now - whereSentAt < 1500)) return;
+  whereSentAt = now;
+  whereLastX = w.pos.x;
+  whereLastZ = w.pos.z;
+  fetch('/api/where', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      x: w.pos.x, y: w.pos.y, z: w.pos.z, yaw: w.yaw,
+      walking: state.mode === 'walk',
+      near: whatIsNear(w),
+      final,
+    }),
+  }).catch(() => { /* the island can lose track of you without any harm done */ });
+}
+
+// A name for where you are, for the prompt and the panel's subtitle. Whatever is
+// within reach, then whatever is merely nearby, then the district you are standing in.
+function whatIsNear(w) {
+  if (w.near && w.near.label) return w.near.label;
+  let best = null, bestD = 9;
+  for (const rec of state.byId.values()) {
+    if (!rec.group.visible) continue;
+    const d = Math.hypot(rec.group.position.x - w.pos.x, rec.group.position.z - w.pos.z);
+    if (d < bestD) { bestD = d; best = rec.spec.name; }
+  }
+  if (best) return best;
+  const p = state.props && state.props.nearest(w.pos.x, w.pos.z, 5);
+  return p ? (p.label || `a ${p.kind}`) : null;
+}
+
+// --------------------------------------------------------------- having a thought
+// Wherever you are standing, T opens a session in the island's own repository and
+// tells it where you are. It can answer, and it can build.
+function openThink() {
+  if (keeperOnly('think out loud here')) return;   // it starts a session on this machine
+  if (!state.think || state.think.isOpen()) return;
+  if (state.walk) state.walk.setPaused(true);
+  state.ui.closeDossier();
+  reportWhere({ final: true });
+  state.think.open();
+}
+
+// --------------------------------------------------------------- what was built
+async function refreshProps({ animate = true } = {}) {
+  if (!state.props) return;
+  try {
+    const r = await fetch('/api/props', { cache: 'no-store' });
+    const body = await r.json();
+    const before = state.props.count();
+    state.props.apply(body.props || [], { animate });
+    const after = state.props.count();
+    if (state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+    if (animate && after > before) {
+      const n = after - before;
+      state.ui.toast(`${n === 1 ? 'Something was' : `${n} things were`} built on the island.`);
+    }
+  } catch (e) {
+    console.warn('could not read what has been built', e);
+  }
 }
 
 function enterWalk() {
@@ -333,8 +415,10 @@ function enterWalk() {
       else talkTo(it.id);
     },
     onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall' && it.kind !== 'office') askToSendAway(it.id); },
+    onThink: () => openThink(),
     onExit: () => exitWalk(),
   });
+  reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
 }
 
 function foundSettler() {
@@ -443,8 +527,10 @@ function exitWalk() {
   state.mode = 'orbit';
   if (state.net) state.net.setWalking(false);
   state.walk.setPeerBlockers([]);
+  reportWhere({ final: true });   // write down where you left off, and that you left
   state.walk.exit();
   state.board.close();
+  if (state.think) state.think.close();
   state.ui.setWalking(false);
   controls.enabled = true;
   frameIsland();
@@ -1346,6 +1432,7 @@ function frame(nowMs) {
   if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    reportWhere();
   }
 
   for (let i = tickers.length - 1; i >= 0; i--) {
@@ -1382,6 +1469,7 @@ function frame(nowMs) {
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
+  if (state.props) state.props.update(dt);
 
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
@@ -1587,6 +1675,16 @@ async function boot() {
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
   });
 
+  state.think = createThink(document.body, {
+    getWhere: () => {
+      const w = state.walk && state.walk.state;
+      if (!w || !w.pos) return null;
+      return { x: w.pos.x, y: w.pos.y, z: w.pos.z, yaw: w.yaw, near: whatIsNear(w) };
+    },
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+    onBuilt: () => refreshProps({ animate: true }),
+  });
+
   state.chat = createChat(document.body, {
     onSendAway: (id) => askToSendAway(id),
     onClose: () => {
@@ -1635,6 +1733,8 @@ async function boot() {
     name: playerName(),
     onStatus: () => {},
   });
+  state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  refreshProps({ animate: false });
   applyVillage(village, { animate: false });
   setLiveMode();
   // Arriving from a neighbour replaces the usual opening sweep with a landing.
@@ -1658,6 +1758,8 @@ function connect() {
       } catch (e) { console.warn('update failed', e); }
     }, 250));
     es.addEventListener('open', () => { if (state.chronicle.t == null) state.ui.setLive('live'); });
+    // Something was built by hand, most likely by a thought somebody had while walking.
+    es.addEventListener('props', debounce(() => refreshProps({ animate: true }), 150));
     // The server can ask for a reload after its own code changed underneath us.
     es.addEventListener('reload', () => location.reload());
     // Somebody on the network raised or struck their flag. Only the keeper is sent this.
