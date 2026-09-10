@@ -442,9 +442,10 @@ export function createUI(handlers) {
     p.hidden = false;
     const key = padConnected ? 'A' : 'E';
     once('walk-prompt', near.kind === 'board' ? `<b>${key}</b> read the sprint board`
-      : near.kind === 'market' ? `<b>${key}</b> the seed stall`
-        : near.kind === 'bed' ? bedPrompt(near, key)
-          : `<b>${key}</b> talk to ${esc(near.label)}`);
+      : near.kind === 'issues' ? `<b>${key}</b> read the island board`
+        : near.kind === 'market' ? `<b>${key}</b> the seed stall`
+          : near.kind === 'bed' ? bedPrompt(near, key)
+            : `<b>${key}</b> talk to ${esc(near.label)}`);
   }
 
   // A bed says what it is and how long it still needs, counted down here rather than

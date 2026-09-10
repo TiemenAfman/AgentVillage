@@ -9,6 +9,7 @@ import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
 import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
+import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import { loadLayout, saveLayout, placeAll } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
@@ -165,7 +166,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
       startedAt: iso(b.startedAt),
       lastAt: iso(b.lastAt),
       workOrders: openBySettler.get(b.id) || [],
-      skills: { jira: hasJiraSkill(b.cwd) },
+      skills: { jira: hasSkill(b.cwd, 'jira-ticket-oppakken'), issue: hasSkill(b.cwd, 'issue-oppakken') },
       commission: commission
         ? { issueKey: commission.issueKey, summary: commission.issueSummary, from: commission.settlerName, url: commission.issueUrl }
         : null,
@@ -199,6 +200,30 @@ function assemble({ config, model, layout, terrain, size, all }) {
       sprintName: sprint.sprintName || null,
       openIssues: open.length,
       totalIssues: (sprint.issues || []).length,
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [],
+      active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The island's own board, facing the sprint board across the square: the open issues
+  // of the repository Promptholm is built from.
+  const issuePlot = plot('civic:issues');
+  if (issuePlot) {
+    const gh = loadIssues();
+    const open = (gh.issues || []).filter((i) => !i.done);
+    const repo = gh.repo || githubConfig().repo || null;
+    civics.push({
+      id: 'civic:issues', kind: 'civic', civicType: 'issues', district: null,
+      plot: issuePlot, door: null, name: 'The island board', label: 'Island board',
+      title: repo ? `${repo} — ${open.length} open of ${(gh.issues || []).length}` : 'No repository to read',
+      cards: open.length,
+      repo,
+      repoUrl: gh.url || null,
+      openIssues: open.length,
+      totalIssues: (gh.issues || []).length,
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [],
       active: false, archived: false,
@@ -323,14 +348,17 @@ function assemble({ config, model, layout, terrain, size, all }) {
   };
 }
 
-// Can this settler's project work a Jira ticket the house way? The skill lives in the repo.
+// Can this settler's project work a ticket the house way? The skills live in the repo:
+// jira-ticket-oppakken for a card from the sprint board, issue-oppakken for one from the
+// island's own board.
 const skillCache = new Map();
-function hasJiraSkill(cwd) {
+function hasSkill(cwd, skill) {
   if (!cwd) return false;
-  if (skillCache.has(cwd)) return skillCache.get(cwd);
+  const key = `${cwd}::${skill}`;
+  if (skillCache.has(key)) return skillCache.get(key);
   let has = false;
-  try { has = fs.statSync(path.join(cwd, '.claude', 'skills', 'jira-ticket-oppakken', 'SKILL.md')).isFile(); } catch { has = false; }
-  skillCache.set(cwd, has);
+  try { has = fs.statSync(path.join(cwd, '.claude', 'skills', skill, 'SKILL.md')).isFile(); } catch { has = false; }
+  skillCache.set(key, has);
   return has;
 }
 

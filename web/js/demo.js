@@ -17,6 +17,7 @@ import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
   ['board', 'Sprint board', 'always'],
+  ['issues', 'Island board', 'always'],
   ['well', 'Well', '5 settlers'],
   ['market', 'Market stalls', '10'],
   ['tavern', 'Tavern', '15'],
