@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
+import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
@@ -123,9 +124,36 @@ function readBody(req, limit = 64 * 1024) {
   });
 }
 
-// Everywhere Claude has been used on this machine, newest first, with a note about
-// which of them carry the Jira workflow skill.
+// Does this folder carry a project skill by that name? It is what decides whether an
+// agent sent there is told to follow the workflow or to be told it in full.
+//
+// This is asked of every project this machine has ever seen, and a stat of a folder on a
+// drive that is asleep costs whole seconds, so the answers are kept: a repository does
+// not grow a skill while you are looking at a list of folders.
+const skillCache = new Map();
+function hasSkill(dir, skill) {
+  if (!dir || !skill) return false;
+  const key = `${dir}::${skill}`;
+  if (skillCache.has(key)) return skillCache.get(key);
+  let has = false;
+  try { has = fs.statSync(path.join(dir, '.claude', 'skills', skill, 'SKILL.md')).isFile(); } catch { has = false; }
+  skillCache.set(key, has);
+  return has;
+}
+
+// Everywhere Claude has been used on this machine, newest first, with a note about which
+// of them carry a workflow skill: the Jira one, and the island's own issue one. Neither
+// is looked for unless the folder has a .claude at all, which most of them do not.
+function skillsOf(dir) {
+  let claude = false;
+  try { claude = fs.statSync(path.join(dir, '.claude', 'skills')).isDirectory(); } catch { claude = false; }
+  if (!claude) return { jira: false, issue: false };
+  return { jira: hasSkill(dir, 'jira-ticket-oppakken'), issue: hasSkill(dir, 'issue-oppakken') };
+}
+
+let folderCache = { at: 0, list: null };
 function projectFolders() {
+  if (folderCache.list && Date.now() - folderCache.at < 60000) return folderCache.list;
   const out = new Map();
   const add = (dir, source) => {
     if (!dir) return;
@@ -136,9 +164,13 @@ function projectFolders() {
     let ok = false;
     try { ok = fs.statSync(clean).isDirectory(); } catch { ok = false; }
     if (!ok) return;
-    let jira = false;
-    try { jira = fs.statSync(path.join(clean, '.claude', 'skills', 'jira-ticket-oppakken', 'SKILL.md')).isFile(); } catch { jira = false; }
-    out.set(key, { path: clean, name: path.basename(clean), jira, source, worktree: /[\\/]worktrees?[\\/]|[\\/]_wt[\\/]/i.test(clean) });
+    out.set(key, {
+      path: clean,
+      name: path.basename(clean),
+      ...skillsOf(clean),
+      source,
+      worktree: /[\\/]worktrees?[\\/]|[\\/]_wt[\\/]/i.test(clean),
+    });
   };
 
   const village = readJson(VILLAGE_FILE, null);
@@ -146,11 +178,13 @@ function projectFolders() {
   const global = readJson(path.join(os.homedir(), '.claude.json'), null);
   for (const dir of Object.keys((global && global.projects) || {})) add(dir, 'claude');
 
-  return [...out.values()].sort((a, b) => {
+  const list = [...out.values()].sort((a, b) => {
     if (a.jira !== b.jira) return a.jira ? -1 : 1;          // repos that know the workflow first
     if (a.worktree !== b.worktree) return a.worktree ? 1 : -1;
     return a.name.localeCompare(b.name);
   });
+  folderCache = { at: Date.now(), list };
+  return list;
 }
 
 // The visitors' copy of the island, rebuilt only when the island itself changes. A room
@@ -393,7 +427,28 @@ async function handle(req, res) {
     return json(res, 200, {
       ...sprint,
       configured: jiraConfig().configured,
-      assignments: readAssignments().slice(0, 60),
+      // Each board counts its own hand-overs. Records from before there were two boards
+      // carry no source and belong to this one.
+      assignments: readAssignments().filter((a) => a.source !== 'github').slice(0, 60),
+    });
+  }
+
+  // ---- the island's own board ----------------------------------------------
+  // The GitHub issues of the repository this island is built from. Read through the gh
+  // command line, so the board sees exactly what an agent sent out from it would see.
+  if (p === '/api/issues') {
+    const force = url.searchParams.get('refresh') === '1';
+    let issues;
+    try { issues = await refreshIssues({ force }); } catch (e) { issues = { ...loadIssues(), note: String(e.message || e) }; }
+    const cfg = githubConfig();
+    return json(res, 200, {
+      ...issues,
+      repo: issues.repo || cfg.repo || null,
+      url: issues.url || cfg.url || null,
+      configured: cfg.configured,
+      skill: cfg.dispatch.skill || null,
+      islandRoot: ROOT,
+      assignments: readAssignments().filter((a) => a.source === 'github').slice(0, 60),
     });
   }
 
@@ -411,12 +466,19 @@ async function handle(req, res) {
   if (p === '/api/assign' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    const { issueKey, buildingId, cwd, model, dryRun } = body || {};
+    const { issueKey, buildingId, cwd, model, dryRun, source } = body || {};
     if (!issueKey) return json(res, 400, { error: 'issueKey is required' });
     if (!buildingId && !cwd) return json(res, 400, { error: 'name a settler or a folder for a newcomer' });
 
-    const sprint = loadSprint();
-    const issue = (sprint.issues || []).find((i) => i.key === issueKey);
+    // Two boards stand on the square, and a card comes off one of them.
+    const from = source === 'github' ? 'github' : 'jira';
+    let issue, wording = null;
+    if (from === 'github') {
+      issue = issueByKey(issueKey);
+      wording = githubConfig().dispatch;
+    } else {
+      issue = (loadSprint().issues || []).find((i) => i.key === issueKey);
+    }
     if (!issue) return json(res, 404, { error: `${issueKey} is not on the board` });
 
     let settler;
@@ -433,8 +495,13 @@ async function handle(req, res) {
       settler = newcomer({ cwd: dir, model: model || null });
     }
 
+    // A workflow skill is only worth naming if the folder actually carries it; without
+    // it the agent is told the route in full instead of being sent looking for a page
+    // that is not there.
+    if (wording && wording.skill && !hasSkill(settler.cwd, wording.skill)) wording = { ...wording, skill: null };
+
     try {
-      const r = dispatch({ issue, settler, cwd: settler.cwd, dryRun: !!dryRun });
+      const r = dispatch({ issue, settler, cwd: settler.cwd, dryRun: !!dryRun, wording, source: from });
       process.stderr.write(`[settlers] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
       setTimeout(() => rescan('assignment'), 1500);
       return json(res, 202, r);
@@ -753,6 +820,16 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   watchData();
   if (neighbours) neighbours.start();
   await rescan('startup');
-  if (RESCAN) setInterval(() => rescan('timer'), RESCAN).unref?.();
+  // So the island board has the right number of notes pinned to it before anyone walks
+  // up to it. refreshIssues throttles itself and hands back the cache untouched when it
+  // is still fresh, so this costs one gh call every few minutes and a rescan only when
+  // something actually came back.
+  const readIssues = async () => {
+    const before = loadIssues().fetchedAt;
+    const r = await refreshIssues({}).catch(() => null);
+    if (r && !r.note && r.fetchedAt && r.fetchedAt !== before) rescan('issues');
+  };
+  readIssues();
+  if (RESCAN) setInterval(() => { readIssues(); rescan('timer'); }, RESCAN).unref?.();
   if (OPEN) openBrowser(`http://localhost:${PORT}/`);
 });

@@ -401,7 +401,9 @@ export function createUI(handlers) {
     const key = padConnected ? 'A' : 'E';
     p.innerHTML = near.kind === 'board'
       ? `<b>${key}</b> read the sprint board`
-      : `<b>${key}</b> talk to ${esc(near.label)}`;
+      : near.kind === 'issues'
+        ? `<b>${key}</b> read the island board`
+        : `<b>${key}</b> talk to ${esc(near.label)}`;
   }
 
   function boot(done, text) {

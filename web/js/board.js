@@ -1,15 +1,25 @@
-// The sprint board seen close up: a cork board with the sprint pinned to it, and the
-// hand-over flow that turns a card into a working agent. Works with the mouse, the
-// keyboard, and a controller driving a cursor over the cards.
+// A board seen close up: cards pinned to it, and the hand-over flow that turns one into
+// a working agent. Works with the mouse, the keyboard, and a controller driving a cursor
+// over the cards.
+//
+// Two boards stand on the town square and this draws both of them. The sprint board
+// carries the Jira cards of whatever the village is working on; the island board carries
+// the GitHub issues of the repository the island itself is built from. They differ in
+// where the cards come from, how they are grouped and which workflow an agent is sent
+// off with - not in anything you do with them, so it is one board with two sources.
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const TYPE_COLOUR = { Bug: '#d94f3d', Story: '#6fb84a', Epic: '#9a6fd9', Task: '#3d7ed9', 'Service Request': '#d9a33d', Subtaak: '#8a8a8a' };
+const TYPE_COLOUR = {
+  Bug: '#d94f3d', Story: '#6fb84a', Epic: '#9a6fd9', Task: '#3d7ed9',
+  'Service Request': '#d9a33d', Subtaak: '#8a8a8a',
+  Enhancement: '#6fb84a', Documentation: '#3d7ed9', Question: '#9a6fd9', Issue: '#8a8a8a',
+};
 const PIN_COLOUR = ['#d94f3d', '#3d7ed9', '#d9a33d', '#6fb84a', '#9a6fd9'];
-const WHO_KEY = 'promptholm.board.who';
+const WHO_KEY = 'promptholm.board.who';   // + the source, because the two boards filter differently
 
 // Grouped to match a Jira workflow with Dutch status names as well as English ones.
 // Work that can still be handed out comes first; what is waiting on others comes last.
-const GROUPS = [
+const JIRA_GROUPS = [
   { id: 'todo', label: 'Up for grabs', match: (i) => !i.done && (i.statusCategory === 'new' || /ijskast|nog doen|to ?do|open|backlog|nieuw/i.test(i.status)) },
   { id: 'doing', label: 'Being worked on', match: (i) => !i.done && /actief|progress|bezig/i.test(i.status) },
   { id: 'check', label: 'Being checked or tested', match: (i) => !i.done && /controleren|testen|review|check|test/i.test(i.status) },
@@ -18,15 +28,75 @@ const GROUPS = [
   { id: 'rest', label: 'Elsewhere', match: () => true },
 ];
 
+// GitHub has two states and no columns, so what tells you an issue is taken is the
+// "in progress" label the workflow puts on, or somebody being assigned to it.
+const GITHUB_GROUPS = [
+  { id: 'todo', label: 'Up for grabs', match: (i) => !i.done && !i.working && !i.assignee },
+  { id: 'doing', label: 'Being worked on', match: (i) => !i.done && (i.working || i.assignee) },
+  { id: 'done', label: 'Done', match: (i) => i.done && i.completed },
+  { id: 'shelved', label: 'Closed, not planned', match: (i) => i.done },
+  { id: 'rest', label: 'Elsewhere', match: () => true },
+];
+
+const SOURCES = {
+  jira: {
+    id: 'jira',
+    api: '/api/sprint',
+    board: 'Sprint board',
+    title: (d) => d.sprintName || 'Sprint board',
+    where: 'Jira',
+    // A sprint is divided up between people, so it opens on your own name.
+    who: 'me',
+    refresh: 'Fetch from Jira again',
+    groups: JIRA_GROUPS,
+    skill: 'jira-ticket-oppakken',
+    knows: 'knows the Jira workflow',
+    // What the settler is about to be told to do, shown before you confirm.
+    workflow: (key) => `will take <b>${esc(key)}</b> and work it end to end, following the
+      <code>jira-ticket-oppakken</code> workflow: branch from develop, fix behind a gate, push,
+      write the test instruction into the ticket and move it to Ready for deploy and FAT.`,
+    without: 'This folder has no <code>jira-ticket-oppakken</code> skill. The agent will have to '
+      + 'improvise the workflow; a settler from the repository that carries it is the safer choice.',
+  },
+  github: {
+    id: 'github',
+    api: '/api/issues',
+    board: 'Island board',
+    title: (d) => d.repo || 'Island board',
+    where: 'GitHub',
+    // Nobody is assigned to most issues here - the account the board reads with cannot
+    // even do the assigning - so opening on one person would show an empty cork.
+    who: 'all',
+    refresh: 'Ask GitHub again',
+    groups: GITHUB_GROUPS,
+    skill: 'issue-oppakken',
+    knows: 'knows the issue workflow',
+    workflow: (key) => `will take <b>${esc(key)}</b> and work it the way this repository does,
+      following the <code>issue-oppakken</code> skill: a branch from <code>origin/main</code> named
+      after the issue, the issue marked as picked up, and when it is done the branch pushed and the
+      issue closed as completed.`,
+    without: 'This folder has no <code>issue-oppakken</code> skill. The agent is told the route in '
+      + 'full instead, but a folder that carries the skill is the safer choice.',
+  },
+};
+
 const CLICKABLE = '.card-pin, .ho-list li, button, a, select';
 
 export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   let data = { issues: [], assignments: [] };
+  let src = SOURCES.jira;   // which board you walked up to
   let filter = 'open';
-  let who = 'me';           // 'me' | 'all' | 'none' | a display name
+  let who = src.who;        // 'me' | 'all' | 'none' | a display name
   let selected = null;      // the issue we are handing over
   let busy = false;
-  try { who = localStorage.getItem(WHO_KEY) || 'me'; } catch { /* no storage */ }
+
+  function rememberWho() {
+    try { localStorage.setItem(`${WHO_KEY}.${src.id}`, who); } catch { /* no storage */ }
+  }
+  function recallWho() {
+    try { who = localStorage.getItem(`${WHO_KEY}.${src.id}`) || src.who; } catch { who = src.who; }
+  }
+  recallWho();
 
   const el = document.createElement('div');
   el.className = 'board-overlay';
@@ -41,7 +111,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
         <div class="board-actions">
           <label class="who"><span>Assigned to</span><select id="board-who"></select></label>
           <div class="chips" id="board-filters"></div>
-          <button class="chip" id="board-refresh" title="Fetch from Jira again">Refresh</button>
+          <button class="chip" id="board-refresh" title="Read the board again">Refresh</button>
           <button class="chip" id="board-close">Close · Esc</button>
         </div>
       </header>
@@ -61,7 +131,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   el.querySelector('#board-refresh').addEventListener('click', () => load(true));
   whoSelect.addEventListener('change', () => {
     who = whoSelect.value;
-    try { localStorage.setItem(WHO_KEY, who); } catch { /* fine */ }
+    rememberWho();
     render();
   });
 
@@ -149,9 +219,9 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   async function load(force = false) {
     setNote('Reading the board…');
     try {
-      const r = await fetch(`/api/sprint${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
+      const r = await fetch(`${src.api}${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
       data = await r.json();
-      setNote(data.note || '');
+      setNote(data.note || readOnlyNote());
       render();
     } catch (e) {
       setNote(`The board could not be read: ${e.message}`);
@@ -162,6 +232,15 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     const n = el.querySelector('#board-note');
     n.textContent = text || '';
     n.hidden = !text;
+  }
+
+  // An account that may only read the repository can comment on an issue but cannot put
+  // a label on it, so "in progress" will never appear here and an agent working one of
+  // these cards has only its comment to say it is busy. Better said than discovered.
+  function readOnlyNote() {
+    if (src !== SOURCES.github || data.canWrite !== false) return '';
+    return `gh is logged in as ${data.me || 'someone'}, who may read this repository but not label `
+      + 'or assign in it. Nothing here will be marked "in progress"; an agent says so in a comment instead.';
   }
 
   // Who the Jira token belongs to. No fallback name: if Jira has not told us yet,
@@ -188,14 +267,14 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
       ['me', me ? `${me} (me)` : 'Me'], ['all', 'Everyone'], ['none', 'Unassigned'],
       ...names.filter((n) => n !== me).map((n) => [n, n]),
     ];
-    if (who !== 'me' && who !== 'all' && who !== 'none' && !names.includes(who)) who = 'me';
+    if (who !== 'me' && who !== 'all' && who !== 'none' && !names.includes(who)) who = src.who;
     whoSelect.innerHTML = opts.map(([v, label]) => `<option value="${esc(v)}"${v === who ? ' selected' : ''}>${esc(label)}</option>`).join('');
   }
 
   // ---- the cork ------------------------------------------------------------
   function render() {
     renderWho();
-    el.querySelector('#board-title').textContent = data.sprintName || 'Sprint board';
+    el.querySelector('#board-title').textContent = src.title(data);
     const open = (data.issues || []).filter((i) => !i.done).length;
     const handed = (data.assignments || []).filter((a) => a.status !== 'failed').length;
     const shown = visible();
@@ -206,7 +285,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
       cork.innerHTML = `<p class="board-empty">Nothing pinned here for ${who === 'me' ? 'you' : who === 'all' ? 'anyone' : who === 'none' ? 'nobody in particular' : esc(who)}. Try "Everyone".</p>`;
       return;
     }
-    const groups = GROUPS.map((g) => ({ ...g, items: [] }));
+    const groups = src.groups.map((g) => ({ ...g, items: [] }));
     for (const i of shown) (groups.find((g) => g.match(i)) || groups[groups.length - 1]).items.push(i);
 
     cork.innerHTML = groups.filter((g) => g.items.length).map((g) => `
@@ -259,15 +338,15 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     if (!issue) return;
     selected = issue;
     const existing = assignmentFor(key);
-    // settlers whose folder carries the Jira workflow skill are the natural choice
-    const settlers = getSettlers().filter((s) => s.cwd).sort((a, b) => (b.jira ? 1 : 0) - (a.jira ? 1 : 0));
+    // settlers whose folder carries this board's workflow skill are the natural choice
+    const settlers = getSettlers().filter((s) => s.cwd).sort((a, b) => (knows(b) ? 1 : 0) - (knows(a) ? 1 : 0));
     handover.hidden = false;
     handover.innerHTML = `
       <div class="handover-panel">
         <button class="x" id="ho-close">✕</button>
         <h3>${esc(issue.key)}</h3>
         <p class="ho-sum">${esc(issue.summary)}</p>
-        <p class="muted">${esc(issue.status)}${issue.assignee ? ` · assigned to ${esc(issue.assignee)}` : ' · unassigned'}${issue.url ? ` · <a href="${esc(issue.url)}" target="_blank" rel="noreferrer">Open in Jira</a>` : ''}</p>
+        <p class="muted">${esc(issue.status)}${issue.assignee ? ` · assigned to ${esc(issue.assignee)}` : ' · unassigned'}${issue.url ? ` · <a href="${esc(issue.url)}" target="_blank" rel="noreferrer">Open on ${esc(src.where)}</a>` : ''}</p>
         ${existing ? `<p class="ho-warn">Already handed to ${esc(existing.settlerName || 'someone')} ${timeAgo(existing.at)}. Handing it over again starts a second agent.</p>` : ''}
         <h4>Hand it to</h4>
         <ul class="ho-list">
@@ -277,7 +356,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
           </li>
           ${settlers.map((s) => `
           <li data-id="${esc(s.id)}">
-            <b>${esc(s.name)}</b>${s.jira ? ' <span class="tag ok">knows the Jira workflow</span>' : ''}
+            <b>${esc(s.name)}</b>${knows(s) ? ` <span class="tag ok">${esc(src.knows)}</span>` : ''}
             <small>${esc(s.districtName || 'somewhere')} · ${esc(s.modelLabel || 'model unknown')}</small>
             <em>${esc(s.cwd)}</em>
           </li>`).join('')}
@@ -290,6 +369,17 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
       else confirmWith(li.dataset.id);
     }));
     setFocus(handover.querySelector('.ho-list li'), false);
+  }
+
+  // Does this settler's folder carry the skill this board's workflow is written in?
+  // Older village data only knows about the Jira one.
+  function knows(s) {
+    if (!s) return false;
+    if (s.skills) return !!s.skills[src === SOURCES.github ? 'issue' : 'jira'];
+    return src === SOURCES.jira && !!s.jira;
+  }
+  function folderKnows(f) {
+    return src === SOURCES.github ? !!f.issue : !!f.jira;
   }
 
   // ---- sending a newcomer --------------------------------------------------
@@ -309,13 +399,16 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     try {
       const r = await fetch('/api/folders', { cache: 'no-store' });
       folders = (await r.json()).folders || [];
+      // The server lists the Jira repositories first; this board wants its own kind at
+      // the top. The sort is stable, so everything else keeps the order it came in.
+      folders.sort((a, b) => (folderKnows(b) ? 1 : 0) - (folderKnows(a) ? 1 : 0));
     } catch { /* fall back to typing a path */ }
 
     box.innerHTML = `
       <div class="ho-confirm">
         <h4 style="margin-top:0">Where should the newcomer work?</h4>
         <select id="nc-folder" size="1">
-          ${folders.map((f) => `<option value="${esc(f.path)}">${esc(f.name)}${f.jira ? '  ✓ knows the workflow' : ''}${f.worktree ? '  (worktree)' : ''} — ${esc(f.path)}</option>`).join('')}
+          ${folders.map((f) => `<option value="${esc(f.path)}">${esc(f.name)}${folderKnows(f) ? '  ✓ knows the workflow' : ''}${f.worktree ? '  (worktree)' : ''} — ${esc(f.path)}</option>`).join('')}
           <option value="__other">Somewhere else, let me type it…</option>
         </select>
         <p id="nc-other" hidden><input id="nc-path" class="ho-input" placeholder="C:\\Development\\..." spellcheck="false"></p>
@@ -337,9 +430,15 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     const refreshWarn = () => {
       other.hidden = folderSel.value !== '__other';
       const f = folders.find((x) => x.path === folderSel.value);
-      warn.innerHTML = (f && !f.jira)
-        ? `<span class="ho-warn">This folder has no <code>jira-ticket-oppakken</code> skill. The newcomer would have to improvise the workflow.</span>`
-        : '';
+      const lines = [];
+      if (f && !folderKnows(f)) lines.push(`This folder has no <code>${esc(src.skill)}</code> skill. ${src.without}`);
+      // Sending an agent into the checkout the island is being served from means it
+      // switches branches under the page you are looking at.
+      if (f && data.islandRoot && sameFolder(f.path, data.islandRoot)) {
+        lines.push('This is the checkout this island is running from. An agent branching here '
+          + 'changes the island under your feet; a worktree is the quieter choice.');
+      }
+      warn.innerHTML = lines.map((l) => `<span class="ho-warn">${l}</span>`).join('<br>');
     };
     folderSel.addEventListener('change', refreshWarn);
     refreshWarn();
@@ -360,15 +459,14 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     const box = handover.querySelector('#ho-confirm');
     box.innerHTML = `
       <div class="ho-confirm">
-        <p>${esc(s.name)} will take <b>${esc(selected.key)}</b> and work it end to end, following the
-        <code>jira-ticket-oppakken</code> workflow: branch from develop, fix behind a gate, push,
-        write the test instruction into the ticket and move it to Ready for deploy and FAT.</p>
+        <p>${esc(s.name)} ${src.workflow(selected.key)}</p>
         <dl>
           <dt>Folder</dt><dd>${esc(s.cwd)}</dd>
           <dt>Model</dt><dd>${esc(s.model || 'the default')}</dd>
           <dt>Permission</dt><dd>full, unattended</dd>
         </dl>
-        ${s.jira ? '' : `<p class="ho-warn">This folder has no <code>jira-ticket-oppakken</code> skill. The agent will have to improvise the workflow; a settler from the Sybolt_PLC repo is the safer choice for a BS ticket.</p>`}
+        ${knows(s) ? '' : `<p class="ho-warn">This folder has no <code>${esc(src.skill)}</code> skill. ${src.without}</p>`}
+        ${data.islandRoot && sameFolder(s.cwd, data.islandRoot) ? '<p class="ho-warn">This is the checkout this island is running from. An agent branching here changes the island under your feet; a worktree is the quieter choice.</p>' : ''}
         <div class="ho-buttons">
           <button class="btn primary" id="ho-go">Hand it over</button>
           <button class="btn" id="ho-dry">Only prepare the command</button>
@@ -387,6 +485,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
 
   async function post(payload) {
     if (busy || !selected) return;
+    payload.source = src === SOURCES.github ? 'github' : 'jira';
     busy = true;
     const out = handover.querySelector('#ho-out');
     out.textContent = payload.dryRun ? 'Preparing…' : 'Waking the settler…';
@@ -478,7 +577,20 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   }
 
   // ---- open / close --------------------------------------------------------
-  function open() {
+  // Which board you walked up to decides where the cards come from. Switching source
+  // throws the old ones away rather than showing Jira cards under a GitHub heading for
+  // the moment it takes to fetch.
+  function open(source = 'jira') {
+    const next = SOURCES[source] || SOURCES.jira;
+    if (next !== src) {
+      src = next;
+      data = { issues: [], assignments: [] };
+      cork.innerHTML = '';
+      recallWho();          // each board remembers who you last looked at it for
+    }
+    el.querySelector('#board-title').textContent = src.board;
+    el.querySelector('#board-sub').textContent = '';
+    el.querySelector('#board-refresh').title = src.refresh;
     el.hidden = false;
     closeHandover();
     load(false);
@@ -497,6 +609,11 @@ function hash(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return h;
+}
+// Windows paths, so case and the trailing slash mean nothing.
+function sameFolder(a, b) {
+  const norm = (p) => String(p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+  return !!a && !!b && norm(a) === norm(b);
 }
 function timeAgo(t) {
   const ms = Date.now() - (typeof t === 'number' ? t : Date.parse(t));

@@ -219,10 +219,24 @@ agent is told comes from `config.json`:
 The `opening` is the first line of the prompt, so make it the phrase your own project
 skill triggers on. Name that skill in `skill` and the agent is told to follow it from
 beginning to end; leave it `null` and the agent is simply asked to work the ticket the
-way the project does. `{key}`, `{summary}`, `{settler}` and `{island}` are filled in.
+way the project does. `{key}`, `{number}`, `{summary}`, `{settler}` and `{island}` are
+filled in.
 
 The skill itself belongs in the repository the agent works in, next to the code it
 describes, not here. That is also where it stays private.
+
+The island's own board hands its cards over in the same shape, under `github`, and comes
+with sensible answers already, so this only needs writing if you disagree with them:
+
+```json
+"github": {
+  "repo": null,
+  "dispatch": { "opening": "Pick up issue #{number}", "skill": "issue-oppakken" }
+}
+```
+
+`repo` left null means the checkout's own `origin` remote. A skill is only ever named to
+an agent whose folder actually carries it.
 
 ## Inviting a session that already exists
 
@@ -312,6 +326,40 @@ within seconds, building in the same district. Its transcript log is kept under
 command** writes the exact command line instead of running it, for when you want to start
 it yourself in a terminal.
 
+## The island's own board
+
+A second noticeboard faces the sprint board across the square, in slate and iron under a
+copper roof rather than cork under planks. The sprint board carries the work of the
+village; this one carries the work on the village itself — the **GitHub issues of the
+repository the island is built from**, one note pinned per open issue. Walk up to it and
+press **E**, or click it.
+
+It reads through the `gh` command line, so there is nothing to configure and no second
+token to keep: the board sees the repository exactly as whoever `gh auth status` says is
+logged in. Which repository that is comes from the checkout's own `origin` remote, so a
+fork or a clone shows its own issues; `"github": { "repo": "owner/name" }` in
+`config.json` overrides it. The last answer is cached in `data/issues.json`, so the board
+still shows something when GitHub is unreachable, and the count of notes on the board
+outside follows it.
+
+GitHub has no columns to drag a card between, so what says an issue is taken is the
+`in progress` label the workflow puts on, or somebody being assigned to it. The cards are
+grouped as **Up for grabs**, **Being worked on**, **Done** and **Closed, not planned**,
+and the board opens on everyone rather than on you, because most issues here belong to
+nobody in particular.
+
+Everything else works as the sprint board does: the same keyboard, the same controller,
+the same hand-over. What differs is what the agent is told. **Hand it over** starts a
+session with `Pick up issue #11`, which triggers the repo's `issue-oppakken` skill:
+an issue first, then a branch from `origin/main` named after it, the issue marked as
+picked up, and when the work is done the branch pushed and the issue closed as completed.
+A folder that does not carry that skill gets the same route spelled out in the prompt
+instead, so a hand-over still lands somewhere sensible.
+
+Two warnings appear where they are earned: a folder without the skill, and the checkout
+the island itself is being served from — an agent branching there changes the island
+under your feet, so one of its worktrees is the quieter choice.
+
 ## How the village grows
 
 A session hook is installed in `~/.claude/settings.json`. It fires on `SessionStart` and
@@ -383,6 +431,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | On the island | In the data |
 |---|---|
 | Town Hall and founding stone | The session that founded the island |
+| A cork noticeboard on the square | The Jira sprint; one pinned note per open ticket |
+| A slate noticeboard facing it, under a copper roof | The GitHub issues of the island's own repository |
 | A house | One Claude Code session |
 | A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
 | A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land; it opens where a road crosses it |
@@ -442,6 +492,8 @@ a lower pixel ratio.
 | Running sessions | `~/.claude/sessions/<pid>.json` |
 | Session titles and models | `%APPDATA%\Claude\claude-code-sessions\…` |
 | Cowork tasks | `%APPDATA%\Claude\local-agent-mode-sessions\…` |
+| The sprint on the cork board | Jira REST v2, cached in `data/sprint.json` |
+| The issues on the island board | `gh issue list`, cached in `data/issues.json` |
 
 Transcripts are append-only, so the scanner remembers how far it read and only folds in
 new bytes. A first scan of a few hundred megabytes takes a second or two; every scan
@@ -475,6 +527,8 @@ lib/ws.mjs      a small WebSocket server, hand-written, no dependency
 lib/players.mjs who is walking the island right now
 lib/neighbours  the UDP beacon that finds other islands on the network
 lib/guestview   the island as a visitor is allowed to see it
+lib/sprint.mjs  the Jira sprint behind the cork board
+lib/issues.mjs  the GitHub issues behind the island's own board, read through gh
 shared/         the island generator, shared by Node and the browser
 web/            the viewer (three.js, no build step)
 data/           generated; safe to delete

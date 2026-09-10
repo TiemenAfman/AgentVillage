@@ -364,6 +364,35 @@ function shed(parts, spec, pal) {
 }
 
 // ---------------------------------------------------------------- civic
+// Two boards stand on the square and they are the same piece of furniture in different
+// paint: posts, a panel, a frame, a little roof and one pinned note per open card. The
+// sprint board is cork under a plank roof; the island's own board is slate in an iron
+// frame under copper, so which is which reads from across the green.
+function noticeBoard(parts, spec, { panel, frame, roof, sign, note, pins }) {
+  const W = 1.7, H = 1.0;
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: -W / 2 + 0.08, z: 0 }));
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: W / 2 - 0.08, z: 0 }));
+  parts.push(box(W, H, 0.06, panel, { y: 0.62, z: 0.02 }));                     // the panel
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 0.58, z: 0.02 }));             // its frame
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 1.62, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: -W / 2 - 0.02, y: 0.58, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: W / 2 + 0.02, y: 0.58, z: 0.02 }));
+  parts.push(prismRoof(W + 0.34, 0.44, 0.22, roof, { y: 1.69, z: 0.02 }));
+  parts.push(box(0.62, 0.16, 0.03, sign, { y: 1.72, z: 0.2 }));                 // the sign
+  // one pinned card per open issue, up to twelve, in three rows
+  const cards = Math.max(1, Math.min(12, spec.cards == null ? 6 : spec.cards));
+  for (let i = 0; i < cards; i++) {
+    const col = i % 4, row = Math.floor(i / 4);
+    const x = -0.6 + col * 0.4, y = 1.34 - row * 0.31;
+    const tilt = ((i * 37) % 13 - 6) * 0.012;
+    parts.push(box(0.3, 0.23, 0.012, note, { x, y, z: 0.06, rz: tilt }));
+    parts.push(box(0.19, 0.018, 0.014, 0xb9b2a4, { x: x - 0.03, y: y + 0.06, z: 0.068, rz: tilt }));
+    parts.push(box(0.13, 0.018, 0.014, 0xb9b2a4, { x: x - 0.06, y: y + 0.02, z: 0.068, rz: tilt }));
+    parts.push(sphere(0.024, pins[i % pins.length], { x, y: y + 0.1, z: 0.078 }));
+  }
+  return 2.1;
+}
+
 function civic(parts, spec, rng) {
   const anchors = {};
   const animated = {};
@@ -659,29 +688,22 @@ function civic(parts, spec, rng) {
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
-      const W = 1.7, H = 1.0;
-      parts.push(cylinder(0.06, 0.07, 1.05, 6, C.darkWood, { x: -W / 2 + 0.08, z: 0 }));
-      parts.push(cylinder(0.06, 0.07, 1.05, 6, C.darkWood, { x: W / 2 - 0.08, z: 0 }));
-      parts.push(box(W, H, 0.06, 0x8a6a44, { y: 0.62, z: 0.02 }));                 // cork
-      parts.push(box(W + 0.1, 0.07, 0.1, C.darkWood, { y: 0.58, z: 0.02 }));       // frame
-      parts.push(box(W + 0.1, 0.07, 0.1, C.darkWood, { y: 1.62, z: 0.02 }));
-      parts.push(box(0.07, H + 0.14, 0.1, C.darkWood, { x: -W / 2 - 0.02, y: 0.58, z: 0.02 }));
-      parts.push(box(0.07, H + 0.14, 0.1, C.darkWood, { x: W / 2 + 0.02, y: 0.58, z: 0.02 }));
-      parts.push(prismRoof(W + 0.34, 0.44, 0.22, C.plank, { y: 1.69, z: 0.02 }));
-      parts.push(box(0.62, 0.16, 0.03, C.paper, { y: 1.72, z: 0.2 }));             // "sprint" sign
-      // one pinned card per open issue, up to twelve, in three rows
-      const cards = Math.max(1, Math.min(12, spec.cards == null ? 6 : spec.cards));
-      const pinCols = [0xd94f3d, 0x3d7ed9, 0xd9a33d, 0x6fb84a, 0x9a6fd9];
-      for (let i = 0; i < cards; i++) {
-        const col = i % 4, row = Math.floor(i / 4);
-        const x = -0.6 + col * 0.4, y = 1.34 - row * 0.31;
-        const tilt = ((i * 37) % 13 - 6) * 0.012;
-        parts.push(box(0.3, 0.23, 0.012, C.paper, { x, y, z: 0.06, rz: tilt }));
-        parts.push(box(0.19, 0.018, 0.014, 0xb9b2a4, { x: x - 0.03, y: y + 0.06, z: 0.068, rz: tilt }));
-        parts.push(box(0.13, 0.018, 0.014, 0xb9b2a4, { x: x - 0.06, y: y + 0.02, z: 0.068, rz: tilt }));
-        parts.push(sphere(0.024, pinCols[i % pinCols.length], { x, y: y + 0.1, z: 0.078 }));
-      }
-      return { anchors, animated, height: 2.1 };
+      const height = noticeBoard(parts, spec, {
+        panel: 0x8a6a44, frame: C.darkWood, roof: C.plank, sign: C.paper, note: C.paper,
+        pins: [0xd94f3d, 0x3d7ed9, 0xd9a33d, 0x6fb84a, 0x9a6fd9],
+      });
+      return { anchors, animated, height };
+    }
+    case 'issues': {
+      // The island's own board: the same furniture in slate and iron under a copper
+      // roof, with a lamp over it, because the work on the island itself never stops.
+      const height = noticeBoard(parts, spec, {
+        panel: C.slate, frame: C.iron, roof: C.copper, sign: C.white, note: C.white,
+        pins: [0xd9a33d, 0xb87333, 0xf5efe0, 0xd9a33d, 0x8a8a8a],
+      });
+      parts.push(cylinder(0.018, 0.018, 0.16, 4, C.iron, { y: 1.95, z: 0.22 }));
+      parts.push(sphere(0.05, C.glass, { y: 1.99, z: 0.22, emissive: 1 }));
+      return { anchors, animated, height };
     }
     case 'office': {
       // A clerk's office: brick, a tiled roof, a lamp by the door and a board with the
@@ -876,9 +898,10 @@ export function buildBuilding(spec, ctx = {}) {
   }
 
   const geometry = merge(parts);
-  // The board is built large for legibility and stands village sized; a house gets a
+  // Both boards are built large for legibility and stand village sized; a house gets a
   // touch of variety so a street of identical sessions still looks hand-made.
-  const s = spec.civicType === 'board' ? 0.6
+  const boardish = spec.civicType === 'board' || spec.civicType === 'issues';
+  const s = boardish ? 0.6
     : spec.kind !== 'civic' ? 0.96 + rng.next() * 0.08
       : 1;
   // The footprint is measured before the scale, so head height is measured there too.
@@ -889,7 +912,7 @@ export function buildBuilding(spec, ctx = {}) {
     geometry.computeBoundingSphere();
     solids = scaleSolids(solids, s);
   }
-  if (spec.civicType === 'board') {
+  if (boardish) {
     height *= s;
     for (const k of Object.keys(anchors)) anchors[k] = anchors[k].map((v) => v * s);
   }

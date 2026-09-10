@@ -15,6 +15,7 @@ import { buildBorders, buildFieldDecals, orchardTrees, variantOf, NONE } from '.
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
   ['board', 'Sprint board', 'always'],
+  ['issues', 'Island board', 'always'],
   ['well', 'Well', '5 settlers'],
   ['market', 'Market stalls', '10'],
   ['tavern', 'Tavern', '15'],

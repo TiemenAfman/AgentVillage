@@ -188,6 +188,7 @@ async function openBoardWithoutIsland() {
       .filter((b) => (b.kind === 'house' || b.kind === 'camp') && b.cwd)
       .map((b) => ({
         id: b.id, name: b.name, cwd: b.cwd, model: b.model,
+        skills: b.skills || {},
         jira: !!(b.skills && b.skills.jira),
         modelLabel: (PALETTE[b.style] || PALETTE.unknown).name,
         districtName: (districts.get(b.district) || {}).name || null,
@@ -306,6 +307,8 @@ function interactables() {
     const p = rec.group.position;
     if (rec.spec.civicType === 'board') {
       out.push({ id: rec.id, kind: 'board', x: p.x, z: p.z, r: 3.0, label: rec.spec.title || 'the sprint board' });
+    } else if (rec.spec.civicType === 'issues') {
+      out.push({ id: rec.id, kind: 'issues', x: p.x, z: p.z, r: 3.0, label: rec.spec.title || 'the island board' });
     } else if (rec.spec.civicType === 'office') {
       out.push({ id: rec.id, kind: 'office', x: p.x, z: p.z, r: 2.4, label: rec.spec.name });
     } else if (rec.spec.civicType === 'townhall') {
@@ -420,12 +423,13 @@ function enterWalk() {
     blockers: walkableBlockers(),
     interactables: interactables(),
     onInteract: (it) => {
-      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open(); }
+      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open('jira'); }
+      else if (it.kind === 'issues') { if (keeperOnly('read the island board')) return; state.walk.setPaused(true); state.board.open('github'); }
       else if (it.kind === 'office') openOffice(it.id);
       else if (it.kind === 'townhall') openTownHall();
       else talkTo(it.id);
     },
-    onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall' && it.kind !== 'office') askToSendAway(it.id); },
+    onSendAway: (it) => { if (!['board', 'issues', 'townhall', 'office'].includes(it.kind)) askToSendAway(it.id); },
     onThink: () => openThink(),
     onExit: () => exitWalk(),
   });
@@ -1848,6 +1852,7 @@ async function boot() {
       .filter((b) => b.kind === 'house' || b.kind === 'camp')
       .map((b) => ({
         id: b.id, name: b.name, cwd: b.cwd, model: b.model,
+        skills: b.skills || {},
         jira: !!(b.skills && b.skills.jira),
         modelLabel: (PALETTE[b.style] || PALETTE.unknown).name,
         districtName: (state.districts.get(b.district) || {}).name || null,
