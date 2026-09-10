@@ -324,12 +324,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
     return out;
   };
+  // How much of the countryside is under the plough. The chronicle hands down a share so
+  // the fields arrive with the village that works them; a live village has none and gets
+  // the full spread.
+  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: 0.35 * v.farmShare });
+
   let clearedBase = baseCleared(village);
   const cleared = new Set(clearedBase);
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase);
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, fieldOpts(village));
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
@@ -624,7 +629,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase);
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase, fieldOpts(v));
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }

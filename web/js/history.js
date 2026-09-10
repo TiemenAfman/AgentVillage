@@ -160,13 +160,22 @@ export function projectVillage(village, t) {
 
   const buildings = (village.buildings || []).filter((b) => +new Date(b.startedAt) <= t);
 
+  // The countryside's ploughed strips and orchards are planned from the terrain seed on
+  // land nobody owns, so they stood at full spread on the founding day - an island with
+  // one house on it and every field already turned. They are the village's work as much
+  // as its roads are, so their spread arrives with it. `planFields` keeps or drops a
+  // field by comparing a per-cell hash against the coverage, so a lower one is a subset
+  // of a higher one: fields appear where they will end up, rather than shuffling about.
+  const farmShare = townShare;
+
   return {
-    key: `${size}|${paths.length}|${parts.join(',')}`,
+    key: `${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
     village: {
       ...village,
       buildings,
       districts,
       paths,
+      farmShare,
       island: { ...village.island, town: { ...town, paved, parcel: townParcel } },
     },
   };

@@ -63,6 +63,14 @@ function place(g, o = {}) {
   return g;
 }
 // a box whose base sits at y = o.y
+// Water and soil are modelled flush with the rim that holds them, which puts two faces
+// on exactly the same plane and leaves the depth buffer to guess - the hatched surfaces
+// on the well, the fountain and the flower beds. Lifting the inner surface by a hair
+// settles it: far below anything the eye can see at this scale, far above the precision
+// the depth buffer has to work with. Filled to the brim rather than a hair short of it,
+// which is also the way a fountain should look.
+const BRIM = 0.004;
+
 export function box(w, h, d, hex, o = {}) {
   const g = new THREE.BoxGeometry(w, h, d);
   g.translate(0, h / 2, 0);
@@ -421,7 +429,7 @@ function civic(parts, spec, rng) {
     }
     case 'well':
       parts.push(cylinder(0.3, 0.32, 0.36, 9, C.stone));
-      parts.push(cylinder(0.24, 0.24, 0.06, 9, 0x2a4a5a, { y: 0.3 }));
+      parts.push(cylinder(0.24, 0.24, 0.06, 9, 0x2a4a5a, { y: 0.3 + BRIM }));
       parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: -0.24, y: 0.36 }));
       parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: 0.24, y: 0.36 }));
       parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.86, ry: Math.PI / 2 }));
@@ -490,7 +498,7 @@ function civic(parts, spec, rng) {
       // a row of them is not four copies of the same red.
       const beds = [0xd94f3d, 0xe8a13a, 0xd96fa8, 0xf2e04a, 0x9a6fd9];
       parts.push(box(0.42, 0.18, 0.28, C.stone));
-      parts.push(box(0.34, 0.04, 0.2, 0x53402e, { y: 0.14 }));
+      parts.push(box(0.34, 0.04, 0.2, 0x53402e, { y: 0.14 + BRIM }));
       for (let i = 0; i < 5; i++) {
         const x = -0.13 + i * 0.065, z = rng.range(-0.05, 0.05);
         const h = 0.07 + rng.range(0, 0.05);
@@ -541,12 +549,12 @@ function civic(parts, spec, rng) {
       // below the rim so it catches the light instead of hiding in the shadow.
       parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
       parts.push(cylinder(0.44, 0.46, 0.28, 8, C.stone, { y: 0.1 }));         // 0.10 - 0.38
-      parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 }));       // the water
+      parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 + BRIM })); // the water
       parts.push(cylinder(0.48, 0.48, 0.05, 8, C.stone, { y: 0.36 }));        // the rim
       parts.push(box(0.26, 0.14, 0.26, C.stone, { y: 0.3 }));                 // 0.30 - 0.44
       parts.push(cylinder(0.09, 0.13, 0.4, 8, C.stone, { y: 0.44 }));         // 0.44 - 0.84
       parts.push(cylinder(0.26, 0.12, 0.1, 8, C.stone, { y: 0.8 }));          // the bowl
-      parts.push(cylinder(0.22, 0.22, 0.03, 8, 0x2f6f8f, { y: 0.87 }));
+      parts.push(cylinder(0.22, 0.22, 0.03, 8, 0x2f6f8f, { y: 0.87 + BRIM }));
       parts.push(cylinder(0.05, 0.08, 0.2, 8, C.stone, { y: 0.9 }));
       parts.push(sphere(0.07, C.copper, { y: 1.15 }));
       // four jets leaning out of the bowl and back down into the basin
