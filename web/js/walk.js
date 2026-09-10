@@ -14,6 +14,8 @@ const CAM_BACK = 2.7;
 const CAM_UP = 1.6;
 const EYE = 0.9;
 const BODY_R = 0.3;
+const JUMP_SPEED = 3.4;   // a hop about half a settler high
+const GRAVITY = 12;
 
 // The player is a settler like any other, with a satchel and a wide hat so you can
 // pick yourself out of a crowd.
@@ -47,6 +49,9 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     camYaw: 0,       // where the camera looks from
     camPitch: 0.28,
     bob: 0,
+    lift: 0,          // height above the ground while a jump is in the air
+    vy: 0,
+    airborne: false,
     blockers: [],
     interactables: [],
     near: null,
@@ -64,6 +69,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
       keys.add(k);
       e.preventDefault();
     }
+    if (k === ' ') { e.preventDefault(); if (!e.repeat) jump(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
@@ -101,6 +107,14 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     return false;
   }
 
+  // A hop, only from solid ground. Gravity brings you back down in update().
+  function jump() {
+    if (!state.active || state.paused || state.airborne) return false;
+    state.vy = JUMP_SPEED;
+    state.airborne = true;
+    return true;
+  }
+
   function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onExit }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
@@ -114,6 +128,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     // look at whatever we were dropped in front of, so the camera stays behind us
     state.yaw = state.camYaw = facing ? Math.atan2(facing[0] - x, facing[1] - z) : 0;
     state.camPitch = 0.44;   // high enough to look over the treetops
+    state.lift = 0; state.vy = 0; state.airborne = false;
     state.active = true;
     avatar.visible = true;
     keys.clear();
@@ -122,6 +137,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   function exit() {
     state.active = false;
     avatar.visible = false;
+    state.lift = 0; state.vy = 0; state.airborne = false;
     keys.clear();
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
   }
@@ -147,7 +163,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
 
   function setPaused(v) {
     state.paused = !!v;
-    if (v) { keys.clear(); stick.x = 0; stick.z = 0; }
+    if (v) { keys.clear(); stick.x = 0; stick.z = 0; state.lift = 0; state.vy = 0; state.airborne = false; }
   }
 
   function update(dt) {
@@ -186,16 +202,23 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     }
 
     state.pos.y = groundAt(state.pos.x, state.pos.z);
-    const bobY = state.moving ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
-    avatar.position.set(state.pos.x, state.pos.y + bobY, state.pos.z);
-    avatar.rotation.set(0, state.yaw, state.moving ? Math.sin(state.bob) * 0.045 : 0);
+    if (state.airborne) {
+      state.vy -= GRAVITY * dt;
+      state.lift += state.vy * dt;
+      if (state.lift <= 0) { state.lift = 0; state.vy = 0; state.airborne = false; }   // landed
+    }
+    const eyeY = state.pos.y + state.lift;
+    // feet off the ground means no footfall bob
+    const bobY = state.moving && !state.airborne ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
+    avatar.position.set(state.pos.x, eyeY + bobY, state.pos.z);
+    avatar.rotation.set(0, state.yaw, state.moving && !state.airborne ? Math.sin(state.bob) * 0.045 : 0);
 
     // camera sits behind and above, and never dips under the ground
     const cx = state.pos.x - Math.sin(state.camYaw) * CAM_BACK * Math.cos(state.camPitch);
     const cz = state.pos.z - Math.cos(state.camYaw) * CAM_BACK * Math.cos(state.camPitch);
-    const cy = state.pos.y + CAM_UP + Math.sin(state.camPitch) * CAM_BACK;
+    const cy = eyeY + CAM_UP + Math.sin(state.camPitch) * CAM_BACK;
     camera.position.set(cx, Math.max(cy, groundAt(cx, cz) + 0.55), cz);
-    camera.lookAt(state.pos.x, state.pos.y + EYE, state.pos.z);
+    camera.lookAt(state.pos.x, eyeY + EYE, state.pos.z);
 
     // what is within reach?
     let near = null, bestD = Infinity;
@@ -218,7 +241,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     avatar.geometry.dispose();
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setInteractables, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, jump, pad, setPaused, setBlockers, setInteractables, dispose, isActive: () => state.active };
 }
 
 function lerpAngle(a, b, t) {

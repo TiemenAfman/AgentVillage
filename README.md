@@ -87,7 +87,7 @@ itself.
 
 Press **Walk** (or **A** on a controller) and you step onto the town square as a settler
 with a straw hat. WASD or the left stick to walk, drag the mouse or use the right stick
-to look, Shift or the right shoulder button to run. Walk up to a house and press **E**
+to look, Shift or the right shoulder button to run, **Space** to hop. Walk up to a house and press **E**
 (**A** on the pad) to read its dossier; **Esc** or **B** flies you back up to the sky.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
