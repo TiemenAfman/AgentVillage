@@ -163,7 +163,11 @@ export function createUI(handlers) {
     if (b.title && b.kind !== 'civic') rows.push(['Session', esc(b.title)]);
     if (b.model) rows.push(['Model', esc(STYLE_BLURB[b.style] || b.model)]);
     if (b.kind !== 'civic') {
-      rows.push(['Project', b.districtName ? `<span title="${esc(b.cwd || '')}">${esc(b.districtName)}</span>${b.outpost ? ` <small>(outpost ${esc(b.outpost.name)})</small>` : ''}` : '—']);
+      rows.push(['Project', b.districtName
+        ? `<span title="${esc(b.cwd || '')}">${esc(b.districtName)}</span>`
+          + (b.subPath ? ` <small>/ ${esc(b.subPath)}</small>` : '')
+          + (b.outpost ? ` <small>(outpost ${esc(b.outpost.name)})</small>` : '')
+        : '—']);
       if (b.gitBranch) rows.push(['Branch', esc(b.gitBranch)]);
     }
     rows.push([b.kind === 'civic' ? 'Built' : 'Started', fmtDate(b.startedAt)]);
@@ -278,7 +282,11 @@ export function createUI(handlers) {
       + '<li><b>Scaffolding</b> <small>— that session is running right now</small></li>'
       + '<li><b>Campfire</b> <small>— a settler just arrived, no transcript yet</small></li>'
       + '<li><b>Quay houses on stilts</b> <small>— Cowork tasks, they arrive by boat</small></li>'
-      + '<li><b>Outpost farms</b> <small>— sessions in a git worktree</small></li>'
+      + '<li><b>A hedged green with a sign</b> <small>— one hamlet per git repository, from its third session</small></li>'
+      + '<li><b>A lone farmhouse in the fields</b> <small>— a project with one or two sessions</small></li>'
+      + '<li><b>Ploughed fields and orchards</b> <small>— countryside nobody has claimed</small></li>'
+      + '<li><b>A kitchen garden</b> <small>— land inside a hamlet nobody has built on</small></li>'
+      + '<li><b>Outposts</b> <small>— sessions in a git worktree; named on the house itself</small></li>'
       + '</ul>';
     el('legend-body').innerHTML = html;
   }
@@ -302,6 +310,29 @@ export function createUI(handlers) {
       d.style.display = '';
       d.textContent = it.text;
       d.className = `label${it.build ? ' build' : ''}`;
+      d.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -100%)`;
+    });
+  }
+
+  // Hamlet names, as map captions rather than tooltips. On a wooden board at overview
+  // distance the lettering is about four pixels tall, so the world sign alone cannot make
+  // the island read as a set of named settlements - these can, and they fade out again as
+  // soon as you are close enough to read the boards.
+  const hamletPool = [];
+  function hamletLabels(items) {
+    while (hamletPool.length < items.length) {
+      const d = document.createElement('div');
+      d.className = 'hamlet-label';
+      labelRoot.appendChild(d);
+      hamletPool.push(d);
+    }
+    hamletPool.forEach((d, i) => {
+      const it = items[i];
+      if (!it) { d.style.display = 'none'; return; }
+      d.style.display = '';
+      d.textContent = it.text;
+      d.style.opacity = String(it.opacity);
+      d.style.color = `hsl(${it.hue} 60% 82%)`;
       d.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -100%)`;
     });
   }
@@ -375,7 +406,7 @@ export function createUI(handlers) {
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
 
   return {
-    state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels,
+    state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPad, setConfirm,
     closeDossier: () => close('dossier'),
   };

@@ -9,6 +9,8 @@ import {
   PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
 } from './buildings.js';
 import { figureGeometry } from './settlers.js';
+import { createNameplate } from './nameplate.js';
+import { buildBorders, buildFieldDecals, orchardTrees, variantOf, NONE } from './hamlets.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -228,9 +230,169 @@ line(['sailor', 'plaque'], (what, x, z) => {
     m.position.set(x, 0, z);
     m.castShadow = true;
     scene.add(m);
-    tag(x, z + 1.1, 'District plaque', 'one per project');
+    tag(x, z + 1.1, 'District plaque', 'retired — see Hamlet signs');
   }
 }, 'Odds');
+
+// ---- hamlet pieces -------------------------------------------------------------
+// A hedge and a field decal both follow the ground, and on a flat plane you cannot tell
+// whether they do it correctly - you would ship something that looks perfect here and
+// floats on the island. So these rows get a gently rolling patch of their own, and they
+// are built by calling the real code against a small stand-in terrain.
+const bump = (x, z) => 0.34 * Math.sin(x / 3.1) + 0.22 * Math.cos(z / 2.4);
+function demoTerrain(originX, originZ, cells) {
+  const half = cells / 2;
+  return {
+    size: cells, half, seed: 1337,
+    cellWorld: (gx, gz) => [gx - half + 0.5, gz - half + 0.5],
+    worldHeight: (x, z) => bump(x + originX, z + originZ),
+    heightAt: (gx, gz) => bump(gx - half + 0.5 + originX, gz - half + 0.5 + originZ),
+    slope: () => 0.1,
+    isLand: () => true,
+    isWater: () => false,
+    isBeach: () => false,
+    isBuildable: () => true,
+  };
+}
+
+// The visible ground under those rows, displaced by the same function.
+function groundPatch(originX, originZ, cells) {
+  const g = new THREE.PlaneGeometry(cells, cells, cells, cells);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, bump(pos.getX(i) + originX, pos.getZ(i) + originZ));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x8fbf5a, roughness: 1, flatShading: true }));
+  m.position.set(originX, 0.005, originZ);
+  m.receiveShadow = true;
+  scene.add(m);
+}
+
+const dressMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+
+// Hamlet signs: a short name, a long one, one that has to wrap, and a small variant.
+line([
+  ['Hawk', 200, 1],
+  ['Sybolt Plc', 24, 1],
+  ['Boikonfm Claude Interface', 96, 1],
+  ['Plclab/src', 300, 0.6],
+], ([text, hue, sc], x, z) => {
+  const sign = createNameplate(text, {
+    width: 2.1 * sc, height: 0.62 * sc, canvasW: 768, band: hue, height0: 0.95 * sc, posts: 2,
+  });
+  sign.group.position.set(x, 0, z);
+  scene.add(sign.group);
+  tag(x, z + 1.3, text, `hue ${hue}${sc < 1 ? ', 0.6x' : ''}`);
+}, 'Hamlet signs');
+
+// Boundaries: the three variants, each as a straight run, a corner, and a run with a gate
+// in it. Built from a synthetic ownership grid so the real buildBorders does the work -
+// which is the whole point of having a model sheet.
+{
+  const z = row * ROW;
+  heading('Boundaries', z);
+  groundPatch(0, z, 26);
+  const CASES = [
+    { name: 'straight', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], roads: [] },
+    { name: 'corner', cells: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2]], roads: [] },
+    { name: 'with a gate', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], roads: [[2, -1], [2, 0]] },
+  ];
+  ['hedge', 'rail', 'wall'].forEach((want, vi) => {
+    CASES.forEach((c, ci) => {
+      const cells = 26, mid = cells / 2;
+      const ox = (ci - 1) * PITCH * 2.1;
+      const oz = z + (vi - 1) * 1.8;
+      const t = demoTerrain(ox, oz, cells);
+      const owner = new Int16Array(cells * cells).fill(NONE);
+      for (const [cx, cz] of c.cells) owner[(mid + cx) + (mid + cz) * cells] = 0;
+      const roads = new Set(c.roads.map(([cx, cz]) => (mid + cx) + (mid + cz) * cells));
+      // The variant comes from the district id's hash, so find an id that lands on the
+      // one we want to show rather than reaching past the real rule.
+      let id = 'a';
+      for (let n = 0; n < 500 && variantOf(id).kind !== want; n++) id = `a${n}`;
+      const fake = { districts: [{ id, hue: 30 + vi * 100 }] };
+      const g = buildBorders(fake, t, owner, roads);
+      if (g) {
+        const m = new THREE.Mesh(g, dressMat());
+        m.position.set(ox, 0, oz);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        scene.add(m);
+      }
+      if (vi === 2) tag(ox, oz + 1.5, c.name, '');
+    });
+  });
+  tag(HEADING_X + PITCH * 1.1, z, 'hedge / rail / wall', 'one per hamlet, by hash');
+  row += 2;
+}
+
+// Fields through the year, an orchard and a kitchen garden.
+{
+  const z = row * ROW;
+  heading('Fields', z);
+  groundPatch(0, z, 26);
+  const items = [
+    ['spring', 3, 4], ['summer', 3, 4], ['autumn', 3, 4], ['winter', 3, 4],
+    ['orchard', 4, 4], ['garden', 1, 2],
+  ];
+  items.forEach(([what, w, d], i) => {
+    const ox = (i - (items.length - 1) / 2) * PITCH * 1.5;
+    const cells = 26, mid = cells / 2;
+    const t = demoTerrain(ox, z, cells);
+    const list = [];
+    for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) list.push([mid + dx, mid + dz]);
+    const patch = { cells: list, gx: mid, gz: mid, w, d };
+    const plan = {
+      patches: what === 'orchard' || what === 'garden' ? [] : [patch],
+      gardens: what === 'garden' ? [patch] : [],
+      orchards: what === 'orchard' ? [patch] : [],
+    };
+    const season = what === 'orchard' || what === 'garden' ? 'summer' : what;
+    const g = buildFieldDecals(plan, t, season);
+    if (g) {
+      const m = new THREE.Mesh(g, dressMat());
+      m.material.polygonOffset = true;
+      m.material.polygonOffsetFactor = -2;
+      m.position.set(ox, 0, z);
+      m.receiveShadow = true;
+      scene.add(m);
+    }
+    if (what === 'orchard') {
+      const treeMat = new THREE.MeshStandardMaterial({ color: 0x6fae4a, flatShading: true, roughness: 1 });
+      for (const [tx, tz, sc] of orchardTrees(plan, t)) {
+        const tree = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 6), treeMat);
+        tree.position.set(ox + tx, bump(ox + tx, z + tz) + 0.45, z + tz);
+        tree.scale.setScalar(sc / 0.5);
+        tree.castShadow = true;
+        scene.add(tree);
+      }
+    }
+    tag(ox, z + d / 2 + 1.2, what, what === 'garden' ? 'inside a hamlet' : 'countryside');
+  });
+  row += 2;
+}
+
+// How strong the ground tint should be: pick the one that still reads as farmland.
+{
+  const z = row * ROW;
+  heading('Ground tint', z);
+  const meadow = new THREE.Color(0x8fbf5a);
+  const upland = new THREE.Color(0x6fa64a);
+  const HUE = 24;
+  [0, 0.06, 0.11, 0.16, 0.25, 'upland'].forEach((v, i) => {
+    const ox = (i - 2.5) * PITCH * 1.15;
+    const strength = v === 'upland' ? 0.11 : v;
+    const c = (v === 'upland' ? upland : meadow).clone()
+      .lerp(new THREE.Color().setHSL(HUE / 360, 0.3, 0.5), strength);
+    if (strength > 0) c.offsetHSL(0, 0, 0.015);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(ox, 0.02, z);
+    scene.add(m);
+    tag(ox, z + 2.0, v === 'upland' ? 'upland' : String(strength), v === 'upland' ? 'at 0.11' : (strength === 0.11 ? 'shipped' : ''));
+  });
+  row++;
+}
 
 // ---- camera --------------------------------------------------------------------
 const fieldDepth = (row - 1) * ROW;

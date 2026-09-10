@@ -8,7 +8,7 @@ import { createWorld, seasonOf } from './world.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildPlaqueGeometry, createFlagMesh, PALETTE, TIER_INDEX,
+  createFlagMesh, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
@@ -626,30 +626,67 @@ function buildScene(village) {
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
 
-  // district plaques and piers
-  const dgroup = new THREE.Group();
-  scene.add(dgroup);
+  syncHamlets(village);
+  frameIsland();
+}
+
+// A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
+// neither: it is one house in the countryside, not a place with a name.
+const hamletGroup = new THREE.Group();
+const hamletSigns = new Map();
+
+function titleCaseName(s) {
+  return String(s || '').split(/[\s_]+/).filter(Boolean)
+    .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+function syncHamlets(village) {
+  if (!hamletGroup.parent) scene.add(hamletGroup);
+  const terrain = state.terrain;
+  const live = new Set();
+
   for (const d of village.districts) {
-    if (!d.center) continue;
-    const [x, z] = terrain.cellWorld(d.center[0], d.center[1]);
-    const plaque = new THREE.Mesh(buildPlaqueGeometry(d.hue), buildingMat);
-    plaque.castShadow = true;
-    plaque.position.set(x + 0.55, groundAt(x + 0.55, z + 0.55), z + 0.55);
-    plaque.rotation.y = Math.PI * 0.15;
-    plaque.userData.id = `district:${d.id}`;
-    dgroup.add(plaque);
     state.districts.set(d.id, d);
-    if (d.pier && d.pier.length) {
-      const g = buildPierGeometry(d.pier, terrain, [x, z]);
+    if (d.pier && d.pier.length && !hamletSigns.has(`pier:${d.id}`)) {
+      const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
+      const g = buildPierGeometry(d.pier, terrain, [px, pz]);
       if (g) {
         const pm = new THREE.Mesh(g, buildingMat);
-        pm.position.set(x, 0, z);
+        pm.position.set(px, 0, pz);
         pm.receiveShadow = true;
-        dgroup.add(pm);
+        hamletGroup.add(pm);
+        hamletSigns.set(`pier:${d.id}`, { group: pm, dispose: () => pm.geometry.dispose() });
       }
     }
+    if (!d.center || d.tier === 'farmstead') continue;
+    for (const [li, lobe] of (d.lobes || []).entries()) {
+      const key = `${d.id}#${li}`;
+      live.add(key);
+      const [gx, gz] = lobe.green || d.center;
+      const [x, z] = terrain.cellWorld(gx, gz);
+      const half = ((lobe.size || 3) - 1) / 2;
+      // On the green's edge facing away from its own middle, so it does not stand in the
+      // way of the well and the settlers who gather there.
+      const sx = x, sz = z + half + 0.2;
+      const have = hamletSigns.get(key);
+      if (have && have.text === d.name) { have.group.position.y = groundAt(sx, sz); continue; }
+      if (have) { hamletGroup.remove(have.group); have.dispose(); }
+      const sign = createNameplate(titleCaseName(d.name), {
+        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 0.95, posts: 2,
+      });
+      sign.group.position.set(sx, groundAt(sx, sz), sz);
+      sign.group.userData.id = `district:${d.id}`;
+      hamletGroup.add(sign.group);
+      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+    }
   }
-  frameIsland();
+  for (const [key, rec] of [...hamletSigns]) {
+    if (key.startsWith('pier:') || live.has(key)) continue;
+    hamletGroup.remove(rec.group);
+    rec.dispose();
+    hamletSigns.delete(key);
+  }
 }
 
 function frameIsland() {
@@ -870,6 +907,13 @@ function applyVillage(next, { animate }) {
     }
   }
 
+  // Outside the `animate` guard on purpose: the hedges and the tint have to be right on
+  // a silent reload too, and only the falling trees are an animation.
+  if (state.world && (!prev || next.districtsRev !== prev.districtsRev)) {
+    state.world.setOwnership(next);
+    syncHamlets(next);
+  }
+
   const events = [];
   for (const [id, spec] of nextSpecs) {
     if (!spec.plot) continue;
@@ -1078,7 +1122,7 @@ function humanSince(msv) {
 }
 function decorate(spec) {
   const d = state.districts.get(spec.district);
-  return { ...spec, districtName: d ? d.name : null };
+  return { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
 }
 function select(id) {
   state.selected = id;
@@ -1311,14 +1355,53 @@ function updateLabels() {
     }
   }
   state.ui.labels(items);
+  state.ui.hamletLabels(hamletCaptions());
   state.ui.setHover(hoverItem);
   document.body.style.cursor = hoverId ? 'pointer' : '';
 }
+
+// Names over the greens, crossfaded against the wooden boards: readable from the air,
+// gone by the time you can read the sign itself.
+function hamletCaptions() {
+  const v = state.village;
+  if (!v || !state.terrain) return [];
+  const dist = camera.position.distanceTo(controls.target);
+  const t = clamp((dist - 30) / 16, 0, 1);
+  const opacity = t * t * (3 - 2 * t);                        // smoothstep
+  if (opacity < 0.02) return [];
+  const out = [];
+  for (const d of v.districts) {
+    if (!d.center || d.tier === 'farmstead') continue;
+    for (const lobe of d.lobes || []) {
+      const [gx, gz] = lobe.green || d.center;
+      const [x, z] = state.terrain.cellWorld(gx, gz);
+      projected.set(x, groundAt(x, z) + 1.9, z).project(camera);
+      if (projected.z > 1) continue;
+      out.push({
+        text: titleCaseName(d.name), hue: d.hue, opacity,
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      });
+    }
+  }
+  return out;
+}
+// Which folder inside the repository this session worked in, if it was not the root.
+// One hamlet per repository is the point, but the detail should not be lost with it.
+function subPathOf(spec, d) {
+  if (!d || !d.root || !spec.cwd) return null;
+  const root = d.root.toLowerCase(), cwd = spec.cwd.toLowerCase();
+  if (cwd === root || !cwd.startsWith(`${root}\\`)) return null;
+  return spec.cwd.slice(d.root.length + 1).split('\\').join('/');
+}
+
 function labelSub(spec) {
   if (spec.kind === 'civic') return spec.title || '';
   const d = state.districts.get(spec.district);
   const style = (PALETTE[spec.style] || PALETTE.unknown).name;
-  return `${spec.kind === 'shed' ? `${spec.agentType} apprentice` : style}${d ? ` · ${d.name}` : ''}`;
+  const sub = subPathOf(spec, d);
+  const where = d ? ` · ${d.name}${sub ? `/${sub}` : ''}` : '';
+  return `${spec.kind === 'shed' ? `${spec.agentType} apprentice` : style}${where}`;
 }
 
 // --------------------------------------------------------------- chronicle

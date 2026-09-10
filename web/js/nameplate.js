@@ -10,13 +10,14 @@ const postMat = new THREE.MeshStandardMaterial({ color: 0x5a3c28, flatShading: t
 const BOARD_W = 0.86;
 const BOARD_H = 0.34;
 const CANVAS_W = 512;
-const CANVAS_H = Math.round(CANVAS_W * BOARD_H / BOARD_W);   // keep the plaque's aspect ratio
 
-function draw(text) {
+function draw(text, boardW, boardH, canvasW, band) {
+  const CANVAS_H = Math.round(canvasW * boardH / boardW);     // keep the plaque's aspect ratio
   const c = document.createElement('canvas');
-  c.width = CANVAS_W;
+  c.width = canvasW;
   c.height = CANVAS_H;
   const g = c.getContext('2d');
+  const CANVAS_W = canvasW;
 
   // a painted plaque: cream field, routed dark border
   g.fillStyle = '#f3e7cf';
@@ -27,6 +28,14 @@ function draw(text) {
   g.lineWidth = 14;
   g.strokeRect(7, 7, CANVAS_W - 14, CANVAS_H - 14);
 
+  // A hamlet's sign carries its own colour as a band across the top, so two neighbours
+  // are told apart at a glance. The hue never goes in the geometry - the board itself is
+  // one shared mesh.
+  if (band != null) {
+    g.fillStyle = `hsl(${band} 52% 46%)`;
+    g.fillRect(7, 7, CANVAS_W - 14, Math.round(CANVAS_H * 0.12));
+  }
+
   const words = String(text || 'Untitled session').trim().split(/\s+/);
   const maxW = CANVAS_W - 52;
   g.fillStyle = '#3a2a1a';
@@ -34,12 +43,13 @@ function draw(text) {
   g.textBaseline = 'middle';
 
   // Fit in one or two lines, shrinking the type until it fits the board.
-  for (let size = 62; size >= 22; size -= 2) {
+  const top = band != null ? Math.round(CANVAS_H * 0.12) : 0;
+  for (let size = Math.round(62 * (CANVAS_W / 512)); size >= 14; size -= 2) {
     g.font = `600 ${size}px "Iowan Old Style", "Palatino Linotype", Georgia, serif`;
     const lines = wrap(g, words, maxW);
     if (lines.length <= 2 && lines.every((l) => g.measureText(l).width <= maxW)) {
       const lh = size * 1.12;
-      const y0 = CANVAS_H / 2 - (lines.length - 1) * lh / 2;
+      const y0 = (CANVAS_H + top) / 2 - (lines.length - 1) * lh / 2;
       lines.forEach((l, i) => g.fillText(l, CANVAS_W / 2, y0 + i * lh));
       break;
     }
@@ -72,23 +82,32 @@ function wrap(g, words, maxW) {
 }
 
 // A staked yard sign carrying `text`, its face toward local +z (the door/street side).
-export function createNameplate(text, { small = false } = {}) {
+export function createNameplate(text, {
+  small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
+  height0 = 0.42, posts = 1,
+} = {}) {
   const s = small ? 0.7 : 1;
   const group = new THREE.Group();
-  const boardY = 0.42 * s;
+  const boardY = height0 * s;
 
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, boardY + 0.04, 6), postMat);
-  post.position.y = (boardY + 0.04) / 2;
-  post.castShadow = true;
-  group.add(post);
+  const grow = Math.sqrt(width / BOARD_W);
+  const legs = [];
+  for (let i = 0; i < posts; i++) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022 * grow, 0.028 * grow, boardY + 0.04, 6), postMat);
+    leg.position.set(posts === 1 ? 0 : (i === 0 ? -1 : 1) * width * s * 0.42, (boardY + 0.04) / 2, 0);
+    leg.castShadow = true;
+    group.add(leg);
+    legs.push(leg);
+  }
 
-  const bw = BOARD_W * s, bh = BOARD_H * s;
+
+  const bw = width * s, bh = height * s;
   const board = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.03), woodMat);
   board.position.y = boardY + bh / 2 - 0.02;
   board.castShadow = true;
   group.add(board);
 
-  const tex = draw(text);
+  const tex = draw(text, width, height, canvasW, band);
   const faceMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
   const face = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.94, bh * 0.86), faceMat);
   face.position.set(0, board.position.y, 0.017);
@@ -99,7 +118,7 @@ export function createNameplate(text, { small = false } = {}) {
   return {
     group,
     dispose() {
-      post.geometry.dispose();
+      for (const leg of legs) leg.geometry.dispose();
       board.geometry.dispose();
       face.geometry.dispose();
       faceMat.dispose();
