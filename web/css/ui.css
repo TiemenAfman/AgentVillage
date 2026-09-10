@@ -122,6 +122,33 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .hover-label { position: fixed; z-index: 8; pointer-events: none; transform: translate(-50%, -140%); background: rgba(20,16,12,.86); border: 1px solid var(--edge); border-radius: 9px; padding: 5px 9px; font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); }
 .hover-label small { display: block; color: var(--ink-dim); font-size: 10.5px; }
 #toasts { position: fixed; left: 14px; bottom: 16px; z-index: 11; display: grid; gap: 7px; width: 288px; }
+
+/* The water closing over the screen on the way to a neighbour's island. */
+#veil { position: fixed; inset: 0; z-index: 40; background: #0d1420; opacity: 0; pointer-events: none; }
+
+/* A toast that asks something rather than only saying something. */
+.toast .act {
+  font: inherit; font-size: 11.5px; cursor: pointer; margin-left: 4px;
+  color: #1c1814; background: var(--accent); border: 1px solid transparent;
+  border-radius: 99px; padding: 3px 9px; font-weight: 600;
+}
+.toast .act.ghost { background: transparent; border-color: var(--edge); color: var(--ink-dim); font-weight: 400; }
+.toast .act:hover { filter: brightness(1.08); }
+
+/* --- floating buttons ------------------------------------------------- */
+/* Bottom right, out of the way of everything: on a phone the browser's own
+   chrome eats a third of the island, and this is the way back to all of it. */
+.fabs { position: fixed; right: 14px; bottom: 16px; z-index: 13; display: flex; align-items: center; gap: 9px; }
+.fab {
+  width: 44px; height: 44px; border-radius: 50%; padding: 0; cursor: pointer;
+  display: grid; place-items: center; color: var(--ink-dim);
+  background: var(--panel); border: 1px solid var(--edge);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: .16s;
+}
+.fab:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
+.fab:active { transform: scale(.94); }
+/* The chronicle bar runs the full width of a narrow screen, so step over it. */
+@media (max-width: 760px) { .fabs { bottom: 74px; } }
 .toast { padding: 9px 12px; font-size: 12px; line-height: 1.4; animation: risein .3s ease; }
 .toast b { color: var(--accent); }
 .toast.fade { opacity: 0; transition: opacity .5s ease; }

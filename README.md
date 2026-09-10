@@ -5,7 +5,8 @@ session is a settler who arrives, pitches a tent, and builds a house that grows 
 session does. Subagents become apprentices with their own sheds in the yard.
 
 Nothing is invented: every building is read from the session records already on this
-machine. No network calls, no API keys, no data leaves the computer.
+machine. No network calls, no API keys, and nothing leaves the computer unless you open
+the island yourself — see [Visitors and neighbours](#visitors-and-neighbours).
 
 ![The island seen from the air](docs/screenshots/island.png)
 
@@ -76,7 +77,9 @@ never start a second copy.
 | Turn the schedule off | `Unregister-ScheduledTask -TaskName "Promptholm island"` |
 
 The server listens on 127.0.0.1 only and refuses requests whose Origin is not the island
- itself, because it can start unattended agents in any folder on this machine.
+ itself, because it can start unattended agents in any folder on this machine. Opening it
+to other people is possible and deliberate; [Visitors and neighbours](#visitors-and-neighbours)
+says what that does and does not give away.
 
 The task runs as you and only when you are logged on, and it catches up if the machine
 was off at 07:30. It does not open a browser; go to http://localhost:4747 when you want
@@ -99,6 +102,51 @@ Any XInput controller works: plug it in, press a button so the browser notices i
 the on-screen hints switch to controller buttons. Left stick walks, right stick looks,
 right shoulder runs, **A** uses what you are standing at, **B** flies back up. Nothing needs a
 controller: mouse and keyboard do everything on their own.
+
+## Visitors and neighbours
+
+The island is shut by default and listens only to this computer. Open it and other people
+can walk it with you, each connection getting its own settler to steer; two islands on the
+same network also find each other, and lie on each other's horizon.
+
+```json
+"network":     { "public": true, "inviteCode": null, "hosts": [] },
+"multiplayer": { "enabled": true, "maxPlayers": 16, "guestView": "redacted", "name": null }
+```
+
+or `node serve.mjs --public` for an afternoon. Then it answers on every address the
+machine has, and phones and laptops reach it at `http://<the machine's name>:4747/`.
+Windows Firewall asks about the port the first time, and about UDP 47474, which is how
+islands announce themselves to each other.
+
+**What a visitor can do.** Walk, swim, look at the village, read a settler's dossier, and
+bump into the other people walking it. That is all. Handing out a ticket, talking to a
+settler, founding one, sending one away, anything touching git, the sprint board and the
+town hall are refused — not hidden, refused, by the server, for anyone who is not on this
+machine. The rule is not a list of forbidden things but the other way round: a handful of
+paths are public and everything else is local-only, so a route added later is shut unless
+somebody deliberately opens it.
+
+**What a visitor can see.** The place and the people: the island, the houses, the settlers'
+names, and the project folders' names. Not the conversations. A session's title is its
+opening prompt and is stripped, and so is anything else written out of a transcript —
+branch names, ticket summaries. Absolute paths are cut back to the folder's own name, so
+`C:\Users\you\Desktop\pixelart` reaches a visitor as `pixelart`, and the identifiers that
+carry a path or a session id are renamed. `"guestView": "full"` turns all of that off for
+a network you trust.
+
+**Neighbours.** Every island shouts its name, its seed and its port over UDP every five
+seconds. Their seed is enough to draw their island's true shape on your horizon without
+ever connecting to them, always on the same bearing, so you learn where to look. Click one
+and you sail over: the page really does go to their server, where you are a visitor like
+anyone else. Who is on your network is yours alone — a visitor is never told.
+
+**One thing this cannot defend against.** A port forwarder on this machine — `netsh
+interface portproxy`, ngrok, `ssh -L`, Docker's userland proxy, a reverse proxy — makes
+every visitor arrive from 127.0.0.1, and the island has no way to tell from the inside.
+Anyone reaching it that way is the keeper, with the full run of the machine. Do not put
+one in front of this. To let somebody in from outside your own network, set an
+`inviteCode` and send them `http://…/?key=…`; without one, only your own subnet is let in.
 
 ## Talking to a settler
 
@@ -348,6 +396,11 @@ scan.mjs        read every session record, write data/village.json
 serve.mjs       serve the island, push updates, rescan on a timer
 hooks/          the SessionStart / SessionEnd hook
 lib/            sources, incremental parsing, the village model, plot layout
+lib/access.mjs  who may do what: the keeper, a visitor, or nobody
+lib/ws.mjs      a small WebSocket server, hand-written, no dependency
+lib/players.mjs who is walking the island right now
+lib/neighbours  the UDP beacon that finds other islands on the network
+lib/guestview   the island as a visitor is allowed to see it
 shared/         the island generator, shared by Node and the browser
 web/            the viewer (three.js, no build step)
 data/           generated; safe to delete
