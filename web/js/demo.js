@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
-  PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
+  buildBridgeGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
 } from './buildings.js';
 import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
@@ -369,6 +369,92 @@ line([
     }
     tag(ox, z + d / 2 + 1.2, what, what === 'garden' ? 'inside a hamlet' : 'countryside');
   });
+  row += 2;
+}
+
+// ---- bridges -------------------------------------------------------------------
+// A deck is judged entirely by whether it meets the ground at both ends, so a flat plane
+// is worse than useless here: it would hide the one thing that can be wrong. Each case
+// therefore gets a real little valley, flooded to below sea level exactly as `terrain.mjs`
+// floods a river, and the cells the deck spans are worked out from that valley the way
+// the layout works them out - the run of cells between two banks that is not land.
+const RIVER_BED = -0.55, RIVER_RISE = 1.5;
+
+// The channel runs along x, so it is seen across from where the model sheet's camera
+// stands rather than end on, and the deck that crosses it runs along z - the other of the
+// two axes a recorded crossing can have.
+function riverPatch(originX, originZ, cells, { w, tilt, base }) {
+  const half = cells / 2;
+  const land = (x, z) => base + tilt * z + 0.1 * Math.sin(x / 2.3);
+  const wh = (x, z) => Math.min(land(x, z), RIVER_BED + RIVER_RISE * Math.max(0, Math.abs(z) - w));
+  const corner = (i, j) => wh(i - half, j - half);
+  const corners = (gx, gz) => [corner(gx, gz), corner(gx + 1, gz), corner(gx, gz + 1), corner(gx + 1, gz + 1)];
+  const t = {
+    size: cells, half, seed: 1337,
+    cellWorld: (gx, gz) => [gx - half + 0.5, gz - half + 0.5],
+    worldHeight: wh,
+    heightAt: (gx, gz) => corners(gx, gz).reduce((a, b) => a + b, 0) / 4,
+    slope: (gx, gz) => { const c = corners(gx, gz); return Math.max(...c) - Math.min(...c); },
+    isLand: (gx, gz) => corners(gx, gz).every((h) => h >= 0),
+    isWater: (gx, gz) => corners(gx, gz).reduce((a, b) => a + b, 0) / 4 < 0,
+    isBeach: () => false,
+    isBuildable: (gx, gz) => corners(gx, gz).every((h) => h >= 0.35),
+  };
+
+  // the ground, displaced by the same function
+  const g = new THREE.PlaneGeometry(cells, cells, cells * 2, cells * 2);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, wh(pos.getX(i), pos.getZ(i)));
+  g.computeVertexNormals();
+  const gm = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x93b06a, roughness: 1, flatShading: true }));
+  gm.position.set(originX, 0, originZ);
+  gm.receiveShadow = true;
+  scene.add(gm);
+
+  // and the water in it, a flat sheet at sea level, which is all the island does either
+  const reach = w - RIVER_BED / RIVER_RISE;
+  const wg = new THREE.PlaneGeometry(cells, reach * 2);
+  wg.rotateX(-Math.PI / 2);
+  const wm = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({
+    color: 0x4d95b0, roughness: 0.3, transparent: true, opacity: 0.85,
+  }));
+  wm.position.set(originX, 0, originZ);
+  scene.add(wm);
+
+  // the run the layout would have recorded: the cells across the middle that are not land
+  const mid = Math.floor(half);
+  const run = [];
+  for (let gz = 0; gz < cells; gz++) if (!t.isLand(mid, gz)) run.push([mid, gz]);
+  return { t, run };
+}
+
+{
+  const z = row * ROW;
+  heading('Bridges', z);
+  const CASES = [
+    ['narrow', { w: 0.6, tilt: 0, base: 0.7 }, 'the upper reach'],
+    ['wide', { w: 1.3, tilt: 0, base: 0.7 }, 'as wide as one gets'],
+    ['uneven banks', { w: 0.8, tilt: 0.075, base: 0.9 }, 'the deck ramps'],
+  ];
+  CASES.forEach(([name, opts, note], i) => {
+    // The patches are as wide apart as they are deep; any closer and two of them overlap
+    // and the ground z-fights along the seam.
+    const CELLS = 13;
+    const ox = (i - 1) * CELLS;
+    const { t, run } = riverPatch(ox, z, CELLS, opts);
+    const [cx, cz] = t.cellWorld(run[0][0], run[0][1]);
+    const g = buildBridgeGeometry(run, t, [cx, cz], 'z');
+    if (g) {
+      const m = new THREE.Mesh(g, material);
+      m.position.set(ox + cx, 0, z + cz);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+    }
+    tag(ox, z + 2.4, name, `${run.length} cells — ${note}`);
+  });
+  tag(HEADING_X + PITCH * 1.1, z, 'over a real valley', 'cells derived, not hand-listed');
   row += 2;
 }
 

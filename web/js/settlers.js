@@ -185,6 +185,14 @@ export function createSettlers(scene, material, terrain) {
   // already existed: no new movement code, only a reason to move.
   let roads = null;
   let strolling = 0;
+  // Where a bridge carries the road over a river, and how high its deck is there.
+  let deckAt = new Map();
+  function setDecks(map) { deckAt = map || new Map(); }
+  const groundOrDeck = (x, z) => {
+    const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
+    const d = deckAt.get(gx + gz * terrain.size);
+    return d != null ? d : terrain.worldHeight(x, z);
+  };
 
   function setRoads(paths, squares) {
     const cells = new Set();
@@ -372,7 +380,7 @@ export function createSettlers(scene, material, terrain) {
         }
       }
 
-      f.y = f.deckY != null ? f.deckY : terrain.worldHeight(f.pos[0], f.pos[1]);
+      f.y = f.deckY != null ? f.deckY : groundOrDeck(f.pos[0], f.pos[1]);
       tmpObj.position.set(f.pos[0], f.y + bob, f.pos[1]);
       tmpObj.rotation.set(0, f.yaw, Math.sin(time * 9 + f.phase) * (bob > 0.001 ? 0.05 : 0.012));
       tmpObj.scale.setScalar(1);
@@ -395,7 +403,7 @@ export function createSettlers(scene, material, terrain) {
   };
 
   return {
-    add, remove, setMode, setVisible, setRoads, walkIn, update, figures,
+    add, remove, setMode, setVisible, setRoads, setDecks, walkIn, update, figures,
     pickables, figureAt,
     findPath: (a, b) => findPath(terrain, a, b, null),
   };

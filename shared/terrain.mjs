@@ -10,6 +10,23 @@ export const BUILD_HEIGHT_MAX = 4.2;
 export const POLDER_H = 80 / 256;   // reclaimed land sits just above the water
 export const DIKE_H = 224 / 256;
 
+// ---- rivers -----------------------------------------------------------------
+// One or two watercourses, from the flank of the hill down the gradient to the sea. A
+// river has to be genuinely below SEA_LEVEL for `isWater` to call it water, so what is
+// cut is not a channel but a valley whose floor is flooded: the bed at RIVER_BED, the
+// banks climbing at RIVER_RISE per cell, and `min` against the ground everywhere - so
+// out on the low coastal plain it barely cuts, and up on the hill it is a ravine. Take
+// the valley away and cutting to below sea level from a summit four units up leaves a
+// slot canyon with vertical walls.
+const RIVER_BED = -0.55;
+const RIVER_RISE = 1.5;            // how fast the bank climbs out of the bed, per cell
+const RIVER_W0 = 0.6;              // half-width at the source
+const RIVER_W1 = 0.95;             // and at the mouth: a river widens as it goes
+const RIVER_PULL = 0.45;           // pull toward the mouth, per cell of ground gained
+const RIVER_WOBBLE = 0.16;         // hashed per cell, so the course meanders
+const RIVER_CENTRE_KEEP = 11;      // world units of the island centre a river leaves alone
+const RIVER_MOUTH_REACH = 2;       // how near the sea has to be for the beach to be a mouth
+
 // 16 unit vectors at 22.5 degree steps, written out as literals because the
 // trigonometric functions are not allowed in this module.
 const DIRS16 = [
@@ -40,6 +57,91 @@ function boxBlur(H, N) {
     }
   }
   return out;
+}
+
+// Where one river runs. Steepest descent from a source on the flank of the hill, four
+// connected, with two corrections that a bare gradient walk needs on a blurred fbm: a
+// seaward pull, which carries the course straight over the pits the noise is full of, and
+// a hashed wobble, so it meanders instead of running dead down the fall line. It stops on
+// the first cell that is already under water - the sea, or the lake - which is where a
+// river ends. The middle of the island is refused outright: the town square is picked as
+// the flattest ground near the centre of the grid and a river through it would take the
+// square, the civic lots and the commons with it.
+function riverCourse(H, N, size, start, mouth) {
+  const half = size / 2;
+  const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const cellH = (gx, gz) =>
+    0.25 * (H[gx + gz * N] + H[gx + 1 + gz * N] + H[gx + (gz + 1) * N] + H[gx + 1 + (gz + 1) * N]);
+  const world = (gx, gz) => [gx - half + 0.5, gz - half + 0.5];
+  const toMouth = (gx, gz) => {
+    const [x, z] = world(gx, gz);
+    const dx = x - mouth[0], dz = z - mouth[1];
+    return Math.sqrt(dx * dx + dz * dz);
+  };
+  const middle = (gx, gz) => {
+    const [x, z] = world(gx, gz);
+    return Math.sqrt(x * x + z * z) < RIVER_CENTRE_KEEP;
+  };
+  // Is there real water within `r` cells, judged on the ground as it was before any of
+  // this was cut? Off the grid counts: that is open sea.
+  const seaWithin = (gx, gz, r) => {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = gx + dx, nz = gz + dz;
+        if (!inGrid(nx, nz) || cellH(nx, nz) < SEA_LEVEL) return true;
+      }
+    }
+    return false;
+  };
+
+  const course = [];
+  const seen = new Uint8Array(size * size);
+  let cur = start;
+  if (!inGrid(cur[0], cur[1]) || middle(cur[0], cur[1])) return course;
+  for (let step = 0; step < size * 3; step++) {
+    course.push(cur);
+    seen[cur[0] + cur[1] * size] = 1;
+    if (cellH(cur[0], cur[1]) < SEA_LEVEL) break;
+    // Stop where the beach begins and let the sea do the rest, rather than gouging an
+    // estuary across the coastal flat: that widest stretch is the one nothing can bridge
+    // anyway - `MAX_SPAN` refuses it - and it eats the most buildable coast. But only
+    // where the water is near enough for the valley to reach it. Stopping on a flat that
+    // is merely low leaves a pond with no way out, measured on one island in eight.
+    if (cellH(cur[0], cur[1]) < BEACH_MAX && seaWithin(cur[0], cur[1], RIVER_MOUTH_REACH)) break;
+    const d0 = toMouth(cur[0], cur[1]);
+    let best = null, bestScore = Infinity;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cur[0] + dx, nz = cur[1] + dz;
+      if (!inGrid(nx, nz) || seen[nx + nz * size] || middle(nx, nz)) continue;
+      const wob = ((hash32(`river:${nx}:${nz}`) % 1000) / 1000 - 0.5) * 2 * RIVER_WOBBLE;
+      const score = cellH(nx, nz) + RIVER_PULL * (toMouth(nx, nz) - d0) + wob;
+      if (score < bestScore) { bestScore = score; best = [nx, nz]; }
+    }
+    if (!best) break;
+    cur = best;
+  }
+  return course;
+}
+
+// The valley around one course. Every corner within reach is pulled down to the profile
+// its distance from the course asks for, and never up: `min` is what makes the same
+// numbers cut a ravine on the hill and no more than a dip on the coastal plain.
+function carveRiver(H, N, size, course) {
+  const n = course.length;
+  const reach = Math.ceil(RIVER_W1 - RIVER_BED / RIVER_RISE) + 2;
+  for (let s = 0; s < n; s++) {
+    const [gx, gz] = course[s];
+    const w = RIVER_W0 + (RIVER_W1 - RIVER_W0) * (n > 1 ? s / (n - 1) : 1);
+    const cx = gx + 0.5, cz = gz + 0.5;          // the cell centre, in corner coordinates
+    for (let j = Math.max(0, gz - reach); j <= Math.min(size, gz + reach); j++) {
+      for (let i = Math.max(0, gx - reach); i <= Math.min(size, gx + reach); i++) {
+        const dx = i - cx, dz = j - cz;
+        const t = RIVER_BED + RIVER_RISE * Math.max(0, Math.sqrt(dx * dx + dz * dz) - w);
+        const k = i + j * N;
+        if (t < H[k]) H[k] = t;
+      }
+    }
+  }
 }
 
 export function hashHeights(H) {
@@ -94,6 +196,36 @@ export function makeTerrain(seed, opts) {
   H = boxBlur(boxBlur(H, N), N);
   for (let k = 0; k < H.length; k++) H[k] = Math.max(-2.5, Math.round(H[k] * 256) / 256);
 
+  // ---- rivers ---------------------------------------------------------------
+  // Cut before the polders, and drawn from a fork of the seed of its own: a river is what
+  // the island does by itself and a polder is what people did to it afterwards, so the
+  // dike wins where the two meet. The fork matters for a duller reason too - drawing
+  // these numbers from `rng` would have shifted every draw after it and moved the hill,
+  // its shoulder and the lake on every island that already exists.
+  const rr = makeRng(seed).fork('rivers');
+  const courses = [];
+  // A source on the flank of the hill and a mouth a quarter of a turn round the coast, so
+  // the river runs across the island rather than straight out of the nearest shore - the
+  // shortest way down from a hill sitting eleven cells off centre is a four cell creek in
+  // the corner, which divides nothing. A second river, when there is one, leaves by the
+  // other side, so the two do not merge and the land ends up in three pieces.
+  const sides = rr.chance(0.55) ? [1, -1] : [rr.chance(0.5) ? 1 : -1];
+  for (const side of sides) {
+    const kSrc = (kHill + side * (2 + rr.int(2)) + 16) % 16;
+    const kEnd = (kHill + side * (4 + rr.int(3)) + 16) % 16;
+    const start = [
+      Math.round(hillCentre[0] + DIRS16[kSrc][0] * 3 + half - 0.5),
+      Math.round(hillCentre[1] + DIRS16[kSrc][1] * 3 + half - 0.5),
+    ];
+    const mouth = [DIRS16[kEnd][0] * (half - 2), DIRS16[kEnd][1] * (half - 2)];
+    const course = riverCourse(H, N, size, start, mouth);
+    if (course.length >= 6) courses.push(course);
+  }
+  for (const course of courses) carveRiver(H, N, size, course);
+  if (courses.length) {
+    for (let k = 0; k < H.length; k++) H[k] = Math.max(-2.5, Math.round(H[k] * 256) / 256);
+  }
+
   const setCell = (gx, gz, v) => {
     if (gx < 0 || gz < 0 || gx >= size || gz >= size) return;
     H[gx + gz * N] = v;
@@ -137,6 +269,44 @@ export function makeTerrain(seed, opts) {
   };
   const cellWorld = (gx, gz) => [gx - half + 0.5, gz - half + 0.5];
 
+  // Which cells the rivers actually made wet, and which ones ended up as their banks.
+  // Derived from `isWater` rather than from the course, so what is drawn and what a
+  // bridge may be thrown over can never disagree with what the layout calls water. A
+  // course cell that ran out into the sea is water there too, so the mouth is included
+  // and the reeds simply stop where the beach begins.
+  const RIVER_NEAR = 4;
+  const nearRiver = new Uint8Array(size * size);
+  for (const course of courses) {
+    for (const [gx, gz] of course) {
+      for (let dz = -RIVER_NEAR; dz <= RIVER_NEAR; dz++) {
+        for (let dx = -RIVER_NEAR; dx <= RIVER_NEAR; dx++) {
+          const nx = gx + dx, nz = gz + dz;
+          if (inGrid(nx, nz)) nearRiver[nx + nz * size] = 1;
+        }
+      }
+    }
+  }
+  const wet = new Uint8Array(size * size);
+  const riverCells = [], riverBankCells = [];
+  for (let gz = 0; gz < size; gz++) {
+    for (let gx = 0; gx < size; gx++) {
+      if (!nearRiver[gx + gz * size] || !isWater(gx, gz)) continue;
+      wet[gx + gz * size] = 1;
+      riverCells.push([gx, gz]);
+    }
+  }
+  for (let gz = 0; gz < size; gz++) {
+    for (let gx = 0; gx < size; gx++) {
+      const k = gx + gz * size;
+      if (!nearRiver[k] || wet[k]) continue;
+      if (wet[gx + 1 + gz * size] || (gx > 0 && wet[gx - 1 + gz * size])
+        || (gz + 1 < size && wet[gx + (gz + 1) * size]) || (gz > 0 && wet[gx + (gz - 1) * size])) {
+        riverBankCells.push([gx, gz]);
+      }
+    }
+  }
+  const isRiver = (gx, gz) => (inGrid(gx, gz) ? wet[gx + gz * size] === 1 : false);
+
   const landCells = [], beachCells = [], coastCells = [];
   for (let gz = 0; gz < size; gz++) {
     for (let gx = 0; gx < size; gx++) {
@@ -154,6 +324,7 @@ export function makeTerrain(seed, opts) {
     hillCentre, lakeCentre,
     heightAt, slope, isLand, isWater, isBeach, isBuildable, worldHeight, cellWorld, inGrid, corner,
     landCells, beachCells, coastCells,
+    rivers: courses, riverCells, riverBankCells, isRiver,
     hash: hashHeights(H),
   };
 }

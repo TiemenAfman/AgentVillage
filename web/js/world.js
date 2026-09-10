@@ -164,8 +164,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
   ground.name = 'ground';
   group.add(ground);
 
-  // ---- sea ----------------------------------------------------------------
-  const waterGeo = new THREE.PlaneGeometry(260, 260, 130, 130);
+  // ---- sea, the lake and the rivers ---------------------------------------
+  // One surface for all the water there is: everything below SEA_LEVEL is under this
+  // plane and the ground mesh hides it everywhere else, which is how the lake has always
+  // been drawn and is now how the rivers are drawn too. A river is only about two cells
+  // across, though, and the old two-unit grid put barely a vertex in the channel - the
+  // depth it shaded by came from the bank. Hence a vertex per unit here.
+  const wSeg = opts.modest ? 130 : 260;
+  const waterGeo = new THREE.PlaneGeometry(260, 260, wSeg, wSeg);
   waterGeo.rotateX(-Math.PI / 2);
   const wp = waterGeo.attributes.position;
   const depth = new Float32Array(wp.count);
@@ -515,6 +521,71 @@ export function createWorld(scene, terrain, village, opts = {}) {
     group.add(pathMesh);
   }
   buildPaths(village.paths);
+
+  // ---- riverbanks ----------------------------------------------------------
+  // The water itself needs nothing drawn: it is under the same plane as the sea, and the
+  // height bands already put sand along a channel that has cut down to below sea level.
+  // What is missing is any sign that it is fresh water rather than a wet ditch, so the
+  // banks get a shingle decal at the waterline and a stand of reeds along it. Rivers are
+  // part of the terrain and never change, so this is built once.
+  function buildRiverBanks() {
+    if (!terrain.riverBankCells || !terrain.riverBankCells.length) return null;
+    const pos = [], col = [], idx = [];
+    let v = 0;
+    const tri = (a, b, c, hex) => {
+      tmpColor.setHex(hex);
+      for (const p of [a, b, c]) { pos.push(p[0], p[1], p[2]); col.push(tmpColor.r, tmpColor.g, tmpColor.b); }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 1);      // both faces: a blade has no back
+      v += 3;
+    };
+    const shingleQuad = (x0, z0, x1, z1, hex) => {
+      tmpColor.setHex(hex);
+      for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+        pos.push(qx, terrain.worldHeight(qx, qz) + 0.035, qz);
+        col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      }
+      idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+      v += 4;
+    };
+    for (const [gx, gz] of terrain.riverBankCells) {
+      const [x, z] = terrain.cellWorld(gx, gz);
+      const h = hash32(`bank:${gx},${gz}`);
+      shingleQuad(x - 0.5, z - 0.5, x + 0.5, z + 0.5, (h & 1) ? 0x9a8a6a : 0x8d7d60);
+      // Reeds only where the bank is close to the waterline; the top of a ravine is dry.
+      if (terrain.worldHeight(x, z) > 0.9) continue;
+      const clumps = 1 + (h % 3);
+      for (let n = 0; n < clumps; n++) {
+        const g = hash32(`reed:${gx},${gz},${n}`);
+        const rx = x + ((g % 100) / 100 - 0.5) * 0.8;
+        const rz = z + (((g >>> 7) % 100) / 100 - 0.5) * 0.8;
+        const y = terrain.worldHeight(rx, rz);
+        const tall = 0.3 + ((g >>> 14) % 100) / 400;
+        const hue = (g >>> 21) & 1 ? 0x6f7f46 : 0x86924f;
+        for (let b = 0; b < 3; b++) {
+          const a = ((g >>> (b * 3)) % 8) / 8 * 6.2832;
+          const lx = Math.cos(a) * 0.13, lz = Math.sin(a) * 0.13;
+          tri([rx - 0.035, y, rz], [rx + 0.035, y, rz], [rx + lx, y + tall, rz + lz], hue);
+        }
+      }
+    }
+    if (!pos.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  }
+  {
+    const bg = buildRiverBanks();
+    if (bg) {
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+      mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      const bm = new THREE.Mesh(bg, mat);
+      bm.receiveShadow = true;
+      group.add(bm);
+    }
+  }
 
   // ---- hedges and fields ---------------------------------------------------
   let borderMesh = null, fieldMesh = null;

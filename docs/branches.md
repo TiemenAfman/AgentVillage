@@ -14,7 +14,7 @@ orders.
 | `fix/one-hamlet-per-repository` | A district is the repository a session's folder belongs to, not the folder itself | + streets |
 | `fix/route-search-rounding` | `routePath` discarded valid steps because its costs are float32 and its heap float64 | + streets |
 | `feature/hamlets` | Land is owned: a parcel per project, hedges, fields, greens, name signs | + streets, camera, repository, rounding |
-| `feature/rivers-and-bridges` | A note on where rivers would go, and why bridges are more than terrain | docs only |
+| `feature/rivers-and-bridges` | Rivers cut from the hill to the coast, and a bridge where a hamlet's road has to cross one | + streets, camera, repository, rounding, hamlets |
 | `feature/polders` | A note on the polder machinery and the bug that makes a reclaimed cell unbuildable | docs only |
 | `perf/serve-gzip` | A note on compressing what the server sends | docs only |
 | `docs/branch-layout` | This page | docs only |
@@ -57,8 +57,11 @@ diff is small in each case, but it is a rewrite, not a cherry-pick.
 the order free. Taking `feature/hamlets` therefore means taking them too; taking any of
 them on its own does not pull in the hamlets.
 
-The three notes are documentation only and share no file with anything else, so they can
-go in or stay out at any point.
+The two remaining notes - `feature/polders` and `perf/serve-gzip` - are documentation only
+and share no file with anything else, so they can go in or stay out at any point.
+`feature/rivers-and-bridges` is no longer one of them: it now carries the rivers and the
+bridges, and it is built on `feature/hamlets` because a bridge is a crossing on a
+*hamlet's* road to town and there is no such road until that branch lands.
 
 ## Why the hamlet work depends on the repository grouping
 
