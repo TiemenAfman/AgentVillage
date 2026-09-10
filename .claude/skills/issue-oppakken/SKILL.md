@@ -19,7 +19,9 @@ Werk aan deze repo loopt langs vier stappen, in deze volgorde. Geen code voordat
 stap 1 en 2 staan.
 
 Alles gaat via `gh` op `TiemenAfman/AgentVillage`. Draai je in een worktree, dan
-werkt `gh` daar gewoon — de remote is dezelfde.
+werkt `gh` daar gewoon — de remote is dezelfde. Lees eerst
+[Rechten](#rechten-gh-leest-git-schrijft): het `gh`-account hier heeft mogelijk
+alleen leesrechten, en dan mislukt de helft van stap 3 stil.
 
 ## 1. Elke taak krijgt eerst een issue
 
@@ -56,6 +58,13 @@ BODY
 Labels die al bestaan: `enhancement`, `bug`, `documentation`, `question`. Kies er
 één; verzin geen nieuwe soorten.
 
+Controleer daarna dát het label er zit. Zonder schrijfrechten gooit GitHub
+`--label` weg zonder een fout te geven, en dan sta je met een issue zonder soort:
+
+```bash
+gh issue view 16 --json number,labels,assignees
+```
+
 Het issuenummer dat je terugkrijgt heb je in stap 2 en 3 nodig.
 
 ## 2. Branch vanaf main
@@ -72,13 +81,19 @@ Naam: `<soort>/<issuenummer>-<korte-slug>`. De soorten komen uit
 `perf/`. Het nummer erin betekent dat de link issue↔branch zichtbaar is zonder
 te zoeken.
 
-Zit de sessie al in een worktree op een `claude/…`-branch die de app zelf van
-`main` heeft afgetakt? Dan is dát de branch — noem hem op de issue en maak geen
-tweede. Controleer wel dat er niets vreemds onder zit:
+Zit de sessie al in een worktree op een `claude/…`-branch die de app zelf heeft
+afgetakt? Kijk dan eerst wat eronder zit voordat je hem hergebruikt:
 
 ```bash
 git log --oneline origin/main..HEAD
 ```
+
+Leeg betekent: precies op `origin/main`, gebruik hem en noem hem op de issue.
+Staan er commits die niet van jou zijn, dan is hij van de **lokale** `main`
+afgetakt, en die loopt hier regelmatig voor op `origin/main` — met ongepusht werk
+erin. Maak dan alsnog een verse branch van `origin/main`, anders duwt je push dat
+werk mee onder jouw branchnaam. Ongetrackte bestanden gaan mee bij het switchen,
+dus je verliest niets.
 
 Niets op `main` committen, ook niet "even snel".
 
@@ -97,6 +112,11 @@ Bestaat het label nog niet in de repo, dan eenmalig:
 ```bash
 gh label create "in progress" --color FBCA04 --description "Wordt nu aan gewerkt"
 ```
+
+Geeft dat `HTTP 404`, en `gh issue edit` daarna een `'in progress' not found`, dan
+is dat geen typefout maar een rechtenkwestie — zie
+[Rechten](#rechten-gh-leest-git-schrijft). De comment werkt dan nog wel, en die is
+in dat geval je enige zichtbare "bezet".
 
 ## 4. Af = branch pushen, issue op done
 
@@ -117,18 +137,39 @@ afsluitcomment welke branch het is en dat hij nog niet in `main` zit.
 
 Een PR hoort hier niet standaard bij. Wil je review, of moet het echt de main in,
 dan is dat de uitzondering: laat de issue open, zet `Closes #11` in de PR-body en
-laat de merge hem sluiten.
+laat de merge hem sluiten. Zet dat sleutelwoord dan *niet* ook in een commit —
+één mechanisme per issue, anders wordt hij twee keer afgesloten.
 
 ```bash
 gh pr create --fill --base main
 ```
+
+## Rechten: `gh` leest, git schrijft
+
+Deze twee lopen hier niet gelijk, en dat is de reden dat stap 3 half kan
+mislukken terwijl stap 4 gewoon doorloopt:
+
+- **`gh`** is ingelogd op een account dat op deze repo alleen `pull` heeft
+  (`push: false`, `triage: false`). Controleer met
+  `gh api repos/TiemenAfman/AgentVillage --jq .permissions`. Daarmee kun je wél
+  issues aanmaken, comments plaatsen en je *eigen* issue sluiten — dat mag een
+  auteur altijd — maar géén labels aanmaken of toekennen, en niemand assignen.
+- **`git push`** loopt via Git Credential Manager, met een andere identiteit die
+  de rechten wél heeft. Pushen werkt dus, ook als `gh` net 404 gaf.
+
+Wil je de labels echt, dan moet `gh` op het account van de repo-eigenaar staan
+(`gh auth status` laat zien wat er nu actief is; `gh auth switch` of opnieuw
+inloggen zet het om). Dat is iets om zelf te doen, niet iets om in een sessie
+langs te automatiseren. Tot die tijd: stap 3 is de comment, stap 4 is de close.
 
 ## Waar het misgaat
 
 - Beginnen met code en de issue er achteraf bij verzinnen. Dan heet de branch al
   verkeerd en is stap 3 zinloos.
 - Aftakken van de huidige branch in plaats van `origin/main`. `git switch -c …
-  origin/main` is niet optioneel.
+  origin/main` is niet optioneel — en de worktree-branch van de app staat niet
+  altijd op `origin/main`, ook al lijkt dat zo.
+- Aannemen dat een `--label` bij `gh issue create` is geland. Kijk het na.
 - `in progress` laten staan op werk dat al gepusht is: dan lijkt de taak bezet.
 - Een tweede issue aanmaken voor iets dat er al staat. Zoeken kost één commando.
 - `gh project`-commando's proberen. Dat vraagt een scope die dit token niet heeft
