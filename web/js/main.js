@@ -236,13 +236,23 @@ function talkTo(id) {
 }
 
 // --------------------------------------------------------------- walking
+// What walk mode cannot step through: the solid rectangles of everything standing,
+// turned with the plot and moved onto it. A plot rotation is a quarter turn, so the
+// rectangles stay axis aligned and only trade their sides.
 function walkableBlockers() {
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
-    const b = rec.built.bbox;
-    const r = Math.max(0.45, Math.max(b.max.x - b.min.x, b.max.z - b.min.z) * 0.5);
-    out.push({ x: rec.group.position.x, z: rec.group.position.z, r, id: rec.id });
+    const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+    for (const r of rec.built.solids) {
+      out.push({
+        x: rec.group.position.x + r.x * c + r.z * s,
+        z: rec.group.position.z - r.x * s + r.z * c,
+        hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
+        hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
+        id: rec.id,
+      });
+    }
   }
   return out;
 }
@@ -610,6 +620,7 @@ function buildScene(village) {
     shadowSize: modest ? 1024 : 2048,
   });
   state.settlers = createSettlers(scene, buildingMat, terrain);
+  state.settlers.setRoads(village.paths, state.world.squareCells(village));
   state.particles = createParticles();
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
@@ -847,7 +858,10 @@ function applyVillage(next, { animate }) {
     const before = new Set(prev.cleared.map((c) => c.join(',')));
     const fresh = next.cleared.filter((c) => !before.has(c.join(',')));
     if (fresh.length) state.world.fellTrees(fresh, true);
-    if (next.paths.length !== prev.paths.length) state.world.buildPaths(next.paths);
+    if (next.paths.length !== prev.paths.length) {
+      state.world.buildPaths(next.paths, state.world.squareCells(next));
+      state.settlers.setRoads(next.paths, state.world.squareCells(next));
+    }
   }
 
   const events = [];
@@ -1084,10 +1098,30 @@ renderer.domElement.addEventListener('pointerup', () => {
   }
   downAt = null;
 });
+// The last ray hit that landed on a person rather than on a building, so the label can
+// follow them down the street instead of sitting on the roof they came from.
+let pickedFigure = null;
+// Testing several hundred instanced people costs real time, and past this distance
+// they are a couple of pixels anyway, so only look for them once the camera is close.
+const PEOPLE_PICK_RANGE = 42;
+
 function pick() {
   ray.setFromCamera(pointer, camera);
-  const hits = ray.intersectObjects(state.pickables.filter((m) => m.parent && m.parent.visible), false);
-  return hits.length ? hits[0].object.userData.id : null;
+  const buildings = ray.intersectObjects(state.pickables.filter((m) => m.parent && m.parent.visible), false);
+  const b = buildings[0] || null;
+
+  pickedFigure = null;
+  if (state.settlers && controls.getDistance() < PEOPLE_PICK_RANGE) {
+    const people = ray.intersectObjects(state.settlers.pickables(), false);
+    const p = people[0];
+    // A person standing in a doorway is nearer the eye than the wall behind them, and
+    // is the smaller target, so give them the tie.
+    if (p && (!b || p.distance <= b.distance + 0.5)) {
+      const f = state.settlers.figureAt(p.object, p.instanceId);
+      if (f) { pickedFigure = f; return f.id; }
+    }
+  }
+  return b ? b.object.userData.id : null;
 }
 
 // --------------------------------------------------------------- loop
@@ -1247,6 +1281,24 @@ function updateLabels() {
       hoverItem = { name: rec.spec.name, sub: labelSub(rec.spec), x, y };
     } else if (dist < 48 && items.length < 24) {
       items.push({ text: `${rec.spec.name} · building`, x, y, build: true });
+    }
+  }
+  // If the hover landed on a person, name them where they stand. A settler out on an
+  // errand can be streets away from the house the label would otherwise sit on.
+  // hoverId is null while the pointer is down, and then pick() has not run, so the
+  // figure it last found must not go on labelling the screen through a camera drag.
+  const who = hoverId ? pickedFigure : null;
+  if (who && who.visible) {
+    const rec = state.byId.get(who.id);
+    const spec = rec ? rec.spec : who.spec;
+    projected.set(who.pos[0], (who.y || 0) + 0.62, who.pos[1]).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        name: spec.name,
+        sub: labelSub(spec),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
     }
   }
   state.ui.labels(items);
