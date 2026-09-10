@@ -16,7 +16,10 @@ if not exist "%CHROME%" set CHROME=%ProgramFiles(x86)%\Google\Chrome\Application
 if not exist "%CHROME%" set CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe
 
 if exist "%CHROME%" (
-  start "" "%CHROME%" --app=%URL% --window-size=1600,1000
+  rem --force-high-performance-gpu: on a laptop with two graphics cards Chromium picks the
+  rem integrated one to save power, whatever Windows' per-app preference says. Here that is
+  rem the card whose driver keeps falling over, so ask for the fast one explicitly.
+  start "" "%CHROME%" --app=%URL% --window-size=1600,1000 --force-high-performance-gpu
 ) else (
   start "" %URL%
 )

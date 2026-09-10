@@ -37,9 +37,11 @@ const PROBE = Array.from({ length: 8 }, (_, i) => {
 });
 
 // The player is a settler like any other, with a satchel and a wide hat so you can
-// pick yourself out of a crowd.
-function playerGeometry() {
-  const base = figureGeometry('sonnet');
+// pick yourself out of a crowd. Everyone walking the island is built from this, which is
+// why it takes a style: the visitors are made of the same kit as the settlers, and the
+// hat and satchel are what say "this one is somebody".
+export function playerGeometry(style = 'sonnet') {
+  const base = figureGeometry(style);
   base.deleteAttribute('normal');   // the kit parts carry none; normals come after the merge
   const parts = [
     base,
@@ -104,12 +106,17 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     lying: false,
     ctrlSince: 0,
     blockers: [],
+    // The other people, kept apart from the buildings on purpose: the building list is
+    // only rebuilt when the village data changes, while this one moves every frame.
+    peerBlockers: [],
     interactables: [],
     near: null,
     onInteract: null,
     onSendAway: null,
+    onThink: null,
     onExit: null,
     moving: false,
+    running: false,
     paused: false,   // true while an overlay owns the input
   };
 
@@ -144,6 +151,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
+    // A thought needs nothing to stand in front of: it is about wherever you are.
+    if (k === 't') { e.preventDefault(); state.onThink && state.onThink(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -206,14 +215,19 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     for (const b of state.blockers) {
       if (Math.abs(x - b.x) < b.hx + BODY_R && Math.abs(z - b.z) < b.hz + BODY_R) return true;
     }
+    for (const b of state.peerBlockers) {
+      const dx = x - b.x, dz = z - b.z;
+      if (dx * dx + dz * dz < (b.r + BODY_R) * (b.r + BODY_R)) return true;
+    }
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onExit }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.onInteract = onInteract;
     state.onSendAway = onSendAway;
+    state.onThink = onThink;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
@@ -240,6 +254,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   }
 
   function setBlockers(list) { state.blockers = list; }
+  function setPeerBlockers(list) { state.peerBlockers = list; }
   function setInteractables(list) { state.interactables = list; }
 
   const forward = new THREE.Vector3();
@@ -256,6 +271,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
     if (p.hit(0) && state.near) state.onInteract && state.onInteract(state.near);
     if (p.hit(2) && state.near) state.onSendAway && state.onSendAway(state.near);   // X on the pad
+    if (p.hit(3)) state.onThink && state.onThink();                                 // Y: have a thought
   }
 
   function setPaused(v) {
@@ -282,6 +298,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
         : state.crouching ? CROUCH_SPEED
           : run ? RUN_SPEED : WALK_SPEED) * push * dt;
     state.moving = push > 0.02;
+    state.running = run && state.moving;   // the others need to know which gait to draw
     if (state.moving) {
       const len = Math.hypot(ix, iz);
       ix /= len; iz /= len;
@@ -387,10 +404,10 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
 
   function setDecks(map) { deckAt = map || new Map(); }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setInteractables, setDecks, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setDecks, dispose, isActive: () => state.active };
 }
 
-function lerpAngle(a, b, t) {
+export function lerpAngle(a, b, t) {
   let d = b - a;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;

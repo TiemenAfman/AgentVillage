@@ -375,9 +375,9 @@ export function createUI(handlers) {
   function renderWalkKeys() {
     el('walk-keys').innerHTML = padConnected
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-        + `<span><kbd>A</kbd> talk</span><span><kbd>X</kbd> send away</span><span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
+        + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span><span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span><span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;
@@ -412,11 +412,67 @@ export function createUI(handlers) {
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
 
+  setupShell();
+
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPad, setConfirm,
     closeDossier: () => close('dossier'),
   };
+}
+
+// --- fullscreen and installing ------------------------------------------
+// Safari and the older Android browsers still only have the prefixed calls.
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function setupShell() {
+  const btn = el('fullscreen-btn');
+  const install = el('install-btn');
+  if (!btn) return;
+
+  const expand = btn.querySelector('[data-icon="expand"]');
+  const collapse = btn.querySelector('[data-icon="collapse"]');
+  const sync = () => {
+    const on = !!fullscreenElement();
+    expand.hidden = on;
+    collapse.hidden = !on;
+    btn.title = on ? 'Leave fullscreen' : 'Fullscreen';
+    btn.setAttribute('aria-label', btn.title);
+  };
+  btn.addEventListener('click', () => {
+    if (fullscreenElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+    } else {
+      const root = document.documentElement;
+      (root.requestFullscreen || root.webkitRequestFullscreen || (() => {})).call(root);
+    }
+  });
+  // Follow the real state, not our own idea of it: Esc and the phone's back
+  // gesture both leave fullscreen without ever touching the button.
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+  sync();
+
+  // The browser decides whether the island can be installed, and only says so once.
+  // Until it does there is nothing to offer, so the button stays out of the way.
+  let prompt = null;
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    prompt = e;
+    if (install) install.hidden = false;
+  });
+  if (install) {
+    install.addEventListener('click', async () => {
+      if (!prompt) return;
+      install.hidden = true;
+      prompt.prompt();
+      try { await prompt.userChoice; } catch { /* they can always ask again later */ }
+      prompt = null;
+    });
+  }
+  addEventListener('appinstalled', () => { if (install) install.hidden = true; });
 }
 
 function cssHex(hex) { return `#${hex.toString(16).padStart(6, '0')}`; }
