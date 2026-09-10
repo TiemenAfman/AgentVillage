@@ -6,6 +6,7 @@ import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
+import { avatarPlayerGeometry, loadAvatar } from './avatar.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -36,10 +37,11 @@ const PROBE = Array.from({ length: 8 }, (_, i) => {
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
 });
 
-// The player is a settler like any other, with a satchel and a wide hat so you can
-// pick yourself out of a crowd. Everyone walking the island is built from this, which is
-// why it takes a style: the visitors are made of the same kit as the settlers, and the
-// hat and satchel are what say "this one is somebody".
+// Everyone else walking the island is a settler with a satchel and a wide hat, built
+// from this so you can pick them out of a crowd: the visitors and neighbours (see
+// peers.js) are made of the same kit as the settlers, and the hat and satchel are what
+// say "this one is somebody". The one you steer is the exception - it is composed by
+// hand in avatar.js - but it still wears the satchel this puts on.
 export function playerGeometry(style = 'sonnet') {
   const base = figureGeometry(style);
   base.deleteAttribute('normal');   // the kit parts carry none; normals come after the merge
@@ -75,8 +77,8 @@ function loungeGeometry() {
   return g;
 }
 
-export function createWalkMode({ scene, camera, terrain, material, dom }) {
-  const avatar = new THREE.Mesh(playerGeometry(), material);
+export function createWalkMode({ scene, camera, terrain, material, dom, avatar: avatarSpec }) {
+  const avatar = new THREE.Mesh(avatarPlayerGeometry(avatarSpec || loadAvatar()), material);
   // Yaw first, then the swimmer's pitch about its own axis. The default XYZ order would
   // tip the body in world space and then spin it. With x = 0 both orders agree, so the
   // walk animation is untouched.
@@ -259,6 +261,15 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   function setPeerBlockers(list) { state.peerBlockers = list; }
   function setInteractables(list) { state.interactables = list; }
 
+  // Re-dress the avatar in place. The mesh, its transform and everything driving it stay;
+  // only the geometry is swapped, so a change made in the studio shows on your character
+  // the instant you pick it, even mid-stride.
+  function setAvatar(spec) {
+    const next = avatarPlayerGeometry(spec);
+    avatar.geometry.dispose();
+    avatar.geometry = next;
+  }
+
   const forward = new THREE.Vector3();
   const right = new THREE.Vector3();
 
@@ -406,7 +417,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
 
   function setDecks(map) { deckAt = map || new Map(); }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setDecks, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {
