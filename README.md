@@ -93,7 +93,8 @@ to look, Shift or the right shoulder button to run. Walk up to a house and press
 **Space** jumps, which is enough to clear a doorstep or a low hedge. **Ctrl** crouches;
 keep it held while standing still and the settler decides the day is over, lies down and
 puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does not end in
-a nap. You can wade into
+a nap. Lying down outlasts the key - let go of Ctrl and they stay there. Walk, or press
+Ctrl again, to get back up. You can wade into
 the sea as long as the shore stays within reach - about two metres - and you swim rather
 than walk once you are past the waterline. You cannot jump out of the water, and you
 cannot set out for the horizon.
