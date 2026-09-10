@@ -313,6 +313,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     districtsRev: hash32(JSON.stringify(districts.map((d) => [d.id, d.tier, d.hue, d.lobes]))),
     buildings: all2,
     paths: layout.paths,
+    bridges: layout.bridges || [],
     cleared: layout.cleared,
     polders: layout.polders,
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),

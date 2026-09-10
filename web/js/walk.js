@@ -177,7 +177,14 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   addEventListener('pointermove', onMove);
   dom.addEventListener('dblclick', () => { if (state.active) dom.requestPointerLock?.(); });
 
-  function groundAt(x, z) { return terrain.worldHeight(x, z); }
+  // A bridge deck is the ground as far as walking is concerned; without this you walk
+  // out over a river and drop into it.
+  let deckAt = new Map();
+  function groundAt(x, z) {
+    const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
+    const d = deckAt.get(gx + gz * terrain.size);
+    return d != null ? d : terrain.worldHeight(x, z);
+  }
 
   // Is there dry land within arm's reach? This is what keeps a swim to the coast and a
   // stream, and refuses the open sea, without needing to know where either of them is.
@@ -374,7 +381,9 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     avatar.geometry.dispose();
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setInteractables, dispose, isActive: () => state.active };
+  function setDecks(map) { deckAt = map || new Map(); }
+
+  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setInteractables, setDecks, dispose, isActive: () => state.active };
 }
 
 function lerpAngle(a, b, t) {

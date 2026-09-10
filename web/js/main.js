@@ -8,7 +8,7 @@ import { createWorld, seasonOf } from './world.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  createFlagMesh, PALETTE, TIER_INDEX,
+  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
@@ -619,15 +619,58 @@ function buildScene(village) {
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
     shadowSize: modest ? 1024 : 2048,
+    modest,
   });
   state.settlers = createSettlers(scene, buildingMat, terrain);
-  state.settlers.setRoads(village.paths, state.world.squareCells(village));
+  syncBridges(village);
+  state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
 
   syncHamlets(village);
   frameIsland();
+}
+
+// ---- bridges ---------------------------------------------------------------
+// A crossing is built once and recorded in the layout, so it is drawn the way the quay's
+// planks are: keyed by id, added when it first appears, never rebuilt. `decks` is where
+// every deck cell is and how high it rides, which is what lets a settler walk over a
+// river instead of through it.
+const bridgeGroup = new THREE.Group();
+const bridgeMeshes = new Map();
+let decks = new Map();
+
+function syncBridges(village) {
+  if (!bridgeGroup.parent) scene.add(bridgeGroup);
+  const terrain = state.terrain;
+  const list = village.bridges || [];
+  decks = new Map();
+  for (const [i, b] of list.entries()) {
+    const key = `${b.id}#${i}`;
+    for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis)) {
+      decks.set(gx + gz * terrain.size, y);
+    }
+    if (bridgeMeshes.has(key)) continue;
+    const [x, z] = terrain.cellWorld(b.cells[0][0], b.cells[0][1]);
+    const g = buildBridgeGeometry(b.cells, terrain, [x, z], b.axis);
+    if (!g) continue;
+    const m = new THREE.Mesh(g, buildingMat);
+    m.position.set(x, 0, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    bridgeGroup.add(m);
+    bridgeMeshes.set(key, m);
+  }
+  if (state.settlers) state.settlers.setDecks(decks);
+  if (state.walk) state.walk.setDecks(decks);
+}
+
+// The road network a settler may walk: the paths, the squares, and the decks - a bridge
+// carries no road surface of its own, so without it every crossing is a hole in the graph
+// and the hamlet on the far bank is unreachable on foot.
+function roadCells(village) {
+  return [...(village.paths || []), ...(village.bridges || [])];
 }
 
 // A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
@@ -901,9 +944,10 @@ function applyVillage(next, { animate }) {
     const before = new Set(prev.cleared.map((c) => c.join(',')));
     const fresh = next.cleared.filter((c) => !before.has(c.join(',')));
     if (fresh.length) state.world.fellTrees(fresh, true);
-    if (next.paths.length !== prev.paths.length) {
+    if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
+      syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
-      state.settlers.setRoads(next.paths, state.world.squareCells(next));
+      state.settlers.setRoads(roadCells(next), state.world.squareCells(next));
     }
   }
 
@@ -1534,6 +1578,7 @@ async function boot() {
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
   state.walk = createWalkMode({ scene, camera, terrain: state.terrain, material: buildingMat, dom: renderer.domElement });
+  state.walk.setDecks(decks);        // buildScene ran before there was a walk mode to tell
   applyVillage(village, { animate: false });
   setLiveMode();
   startIntro();
