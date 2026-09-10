@@ -113,6 +113,12 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     paused: false,   // true while an overlay owns the input
   };
 
+  // Letting go of Ctrl ends a crouch, but not a nap: once the settler is down they stay
+  // down, so the key can be released. Getting up is moving, or pressing Ctrl again.
+  function releaseCrouch() {
+    state.crouching = false;
+    if (!state.lying) state.ctrlSince = 0;
+  }
   function standUp() {
     state.crouching = false;
     state.lying = false;
@@ -133,7 +139,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     }
     if (k === 'control') {
       e.preventDefault();
-      if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
+      if (state.lying) standUp();                    // pressing it again is how you get up
+      else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
     }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
@@ -142,11 +149,12 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
   const onKeyUp = (e) => {
     const k = e.key.toLowerCase();
     keys.delete(k);
-    if (k === 'control') standUp();
+    if (k === 'control') releaseCrouch();
   };
   // A keyup that never arrives - the window losing focus with Ctrl held - would leave the
-  // settler crouched for good, so anything that takes the keyboard away stands them up.
-  const onBlur = () => standUp();
+  // settler crouched for good, so anything that takes the keyboard away ends the crouch.
+  // A nap survives it, the same as it survives letting go of the key.
+  const onBlur = () => releaseCrouch();
   addEventListener('blur', onBlur);
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
@@ -298,13 +306,15 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     }
     state.swimming = state.grounded && inWater;
 
-    // Standing still with Ctrl held long enough is a decision to stop for the day. Any
-    // movement puts the clock back to zero, and getting up is immediate.
-    if (state.crouching && state.grounded && !state.swimming) {
-      if (state.moving) { state.ctrlSince = performance.now(); state.lying = false; }
-      else if (!state.lying && performance.now() - state.ctrlSince >= LIE_AFTER_MS) state.lying = true;
-    } else if (state.lying) {
-      state.lying = false;
+    // Standing still with Ctrl held long enough is a decision to stop for the day, and it
+    // outlasts the key: once down, the settler stays down until they move or press Ctrl
+    // again. While crouching, any movement puts the clock back to zero, so a crouch-walk
+    // never ends in a nap.
+    if (state.lying) {
+      if (state.moving || !state.grounded || state.swimming) standUp();
+    } else if (state.crouching && state.grounded && !state.swimming) {
+      if (state.moving) state.ctrlSince = performance.now();
+      else if (performance.now() - state.ctrlSince >= LIE_AFTER_MS) { state.lying = true; state.crouching = false; }
     }
 
     avatar.scale.setScalar(1);
