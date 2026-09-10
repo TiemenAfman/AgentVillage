@@ -431,16 +431,20 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
       other.hidden = folderSel.value !== '__other';
       const f = folders.find((x) => x.path === folderSel.value);
       const lines = [];
+      // Whether a folder carries the skill is something only the server knows, so that
+      // one can only be said about a folder from the list.
       if (f && !folderKnows(f)) lines.push(`This folder has no <code>${esc(src.skill)}</code> skill. ${src.without}`);
       // Sending an agent into the checkout the island is being served from means it
-      // switches branches under the page you are looking at.
-      if (f && data.islandRoot && sameFolder(f.path, data.islandRoot)) {
+      // switches branches under the page you are looking at. That one is worth saying
+      // about a typed path as well, which is exactly how you would reach it.
+      if (data.islandRoot && sameFolder(chosen(), data.islandRoot)) {
         lines.push('This is the checkout this island is running from. An agent branching here '
           + 'changes the island under your feet; a worktree is the quieter choice.');
       }
       warn.innerHTML = lines.map((l) => `<span class="ho-warn">${l}</span>`).join('<br>');
     };
     folderSel.addEventListener('change', refreshWarn);
+    pathInput.addEventListener('input', refreshWarn);
     refreshWarn();
     box.querySelector('#nc-go').addEventListener('click', () => sendNew(chosen(), box.querySelector('#nc-model').value, false));
     box.querySelector('#nc-dry').addEventListener('click', () => sendNew(chosen(), box.querySelector('#nc-model').value, true));

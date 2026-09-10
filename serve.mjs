@@ -141,36 +141,37 @@ function hasSkill(dir, skill) {
   return has;
 }
 
+// A folder on a drive that has gone away does not answer "no", it answers slowly: a
+// single stat of a mapped network drive that is not there costs twenty seconds, and one
+// such path among sixty is enough to make picking a folder look broken. So every path is
+// asked at once and whatever has not answered shortly is treated as not there.
+const STAT_PATIENCE = 400;
+function isFolderSoon(p) {
+  return Promise.race([
+    fs.promises.stat(p).then((s) => s.isDirectory()).catch(() => false),
+    new Promise((done) => setTimeout(() => done(false), STAT_PATIENCE)),
+  ]);
+}
+
 // Everywhere Claude has been used on this machine, newest first, with a note about which
 // of them carry a workflow skill: the Jira one, and the island's own issue one. Neither
 // is looked for unless the folder has a .claude at all, which most of them do not.
-function skillsOf(dir) {
-  let claude = false;
-  try { claude = fs.statSync(path.join(dir, '.claude', 'skills')).isDirectory(); } catch { claude = false; }
-  if (!claude) return { jira: false, issue: false };
+async function skillsOf(dir) {
+  if (!(await isFolderSoon(path.join(dir, '.claude', 'skills')))) return { jira: false, issue: false };
   return { jira: hasSkill(dir, 'jira-ticket-oppakken'), issue: hasSkill(dir, 'issue-oppakken') };
 }
 
 let folderCache = { at: 0, list: null };
-function projectFolders() {
+async function projectFolders() {
   if (folderCache.list && Date.now() - folderCache.at < 60000) return folderCache.list;
-  const out = new Map();
+  const wanted = new Map();
   const add = (dir, source) => {
     if (!dir) return;
     const clean = path.resolve(String(dir));
     const key = clean.toLowerCase();
-    if (out.has(key)) return;
+    if (wanted.has(key)) return;
     if (clean === path.parse(clean).root) return;   // a drive root is nobody's project
-    let ok = false;
-    try { ok = fs.statSync(clean).isDirectory(); } catch { ok = false; }
-    if (!ok) return;
-    out.set(key, {
-      path: clean,
-      name: path.basename(clean),
-      ...skillsOf(clean),
-      source,
-      worktree: /[\\/]worktrees?[\\/]|[\\/]_wt[\\/]/i.test(clean),
-    });
+    wanted.set(key, { path: clean, source });
   };
 
   const village = readJson(VILLAGE_FILE, null);
@@ -178,7 +179,18 @@ function projectFolders() {
   const global = readJson(path.join(os.homedir(), '.claude.json'), null);
   for (const dir of Object.keys((global && global.projects) || {})) add(dir, 'claude');
 
-  const list = [...out.values()].sort((a, b) => {
+  const found = await Promise.all([...wanted.values()].map(async ({ path: dir, source }) => {
+    if (!(await isFolderSoon(dir))) return null;
+    return {
+      path: dir,
+      name: path.basename(dir),
+      ...(await skillsOf(dir)),
+      source,
+      worktree: /[\\/]worktrees?[\\/]|[\\/]_wt[\\/]/i.test(dir),
+    };
+  }));
+
+  const list = found.filter(Boolean).sort((a, b) => {
     if (a.jira !== b.jira) return a.jira ? -1 : 1;          // repos that know the workflow first
     if (a.worktree !== b.worktree) return a.worktree ? 1 : -1;
     return a.name.localeCompare(b.name);
@@ -454,7 +466,7 @@ async function handle(req, res) {
 
   // The folders a newcomer could be sent to work in: every project this machine has
   // seen Claude used in, plus the districts already on the island.
-  if (p === '/api/folders') return json(res, 200, { folders: projectFolders() });
+  if (p === '/api/folders') return json(res, 200, { folders: await projectFolders() });
 
   if (p === '/api/agents') return json(res, 200, { agents: liveAgents() });
 
