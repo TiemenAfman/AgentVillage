@@ -480,21 +480,31 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.42 };
     }
     case 'terrace': {
-      // Two little tables and their chairs under a parasol, the way a tavern spills out.
-      for (const [tx, tz] of [[-0.16, 0.1], [0.18, -0.12]]) {
+      // Two little tables with a chair either side, and one parasol between them. Three
+      // things were wrong before. The pole stood on the first table's own centre, so it
+      // was coaxial with that table's pedestal and came up through the top. The chairs
+      // sat left and right of each table, which put the right-hand chair of one table
+      // 0.06 from the left-hand chair of the other - close enough that the seats
+      // intersected. And the two backs faced opposite ways.
+      //
+      // So the chairs now sit in front of and behind their own table, where the
+      // neighbouring one cannot reach them, and the parasol stands on its own spot
+      // between the two and shades both.
+      for (const [tx, tz] of [[-0.24, -0.02], [0.26, 0.06]]) {
         parts.push(cylinder(0.035, 0.045, 0.2, 6, C.darkWood, { x: tx, z: tz }));
         parts.push(cylinder(0.13, 0.13, 0.025, 8, C.plank, { x: tx, y: 0.2, z: tz }));
-        for (const cx of [-0.2, 0.2]) {
+        for (const cz of [-0.23, 0.23]) {
           for (const [lx, lz] of [[-0.032, -0.032], [0.032, -0.032], [-0.032, 0.032], [0.032, 0.032]]) {
-            parts.push(box(0.014, 0.12, 0.014, C.darkWood, { x: tx + cx + lx, z: tz + lz }));
+            parts.push(box(0.014, 0.12, 0.014, C.darkWood, { x: tx + lx, z: tz + cz + lz }));
           }
-          parts.push(box(0.09, 0.022, 0.09, C.plank, { x: tx + cx, y: 0.12, z: tz }));
-          parts.push(box(0.09, 0.12, 0.018, C.darkWood, { x: tx + cx, y: 0.142, z: tz + (cx < 0 ? -0.036 : 0.036) }));
+          parts.push(box(0.09, 0.022, 0.09, C.plank, { x: tx, y: 0.12, z: tz + cz }));
+          // the back on the outer side, so both chairs face their table
+          parts.push(box(0.09, 0.12, 0.018, C.darkWood, { x: tx, y: 0.142, z: tz + cz + (cz < 0 ? -0.036 : 0.036) }));
         }
       }
-      parts.push(cylinder(0.02, 0.022, 0.6, 6, C.darkWood, { x: -0.16, z: 0.1 }));
-      parts.push(cone(0.34, 0.2, 8, C.red, { x: -0.16, y: 0.6, z: 0.1 }));
-      parts.push(sphere(0.03, C.gold, { x: -0.16, y: 0.84, z: 0.1 }));
+      parts.push(cylinder(0.02, 0.022, 0.62, 6, C.darkWood, { x: 0.01, z: 0.02 }));
+      parts.push(cone(0.32, 0.18, 8, C.red, { x: 0.01, y: 0.62, z: 0.02 }));
+      parts.push(sphere(0.03, C.gold, { x: 0.01, y: 0.84, z: 0.02 }));
       return { anchors, animated, height: 0.88 };
     }
     case 'fountain': {
