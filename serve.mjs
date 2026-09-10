@@ -279,6 +279,15 @@ async function handle(req, res) {
     return;
   }
 
+  // Asks every open island to reload itself. The page's own code changes often while
+  // you are working on it, and walking to each window to press F5 gets old.
+  if (p === '/api/reload' && req.method === 'POST') {
+    const n = clients.size;
+    broadcast({ at: Date.now() }, 'reload');
+    log(`asked ${n} open island(s) to reload`);
+    return json(res, 200, { ok: true, islands: n });
+  }
+
   if (p === '/api/rescan' && req.method === 'POST') {
     if (scanning) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"skipped":true}'); return; }
     res.writeHead(202, { 'Content-Type': 'application/json' });
@@ -481,8 +490,8 @@ async function handle(req, res) {
   sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
 }
 
-function broadcast(payload) {
-  const msg = `event: update\ndata: ${JSON.stringify(payload)}\n\n`;
+function broadcast(payload, event = 'update') {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const c of clients) { try { c.write(msg); } catch { clients.delete(c); } }
 }
 

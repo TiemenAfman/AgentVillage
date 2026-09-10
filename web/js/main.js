@@ -1410,6 +1410,8 @@ function connect() {
       } catch (e) { console.warn('update failed', e); }
     }, 250));
     es.addEventListener('open', () => { if (state.chronicle.t == null) state.ui.setLive('live'); });
+    // The server can ask for a reload after its own code changed underneath us.
+    es.addEventListener('reload', () => location.reload());
     es.onerror = () => { state.ui.setLive('off'); };
   };
   open();
