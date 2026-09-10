@@ -2,8 +2,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
+import { decodeOwnership, buildBorders, planFields, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
+const tmpTint = new THREE.Color();
 const tmpObj = new THREE.Object3D();
 
 const SEASON = {
@@ -104,17 +106,54 @@ export function createWorld(scene, terrain, village, opts = {}) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
 
+  // Whose land a ground vertex stands on, and how far inside it. A vertex touches up to
+  // four cells, and `inset` already ramps over three of them, so the tint feathers over
+  // about three world units for free - farmland fading into heath rather than a border
+  // drawn on a political map.
+  const tintHue = new Float32Array(N * N);
+  const tintAmt = new Float32Array(N * N);
+  function computeTint(owner, inset, hues) {
+    tintAmt.fill(0);
+    if (!owner) return;
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        let best = NONE, depth = 0;
+        for (const [dx, dz] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+          const gx = i + dx, gz = j + dz;
+          if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+          const o = owner[gx + gz * size];
+          if (o === NONE) continue;
+          const d = inset[gx + gz * size];
+          if (best === NONE || d > depth || (d === depth && o < best)) { best = o; depth = d; }
+        }
+        const k = i + j * N;
+        if (best === NONE || hues[best] == null) continue;
+        tintHue[k] = hues[best];
+        tintAmt[k] = Math.min(1, depth / 3);
+      }
+    }
+  }
+
+  const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
   function paintGround(seasonName) {
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const k = i + j * N;
-        tmpColor.setHex(bandColour(terrain.H[k], seasonName));
+        const h = terrain.H[k];
+        tmpColor.setHex(bandColour(h, seasonName));
+        const a = tintAmt[k];
+        // Meadow and upland only: tinting the sand or the summit is what would make this
+        // look like an overlay rather than like farmland.
+        if (a > 0 && h >= 0.35 && h < 3.4) {
+          tmpTint.setHSL(tintHue[k] / 360, 0.3, 0.5);
+          tmpColor.lerp(tmpTint, TINT * a);
+          tmpColor.offsetHSL(0, 0, 0.015 * a);
+        }
         col[k * 3] = tmpColor.r; col[k * 3 + 1] = tmpColor.g; col[k * 3 + 2] = tmpColor.b;
       }
     }
     geo.attributes.color.needsUpdate = true;
   }
-  paintGround(season);
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
 
@@ -247,7 +286,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
   group.add(sunDisc, moonDisc);
 
-  scene.fog = new THREE.Fog(0xdcefff, 85, 235);
+  // Scaled to the island rather than fixed: 85/235 was chosen for a 64 grid, and at the
+  // distance this one has to be viewed from, the far coast sat in full fog.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.2, terrain.half * 3.9);
 
   // ---- lights --------------------------------------------------------------
   const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8a9a6a, 0.85);
@@ -264,10 +305,31 @@ export function createWorld(scene, terrain, village, opts = {}) {
   scene.add(hemi, ambient, key, key.target);
 
   // ---- vegetation ----------------------------------------------------------
-  const cleared = new Set((village.cleared || []).map(([gx, gz]) => gx + gz * size));
-  for (const b of village.buildings || []) {
-    if (!b.plot) continue;
-    for (let z = -1; z <= b.plot.d; z++) for (let x = -1; x <= b.plot.w; x++) cleared.add((b.plot.gx + x) + (b.plot.gz + z) * size);
+  // Two sets, and the difference matters. `clearedBase` is ground that buildings, roads
+  // and squares have taken - that is what decides where a field may go. `cleared` is that
+  // plus the fields themselves, which is what keeps the forest from growing on top of
+  // them. Planning fields against `cleared` would find nothing the second time round,
+  // because the first plan's own cells would have ruled every candidate out.
+  const baseCleared = (v) => {
+    const out = new Set((v.cleared || []).map(([gx, gz]) => gx + gz * size));
+    for (const b of v.buildings || []) {
+      if (!b.plot) continue;
+      for (let z = -1; z <= b.plot.d; z++) for (let x = -1; x <= b.plot.w; x++) out.add((b.plot.gx + x) + (b.plot.gz + z) * size);
+    }
+    return out;
+  };
+  let clearedBase = baseCleared(village);
+  const cleared = new Set(clearedBase);
+
+  let own = decodeOwnership(village, size);
+  let hues = village.districts.map((d) => d.hue);
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase);
+  computeTint(own.owner, own.inset, hues);
+  paintGround(season);
+  // Tilled ground is cleared ground: without this the forest is scattered straight on
+  // top of the fields.
+  for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
+    for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
   }
 
   const rng = makeRng(terrain.seed).fork('flora');
@@ -318,13 +380,35 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const orchard = orchardTrees(fieldPlan, terrain);
+  const ORCHARD_CAP = 1500;
   const pineMesh = new THREE.InstancedMesh(pineGeo, treeMat, Math.max(1, pines.length));
   const oakMesh = new THREE.InstancedMesh(oakGeo, treeMat, Math.max(1, oaks.length));
   const rockMesh = new THREE.InstancedMesh(rockGeo, treeMat, Math.max(1, rocks.length));
   const grassMesh = new THREE.InstancedMesh(grassGeo, treeMat, Math.max(1, tufts.length));
-  for (const m of [pineMesh, oakMesh, rockMesh]) { m.castShadow = true; m.receiveShadow = true; }
+  const orchardMesh = new THREE.InstancedMesh(oakGeo, treeMat, ORCHARD_CAP);
+  for (const m of [pineMesh, oakMesh, rockMesh, orchardMesh]) { m.castShadow = true; m.receiveShadow = true; }
   grassMesh.castShadow = false;
-  group.add(pineMesh, oakMesh, rockMesh, grassMesh);
+  group.add(pineMesh, oakMesh, rockMesh, grassMesh, orchardMesh);
+
+  // Planted rather than scattered: a grid, one size, barely any rotation.
+  function placeOrchard(list, seasonName) {
+    orchardMesh.count = Math.min(ORCHARD_CAP, list.length);
+    const autumn = seasonName === 'autumn';
+    for (let i = 0; i < orchardMesh.count; i++) {
+      const [x, z, sc] = list[i];
+      tmpObj.position.set(x, terrain.worldHeight(x, z) - 0.02, z);
+      tmpObj.rotation.set(0, ((hash32(`o${x},${z}`) % 12) / 12) * 0.5, 0);
+      tmpObj.scale.set(sc, sc * 1.05, sc);
+      tmpObj.updateMatrix();
+      orchardMesh.setMatrixAt(i, tmpObj.matrix);
+      const tint = autumn ? 0xd7a24a : 0x6fae4a;
+      orchardMesh.setColorAt(i, tmpColor.setHex(tint).multiplyScalar(0.9 + ((hash32(`t${x},${z}`) % 20) / 100)));
+    }
+    orchardMesh.instanceMatrix.needsUpdate = true;
+    if (orchardMesh.instanceColor) orchardMesh.instanceColor.needsUpdate = true;
+  }
+  placeOrchard(orchard, season);
 
   function placeTrees(list, mesh, seasonName) {
     const autumn = seasonName === 'autumn';
@@ -369,24 +453,48 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // ---- footpaths -----------------------------------------------------------
   let pathMesh = null;
-  function buildPaths(paths) {
+  // Only the town square and a village green are laid in stone. A hamlet's green stays
+  // grass - a plaza three cells across, thirty times over, reads as a rash of empty
+  // patios - so the wire only names the ones that are actually paved.
+  function squareCells(v) {
+    const out = [];
+    const town = v.island && v.island.town;
+    if (town && town.paved) out.push(...town.paved);
+    else if (town && town.square) {
+      const n = town.size || 3;
+      for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.push([town.square[0] + x, town.square[1] + z]);
+    }
+    for (const d of v.districts || []) for (const c of d.paved || []) out.push(c);
+    return out;
+  }
+
+  function buildPaths(paths, squares = squareCells(village)) {
     if (pathMesh) { group.remove(pathMesh); pathMesh.geometry.dispose(); pathMesh = null; }
     const positions = [], colors = [], indices = [];
     let v = 0;
     // A track half a cell wide, widened towards whichever neighbours continue the path,
-    // so a run of cells joins up into one continuous footpath.
+    // so a run of cells joins up into one continuous footpath. Squares are laid the same
+    // way in a paler stone, which is what makes a road meet a plaza instead of stopping
+    // a cell short of it.
     const seen = new Set();
-    for (const p of paths || []) for (const [gx, gz] of p.cells) seen.add(gx + gz * terrain.size);
+    const tiles = [];
+    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, 0xcbb691]); }
+    for (const c of squares || []) {
+      const k = c[0] + c[1] * terrain.size;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      tiles.push([c, 0xd6cbb2]);
+    }
     const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
     const H = 0.26;
-    for (const p of paths || []) {
-      for (const [gx, gz] of p.cells) {
+    {
+      for (const [[gx, gz], hex] of tiles) {
         const [x, z] = terrain.cellWorld(gx, gz);
         const x0 = x - (hasCell(gx - 1, gz) ? 0.5 : H), x1 = x + (hasCell(gx + 1, gz) ? 0.5 : H);
         const z0 = z - (hasCell(gx, gz - 1) ? 0.5 : H), z1 = z + (hasCell(gx, gz + 1) ? 0.5 : H);
         for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
           positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
-          tmpColor.setHex(0xcbb691);
+          tmpColor.setHex(hex);
           colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
         }
         indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
@@ -407,6 +515,53 @@ export function createWorld(scene, terrain, village, opts = {}) {
     group.add(pathMesh);
   }
   buildPaths(village.paths);
+
+  // ---- hedges and fields ---------------------------------------------------
+  let borderMesh = null, fieldMesh = null;
+  const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+
+  function buildHamletDressing(v, seasonName) {
+    if (borderMesh) { group.remove(borderMesh); borderMesh.geometry.dispose(); borderMesh.material.dispose(); borderMesh = null; }
+    if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
+
+    // A hedge opens where a road crosses it, and the road set is the one the settlers
+    // already walk on, so no extra data is needed to know where the gates are.
+    const roads = new Set();
+    for (const p of v.paths || []) for (const c of p.cells) roads.add(c[0] + c[1] * size);
+    for (const c of squareCells(v)) roads.add(c[0] + c[1] * size);
+
+    const bg = buildBorders(v, terrain, own.owner, roads);
+    if (bg) {
+      borderMesh = new THREE.Mesh(bg, groundMat());
+      borderMesh.castShadow = true;
+      borderMesh.receiveShadow = true;
+      group.add(borderMesh);
+    }
+    const fg = buildFieldDecals(fieldPlan, terrain, seasonName);
+    if (fg) {
+      const mat = groundMat();
+      mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      fieldMesh = new THREE.Mesh(fg, mat);
+      fieldMesh.receiveShadow = true;
+      group.add(fieldMesh);
+    }
+  }
+  buildHamletDressing(village, season);
+
+  // The land register changed: a parcel grew, a hamlet was founded, a hedge moved out.
+  function setOwnership(v, seasonName = currentSeason) {
+    own = decodeOwnership(v, size);
+    hues = v.districts.map((d) => d.hue);
+    clearedBase = baseCleared(v);
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase);
+    for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
+      for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
+    }
+    computeTint(own.owner, own.inset, hues);
+    paintGround(seasonName);
+    placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);
+    buildHamletDressing(v, seasonName);
+  }
 
   // ---- clouds --------------------------------------------------------------
   const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1 });
@@ -469,6 +624,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   let time = 0;
   let currentSeason = season;
   const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
+  // The shadow frustum follows what you are looking at. It is 84 units across and the
+  // island is about 120, so anchored at the origin the far half of the coast cast no
+  // shadow at all. Widening it instead would take the shadow map from 24 pixels per unit
+  // down to 15 and soften every roof edge, so it moves. Eased, not snapped, or shadows
+  // pop in and out along the frustum edge while you pan.
+  const shadowFocus = new THREE.Vector3();
+  const followShadow = (x, z) => shadowFocus.set(x, 0, z);
 
   function update(dt, hour, month) {
     time += dt;
@@ -477,7 +639,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     state.sun.copy(dir);
     state.night = d.night;
 
-    key.position.copy(dir).multiplyScalar(90);
+    key.target.position.lerp(shadowFocus, Math.min(1, dt * 4));
+    key.position.copy(key.target.position).addScaledVector(dir, 90);
     key.color.copy(d.key);
     key.intensity = d.int;
     hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
@@ -526,6 +689,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
       paintGround(s);
       placeTrees(pines, pineMesh, s);
       placeTrees(oaks, oakMesh, s);
+      placeOrchard(orchardTrees(fieldPlan, terrain), s);
+      buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
     }
     // felling animation
     for (let i = falling.length - 1; i >= 0; i--) {
@@ -565,7 +730,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   // anything already cleared at load time is simply not planted, so nothing to do here
 
-  return { group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees, buildPaths, state, season: () => currentSeason };
+  return {
+    group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
+    buildPaths, squareCells, setOwnership, followShadow, ownership: () => own, state,
+    season: () => currentSeason,
+  };
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------

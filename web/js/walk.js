@@ -3,7 +3,7 @@
 // come close to something you can interact with.
 import * as THREE from 'three';
 import { figureGeometry } from './settlers.js';
-import { box, cylinder, cone, sphere } from './buildings.js';
+import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 
@@ -35,7 +35,6 @@ const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
 });
-const BODY_R = 0.3;
 
 // The player is a settler like any other, with a satchel and a wide hat so you can
 // pick yourself out of a crowd.
@@ -190,12 +189,14 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     return false;
   }
 
+  // A blocker is an axis aligned rectangle: the part of a building that is low enough
+  // to bump into, grown by half a settler so the avatar stops at the wall rather than
+  // standing in it. Rectangles, not circles, or a market row would be a fat bollard.
   function blocked(x, z) {
     // You may wade in as long as the shore stays close; the open water is still a wall.
     if (groundAt(x, z) < 0.06 && !shoreWithinReach(x, z)) return true;
     for (const b of state.blockers) {
-      const dx = x - b.x, dz = z - b.z;
-      if (dx * dx + dz * dz < (b.r + BODY_R) * (b.r + BODY_R)) return true;
+      if (Math.abs(x - b.x) < b.hx + BODY_R && Math.abs(z - b.z) < b.hz + BODY_R) return true;
     }
     return false;
   }

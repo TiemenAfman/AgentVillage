@@ -8,7 +8,7 @@ import { createWorld, seasonOf } from './world.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildPlaqueGeometry, createFlagMesh, PALETTE, TIER_INDEX,
+  createFlagMesh, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
@@ -190,7 +190,7 @@ const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 14
 const controls = new OrbitControls(camera, renderer.domElement);
 Object.assign(controls, {
   enableDamping: true, dampingFactor: 0.075, screenSpacePanning: false,
-  minDistance: 5, maxDistance: 95, minPolarAngle: 0.12, maxPolarAngle: 1.34,
+  minDistance: 5, maxDistance: 200, minPolarAngle: 0.12, maxPolarAngle: 1.34,
   rotateSpeed: 0.62, panSpeed: 0.85, zoomSpeed: 0.9, zoomToCursor: true,
 });
 controls.target.set(0, 1, 0);
@@ -200,6 +200,7 @@ const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
   village: null, terrain: null, world: null, settlers: null, ui: null,
+  bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
@@ -239,13 +240,23 @@ function talkTo(id) {
 }
 
 // --------------------------------------------------------------- walking
+// What walk mode cannot step through: the solid rectangles of everything standing,
+// turned with the plot and moved onto it. A plot rotation is a quarter turn, so the
+// rectangles stay axis aligned and only trade their sides.
 function walkableBlockers() {
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
-    const b = rec.built.bbox;
-    const r = Math.max(0.45, Math.max(b.max.x - b.min.x, b.max.z - b.min.z) * 0.5);
-    out.push({ x: rec.group.position.x, z: rec.group.position.z, r, id: rec.id });
+    const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+    for (const r of rec.built.solids) {
+      out.push({
+        x: rec.group.position.x + r.x * c + r.z * s,
+        z: rec.group.position.z - r.x * s + r.z * c,
+        hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
+        hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
+        id: rec.id,
+      });
+    }
   }
   // A tree somebody asked for is as solid as a house. A bridge is not: it is walked over.
   if (state.props) out.push(...state.props.blockers());
@@ -692,34 +703,72 @@ function buildScene(village) {
     shadowSize: modest ? 1024 : 2048,
   });
   state.settlers = createSettlers(scene, buildingMat, terrain);
+  state.settlers.setRoads(village.paths, state.world.squareCells(village));
   state.particles = createParticles();
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
 
-  // district plaques and piers
-  const dgroup = new THREE.Group();
-  scene.add(dgroup);
+  syncHamlets(village);
+  frameIsland();
+}
+
+// A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
+// neither: it is one house in the countryside, not a place with a name.
+const hamletGroup = new THREE.Group();
+const hamletSigns = new Map();
+
+function titleCaseName(s) {
+  return String(s || '').split(/[\s_]+/).filter(Boolean)
+    .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+function syncHamlets(village) {
+  if (!hamletGroup.parent) scene.add(hamletGroup);
+  const terrain = state.terrain;
+  const live = new Set();
+
   for (const d of village.districts) {
-    if (!d.center) continue;
-    const [x, z] = terrain.cellWorld(d.center[0], d.center[1]);
-    const plaque = new THREE.Mesh(buildPlaqueGeometry(d.hue), buildingMat);
-    plaque.castShadow = true;
-    plaque.position.set(x + 0.55, groundAt(x + 0.55, z + 0.55), z + 0.55);
-    plaque.rotation.y = Math.PI * 0.15;
-    plaque.userData.id = `district:${d.id}`;
-    dgroup.add(plaque);
     state.districts.set(d.id, d);
-    if (d.pier && d.pier.length) {
-      const g = buildPierGeometry(d.pier, terrain, [x, z]);
+    if (d.pier && d.pier.length && !hamletSigns.has(`pier:${d.id}`)) {
+      const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
+      const g = buildPierGeometry(d.pier, terrain, [px, pz]);
       if (g) {
         const pm = new THREE.Mesh(g, buildingMat);
-        pm.position.set(x, 0, z);
+        pm.position.set(px, 0, pz);
         pm.receiveShadow = true;
-        dgroup.add(pm);
+        hamletGroup.add(pm);
+        hamletSigns.set(`pier:${d.id}`, { group: pm, dispose: () => pm.geometry.dispose() });
       }
     }
+    if (!d.center || d.tier === 'farmstead') continue;
+    for (const [li, lobe] of (d.lobes || []).entries()) {
+      const key = `${d.id}#${li}`;
+      live.add(key);
+      const [gx, gz] = lobe.green || d.center;
+      const [x, z] = terrain.cellWorld(gx, gz);
+      const half = ((lobe.size || 3) - 1) / 2;
+      // On the green's edge facing away from its own middle, so it does not stand in the
+      // way of the well and the settlers who gather there.
+      const sx = x, sz = z + half + 0.2;
+      const have = hamletSigns.get(key);
+      if (have && have.text === d.name) { have.group.position.y = groundAt(sx, sz); continue; }
+      if (have) { hamletGroup.remove(have.group); have.dispose(); }
+      const sign = createNameplate(titleCaseName(d.name), {
+        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 0.95, posts: 2,
+      });
+      sign.group.position.set(sx, groundAt(sx, sz), sz);
+      sign.group.userData.id = `district:${d.id}`;
+      hamletGroup.add(sign.group);
+      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+    }
   }
-  frameIsland();
+  for (const [key, rec] of [...hamletSigns]) {
+    if (key.startsWith('pier:') || live.has(key)) continue;
+    hamletGroup.remove(rec.group);
+    rec.dispose();
+    hamletSigns.delete(key);
+  }
 }
 
 function frameIsland() {
@@ -731,10 +780,15 @@ function frameIsland() {
     minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
   }
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  // Measured once, here, so the fit above and the pan clamps below read one place rather
+  // than three numbers that each have to be remembered when the island changes size.
+  state.bounds = { minX, maxX, minZ, maxZ };
   // fit the wider of the two spans, then pull in a little so the island fills the frame
   const r = 0.5 * Math.max(maxX - minX, maxZ - minZ) + 2;
   const fov = camera.fov * Math.PI / 180;
-  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, 88);
+  // The ceiling of 88 was sized for a 64 grid. On this island the computed fit is about
+  // 122, so the coast was being cropped at boot.
+  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, 175);
   const az = 0.6, el = 0.72;
   controls.target.set(cx, 1, cz);
   camera.position.set(
@@ -929,7 +983,17 @@ function applyVillage(next, { animate }) {
     const before = new Set(prev.cleared.map((c) => c.join(',')));
     const fresh = next.cleared.filter((c) => !before.has(c.join(',')));
     if (fresh.length) state.world.fellTrees(fresh, true);
-    if (next.paths.length !== prev.paths.length) state.world.buildPaths(next.paths);
+    if (next.paths.length !== prev.paths.length) {
+      state.world.buildPaths(next.paths, state.world.squareCells(next));
+      state.settlers.setRoads(next.paths, state.world.squareCells(next));
+    }
+  }
+
+  // Outside the `animate` guard on purpose: the hedges and the tint have to be right on
+  // a silent reload too, and only the falling trees are an animation.
+  if (state.world && (!prev || next.districtsRev !== prev.districtsRev)) {
+    state.world.setOwnership(next);
+    syncHamlets(next);
   }
 
   const events = [];
@@ -1140,7 +1204,7 @@ function humanSince(msv) {
 }
 function decorate(spec) {
   const d = state.districts.get(spec.district);
-  return { ...spec, districtName: d ? d.name : null };
+  return { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
 }
 function select(id) {
   state.selected = id;
@@ -1166,10 +1230,30 @@ renderer.domElement.addEventListener('pointerup', () => {
   }
   downAt = null;
 });
+// The last ray hit that landed on a person rather than on a building, so the label can
+// follow them down the street instead of sitting on the roof they came from.
+let pickedFigure = null;
+// Testing several hundred instanced people costs real time, and past this distance
+// they are a couple of pixels anyway, so only look for them once the camera is close.
+const PEOPLE_PICK_RANGE = 42;
+
 function pick() {
   ray.setFromCamera(pointer, camera);
-  const hits = ray.intersectObjects(state.pickables.filter((m) => m.parent && m.parent.visible), false);
-  return hits.length ? hits[0].object.userData.id : null;
+  const buildings = ray.intersectObjects(state.pickables.filter((m) => m.parent && m.parent.visible), false);
+  const b = buildings[0] || null;
+
+  pickedFigure = null;
+  if (state.settlers && controls.getDistance() < PEOPLE_PICK_RANGE) {
+    const people = ray.intersectObjects(state.settlers.pickables(), false);
+    const p = people[0];
+    // A person standing in a doorway is nearer the eye than the wall behind them, and
+    // is the smaller target, so give them the tie.
+    if (p && (!b || p.distance <= b.distance + 0.5)) {
+      const f = state.settlers.figureAt(p.object, p.instanceId);
+      if (f) { pickedFigure = f; return f.id; }
+    }
+  }
+  return b ? b.object.userData.id : null;
 }
 
 // --------------------------------------------------------------- loop
@@ -1223,8 +1307,9 @@ function frame(nowMs) {
         const pan = radius * 0.5 * dt;
         controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
         controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
-        controls.target.x = clamp(controls.target.x, -40, 40);
-        controls.target.z = clamp(controls.target.z, -40, 40);
+        const wb = state.bounds;
+        controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
+        controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
         camera.position.set(
           controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
           controls.target.y + r2 * Math.cos(phi),
@@ -1306,8 +1391,10 @@ function frame(nowMs) {
     controls.update();
     const y = state.terrain ? state.terrain.worldHeight(camera.position.x, camera.position.z) + 0.9 : 0;
     if (camera.position.y < y) camera.position.y = y;
-    controls.target.x = clamp(controls.target.x, -34, 34);
-    controls.target.z = clamp(controls.target.z, -34, 34);
+    const b = state.bounds;
+    controls.target.x = clamp(controls.target.x, b.minX - 3, b.maxX + 3);
+    controls.target.z = clamp(controls.target.z, b.minZ - 3, b.maxZ + 3);
+    if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
   }
 
   if (state.mode !== 'walk') updateLabels();
@@ -1333,15 +1420,72 @@ function updateLabels() {
       items.push({ text: `${rec.spec.name} · building`, x, y, build: true });
     }
   }
+  // If the hover landed on a person, name them where they stand. A settler out on an
+  // errand can be streets away from the house the label would otherwise sit on.
+  // hoverId is null while the pointer is down, and then pick() has not run, so the
+  // figure it last found must not go on labelling the screen through a camera drag.
+  const who = hoverId ? pickedFigure : null;
+  if (who && who.visible) {
+    const rec = state.byId.get(who.id);
+    const spec = rec ? rec.spec : who.spec;
+    projected.set(who.pos[0], (who.y || 0) + 0.62, who.pos[1]).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        name: spec.name,
+        sub: labelSub(spec),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
   state.ui.labels(items);
+  state.ui.hamletLabels(hamletCaptions());
   state.ui.setHover(hoverItem);
   document.body.style.cursor = hoverId ? 'pointer' : '';
 }
+
+// Names over the greens, crossfaded against the wooden boards: readable from the air,
+// gone by the time you can read the sign itself.
+function hamletCaptions() {
+  const v = state.village;
+  if (!v || !state.terrain) return [];
+  const dist = camera.position.distanceTo(controls.target);
+  const t = clamp((dist - 30) / 16, 0, 1);
+  const opacity = t * t * (3 - 2 * t);                        // smoothstep
+  if (opacity < 0.02) return [];
+  const out = [];
+  for (const d of v.districts) {
+    if (!d.center || d.tier === 'farmstead') continue;
+    for (const lobe of d.lobes || []) {
+      const [gx, gz] = lobe.green || d.center;
+      const [x, z] = state.terrain.cellWorld(gx, gz);
+      projected.set(x, groundAt(x, z) + 1.9, z).project(camera);
+      if (projected.z > 1) continue;
+      out.push({
+        text: titleCaseName(d.name), hue: d.hue, opacity,
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      });
+    }
+  }
+  return out;
+}
+// Which folder inside the repository this session worked in, if it was not the root.
+// One hamlet per repository is the point, but the detail should not be lost with it.
+function subPathOf(spec, d) {
+  if (!d || !d.root || !spec.cwd) return null;
+  const root = d.root.toLowerCase(), cwd = spec.cwd.toLowerCase();
+  if (cwd === root || !cwd.startsWith(`${root}\\`)) return null;
+  return spec.cwd.slice(d.root.length + 1).split('\\').join('/');
+}
+
 function labelSub(spec) {
   if (spec.kind === 'civic') return spec.title || '';
   const d = state.districts.get(spec.district);
   const style = (PALETTE[spec.style] || PALETTE.unknown).name;
-  return `${spec.kind === 'shed' ? `${spec.agentType} apprentice` : style}${d ? ` · ${d.name}` : ''}`;
+  const sub = subPathOf(spec, d);
+  const where = d ? ` · ${d.name}${sub ? `/${sub}` : ''}` : '';
+  return `${spec.kind === 'shed' ? `${spec.agentType} apprentice` : style}${where}`;
 }
 
 // --------------------------------------------------------------- chronicle

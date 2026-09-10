@@ -11,6 +11,7 @@ import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { readBanished } from './lib/banish.mjs';
 import { loadLayout, saveLayout, placeAll } from './lib/layout.mjs';
+import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
 export function parseArgs(argv) {
@@ -95,6 +96,17 @@ async function runScan(o) {
     if (!hasTranscript.has(sid)) delete layout.plots[id];
   }
   layout.paths = layout.paths.filter((p) => !banished.has(String(p.id).replace(/^path:/, '')));
+
+  // A district whose last session was dropped stops being a place, and its land goes back
+  // to being countryside. The quay is the exception: its planks are real construction.
+  {
+    const live = new Set(model.districts.map((d) => d.id));
+    for (const [id, rec] of Object.entries(layout.districts)) {
+      if (live.has(id) || (rec.pier || []).length) continue;
+      delete layout.districts[id];
+      layout.paths = layout.paths.filter((p) => !String(p.id).startsWith(`road:${id}:`));
+    }
+  }
   const { terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size });
 
   const village = assemble({ config, model, layout, terrain, size, all: o.all });
@@ -219,7 +231,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     if (!m.unlocked || !p) continue;
     civics.push({
       id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(p),
-      name: m.label, title: `Unlocked at ${m.at} settlers`, label: m.label,
+      name: m.label, title: `Unlocked at ${m.at} ${m.on === 'apprentices' ? 'apprentices' : 'settlers'}`, label: m.label,
       startedAt: iso(m.unlockedAt), lastAt: null, style: 'unknown', model: null, models: {},
       tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
@@ -227,15 +239,57 @@ function assemble({ config, model, layout, terrain, size, all }) {
     });
   }
 
+  // what stands on the square: earned by the apprentices, not the settlers
+  for (const f of model.furniture || []) {
+    const p = plot(f.id);
+    if (!p) continue;
+    civics.push({
+      id: f.id, kind: 'civic', civicType: f.kind, district: null, plot: p, door: null,
+      name: f.label, title: `Unlocked at ${f.at} apprentices`, label: f.label,
+      startedAt: config.foundedAt, lastAt: null, style: 'unknown', model: null, models: {},
+      tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // A parcel goes over the wire as a bounding box of super-cells plus one bitstring per
+  // row, which is a couple of hundred bytes for the largest hamlet against the forty
+  // kilobytes a list of cells would cost. The viewer turns a super-cell back into its
+  // sixteen ground cells with `island.lattice`, and derives everything else from that:
+  // the hedge runs along an owned cell with a missing neighbour, the gardens are owned
+  // cells with no house on them, and the countryside is the land nobody owns.
+  const rleParcel = (cells) => {
+    if (!cells || !cells.length) return null;
+    let i0 = Infinity, j0 = Infinity, i1 = -Infinity, j1 = -Infinity;
+    for (const [i, j] of cells) {
+      i0 = Math.min(i0, i); i1 = Math.max(i1, i);
+      j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+    }
+    const w = i1 - i0 + 1, h = j1 - j0 + 1;
+    const rows = Array.from({ length: h }, () => new Array(w).fill('0'));
+    for (const [i, j] of cells) rows[j - j0][i - i0] = '1';
+    return { i0, j0, w, h, rows: rows.map((r) => r.join('')) };
+  };
+
   const districts = model.districts.map((d) => {
     const l = layout.districts[d.id];
+    const lobes = ((l && l.lobes) || []).map((lo) => ({
+      green: lo.centre, size: lo.green, paved: lo.paved || [], parcel: rleParcel(lo.cells),
+    }));
     return {
       id: d.id, kind: d.kind, name: d.name, root: d.root, hue: d.hue,
-      center: l ? l.centre : null, square: l ? l.square : null, pier: (l && l.pier) || [],
+      center: (l && l.centre) || null, square: (l && l.square) || null, pier: (l && l.pier) || [],
       firstSeenAt: iso(d.firstSeenAt), population: d.population,
       outposts: d.outposts || [],
+      tier: (l && l.tier) || 'farmstead',
+      guest: !!(l && l.guest),
+      paved: (l && l.paved) || [],
+      lobes,
+      folders: d.folders || {},
+      branches: d.branches || {},
     };
-  }).filter((d) => d.center);
+  });
 
   const all2 = [...buildings, ...civics];
   return {
@@ -248,10 +302,15 @@ function assemble({ config, model, layout, terrain, size, all }) {
       foundedAt: config.foundedAt,
       terrainHash: terrain.hash,
       landing: layout.landing,
-      town: layout.town,
+      town: { ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2 },
+      lattice: layout.lattice,
     },
     grid: { size },
     districts,
+    // One number that changes whenever the land register does, so the viewer can tell in
+    // a single comparison that a parcel grew - a length check cannot, because growth
+    // changes cells inside an entry that already existed.
+    districtsRev: hash32(JSON.stringify(districts.map((d) => [d.id, d.tier, d.hue, d.lobes]))),
     buildings: all2,
     paths: layout.paths,
     cleared: layout.cleared,
@@ -259,7 +318,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),
-    stats: { ...model.stats, nextMilestone: nextMilestone(model.stats.settlers) },
+    stats: { ...model.stats, nextMilestone: nextMilestone(model.stats) },
   };
 }
 
@@ -274,9 +333,18 @@ function hasJiraSkill(cwd) {
   return has;
 }
 
-function nextMilestone(count) {
-  const m = MILESTONES.find((x) => x.at > count);
-  return m ? { id: m.id, at: m.at, label: m.label, remaining: m.at - count } : null;
+// Milestones no longer all count the same heads, so the nearest one wins rather than
+// the first one in the list.
+function nextMilestone(stats) {
+  let best = null;
+  for (const m of MILESTONES) {
+    const on = m.on === 'apprentices' ? 'apprentices' : 'settlers';
+    const have = on === 'apprentices' ? stats.apprentices : stats.settlers;
+    if (m.at <= have) continue;
+    const remaining = m.at - have;
+    if (!best || remaining < best.remaining) best = { id: m.id, at: m.at, on, label: m.label, remaining };
+  }
+  return best;
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(path.join(ROOT, 'scan.mjs'));

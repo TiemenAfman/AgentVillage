@@ -271,6 +271,40 @@ A session hook is installed in `~/.claude/settings.json`. It fires on `SessionSt
 always exits 0, so it can never disturb a session. The server also rescans every 60
 seconds, which is how Cowork tasks are noticed (their sandbox may not run user hooks).
 
+### Hamlets and git
+
+A working directory is not a project. `D:\git\Sybolt_PLC`, `...\TrayMagazijn` and
+`...\_Scam\SCM_TrayFill_Coordinator` are three folders and one piece of work, so the
+island walks up from a session's cwd to the repository the folder lives in and keys the
+hamlet on that. A `.git` file rather than a directory is followed: a linked worktree
+becomes an outpost of its repository, a submodule folds into its superproject.
+
+Plenty of real projects have no `.git` at all, so two rules pick up the leftovers. A
+plain folder with exactly one repository just below it belongs to that repository
+(`D:\git\plclab` has none, `D:\git\plclab\src` has one). A plain folder under another
+plain folder is absorbed by it - *unless* that parent holds two or more separate
+projects, in which case it is a shelf, not a place, and never absorbs anyone. Without
+that guard `D:\git\Martijn`, which is not a repository, swallows Claude, HomeAssistant,
+WhatsappBot and five others into one meaningless block of sixty houses.
+
+The answers are cached in `data/cache.json` under `repoRoots`, and **a positive answer is
+never checked again**. Folders get renamed and deleted long after their sessions are over
+- `D:\git\PlcLabNet` already has - and a hamlet that loses its folder should keep its
+name rather than quietly turn into somewhere else. That map survives a parse-format
+change for the same reason.
+
+A project earns a hamlet - a green, a sign, a hedge - on its third session. Below that it
+gets a lone farmhouse in the countryside, or a place on the town commons if the island has
+no room for one. When it reaches its third session it founds a hamlet, and the houses
+already standing keep their plots: they stay where they are for good.
+
+**`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
+owned, and a change to how it is divided means re-planning every house and shed at once -
+so that is a numbered, deliberate act, separate from `LAYOUT_VERSION`, which would also
+throw away the town square and everything civic. If you delete `data/layout.json` you get
+a completely different-looking island: the town is tied to the terrain, but which hamlet
+sits where is not.
+
 Sessions that started before the island was founded are ignored, so the village begins
 empty and grows from the founding session onward. `npm run scan:all` shows what the
 island would look like with the entire history on it, written to separate files so it
@@ -294,8 +328,16 @@ recorded on the island at once. A village that starts today looks emptier for a 
 |---|---|
 | Town Hall and founding stone | The session that founded the island |
 | A house | One Claude Code session |
-| A district with a plaque and a well | One project folder |
-| An outpost | A session in a git worktree |
+| A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
+| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land; it opens where a road crosses it |
+| A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
+| Houses around the town square with no hedge | The commons: whoever the island had no room for elsewhere |
+| Ploughed fields and orchards | Countryside - buildable land no project has claimed |
+| A kitchen garden | Land inside a hamlet that nobody has built on yet |
+| A faint colour in the grass | Whose hamlet's land you are standing on |
+| The Outlands | Sessions whose folder is not a project: System32, a downloads folder, a shelf full of other repos |
+| The town square, growing 3 -> 5 -> 7 cells across | 1, 30 and 90 settlers |
+| An outpost | A session in a git worktree, whether `.claude/worktrees` or `git worktree add` |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
 | Tower with a copper dome | Fable |
@@ -313,7 +355,9 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, clock tower, windmill, lighthouse, castle | 5, 10, 20, 30, 50 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 40, 45, 50, 70 and 100 settlers |
+| The school | 25 apprentices: it is where they are taught |
+| Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
 The day and night follow the real clock; the season follows the month. Windows light up
 after dark, campfires flicker, the lighthouse sweeps the water and fireflies come out.
@@ -344,6 +388,22 @@ a lower pixel ratio.
 Transcripts are append-only, so the scanner remembers how far it read and only folds in
 new bytes. A first scan of a few hundred megabytes takes a second or two; every scan
 after that takes a fraction of one.
+
+## The model sheet
+
+`http://localhost:4747/demo` draws every object the island can build on one field:
+each house tier in each model's colours, the sheds, the ornaments, every civic
+building and everything that stands on the square, with a night slider so the lit
+windows and the street lamps can be judged, and a wireframe toggle. Nothing on it
+reads the village, so a piece that no village has unlocked yet still shows up. Edit
+`web/js/buildings.js` and reload.
+
+**Hitbox** draws what walk mode cannot step through. Amber is the solid part of the
+shape: everything low enough for a settler to bump into, which leaves out roof
+overhangs, bell towers and parasols because you walk under those. Red is where a
+settler's middle actually stops, the same box grown by half a body -- so if two red
+rings touch, nobody fits between those two objects. It is the view that answers why
+something on the island cannot be walked past.
 
 ## Layout
 
