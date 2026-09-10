@@ -1,7 +1,8 @@
 // The village office: what git says about a district's repository.
 //
-// Reading only. Staging, rebasing and untangling a merge belong in a real client, and
-// the office has a button that opens the ones you have installed.
+// It reads, it fetches, and it merges a branch into the one you are on when that can
+// be done cleanly. Staging, rebasing and untangling a conflict belong in a real client,
+// and the office has a button that opens the ones you have installed.
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createOffice(root, { onClose }) {
@@ -25,6 +26,7 @@ export function createOffice(root, { onClose }) {
         <button class="x" id="office-close" title="Close · Esc">✕</button>
       </div>
     </header>
+    <div class="office-merge" id="office-merge"></div>
     <div class="office-body">
       <div class="office-lists">
         <section>
@@ -113,6 +115,80 @@ export function createOffice(root, { onClose }) {
     $('office-log').querySelectorAll('[data-sha]').forEach((li) => li.addEventListener('click', () => showCommit(li.dataset.sha, li)));
 
     $('office-foot').innerHTML = `<span class="mono">${esc(data.dir)}</span>`;
+    renderMerge();
+  }
+
+  // ---- merging a branch into the one you are on ---------------------------
+  let armedRef = null;
+  function renderMerge() {
+    const m = $('office-merge');
+    const others = data.branches || [];
+    if (!others.length) { m.hidden = true; m.innerHTML = ''; return; }
+    m.hidden = false;
+    if (!data.clean) {
+      m.innerHTML = `<span class="office-merge-note">Working tree has changes — commit or stash them before merging.</span>`;
+      return;
+    }
+    // A repository can have hundreds of branches, so this is a text box with
+    // suggestions rather than a list you scroll: type a few letters and pick.
+    m.innerHTML = `
+      <span class="office-merge-lead">Merge</span>
+      <input id="office-merge-ref" list="office-merge-list" spellcheck="false" autocomplete="off"
+             placeholder="branch" value="${esc(others[0] || '')}" size="22">
+      <datalist id="office-merge-list">${others.map((b) => `<option value="${esc(b)}"></option>`).join('')}</datalist>
+      <span class="office-merge-lead">into <b>${esc(data.branch)}</b></span>
+      <label class="office-merge-noff" title="Always record a merge commit, even when a fast-forward would do"><input type="checkbox" id="office-merge-noff"> merge commit</label>
+      <button class="chip" id="office-merge-go">Merge</button>
+      ${data.branchesTruncated ? `<span class="office-merge-note">showing the ${others.length} most recent of ${others.length + data.branchesTruncated}; type any other name in full</span>` : ''}`;
+    const go = $('office-merge-go');
+    const sel = $('office-merge-ref');
+    // Typing a different name must cancel a merge you already armed.
+    sel.addEventListener('change', () => disarmMerge());
+    sel.addEventListener('input', () => disarmMerge());
+    go.addEventListener('click', () => {
+      const ref = sel.value.trim();
+      if (!ref) { sel.focus(); return; }
+      if (armedRef === ref) { doMerge(ref, $('office-merge-noff').checked); return; }
+      armedRef = ref;
+      go.textContent = `Merge ${ref}?`;
+      go.classList.add('armed');
+      clearTimeout(go._t);
+      go._t = setTimeout(() => disarmMerge(), 5000);
+    });
+  }
+  function disarmMerge() {
+    armedRef = null;
+    const go = $('office-merge-go');
+    if (go) { go.textContent = 'Merge'; go.classList.remove('armed'); clearTimeout(go._t); }
+  }
+
+  async function doMerge(ref, noff) {
+    if (busy) return;
+    disarmMerge();
+    busy = true;
+    const foot = $('office-foot');
+    foot.textContent = `Merging ${ref}…`;
+    try {
+      const r = await fetch('/api/git-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ district: district.id, op: 'merge', ref, noff }),
+      });
+      const body = await r.json();
+      if (body.ok) {
+        const how = body.upToDate ? `already up to date with ${esc(ref)}`
+          : body.fastForward ? `fast-forwarded to ${esc(ref)}`
+            : `merged ${esc(ref)} into ${esc(body.current)}`;
+        await load();
+        foot.innerHTML = `<span class="good">${how}.</span>`;
+      } else {
+        foot.innerHTML = `<span class="bad">${esc(body.reason || 'the merge did not work')}</span>`;
+      }
+    } catch (e) {
+      foot.innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+    } finally {
+      busy = false;
+    }
   }
 
   function mark(li) {

@@ -11,7 +11,7 @@ import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sp
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
-import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo } from './lib/git.mjs';
+import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import os from 'node:os';
 
@@ -218,7 +218,15 @@ async function handle(req, res) {
     const dir = district.root;
     const op = url.searchParams.get('op') || 'overview';
     try {
-      if (op === 'overview') return json(res, 200, { ...(await overview(dir, { logCount: 30 })), district: district.id, name: district.name, tools: gitTools().map((t) => ({ id: t.id, name: t.name })) });
+      if (op === 'overview') {
+        const [ov, br] = await Promise.all([overview(dir, { logCount: 30 }), gitBranches(dir)]);
+        return json(res, 200, {
+          ...ov, district: district.id, name: district.name,
+          tools: gitTools().map((t) => ({ id: t.id, name: t.name })),
+          branches: br.ok ? br.mergeable : [],
+          branchesTruncated: br.ok ? br.truncated || 0 : 0,
+        });
+      }
       if (op === 'diff') return json(res, 200, await fileDiff(dir, url.searchParams.get('file') || '', { staged: url.searchParams.get('staged') === '1' }));
       if (op === 'commit') return json(res, 200, await commitDetail(dir, url.searchParams.get('sha') || ''));
       if (op === 'commit-diff') return json(res, 200, await commitDiff(dir, url.searchParams.get('sha') || ''));
@@ -236,6 +244,11 @@ async function handle(req, res) {
     if (!district || !district.root) return json(res, 404, { error: 'no such district' });
     try {
       if (body.op === 'fetch') { const r = await gitFetch(district.root); log(`fetch in ${district.name}: ${r.message}`); return json(res, 200, r); }
+      if (body.op === 'merge') {
+        const r = await gitMerge(district.root, String(body.ref || ''), { noff: !!body.noff });
+        log(`merge ${body.ref} in ${district.name}: ${r.ok ? r.message : r.reason}`);
+        return json(res, 200, r);
+      }
       if (body.op === 'open') { const r = openIn(String(body.tool || ''), district.root); log(`opened ${r.tool} at ${r.dir}`); return json(res, 200, { ok: true, ...r }); }
       return json(res, 400, { error: 'the office does not do that' });
     } catch (e) {

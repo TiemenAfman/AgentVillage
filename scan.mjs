@@ -203,7 +203,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     civics.push({
       id, kind: 'civic', civicType: 'office', district: d.id,
       plot: op, door: doorOf(op),
-      name: `${d.name} office`, label: 'Office',
+      name: `${d.name} office`, label: 'Office', repoName: d.name,
       title: `The register of ${d.name}`,
       startedAt: iso(d.firstSeenAt), lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [],

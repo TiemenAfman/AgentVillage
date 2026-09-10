@@ -570,6 +570,14 @@ function attachExtras(rec) {
     group.add(plate.group);
     rec.nameplate = plate;
   }
+
+  // A signboard in front of the office carrying the repository's name.
+  if (spec.civicType === 'office' && spec.repoName) {
+    const plate = createNameplate(spec.repoName);
+    plate.group.position.set(-0.02, 0, 0.72);
+    group.add(plate.group);
+    rec.nameplate = plate;
+  }
 }
 function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fire) n++; return n; }
 
