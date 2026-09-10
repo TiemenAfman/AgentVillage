@@ -313,3 +313,47 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .tag.style-opus { border-color: rgba(168,165,158,.5); color: #c9c6bf; }
 .tag.style-sonnet { border-color: rgba(240,226,200,.5); color: #f0e2c8; }
 .tag.style-haiku { border-color: rgba(217,185,140,.5); color: #d9b98c; }
+
+/* --- the village office ------------------------------------------------ */
+.office-panel { position: fixed; inset: 5vh 4vw; z-index: 30; display: flex; flex-direction: column; overflow: hidden; animation: fadein .18s ease; }
+.office-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 13px 18px; border-bottom: 1px solid var(--edge); }
+.office-head h2 { font-family: var(--font); font-size: 19px; margin: 0; }
+.office-head .muted { margin-top: 3px; }
+.office-head .muted b { color: var(--accent); font-weight: 600; }
+.office-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.office-actions #office-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.office-actions a.chip { text-decoration: none; }
+.office-body { flex: 1; display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: 0; overflow: hidden; }
+.office-lists { overflow: auto; border-right: 1px solid var(--edge); padding: 12px 14px 18px; }
+.office-lists section + section { margin-top: 18px; }
+.office-lists h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); margin: 0 0 8px; font-weight: 600; }
+.office-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.office-list li { padding: 6px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; font-size: 12px; line-height: 1.35; }
+.office-list li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+.office-list li.on { background: rgba(232,180,92,.14); border-color: rgba(232,180,92,.4); }
+.office-list li.empty { color: var(--ink-dim); font-style: italic; cursor: default; }
+.office-list li.conflict .path { color: #e8705c; }
+.office-list .code { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; padding: 1px 5px; border-radius: 4px; margin-right: 7px;
+  background: rgba(255,255,255,.08); color: var(--ink-dim); }
+.office-list .code.staged { background: rgba(111,206,122,.18); color: #8fd89a; }
+.office-list .code.dirty { background: rgba(232,180,92,.18); color: var(--accent); }
+.office-list .code.new { background: rgba(125,180,232,.18); color: #8fc4e8; }
+.office-list .sha { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--accent-2); margin-right: 7px; }
+.office-list .path { word-break: break-all; }
+.office-list small { display: block; color: var(--ink-dim); font-size: 10.5px; margin-top: 1px; }
+.office-list .refs { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.office-list .refs i { font-style: normal; font-size: 9.5px; padding: 0 6px; border-radius: 99px; background: rgba(127,199,217,.16); color: var(--accent-2); }
+.office-detail { overflow: auto; padding: 14px 16px 20px; }
+.office-detail h4 { font-family: var(--font); font-size: 15px; margin: 0 0 4px; word-break: break-all; }
+.office-detail .commit-message { white-space: pre-wrap; font-family: inherit; font-size: 12.5px; line-height: 1.5; color: var(--ink); background: rgba(255,255,255,.04); border-left: 2px solid var(--edge); padding: 8px 11px; border-radius: 0 8px 8px 0; margin: 10px 0; }
+.office-detail .commit-stat { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ink-dim); margin: 10px 0; white-space: pre-wrap; }
+.diff { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 11.5px; line-height: 1.45; white-space: pre; overflow-x: auto;
+  background: rgba(0,0,0,.25); border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; margin: 10px 0 0; }
+.diff span { display: block; }
+.diff .add { color: #8fd89a; background: rgba(111,206,122,.09); }
+.diff .del { color: #e8988a; background: rgba(232,112,92,.09); }
+.diff .hunk { color: var(--accent-2); margin-top: 6px; }
+.diff .meta { color: var(--ink-dim); }
+.office-foot { margin: 0; padding: 8px 18px; border-top: 1px solid var(--edge); font-size: 11px; color: var(--ink-dim); }
+.office-foot .good { color: #7fd08a; }
+.office-foot .bad { color: #e8705c; }

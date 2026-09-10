@@ -195,6 +195,24 @@ function assemble({ config, model, layout, terrain, size, all }) {
     });
   }
 
+  // An office on the square of every district that is a git repository.
+  for (const d of model.districts) {
+    const id = `civic:office:${d.id}`;
+    const op = plot(id);
+    if (!d.gitRepo || !op) continue;
+    civics.push({
+      id, kind: 'civic', civicType: 'office', district: d.id,
+      plot: op, door: doorOf(op),
+      name: `${d.name} office`, label: 'Office',
+      title: `The register of ${d.name}`,
+      startedAt: iso(d.firstSeenAt), lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [],
+      active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
   for (const m of model.milestones) {
     const id = `civic:${m.civicType}`;
     const p = plot(id);

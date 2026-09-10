@@ -16,6 +16,7 @@ import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
+import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createGamepad, BTN } from './gamepad.js';
@@ -206,6 +207,17 @@ const state = {
   walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
 };
 
+// Walking into the office of a district shows what git has to say about that repo.
+function openOffice(id) {
+  const rec = state.byId.get(id);
+  if (!rec || rec.spec.civicType !== 'office') return;
+  const d = state.districts.get(rec.spec.district);
+  if (!d) return;
+  if (state.walk) state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.office.open({ id: d.id, name: d.name });
+}
+
 // Addressing a settler opens their session and lets you carry it on.
 function talkTo(id) {
   const rec = state.byId.get(id);
@@ -242,6 +254,8 @@ function interactables() {
     const p = rec.group.position;
     if (rec.spec.civicType === 'board') {
       out.push({ id: rec.id, kind: 'board', x: p.x, z: p.z, r: 3.0, label: rec.spec.title || 'the sprint board' });
+    } else if (rec.spec.civicType === 'office') {
+      out.push({ id: rec.id, kind: 'office', x: p.x, z: p.z, r: 2.4, label: rec.spec.name });
     } else if (rec.spec.civicType === 'townhall') {
       out.push({ id: rec.id, kind: 'townhall', x: p.x, z: p.z, r: 3.2, label: 'the town hall' });
     } else if (rec.spec.kind !== 'civic') {
@@ -277,10 +291,11 @@ function enterWalk() {
     interactables: interactables(),
     onInteract: (it) => {
       if (it.kind === 'board') { state.walk.setPaused(true); state.board.open(); }
+      else if (it.kind === 'office') openOffice(it.id);
       else if (it.kind === 'townhall') openTownHall();
       else talkTo(it.id);
     },
-    onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall') askToSendAway(it.id); },
+    onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall' && it.kind !== 'office') askToSendAway(it.id); },
     onExit: () => exitWalk(),
   });
 }
@@ -1332,6 +1347,10 @@ async function boot() {
       state.ui.toast(`<b>${r.settlerName}</b> took ${r.issueKey}.`);
       setTimeout(() => fetchVillage().then((v) => applyVillage(v, { animate: true })).catch(() => {}), 2500);
     },
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+  });
+
+  state.office = createOffice(document.body, {
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
   });
 

@@ -481,6 +481,24 @@ function civic(parts, spec, rng) {
       }
       return { anchors, animated, height: 2.1 };
     }
+    case 'office': {
+      // A clerk's office: brick, a tiled roof, a lamp by the door and a board with the
+      // branch chalked on it. Small, because it is a village.
+      parts.push(box(0.62, 0.44, 0.5, C.brick, { y: 0 }));
+      parts.push(box(0.64, 0.06, 0.52, C.stone, { y: 0.44 }));
+      parts.push(prismRoof(0.72, 0.6, 0.26, C.slate, { y: 0.5 }));
+      parts.push(box(0.09, 0.2, 0.03, C.darkWood, { z: 0.26 }));                       // door
+      parts.push(box(0.12, 0.13, 0.03, C.glass, { x: -0.17, y: 0.2, z: 0.26, emissive: 1 }));
+      parts.push(box(0.12, 0.13, 0.03, C.glass, { x: 0.17, y: 0.2, z: 0.26, emissive: 1 }));
+      parts.push(cylinder(0.02, 0.02, 0.16, 4, C.iron, { x: 0.24, y: 0.3, z: 0.28 }));  // lamp bracket
+      parts.push(sphere(0.045, C.glass, { x: 0.24, y: 0.44, z: 0.28, emissive: 1 }));
+      parts.push(box(0.3, 0.16, 0.02, 0x2f3a33, { x: -0.02, y: 0.24, z: 0.28 }));       // the chalk board
+      parts.push(box(0.2, 0.02, 0.014, C.white, { x: -0.05, y: 0.32, z: 0.292 }));
+      parts.push(box(0.12, 0.02, 0.014, C.white, { x: -0.09, y: 0.28, z: 0.292 }));
+      parts.push(box(0.07, 0.24, 0.07, C.brick, { x: 0.2, y: 0.5, z: -0.12 }));         // chimney
+      anchors.smoke = [0.2, 0.78, -0.12];
+      return { anchors, animated, height: 0.82 };
+    }
     case 'poldermill':
       parts.push(cylinder(0.3, 0.42, 1.2, 8, 0xd9b98c));
       parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));

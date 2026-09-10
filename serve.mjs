@@ -11,6 +11,7 @@ import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sp
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
+import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import os from 'node:os';
 
@@ -205,6 +206,41 @@ async function handle(req, res) {
     fs.writeFileSync(file, buf);
     log(`saved screenshot ${name}.png (${Math.round(buf.length / 1024)} kB)`);
     return json(res, 200, { ok: true, file: path.relative(ROOT, file), bytes: buf.length });
+  }
+
+  // ---- the village office ----------------------------------------------------
+  // Everything here is scoped to a district's own folder: the page names a district,
+  // never a path, so no request can point git at somewhere else on the machine.
+  if (p === '/api/git') {
+    const village = readJson(VILLAGE_FILE, null);
+    const district = (village && (village.districts || []).find((d) => d.id === url.searchParams.get('district'))) || null;
+    if (!district || !district.root) return json(res, 404, { ok: false, reason: 'no such district' });
+    const dir = district.root;
+    const op = url.searchParams.get('op') || 'overview';
+    try {
+      if (op === 'overview') return json(res, 200, { ...(await overview(dir, { logCount: 30 })), district: district.id, name: district.name, tools: gitTools().map((t) => ({ id: t.id, name: t.name })) });
+      if (op === 'diff') return json(res, 200, await fileDiff(dir, url.searchParams.get('file') || '', { staged: url.searchParams.get('staged') === '1' }));
+      if (op === 'commit') return json(res, 200, await commitDetail(dir, url.searchParams.get('sha') || ''));
+      if (op === 'commit-diff') return json(res, 200, await commitDiff(dir, url.searchParams.get('sha') || ''));
+      return json(res, 400, { ok: false, reason: `the office does not do "${op}"` });
+    } catch (e) {
+      return json(res, 500, { ok: false, reason: String(e.message || e) });
+    }
+  }
+
+  if (p === '/api/git-action' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const village = readJson(VILLAGE_FILE, null);
+    const district = (village && (village.districts || []).find((d) => d.id === body.district)) || null;
+    if (!district || !district.root) return json(res, 404, { error: 'no such district' });
+    try {
+      if (body.op === 'fetch') { const r = await gitFetch(district.root); log(`fetch in ${district.name}: ${r.message}`); return json(res, 200, r); }
+      if (body.op === 'open') { const r = openIn(String(body.tool || ''), district.root); log(`opened ${r.tool} at ${r.dir}`); return json(res, 200, { ok: true, ...r }); }
+      return json(res, 400, { error: 'the office does not do that' });
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
   }
 
   // What the page reports when it hits trouble, so a crash leaves a trace.

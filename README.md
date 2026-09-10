@@ -130,6 +130,22 @@ They are a resident, not a visitor: no ticket is attached and they stay until yo
 them away. Sessions you start the ordinary way, in the desktop app, in VS Code or from a
 terminal, arrive on the island by themselves through the session hook.
 
+## The office
+
+Every district that is a git repository has an office on its square. Walk in, or click
+it, and you get what git has to say about that repo: the branch and how far it has
+drifted from its upstream, what is waiting in the working tree, and the recent history.
+Click a file for its diff, click a commit for its message, its stat and its patch.
+
+It only reads. The one thing it will change is remote-tracking refs, through a **Fetch**
+button, which never touches your work. Staging, rebasing and untangling a merge belong
+in a real client, so the office lists the ones you have installed and opens them at that
+repository: Git Extensions, Fork, SourceTree, GitHub Desktop, VS Code, or plain File
+Explorer. Whatever is not installed is simply not offered.
+
+The page names a district, never a path, so no request can point git at some other
+folder on the machine.
+
 ## Telling an agent how your team works
 
 The island does not know your workflow, so it does not carry one. What a dispatched
