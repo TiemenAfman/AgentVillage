@@ -348,6 +348,13 @@ windows and the street lamps can be judged, and a wireframe toggle. Nothing on i
 reads the village, so a piece that no village has unlocked yet still shows up. Edit
 `web/js/buildings.js` and reload.
 
+**Hitbox** draws what walk mode cannot step through. Amber is the solid part of the
+shape: everything low enough for a settler to bump into, which leaves out roof
+overhangs, bell towers and parasols because you walk under those. Red is where a
+settler's middle actually stops, the same box grown by half a body -- so if two red
+rings touch, nobody fits between those two objects. It is the view that answers why
+something on the island cannot be walked past.
+
 ## Layout
 
 ```
