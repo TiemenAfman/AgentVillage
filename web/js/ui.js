@@ -87,6 +87,8 @@ export function createUI(handlers) {
   function syncSidebar() {
     const panelOpen = !el('dossier').hidden || !el('legend').hidden;
     el('building-now').hidden = walking || panelOpen || !hasBuilders;
+    const w = el('waiting-now');
+    if (w) w.hidden = walking || panelOpen || !w.querySelector('li');
     el('chronicle').hidden = walking;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
   }
@@ -139,13 +141,35 @@ export function createUI(handlers) {
   }
 
   // --- now building --------------------------------------------------------
-  function setBuilding(list) {
+  function setBuilding(list, waiting = []) {
     const ul = el('building-list');
+    renderWaiting(waiting);
     hasBuilders = list.length > 0;
     syncSidebar();
     if (!list.length) { ul.innerHTML = '<li class="empty">Nobody is building right now.</li>'; return; }
     ul.innerHTML = list.map((b) => `<li data-id="${esc(b.id)}"><span class="dot"></span>${esc(b.name)}<small>${esc(b.where)} · ${esc(b.since)}</small></li>`).join('');
     ul.querySelectorAll('li[data-id]').forEach((li) => li.addEventListener('click', () => handlers.onFocus(li.dataset.id)));
+  }
+
+  // --- who is waiting on you -----------------------------------------------
+  // The flags on the island say where; this says who, and what they asked. It sits
+  // above everything else because it is the one list with something owed in it.
+  function renderWaiting(waiting) {
+    const box = el('waiting-now');
+    if (!box) return;
+    box.hidden = !waiting.length;
+    if (!waiting.length) return;
+    const asked = waiting.filter((w) => w.asked).length;
+    el('waiting-head').textContent = asked
+      ? `${asked} question${asked > 1 ? 's' : ''} for you`
+      : `Waiting for you · ${waiting.length}`;
+    el('waiting-list').innerHTML = waiting.map((w) => `
+      <li data-id="${esc(w.id)}" class="${w.asked ? 'asked' : ''}">
+        <span class="pennant"></span>${esc(w.name)}
+        <small>${esc(w.since)} · ${esc(w.question || '')}</small>
+      </li>`).join('');
+    el('waiting-list').querySelectorAll('li[data-id]').forEach((li) =>
+      li.addEventListener('click', () => handlers.onFocus(li.dataset.id)));
   }
 
   // --- dossier -------------------------------------------------------------
@@ -413,6 +437,7 @@ export function createUI(handlers) {
 
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
+  el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
 
   setupShell();
 
