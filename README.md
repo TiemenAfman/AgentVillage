@@ -104,8 +104,46 @@ cannot set out for the horizon.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
 the on-screen hints switch to controller buttons. Left stick walks, right stick looks,
-right shoulder runs, **A** uses what you are standing at, **B** flies back up. Nothing needs a
-controller: mouse and keyboard do everything on their own.
+right shoulder runs, **A** uses what you are standing at, **B** flies back up, **D-pad up**
+sows a bed. Nothing needs a controller: mouse and keyboard do everything on their own.
+
+## Market gardening
+
+Once the village has earned its market stalls — ten settlers — one of them is a seed
+stall. Walk up to it and press **E**: it sells seed, and it buys back whatever you grow.
+You start with fifteen coins, which is seven beds of turnip or one long look at the
+pumpkin seed and a change of plan.
+
+**P** sows a bed where you are standing, **Q** takes the next kind of seed out of the
+pouch, and **E** at a bed that is ready pulls it up. What you pull goes in the basket and
+the basket is only worth anything back at the stall. **X** at a bed you have thought
+better of turns it over again; a bed that is ready is pulled rather than dug, so a
+mistyped key cannot cost you a pumpkin.
+
+| | Seed | Ready in | A bed gives | The stall pays |
+|---|---|---|---|---|
+| **Turnip** | 2 | 4 min | 3 | about 2 each |
+| **Carrot** | 4 | 8 min | 4 | about 3 |
+| **Beetroot** | 7 | 15 min | 4 | about 6 |
+| **Tidebean** | 12 | 25 min | 5 | about 8 |
+| **Moonleek** | 20 | 45 min | 5 | about 15 |
+| **Pumpkin** | 35 | 1 h 30 | 2 | about 90 |
+
+The clock is the real one, so the long crops are for an island left open beside your
+work and they pay better by the minute for it. Nothing rots: a bed that is ready waits
+until you come back for it.
+
+Where you sow matters twice. A bed needs earth — not the sea, not a river, not the
+beach, not the flagstones of the square, and not a slope the water would run off — and
+the **tidebean** wants salt in the air: sown within four paces of the water it sets two
+extra pods. The **moonleek** is worth growing for its own reason, which is that a ripe
+row is faintly lit and can be found after dark.
+
+What the stall pays moves about a quarter either way from one day to the next, the same
+for everyone looking at the same island, so a full basket carried over to tomorrow is a
+real decision. The purse, the pouch and the basket are yours alone: a visitor walking
+your island can see the beds standing in the ground, and that is all — the stall, like
+the tickets and the git, belongs to whoever lives here.
 
 ## Visitors and neighbours
 
@@ -474,6 +512,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
 | Well, market, tavern, clock tower, tables, windmill, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 40, 45, 50, 70 and 100 settlers |
+| A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
+| A pale row that glows after dark | Moonleeks, ready to pull |
 | The school | 25 apprentices: it is where they are taught |
 | Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
@@ -513,10 +553,11 @@ after that takes a fraction of one.
 
 `http://localhost:4747/demo` draws every object the island can build on one field:
 each house tier in each model's colours, the sheds, the ornaments, every civic
-building and everything that stands on the square, with a night slider so the lit
-windows and the street lamps can be judged, and a wireframe toggle. Nothing on it
-reads the village, so a piece that no village has unlocked yet still shows up. Edit
-`web/js/buildings.js` and reload.
+building, everything that stands on the square, and every vegetable — each crop as
+you would buy it, and one turnip through all four of its looks — with a night slider
+so the lit windows, the street lamps and the moonleeks can be judged, and a wireframe
+toggle. Nothing on it reads the village or the garden, so a piece that no village has
+unlocked yet still shows up. Edit `web/js/buildings.js` and reload.
 
 **Hitbox** draws what walk mode cannot step through. Amber is the solid part of the
 shape: everything low enough for a settler to bump into, which leaves out roof
@@ -533,6 +574,7 @@ serve.mjs       serve the island, push updates, rescan on a timer
 hooks/          the SessionStart / SessionEnd hook
 lib/            sources, incremental parsing, the village model, plot layout
 lib/access.mjs  who may do what: the keeper, a visitor, or nobody
+lib/garden.mjs  the purse, the seed pouch and every bed that has been sown
 lib/ws.mjs      a small WebSocket server, hand-written, no dependency
 lib/players.mjs who is walking the island right now
 lib/neighbours  the UDP beacon that finds other islands on the network
@@ -554,6 +596,8 @@ terrain on load and warns in the console if the two ever disagree.
   start the village from now, or set it to an ISO date to include earlier sessions.
 - **Rename the island** or move the founding date: edit `config.json`.
 - **Start over**: delete `data/` and rescan. Houses will be placed afresh.
+- **The garden** is in `data/garden.json`, which the scanner never touches — but it is
+  still under `data/`, so deleting that takes the purse, the pouch and every bed with it.
 - **A house never moves.** `data/layout.json` records where every building stands and is
   only ever added to, so the town you know stays the town you know.
 - **Turn it off**: remove the two `Settlers` entries from `hooks` in

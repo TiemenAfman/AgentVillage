@@ -116,6 +116,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     onInteract: null,
     onSendAway: null,
     onThink: null,
+    onPlant: null,
+    onNextSeed: null,
     onExit: null,
     moving: false,
     running: false,
@@ -155,6 +157,9 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // A thought needs nothing to stand in front of: it is about wherever you are.
     if (k === 't') { e.preventDefault(); state.onThink && state.onThink(); }
+    // Sowing is the same kind of thing: it happens where the feet are, not at a door.
+    if (k === 'p') { e.preventDefault(); state.onPlant && state.onPlant(); }
+    if (k === 'q') { e.preventDefault(); state.onNextSeed && state.onNextSeed(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -226,12 +231,14 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.onInteract = onInteract;
     state.onSendAway = onSendAway;
     state.onThink = onThink;
+    state.onPlant = onPlant;
+    state.onNextSeed = onNextSeed;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
@@ -285,6 +292,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     if (p.hit(0) && state.near) state.onInteract && state.onInteract(state.near);
     if (p.hit(2) && state.near) state.onSendAway && state.onSendAway(state.near);   // X on the pad
     if (p.hit(3)) state.onThink && state.onThink();                                 // Y: have a thought
+    if (p.hit(12)) state.onPlant && state.onPlant();                                // D-pad up: sow a bed
+    if (p.hit(15)) state.onNextSeed && state.onNextSeed();                          // D-pad right: next seed
   }
 
   function setPaused(v) {
@@ -417,7 +426,17 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
 
   function setDecks(map) { deckAt = map || new Map(); }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, dispose, isActive: () => state.active };
+  // Is there room here for something wider than a person? Walk mode already knows what
+  // cannot be walked through, so "can a vegetable bed go where I am standing" is that
+  // same question asked with a bed's radius instead of a settler's.
+  function roomFor(x, z, r) {
+    for (const b of state.blockers) {
+      if (Math.abs(x - b.x) < b.hx + r && Math.abs(z - b.z) < b.hz + r) return false;
+    }
+    return true;
+  }
+
+  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, roomFor, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {
