@@ -153,13 +153,19 @@ export function buildBorders(village, terrain, owner, roadCells) {
   for (let gz = 0; gz < size; gz++) {
     for (let gx = 0; gx < size; gx++) {
       const k = ownerAt(gx, gz);
-      if (k === NONE) continue;
+      // The town puts up no hedge. A hamlet's edge says whose land you are standing on,
+      // which is worth drawing; the commons is simply the middle of the island, and a
+      // fence around it reads as a boundary between nothing and nothing - clearest on an
+      // early island, where it was one long line across empty grass.
+      if (k === NONE || k === TOWN) continue;
       for (const [dx, dz] of N4) {
         const nx = gx + dx, nz = gz + dz;
         if (ownerAt(nx, nz) === k) continue;
         // Two owners meeting would draw the hedge twice; the lower index draws it.
         const no = ownerAt(nx, nz);
-        if (no !== NONE && no < k) continue;
+        // The lower index draws a shared edge - but the town draws nothing now, so a
+        // hamlet meeting the commons has to put up its own side or the run breaks there.
+        if (no !== NONE && no !== TOWN && no < k) continue;
         // The coast is its own boundary, and a hedge over water looks like a mistake.
         if (!terrain.isLand(nx, nz)) continue;
         // Where a road crosses, the hedge opens and leaves two gateposts behind.
