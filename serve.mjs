@@ -484,7 +484,9 @@ async function handle(req, res) {
     if (f) return sendFile(res, f, { noStore: true });   // our own code: never cached
   }
 
-  const rel = p === '/' ? 'index.html' : p.replace(/^\//, '');
+  const rel = p === '/' ? 'index.html'
+    : p === '/demo' ? 'demo.html'          // the model sheet: every object on one field
+      : p.replace(/^\//, '');
   const f = safeJoin(WEB, rel);
   if (!f) { res.writeHead(400); res.end('Bad path'); return; }
   sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });

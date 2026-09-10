@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Promptholm — the model sheet</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🧱</text></svg>">
+<meta name="theme-color" content="#0d1420">
+<link rel="stylesheet" href="/css/ui.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three.module.js",
+    "three/addons/": "/vendor/addons/",
+    "shared/": "/shared/"
+  }
+}
+</script>
+<style>
+  #demo-bar {
+    position: fixed; left: 12px; top: 12px; z-index: 20;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 14px; max-width: 280px;
+  }
+  #demo-bar h1 { margin: 0; font-size: 17px; }
+  #demo-bar .row { display: flex; align-items: center; gap: 8px; }
+  #demo-bar label { font-size: 12px; opacity: .75; min-width: 52px; }
+  #demo-bar input[type=range] { flex: 1; }
+  #demo-bar .val { font-size: 12px; opacity: .6; min-width: 34px; text-align: right; }
+  #demo-labels { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #demo-labels .tag {
+    position: absolute; transform: translate(-50%, 0);
+    font-size: 11px; line-height: 1.25; text-align: center; white-space: nowrap;
+    color: #f2ede1; text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+  }
+  #demo-labels .tag b { display: block; font-weight: 600; }
+  #demo-labels .tag i { font-style: normal; opacity: .55; font-size: 10px; }
+  #demo-labels .group {
+    position: absolute; transform: translate(-50%, -50%);
+    font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: #ffd9a0; text-shadow: 0 1px 4px rgba(0, 0, 0, .9);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<section class="card" id="demo-bar">
+  <h1>Model sheet</h1>
+  <div class="muted" style="font-size:12px">Every object the island can draw, on one field. Edit <code>web/js/buildings.js</code> and reload.</div>
+  <div class="row"><label for="d-night">Night</label><input type="range" id="d-night" min="0" max="1" step="0.01" value="0"><span class="val" id="d-night-v">0</span></div>
+  <div class="row"><label for="d-spin">Spin</label><input type="range" id="d-spin" min="0" max="1" step="0.01" value="0.15"><span class="val" id="d-spin-v">.15</span></div>
+  <div class="row">
+    <button class="chip" id="d-grid">Grid</button>
+    <button class="chip" id="d-wire">Wireframe</button>
+    <button class="chip" id="d-hits">Hitbox</button>
+    <button class="chip" id="d-top">Top</button>
+  </div>
+  <div class="muted" id="d-hits-key" style="font-size:11px" hidden>
+    <b style="color:#ffc247">Amber</b> is what walk mode calls solid, up to head height.
+    <b style="color:#ff8a7d">Red</b> is where a settler's middle stops: the same box grown
+    by half a body. Two red rings that touch is a gap nobody fits through.
+  </div>
+</section>
+
+<div id="demo-labels"></div>
+
+<script type="module" src="/js/demo.js"></script>
+</body>
+</html>
