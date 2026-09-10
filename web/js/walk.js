@@ -109,6 +109,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     near: null,
     onInteract: null,
     onSendAway: null,
+    onThink: null,
     onExit: null,
     moving: false,
     paused: false,   // true while an overlay owns the input
@@ -145,6 +146,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
+    // A thought needs nothing to stand in front of: it is about wherever you are.
+    if (k === 't') { e.preventDefault(); state.onThink && state.onThink(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -197,11 +200,12 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onExit }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.onInteract = onInteract;
     state.onSendAway = onSendAway;
+    state.onThink = onThink;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
@@ -244,6 +248,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom }) {
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
     if (p.hit(0) && state.near) state.onInteract && state.onInteract(state.near);
     if (p.hit(2) && state.near) state.onSendAway && state.onSendAway(state.near);   // X on the pad
+    if (p.hit(3)) state.onThink && state.onThink();                                 // Y: have a thought
   }
 
   function setPaused(v) {

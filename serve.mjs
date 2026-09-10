@@ -11,6 +11,9 @@ import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sp
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
+import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
+import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
+import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import os from 'node:os';
@@ -467,6 +470,107 @@ async function handle(req, res) {
       }
       try { res.end(); } catch { /* gone */ }
       setTimeout(() => rescan('chat'), 1200);
+    });
+    req.on('close', () => { if (!child.killed) child.kill(); });
+    return;
+  }
+
+  // ---- where you are standing ------------------------------------------------
+  // The village knows nothing about the reader, and an agent asked to put a bridge
+  // "here" has to be able to find out where here is. The page reports while you walk;
+  // tools/island.mjs reads it back.
+  if (p === '/api/where') {
+    if (req.method === 'POST') {
+      let body;
+      try { body = await readBody(req, 4 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+      return json(res, 200, { at: rememberPlayer(body, { force: !!body.final }) });
+    }
+    return json(res, 200, { at: whereIsPlayer() });
+  }
+
+  // ---- what has been built by hand ---------------------------------------------
+  // Everything here is a shape, a place and a size. Nothing names a file or a folder,
+  // so the worst a runaway agent can do is clutter the island, and `clear` sweeps it.
+  if (p === '/api/props') return json(res, 200, { props: listProps() });
+
+  if (p === '/api/build' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 8 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    try {
+      const prop = addProp(body);
+      log(`built ${prop.kind} at ${prop.x}, ${prop.z}${prop.unknown ? ' (nothing draws that yet, so it stands as a cairn)' : ''}`);
+      broadcast({ at: Date.now(), id: prop.id, kind: prop.kind }, 'props');
+      return json(res, 201, { ok: true, prop });
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
+  }
+
+  if (p === '/api/unbuild' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 4 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    if (body.clear) {
+      const cleared = clearProps();
+      log(`cleared ${cleared} built thing(s) off the island`);
+      broadcast({ at: Date.now(), cleared }, 'props');
+      return json(res, 200, { ok: true, cleared });
+    }
+    const removed = removeProp(String(body.id || ''));
+    if (removed) {
+      log(`took away the ${removed.kind} at ${removed.x}, ${removed.z}`);
+      broadcast({ at: Date.now(), id: removed.id }, 'props');
+    }
+    return json(res, 200, { ok: true, removed });
+  }
+
+  // ---- a thought, had while standing somewhere ---------------------------------
+  // Starts a session in this very repository and streams what it says back, the same
+  // way /api/say does for a settler. It is told where you are standing, which is what
+  // lets it act on "here".
+  if (p === '/api/think' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { text, sessionId, at, model } = body || {};
+
+    // Whatever the page says it knows about where you are is worth writing down, so
+    // the command line agrees with the prompt even if you have not moved in a while.
+    if (at && Number.isFinite(Number(at.x))) rememberPlayer({ ...at, walking: true }, { force: true });
+
+    let started;
+    try { started = think({ text, at: whereIsPlayer(), sessionId, model }); }
+    catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    // The page needs the session id to carry the next thought on, and the stream's own
+    // init line does not always arrive first. Say it before anything else.
+    res.write(`${JSON.stringify({ type: 'settlers_thought', sessionId: started.sessionId, resumed: started.resumed })}\n`);
+    log(`thought ${started.resumed ? 'continued' : 'started'} ${started.sessionId}: ${String(text).replace(/\s+/g, ' ').slice(0, 120)}`);
+
+    const { child } = started;
+    let carry = '';
+    child.stdout.on('data', (chunk) => {
+      carry += chunk;
+      const lines = carry.split('\n');
+      carry = lines.pop();
+      for (const line of lines) if (line.trim()) res.write(line.trim() + '\n');
+    });
+    let stderr = '';
+    child.stderr.on('data', (c) => { stderr += c; });
+    child.on('error', (e) => {
+      try { res.write(JSON.stringify({ type: 'settlers_error', error: String(e.message || e) }) + '\n'); } catch { /* client gone */ }
+    });
+    child.on('close', (code) => {
+      if (carry.trim()) { try { res.write(carry.trim() + '\n'); } catch { /* client gone */ } }
+      if (code !== 0) {
+        log(`thought ${started.sessionId} exited ${code}: ${stderr.slice(0, 400)}`);
+        try { res.write(JSON.stringify({ type: 'settlers_error', error: stderr.trim().slice(0, 400) || `claude exited with ${code}` }) + '\n'); } catch { /* gone */ }
+      }
+      try { res.end(); } catch { /* gone */ }
     });
     req.on('close', () => { if (!child.killed) child.kill(); });
     return;
