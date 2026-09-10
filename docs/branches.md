@@ -17,6 +17,26 @@ orders.
 | `feature/rivers-and-bridges` | A note on where rivers would go, and why bridges are more than terrain | docs only |
 | `feature/polders` | A note on the polder machinery and the bug that makes a reclaimed cell unbuildable | docs only |
 | `perf/serve-gzip` | A note on compressing what the server sends | docs only |
+| `docs/branch-layout` | This page | docs only |
+
+## What went straight onto `main`
+
+A fix that `main` can actually take does not need a branch waiting for it. So far:
+
+- **Labels hung in the air after stepping down to walk** (`5cc77c0`). The label layer was
+  never emptied on the way into walk mode. Independent of everything else, and merged
+  clean with all nine branches both ways before it went in.
+
+Two of the fixes below cannot go that route, and it is worth saying why rather than
+leaving it to be discovered:
+
+- `fix/route-search-rounding` fixes the weighted route search, and **`main` has no
+  weighted route search** — it is a plain flood fill until the streets branch lands. There
+  is nothing there to fix.
+- `fix/camera-for-the-larger-island` would apply to `main` on its own, but the streets
+  branch rewrites the same regions of `web/js/main.js` and `web/js/world.js`, so putting
+  it on `main` first only moves the conflict to whoever merges the streets work. It sits
+  on the streets branch instead, where it merges in any order.
 
 ## The one dependency that could not be removed
 
