@@ -26,6 +26,8 @@ import { createProps } from './props.js';
 import { createCrops } from './crops.js';
 import { createMarket } from './market.js';
 import { createThink } from './think.js';
+import { createAvatarStudio } from './studio.js';
+import { createWaitingFlags } from './waiting.js';
 import { createGamepad, BTN } from './gamepad.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
@@ -580,6 +582,14 @@ function foundSettler() {
   state.newSettler.open();
 }
 
+// Dressing the settler you walk as. Anyone may do it - it is your own look, on your own
+// screen, and touches nothing that belongs to the island - so it is not behind keeperOnly.
+function openStudio() {
+  if (!state.studio || state.studio.isOpen()) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.studio.open();
+}
+
 // The town hall keeps the register of every session this machine remembers.
 function openTownHall() {
   if (keeperOnly('read the register')) return;
@@ -1033,6 +1043,7 @@ function buildScene(village) {
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
+  state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
 
@@ -1408,6 +1419,7 @@ function applyVillage(next, { animate }) {
 
   assignFlags();
   applyVisibility();
+  refreshWaitingFlags();
   refreshUI();
   if (state.walk && state.mode === 'walk') {
     state.walk.setBlockers(walkableBlockers());
@@ -1547,6 +1559,19 @@ async function sailIn(rec, district) {
 }
 
 // --------------------------------------------------------------- UI wiring
+// A pole over every house whose session has stopped and is waiting on a person.
+function refreshWaitingFlags() {
+  if (!state.waitingFlags) return;
+  const entries = [];
+  for (const rec of state.byId.values()) {
+    const w = rec.spec && rec.spec.waiting;
+    if (!w || !rec.group.visible) continue;
+    const p = rec.group.position;
+    entries.push({ id: rec.id, x: p.x, y: p.y, z: p.z, height: rec.built.height + 0.15, asked: !!w.asked });
+  }
+  state.waitingFlags.update(entries);
+}
+
 function refreshUI() {
   const v = state.village;
   state.ui.setVillage(v);
@@ -1560,7 +1585,18 @@ function refreshUI() {
       where: b.kind === 'shed' ? `${b.agentType} apprentice` : (state.districts.get(b.district) || {}).name || 'Somewhere',
       since: humanSince(now - new Date(b.startedAt).getTime()),
     }));
-  state.ui.setBuilding(list);
+  // Anyone who has stopped and is waiting on you, questions first, then whoever has
+  // been standing there longest.
+  const waiting = v.buildings
+    .filter((b) => b.waiting)
+    .sort((a, b) => (b.waiting.asked ? 1 : 0) - (a.waiting.asked ? 1 : 0) || b.waiting.quietFor - a.waiting.quietFor)
+    .map((b) => ({
+      id: b.id, name: b.name,
+      asked: !!b.waiting.asked,
+      question: b.waiting.question,
+      since: humanSince(b.waiting.quietFor),
+    }));
+  state.ui.setBuilding(list, waiting);
   if (state.selected) {
     const spec = specById(v).get(state.selected);
     if (spec) state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
@@ -1741,6 +1777,7 @@ function frame(nowMs) {
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
+  if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
   if (state.crops) state.crops.update(dt);
 
@@ -1970,6 +2007,7 @@ async function boot() {
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
+    onCustomize: () => openStudio(),
   });
 
   state.market = createMarket(document.body, {
@@ -1979,6 +2017,13 @@ async function boot() {
       if (state.mode === 'walk') state.walk.setInteractables(interactables());
     },
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
+  });
+
+  state.studio = createAvatarStudio(document.body, {
+    // Re-dress the avatar the instant a swatch is picked, so if you are already walking
+    // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
+    onApply: (spec) => { if (state.walk) state.walk.setAvatar(spec); },
+    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
   state.townHall = createTownHall(document.body, {

@@ -44,15 +44,23 @@
   <div class="chips">
     <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
     <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
+    <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
     <button class="chip" id="legend-btn">Legend</button>
     <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
   </div>
 </div>
 
-<section class="card building-now" id="building-now" hidden>
-  <h2>Now building</h2>
-  <ul id="building-list"></ul>
-</section>
+<div class="right-column" id="right-column">
+  <section class="card waiting-now" id="waiting-now" hidden>
+    <h2 id="waiting-head">Waiting for you</h2>
+    <ul id="waiting-list"></ul>
+  </section>
+
+  <section class="card building-now" id="building-now" hidden>
+    <h2>Now building</h2>
+    <ul id="building-list"></ul>
+  </section>
+</div>
 
 <aside class="panel" id="legend" hidden>
   <div class="panel-head"><h2>Legend</h2><button class="x" data-close="legend">✕</button></div>
