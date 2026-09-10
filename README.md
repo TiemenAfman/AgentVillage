@@ -318,6 +318,35 @@ empty and grows from the founding session onward. `npm run scan:all` shows what 
 island would look like with the entire history on it, written to separate files so it
 never disturbs the real village.
 
+### When the island runs out of land
+
+It does run out. The terrain holds 475 fully buildable 4x4 blocks; the hamlets and the
+town commons own about 305 of them, and somewhere past three hundred houses a new project
+stops being given a hamlet at all and its houses pile onto the commons. Raising
+`gridSize` is not the way out - it is the terrain generator's own argument, so a bigger
+number is a different island: a different coast, a failed `size` check in `loadLayout`,
+and a town square somewhere else entirely.
+
+So the village takes land off the water instead. At **150 settlers** it builds the polder
+mill and drains its first polder, and it drains one more for every 25 settlers after
+that - `POLDER_AT` and `POLDER_EVERY` in `lib/layout.mjs`. Each one is twelve super-cells
+of shallow water, about eleven plots, walled by a dike where there is water to keep out
+and joined to the island by a causeway over the beach. Which stretch of coast a polder
+faces is the one thing the island seed decides, so two islands reclaim different water.
+
+Reclamation only ever takes cells that are **under water**, never a cell that is already
+land, which is what lets it happen to a village that is already standing: no house moves,
+no parcel moves, and the town keeps every stone. The dike and the causeway are road
+rather than building land - raised ground you may walk but not settle - so a hamlet
+cannot put a house on top of its own sea wall.
+
+The trigger is the settler count and nothing else. `ensureParcel` does know when it could
+not seat a district - that is what `rec.guest` means - but that answer only exists after
+the placement, and the terrain has to be final before it. Feeding it back would mean
+reclaiming on the *next* scan, and then a second scan of an unchanged island would rewrite
+`data/layout.json`, which is the one thing that must never happen. A settler count is a
+pure function of the model, so a rescan reclaims exactly the same land.
+
 ## A look around
 
 | | |
@@ -342,6 +371,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
 | Houses around the town square with no hedge | The commons: whoever the island had no room for elsewhere |
+| Flat green land behind an earth wall, out in a cove | A polder: land reclaimed once the island ran out, from 150 settlers on |
+| A small mill on a dike | The polder mill, which drains the first polder |
 | Ploughed fields and orchards | Countryside - buildable land no project has claimed |
 | A kitchen garden | Land inside a hamlet that nobody has built on yet |
 | A faint colour in the grass | Whose hamlet's land you are standing on |
