@@ -346,7 +346,7 @@ export function createUI(handlers) {
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
         + `<span><kbd>A</kbd> talk</span><span><kbd>X</kbd> send away</span><span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>E</kbd> talk</span><span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;
