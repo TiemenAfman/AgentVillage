@@ -382,6 +382,11 @@ export function createUI(handlers) {
     walking = !!on;
     if (!on) setConfirm(null);
     el('walk-hud').hidden = !on;
+    // Nothing drives the label layer on foot - `updateLabels` is skipped in walk mode -
+    // so whatever was on screen when you stepped down stayed there, hanging in the air at
+    // eye level. It only became obvious with the hamlet captions, which are meant to be
+    // read from high up and so are always on when you leave the sky.
+    el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
     el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
     if (on) { el('dossier').hidden = true; el('legend').hidden = true; renderWalkKeys(); }
