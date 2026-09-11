@@ -22,6 +22,7 @@ import { createNet } from './net.js';
 import { createHorizon } from './horizon.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
+import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
@@ -285,7 +286,7 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, panels: null, buildMenu: null, ghost: null,
+  props: null, panels: null, buildMenu: null, ghost: null, islandchat: null,
   crops: null, market: null, garden: null,
 };
 
@@ -2515,12 +2516,21 @@ async function boot() {
   });
   state.horizon = createHorizon({ scene, pickables: state.pickables });
   if (!state.guest) refreshNeighbours();
+  // Talking to the people here rather than to the settlers - see web/js/islandchat.js
+  // for which conversation is which. Made before the line is opened, so a first line
+  // cannot arrive with nowhere to land.
+  state.islandchat = createIslandChat(document.body, {
+    say: (text) => !!(state.net && state.net.say(text)),
+    // A board or the stall has the screen and the letters; T is not ours then.
+    blocked: () => !!openPanel(),
+  });
   state.net = createNet({
     peers: state.peers,
     walk: state.walk,
     name: playerName(),
     onStatus: () => {},
     onPanels: (m) => applyPanelMessage(m),
+    onSaid: (m) => state.islandchat.said(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   // What a shape looks like before anybody has agreed to it. Built after the world and

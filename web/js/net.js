@@ -26,7 +26,7 @@ const FLAG_AIRBORNE = 8;
 const UI_MS = 160;
 const UI_PER_BEAT = 2;
 
-export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, name = null } = {}) {
+export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, onSaid = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -81,6 +81,10 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
         case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
+        // Somebody talking. The server sends this to everybody including us, so our own
+        // line comes back down this same wire and the page can show the conversation in
+        // the order the island saw it instead of the order we typed it.
+        case 'said': onSaid({ id: m.id, name: m.name, keeper: !!m.keeper, text: m.text, self: m.id === selfId }); break;
         default: break;
       }
     });
@@ -173,6 +177,11 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
     // press each, and waiting for the beat would make E feel slow.
     takePanel(id) { send({ t: 'take', id }); },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
+    // One sentence out loud, to everybody on the island. Sent at once rather than on a
+    // beat: a sixth of a second of waiting is nothing on a board, but on a conversation
+    // it reads as a bad line. Returns false when the line is down, so the page can say
+    // so instead of swallowing what somebody just typed.
+    say(text) { return send({ t: 'say', text }); },
     // Where our hand is on the board we are at, or null when it is off it.
     setPanelCursor(at) {
       const had = cursor;

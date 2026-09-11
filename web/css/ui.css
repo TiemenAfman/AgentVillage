@@ -408,6 +408,31 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   border: 1px solid var(--edge); border-radius: 8px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; }
 #office-merge-ref:focus { outline: none; border-color: var(--accent); }
 
+/* --- talking to the people on the island -------------------------------- */
+/* Bottom left, which is also where the toasts land. This sits over them on purpose: a
+   toast is gone in five seconds and a conversation is not, so covering one is better
+   than having a notice drop on the line somebody is reading. */
+.islandchat { position: fixed; left: 14px; bottom: 16px; z-index: 12;
+  width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 7px; }
+.islandchat-log { max-height: 34vh; overflow: auto; display: flex; flex-direction: column; gap: 3px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 9px 11px; backdrop-filter: blur(5px); }
+.islandchat-log p { margin: 0; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.islandchat-log p b { color: var(--accent-2); font-weight: 600; }
+.islandchat-log p.mine b { color: var(--accent); }
+/* Who the island belongs to, so a visitor can tell whose house they are standing in. */
+.islandchat-home { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 0 5px; margin-left: 5px; white-space: nowrap; }
+.islandchat-note { color: var(--ink-dim); font-style: italic; }
+.islandchat-input { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 7px 13px; box-shadow: var(--shadow); }
+.islandchat-input:focus { outline: none; border-color: rgba(127,199,217,.5); }
+.islandchat-input::placeholder { color: var(--ink-dim); }
+/* Peeking is the log on its own: what was said stays readable, and the keyboard stays
+   with whoever is walking somewhere. */
+.islandchat.peeking .islandchat-input { display: none; }
+.islandchat.peeking .islandchat-log { background: rgba(28, 24, 20, 0.62); }
+
 /* The keys on the walking strip that are about where you are standing rather than what
    is in front of you: sitting down, sowing, opening the catalogue. */
 .walk-keys .lit { color: var(--accent-2); }
