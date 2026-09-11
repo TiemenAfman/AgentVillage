@@ -71,8 +71,9 @@
 
 <section class="card ed scroll" id="ed-left">
   <h1>Workbench</h1>
-  <div class="muted" style="font-size:11.5px">Pick a model, click a piece, nudge it. The panel on the
-  right hands you the code to paste back into <code>web/js/buildings.js</code>.</div>
+  <div class="muted" style="font-size:11.5px">Pick a model, click a piece, nudge it. <b>Save</b> writes
+  it into <code>web/js/buildings.js</code>; whatever it cannot match is named, and <b>Copy</b>
+  hands you that line to place by hand.</div>
   <select id="ed-model"></select>
   <div class="row">
     <label for="ed-night">Night</label>
@@ -99,8 +100,10 @@
     <button class="chip on" id="ed-mode-diff">Changes</button>
     <button class="chip" id="ed-mode-all">Whole model</button>
     <button class="btn" id="ed-copy" style="margin-left:auto">Copy</button>
+    <button class="btn primary" id="ed-save" title="Write the changed lines into web/js/buildings.js">Save</button>
   </div>
   <pre id="ed-code"></pre>
+  <div class="muted" id="ed-say" style="min-height:15px"></div>
 </section>
 
 <div class="card" id="ed-hint">

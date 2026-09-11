@@ -20,7 +20,7 @@ import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
-import { createAccess, isPublicPath, KEY_COOKIE } from './lib/access.mjs';
+import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { createWsServer } from './lib/ws.mjs';
 import { createRoster } from './lib/players.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
@@ -330,6 +330,68 @@ async function handle(req, res) {
     return json(res, 200, { ok: true, file: path.relative(ROOT, file), bytes: buf.length });
   }
 
+
+  // Saves what the workbench moved. The page sends whole lines - the one standing in
+  // buildings.js now, and the one that takes its place - and every one of them has to be
+  // found exactly once or nothing at all is written. That is the whole safety story: no
+  // line numbers, no patch format, no guessing at code, and the file named here rather
+  // than by the request, so nothing can aim this at somewhere else on the machine.
+  // Loopback only, whatever the island's own door policy says, because this writes source.
+  if (p === '/api/model-save' && req.method === 'POST') {
+    if (!isLoopback(req.socket && req.socket.remoteAddress)) {
+      return json(res, 403, { error: 'only this computer may write to the island source' });
+    }
+    let body;
+    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const edits = Array.isArray(body.edits) ? body.edits : [];
+    if (!edits.length) return json(res, 400, { error: 'nothing to save' });
+    if (edits.length > 400) return json(res, 400, { error: 'more at once than this was meant for' });
+
+    const file = path.join(WEB, 'js', 'buildings.js');
+    const before = fs.readFileSync(file, 'utf8');
+    let text = before;
+    let count = 0;
+    for (const e of edits) {
+      const op = String(e.op || '');
+      const find = String(e.find || '');
+      const line = String(e.line || '');
+      if (!find) return json(res, 400, { error: 'an edit arrived with no line to find' });
+      if (/[\r\n]/.test(find) || /[\r\n]/.test(line)) return json(res, 400, { error: 'an edit has to be a single line' });
+      // Nothing is written unless the line is in there once and once only. Twice and it
+      // is not clear which one you moved; never and someone has edited it since.
+      const hits = text.split(find).length - 1;
+      if (hits !== 1) {
+        return json(res, 409, {
+          saved: 0,
+          error: hits
+            ? `this line is in the file ${hits} times, so it is not clear which one you meant: ${find}`
+            : `this line is not in the file as it stands, so it has been edited since: ${find}`,
+        });
+      }
+      const at = text.indexOf(find);
+      const lineStart = text.lastIndexOf('\n', at) + 1;
+      const lineEnd = text.indexOf('\n', at);
+      if (op === 'replace') {
+        text = text.slice(0, at) + line + text.slice(at + find.length);
+      } else if (op === 'remove') {
+        text = text.slice(0, lineStart) + text.slice(lineEnd + 1);
+      } else if (op === 'insertAfter') {
+        const indent = (text.slice(lineStart, at).match(/^\s*/) || [''])[0];
+        text = `${text.slice(0, lineEnd)}\n${indent}${line}${text.slice(lineEnd)}`;
+      } else {
+        return json(res, 400, { error: `the workbench does not do "${op}"` });
+      }
+      count++;
+    }
+    if (text === before) return json(res, 200, { ok: true, saved: 0 });
+    // Written beside the original and moved into place, so a half-written buildings.js
+    // never exists for the page to fetch.
+    const tmp = `${file}.workbench`;
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+    log(`the workbench wrote ${count} line(s) into web/js/buildings.js`);
+    return json(res, 200, { ok: true, saved: count });
+  }
   // ---- the village office ----------------------------------------------------
   // Everything here is scoped to a district's own folder: the page names a district,
   // never a path, so no request can point git at somewhere else on the machine.

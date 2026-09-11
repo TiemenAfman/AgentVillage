@@ -4,9 +4,11 @@
 // geometry as it goes - and that is what lets this page hand back a line of code rather
 // than a mesh.
 //
-// It deliberately stops at the clipboard. Nothing here writes to `buildings.js`: you copy
-// the line and paste it, so the change goes through git like any other edit and nothing
-// on the island moves behind your back.
+// Save writes those lines into `buildings.js`, and is careful about it: the page sends the
+// line as it stands in the file and the line that takes its place, and the server refuses
+// unless it finds the first exactly once. A line the file works out rather than writes down
+// cannot be matched that way, and is named instead of guessed at - which is why Copy is
+// still here.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
@@ -187,11 +189,91 @@ let groupMode = true;
 let step = 0.01;
 let mode = 'diff';
 const undoStack = [];
+let saving = false;
 let lastMark = { tag: null, at: 0 };
 
 const el = (id) => document.getElementById(id);
+// One line under the code panel, for the things that are worth saying once.
+function say(text, kind = '') {
+  const box = el('ed-say');
+  if (!box) return;
+  box.textContent = text || '';
+  box.style.color = kind === 'bad' ? '#e58a80' : kind === 'good' ? '#8fd98f' : '';
+}
 const active = () => items.filter((it) => it.state !== 'removed');
+// Where a piece came from, as opposed to what has become of it. Removing something
+// overwrites its state, so the state cannot be asked whether it was ever in the file.
+const fromFile = (it) => it.base !== null;
 const clone = (v) => JSON.parse(JSON.stringify(v));
+
+// Gives a piece its mesh and its place in the list.
+function mount(it, geometry) {
+  it.mesh = new THREE.Mesh(geometry, material);
+  it.mesh.castShadow = true;
+  it.mesh.receiveShadow = true;
+  it.mesh.userData.item = it;
+  it.mesh.visible = it.state !== 'removed';
+  model.add(it.mesh);
+  items.push(it);
+  return it;
+}
+
+// ---------------------------------------------------------------- keeping your place
+// The workbench has no file of its own, so what you have moved lives in this browser
+// until you save it. That is enough to survive a reload or a stray Ctrl+R; it is not a
+// substitute for Save, which is the only thing that puts it in buildings.js.
+const STORE = 'promptholm.workbench';
+const modelIndex = () => CATALOGUE.findIndex((e) => e.spec.id === spec.id);
+const dirty = () => items.some((it) => it.state !== 'loaded' || sig(it.rec) !== it.base);
+
+function remember() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({
+      model: modelIndex(),
+      loaded: items.filter(fromFile)
+        .map((it) => ({ base: it.base, rec: it.rec, state: it.state, kit: it.kit })),
+      added: items.filter((it) => !fromFile(it))
+        .map((it) => ({ rec: it.rec, state: it.state, kit: it.kit })),
+    }));
+  } catch { /* a private window or a full store is not worth an error */ }
+}
+// Only ever throws away this model's own work. A clean model is the usual state of
+// affairs, and it has no business wiping what was left unsaved on another one.
+function forget() {
+  try {
+    const kept = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (kept && kept.model !== modelIndex()) return;
+    localStorage.removeItem(STORE);
+  } catch { /* then it stays, and does no harm */ }
+}
+
+// Puts back what was being worked on, but only if that model still builds the same pieces
+// in the same order. Anything else - a buildings.js that has been saved since, a
+// different model - and it is dropped rather than smeared over the wrong shape.
+function recall(modelIndex) {
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { kept = null; }
+  if (!kept || kept.model !== modelIndex) return false;
+  const loaded = items.slice();
+  if (!Array.isArray(kept.loaded) || kept.loaded.length !== loaded.length
+      || kept.loaded.some((k, i) => k.base !== loaded[i].base)) { forget(); return false; }
+  kept.loaded.forEach((k, i) => {
+    loaded[i].rec = k.rec;
+    loaded[i].kit = k.kit;
+    loaded[i].state = k.state;
+    loaded[i].mesh.visible = k.state !== 'removed';
+    refresh(loaded[i]);
+  });
+  for (const a of kept.added || []) {
+    const it = {
+      rec: a.rec, origRec: null, base: null, state: a.state,
+      loaded: null, built: null, orphan: false, kit: a.kit,
+    };
+    it.built = rebuild(a.rec);
+    mount(it, it.built);
+  }
+  return true;
+}
 
 // ---------------------------------------------------------------- loading a model
 function load(entry) {
@@ -225,15 +307,13 @@ function load(entry) {
       // piece would quietly straighten it, so it is flagged and left as it arrived.
       orphan: !sameShape(g, rebuild(rec)),
       kit: rec.group && rec.group.args ? { kind: rec.group.kind, id: rec.group.id, args: clone(rec.group.args) } : null,
+      origKit: rec.group && rec.group.args ? { kind: rec.group.kind, id: rec.group.id, args: clone(rec.group.args) } : null,
       mesh: null,
     };
-    it.mesh = new THREE.Mesh(g, material);
-    it.mesh.castShadow = true;
-    it.mesh.receiveShadow = true;
-    it.mesh.userData.item = it;
-    model.add(it.mesh);
-    items.push(it);
+    mount(it, g);
   }
+
+  const back = recall(CATALOGUE.indexOf(entry));
 
   anchorDots.clear();
   for (const at of Object.values(built.anchors || {})) {
@@ -246,6 +326,7 @@ function load(entry) {
   renderParts();
   renderProps();
   renderCode();
+  if (back) say('Picked up where you left off. Save writes it into buildings.js.');
 }
 
 // Does a rebuilt piece land where the loaded one sits? Bounding boxes settle it: were the
@@ -404,13 +485,8 @@ function addParts(recs, kitInfo = null) {
       mesh: null,
     };
     it.built = rebuild(rec);
-    it.mesh = new THREE.Mesh(it.built, material);
-    it.mesh.castShadow = true;
-    it.mesh.receiveShadow = true;
-    it.mesh.userData.item = it;
-    model.add(it.mesh);
     added.push(items.length);
-    items.push(it);
+    mount(it, it.built);
   }
   select(added);
   renderParts();
@@ -500,11 +576,18 @@ function remove() {
 }
 
 // ---------------------------------------------------------------- the code that comes out
-function hexName(h) {
-  for (const [k, v] of Object.entries(C)) if (v === h) return `C.${k}`;
-  for (const [k, v] of Object.entries(pal)) if (typeof v === 'number' && v === h) return `pal.${k}`;
-  return `0x${(h & 0xffffff).toString(16).padStart(6, '0')}`;
+// Every name the palette has for one colour. C holds two pairs that are the same value -
+// anvil and iron, paper and white - so a line written from a number alone can name the
+// wrong half of a pair and then be nowhere to be found in the file. All of them are
+// offered, and the source settles which one is really there.
+function hexNames(h) {
+  const out = [];
+  for (const [k, v] of Object.entries(C)) if (v === h) out.push(`C.${k}`);
+  for (const [k, v] of Object.entries(pal)) if (typeof v === 'number' && v === h) out.push(`pal.${k}`);
+  if (!out.length) out.push(`0x${(h & 0xffffff).toString(16).padStart(6, '0')}`);
+  return out;
 }
+const hexName = (h) => hexNames(h)[0];
 
 const argLit = (v) => (Array.isArray(v) ? `[${v.map(argLit).join(', ')}]` : num(v));
 
@@ -518,8 +601,23 @@ function oLit(o) {
   return bits.length ? `, { ${bits.join(', ')} }` : '';
 }
 
-function partLine(rec) {
-  return `parts.push(${rec.fn}(${rec.args.map(argLit).join(', ')}, ${hexName(rec.hex)}${oLit(rec.o)}));`;
+function partLine(rec, name = hexName(rec.hex)) {
+  return `parts.push(${rec.fn}(${rec.args.map(argLit).join(', ')}, ${name}${oLit(rec.o)}));`;
+}
+
+// buildings.js as it stands on disk, read once when the page opens. It is what lets the
+// panel show the line you will actually be looking for rather than a plausible guess at
+// it, and what lets Save know beforehand whether there is anything to replace.
+let source = '';
+const timesInSource = (line) => (source && line ? source.split(line).length - 1 : 0);
+
+// The line as it is written in the file, if it is in there exactly once.
+function trueLine(rec) {
+  for (const name of hexNames(rec.hex)) {
+    const line = partLine(rec, name);
+    if (timesInSource(line) === 1) return { line, name, exact: true };
+  }
+  return { line: partLine(rec), name: hexName(rec.hex), exact: false };
 }
 
 function kitLine(kit) {
@@ -536,7 +634,13 @@ function kitLine(kit) {
 // one pane has been nudged on its own it is no longer a window, and the code has to say so
 // piece by piece.
 function kitIntact(kit) {
-  const idx = items.map((it, i) => (it.state !== 'removed' && it.rec.group && it.rec.group.id === kit.id ? i : -1)).filter((i) => i >= 0);
+  const idx = items.map((it, i) => (it.rec.group && it.rec.group.id === kit.id ? i : -1)).filter((i) => i >= 0);
+  if (!idx.length) return false;
+  // Taken away as a whole it is still that piece, and its one line can go. Taken apart -
+  // one pane of a window gone, the rest standing - it is not a window any more, and the
+  // code has to speak of the boxes it has become.
+  const gone = items[idx[0]].state === 'removed';
+  if (idx.some((i) => (items[i].state === 'removed') !== gone)) return false;
   const { recs } = buildKit(kit.kind, kit.args, kit.id);
   return recs.length === idx.length && idx.every((i, n) => sig(items[i].rec) === sig(recs[n]));
 }
@@ -566,9 +670,8 @@ const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 // for word; one that came out of the kit or out of a shared helper cannot, because the
 // numbers in the file are worked out rather than written down.
 function sourceNote(kind) {
-  return SHARED_FROM[kind]
-    ? `this ${kind} is drawn by ${SHARED_FROM[kind]} - a change there is a change everywhere`
-    : `this ${kind} comes from a KIT.${kind}.build(...) call; that is the call to replace`;
+  const hint = SHARED_FROM[kind] ? `, quite possibly ${SHARED_FROM[kind]}` : '';
+  return `this ${kind} is a KIT.${kind}.build(...) call whose numbers are worked out${hint}`;
 }
 
 // The code panel is kept as lines rather than as markup, so Copy can hand over the part
@@ -582,18 +685,42 @@ function codeChanges() {
     const live = u.indices.filter((i) => items[i].state !== 'removed');
     const changed = u.indices.some((i) => items[i].state !== 'loaded' || sig(items[i].rec) !== items[i].base);
     if (!changed) continue;
-    const loaded = u.item.state === 'loaded';
-    const from = loaded && u.item.origRec.group ? u.item.origRec.group.kind : null;
-    if (from) say('note', `// ${sourceNote(from)}.`);
+    const loaded = fromFile(u.item);
+    const grouped = loaded && u.item.origRec.group ? u.item.origRec.group.kind : null;
+    // A kit call written out in the file is a line like any other, and can be shown as
+    // itself. One whose numbers a helper works out has no line to point at.
+    const wasKit = grouped && u.kit && u.item.origKit ? kitLine(u.item.origKit) : null;
+    if (wasKit && timesInSource(wasKit) === 1) {
+      say('del', `- ${wasKit}`);
+      if (live.length) { const l = kitLine(u.kit); say('add', `+ ${l}`, l); }
+      continue;
+    }
+    const from = grouped;
+    if (from) {
+      say('note', `// ${sourceNote(from)},`);
+      say('note', '// so there is no line here to match. Find that call and change it there.');
+    }
     if (!live.length) {
       // Added here and taken away again: it was never in the file, so there is nothing
       // to say about it.
       if (!loaded) continue;
       if (from) say('del', '- remove that call.');
-      else for (const i of u.indices) say('del', `- ${partLine(items[i].origRec)}`);
+      else for (const i of u.indices) say('del', `- ${trueLine(items[i].origRec).line}`);
       continue;
     }
-    if (loaded && !from) for (const i of u.indices) say('del', `- ${partLine(items[i].origRec)}`);
+    if (loaded && !from) {
+      for (const i of u.indices) {
+        const t = trueLine(items[i].origRec);
+        say('del', `- ${t.line}`);
+        if (!t.exact) {
+          say('note', '// the file writes this one with a variable or inside a loop, so it will not');
+          say('note', '// match word for word. Find it by its numbers and change it there.');
+        }
+        const l = partLine(items[i].rec, t.name);
+        say('add', `+ ${l}`, l);
+      }
+      continue;
+    }
     if (u.kit) { const l = kitLine(u.kit); say('add', `+ ${l}`, l); }
     else for (const i of live) { const l = partLine(items[i].rec); say('add', `+ ${l}`, l); }
   }
@@ -631,7 +758,61 @@ function codeWhole() {
   ];
 }
 
+// What Save can actually write, and what it cannot. A piece pushed straight into a
+// builder is one line in the file, so it can be found and replaced word for word. A
+// loaded piece out of the kit or out of a shared helper is not: the numbers there are
+// worked out rather than written down, so those stay a copy-and-paste job and are named
+// as such. Anything added is a new line, and hangs on the last untouched line of this
+// model so that it lands inside the right case.
+function saveable() {
+  const edits = [];
+  const byHand = [];
+  let anchor = null;
+  const news = [];
+  for (const u of units()) {
+    const it = u.item;
+    const loaded = fromFile(it);
+    const grouped = !!((it.origRec || it.rec).group);
+    const live = u.indices.filter((i) => items[i].state !== 'removed');
+    const changed = u.indices.some((i) => items[i].state !== 'loaded' || sig(items[i].rec) !== items[i].base);
+    if (!changed) {
+      if (loaded && !grouped) { const t = trueLine(it.origRec); if (t.exact) anchor = t.line; }
+      continue;
+    }
+    if (!loaded) {
+      if (live.length) news.push(u.kit ? kitLine(u.kit) : partLine(it.rec));
+      continue;
+    }
+    if (grouped) {
+      const kind = it.origRec.group.kind;
+      // A kit call written out in the file - the kind Save itself puts there - can be
+      // found and replaced like any other line. One whose numbers a helper works out
+      // cannot, and windowsOn is the reason that distinction exists.
+      const was = u.kit && it.origKit ? kitLine(it.origKit) : null;
+      if (was && timesInSource(was) === 1) {
+        if (!live.length) edits.push({ op: 'remove', find: was });
+        else edits.push({ op: 'replace', find: was, line: kitLine(u.kit) });
+        continue;
+      }
+      byHand.push(`the ${kind} (${SHARED_FROM[kind] ? 'drawn by a shared helper' : 'its numbers are worked out'})`);
+      continue;
+    }
+    const t = trueLine(it.origRec);
+    if (!t.exact) { byHand.push(`a ${it.rec.fn} (the file works that line out)`); continue; }
+    if (!live.length) edits.push({ op: 'remove', find: t.line });
+    else edits.push({ op: 'replace', find: t.line, line: partLine(it.rec, t.name) });
+  }
+  // The anchor is only known once the whole model has been walked, so the new pieces wait
+  // until here. Without one there is no telling where in the file they belong.
+  for (const line of news) {
+    if (anchor) edits.push({ op: 'insertAfter', find: anchor, line });
+    else byHand.push('a new piece');
+  }
+  return { edits, byHand: [...new Set(byHand)] };
+}
+
 function renderCode() {
+  if (dirty()) remember(); else forget();
   codeLines = mode === 'diff' ? codeChanges() : codeWhole();
   el('ed-code').innerHTML = codeLines
     .map((l) => (l.cls ? `<span class="${l.cls}">${esc(l.text)}</span>` : esc(l.text)))
@@ -873,7 +1054,15 @@ CATALOGUE.forEach((entry, i) => {
   opt.textContent = entry.label;
   optionHost.appendChild(opt);
 });
-picker.onchange = () => load(CATALOGUE[Number(picker.value)]);
+picker.onchange = () => {
+  const here = modelIndex();
+  if (dirty() && !confirm('You have moved things here that are not in buildings.js yet. Leave them behind?')) {
+    picker.value = String(here);
+    return;
+  }
+  forget();   // one model's work is remembered at a time, and you just chose another
+  load(CATALOGUE[Number(picker.value)]);
+};
 
 el('ed-night').oninput = (e) => { uniforms.uNight.value = Number(e.target.value); };
 el('ed-groups').onclick = (e) => {
@@ -910,6 +1099,49 @@ el('ed-copy').onclick = async () => {
   setTimeout(() => { el('ed-copy').textContent = 'Copy'; }, 1200);
 };
 
+el('ed-save').onclick = async () => {
+  const { edits, byHand } = saveable();
+  const hands = byHand.length ? ` Still by hand: ${byHand.join(', ')}.` : '';
+  if (!edits.length) {
+    if (byHand.length) say(`Nothing here can be written for you.${hands}`, 'bad');
+    else say('Nothing has changed.');
+    return;
+  }
+  const btn = el('ed-save');
+  btn.disabled = true;
+  say('Writing into buildings.js...');
+  try {
+    const r = await fetch('/api/model-save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ edits }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || !out.ok) {
+      say(out.error || `the island answered ${r.status}`, 'bad');
+      btn.disabled = false;
+      return;
+    }
+    // The file is the truth now, so the page is read again rather than pretending to
+    // know what it says.
+    saving = true;
+    forget();
+    say(`Saved ${out.saved} line${out.saved === 1 ? '' : 's'}.${hands} Reading it back.`, 'good');
+    setTimeout(() => location.reload(), byHand.length ? 2600 : 800);
+  } catch (e) {
+    say(String(e.message || e), 'bad');
+    btn.disabled = false;
+  }
+};
+
+// Moving something and then closing the tab is the one way to lose work that the browser
+// can warn about, so it does.
+addEventListener('beforeunload', (e) => {
+  if (!dirty() || saving) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -917,7 +1149,25 @@ addEventListener('resize', () => {
 });
 
 gizmo.setTranslationSnap(step);
-load(CATALOGUE[0]);
+
+// buildings.js is read once, before the first model goes up: it is what lets the panel
+// name the line you will actually be looking for, and lets Save know in advance whether
+// there is anything there to replace.
+try {
+  const r = await fetch('/js/buildings.js');
+  source = r.ok ? await r.text() : '';
+} catch { source = ''; }
+
+// If the page went away with work still in it - a reload, a tab closed by accident -
+// come back to that model rather than to the first one on the list.
+let first = 0;
+try {
+  const kept = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (kept && CATALOGUE[kept.model]) first = kept.model;
+} catch { /* then we start at the top, which is no disaster */ }
+picker.value = String(first);
+load(CATALOGUE[first]);
+if (!source) say('Could not read buildings.js, so Save has nothing to match against.', 'bad');
 
 (function loop() {
   requestAnimationFrame(loop);
