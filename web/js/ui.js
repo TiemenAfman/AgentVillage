@@ -483,6 +483,36 @@ export function createUI(handlers) {
       : `<b>${key}</b> pull the ${esc(plural)}`;
   }
 
+  // What is in your hand while building, and why it will not go down if it will not.
+  //
+  // The same shape as setPouch below, and for the same reason: it is called every frame,
+  // so it goes through once() and the DOM is only touched when the words change. The
+  // refusal lives here rather than in a toast - a toast per mouse move is unreadable.
+  const DOES = { rot: 'turn', scale: 'size', length: 'stretch' };
+  function setBuildHud(info) {
+    const p = el('build-hud');
+    if (!info) { p.hidden = true; return; }
+    p.hidden = false;
+    if (info.taking) {
+      once('build-hud', `<b>Taking away</b>`
+        + (info.target ? '<span>click to take it</span>' : '<span class="muted">point at something built by hand</span>')
+        + '<span class="muted"><kbd>Esc</kbd> stop</span>');
+      return;
+    }
+    const w = info.wheels || {};
+    const size = info.spec && w.shift === 'length' && info.spec.length
+      ? ` <span class="muted">${Math.round(info.spec.length * 10) / 10} long</span>` : '';
+    const keys = [
+      w.wheel ? `<kbd>scroll</kbd> ${DOES[w.wheel]}` : '',
+      w.ctrl ? `<kbd>ctrl</kbd> ${DOES[w.ctrl]}` : '',
+      w.shift ? `<kbd>shift</kbd> ${DOES[w.shift]}` : '',
+    ].filter(Boolean).join(' · ');
+    once('build-hud', `<b>${esc(info.kind)}</b>${size} in hand`
+      + (info.why ? `<span class="why">${esc(info.why)}</span>` : '<span>click to put it down</span>')
+      + (keys ? `<span class="muted">${keys}</span>` : '')
+      + '<span class="muted"><kbd>Esc</kbd> put back</span>');
+  }
+
   // The purse, the seed in your hand and what is standing ready, while you walk. Only
   // the keeper of the island farms it, so a visitor is never shown this.
   function setPouch(garden) {
@@ -512,7 +542,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm, setIndoors,
+    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
   };
 }

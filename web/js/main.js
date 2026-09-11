@@ -29,6 +29,7 @@ import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
 import { createBuildMenu } from './buildmenu.js';
+import { createGhost } from './ghost.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
@@ -2133,7 +2134,10 @@ function frame(nowMs) {
     if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
   }
 
-  if (state.mode !== 'walk') updateLabels();
+  // After the camera is settled, so the ray it casts is the one you are looking down.
+  if (state.ghost) state.ghost.update(dt);
+  // Hover labels and a ghost fight over the same pointer, and the ghost wins.
+  if (state.mode !== 'walk' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
   // After the canvas, on its own layer above it. This one has no depth of its own - see
@@ -2462,6 +2466,17 @@ async function boot() {
     onPanels: (m) => applyPanelMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  // What a shape looks like before anybody has agreed to it. Built after the world and
+  // the props, because it aims at the ground mesh and measures against what is standing.
+  state.ghost = createGhost({
+    scene, camera, terrain: state.terrain, dom: renderer.domElement,
+    groundMesh: state.world.ground,
+    propsGroup: state.props.group,
+    player: () => (state.mode === 'walk' && !state.inside ? state.walk.state.pos : null),
+    blockers: () => walkableBlockers(),
+    hud: (info) => state.ui.setBuildHud(info),
+    toast: (html) => state.ui.toast(escapeHtml(html)),
+  });
   // What a panel is allowed to know about the island: a handful of getters, so a face
   // can say something live without reaching into the scene.
   state.panels = createPanels({
