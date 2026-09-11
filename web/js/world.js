@@ -175,8 +175,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // been drawn and is now how the rivers are drawn too. A river is only about two cells
   // across, though, and the old two-unit grid put barely a vertex in the channel - the
   // depth it shaded by came from the bank. Hence a vertex per unit here.
-  const wSeg = opts.modest ? 130 : 260;
-  const waterGeo = new THREE.PlaneGeometry(260, 260, wSeg, wSeg);
+  //
+  // 260 was a fixed number that happened to fit a grid of 140 with room to spare. A grid
+  // can be 512, and then the detailed patch stopped at 130 while the coast ran on to 256:
+  // half the island's own water had no rivers shaded into it. It follows the island now,
+  // with the same margin - which on a small island is less to draw than before, not more.
+  const wSpan = Math.max(260, size + 120);
+  const wSeg = opts.modest ? Math.round(wSpan / 2) : wSpan;
+  const waterGeo = new THREE.PlaneGeometry(wSpan, wSpan, wSeg, wSeg);
   waterGeo.rotateX(-Math.PI / 2);
   const wp = waterGeo.attributes.position;
   const depth = new Float32Array(wp.count);
@@ -253,12 +259,31 @@ export function createWorld(scene, terrain, village, opts = {}) {
   water.renderOrder = 1;
   group.add(water);
 
-  // A plain disc of sea beyond the detailed patch, so the horizon has no seam.
-  const oceanGeo = new THREE.CircleGeometry(500, 72);
+  // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
+  // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
+  // and an island of the largest grid reaches 256 further again, so the far water is
+  // something you look at rather than past. It is the same shader now, sharing the same
+  // uniforms so there is one clock and one sun over the whole sea, and it runs out to
+  // 1200 - inside the camera's far plane, with the sky grown to stay outside it.
+  //
+  // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
+  // gives everything past its own edge, so the colour is constant and there is nothing to
+  // interpolate; the waves are 5 cm on a surface a kilometre across.
+  //
+  // Opaque, unlike the patch, because there is nothing underneath it to show through.
+  const OCEAN_R = 1200;
+  const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
   oceanGeo.rotateX(-Math.PI / 2);
-  const ocean = new THREE.Mesh(oceanGeo, new THREE.MeshBasicMaterial({ color: 0x215e78, fog: true }));
-  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles.
-  ocean.position.y = -0.2;
+  const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
+  oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
+  const oceanMat = waterMat.clone();
+  oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
+  oceanMat.transparent = false;
+  oceanMat.depthWrite = true;
+  const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+  // Wave troughs reach -0.09, and this sheet rides the same ones, so it sits just under
+  // the patch rather than well below it: any deeper and the seam shows as a dark ring.
+  ocean.position.y = -0.06;
   ocean.renderOrder = 0;
   group.add(ocean);
 
@@ -292,7 +317,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
     `,
   });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(620, 26, 16), skyMat);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea, inside the camera's far plane
   sky.frustumCulled = false;
   group.add(sky);
 
@@ -755,7 +780,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     waterMat.uniforms.uSunDir.value.copy(dir);
     waterMat.uniforms.uSunColor.value.copy(d.key);
     waterMat.uniforms.uNight.value = d.night;
-    ocean.material.color.copy(waterMat.uniforms.uDeep.value).multiplyScalar(lerp(1, 0.34, d.night));
+    // The open sea shares these uniforms rather than a colour of its own, so it takes the
+    // sun and the nightfall from the lines above; there is nothing left to set here.
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
