@@ -115,10 +115,6 @@ function makeRenderer() {
 // comes back. It usually respawns within seconds, so wait and reload rather than making
 // the reader do it. A counter in sessionStorage keeps that from becoming a reload loop.
 const RETRY_KEY = 'promptholm.canvasRetries';
-// Losing a context is counted apart from failing to make one. The creation counter is
-// cleared the moment a context is handed over, which is exactly what a card that gives
-// one back and then drops it again keeps doing - so it would never reach its bound.
-const LOST_KEY = 'promptholm.canvasLosses';
 const MAX_RETRIES = 4;
 
 let renderer;
@@ -138,21 +134,6 @@ try {
   }
   throw e;
 }
-
-function gpuName() {
-  try {
-    const gl = renderer.getContext();
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    return dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
-  } catch { return 'unknown'; }
-}
-
-// Asked the once, while there is still a context to ask. Inside the handler below there
-// is not: by the time it runs the context is already gone, which is why every
-// "webgl context lost" line in data/server.log said renderer: unknown - the one thing
-// worth knowing on a machine with two cards that keeps changing its mind about which
-// one draws.
-const GPU = gpuName();
 
 function countdownReload(seconds, attempt) {
   const boot = document.getElementById('boot');
@@ -181,28 +162,25 @@ let contextLost = false;
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
   contextLost = true;
-  report('webgl context lost', `renderer: ${GPU}`);
+  report('webgl context lost', `renderer: ${gpuName()}`);
   showCanvasTrouble(new Error('The island lost its 3D canvas.'), true);
 });
+
+function gpuName() {
+  try {
+    const gl = renderer.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    return dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+  } catch { return 'unknown'; }
+}
 
 // An integrated GPU driving a full-screen scene with a big shadow map is the most
 // likely thing to fall over, so ask it for less.
 const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
 canvas.addEventListener('webglcontextrestored', () => {
   contextLost = false;
-  // A card that keeps handing the context back and losing it again would reload for ever,
-  // so this is bounded the way a failed creation is. Past the bound the standing message
-  // and the board behind it are more use than another round trip.
-  let losses = 0;
-  try { losses = Number(sessionStorage.getItem(LOST_KEY) || 0); } catch { /* private window */ }
-  if (losses >= MAX_RETRIES) { showCanvasTrouble(new Error('The 3D canvas keeps going away.')); return; }
-  try { sessionStorage.setItem(LOST_KEY, String(losses + 1)); } catch { /* private window */ }
   location.reload();
 });
-
-// An island that has drawn for a minute is not in a reload loop, so whatever it runs into
-// after that gets the full count again rather than the tail of an older run of trouble.
-setTimeout(() => { try { sessionStorage.removeItem(LOST_KEY); } catch { /* private window */ } }, 60000);
 
 function showCanvasTrouble(err, recoverable = false) {
   const boot = document.getElementById('boot');
@@ -247,8 +225,8 @@ async function openBoardWithoutIsland() {
   board.open();
 }
 
-const modest = MODEST_GPU.test(GPU);
-report(`island drawing on: ${GPU}`);   // one line per load, so the log says which card
+const modest = MODEST_GPU.test(gpuName());
+report(`island drawing on: ${gpuName()}`);   // one line per load, so the log says which card
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
