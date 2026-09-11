@@ -107,7 +107,7 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
         <h4>Taking things away</h4>
         <div class="bd-grid one">
           <div class="bd-tile take" data-take="1">
-            <b>take away</b>
+            <b>DESTROY OBJECT</b>
             <p>Point at something that was built by hand and click. It stays on until
             <kbd>Esc</kbd>, so a run of fence is one click a post.</p>
           </div>
