@@ -13,9 +13,11 @@
   inset: 0;
   z-index: 1;                 /* over the canvas, under every card and panel of the UI */
   overflow: hidden;
-  /* The container never takes the mouse. Without this it lies over the whole island and
-     nothing can be dragged, zoomed or clicked. panels.js sets it too, in case this
-     stylesheet is ever missing; both are cheap and the failure is silent. */
+  /* Nothing on this layer ever takes the mouse - not the container, not a panel. Without
+     it the layer lies over the whole island and nothing can be dragged, zoomed or
+     clicked; with it, a click on a board is aimed by the raycaster instead, which is the
+     only thing that works at the distance you stand to read one. See web/js/panels.js,
+     which sets this too in case this stylesheet is ever missing. */
   pointer-events: none;
 }
 
@@ -26,23 +28,23 @@
   overflow: hidden;
   /* The board behind the glass is dark wood, and the page sits in it rather than on it:
      a little inset shadow is what stops it reading as a sticker. */
-  box-shadow: inset 0 0 60px rgba(0, 0, 0, .75), inset 0 0 0 4px rgba(0, 0, 0, .5);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, .75), inset 0 0 0 2px rgba(0, 0, 0, .5);
 }
 
 .face {
   width: 100%;
   height: 100%;
-  padding: 56px 64px;
+  padding: 26px 30px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
   background: radial-gradient(120% 90% at 50% 0%, #23201b 0%, #14100c 75%);
 }
 
 .face h1 {
   margin: 0;
   font-family: var(--font);
-  font-size: 62px;
+  font-size: 40px;
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: .01em;
@@ -53,16 +55,16 @@
 .face-notice p {
   margin: 0;
   flex: 1;
-  font-size: 38px;
+  font-size: 22px;
   line-height: 1.45;
   color: var(--ink);
 }
 
 .face-notice footer {
-  font-size: 26px;
+  font-size: 15px;
   color: var(--ink-dim);
-  border-top: 2px solid var(--edge);
-  padding-top: 18px;
+  border-top: 1px solid var(--edge);
+  padding-top: 10px;
 }
 
 /* --- clock ------------------------------------------------------------ */
@@ -70,16 +72,16 @@
 
 .face-clock .clock-time {
   font-family: var(--font);
-  font-size: 190px;
+  font-size: 112px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
 
 .face-clock .clock-season {
-  font-size: 34px;
+  font-size: 20px;
   color: var(--accent-2);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .face-clock ul {
@@ -87,9 +89,9 @@
   padding: 0;
   list-style: none;
   flex: 1;
-  border-top: 2px solid var(--edge);
-  padding-top: 16px;
-  font-size: 28px;
+  border-top: 1px solid var(--edge);
+  padding-top: 9px;
+  font-size: 17px;
   line-height: 1.5;
   color: var(--ink);
   overflow: hidden;
@@ -98,9 +100,90 @@
 .face-clock li.head,
 .face-clock li.more {
   color: var(--ink-dim);
-  font-size: 24px;
+  font-size: 14px;
   letter-spacing: .06em;
   text-transform: uppercase;
 }
 
 .face-clock li.more { text-transform: none; letter-spacing: 0; }
+
+/* A board somebody is standing at and working. The ring is the whole of the feedback:
+   it is the difference between a page you are reading and a page that has your mouse
+   and your keyboard. */
+.panel3d.worked {
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, .6), inset 0 0 0 3px var(--accent), 0 0 45px rgba(232, 180, 92, .35);
+}
+
+/* --- tally ------------------------------------------------------------ */
+.face-tally { gap: 10px; }
+
+.face-tally .tabs { display: flex; gap: 7px; }
+
+.face-tally .tab {
+  font: inherit;
+  font-size: 16px;
+  padding: 6px 15px;
+  color: var(--ink-dim);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--edge);
+  border-radius: 99px;
+  cursor: pointer;
+}
+
+.face-tally .tab.on { color: #14100c; background: var(--accent); border-color: var(--accent); }
+
+.face-tally .tab-body { flex: 1; display: flex; flex-direction: column; gap: 13px; }
+
+.face-tally .tally-n {
+  font-family: var(--font);
+  font-size: 76px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.face-tally .tally-keys { display: flex; gap: 9px; }
+
+.face-tally .btn {
+  font: inherit;
+  font-size: 20px;
+  padding: 8px 20px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* `under` is :hover, put on by hand: the mouse never really enters this page, so the
+   browser has no hover state to give it. See hover() in web/js/panels.js. */
+.face-tally .btn.under { border-color: var(--accent); color: var(--accent); }
+.face-tally .tab.under { color: var(--ink); border-color: var(--accent); }
+.face-tally .btn.quiet { color: var(--ink-dim); font-size: 16px; }
+
+.face-tally label {
+  display: block;
+  font-size: 14px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.face-tally input,
+.face-tally textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 19px;
+  padding: 8px 11px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, .4);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  resize: none;
+}
+
+.face-tally input:focus,
+.face-tally textarea:focus { outline: none; border-color: var(--accent); }
+.face-tally input.under,
+.face-tally textarea.under { border-color: var(--ink-dim); }
