@@ -401,6 +401,7 @@ export function createWalkMode({
     lounge.visible = false;
     standUp();
     keys.clear();
+    stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false;
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
   }
 
@@ -460,7 +461,9 @@ export function createWalkMode({
 
   function setPaused(v) {
     state.paused = !!v;
-    if (v) { keys.clear(); stick.x = 0; stick.z = 0; }
+    // The sprint toggle is state now, so it has to be dropped along with the rest - or you
+    // come out of a conversation already running.
+    if (v) { keys.clear(); stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; }
   }
 
   // Step up to a board and work it. Pointer lock is the thing that has to go: while the
