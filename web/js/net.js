@@ -15,13 +15,30 @@ const FLAG_SWIMMING = 2;
 const FLAG_RUNNING = 4;
 const FLAG_AIRBORNE = 8;
 
-export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}) {
+// What somebody does on a board goes out on this beat, coalesced: a field typed into or
+// pressed repeatedly is one value every sixth of a second, not one per keystroke.
+//
+// That is not politeness, it is the budget. The bucket in lib/players.mjs does not
+// throttle when it runs out - it closes the socket with 1008 - and it refills at 25 a
+// second, of which the pose beat above already spends ten. Six beats a second carrying
+// at most two fields each is 12.5, which leaves room to spare; without the cap a face
+// with four fields waiting would send 24 on its own and take the line down.
+const UI_MS = 160;
+const UI_PER_BEAT = 2;
+
+export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
   let walking = false;
   let selfId = null;
   const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, at: 0 };
+  // Where our own hand is on a board, riding along with the pose rather than costing a
+  // message of its own.
+  let cursor = null;
+  // One pending value per board and field, so the last word wins and the ones it
+  // overtook are never sent at all.
+  const pending = new Map();
 
   const send = (obj) => {
     if (sock && sock.readyState === 1) { sock.send(JSON.stringify(obj)); return true; }
@@ -49,11 +66,16 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
           selfId = m.id;
           peers.setSelf(m.id);
           for (const p of m.players || []) peers.join(p);
+          // Whatever the boards already said before we walked up.
+          onPanels({ kind: 'all', boards: m.panels || [] });
           break;
         case 'join': peers.join(m.p); break;
         case 'leave': peers.leave(m.id); break;
         case 'roster': peers.roster(m.players); break;
         case 's': peers.snapshot(m.a); break;
+        // The boards. `ui` is one field of one board; `drove` is who is standing at it.
+        case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
+        case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
         default: break;
       }
     });
@@ -96,9 +118,25 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
       && Math.abs(s.yaw - last.yaw) < TURNED
       && f === last.f;
     if (still && now - last.at < KEEPALIVE_MS) return;
-    if (!send({ t: 'p', x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, f })) return;
+    const pose = { t: 'p', x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, f };
+    if (cursor) { pose.b = cursor.id; pose.u = cursor.u; pose.v = cursor.v; }
+    if (!send(pose)) return;
     last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.at = now;
   }, POSE_MS);
+
+  // A standing player sends nothing but the slow keepalive, and a hand moving over a
+  // board while the feet are still would be stuck in it. So the moment the cursor
+  // changes the next beat is made to go out.
+  function stirPose() { last.f = -1; }
+
+  const uiBeat = setInterval(() => {
+    let left = UI_PER_BEAT;
+    for (const [key, msg] of pending) {
+      if (left-- <= 0) return;             // the rest go out on the next beat
+      if (!send(msg)) return;              // the line is down; keep them for when it is back
+      pending.delete(key);
+    }
+  }, UI_MS);
 
   // A hidden tab is a player who has stepped away: say so, rather than leaving a statue
   // standing until the server times it out.
@@ -114,10 +152,26 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
       send({ t: 'w', on: walking });
     },
     setName(n) { if (n) send({ t: 'hello', name: n }); },
+    // One field of one board. Queued rather than sent: see UI_MS.
+    setPanelField(id, action, value) {
+      pending.set(`${id}:${action}`, { t: 'ui', id, a: action, v: value });
+    },
+    // Standing at a board, and letting go of it. Both go out at once - they are one
+    // press each, and waiting for the beat would make E feel slow.
+    takePanel(id) { send({ t: 'take', id }); },
+    dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
+    // Where our hand is on the board we are at, or null when it is off it.
+    setPanelCursor(at) {
+      const had = cursor;
+      cursor = at;
+      if (!had !== !cursor || (cursor && had && (cursor.id !== had.id
+        || Math.abs(cursor.u - had.u) > 0.004 || Math.abs(cursor.v - had.v) > 0.004))) stirPose();
+    },
     id: () => selfId,
     dispose() {
       closed = true;
       clearInterval(beat);
+      clearInterval(uiBeat);
       document.removeEventListener('visibilitychange', onVisibility);
       try { sock && sock.close(); } catch { /* already gone */ }
     },

@@ -187,3 +187,59 @@
 .face-tally textarea:focus { outline: none; border-color: var(--accent); }
 .face-tally input.under,
 .face-tally textarea.under { border-color: var(--ink-dim); }
+
+/* --- other people at the same board ----------------------------------- */
+/* A cursor and a name have to be DOM inside the panel. Nothing drawn in WebGL can lie
+   over this layer, so a pointer made of geometry would disappear behind the very page
+   it is pointing at. */
+.panel-hands {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.panel-hands .hand {
+  position: absolute;
+  transform: translate(-1px, -1px);
+  transition: left .1s linear, top .1s linear;   /* the poses arrive ten times a second */
+  color: var(--accent-2);
+}
+
+.panel-hands .hand svg { width: 17px; height: 22px; display: block; fill: currentColor; stroke: #14100c; stroke-width: 1.2; }
+
+.panel-hands .hand b {
+  position: absolute;
+  left: 15px;
+  top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 99px;
+  color: #14100c;
+  background: currentColor;
+}
+
+/* The same five model colours the settlers wear, so a hand on a board belongs to the
+   same person as the figure standing beside you. */
+.panel-hands .hand.style-fable { color: #d98fc2; }
+.panel-hands .hand.style-opus { color: #c9a2f0; }
+.panel-hands .hand.style-sonnet { color: #7fc7d9; }
+.panel-hands .hand.style-haiku { color: #8fd99a; }
+.panel-hands .hand.style-unknown { color: #d9c48f; }
+
+/* Somebody else has this one. It still reads, it simply does not answer. */
+.panel-driver {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: #14100c;
+  background: var(--accent);
+}
+
+.panel3d.driven { box-shadow: inset 0 0 30px rgba(0, 0, 0, .6), inset 0 0 0 2px var(--accent-2); }

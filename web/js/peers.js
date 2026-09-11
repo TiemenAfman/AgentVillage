@@ -60,7 +60,7 @@ function labelTexture(text) {
   return tex;
 }
 
-export function createPeers({ scene, material, terrain }) {
+export function createPeers({ scene, material, terrain, onCursor = () => {} }) {
   // One geometry per style, shared by everyone wearing it. Never disposed while the page
   // lives: handing it to a peer and then throwing it away when that peer leaves is how
   // the next arrival of the same style renders as garbage.
@@ -99,6 +99,7 @@ export function createPeers({ scene, material, terrain }) {
       from: null,          // the two samples we interpolate between
       to: null,
       bob: Math.random() * 6.28,
+      cursor: null,       // where their hand is on a board, if it is on one
       shown: false,
       fade: 0,             // seconds left of the leaving animation
       leaving: false,
@@ -131,6 +132,7 @@ export function createPeers({ scene, material, terrain }) {
   }
 
   function drop(p) {
+    setCursor(p, null);
     scene.remove(p.mesh);
     p.mesh.remove(p.sprite);
     // Only what belongs to this one peer. The geometry and the material are shared.
@@ -157,8 +159,22 @@ export function createPeers({ scene, material, terrain }) {
       p.from = p.to || pose;
       p.to = pose;
       p.shown = true;
+      // A seventh entry means their hand is on a board. It rides here rather than in a
+      // message of its own - see the pose beat in web/js/net.js.
+      setCursor(p, row.length > 6 ? { board: row[6], u: row[7], v: row[8] } : null);
     }
-    for (const p of peers.values()) if (p.shown && !seen.has(p.id)) { p.shown = false; p.leaving = true; p.fade = FADE_S; }
+    for (const p of peers.values()) {
+      if (p.shown && !seen.has(p.id)) { p.shown = false; p.leaving = true; p.fade = FADE_S; setCursor(p, null); }
+    }
+  }
+
+  // Only on a change, so the panels are not handed the same position ten times a second.
+  function setCursor(p, at) {
+    const had = p.cursor;
+    if (!had && !at) return;
+    if (had && at && had.board === at.board && had.u === at.u && had.v === at.v) return;
+    p.cursor = at;
+    onCursor(p.id, at ? { ...at, name: p.name, style: p.style } : null);
   }
 
   function roster(list) {
@@ -238,6 +254,9 @@ export function createPeers({ scene, material, terrain }) {
     update,
     clear,
     blockers: () => blockers,
+    // A player id is only a name in here, so anything that wants to say who somebody is
+    // has to ask. Somebody who has already left keeps a placeholder rather than an id.
+    nameOf: (id) => (peers.get(id) ? peers.get(id).name : 'Somebody'),
     setSelf: (id) => { selfId = id; if (peers.has(id)) drop(peers.get(id)); },
     count: () => peers.size,
     dispose: () => {
