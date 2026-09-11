@@ -21,7 +21,12 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
   let closed = false;
   let walking = false;
   let selfId = null;
-  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, at: 0 };
+  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, r: null, at: 0 };
+  // Whose feet to report. Walking the island it is the island's walk mode; indoors the
+  // room owns one of its own, and reporting the wrong one would leave your body standing
+  // wherever you last were outside.
+  let here = walk;
+  let room = null;
 
   const send = (obj) => {
     if (sock && sock.readyState === 1) { sock.send(JSON.stringify(obj)); return true; }
@@ -83,8 +88,8 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
   // front of everyone else in a way they cannot tell from a crash. setInterval is clamped
   // to about a second in the background, which is exactly the right amount of alive.
   const beat = setInterval(() => {
-    if (!walking || !walk || !walk.state.active) return;
-    const s = walk.state;
+    if (!walking || !here || !here.state.active) return;
+    const s = here.state;
     const f = (s.moving ? FLAG_MOVING : 0)
       | (s.swimming ? FLAG_SWIMMING : 0)
       | (s.moving && !s.swimming && s.running ? FLAG_RUNNING : 0)
@@ -94,10 +99,11 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
       && Math.abs(s.pos.z - last.z) < MOVED
       && Math.abs(s.pos.y - last.y) < MOVED
       && Math.abs(s.yaw - last.yaw) < TURNED
-      && f === last.f;
+      && f === last.f
+      && room === last.r;
     if (still && now - last.at < KEEPALIVE_MS) return;
-    if (!send({ t: 'p', x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, f })) return;
-    last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.at = now;
+    if (!send({ t: 'p', x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, f, r: room || undefined })) return;
+    last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.r = room; last.at = now;
   }, POSE_MS);
 
   // A hidden tab is a player who has stepped away: say so, rather than leaving a statue
@@ -112,6 +118,13 @@ export function createNet({ peers, walk, onStatus = () => {}, name = null } = {}
       walking = !!on;
       last.f = -1;
       send({ t: 'w', on: walking });
+    },
+    // Stepping into a room, or back out of it. Null is outdoors, and the walk mode that
+    // comes with it is the one your pose is read from until you leave.
+    setRoom(name, mode = null) {
+      room = name || null;
+      here = mode || walk;
+      last.f = -1;                    // force the next pose through, wherever it is
     },
     setName(n) { if (n) send({ t: 'hello', name: n }); },
     id: () => selfId,

@@ -60,7 +60,12 @@ function labelTexture(text) {
   return tex;
 }
 
+// Where a room's people get drawn, and what they stand on. The island is the room with
+// no name; a tavern registers itself under its own, and a peer moves between them as
+// their pose says so. One peer list either way: the label, the geometry and the join
+// bookkeeping are the same wherever somebody happens to be standing.
 export function createPeers({ scene, material, terrain }) {
+  const places = new Map([[null, { scene, terrain }]]);
   // One geometry per style, shared by everyone wearing it. Never disposed while the page
   // lives: handing it to a peer and then throwing it away when that peer leaves is how
   // the next arrival of the same style renders as garbage.
@@ -71,7 +76,12 @@ export function createPeers({ scene, material, terrain }) {
   }
 
   const peers = new Map();   // id -> peer
-  const blockers = [];
+  const byRoom = new Map();  // room -> the people in it you can bump into
+  const blockersIn = (name) => {
+    const key = name || null;
+    if (!byRoom.has(key)) byRoom.set(key, []);
+    return byRoom.get(key);
+  };
   let selfId = null;
 
   function makePeer(info) {
@@ -81,7 +91,7 @@ export function createPeers({ scene, material, terrain }) {
     mesh.rotation.order = 'YXZ';       // yaw first, then the swimmer's pitch - as in walk.js
     mesh.castShadow = true;
     mesh.visible = false;
-    scene.add(mesh);
+    scene.add(mesh);                   // outdoors until a pose says otherwise
 
     const tex = labelTexture(info.name);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true }));
@@ -99,6 +109,8 @@ export function createPeers({ scene, material, terrain }) {
       from: null,          // the two samples we interpolate between
       to: null,
       bob: Math.random() * 6.28,
+      room: null,
+      want: null,
       shown: false,
       fade: 0,             // seconds left of the leaving animation
       leaving: false,
@@ -130,8 +142,29 @@ export function createPeers({ scene, material, terrain }) {
     p.fade = FADE_S;
   }
 
+  // A room the page has built and can draw. Registering one after the fact is normal:
+  // the tavern is not built until somebody first opens its door.
+  function place(name, where) {
+    if (where) places.set(name || null, where);
+    else places.delete(name);
+  }
+
+  // Somebody has walked through a door: their body goes with them. A room nobody has
+  // built yet leaves them where they were, which is the honest answer -- there is no
+  // scene to put them in.
+  function moveTo(p, name) {
+    const to = places.get(name || null);
+    if (!to || p.room === (name || null)) return;
+    const from = places.get(p.room);
+    if (from) from.scene.remove(p.mesh);
+    to.scene.add(p.mesh);
+    p.room = name || null;
+    p.from = null;                     // do not slide them in from the other room
+  }
+
   function drop(p) {
-    scene.remove(p.mesh);
+    const from = places.get(p.room);
+    if (from) from.scene.remove(p.mesh);
     p.mesh.remove(p.sprite);
     // Only what belongs to this one peer. The geometry and the material are shared.
     p.sprite.material.map.dispose();
@@ -144,13 +177,15 @@ export function createPeers({ scene, material, terrain }) {
   function snapshot(list, at = performance.now()) {
     const seen = new Set();
     for (const row of list || []) {
-      const [id, x, y, z, yaw, f] = row;
+      const [id, x, y, z, yaw, f, r] = row;
       if (id === selfId) continue;
       const p = peers.get(id);
       if (!p) continue;              // unknown until the next join or roster: one creation path
       seen.add(id);
       p.leaving = false;
       p.fade = 0;
+      p.want = typeof r === 'string' ? r : null;
+      moveTo(p, p.want);
       const pose = { x, y, z, yaw, f: f | 0, at };
       // Timestamps are our own clock, never the server's: nothing to synchronise and
       // nothing to skew.
@@ -169,13 +204,13 @@ export function createPeers({ scene, material, terrain }) {
 
   function clear() {
     for (const p of [...peers.values()]) drop(p);
-    blockers.length = 0;
+    for (const list of byRoom.values()) list.length = 0;
   }
 
   function update(dt) {
     const now = performance.now();
     const render = now - LAG_MS;
-    blockers.length = 0;
+    for (const list of byRoom.values()) list.length = 0;
 
     for (const p of [...peers.values()]) {
       if (p.leaving) {
@@ -187,6 +222,9 @@ export function createPeers({ scene, material, terrain }) {
         continue;
       }
       if (!p.to) { p.mesh.visible = false; continue; }
+      // Somewhere this page has not built. Better nowhere than standing outside a room
+      // they are actually sitting in.
+      if (p.room !== p.want) { p.mesh.visible = false; continue; }
       p.mesh.scale.setScalar(1);
       p.mesh.visible = true;
 
@@ -211,7 +249,10 @@ export function createPeers({ scene, material, terrain }) {
       // generated the island from a different seed the two terrains disagree, and this is
       // what keeps everyone's feet on the floor instead of sunk or hovering. A jump is the
       // exception: that arc is not something the ground can tell us.
-      const ground = terrain ? terrain.worldHeight(x, z) : 0;
+      // The ground of the room they are in, not of the island: indoors that is a flat
+      // floor a little over the water line, and the island's terrain knows nothing of it.
+      const floor = (places.get(p.room) || {}).terrain;
+      const ground = floor ? floor.worldHeight(x, z) : 0;
       const base = airborne ? (a.y + (b.y - a.y) * k) : (ground < 0 ? -0.07 : ground);
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
@@ -226,7 +267,7 @@ export function createPeers({ scene, material, terrain }) {
 
       // Somebody to bump into. Swimmers and jumpers are left out: a wall you cannot see
       // standing in open water is worse than walking through a swimmer.
-      if (!swimming && !airborne) blockers.push({ x, z, r: BODY_R });
+      if (!swimming && !airborne) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
   }
 
@@ -237,7 +278,8 @@ export function createPeers({ scene, material, terrain }) {
     snapshot,
     update,
     clear,
-    blockers: () => blockers,
+    place,
+    blockers: (name = null) => blockersIn(name),
     setSelf: (id) => { selfId = id; if (peers.has(id)) drop(peers.get(id)); },
     count: () => peers.size,
     dispose: () => {
