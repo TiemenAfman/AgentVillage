@@ -432,7 +432,7 @@ export function createUI(handlers) {
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span>`
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
         + `<span class="lit"><kbd>B</kbd> build</span>`
         + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;

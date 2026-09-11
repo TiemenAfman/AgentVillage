@@ -26,9 +26,12 @@ const SWIM_SPEED = 1.9;
 const SWIM_REACH = 2.0;
 const WATER_Y = 0;
 const SWIM_SINK = 0.07;
-// Ctrl crouches. Keep holding it while standing still and the settler decides the day is
+// C crouches. Keep holding it while standing still and the settler decides the day is
 // over, lies down and puts up a parasol - so the countdown only runs while you are not
 // moving, or a crouch-walk would end in a nap.
+//
+// It used to be Ctrl, which read well until you crouched and walked: that is ctrl+W, and
+// Chrome closes the tab on it without letting the page object. A letter has no such owner.
 const CROUCH_SCALE = 0.62;
 const CROUCH_SPEED = 1.7;
 const LIE_AFTER_MS = 2000;
@@ -148,7 +151,7 @@ export function createWalkMode({
     // Where you are sitting, or null. A seat carries its own height, so a bar stool holds
     // you above the floor rather than sinking you into it.
     sitting: null,
-    ctrlSince: 0,
+    crouchSince: 0,
     blockers: [],
     // The other people, kept apart from the buildings on purpose: the building list is
     // only rebuilt when the village data changes, while this one moves every frame.
@@ -173,17 +176,17 @@ export function createWalkMode({
     paused: false,   // true while an overlay owns the input
   };
 
-  // Letting go of Ctrl ends a crouch, but not a nap: once the settler is down they stay
-  // down, so the key can be released. Getting up is moving, or pressing Ctrl again.
+  // Letting go of C ends a crouch, but not a nap: once the settler is down they stay
+  // down, so the key can be released. Getting up is moving, or pressing C again.
   function releaseCrouch() {
     state.crouching = false;
-    if (!state.lying) state.ctrlSince = 0;
+    if (!state.lying) state.crouchSince = 0;
   }
   function standUp() {
     state.crouching = false;
     state.lying = false;
     state.sitting = null;
-    state.ctrlSince = 0;
+    state.crouchSince = 0;
   }
 
   // Jumping and crouching live here rather than in the key handler because the controller
@@ -194,7 +197,7 @@ export function createWalkMode({
   }
   function crouchToggle() {
     if (state.lying) standUp();                 // pressing it again is how you get up
-    else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
+    else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); }
   }
 
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
@@ -203,7 +206,7 @@ export function createWalkMode({
   function sitOn({ x, z, y, yaw = 0 }) {
     state.crouching = false;
     state.lying = false;
-    state.ctrlSince = 0;
+    state.crouchSince = 0;
     state.sitting = { x, z, y: y != null ? y : groundAt(x, z, state.pos.y), yaw, since: performance.now() };
     state.pos.set(x, state.sitting.y, z);
     keys.clear();                            // whatever walked you here is not walking you off
@@ -216,6 +219,11 @@ export function createWalkMode({
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
     const k = e.key.toLowerCase();
+    // A key with ctrl, meta or alt on it belongs to the browser, and the island does not
+    // get a say: ctrl+W closes the tab and Chrome will not let a page cancel it. Nothing
+    // here is meant to be pressed with a modifier, so they all go straight through -
+    // which also covers AltGr on a Dutch layout, where it arrives as ctrl+alt.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
     // inside a field, where those keys are letters somebody is typing.
@@ -230,12 +238,7 @@ export function createWalkMode({
     }
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') { e.preventDefault(); jump(); }
-    if (k === 'control') { e.preventDefault(); crouchToggle(); }
-    // Past this point the keys are bare letters, and a letter with ctrl or alt on it
-    // belongs to the browser - ctrl+shift+B is Chrome's bookmarks bar, and on a Dutch
-    // layout AltGr arrives as ctrl+alt. Let those through untouched rather than firing
-    // both the island's command and the browser's.
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (k === 'c') { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // A thought needs nothing to stand in front of: it is about wherever you are.
@@ -251,9 +254,9 @@ export function createWalkMode({
   const onKeyUp = (e) => {
     const k = e.key.toLowerCase();
     keys.delete(k);
-    if (k === 'control') releaseCrouch();
+    if (k === 'c') releaseCrouch();
   };
-  // A keyup that never arrives - the window losing focus with Ctrl held - would leave the
+  // A keyup that never arrives - the window losing focus with C held - would leave the
   // settler crouched for good, so anything that takes the keyboard away ends the crouch.
   // A nap survives it, the same as it survives letting go of the key.
   const onBlur = () => releaseCrouch();
@@ -451,7 +454,7 @@ export function createWalkMode({
     if (p.hit('jump')) jump();
     if (p.hit('crouch')) crouchToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
-    // must not undo a crouch somebody started with Ctrl.
+    // must not undo a crouch somebody started with C.
     const held = p.down('crouch');
     if (padCrouch && !held) releaseCrouch();
     padCrouch = held;
@@ -557,8 +560,8 @@ export function createWalkMode({
     }
     state.swimming = state.grounded && inWater && !state.sitting;
 
-    // Standing still with Ctrl held long enough is a decision to stop for the day, and it
-    // outlasts the key: once down, the settler stays down until they move or press Ctrl
+    // Standing still with C held long enough is a decision to stop for the day, and it
+    // outlasts the key: once down, the settler stays down until they move or press C
     // again. While crouching, any movement puts the clock back to zero, so a crouch-walk
     // never ends in a nap.
     if (state.sitting) {
@@ -567,8 +570,8 @@ export function createWalkMode({
     } else if (state.lying) {
       if (state.moving || !state.grounded || state.swimming) standUp();
     } else if (state.crouching && state.grounded && !state.swimming) {
-      if (state.moving) state.ctrlSince = performance.now();
-      else if (performance.now() - state.ctrlSince >= LIE_AFTER_MS) { state.lying = true; state.crouching = false; }
+      if (state.moving) state.crouchSince = performance.now();
+      else if (performance.now() - state.crouchSince >= LIE_AFTER_MS) { state.lying = true; state.crouching = false; }
     }
 
     avatar.scale.setScalar(1);
