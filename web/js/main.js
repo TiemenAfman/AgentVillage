@@ -19,7 +19,7 @@ import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
-import { createHorizon } from './horizon.js';
+import { createHorizon, RING } from './horizon.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createOffice } from './office.js';
@@ -934,7 +934,20 @@ function applyNeighbours(list) {
   const arrived = state.horizon.apply(list);
   // The haze normally swallows everything past 235 units, which is exactly where the
   // neighbours lie. Push it back only while there is somebody out there to see.
-  if (scene.fog) scene.fog.far = state.horizon.count() ? 300 : 235;
+  //
+  // Both ends of it. Where the haze *starts* is scaled to your own island, and on a small
+  // one that is barely past your own beach - 38 units on a grid of 64 - while a neighbour
+  // lies at a fixed 150 whatever size you are. The sea around them was white long before
+  // you got there, and an island with no water behind it reads as one that fell off the
+  // edge of the world. There is sea out there: world.js lays a disc of it to 500. You just
+  // could not see it. So hold the haze off until the ring itself, and never closer in than
+  // the island already asked for - a big island wants its own distance kept.
+  if (scene.fog) {
+    const out = state.horizon.count() > 0;
+    const own = state.terrain ? state.terrain.half * 1.2 : scene.fog.near;
+    scene.fog.near = out ? Math.max(own, RING.near * 0.8) : own;
+    scene.fog.far = out ? 300 : 235;
+  }
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
     state.ui.toast(
