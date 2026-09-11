@@ -358,6 +358,43 @@ export function createProps({ scene, terrain, material }) {
     return out;
   }
 
+  // Which ground cells a built bridge carries, and how high its deck rides over them -
+  // the same map syncBridges() makes for the crossings the layout lays, in the same
+  // shape, so walk mode and the settlers can read one and not care where it came from.
+  //
+  // Without this a bridge put up by hand is drawn and not stood on: blockers() leaves it
+  // out because a bridge is walked over rather than around, and nothing was making the
+  // first half of that true, so groundAt() read the river underneath and you went in.
+  //
+  // Sampled rather than reasoned about: the deck is a rectangle turned by its rot, and
+  // stepping across it in strides of less than a cell is what catches every cell it
+  // covers, whatever angle it lies at.
+  function deckCells(terrain) {
+    const out = new Map();
+    for (const rec of records.values()) {
+      const p = rec.spec;
+      if (p.kind !== 'bridge') continue;
+      const scale = p.scale || 1;
+      const len = Math.max(2, p.length || 6) * scale;
+      const wide = 0.75 * scale;                       // the deck is 1.5 across
+      const y = bridgeDeck(p, terrain);
+      const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+      for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.4) {
+        for (let w = -wide; w <= wide + 0.01; w += 0.4) {
+          // The deck runs along the prop's own z and is `wide` across its x, both turned
+          // by rot - the same sum bridgeDeck() uses to find the banks.
+          const x = p.x + s * t + c * w;
+          const z = p.z + c * t - s * w;
+          const gx = Math.round(x + terrain.half - 0.5);
+          const gz = Math.round(z + terrain.half - 0.5);
+          if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
+          out.set(gx + gz * terrain.size, y);
+        }
+      }
+    }
+    return out;
+  }
+
   function nearest(x, z, within = 4) {
     let best = null, bestD = within;
     for (const rec of records.values()) {
@@ -374,5 +411,5 @@ export function createProps({ scene, terrain, material }) {
     records.clear();
   }
 
-  return { group, apply, update, blockers, nearest, count: () => records.size, dispose };
+  return { group, apply, update, blockers, deckCells, nearest, count: () => records.size, dispose };
 }
