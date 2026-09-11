@@ -192,6 +192,44 @@ function flag() {
   ]);
 }
 
+// A board on two posts with a page of the island on it. Only the woodwork is drawn
+// here: what the board says is real HTML, hung in front of it by web/js/panels.js.
+// Both sides have to agree on where that glass is, so the sums are in panelFace() and
+// neither side does them twice.
+const PANEL_RATIO = 0.625;     // 16:10, the shape every face is drawn at
+const PANEL_LIFT = 0.62;       // how high the bottom edge stands off the ground
+const PANEL_FRAME = 0.07;      // the lip of the frame around the glass
+const PANEL_DEPTH = 0.06;
+
+// A board is about the size of a large monitor by default, and that is not only taste:
+// see READ_RATIO in web/js/panels.js for why a wide board stops being clickable.
+export const PANEL_WIDE = 1.5;
+
+export function panelFace(p) {
+  const w = Math.min(8, Math.max(0.6, p.length || PANEL_WIDE));
+  const h = w * PANEL_RATIO;
+  // y is the middle of the glass and z is how far it stands in front of the board, both
+  // in the prop's own space: panels.js turns and scales them with the rest of the prop.
+  return { w, h, y: PANEL_LIFT + h / 2, z: PANEL_DEPTH / 2 + 0.005 };
+}
+
+function panel(p) {
+  const { w, h } = panelFace(p);
+  const post = Math.max(0.1, w / 2 - 0.12);
+  const frameW = w + PANEL_FRAME * 2;
+  return merge([
+    box(0.12, PANEL_LIFT + 0.14, 0.12, WOOD, { x: -post }),
+    box(0.12, PANEL_LIFT + 0.14, 0.12, WOOD, { x: post }),
+    // The board behind the glass, dark, so the page reads as lit against it - and so
+    // there is still a board to look at from behind, where the page is not drawn.
+    box(w, h, PANEL_DEPTH, 0x1b1712, { y: PANEL_LIFT }),
+    box(frameW, PANEL_FRAME, PANEL_DEPTH + 0.03, PLANK, { y: PANEL_LIFT + h }),
+    box(frameW, PANEL_FRAME, PANEL_DEPTH + 0.03, PLANK, { y: PANEL_LIFT - PANEL_FRAME }),
+    box(PANEL_FRAME, h + PANEL_FRAME * 2, PANEL_DEPTH + 0.03, PLANK_DARK, { x: -(w + PANEL_FRAME) / 2, y: PANEL_LIFT - PANEL_FRAME }),
+    box(PANEL_FRAME, h + PANEL_FRAME * 2, PANEL_DEPTH + 0.03, PLANK_DARK, { x: (w + PANEL_FRAME) / 2, y: PANEL_LIFT - PANEL_FRAME }),
+  ]);
+}
+
 // name -> how to draw it, how much of the ground it takes up, and where it sits.
 const SHAPES = {
   tree: { build: tree, r: 0.42 },
@@ -200,7 +238,7 @@ const SHAPES = {
   rock: { build: rock, r: 0.36 },
   cairn: { build: cairn, r: 0.3 },
   bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75 },
-  fence: { build: fence, r: 0, run: 0.22 },
+  fence: { build: fence, r: 0, run: 0.22, wall: (p) => Math.max(1, p.length || 4) },
   bench: { build: bench, r: 0.45 },
   lamp: { build: lamp, r: 0.2 },
   signpost: { build: signpost, r: 0.2 },
@@ -208,6 +246,7 @@ const SHAPES = {
   statue: { build: statue, r: 0.55 },
   campfire: { build: campfire, r: 0.45 },
   flag: { build: flag, r: 0.22 },
+  panel: { build: panel, r: 0, run: 0.14, wall: (p) => panelFace(p).w },
 };
 
 // A bridge is the one shape that does not simply stand on the ground: it has to clear
@@ -219,6 +258,60 @@ function bridgeDeck(p, terrain) {
   const a = terrain.worldHeight(p.x + s * half, p.z + c * half);
   const b = terrain.worldHeight(p.x - s * half, p.z - c * half);
   return Math.max(a, b, 0.1) + 0.32;
+}
+
+// ---------------------------------------------------------------- the table, opened up
+// What the table above knows about a shape, for anyone who needs to draw or measure one
+// without a village behind them. The build menu holds a prop before it exists: there is
+// no record, no id and nothing on the server yet, only a spec somebody is aiming.
+//
+// These are the single source of truth on purpose. createProps() below calls the same
+// functions, so a thing you are about to put down cannot look or measure differently
+// from the thing you get.
+
+// The geometry for a spec, uncached. createProps keeps its own cache for the props that
+// are standing; a ghost holds one geometry and throws it away when the shape changes.
+export function propGeometry(p) {
+  return (SHAPES[p.kind] || SHAPES.cairn).build(p);
+}
+
+// How high it sits. A bridge clears what it crosses; everything else stands on the
+// ground, sunk three centimetres so it does not hover.
+export function propLift(p, terrain) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  return shape.lift ? shape.lift(p, terrain) : terrain.worldHeight(p.x, p.z) - 0.03;
+}
+
+// What it takes up, as the axis-aligned rectangles walk mode reads. A wall-like shape is
+// a line of small squares rather than one blob; a bridge takes up nothing at all, because
+// it is walked over rather than around.
+export function propFootprint(p) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  const scale = p.scale || 1;
+  const out = [];
+  if (shape.wall) {
+    const len = shape.wall(p) * scale;
+    const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+    const h = shape.run * scale;
+    for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
+      out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h });
+    }
+    return out;
+  }
+  if (!shape.r) return out;
+  const h = shape.r * scale;
+  out.push({ x: p.x, z: p.z, hx: h, hz: h });
+  return out;
+}
+
+// How far from its middle the thing reaches - for "am I standing in it" and for deciding
+// what a demolish cursor is pointing at. The floor keeps a lamp post from being a target
+// you have to hit dead centre.
+export function propReach(p) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  const scale = p.scale || 1;
+  const wall = shape.wall ? (shape.wall(p) * scale) / 2 : 0;
+  return Math.max(shape.r * scale, wall, 0.4);
 }
 
 export function createProps({ scene, terrain, material }) {
@@ -235,16 +328,15 @@ export function createProps({ scene, terrain, material }) {
     // Only the shapes that read a number off the prop need their own geometry; the
     // rest are the same every time and are worth keeping.
     const key = shape.run ? `${p.kind}:${p.length || 0}:${p.label ? 1 : 0}` : `${p.kind}:${p.label ? 1 : 0}`;
-    if (!cache.has(key)) cache.set(key, shape.build(p));
+    if (!cache.has(key)) cache.set(key, propGeometry(p));
     return cache.get(key);
   }
 
   function add(p, animate) {
-    const shape = SHAPES[p.kind] || SHAPES.cairn;
     const mesh = new THREE.Mesh(geometryFor(p), material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    const y = shape.lift ? shape.lift(p, terrain) : terrain.worldHeight(p.x, p.z) - 0.03;
+    const y = propLift(p, terrain);
     mesh.position.set(p.x, y, p.z);
     mesh.rotation.y = p.rot || 0;
     mesh.userData.id = p.id;
@@ -300,21 +392,44 @@ export function createProps({ scene, terrain, material }) {
   function blockers() {
     const out = [];
     for (const rec of records.values()) {
+      for (const b of propFootprint(rec.spec)) out.push({ ...b, id: rec.spec.id });
+    }
+    return out;
+  }
+
+  // Which ground cells a built bridge carries, and how high its deck rides over them -
+  // the same map syncBridges() makes for the crossings the layout lays, in the same
+  // shape, so walk mode and the settlers can read one and not care where it came from.
+  //
+  // Without this a bridge put up by hand is drawn and not stood on: blockers() leaves it
+  // out because a bridge is walked over rather than around, and nothing was making the
+  // first half of that true, so groundAt() read the river underneath and you went in.
+  //
+  // Sampled rather than reasoned about: the deck is a rectangle turned by its rot, and
+  // stepping across it in strides of less than a cell is what catches every cell it
+  // covers, whatever angle it lies at.
+  function deckCells(terrain) {
+    const out = new Map();
+    for (const rec of records.values()) {
       const p = rec.spec;
-      const shape = SHAPES[p.kind] || SHAPES.cairn;
+      if (p.kind !== 'bridge') continue;
       const scale = p.scale || 1;
-      if (shape.run && p.kind === 'fence') {
-        const len = Math.max(1, p.length || 4);
-        const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
-        const h = shape.run * scale;
-        for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
-          out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h, id: p.id });
+      const len = Math.max(2, p.length || 6) * scale;
+      const wide = 0.75 * scale;                       // the deck is 1.5 across
+      const y = bridgeDeck(p, terrain);
+      const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+      for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.4) {
+        for (let w = -wide; w <= wide + 0.01; w += 0.4) {
+          // The deck runs along the prop's own z and is `wide` across its x, both turned
+          // by rot - the same sum bridgeDeck() uses to find the banks.
+          const x = p.x + s * t + c * w;
+          const z = p.z + c * t - s * w;
+          const gx = Math.round(x + terrain.half - 0.5);
+          const gz = Math.round(z + terrain.half - 0.5);
+          if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
+          out.set(gx + gz * terrain.size, y);
         }
-        continue;
       }
-      if (!shape.r) continue;                        // a bridge is walked over, not around
-      const h = shape.r * scale;
-      out.push({ x: p.x, z: p.z, hx: h, hz: h, id: p.id });
     }
     return out;
   }
@@ -335,5 +450,5 @@ export function createProps({ scene, terrain, material }) {
     records.clear();
   }
 
-  return { group, apply, update, blockers, nearest, count: () => records.size, dispose };
+  return { group, apply, update, blockers, deckCells, nearest, count: () => records.size, dispose };
 }

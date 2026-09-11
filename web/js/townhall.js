@@ -32,7 +32,16 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
 
   function onKey(e) {
     if (el.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') {
+      // Stopped dead, not just from bubbling on: walk.js listens on this same window,
+      // and close() has just let its feet go - so it would read this very Escape as
+      // "back to the sky". stopPropagation cannot help with a listener on the same
+      // element; only stopImmediatePropagation can.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
+      return;
+    }
     e.stopPropagation();
   }
   el.addEventListener('keydown', (e) => e.stopPropagation());

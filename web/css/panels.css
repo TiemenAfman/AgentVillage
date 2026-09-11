@@ -1,0 +1,245 @@
+/* The panels that stand on the island: real HTML, turned into the scene by
+   web/js/panels.js. Kept apart from ui.css because none of this is the island's
+   chrome - it is the inside of a board somebody put up, and it is read through a
+   perspective transform rather than straight on.
+
+   Everything here is sized in the face's own pixels. A face is drawn 960 x 600 and
+   then scaled down to a couple of world units, so the type here is far bigger than
+   anything in ui.css and still ends up small on screen - which is what makes a panel
+   sharp when you walk up to it instead of soft. */
+
+#panels {
+  position: fixed;
+  inset: 0;
+  z-index: 1;                 /* over the canvas, under every card and panel of the UI */
+  overflow: hidden;
+  /* Nothing on this layer ever takes the mouse - not the container, not a panel. Without
+     it the layer lies over the whole island and nothing can be dragged, zoomed or
+     clicked; with it, a click on a board is aimed by the raycaster instead, which is the
+     only thing that works at the distance you stand to read one. See web/js/panels.js,
+     which sets this too in case this stylesheet is ever missing. */
+  pointer-events: none;
+}
+
+.panel3d {
+  background: #14100c;
+  color: var(--ink);
+  font-family: var(--ui);
+  overflow: hidden;
+  /* The board behind the glass is dark wood, and the page sits in it rather than on it:
+     a little inset shadow is what stops it reading as a sticker. */
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, .75), inset 0 0 0 2px rgba(0, 0, 0, .5);
+}
+
+.face {
+  width: 100%;
+  height: 100%;
+  padding: 26px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: radial-gradient(120% 90% at 50% 0%, #23201b 0%, #14100c 75%);
+}
+
+.face h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: .01em;
+  color: var(--accent);
+}
+
+/* --- notice ----------------------------------------------------------- */
+.face-notice p {
+  margin: 0;
+  flex: 1;
+  font-size: 22px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.face-notice footer {
+  font-size: 15px;
+  color: var(--ink-dim);
+  border-top: 1px solid var(--edge);
+  padding-top: 10px;
+}
+
+/* --- clock ------------------------------------------------------------ */
+.face-clock { gap: 8px; }
+
+.face-clock .clock-time {
+  font-family: var(--font);
+  font-size: 112px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+.face-clock .clock-season {
+  font-size: 20px;
+  color: var(--accent-2);
+  margin-bottom: 6px;
+}
+
+.face-clock ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+  border-top: 1px solid var(--edge);
+  padding-top: 9px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.face-clock li.head,
+.face-clock li.more {
+  color: var(--ink-dim);
+  font-size: 14px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.face-clock li.more { text-transform: none; letter-spacing: 0; }
+
+/* A board somebody is standing at and working. The ring is the whole of the feedback:
+   it is the difference between a page you are reading and a page that has your mouse
+   and your keyboard. */
+.panel3d.worked {
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, .6), inset 0 0 0 3px var(--accent), 0 0 45px rgba(232, 180, 92, .35);
+}
+
+/* --- tally ------------------------------------------------------------ */
+.face-tally { gap: 10px; }
+
+.face-tally .tabs { display: flex; gap: 7px; }
+
+.face-tally .tab {
+  font: inherit;
+  font-size: 16px;
+  padding: 6px 15px;
+  color: var(--ink-dim);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--edge);
+  border-radius: 99px;
+  cursor: pointer;
+}
+
+.face-tally .tab.on { color: #14100c; background: var(--accent); border-color: var(--accent); }
+
+.face-tally .tab-body { flex: 1; display: flex; flex-direction: column; gap: 13px; }
+
+.face-tally .tally-n {
+  font-family: var(--font);
+  font-size: 76px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.face-tally .tally-keys { display: flex; gap: 9px; }
+
+.face-tally .btn {
+  font: inherit;
+  font-size: 20px;
+  padding: 8px 20px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* `under` is :hover, put on by hand: the mouse never really enters this page, so the
+   browser has no hover state to give it. See hover() in web/js/panels.js. */
+.face-tally .btn.under { border-color: var(--accent); color: var(--accent); }
+.face-tally .tab.under { color: var(--ink); border-color: var(--accent); }
+.face-tally .btn.quiet { color: var(--ink-dim); font-size: 16px; }
+
+.face-tally label {
+  display: block;
+  font-size: 14px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.face-tally input,
+.face-tally textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 19px;
+  padding: 8px 11px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, .4);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  resize: none;
+}
+
+.face-tally input:focus,
+.face-tally textarea:focus { outline: none; border-color: var(--accent); }
+.face-tally input.under,
+.face-tally textarea.under { border-color: var(--ink-dim); }
+
+/* --- other people at the same board ----------------------------------- */
+/* A cursor and a name have to be DOM inside the panel. Nothing drawn in WebGL can lie
+   over this layer, so a pointer made of geometry would disappear behind the very page
+   it is pointing at. */
+.panel-hands {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.panel-hands .hand {
+  position: absolute;
+  transform: translate(-1px, -1px);
+  transition: left .1s linear, top .1s linear;   /* the poses arrive ten times a second */
+  color: var(--accent-2);
+}
+
+.panel-hands .hand svg { width: 17px; height: 22px; display: block; fill: currentColor; stroke: #14100c; stroke-width: 1.2; }
+
+.panel-hands .hand b {
+  position: absolute;
+  left: 15px;
+  top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 99px;
+  color: #14100c;
+  background: currentColor;
+}
+
+/* The same five model colours the settlers wear, so a hand on a board belongs to the
+   same person as the figure standing beside you. */
+.panel-hands .hand.style-fable { color: #d98fc2; }
+.panel-hands .hand.style-opus { color: #c9a2f0; }
+.panel-hands .hand.style-sonnet { color: #7fc7d9; }
+.panel-hands .hand.style-haiku { color: #8fd99a; }
+.panel-hands .hand.style-unknown { color: #d9c48f; }
+
+/* Somebody else has this one. It still reads, it simply does not answer. */
+.panel-driver {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: #14100c;
+  background: var(--accent);
+}
+
+.panel3d.driven { box-shadow: inset 0 0 30px rgba(0, 0, 0, .6), inset 0 0 0 2px var(--accent-2); }

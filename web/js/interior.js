@@ -611,18 +611,19 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam,
   });
 
-  // The stage, as a deck to stand on. Walk mode looks a cell up in this map before it asks
-  // the terrain, which is how a bridge carries you over a river; the platform was built to
-  // whole cells so the step up lands exactly on its edge.
+  // The stage, as a surface to stand on. Walk mode keeps a list of what stands above the
+  // floor of each cell and picks the one you belong to, which is how a bridge carries you
+  // over a river and how this carries you over the boards; the platform was built to whole
+  // cells so the step up lands exactly on its edge.
   if (def.stage) {
-    const deck = new Map();
+    const levels = new Map();
     const cell = (v) => Math.round(v + HALF_CELLS - 0.5);
     for (let gx = cell(def.stage.x0 + 0.5); gx <= cell(def.stage.x1 - 0.5); gx++) {
       for (let gz = cell(def.stage.z0 + 0.5); gz <= cell(def.stage.z1 - 0.5); gz++) {
-        deck.set(gx + gz * SIZE, def.stage.height);
+        levels.set(gx + gz * SIZE, [def.stage.height]);
       }
     }
-    walk.setDecks(deck);
+    walk.setLevels(levels);
   }
 
   // Sitting down is the first press; after that the same key is how you order, because
@@ -702,8 +703,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   return {
-    name: def.name, scene, walk, enter, update, leave, dispose,
+    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
     setPaused: (v) => walk.setPaused(v),
+    // The room has its own walk mode, so it needs its own way in for the controller.
+    pad: (a, dt) => walk.pad(a, dt),
     isInside: () => !left,
   };
 }

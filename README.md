@@ -90,8 +90,8 @@ itself.
 
 Press **Walk** (or **A** on a controller) and you step onto the town square as a settler
 with a straw hat. WASD or the left stick to walk, drag the mouse or use the right stick
-to look, Shift or the right shoulder button to run. Walk up to a house and press **E**
-(**A** on the pad) to read its dossier; **Esc** or **B** flies you back up to the sky.
+to look, Shift or a click of the left stick to run. Walk up to a house and press **E**
+(**X** on the pad) to read its dossier; **Esc** or **Back** flies you back up to the sky.
 
 **Space** jumps, which is enough to clear a doorstep or a low hedge. **Ctrl** crouches;
 keep it held while standing still and the settler decides the day is over, lies down and
@@ -103,9 +103,16 @@ than walk once you are past the waterline. You cannot jump out of the water, and
 cannot set out for the horizon.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
-the on-screen hints switch to controller buttons. Left stick walks, right stick looks,
-right shoulder runs, **A** uses what you are standing at, **B** flies back up, **D-pad up**
-sows a bed. Nothing needs a controller: mouse and keyboard do everything on their own.
+the on-screen hints switch to controller buttons. The buttons are laid out the way a
+console lays them out, so **A** is the one that says yes: on foot it jumps, **B** crouches,
+**X** uses what you are standing at and **Y** has a thought. **RT** sows a bed, **LT** is the
+destructive one - sending someone away, turning a bed over - and the shoulder buttons go
+through the seed pouch. Click the left stick to run, **Back** flies you up to the sky.
+
+In any panel the same four mean what you would expect: **A** picks, **B** steps back,
+**X** switches person and **Y** refreshes. Indoors the island's buttons that have nothing to
+do in a room simply do nothing. Nothing needs a controller: mouse and keyboard do
+everything on their own.
 
 ## Market gardening
 
@@ -192,7 +199,7 @@ one in front of this. To let somebody in from outside your own network, set an
 
 ## Talking to a settler
 
-Walk up to a house and press **E** (**A** on the controller), or open its dossier and use
+Walk up to a house and press **E** (**X** on the controller), or open its dossier and use
 **Talk to them**. Their session transcript opens as a conversation: what you asked, what
 they answered, and the tools they reached for along the way. A long stretch of tool work
 is folded into one turn with the last few calls shown, so it reads the way the session
@@ -304,7 +311,7 @@ The grace period is `visitorGraceMs` in `config.json`.
 
 ## Sending a settler away
 
-Walk up to a house and press **X** (**X** on the controller), use **Send away** in the top right
+Walk up to a house and press **X** (**LT** on the controller), use **Send away** in the top right
 of a settler's conversation, or open their dossier and use **Send off the island**. It always asks twice: the first press shows who you are about to
 send away, the second confirms. The house comes apart in a cloud of dust, the settler's
 apprentices leave with them, and their plot becomes ordinary ground that a later arrival
@@ -330,7 +337,8 @@ colleague, to everyone, or to what nobody has picked up yet, and remembers your 
 You can drive the whole board three ways. With the mouse as usual; with the keyboard,
 where the arrow keys walk between cards, **Enter** picks one, **A** switches person, **R** refreshes
 and **Esc** steps back; or with a controller, where the left stick moves a pointer across the
-cork, **A** presses what is under it, the right stick scrolls and **B** steps back. The hint bar at
+cork, **A** presses what is under it, **X** switches person, **Y** refreshes, the right stick
+scrolls and **B** steps back. The hint bar at
 the bottom of the board always shows the set that applies.
 
 The board reads Jira over REST v2 with the same three environment variables the
@@ -461,6 +469,35 @@ empty and grows from the founding session onward. `npm run scan:all` shows what 
 island would look like with the entire history on it, written to separate files so it
 never disturbs the real village.
 
+### When the island runs out of land
+
+It does run out. The terrain holds 475 fully buildable 4x4 blocks; the hamlets and the
+town commons own about 305 of them, and somewhere past three hundred houses a new project
+stops being given a hamlet at all and its houses pile onto the commons. Raising
+`gridSize` is not the way out - it is the terrain generator's own argument, so a bigger
+number is a different island: a different coast, a failed `size` check in `loadLayout`,
+and a town square somewhere else entirely.
+
+So the village takes land off the water instead. At **150 settlers** it builds the polder
+mill and drains its first polder, and it drains one more for every 25 settlers after
+that - `POLDER_AT` and `POLDER_EVERY` in `lib/layout.mjs`. Each one is twelve super-cells
+of shallow water, about eleven plots, walled by a dike where there is water to keep out
+and joined to the island by a causeway over the beach. Which stretch of coast a polder
+faces is the one thing the island seed decides, so two islands reclaim different water.
+
+Reclamation only ever takes cells that are **under water**, never a cell that is already
+land, which is what lets it happen to a village that is already standing: no house moves,
+no parcel moves, and the town keeps every stone. The dike and the causeway are road
+rather than building land - raised ground you may walk but not settle - so a hamlet
+cannot put a house on top of its own sea wall.
+
+The trigger is the settler count and nothing else. `ensureParcel` does know when it could
+not seat a district - that is what `rec.guest` means - but that answer only exists after
+the placement, and the terrain has to be final before it. Feeding it back would mean
+reclaiming on the *next* scan, and then a second scan of an unchanged island would rewrite
+`data/layout.json`, which is the one thing that must never happen. A settler count is a
+pure function of the model, so a rescan reclaims exactly the same land.
+
 ## A look around
 
 | | |
@@ -488,6 +525,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
 | Houses around the town square with no hedge | The commons: whoever the island had no room for elsewhere |
+| Flat green land behind an earth wall, out in a cove | A polder: land reclaimed once the island ran out, from 150 settlers on |
+| A small mill on a dike | The polder mill, which drains the first polder |
 | Ploughed fields and orchards | Countryside - buildable land no project has claimed |
 | A kitchen garden | Land inside a hamlet that nobody has built on yet |
 | A faint colour in the grass | Whose hamlet's land you are standing on |

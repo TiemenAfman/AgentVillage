@@ -7,6 +7,8 @@
 // the GitHub issues of the repository the island itself is built from. They differ in
 // where the cards come from, how they are grouped and which workflow an agent is sent
 // off with - not in anything you do with them, so it is one board with two sources.
+import { padKey } from './input.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const TYPE_COLOUR = {
@@ -188,7 +190,16 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   function onKey(e) {
     if (el.hidden) return;
     const k = e.key;
-    if (k === 'Escape') { e.preventDefault(); back(); return; }
+    if (k === 'Escape') {
+      // Stopped dead, not just from bubbling on: walk.js listens on this same window,
+      // and close() has just let its feet go - so it would read this very Escape as
+      // "back to the sky". stopPropagation cannot help with a listener on the same
+      // element; only stopImmediatePropagation can.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      back();
+      return;
+    }
     if (e.target.tagName === 'SELECT') return;        // let the dropdown have its arrows
     const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (dirs[k]) {
@@ -307,7 +318,8 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   function hint() {
     const pad = cur.shown;
     el.querySelector('#board-hint').innerHTML = pad
-      ? `<kbd>stick</kbd> move the pointer · <kbd>A</kbd> pick · <kbd>B</kbd> back · <kbd>Y</kbd> refresh · <kbd>right stick</kbd> scroll`
+      ? `<kbd>stick</kbd> move the pointer · <kbd>${padKey('panel', 'select')}</kbd> pick · <kbd>${padKey('panel', 'back')}</kbd> back`
+        + ` · <kbd>${padKey('panel', 'alt')}</kbd> switch person · <kbd>${padKey('panel', 'extra')}</kbd> refresh · <kbd>right stick</kbd> scroll`
       : `<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> pick · <kbd>Esc</kbd> back · <kbd>A</kbd> switch person · <kbd>R</kbd> refresh · or just use the mouse`;
   }
 
@@ -552,8 +564,8 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     showCursor();
     const speed = 1100 * dt;
     let dx = p.move.x, dy = p.move.y;
-    if (p.down(14)) dx -= 0.6; if (p.down(15)) dx += 0.6;   // d-pad nudges
-    if (p.down(12)) dy -= 0.6; if (p.down(13)) dy += 0.6;
+    if (p.down('navLeft')) dx -= 0.6; if (p.down('navRight')) dx += 0.6;   // d-pad nudges
+    if (p.down('navUp')) dy -= 0.6; if (p.down('navDown')) dy += 0.6;
     if (dx || dy) {
       cur.x = Math.max(4, Math.min(innerWidth - 4, cur.x + dx * speed));
       cur.y = Math.max(4, Math.min(innerHeight - 4, cur.y + dy * speed));
@@ -565,15 +577,16 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
       pane.scrollTop += p.look.y * 900 * dt;
     }
     placeCursor();
-    if (p.hit(0) && cur.hover) {                          // A: press what is under the cursor
+    if (p.hit('select') && cur.hover) {                    // A: press what is under the cursor
       cursor.classList.add('press');
       setTimeout(() => cursor.classList.remove('press'), 140);
       if (cur.hover.tagName === 'SELECT') cycleSelect(cur.hover);
       else if (cur.hover.tagName === 'A') window.open(cur.hover.href, '_blank', 'noreferrer');
       else cur.hover.click();
     }
-    if (p.hit(1)) back();                                  // B: one step back
-    if (p.hit(3)) load(true);                              // Y: refresh
+    if (p.hit('back')) back();                             // B: one step back
+    if (p.hit('alt')) cycleSelect(whoSelect);              // X: whose board you are reading
+    if (p.hit('extra')) load(true);                        // Y: refresh
   }
   function cycleSelect(sel) {
     sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;

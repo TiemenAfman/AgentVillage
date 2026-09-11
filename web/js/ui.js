@@ -2,6 +2,7 @@
 // the chronicle bar, the floating labels and the toasts.
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
+import { padKey } from './input.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -339,7 +340,10 @@ export function createUI(handlers) {
       if (!it) { d.style.display = 'none'; return; }
       d.style.display = '';
       d.textContent = it.text;
-      d.className = `label${it.build ? ' build' : ''}`;
+      // `above` arrives from a beacon on the network, so it is written as an attribute and
+      // drawn by the stylesheet: attr() puts text on the page, never markup.
+      if (it.above) d.dataset.above = it.above; else delete d.dataset.above;
+      d.className = `label${it.build ? ' build' : ''}${it.above ? ' over' : ''}`;
       d.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -100%)`;
     });
   }
@@ -392,7 +396,9 @@ export function createUI(handlers) {
     const p = el('walk-confirm');
     if (!item) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'X' : 'X';
+    // On the pad there is no cancel to offer - B crouches - so the way out is to wait:
+    // the confirmation lapses on its own.
+    const key = padConnected ? padKey('walk', 'secondary') : 'X';
     p.innerHTML = `Send <b>${esc(item.name)}</b> off the island? `
       + `<span class="muted">Press ${key} again to confirm${padConnected ? '' : ', Esc to leave them be'}</span>`;
   }
@@ -408,7 +414,9 @@ export function createUI(handlers) {
     if (indoors) {
       el('walk-keys').innerHTML = padConnected
         ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-          + `<span class="lit"><kbd>A</kbd> sit down</span><span><kbd>B</kbd> step outside</span>`
+          + `<span class="lit"><kbd>${padKey('inside', 'interact')}</kbd> sit down</span>`
+          + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
+          + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
           + `<span>drag to look, double-click to hold the mouse</span>`
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
@@ -417,12 +425,16 @@ export function createUI(handlers) {
     }
     el('walk-keys').innerHTML = padConnected
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-        + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span>`
-        + `<span class="lit"><kbd>D-pad ↑</kbd> sow</span><span><kbd>D-pad →</kbd> next seed</span>`
-        + `<span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
+        + `<span><kbd>${padKey('walk', 'interact')}</kbd> talk</span><span class="lit"><kbd>${padKey('walk', 'think')}</kbd> think</span>`
+        + `<span><kbd>${padKey('walk', 'secondary')}</kbd> send away</span>`
+        + `<span class="lit"><kbd>${padKey('walk', 'primary')}</kbd> sow</span>`
+        + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
+        + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
+        + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
+        + `<span class="lit"><kbd>B</kbd> build</span>`
         + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
@@ -455,7 +467,10 @@ export function createUI(handlers) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'A' : 'E';
+    // Whatever is within reach answers to E, or to whatever the controller map calls
+    // interact. A board you are already standing at is the exception: it names its own
+    // key, because what it offers is the way back out.
+    const key = near.key || (padConnected ? padKey(indoors ? 'inside' : 'walk', 'interact') : 'E');
     // Anything that carries its own wording says it itself. The rooms indoors do that: what
     // a bar stool offers depends on whether you are already sitting on it.
     once('walk-prompt', near.prompt ? `<b>${key}</b> ${esc(near.prompt)}`
@@ -477,13 +492,43 @@ export function createUI(handlers) {
       : `<b>${key}</b> pull the ${esc(plural)}`;
   }
 
+  // What is in your hand while building, and why it will not go down if it will not.
+  //
+  // The same shape as setPouch below, and for the same reason: it is called every frame,
+  // so it goes through once() and the DOM is only touched when the words change. The
+  // refusal lives here rather than in a toast - a toast per mouse move is unreadable.
+  const DOES = { rot: 'turn', scale: 'size', length: 'stretch' };
+  function setBuildHud(info) {
+    const p = el('build-hud');
+    if (!info) { p.hidden = true; return; }
+    p.hidden = false;
+    if (info.taking) {
+      once('build-hud', `<b>Taking away</b>`
+        + (info.target ? '<span>click to take it</span>' : '<span class="muted">point at something built by hand</span>')
+        + '<span class="muted"><kbd>Esc</kbd> stop</span>');
+      return;
+    }
+    const w = info.wheels || {};
+    const size = info.spec && w.shift === 'length' && info.spec.length
+      ? ` <span class="muted">${Math.round(info.spec.length * 10) / 10} long</span>` : '';
+    const keys = [
+      w.wheel ? `<kbd>scroll</kbd> ${DOES[w.wheel]}` : '',
+      w.ctrl ? `<kbd>ctrl</kbd> ${DOES[w.ctrl]}` : '',
+      w.shift ? `<kbd>shift</kbd> ${DOES[w.shift]}` : '',
+    ].filter(Boolean).join(' · ');
+    once('build-hud', `<b>${esc(info.kind)}</b>${size} in hand`
+      + (info.why ? `<span class="why">${esc(info.why)}</span>` : '<span>click to put it down</span>')
+      + (keys ? `<span class="muted">${keys}</span>` : '')
+      + '<span class="muted"><kbd>Esc</kbd> put back</span>');
+  }
+
   // The purse, the seed in your hand and what is standing ready, while you walk. Only
   // the keeper of the island farms it, so a visitor is never shown this.
   function setPouch(garden) {
     const p = el('walk-pouch');
     if (!garden) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'D-pad ↑' : 'P';
+    const key = padConnected ? padKey('walk', 'primary') : 'P';
     const held = garden.held && garden.seeds[garden.held];
     once('walk-pouch', `<span class="coins">${garden.purse} coins</span>`
       + (held
@@ -500,13 +545,16 @@ export function createUI(handlers) {
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
   el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
+  el('build-btn').addEventListener('click', () => handlers.onBuild());
 
   setupShell();
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm, setIndoors,
+    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
+    // What B clears from up in the sky: neither of these is modal, so nothing else changes.
+    closeOverlays: () => { close('dossier'); close('legend'); },
   };
 }
 

@@ -142,6 +142,7 @@ export function createHorizon({ scene, pickables }) {
       name: it.info.name,
       island: it.info.island,
       settlers: it.info.settlers,
+      dev: it.info.dev || null,
       url: it.info.url,
       x: it.x,
       z: it.z,

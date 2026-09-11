@@ -11,7 +11,7 @@ import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
-import { loadLayout, saveLayout, placeAll, SQUARE_STEPS, MIN_HAMLET } from './lib/layout.mjs';
+import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
@@ -351,7 +351,14 @@ function assemble({ config, model, layout, terrain, size, all }) {
     paths: layout.paths,
     bridges: layout.bridges || [],
     cleared: layout.cleared,
-    polders: layout.polders,
+    // Each polder carries the moment it was drained, the way a milestone carries
+    // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +
+    // k * POLDER_EVERY settlers, so the index is the date - but the viewer should not
+    // have to know the ladder to replay the coast, and the arithmetic belongs here.
+    polders: layout.polders.map((p, k) => {
+      const at = POLDER_AT + k * POLDER_EVERY;
+      return { ...p, at, unlockedAt: iso(model.arrivals[at - 1] || null) };
+    }),
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),

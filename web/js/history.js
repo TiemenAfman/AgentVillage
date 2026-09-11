@@ -84,12 +84,23 @@ export function squareSizeAt(village, t) {
   return size;
 }
 
+export function poldersAt(village, t) {
+  let n = 0;
+  for (const p of village.polders || []) {
+    if (p.unlockedAt && +new Date(p.unlockedAt) > t) break;
+    n++;
+  }
+  return n;
+}
+
 // The projection, plus a short key saying what of the landscape it would draw - so the
 // caller can skip a rebuild when dragging the slider by a few minutes changes nothing
 // anyone could see.
 export function projectVillage(village, t) {
   const lat = village.island && village.island.lattice;
-  if (!Number.isFinite(t) || !lat) return { key: 'live', village };
+  if (!Number.isFinite(t) || !lat) {
+    return { key: 'live', polders: (village.polders || []).length, village };
+  }
 
   // Who had arrived, per project.
   const pop = new Map();
@@ -159,6 +170,8 @@ export function projectVillage(village, t) {
   });
 
   const buildings = (village.buildings || []).filter((b) => +new Date(b.startedAt) <= t);
+  const nP = poldersAt(village, t);
+
 
   // The countryside's ploughed strips and orchards are planned from the terrain seed on
   // land nobody owns, so they stood at full spread on the founding day - an island with
@@ -169,7 +182,8 @@ export function projectVillage(village, t) {
   const farmShare = townShare;
 
   return {
-    key: `${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
+    key: `${nP}|${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
+    polders: nP,
     village: {
       ...village,
       buildings,

@@ -21,7 +21,16 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
 
   function onKey(e) {
     if (el.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    if (e.key === 'Escape') {
+      // Stopped dead, not just from bubbling on: walk.js listens on this same window,
+      // and close() has just let its feet go - so it would read this very Escape as
+      // "back to the sky". stopPropagation cannot help with a listener on the same
+      // element; only stopImmediatePropagation can.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      cancel();
+      return;
+    }
     e.stopPropagation();   // the swatches own the keyboard while open, not the island
   }
   // Escape has to work whether focus is on the Avatar chip that opened us (caught on the

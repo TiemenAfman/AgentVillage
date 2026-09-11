@@ -25,13 +25,17 @@ import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
+import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
+import { createBuildMenu } from './buildmenu.js';
+import { createGhost } from './ghost.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
-import { createGamepad, BTN } from './gamepad.js';
+import { createGamepad } from './gamepad.js';
+import { createInput } from './input.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
 const params = new URLSearchParams(location.search);
@@ -232,7 +236,7 @@ const buildingMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
-  village: null, terrain: null, world: null, settlers: null, ui: null,
+  village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
@@ -240,13 +244,13 @@ const state = {
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
   hover: null, selected: null, intro: null, tween: null, live: 'live',
   queue: [], running: false, flags: null, particles: null,
-  walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
+  walk: null, board: null, chat: null, pad: null, input: null, padSeen: false, mode: 'orbit',
   // The room you are standing in, if any. Walking and being indoors are not two modes:
   // you are still on foot, the room simply owns the camera and the keyboard while you
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, think: null,
+  props: null, panels: null, think: null, buildMenu: null, ghost: null,
   crops: null, market: null, garden: null,
 };
 
@@ -337,6 +341,10 @@ function interactables() {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
   }
+  // The boards with a page on them. They come from the panel layer rather than from the
+  // props, because that is the half that knows how wide a board is and whether its page
+  // is up yet.
+  if (state.panels) out.push(...state.panels.interactables());
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
   // the prompt above the keys counts the last minutes down on its own.
   if (state.crops) {
@@ -422,7 +430,14 @@ async function refreshProps({ animate = true } = {}) {
     const before = state.props.count();
     state.props.apply(body.props || [], { animate });
     const after = state.props.count();
-    if (state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+    // The same list, read a second time for its panels: props.js draws the woodwork and
+    // panels.js hangs the page in front of it.
+    if (state.panels) state.panels.apply(body.props || []);
+    handOutDecks();                                   // a bridge that has just gone up
+    if (state.mode === 'walk') {
+      state.walk.setBlockers(walkableBlockers());
+      state.walk.setInteractables(interactables());   // a board that has just gone up
+    }
     if (animate && after > before) {
       const n = after - before;
       state.ui.toast(`${n === 1 ? 'Something was' : `${n} things were`} built on the island.`);
@@ -504,13 +519,30 @@ function sowHere() {
   tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
 }
 
-// Which seed is in hand, one press at a time, in the order the stall lists them.
-function nextSeed() {
+// --------------------------------------------------------------- building by hand
+// The catalogue, and then a thing in your hand. Everything after the menu closes is
+// web/js/ghost.js: the aiming, the wheel, and the one POST that puts it down.
+//
+// Pressing it again while something is already in hand puts that back, so the key is a
+// toggle rather than a way to open a menu on top of a ghost.
+function openBuild() {
+  if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
+  if (keeperOnly('build on this island')) return;
+  if (state.buildMenu.isOpen()) return;
+  if (state.ghost && state.ghost.holding()) { state.ghost.drop(); return; }
+  if (state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.buildMenu.open();
+}
+
+// Which seed is in hand, one press at a time, in the order the stall lists them. The
+// shoulder buttons go both ways round the pouch, so the step is a parameter.
+function cycleSeed(step) {
   if (keeperOnly('go through this island’s seed pouch')) return;
   const g = state.garden;
   const have = g ? CROP_KINDS.filter((k) => (g.seeds || {})[k]) : [];
   if (!have.length) { state.ui.toast('The pouch is empty. The stall at the market sells seed.'); return; }
-  const next = have[(have.indexOf(g.held) + 1) % have.length];
+  const next = have[(have.indexOf(g.held) + step + have.length) % have.length];
   tend({ op: 'hold', kind: next }, () => `<b>${escapeHtml(CROPS[next].name)}</b> seed in hand — ${(g.seeds || {})[next]} left.`);
 }
 
@@ -551,6 +583,13 @@ function openMarket() {
   state.market.open();
 }
 
+// Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
+// controller close all of them from one place instead of eight. Only one can be up at a
+// time in practice, so the first one found is the one holding the screen.
+const PANELS = () => [state.board, state.chat, state.think, state.market,
+  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu];
+const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
+
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
 // stepping back out of a room re-enters walk mode, and a second copy of this list would
 // drift away from the first one.
@@ -564,6 +603,7 @@ function walkCallbacks() {
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
+      else if (it.kind === 'panel') workPanel(it);
       else talkTo(it.id);
     },
     onSendAway: (it) => {
@@ -572,9 +612,62 @@ function walkCallbacks() {
     },
     onThink: () => openThink(),
     onPlant: () => sowHere(),
-    onNextSeed: () => nextSeed(),
+    onNextSeed: () => cycleSeed(1),
+    onPrevSeed: () => cycleSeed(-1),
+    onBuild: () => openBuild(),
+    onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
   };
+}
+
+// --------------------------------------------------------------- standing at a board
+// Stepping up to a panel: the page on it takes the mouse and, through walk.js, every
+// key that is not a step. Nothing about this leaves the screen - what you do on a board
+// is still yours alone, and the other people on the island see a settler standing still.
+function workPanel(it) {
+  if (!state.panels || !state.panels.take(it.id)) return;
+  state.walk.setWorking(it);
+}
+
+// Called by walk mode, whichever way you left: Escape, a step away, the controller, or
+// walking out of the mode altogether.
+function releasePanel() {
+  if (state.panels) state.panels.release();
+}
+
+// Who somebody is, by the id the island knows them under. Ours is not in the roster -
+// the peers only hold other people - so it is named here.
+function peerName(id) {
+  if (state.net && id === state.net.id()) return playerName() || 'you';
+  return state.peers ? state.peers.nameOf(id) : 'Somebody';
+}
+
+// What the island says the boards say. Everything that changes a panel comes through
+// here - our own presses included, which went out as a request and come back as fact.
+function applyPanelMessage(m) {
+  if (!state.panels) return;
+  if (m.kind === 'all') { state.panels.all(m.boards); return; }
+  if (m.kind === 'ui') { state.panels.field(m.id, m.action, m.value); return; }
+  if (m.kind === 'drove') {
+    // The roster is where an id becomes a name, so the name is put on here rather than
+    // in the panel layer, which has never heard of players.
+    if (m.driver) state.panels.drivenBy(m.id, peerName(m.driver));
+    const taken = state.panels.driven(m.id, m.driver);
+    if (taken) {
+      state.walk.setWorking(null);
+      state.ui.toast(`<b>${escapeHtml(peerName(taken))}</b> is working that board. You can read over their shoulder.`);
+    }
+  }
+}
+
+// A board you are already working says how to let go of it, not how to take it.
+function promptFor(near) {
+  if (!near) return null;
+  const held = state.walk.state.working;
+  if (near.kind === 'panel' && held && held.id === near.id) {
+    return { ...near, key: 'Esc', prompt: `step back from ${near.label}` };
+  }
+  return near;
 }
 
 // --------------------------------------------------------------- stepping inside
@@ -608,7 +701,11 @@ function enterInterior(room, at) {
   inside.enter({ avatar: loadAvatar() });
   state.ui.setIndoors(true);
   state.ui.setWalkPrompt(null);
-  if (state.net) state.net.setWalking(false);   // nobody out on the island can see you in here
+  // The room is a place the others can be drawn in, and your pose now comes from its own
+  // walk mode. Switching presence off instead -- which is what this used to do -- made the
+  // tavern the one room on the island where nobody could keep you company.
+  if (state.peers) state.peers.place(inside.room, { scene: inside.scene, terrain: inside.terrain });
+  if (state.net) state.net.setRoom(inside.room, inside.walk);
 }
 
 function leaveInterior() {
@@ -616,7 +713,7 @@ function leaveInterior() {
   state.inside = null;
   state.ui.setIndoors(false);
   state.ui.setWalkPrompt(null);
-  if (state.net) state.net.setWalking(true);
+  if (state.net) state.net.setRoom(null, state.walk);
   // Still on foot: walk mode picks up again on the step outside the door.
   state.walk.enter({
     at: (cameFrom && cameFrom.at) || [0, 0],
@@ -778,7 +875,10 @@ function exitWalk() {
     state.ui.setIndoors(false);
   }
   state.mode = 'orbit';
-  if (state.net) state.net.setWalking(false);
+  // Back outdoors as far as the others are concerned, and the pose comes from the island's
+  // walk mode again. Leaving this pointed at a room you have left is how you come back down
+  // from the sky invisible: the room's walk mode is no longer active, so nothing is sent.
+  if (state.net) { state.net.setRoom(null, state.walk); state.net.setWalking(false); }
   state.walk.setPeerBlockers([]);
   reportWhere({ final: true });   // write down where you left off, and that you left
   state.walk.exit();
@@ -1142,6 +1242,7 @@ function buildScene(village) {
   // calls "live" - so record that as already drawn. Without it the first `setLiveMode` of
   // every page load re-lays the whole landscape it has this moment finished laying.
   shownKey = 'live';
+  shownPolders = (village.polders || []).length;
   state.shot = village;
   frameIsland();
 }
@@ -1176,8 +1277,29 @@ function syncBridges(village) {
     bridgeGroup.add(m);
     bridgeMeshes.set(key, m);
   }
-  if (state.settlers) state.settlers.setDecks(decks);
-  if (state.walk) state.walk.setDecks(decks);
+  handOutDecks();
+}
+
+// Everything that stands above the terrain and can be stood on: the crossings the layout
+// laid, plus the ones somebody built by hand. Two sources, one map.
+//
+// Walk mode wants them as a list per cell, lowest first, because a cell can carry more
+// than one surface - see the note on `levels` in web/js/walk.js. The settlers still walk
+// the routes the layout plans and never leave the ground, so they keep the flat map they
+// have always had.
+//
+// Called from both sides: the two lists arrive at different moments - the layout's with a
+// village update, a built one with the props - and whichever came last used to win by
+// replacing the other.
+function handOutDecks() {
+  const flat = new Map(decks);
+  if (state.props && state.terrain) {
+    for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
+  }
+  const stacked = new Map();
+  for (const [cell, y] of flat) stacked.set(cell, [y]);
+  if (state.settlers) state.settlers.setDecks(flat);
+  if (state.walk) state.walk.setLevels(stacked);
 }
 
 // The road network a settler may walk: the paths, the squares, and the decks - a bridge
@@ -1345,19 +1467,35 @@ function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
   return start <= t;
 }
+// How much of the island the village had built by a given moment. Until now the only
+// thing the chronicle rewound was the buildings: scrub back to the founding day and every
+// house went, while the polders, their dikes and the mill they earned all stayed - ground
+// that would not exist for another six weeks. This is the landscape's side of `visibleAt`.
+//
+// Polders are the exact case, and the only one handled here. The ladder is a pure
+// function of the settler count, the list is append-only, and the scanner now stamps each
+// one with the moment it was drained - so the coast at time t is a prefix of the list.
 // `history.js` projects the village onto the cursor's moment; this lays that projection
 // out with the same functions that build the landscape from a live village, so there is
 // no second description of what a hamlet looks like.
 //
-// `setOwnership` is the heavy one - it re-decodes ownership over the whole grid, re-plans
-// the fields, re-tints the ground and rebuilds the hedges - so it cannot run per pointer
-// move. The projection's key says what would actually be drawn, and the work is throttled
+// Two costs to respect. Moving the coast means rebuilding the heightfield, because a
+// polder is stamped into it rather than drawn on top - but the coast changes only once
+// per polder, so it is keyed separately and touched almost never. Re-laying the land is
+// the heavy one: `setOwnership` re-decodes ownership over the whole grid, re-plans the
+// fields, re-tints the ground and rebuilds the hedges. That cannot run per pointer move,
+// so the projection's key says what would actually be drawn and the work is throttled -
 // with a trailing pass, so the last position the slider stops at is always the one drawn.
 const LANDSCAPE_MS = 120;
-let shownKey = null, landscapePending = null, landscapeRan = 0;
+let shownKey = null, shownPolders = null, landscapePending = null, landscapeRan = 0;
 
 function layLandscape(shot) {
   const w = state.world;
+  if (shot.polders !== shownPolders) {
+    shownPolders = shot.polders;
+    const v = state.village;
+    w.reshape(makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) }));
+  }
   state.shot = shot.village;
   w.setOwnership(shot.village);
   w.buildPaths(shot.village.paths, w.squareCells(shot.village));
@@ -1795,9 +1933,19 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   pointerScreen = { x: e.clientX, y: e.clientY };
   if (downAt) moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  // The board you are standing at gets the mouse before the island does. It takes no
+  // pointer events of its own - see the top of web/js/panels.js - so this is what lights
+  // up a button under the cursor.
+  if (state.panels) state.panels.point(pointer);
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
-renderer.domElement.addEventListener('pointerup', () => {
+renderer.domElement.addEventListener('pointerup', (e) => {
+  // Aimed from the event rather than from the last move: a tap on a touch screen never
+  // sends one, and a click that lands a finger's width off a button is worse than none.
+  pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  // A click on the board you are working is the board's, and never also picks whatever
+  // building happens to stand behind it.
+  if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
     if (hit && String(hit).startsWith('neighbour:')) askToVisit(hit);
@@ -1837,6 +1985,34 @@ const projected = new THREE.Vector3();
 
 // One bad frame must never stop the island: log it once and keep going.
 let frameErrors = 0;
+// The controller from up in the sky: right stick orbits, left stick pans, triggers zoom.
+// A drops you onto the island, B clears whatever panel is hanging over it.
+function orbitPad(a, dt) {
+  if (a.hit('walk') || a.hit('walkAlt')) { enterWalk(); return; }
+  if (a.hit('back')) state.ui.closeOverlays();
+  const look = a.look, move = a.move;
+  if (!(look.x || look.y || move.x || move.y || a.lt > 0.1 || a.rt > 0.1)) return;
+  const off = camera.position.clone().sub(controls.target);
+  const radius = off.length();
+  let theta = Math.atan2(off.x, off.z), phi = Math.acos(clamp(off.y / radius, -1, 1));
+  theta -= look.x * 1.7 * dt;
+  phi = clamp(phi + look.y * 1.2 * dt, 0.14, 1.34);
+  const r2 = clamp(radius * (1 + (a.lt - a.rt) * 1.1 * dt), controls.minDistance, controls.maxDistance);
+  // stick right slides along the camera's right, stick up slides away from the camera
+  const pan = radius * 0.5 * dt;
+  controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
+  controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
+  const wb = state.bounds;
+  controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
+  controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
+  camera.position.set(
+    controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
+    controls.target.y + r2 * Math.cos(phi),
+    controls.target.z + r2 * Math.sin(phi) * Math.cos(theta),
+  );
+  state.intro = null;
+}
+
 function tick(nowMs) {
   if (!contextLost) {
     try {
@@ -1855,52 +2031,17 @@ function frame(nowMs) {
   if (state.chronicle.playing) advanceChronicle(dt);
 
   // ---- controller ---------------------------------------------------------
-  const pad = state.pad ? state.pad.poll() : null;
-  if (pad) {
-    if (!state.padSeen) {
-      state.padSeen = true;
-      state.ui.toast(`Controller connected. <b>A</b> to walk the island.`);
-      state.ui.setPad(true);
-    }
-    if (state.board && state.board.isOpen()) {
-      state.board.pad(pad, dt);           // the stick drives a cursor over the cards
-    } else if (state.mode === 'walk') {
-      state.walk.pad(pad, dt);
-      if (pad.hit(BTN.B) || pad.hit(BTN.START)) exitWalk();
-    } else {
-      if (pad.hit(BTN.A) || pad.hit(BTN.START)) enterWalk();
-      // right stick orbits, left stick pans, triggers zoom
-      const look = pad.look, move = pad.move;
-      if (look.x || look.y || move.x || move.y || pad.lt > 0.1 || pad.rt > 0.1) {
-        const off = camera.position.clone().sub(controls.target);
-        const radius = off.length();
-        let theta = Math.atan2(off.x, off.z), phi = Math.acos(clamp(off.y / radius, -1, 1));
-        theta -= look.x * 1.7 * dt;
-        phi = clamp(phi + look.y * 1.2 * dt, 0.14, 1.34);
-        const r2 = clamp(radius * (1 + (pad.lt - pad.rt) * 1.1 * dt), controls.minDistance, controls.maxDistance);
-        // stick right slides along the camera's right, stick up slides away from the camera
-        const pan = radius * 0.5 * dt;
-        controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
-        controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
-        const wb = state.bounds;
-        controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
-        controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
-        camera.position.set(
-          controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
-          controls.target.y + r2 * Math.cos(phi),
-          controls.target.z + r2 * Math.sin(phi) * Math.cos(theta),
-        );
-        state.intro = null;
-      }
-    }
-  }
+  // Who gets it is decided in input.js; here it is one line.
+  if (state.input) state.input.frame(dt);
 
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
   // somebody crossing the island.
   if (state.peers) {
     state.peers.update(dt);
-    if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
+    // Only the people in the room you are standing in are people you can bump into.
+    if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
+    else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
   }
 
   // ---- walking ------------------------------------------------------------
@@ -1910,7 +2051,7 @@ function frame(nowMs) {
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
-    state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setWalkPrompt(promptFor(w && w.near));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
   }
@@ -1953,6 +2094,10 @@ function frame(nowMs) {
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
+  if (state.panels) {
+    state.panels.setVisible(!state.inside);
+    state.panels.update(dt);
+  }
   if (state.crops) state.crops.update(dt);
 
   // per-building animated bits
@@ -1991,9 +2136,15 @@ function frame(nowMs) {
     if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
   }
 
-  if (state.mode !== 'walk') updateLabels();
+  // After the camera is settled, so the ray it casts is the one you are looking down.
+  if (state.ghost) state.ghost.update(dt);
+  // Hover labels and a ghost fight over the same pointer, and the ghost wins.
+  if (state.mode !== 'walk' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
+  // After the canvas, on its own layer above it. This one has no depth of its own - see
+  // the top of web/js/panels.js for what that costs.
+  if (state.panels) state.panels.render();
 }
 
 function updateLabels() {
@@ -2032,6 +2183,7 @@ function updateLabels() {
       };
     }
   }
+
   // The neighbours, named where they lie. They are far past the buildings' distance
   // cut-off, so they get their own pass rather than an exception in the one above.
   if (state.horizon) {
@@ -2039,10 +2191,12 @@ function updateLabels() {
       projected.set(m.x, m.y, m.z).project(camera);
       if (projected.z > 1) continue;
       const x = (projected.x + 1) / 2 * innerWidth, y = (1 - projected.y) / 2 * innerHeight;
+      const sub = `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'} · click to sail over`;
       if (hoverId === `neighbour:${m.id}`) {
-        hoverItem = { name: m.name, sub: `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'} · click to sail over`, x, y };
+        hoverItem = { name: m.name, sub: m.dev ? `${m.dev} · ${sub}` : sub, x, y };
       } else {
-        items.push({ text: m.name, x, y });
+        // A working copy says which work it is, over its own name.
+        items.push({ text: m.name, above: m.dev || null, x, y });
       }
     }
   }
@@ -2184,6 +2338,15 @@ async function boot() {
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
+    onBuild: () => openBuild(),
+  });
+
+  state.buildMenu = createBuildMenu(document.body, {
+    onPick: (spec) => { if (state.ghost) state.ghost.take(spec); },
+    onDemolish: () => { if (state.ghost) state.ghost.demolish(); },
+    // The menu is the only part of building that stops your feet. While a ghost is in
+    // your hand you keep walking, which is what makes "two steps left, then down" work.
+    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
   state.market = createMarket(document.body, {
@@ -2266,6 +2429,33 @@ async function boot() {
     },
   });
 
+  // Who the controller is talking to. First one that says it is up, wins - a panel over
+  // a room, a room over the island, the island over the sky.
+  state.input = createInput(state.pad, {
+    onFirstPad: () => {
+      state.padSeen = true;
+      state.ui.setPad(true);
+      state.ui.toast('Controller connected. <b>A</b> to walk the island.');
+    },
+  });
+  state.input.mode('panel', {
+    active: () => !!openPanel(),
+    handle: (a, dt) => {
+      const p = openPanel();
+      if (p.pad) p.pad(a, dt);              // the boards steer a cursor of their own
+      else if (a.hit('back')) p.close();    // everything else: B is the way out
+    },
+  });
+  state.input.mode('inside', {
+    active: () => !!state.inside,
+    handle: (a, dt) => state.inside.pad(a, dt),
+  });
+  state.input.mode('walk', {
+    active: () => state.mode === 'walk' && !state.inside,
+    handle: (a, dt) => state.walk.pad(a, dt),
+  });
+  state.input.mode('orbit', { active: () => true, handle: orbitPad });
+
   // Who are we here: the keeper of this island, or somebody visiting it? The page only
   // uses this to decide what to offer; the server refuses the rest either way.
   try {
@@ -2287,9 +2477,14 @@ async function boot() {
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
   state.walk = createWalkMode({ scene, camera, terrain: state.terrain, material: buildingMat, dom: renderer.domElement });
-  state.walk.setDecks(decks);        // buildScene ran before there was a walk mode to tell
+  handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
-  state.peers = createPeers({ scene, material: buildingMat, terrain: state.terrain });
+  state.peers = createPeers({
+    scene, material: buildingMat, terrain: state.terrain,
+    // Somebody else's hand on a board. It rides in with their pose, so it arrives here
+    // rather than as a message of its own - see web/js/net.js.
+    onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
+  });
   state.horizon = createHorizon({ scene, pickables: state.pickables });
   if (!state.guest) refreshNeighbours();
   state.net = createNet({
@@ -2297,8 +2492,42 @@ async function boot() {
     walk: state.walk,
     name: playerName(),
     onStatus: () => {},
+    onPanels: (m) => applyPanelMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  // What a shape looks like before anybody has agreed to it. Built after the world and
+  // the props, because it aims at the ground mesh and measures against what is standing.
+  state.ghost = createGhost({
+    scene, camera, terrain: state.terrain, dom: renderer.domElement,
+    groundMesh: state.world.ground,
+    propsGroup: state.props.group,
+    player: () => (state.mode === 'walk' && !state.inside ? state.walk.state.pos : null),
+    blockers: () => walkableBlockers(),
+    hud: (info) => state.ui.setBuildHud(info),
+    toast: (html) => state.ui.toast(escapeHtml(html)),
+  });
+  // What a panel is allowed to know about the island: a handful of getters, so a face
+  // can say something live without reaching into the scene.
+  state.panels = createPanels({
+    camera,
+    terrain: state.terrain,
+    element: document.getElementById('panels'),
+    island: {
+      name: () => (state.village && state.village.island ? state.village.island.name : 'Promptholm'),
+      hour: () => currentHour(),
+      season: () => (state.world ? state.world.season() : seasonOf(new Date(timeNow()).getMonth())),
+      building: () => (state.village
+        ? state.village.buildings.filter((b) => b.active && b.kind !== 'civic').map((b) => b.name)
+        : []),
+    },
+    // Nothing a board says is decided here. A press asks the island, the island answers
+    // every copy at once, and applyPanelMessage below is where the answer lands.
+    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(id, action, value); },
+    onTake: (id) => { if (state.net) state.net.takePanel(id); },
+    onDrop: (id) => { if (state.net) state.net.dropPanel(id); },
+    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at); },
+    self: () => (state.net ? state.net.id() : null),
+  });
   refreshProps({ animate: false });
   state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });
   refreshGarden({ animate: false });
@@ -2358,6 +2587,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
+  if (state.panels) state.panels.resize();
   if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
 });
 

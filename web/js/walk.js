@@ -3,7 +3,7 @@
 // come close to something you can interact with.
 import * as THREE from 'three';
 import { figureGeometry } from './settlers.js';
-import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R } from './buildings.js';
+import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { avatarPlayerGeometry, loadAvatar } from './avatar.js';
@@ -36,6 +36,20 @@ const LIE_AFTER_MS = 2000;
 // the key that walked you up to it: without a moment's grace the same press that sat you down
 // stood you straight back up, and it looked as though the stools could not be sat on at all.
 const SIT_HOLD_MS = 400;
+// How much room a settler needs over their feet. The same figure the buildings measure
+// themselves against, so a gap you can walk under is a gap you can walk under.
+const HEAD = WALK_CLEARANCE;
+// The keys the feet use. Lifted out of onKeyDown because a board being worked hands
+// every other key to the page and keeps only these.
+const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
+
+// A field on a board takes its letters. In here w is a w, not a step, so the feet keep
+// out of it entirely - which is the whole of "type quit and you plant a tree".
+function typingInto(el) {
+  if (!el || !el.tagName) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
+}
+
 const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
@@ -123,6 +137,11 @@ export function createWalkMode({
     bob: 0,
     vy: 0,           // vertical speed; zero whenever the feet are down
     grounded: true,
+    // The surface you are standing on, held for the whole of a jump. Which floor you
+    // belong to has to be decided when you leave the ground and not recomputed as you
+    // rise, or a swimmer under a bridge would climb into reach of the deck halfway up
+    // and land on top of the thing they were swimming under.
+    floor: 0,
     swimming: false,
     crouching: false,
     lying: false,
@@ -141,7 +160,14 @@ export function createWalkMode({
     onThink: null,
     onPlant: null,
     onNextSeed: null,
+    onPrevSeed: null,
+    onBuild: null,
     onExit: null,
+    // The board you are standing at and working, or null. While one is held the page on
+    // it owns the keyboard and the mouse; only the keys that walk you away are still the
+    // island's. See setWorking.
+    working: null,
+    onRelease: null,
     moving: false,
     running: false,
     paused: false,   // true while an overlay owns the input
@@ -160,6 +186,17 @@ export function createWalkMode({
     state.ctrlSince = 0;
   }
 
+  // Jumping and crouching live here rather than in the key handler because the controller
+  // does both as well, and two copies of "only from the ground" would drift apart.
+  function jump() {
+    if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
+    if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
+  }
+  function crouchToggle() {
+    if (state.lying) standUp();                 // pressing it again is how you get up
+    else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
+  }
+
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
   // pose held until you walk out of it - except that it is entered deliberately, so
   // nothing counts down to it and the seat says how high you end up.
@@ -167,7 +204,7 @@ export function createWalkMode({
     state.crouching = false;
     state.lying = false;
     state.ctrlSince = 0;
-    state.sitting = { x, z, y: y != null ? y : groundAt(x, z), yaw, since: performance.now() };
+    state.sitting = { x, z, y: y != null ? y : groundAt(x, z, state.pos.y), yaw, since: performance.now() };
     state.pos.set(x, state.sitting.y, z);
     keys.clear();                            // whatever walked you here is not walking you off
     state.vy = 0;
@@ -179,21 +216,21 @@ export function createWalkMode({
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
     const k = e.key.toLowerCase();
-    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
+    // A board being worked has the keyboard. Escape hands it back wherever the focus is,
+    // and the feet keep their own keys so that walking away is still a way out - except
+    // inside a field, where those keys are letters somebody is typing.
+    if (state.working) {
+      if (k === 'escape') { e.preventDefault(); release(); return; }
+      if (!typingInto(e.target) && MOVE_KEYS.includes(k)) { keys.add(k); e.preventDefault(); }
+      return;
+    }
+    if (MOVE_KEYS.includes(k)) {
       keys.add(k);
       e.preventDefault();
     }
     // Only from the ground, so holding space does not climb the sky.
-    if (k === ' ') {
-      e.preventDefault();
-      if (state.sitting) standUp();          // stand before you jump, not off the stool
-      else if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
-    }
-    if (k === 'control') {
-      e.preventDefault();
-      if (state.lying) standUp();                    // pressing it again is how you get up
-      else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
-    }
+    if (k === ' ') { e.preventDefault(); jump(); }
+    if (k === 'control') { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // A thought needs nothing to stand in front of: it is about wherever you are.
@@ -201,6 +238,9 @@ export function createWalkMode({
     // Sowing is the same kind of thing: it happens where the feet are, not at a door.
     if (k === 'p') { e.preventDefault(); state.onPlant && state.onPlant(); }
     if (k === 'q') { e.preventDefault(); state.onNextSeed && state.onNextSeed(); }
+    // The catalogue. Like a thought, it is about wherever you happen to be standing, so
+    // it needs nothing within reach.
+    if (k === 'b') { e.preventDefault(); state.onBuild && state.onBuild(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -243,25 +283,66 @@ export function createWalkMode({
   dom.addEventListener('pointerdown', onDown);
   addEventListener('pointerup', onUp);
   addEventListener('pointermove', onMove);
-  dom.addEventListener('dblclick', () => { if (state.active) dom.requestPointerLock?.(); });
+  // Not while a board is held: pointer lock turns off DOM events entirely, so taking it
+  // back would kill every click on the page hanging in front of you.
+  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.(); });
 
-  // A bridge deck is the ground as far as walking is concerned; without this you walk out
-  // over a river and drop into it. This is also where the decks meet the wading rule,
-  // which is not obvious from either end: a deck is never below WATER_Y, so `blocked`
-  // does not treat a crossing as open water, `inWater` below stays false and you walk
-  // over rather than swim across. Step off the side of one and you are wading again,
-  // with the deck itself counting as the shore within reach.
-  let deckAt = new Map();
-  function groundAt(x, z) {
+  // A cell can have more than one surface to stand on: the ground, and above it a bridge
+  // deck, a floor, a roof, the lid of a tunnel. `levels` holds what is above the terrain,
+  // lowest first; the terrain itself is always the bottom and is never in the list.
+  //
+  // Which of them is your floor depends on where you already are, and that is the whole
+  // idea. Swim under a bridge and the deck is over your head, so the riverbed is your
+  // floor; walk onto the same cell along the bank and the deck is within a step, so the
+  // deck is. One number per cell could not tell those apart, which is why you could not
+  // swim under a crossing, stand on a roof, or have a tunnel at all.
+  //
+  // This is also where the levels meet the wading rule, which is not obvious from either
+  // end: a deck is never below WATER_Y, so while you are up on one `blocked` does not
+  // treat the crossing as open water, `inWater` stays false and you walk over rather than
+  // swim across. Step off the side and you are wading again.
+  let levels = new Map();
+
+  // How far up you will take a surface without jumping. Wider than the 0.32 a deck rides
+  // above its bank, so you walk onto a bridge rather than bump into it; well under a
+  // storey, or you would step off the ground straight onto your own roof.
+  const STEP_UP = 0.45;
+
+  function levelsIn(x, z) {
     const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
-    const d = deckAt.get(gx + gz * terrain.size);
-    return d != null ? d : terrain.worldHeight(x, z);
+    return levels.get(gx + gz * terrain.size);
+  }
+
+  // The highest surface that is not over your head. `from` is where your feet are now;
+  // leaving it out asks for the topmost one, which is what something looking down from
+  // outside the world wants.
+  function groundAt(x, z, from = Infinity) {
+    let best = terrain.worldHeight(x, z);
+    const above = levelsIn(x, z);
+    if (!above) return best;
+    const reach = from + STEP_UP;
+    for (const y of above) if (y <= reach && y > best) best = y;
+    return best;
+  }
+
+  // The lowest surface above you, or Infinity under the open sky. This is the half that
+  // makes "under" mean anything: without it a swimmer below a deck jumps straight through
+  // it and lands on top, and a tunnel is just a differently shaped hill.
+  function ceilingAt(x, z, from) {
+    const above = levelsIn(x, z);
+    if (!above) return Infinity;
+    let best = Infinity;
+    const reach = from + STEP_UP;
+    for (const y of above) if (y > reach && y < best) best = y;
+    return best;
   }
 
   // Is there dry land within arm's reach? This is what keeps a swim to the coast and a
   // stream, and refuses the open sea, without needing to know where either of them is.
-  function shoreWithinReach(x, z) {
-    for (const [dx, dz] of PROBE) if (groundAt(x + dx, z + dz) >= 0.06) return true;
+  // Asked from your own height, or the deck you are swimming under would count as a
+  // shore you cannot possibly climb onto.
+  function shoreWithinReach(x, z, from) {
+    for (const [dx, dz] of PROBE) if (groundAt(x + dx, z + dz, from) >= 0.06) return true;
     return false;
   }
 
@@ -270,9 +351,9 @@ export function createWalkMode({
   // standing in it. Rectangles, not circles, or a market row would be a fat bollard.
   // People are the exception, and keep their circle: a person is round, and unlike the
   // buildings they move, so they arrive in their own list every frame.
-  function blocked(x, z) {
+  function blocked(x, z, from = state.pos.y) {
     // You may wade in as long as the shore stays close; the open water is still a wall.
-    if (groundAt(x, z) < 0.06 && !shoreWithinReach(x, z)) return true;
+    if (groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
     for (const b of state.blockers) {
       if (Math.abs(x - b.x) < b.hx + BODY_R && Math.abs(z - b.z) < b.hz + BODY_R) return true;
     }
@@ -283,19 +364,25 @@ export function createWalkMode({
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant,
+    onNextSeed, onPrevSeed, onBuild, onExit, onRelease }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
+    state.working = null;
     state.onInteract = onInteract;
+    state.onRelease = onRelease;
     state.onSendAway = onSendAway;
     state.onThink = onThink;
     state.onPlant = onPlant;
     state.onNextSeed = onNextSeed;
+    state.onPrevSeed = onPrevSeed;
+    state.onBuild = onBuild;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
     for (let i = 0; i < 40 && blocked(x, z); i++) { x += 0.4; z += 0.25; }
     state.pos.set(x, groundAt(x, z), z);
+    state.floor = state.pos.y;
     state.vy = 0;
     state.grounded = true;
     standUp();
@@ -308,6 +395,7 @@ export function createWalkMode({
   }
 
   function exit() {
+    release();
     state.active = false;
     avatar.visible = false;
     lounge.visible = false;
@@ -332,25 +420,67 @@ export function createWalkMode({
   const forward = new THREE.Vector3();
   const right = new THREE.Vector3();
 
-  // Controller input, folded into the same movement the keyboard uses.
+  // Controller input, folded into the same movement the keyboard uses. The actions come in
+  // by name, so this one function serves the island and the rooms indoors both: what a
+  // room's map leaves out - sowing, sending anyone away - never fires there.
   const stick = { x: 0, z: 0, run: false };
+  let padCrouch = false;
   function pad(p, dt) {
-    if (!state.active) return;
+    if (!state.active || state.paused) return;   // an overlay has the controller
+    // A board held with a controller can only be let go of: there is no cursor to press
+    // anything on it with. The button that took it gives it back, and so does the one
+    // that would otherwise fly you off the island.
+    if (state.working) {
+      if (p.hit('interact') || p.hit('exit')) release();
+      return;
+    }
     stick.x = p.move.x;
     stick.z = -p.move.y;                       // pushing up on the stick walks forward
-    stick.run = p.down(5) || p.rt > 0.4;       // right shoulder or right trigger
+    // A tap keeps you running until you stand still; holding it down works too.
+    if (!stick.x && !stick.z) stick.run = false;
+    if (p.hit('sprint')) stick.run = !stick.run;
+    if (p.down('sprint')) stick.run = true;
     state.camYaw -= p.look.x * 2.6 * dt;
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
-    if (p.hit(0) && state.near) state.onInteract && state.onInteract(state.near);
-    if (p.hit(2) && state.near) state.onSendAway && state.onSendAway(state.near);   // X on the pad
-    if (p.hit(3)) state.onThink && state.onThink();                                 // Y: have a thought
-    if (p.hit(12)) state.onPlant && state.onPlant();                                // D-pad up: sow a bed
-    if (p.hit(15)) state.onNextSeed && state.onNextSeed();                          // D-pad right: next seed
+    if (p.hit('jump')) jump();
+    if (p.hit('crouch')) crouchToggle();
+    // Only the pad's own release stands you up again - a pad lying untouched on the desk
+    // must not undo a crouch somebody started with Ctrl.
+    const held = p.down('crouch');
+    if (padCrouch && !held) releaseCrouch();
+    padCrouch = held;
+    if (p.hit('interact') && state.near) state.onInteract && state.onInteract(state.near);
+    if (p.hit('secondary') && state.near) state.onSendAway && state.onSendAway(state.near);
+    if (p.hit('think')) state.onThink && state.onThink();
+    if (p.hit('primary')) state.onPlant && state.onPlant();
+    if (p.hit('nextTool')) state.onNextSeed && state.onNextSeed();
+    if (p.hit('prevTool')) state.onPrevSeed && state.onPrevSeed();
+    if (p.hit('exit') || p.hit('exitAlt')) state.onExit && state.onExit();
   }
 
   function setPaused(v) {
     state.paused = !!v;
     if (v) { keys.clear(); stick.x = 0; stick.z = 0; }
+  }
+
+  // Step up to a board and work it. Pointer lock is the thing that has to go: while the
+  // pointer is locked no DOM element gets a mouse event at all, so a panel in front of
+  // you would look alive and answer nothing. The keys are handed over in onKeyDown.
+  //
+  // Not setPaused: that is for an overlay that owns the whole screen, and standing at a
+  // board is not that - you are still out on the island, and a step away is a way out.
+  function setWorking(it) {
+    state.working = it || null;
+    if (!state.working) return;
+    keys.clear();
+    if (document.pointerLockElement === dom) document.exitPointerLock?.();
+  }
+
+  function release() {
+    if (!state.working) return;
+    const was = state.working;
+    state.working = null;
+    if (state.onRelease) state.onRelease(was);
   }
 
   function update(dt) {
@@ -396,7 +526,10 @@ export function createWalkMode({
     // or the water surface where the terrain is below it. A jump keeps its arc out over
     // the water and only starts swimming when it comes down, which is what lets you clear
     // a stream instead of paddling across it.
-    const ground = groundAt(state.pos.x, state.pos.z);
+    // Feet down: whatever is within a step of where you stand. In the air: the floor you
+    // left, so a jump cannot change which storey you are on.
+    const ground = groundAt(state.pos.x, state.pos.z, state.grounded ? state.pos.y : state.floor);
+    if (state.grounded) state.floor = ground;
     const inWater = ground < 0;
     const underfoot = inWater ? WATER_Y - SWIM_SINK : ground;
     if (state.sitting) {
@@ -406,6 +539,12 @@ export function createWalkMode({
     } else {
       state.vy -= GRAVITY * dt;
       state.pos.y += state.vy * dt;
+      // Your head. Without this a swimmer under a bridge jumps clean through the deck and
+      // lands on top of it, which is the same hole that would let anyone out of a tunnel.
+      if (state.vy > 0) {
+        const lid = ceilingAt(state.pos.x, state.pos.z, state.floor);
+        if (state.pos.y + HEAD > lid) { state.pos.y = lid - HEAD; state.vy = 0; }
+      }
       if (state.pos.y <= underfoot) { state.pos.y = underfoot; state.vy = 0; state.grounded = true; }
     }
     state.swimming = state.grounded && inWater && !state.sitting;
@@ -462,7 +601,7 @@ export function createWalkMode({
     const cz = state.pos.z - Math.cos(state.camYaw) * dist * Math.cos(state.camPitch);
     const eyeDrop = state.lying ? camUp * 0.55 : state.crouching || state.sitting ? camUp * 0.3 : 0;
     const cy = state.pos.y + camUp - eyeDrop + Math.sin(state.camPitch) * dist;
-    camera.position.set(cx, Math.max(cy, groundAt(cx, cz) + 0.55), cz);
+    camera.position.set(cx, Math.max(cy, groundAt(cx, cz, cy) + 0.55), cz);
     if (clampCam) clampCam(camera.position);
     camera.lookAt(state.pos.x, state.pos.y + (state.lying ? camAim * 0.22 : state.crouching ? camAim * 0.7 : camAim), state.pos.z);
 
@@ -474,6 +613,11 @@ export function createWalkMode({
       if (d < (it.r || 2.6) && d < bestD) { bestD = d; near = it; }
     }
     state.near = near;
+    // Walking out of reach of the board you are working is the other way out, and the
+    // one you take without thinking about it. Compared by id, not by identity: the list
+    // of what is within reach is rebuilt whenever the island changes, and a board that
+    // was rebuilt is still the same board to stand at.
+    if (state.working && (!near || near.id !== state.working.id)) release();
     return { near, pos: state.pos, distance: bestD };
   }
 
@@ -489,7 +633,9 @@ export function createWalkMode({
     avatar.geometry.dispose();
   }
 
-  function setDecks(map) { deckAt = map || new Map(); }
+  // What stands above the terrain, per cell, lowest first. main.js merges the layout's
+  // bridges with the ones somebody built before handing it over.
+  function setLevels(map) { levels = map || new Map(); }
 
   // Is there room here for something wider than a person? Walk mode already knows what
   // cannot be walked through, so "can a vegetable bed go where I am standing" is that
@@ -501,7 +647,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {

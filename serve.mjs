@@ -18,7 +18,7 @@ import {
 } from './lib/garden.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
-import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
+import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { createWsServer } from './lib/ws.mjs';
@@ -249,7 +249,18 @@ const access = createAccess({ port: PORT, config });
 // Everyone who opens the page gets a body to walk around in. The upgrade event is a
 // second front door - handle() below never sees it - so the same classification has to
 // be made again here, by hand, or the socket would be the way around the whole gate.
-const roster = createRoster({ maxPlayers: config.multiplayer.maxPlayers, log });
+// The roster is also where the boards on the island are remembered now, and it needs to
+// know which face each one carries to know what it will accept. Read from the props on
+// every message rather than cached: a board can go up while people are standing there.
+const panelFaces = () => {
+  const out = new Map();
+  for (const prop of listProps()) if (prop.kind === 'panel') out.set(prop.id, prop.face || 'notice');
+  return out;
+};
+const roster = createRoster({ maxPlayers: config.multiplayer.maxPlayers, panelFaces, log });
+// A board taken off the island takes what it said with it, rather than waiting for a
+// restart to be forgotten.
+const forgetGonePanels = () => roster.panels.forget([...panelFaces().keys()]);
 const whoFor = (req) => {
   try { return access.classify(req, new URL(req.url, `http://localhost:${PORT}`)); } catch { return { role: 'refused' }; }
 };
@@ -269,6 +280,26 @@ if (ws) setInterval(() => roster.tick(), Math.max(33, Number(config.multiplayer.
 const islanderName = config.multiplayer.name || (() => {
   try { return os.userInfo().username; } catch { return os.hostname(); }
 })();
+// An island answering on a port of its own is somebody's working copy rather than the
+// island of this machine -- `--port`, PORT in the environment and autoPort in
+// launch.json all end up here -- and it says so on the horizon, with the branch it is
+// serving. Two Promptholms in the distance are then two pieces of work you can tell
+// apart, instead of a nameless twin of your own island.
+//
+// Read once, in the background: a beacon goes out every five seconds and none of them
+// deserves to shell out to git, and a server does not change branch under its own feet.
+const devPort = PORT !== Number(config.port || 4747);
+let devLabel = devPort ? 'development' : null;
+if (devPort) currentBranch(ROOT).then((b) => { devLabel = workLabel(b) || devLabel; }).catch(() => {});
+
+// The branches here are named <kind>/<issue>-<slug>, so `feature/25-dev-eiland-label`
+// reads back as `#25 dev-eiland-label`. Anything not in that shape is shown as it is.
+function workLabel(branch) {
+  if (!branch) return null;
+  const m = /^[^/]+\/(\d+)-(.+)$/.exec(branch);
+  return m ? `#${m[1]} ${m[2]}` : branch;
+}
+
 const neighbours = config.multiplayer.discovery ? createNeighbours({
   port: PORT,
   name: islanderName,
@@ -280,6 +311,7 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
     const v = readJson(VILLAGE_FILE, null);
     return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
   },
+  dev: () => devLabel,
   log,
   onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
 }) : null;
@@ -749,12 +781,14 @@ async function handle(req, res) {
       const cleared = clearProps();
       log(`cleared ${cleared} built thing(s) off the island`);
       broadcast({ at: Date.now(), cleared }, 'props');
+      forgetGonePanels();
       return json(res, 200, { ok: true, cleared });
     }
     const removed = removeProp(String(body.id || ''));
     if (removed) {
       log(`took away the ${removed.kind} at ${removed.x}, ${removed.z}`);
       broadcast({ at: Date.now(), id: removed.id }, 'props');
+      forgetGonePanels();
     }
     return json(res, 200, { ok: true, removed });
   }

@@ -318,6 +318,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // because the first plan's own cells would have ruled every candidate out.
   const baseCleared = (v) => {
     const out = new Set((v.cleared || []).map(([gx, gz]) => gx + gz * size));
+    // A dike is a wall and a causeway is a road. Neither is ground that grows anything,
+    // and both are flat and high enough that the scatter below would otherwise plant
+    // trees along the top of the sea wall.
+    for (const p of v.polders || []) {
+      for (const [gx, gz] of [...(p.dike || []), ...(p.road || [])]) out.add(gx + gz * size);
+    }
     for (const b of v.buildings || []) {
       if (!b.plot) continue;
       for (let z = -1; z <= b.plot.d; z++) for (let x = -1; x <= b.plot.w; x++) out.add((b.plot.gx + x) + (b.plot.gz + z) * size);
@@ -331,6 +337,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   let clearedBase = baseCleared(village);
   const cleared = new Set(clearedBase);
+  // Reclaimed land is farmland, not heath. It sits at POLDER_H, just under the height
+  // the scatter treats as shore, so without this every polder comes out strewn with
+  // boulders - about one cell in ten. It stays out of `clearedBase` so that a hamlet
+  // which settles a polder still gets its fields.
+  for (const p of village.polders || []) {
+    for (const [gx, gz] of p.cells || []) cleared.add(gx + gz * size);
+  }
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
@@ -806,10 +819,32 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   // anything already cleared at load time is simply not planted, so nothing to do here
 
+  // The coast of another moment. Polders are stamped into the heightfield rather than
+  // drawn on top of it, so replaying the island's history means moving the ground
+  // itself - there is no visibility flag that can put the sea back. Everything else is
+  // already incremental: the colour attribute is written in place by `paintGround`, and
+  // the scatter never touches a polder or its dike, so nothing is left hanging in the
+  // air when the water returns.
+  function reshape(next) {
+    terrain = next;
+    const pa = geo.attributes.position;
+    for (let k = 0; k < N * N; k++) pa.array[k * 3 + 1] = terrain.H[k];
+    pa.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    paintGround(currentSeason);
+    const wa = waterGeo.attributes.aDepth;
+    for (let i = 0; i < wp.count; i++) {
+      const x = wp.getX(i), z = wp.getZ(i);
+      wa.array[i] = (Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z);
+    }
+    wa.needsUpdate = true;
+  }
+
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
     buildPaths, squareCells, setOwnership, followShadow, ownership: () => own, state,
-    season: () => currentSeason,
+    season: () => currentSeason, reshape,
   };
 }
 
