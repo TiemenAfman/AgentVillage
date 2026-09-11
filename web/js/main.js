@@ -27,6 +27,7 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
+import { setBillboardOrigin } from './faces.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
 import { createBuildMenu } from './buildmenu.js';
@@ -1988,6 +1989,13 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (state.panels) state.panels.point(pointer);
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
+// A hoarding can carry a page taller than the board it is folded onto, and the wheel is
+// the only way down it. The board you are standing at gets first refusal, the same as a
+// press does; if it takes the notch, the island does not also zoom out from under you.
+// Not passive, because taking it means preventing it.
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (state.panels && state.panels.wheel(e.deltaY)) e.preventDefault();
+}, { passive: false });
 renderer.domElement.addEventListener('pointerup', (e) => {
   // Aimed from the event rather than from the last move: a tap on a touch screen never
   // sends one, and a click that lands a finger's width off a button is worse than none.
@@ -2524,6 +2532,9 @@ async function boot() {
   // uses this to decide what to offer; the server refuses the rest either way.
   try {
     const hello = await fetch('/api/hello').then((r) => r.json());
+    // Billboards are served from a port of their own, and only the island knows which.
+    // Told before any board is drawn, since a board that does not know stays blank.
+    setBillboardOrigin(hello.billboards);
     state.guest = hello.role !== 'islander';
     setVisiting(state.guest);
     if (state.guest) {

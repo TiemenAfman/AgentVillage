@@ -91,3 +91,64 @@ export function applyUi(face, state, action, value) {
   }
   return null;
 }
+
+// ---------------------------------------------------------------- billboards
+// Which site a billboard carries, and the whole of what counts as a usable address.
+// Here rather than in web/js/faces.js because the server reads it too: it is what
+// /billboard checks a request against before it will fetch anything, and a rule the two
+// halves disagreed about would be a hole rather than a bug.
+export const BILLBOARD = 'https://www.boikon.nl/';
+
+// A board carries the site it was put up with: `--note https://...` on the prop. A whole
+// URL, because a bare host or a typo would frame nothing and there would be no error to
+// say so. Anything else falls back to the address above, so a mistake shows the wrong
+// billboard rather than a broken one.
+//
+// https, or http when it is this machine talking to itself. That exception is not a
+// loosening: plain http to anywhere else would be the island fetching over the open
+// network in the clear, while http to loopback cannot leave the machine - and it is the
+// only way to hang the island's own pages on a board, which is worth having.
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+export function isLoopbackHost(host) {
+  return LOOPBACK.has(String(host || '').toLowerCase());
+}
+
+export function siteUrl(note) {
+  try {
+    const u = new URL(String(note || '').trim());
+    if (u.protocol === 'https:') return u;
+    if (u.protocol === 'http:' && isLoopbackHost(u.hostname)) return u;
+    return null;
+  } catch { return null; }
+}
+
+// A board can also carry a page of the island's own, written by hand and dropped in
+// data/boards/. That is the thing a billboard turns out to be wanted for most: putting
+// something up for the people on the island to read, without it having to exist on the
+// web at all.
+//
+// Written as a plain name - `--note welcome` or `--note welcome.html` - because a name is
+// what a person has in their head, and anything with a scheme in it is a site. Kept to
+// one segment of safe characters, which is also what keeps it from walking out of the
+// folder it lives in: no slashes, no dots doubling back, nothing to escape with.
+const PAGE = /^[a-z0-9][a-z0-9_-]{0,63}(\.html?)?$/i;
+
+export function boardPage(note) {
+  const raw = String(note == null ? '' : note).trim();
+  if (!raw || !PAGE.test(raw)) return null;
+  return raw.replace(/\.html?$/i, '') + '.html';
+}
+
+// What a given board is actually pointed at: a page of ours, a site, or the default.
+// Exactly one of `page` and `site` is ever set, so neither side has to guess.
+export function boardSite(prop) {
+  return siteUrl(prop && prop.note) || new URL(BILLBOARD);
+}
+
+export function boardTarget(prop) {
+  const page = boardPage(prop && prop.note);
+  if (page) return { page, label: page.replace(/\.html$/, '') };
+  const site = siteUrl(prop && prop.note) || new URL(BILLBOARD);
+  return { site, label: site.host };
+}

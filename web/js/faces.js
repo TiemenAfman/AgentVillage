@@ -19,6 +19,12 @@
 // kind, give it a rule or two in web/css/panels.css, and - if it remembers anything -
 // declare its fields in shared/panels.mjs. A name nobody has written a face for falls
 // back to the notice board, so a panel never comes up blank.
+import { BILLBOARD, siteUrl, boardSite } from 'shared/panels.mjs';
+
+// Re-exported because web/js/buildmenu.js asks this face what a usable address looks
+// like before it hands a board over. The rule itself is shared with the server.
+export { BILLBOARD, siteUrl };
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const SEASON_MARK = { spring: '🌱', summer: '☀️', autumn: '🍂', winter: '❄️' };
@@ -133,61 +139,104 @@ function tally({ prop, send }) {
   };
 }
 
-// Somebody else's website, framed, on a board the size of a hoarding. The one face that
-// is not ours, and the one that needs the exception in the header above.
+// Somebody else's website, on a board the size of a hoarding - and the one face that is
+// not ours, which is what the exception in the header above is about.
 //
-// What it costs is everything the same-origin rule was buying. A cross-origin page can
-// be drawn and nothing more: press() in web/js/panels.js hands its click to the <iframe>
-// element and gets no further in, we cannot read a line of it, and there is no state to
-// send anybody - two people standing at this board see the same site and neither can
-// press a thing on it. That is the whole bargain, and it is the right one here: a
-// billboard is read from the road.
+// It is framed through the island's own address rather than straight off the far site.
+// lib/billboard.mjs is where that is argued; from this side what it buys is that the
+// page is same-origin, so elementAt() in web/js/panels.js can ask it what is under the
+// pointer and a press lands the way it does on any other board. Framed the obvious way,
+// it could not: the island aims the mouse with a raycaster, and a raycaster stops at the
+// edge of a cross-origin document.
 //
-// Nothing of ours is laid over the site except the strip with the address on it, which
-// earns its place twice: it is what a hoarding has, and it is the only part still
-// standing if the site ever starts refusing to be framed. That refusal is invisible from
-// this side - cross-origin, so there is no load error to catch - so the blank it would
-// leave has to read as a board with nothing on it rather than as a hole.
-// Exported because the build menu asks for this one before it hands a board over, and
-// fills the field with it. One address and one idea of what a usable one looks like,
-// read by both, so the menu can never accept something the board then quietly replaces.
-export const BILLBOARD = 'https://www.boikon.nl/';
+// The frame carries no `allow-scripts`. The page is running at our origin now, and the
+// response says `script-src 'none'` for the same reason - two locks on one door, the
+// care shared/panels.mjs takes over text, for a bigger risk. A hoarding is for reading
+// and for following a link.
+//
+// Nothing of ours is laid over the site at all: the board is the page and the frame
+// around it is the woodwork. The one thing drawn on top is the host, and only until the
+// page has painted - see .bb-wait in web/css/panels.css - so a board that is still on
+// its way says whose it is instead of standing there white.
 
-// A board carries the site it was put up with: `--note https://...` on the prop. Only a
-// whole https URL, because a bare host or a typo would frame nothing and there would be
-// no error to say so. Anything else falls back to the address above, so a mistake shows
-// the wrong billboard rather than a broken one. Only the keeper can put a prop up -
-// /api/build is not a public path - so this is the keeper's own choice, not a visitor's.
-export function siteUrl(note) {
-  try {
-    const u = new URL(String(note || '').trim());
-    return u.protocol === 'https:' ? u : null;
-  } catch { return null; }
-}
+// How much bigger the page is laid out than the board it is folded onto - the 266.6667%
+// and scale(.375) in web/css/panels.css, as one number. Here as well as there because
+// this is what turns a point on the board into a point on the page, and the two drifting
+// apart would put the pointer somewhere the reader is not looking.
+const BB_ZOOM = 0.375;
+
+// Where the boards are served from, which is a port of its own rather than this one.
+// Handed over by /api/hello, because the island picks the port; the fallback is only for
+// a page opened before that answer arrives, and a board would come up blank rather than
+// wrong. See lib/billboard.mjs for why it must not be this origin.
+let BILLBOARD_ORIGIN = '';
+export function setBillboardOrigin(origin) { BILLBOARD_ORIGIN = String(origin || ''); }
 
 function billboard({ prop }) {
-  const url = siteUrl(prop.note) || new URL(BILLBOARD);
+  const url = boardSite(prop);
   const el = document.createElement('div');
   el.className = 'face face-billboard';
   el.innerHTML = `
     <iframe class="bb-glass" title="${esc(prop.label || url.host)}" tabindex="-1"
-            sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
-    <div class="bb-wait">${esc(url.host)}</div>
-    <div class="bb-strip">${esc(url.host)}</div>`;
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            referrerpolicy="no-referrer"></iframe>
+    <div class="bb-wait">${esc(url.host)}</div>`;
   const frame = el.querySelector('iframe');
-  // Fires for a cross-origin page too, which is as much as we are ever told about it.
   frame.addEventListener('load', () => el.classList.add('lit'));
+
+  // `allow-scripts` with `allow-same-origin` is the pairing every warning is about, and
+  // it is safe here for the one reason those warnings turn on: the frame's origin is not
+  // ours. It keeps the billboard port's origin, which holds nothing, so the page can do
+  // as it likes inside it and still be unable to reach the island. Served from this
+  // origin the same two flags would hand a stranger `parent.document`.
+
+  // Everything said to the page goes this way. It is one-directional on purpose: the
+  // island tells the page where the pointer is and never asks it anything, so nothing
+  // about somebody else's site ever comes back across.
+  function tell(msg) {
+    const win = frame.contentWindow;
+    if (!win || !BILLBOARD_ORIGIN) return false;
+    try { win.postMessage(msg, BILLBOARD_ORIGIN); return true; } catch { return false; }
+  }
+
+  // A point on the board, in the face's own pixels, as a point in the page. The page is
+  // laid out larger and folded down - the 266.6667% and scale(.375) in
+  // web/css/panels.css - and undoing that fold is the whole conversion.
+  //
+  // The scroll is deliberately not part of it. That looks wrong and is not: the bridge
+  // calls elementFromPoint(), which takes viewport coordinates, and a point on the board
+  // already is one - the board shows whatever the frame currently shows. Correcting for
+  // the scroll aims at where the text used to be, so a scrolled board quietly stops
+  // answering. It cost an afternoon once already.
+  const onPage = (x, y) => ({ x: x / BB_ZOOM, y: y / BB_ZOOM });
 
   let asked = false;
   return {
     el,
+    // panels.js hands the point over rather than asking what is there: across an origin
+    // there is nothing to hand back, and the highlight is put on from inside the page.
+    // Answering true means the board took it.
+    aimAt(x, y) {
+      const at = onPage(x, y);
+      return tell({ k: 'hover', x: at.x, y: at.y });
+    },
+    pressAt(x, y) {
+      const at = onPage(x, y);
+      return tell({ k: 'press', x: at.x, y: at.y });
+    },
+    // A hoarding taller than the board it is on. The wheel never reaches the page by
+    // itself - nothing on this layer takes a pointer event - so the island hands it down.
+    scrollBy(dy) {
+      return tell({ k: 'scroll', dy: dy / BB_ZOOM });
+    },
     update() {
       // update() only runs while the board is in view, so an island that opens with a
       // billboard behind a hill fetches nothing off somebody else's server until a
-      // person has walked round and looked at it.
-      if (asked) return;
+      // person has walked round and looked at it. It also waits for the port: without it
+      // the board would ask this origin, which serves no boards.
+      if (asked || !BILLBOARD_ORIGIN) return;
       asked = true;
-      frame.src = url.href;
+      frame.src = `${BILLBOARD_ORIGIN}/billboard?of=${encodeURIComponent(prop.id)}`;
     },
   };
 }

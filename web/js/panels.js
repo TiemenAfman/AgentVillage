@@ -48,6 +48,20 @@ const SEE_WIDTHS = 8;
 // a panel is something you stand in front of rather than walk into.
 const REACH = 2.4;
 
+// But that is a monitor's reach, and it does not survive being handed to a hoarding: at
+// 2.4 m from an eight-metre board you are standing at its bottom-left corner with your
+// nose on it, reading a tenth of what is there. So a board also reaches most of its own
+// width, which leaves every board narrower than three metres exactly where it was and
+// lets you step up to a billboard from where it can actually be read.
+//
+// Nothing technical forces the old number - the raycaster below reaches as far as the
+// board is drawn. This is only about where a person would stand.
+const REACH_WIDTHS = 0.8;
+
+function reachOf(p) {
+  return Math.max(REACH, panelFace(p).w * (p.scale || 1) * REACH_WIDTHS);
+}
+
 // Why the mouse is aimed by hand.
 //
 // Chrome draws a CSS3D panel perfectly and then declines to hit-test it once it fills
@@ -59,6 +73,25 @@ const REACH = 2.4;
 // So the panels take no pointer events at all and the aiming is done here, with the
 // raycaster the island already has. It is more code than `pointer-events: auto`, but it
 // behaves the same at every distance, which that does not.
+//
+// That was measured again when the billboard went up, because a framed page is the one
+// thing the raycaster looked unable to stand in for, and the answer was worse than the
+// paragraph above: with the frame itself on `pointer-events: auto` and the board being
+// worked, document.elementFromPoint() answers CANVAS#stage at every distance, and
+// sweeping the whole screen finds the frame at none of them. Take the canvas away and
+// the answer is BODY, not the frame. There is no distance at which it works, so handing
+// the page the pointer is not a way out of anything.
+//
+// (A bench built to isolate it - a lone CSS3DRenderer, one framed page, no full-screen
+// canvas - does land the press at every distance from 1.2 m to 30 m. So it is how this
+// layer sits in this page rather than CSS3D itself. Unexplained, and the thread to pull
+// if the aiming below ever has to go.)
+//
+// Which leaves the raycaster doing that job for the billboard too, and it can, because
+// the page is served through the island's own address and is therefore same-origin. See
+// lib/billboard.mjs for why that is worth doing and what it costs. The only part that
+// differs is the last step: a face carrying a page of its own answers elementAt() itself
+// rather than going to the bench.
 
 // One square metre of nothing, shared by every board: scaled to the face's own pixels
 // and hung inside the CSS object, so it stands exactly where the glass does and its uv
@@ -311,7 +344,7 @@ export function createPanels({
       const p = rec.spec;
       const what = p.label || 'the board';
       out.push({
-        id: p.id, kind: 'panel', x: p.x, z: p.z, r: REACH,
+        id: p.id, kind: 'panel', x: p.x, z: p.z, r: reachOf(p),
         label: what, prompt: `step up to ${what}`,
       });
     }
@@ -342,9 +375,10 @@ export function createPanels({
     return { x: hit.uv.x * FACE_W, y: (1 - hit.uv.y) * FACE_H };
   }
 
-  // Which element of the face is at that point. The face goes to the bench, loses its
-  // 3D transform, is asked, and goes back - all before the browser paints again.
+  // Which element of the face is at that point.
   function elementAt(at) {
+    // The face goes to the bench, loses its 3D transform, is asked, and goes back - all
+    // before the browser paints again, so the board never flickers.
     const el = held.el;
     const home = el.parentNode, next = el.nextSibling;
     const transform = el.style.transform;
@@ -369,6 +403,11 @@ export function createPanels({
   // board took it - so a click meant for a panel never also picks a building behind it.
   function point(pointer) {
     const at = held && aim(pointer);
+    // A face that carries a page of its own - the billboard, and only it - is handed the
+    // point instead of being asked what is under it. Its page is at another origin, so
+    // there is nothing to hand back; the highlight goes on from inside. See the bridge in
+    // lib/billboard.mjs.
+    if (at && held.face.aimAt) { held.face.aimAt(at.x, at.y); onCursor(null); return true; }
     hover(at ? elementAt(at) : null);
     // Our own hand, for everybody else's copy of the board.
     onCursor(at ? { id: held.spec.id, u: at.x / FACE_W, v: at.y / FACE_H } : null);
@@ -381,11 +420,23 @@ export function createPanels({
     // Held here but not ours yet, or somebody else's: the board is still readable, it
     // simply does not answer. One hand at a time is the whole of the rule.
     if (held.driver && held.driver !== self()) return true;
+    // Same story as point(): the press goes over the bridge rather than being aimed here.
+    if (held.face.pressAt) { held.face.pressAt(at.x, at.y); return true; }
     const el = elementAt(at);
     // Focus first: it is what makes a field take the keys walk.js has just let go of.
     if (el && el.focus) el.focus();
     if (el && el.click) el.click();
     return true;
+  }
+
+  // A page taller than the board it is folded onto. Nothing on this layer takes a
+  // pointer event, so the wheel arrives at the island first and is handed down from
+  // there - and only while the board is held and ours, so a scroll out on the terrain is
+  // still the terrain's. Answering true is what tells the island to keep its hands off.
+  function wheel(dy) {
+    if (!held || !held.face.scrollBy) return false;
+    if (held.driver && held.driver !== self()) return true;
+    return held.face.scrollBy(dy);
   }
 
   const toCamera = new THREE.Vector3();
@@ -421,7 +472,7 @@ export function createPanels({
   }
 
   return {
-    apply, update, render, resize, setVisible, take, release, point, press, interactables, dispose,
+    apply, update, render, resize, setVisible, take, release, point, press, wheel, interactables, dispose,
     field, driven, drivenBy, all, peerCursor, count: () => records.size,
   };
 }

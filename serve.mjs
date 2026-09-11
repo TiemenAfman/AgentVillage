@@ -20,10 +20,11 @@ import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
-import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
+import { createAccess, isPublicPath, isSharedWithBoards, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { createWsServer } from './lib/ws.mjs';
 import { createRoster } from './lib/players.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
+import { serveBillboard, serveBoardFile } from './lib/billboard.mjs';
 import { guestVillage } from './lib/guestview.mjs';
 import os from 'node:os';
 
@@ -265,6 +266,34 @@ async function rescan(reason) {
   return null;
 }
 
+// A second little server, for one route, on a port of its own. The port is the whole
+// point: the pages it hands out run scripts, and they must not be able to reach the
+// island - so they are given an origin that is not the island's. lib/billboard.mjs has
+// the reasoning, and the bridge that lets a board still be pressed across that gap.
+//
+// Loopback only, always, even on an open island. A visitor's browser frames this from
+// their own machine, so it never has to answer anybody but the computer it runs on -
+// which also means an open island does not put a fetching proxy on the network.
+const BILLBOARD_PORT = PORT + 1;
+const billboardOrigin = `http://localhost:${BILLBOARD_PORT}`;
+const islandOrigin = `http://localhost:${PORT}`;
+
+const billboardServer = http.createServer((req, res) => {
+  const url = new URL(req.url, billboardOrigin);
+  const p = decodeURIComponent(url.pathname);
+  // Everything a page of our own is made of - its stylesheet, its script, its pictures -
+  // comes off this same origin, which is the whole reason such a page works where a
+  // proxied site half does. data/boards/ is the folder; lib/billboard.mjs guards it.
+  if (p !== '/billboard') {
+    return serveBoardFile(p, res, { island: islandOrigin });
+  }
+  serveBillboard(url, res, { origin: billboardOrigin, island: islandOrigin })
+    .catch((e) => {
+      log(`billboard failed ${req.url}: ${e && e.message ? e.message : e}`);
+      try { if (!res.headersSent) { res.writeHead(502, { 'content-type': 'text/plain' }); res.end('the board stumbled'); } else res.end(); } catch { /* gone */ }
+    });
+});
+
 const server = http.createServer((req, res) => {
   handle(req, res).catch((e) => {
     log(`request failed ${req.method} ${req.url}: ${e && e.stack ? e.stack : e}`);
@@ -276,7 +305,7 @@ const server = http.createServer((req, res) => {
 // dangerous half of it only ever answers this computer. Visitors, when the island is
 // open, get the island and each other and nothing else. The reasoning behind the three
 // checks that decide this lives in lib/access.mjs.
-const access = createAccess({ port: PORT, config });
+const access = createAccess({ port: PORT, config, boardOrigin: billboardOrigin });
 
 // Everyone who opens the page gets a body to walk around in. The upgrade event is a
 // second front door - handle() below never sees it - so the same classification has to
@@ -352,6 +381,18 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = decodeURIComponent(url.pathname);
 
+  // A board carrying one of the island's own pages runs at the billboard origin, and a
+  // module script will not load across that unless we say so. Static files only - see
+  // isSharedWithBoards in lib/access.mjs for why the API is not on that list.
+  if (isSharedWithBoards(p)) {
+    res.setHeader('Access-Control-Allow-Origin', billboardOrigin);
+    // Without this the answer is cached under the path alone, so a copy fetched before
+    // the board port existed - or fetched by the island itself, which sends no Origin -
+    // gets handed back to the board with no header on it and the browser refuses it. The
+    // symptom is a board that stays blank while curl says the header is right there.
+    res.setHeader('Vary', 'Origin');
+  }
+
   const who = access.classify(req, url);
   if (who.role === 'refused') {
     log(`refused ${req.method} ${p} from ${req.socket.remoteAddress} (${who.why})`);
@@ -371,6 +412,9 @@ async function handle(req, res) {
     return json(res, 200, {
       role: who.role,
       islandName: config.islandName,
+      // Where the billboards are served from. A port rather than a path, because the
+      // whole safety of it is that it is not this origin - see lib/billboard.mjs.
+      billboards: billboardOrigin,
       multiplayer: {
         enabled: !!config.multiplayer.enabled,
         maxPlayers: config.multiplayer.maxPlayers,
@@ -796,6 +840,10 @@ async function handle(req, res) {
   // ---- what has been built by hand ---------------------------------------------
   // Everything here is a shape, a place and a size. Nothing names a file or a folder,
   // so the worst a runaway agent can do is clutter the island, and `clear` sweeps it.
+  // Somebody else's site, handed back through our own address so that the board it
+  // hangs on can be worked rather than only looked at. lib/billboard.mjs has the whole
+  // reasoning, including why this cannot be asked to fetch an arbitrary URL.
+
   if (p === '/api/props') return json(res, 200, { props: listProps() });
 
   if (p === '/api/build' && req.method === 'POST') {
@@ -1007,6 +1055,11 @@ if (access.open) {
   server.requestTimeout = 30000;
   server.maxConnections = 128;
 }
+billboardServer.listen(BILLBOARD_PORT, '127.0.0.1', () => {
+  log(`billboards are served from ${billboardOrigin}`);
+});
+billboardServer.on('error', (e) => log(`the billboard port could not be opened: ${e && e.message ? e.message : e}`));
+
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
   checkVendor();

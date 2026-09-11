@@ -16,6 +16,8 @@ import { bedGeometry } from './crops.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
+import { createPanels } from './panels.js';
+import { setBillboardOrigin } from './faces.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -626,6 +628,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  panels.resize();
 });
 
 // ---- walking the field ---------------------------------------------------------
@@ -687,8 +690,12 @@ function enterField(at, facing) {
   walk.enter({
     at, facing,
     blockers,
-    interactables: doors(),
-    onInteract: (it) => { if (it.kind === 'door') stepInside(it); },
+    interactables: [...doors(), ...panels.interactables()],
+    onInteract: (it) => {
+      if (it.kind === 'door') return stepInside(it);
+      if (it.kind === 'panel') { panels.take(it.id); walk.setWorking(it); }
+    },
+    onRelease: () => panels.release(),
     onExit: () => leaveField(),
   });
   controls.enabled = false;
@@ -731,24 +738,77 @@ function stepOutside(door) {
   enterField([door.x, door.z + 2.2], [door.x, door.z]);
 }
 
+// ---- the board ------------------------------------------------------------------
+// One panel on the field, so a face can be worked without walking the island to find a
+// board. It is a billboard because that is the face with the most to go wrong: it carries
+// somebody else's site through the proxy in lib/billboard.mjs, and everything about it -
+// whether the page arrives, whether the mouse reaches into it, whether a link stays on
+// the island - only shows up by standing at one.
+//
+// `demo` rather than a prop id: nothing here reads the village, so there is no prop to
+// name. lib/billboard.mjs knows that word and answers with the default address.
+// Beside where walk mode starts - a couple of paces off the tavern door - and turned to
+// face it, so the prompt is there the moment you press Walk. A board on the far side of
+// the sheet would be a board you have to go and find, which is the whole thing this is
+// meant to save.
+const BOARD = {
+  id: 'demo', kind: 'panel', face: 'billboard',
+  x: 8.2, z: 52, rot: -Math.PI / 2, scale: 1, length: 4,
+  label: 'the billboard', note: null, by: 'the model sheet',
+};
+
+// The clock face asks the island what time it is. Nothing on this sheet knows, and a
+// billboard never asks - but createFace() hands the same object to every face, so it has
+// to be something rather than nothing.
+const noIsland = {
+  name: () => 'the model sheet',
+  hour: () => 12,
+  season: () => 'summer',
+  building: () => [],
+};
+
+// The model sheet reads no village, but it does have to ask the island which port the
+// boards are served from - that is not something it can invent. See lib/billboard.mjs.
+fetch('/api/hello')
+  .then((r) => r.json())
+  .then((hello) => setBillboardOrigin(hello.billboards))
+  .catch(() => { /* a sheet opened without a server shows an empty board, which is honest */ });
+
+const panels = createPanels({
+  camera, terrain: flatTerrain, island: noIsland,
+  element: document.getElementById('panels'),
+});
+panels.apply([BOARD]);
+
+// The same two handlers web/js/main.js has, and for the same reason: nothing on the panel
+// layer takes a pointer event, so the board is aimed at from here or not at all.
+const panelPointer = new THREE.Vector2();
+const aimAt = (e) => panelPointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+renderer.domElement.addEventListener('pointermove', (e) => { aimAt(e); panels.point(panelPointer); });
+renderer.domElement.addEventListener('pointerup', (e) => { aimAt(e); panels.press(panelPointer); });
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (panels.wheel(e.deltaY)) e.preventDefault();
+}, { passive: false });
+
 // A handle on all of it from the console. The model sheet is a workbench, and "why will this
 // not let me walk there" is answered by looking at the numbers rather than by guessing:
 // __sheet.walk.state.pos, __sheet.inside.walk.state.sitting, __sheet.blockers.
 window.__sheet = {
   get walk() { return inside ? inside.walk : walk; },
   get inside() { return inside; },
-  blockers, placed, doors, camera, scene,
+  blockers, placed, doors, camera, scene, panels,
 };
 
 walkBtn.addEventListener('click', () => {
   if (inside || (walk && walk.isActive())) { leaveField(); return; }
-  // A couple of paces in front of the tavern door, facing it, which is close enough to be
-  // inside the reach of it: there is nothing else on this field worth starting at.
-  const tavern = placed.get('c:tavern');
-  enterField(
-    tavern ? [tavern.x, tavern.z + 2.1] : [0, 0],
-    tavern ? [tavern.x, tavern.z] : null,
-  );
+  // Standing at the board, facing it, with the tavern door a few paces off to the side.
+  // Both are within reach from here, which is the point: the two things on this field
+  // worth walking up to should not need any walking to reach.
+  enterField([BOARD.x - 2.1, BOARD.z], [BOARD.x, BOARD.z]);
+  // walk.js starts every visit looking over the treetops, which on the island is right
+  // and in front of a hoarding is not: it puts the board above the top of the screen.
+  // Levelled off here rather than there, because this is the one place that is true.
+  if (walk) walk.state.camPitch = 0.06;
 });
 
 // ---- frame ----------------------------------------------------------------------
@@ -772,6 +832,11 @@ function frame(now) {
     controls.update();
   }
   renderer.render(inside ? inside.scene : scene, camera);
+  // The panel layer is DOM and draws itself, over the canvas. Hidden indoors, where a
+  // board standing out on the field has no business floating through the wall.
+  panels.setVisible(!inside);
+  panels.update(dt);
+  panels.render(scene, camera);
 
   // labels ride along with the objects they name
   if (!labels.hidden) for (const t of tags) {

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Welkom op Promptholm</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: grid;
+    place-items: center;
+    background: #14100c;
+    color: #f4ead8;
+    font: 400 28px/1.5 ui-serif, Georgia, serif;
+    text-align: center;
+  }
+  main { padding: 48px 64px; max-width: 900px; }
+  h1 { margin: 0 0 24px; font-size: 72px; letter-spacing: -.02em; }
+  p { margin: 0 0 28px; color: #cbbfa8; }
+  code { font: 400 .8em ui-monospace, monospace; color: #e8b45c; }
+  button {
+    font: inherit;
+    font-size: 26px;
+    padding: 14px 32px;
+    border: 0;
+    border-radius: 10px;
+    background: #e8b45c;
+    color: #14100c;
+    cursor: pointer;
+  }
+  button:hover, button.under { background: #f3c976; }
+  output { display: block; margin-top: 24px; font-size: 24px; color: #9db79a; min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Welkom op het eiland</h1>
+  <p>
+    Dit is een pagina van het eiland zelf, uit <code>data/boards/</code>.
+    Zet er een bord bij met <code>--note welkom</code> en hij hangt aan de weg.
+  </p>
+  <button id="knop" type="button">Druk eens</button>
+  <output id="uit"></output>
+</main>
+<script>
+  // Script draait hier gewoon: een bordpagina staat op een eigen oorsprong, dus zij kan
+  // doen wat ze wil zonder bij het eiland te kunnen. Dit knopje is er om dat te laten
+  // zien - klik hem vanaf het bord aan en de teller loopt op.
+  let n = 0;
+  const uit = document.getElementById('uit');
+  document.getElementById('knop').addEventListener('click', () => {
+    n += 1;
+    uit.textContent = n === 1 ? 'Eén keer ingedrukt.' : `${n} keer ingedrukt.`;
+  });
+</script>
+</body>
+</html>

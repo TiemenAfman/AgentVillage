@@ -201,8 +201,10 @@ const PANEL_LIFT = 0.62;       // how high the bottom edge stands off the ground
 const PANEL_FRAME = 0.07;      // the lip of the frame around the glass
 const PANEL_DEPTH = 0.06;
 
-// A board is about the size of a large monitor by default, and that is not only taste:
-// see READ_RATIO in web/js/panels.js for why a wide board stops being clickable.
+// A board is about the size of a large monitor by default, which is mostly taste: what
+// a panel is for is standing in front of and reading. A wide one is still clickable -
+// see the measurement above aim() in web/js/panels.js, which replaced the READ_RATIO
+// this line used to point at.
 export const PANEL_WIDE = 1.5;
 
 // And as wide as a board goes: a hoarding along the road, which is what the billboard

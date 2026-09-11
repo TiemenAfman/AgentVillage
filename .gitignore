@@ -2,6 +2,17 @@ node_modules/
 web/vendor/
 data/*
 !data/.gitkeep
+# Pages for the billboards, which are content rather than state: somebody wrote them to
+# be read, so they travel with the island instead of staying on one machine. See
+# lib/billboard.mjs.
+!data/boards/
+data/boards/*
+!data/boards/*.html
+!data/boards/*.css
+!data/boards/*.js
+!data/boards/*.svg
+!data/boards/*.png
+!data/boards/*.jpg
 
 # per-machine settings; config.example.json is the template
 config.json

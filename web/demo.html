@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🧱</text></svg>">
 <meta name="theme-color" content="#0d1420">
 <link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/panels.css">
 <script type="importmap">
 {
   "imports": {
@@ -64,6 +65,10 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+
+<!-- The panel layer, as in web/index.html: over the canvas, under the UI. The model
+     sheet carries one board so a face can be worked without walking the island for it. -->
+<div id="panels"></div>
 
 <section class="card" id="demo-bar">
   <h1>Model sheet</h1>
