@@ -31,5 +31,10 @@
       "opening": "Pick up issue #{number}",
       "skill": "issue-oppakken"
     }
+  },
+  "star": {
+    "pixlet": null,
+    "app": "promptholm",
+    "refreshMs": 60000
   }
 }

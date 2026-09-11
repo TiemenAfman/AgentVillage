@@ -19,6 +19,9 @@ export const SHAPES = {
   bench: { what: 'A bench to sit on', takes: ['rot'] },
   lamp: { what: 'A lamp post, lit after dark', takes: ['scale'] },
   signpost: { what: 'A signpost with a blank board', takes: ['rot'] },
+  // The one shape that shows something rather than being something: --label names an
+  // applet in star/, pixlet renders it, and the panel wears the result.
+  deskdisplay: { what: 'A wooden box with a 64x32 matrix, running a .star applet', takes: ['rot', 'scale', 'label'] },
   well: { what: 'A stone well with a roof', takes: ['scale'] },
   statue: { what: 'A settler on a plinth', takes: ['rot', 'scale'] },
   campfire: { what: 'Logs and a flame', takes: ['scale'] },
@@ -60,6 +63,6 @@ export function knownShape(kind) {
 export function catalogueLines() {
   return Object.entries(SHAPES).map(([k, s]) => {
     const extra = s.takes.filter((t) => t !== 'scale' && t !== 'rot');
-    return `  ${k.padEnd(10)} ${s.what}${extra.length ? ` (--${extra.join(', --')})` : ''}`;
+    return `  ${k.padEnd(12)} ${s.what}${extra.length ? ` (--${extra.join(', --')})` : ''}`;
   });
 }
