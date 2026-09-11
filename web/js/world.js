@@ -11,7 +11,7 @@ const tmpObj = new THREE.Object3D();
 const SEASON = {
   spring: { meadow: 0x93cf62, upland: 0x74ad4c, canopyMul: 1.06, summit: 0xa39d90 },
   summer: { meadow: 0x8fbf5a, upland: 0x6fa64a, canopyMul: 1.0, summit: 0xa39d90 },
-  autumn: { meadow: 0xa9b053, upland: 0x8a9a48, canopyMul: 0.95, summit: 0xa39d90 },
+  autumn: { meadow: 0x91ad68, upland: 0x738b53, canopyMul: 0.95, summit: 0xa39d90 },
   winter: { meadow: 0x8f9f76, upland: 0x77855f, canopyMul: 0.86, summit: 0xe6e6e0 },
 };
 export function seasonOf(month) {
@@ -68,7 +68,7 @@ function bandColour(h, season) {
   const s = SEASON[season];
   if (h < -0.6) return 0x3f6a7c;
   if (h < 0) return 0x8f9f7a;
-  if (h < 0.35) return 0xe8d6a4;
+  if (h < 0.35) return 0xefddb2;
   if (h < 1.6) return s.meadow;
   if (h < 3.4) return s.upland;
   if (h < 5.2) return 0x8f8a80;
@@ -135,12 +135,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
+  const meadowNoise = makeSimplex2D(hash32(`meadow:${village.seed || 0}`));
   function paintGround(seasonName) {
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const k = i + j * N;
         const h = terrain.H[k];
         tmpColor.setHex(bandColour(h, seasonName));
+        // Broad, stable patches of colour soften the grid without textures or geometry.
+        if (h >= 0.35 && h < 3.4) {
+          tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.065);
+        }
         const a = tintAmt[k];
         // Meadow and upland only: tinting the sand or the summit is what would make this
         // look like an overlay rather than like farmland.
@@ -158,7 +163,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   geo.computeBoundingSphere();
 
   const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    vertexColors: true, flatShading: true, roughness: 0.96, metalness: 0,
+    vertexColors: true, flatShading: false, roughness: 0.96, metalness: 0,
   }));
   ground.receiveShadow = true;
   ground.name = 'ground';
@@ -195,8 +200,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
       THREE.UniformsLib.fog,
       {
         uTime: { value: 0 },
-        uDeep: { value: new THREE.Color(0x2a6f98) },
-        uShallow: { value: new THREE.Color(0x5fb8c9) },
+        uDeep: { value: new THREE.Color(0x215e78) },
+        uShallow: { value: new THREE.Color(0x65c4b5) },
         uFoam: { value: new THREE.Color(0xeaf6f8) },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xffffff) },
@@ -234,10 +239,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
       void main() {
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
-        float foam = smoothstep(-0.32, -0.02, vDepth) * (0.55 + 0.45 * sin(uTime * 2.0 + vDepth * 34.0));
+        float foam = smoothstep(-0.32, -0.02, vDepth) * (0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 28.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5)));
         col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.65);
         vec3 n = normalize(vWave);
         vec3 v = normalize(cameraPosition - vWorld);
+        float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        col = mix(col, uShallow, fresnel * 0.18);
         vec3 r = reflect(-normalize(uSunDir), n);
         float spec = pow(max(dot(r, v), 0.0), 60.0);
         col += uSunColor * spec * 0.55 * (1.0 - uNight * 0.8);
@@ -274,7 +281,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   oceanMat.transparent = false;
   oceanMat.depthWrite = true;
   const ocean = new THREE.Mesh(oceanGeo, oceanMat);
-  ocean.position.y = -0.06;
+  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
+  // disc carries the same wave, but with a vertex only at its centre and its rim it is
+  // flat where the patch is not, so the two do not dip together.
+  ocean.position.y = -0.2;
   ocean.renderOrder = 0;
   group.add(ocean);
 
@@ -757,8 +767,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     key.color.copy(d.key);
     key.intensity = d.int;
     hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
-    hemi.intensity = lerp(0.35, 0.9, 1 - d.night);
-    ambient.intensity = d.amb;
+    hemi.intensity = lerp(0.5, 0.9, 1 - d.night);
+    ambient.intensity = d.amb + d.night * 0.09;
 
     skyMat.uniforms.uTop.value.copy(d.top);
     skyMat.uniforms.uHor.value.copy(d.hor);
@@ -771,6 +781,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     waterMat.uniforms.uSunDir.value.copy(dir);
     waterMat.uniforms.uSunColor.value.copy(d.key);
     waterMat.uniforms.uNight.value = d.night;
+    // The open sea used to be a plain colour that had to be dimmed by hand to follow the
+    // rest of the water into the evening. It shares these uniforms now, so it darkens on
+    // its own - one nightfall over the whole sea rather than two kept in step.
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
