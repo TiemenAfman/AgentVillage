@@ -93,11 +93,13 @@ with a straw hat. WASD or the left stick to walk, drag the mouse or use the righ
 to look, Shift or a click of the left stick to run. Walk up to a house and press **E**
 (**X** on the pad) to read its dossier; **Esc** or **Back** flies you back up to the sky.
 
-**Space** jumps, which is enough to clear a doorstep or a low hedge. **Ctrl** crouches;
+**Space** jumps, which is enough to clear a doorstep or a low hedge. **C** crouches;
 keep it held while standing still and the settler decides the day is over, lies down and
 puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does not end in
-a nap. Lying down outlasts the key - let go of Ctrl and they stay there. Walk, or press
-Ctrl again, to get back up. You can wade into
+a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
+C again, to get back up. (It was Ctrl until crouching and walking turned out to be
+ctrl+W, which closes the tab: Chrome keeps that one for itself and a page cannot refuse
+it.) You can wade into
 the sea as long as the shore stays within reach - about two metres - and you swim rather
 than walk once you are past the waterline. You cannot jump out of the water, and you
 cannot set out for the horizon.
