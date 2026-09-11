@@ -78,6 +78,38 @@ function log(line) {
   } catch { /* logging must never be the thing that breaks */ }
 }
 
+// A vendored addon that is not on disk 404s inside an ES module import, and that takes
+// main.js down with it: the island then sits on its boot screen saying nothing. web/vendor
+// is gitignored and filled by scripts/vendor.mjs, so a checkout that has not run that
+// since the list grew serves an island which cannot start.
+//
+// The page cannot work this out on its own - the browser fires the error on the <script>
+// that owns the module graph, not on the import that 404'd - so the boot watchdog in
+// web/index.html asks /api/vendor for this list instead of guessing.
+function missingVendor() {
+  try {
+    const want = new Map([['three', path.join(WEB, 'vendor', 'three.module.js')]]);
+    const dir = path.join(WEB, 'js');
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.js')) continue;
+      const src = fs.readFileSync(path.join(dir, f), 'utf8');
+      for (const m of src.matchAll(/from\s+['"]three\/addons\/([^'"]+)['"]/g)) {
+        want.set(`three/addons/${m[1]}`, path.join(WEB, 'vendor', 'addons', m[1]));
+      }
+    }
+    return [...want].filter(([, file]) => !fs.existsSync(file)).map(([spec]) => spec);
+  } catch { return []; }      // this warning must never be the thing that keeps the island down
+}
+
+function checkVendor() {
+  const missing = missingVendor();
+  if (!missing.length) return;
+  log(`web/vendor is missing ${missing.length} file(s) that the island imports:`);
+  for (const spec of missing) log(`    ${spec}`);
+  log(`    the page will hang on its boot screen until this is fixed. Run: npm run vendor`);
+}
+
+
 // A bad request must never take the island down.
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
@@ -442,6 +474,11 @@ async function handle(req, res) {
       return json(res, 400, { error: String(e.message || e) });
     }
   }
+
+  // What the boot watchdog in web/index.html asks when the island never came up. The API
+  // is deny-by-default, which is right here: the state of this checkout is not a
+  // visitor's to read, and their boot screen falls back to the generic wording.
+  if (p === '/api/vendor') return json(res, 200, { missing: missingVendor() });
 
   // What the page reports when it hits trouble, so a crash leaves a trace.
   if (p === '/api/log' && req.method === 'POST') {
@@ -938,6 +975,7 @@ if (access.open) {
 }
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
+  checkVendor();
   if (access.open) {
     log(`the island is OPEN. Visitors can reach it at:`);
     for (const a of access.addresses()) log(`    http://${a.includes(':') ? `[${a}]` : a}:${PORT}/`);

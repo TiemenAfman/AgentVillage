@@ -9,6 +9,63 @@
 <meta name="description" content="A 3D island where the Claude agents you work with live.">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/island-192.png">
+<script>
+// The page reports its own errors from js/main.js - which is exactly the file that does
+// not run when something in its import graph 404s. The import fails, main.js never gets
+// to execute, and the boot overlay below keeps saying "Charting the island…" for as long
+// as anyone cares to wait; one unnamed 404 in the console is the only trace. So this much
+// has to sit out here, outside the graph it is watching.
+(() => {
+  const failed = [];
+  // Resource errors do not bubble, so a listener without the capture flag never sees a
+  // 404 on a module, a script or a stylesheet.
+  addEventListener('error', (e) => {
+    const el = e.target;
+    if (!el || el === window || !el.tagName) return;      // a thrown error, not a resource
+    const url = el.src || el.href;
+    if (url) failed.push(String(url).replace(location.origin, ''));
+  }, true);
+
+  // Generous on purpose: a cold start has a lot of geometry to build before it takes the
+  // overlay down, and crying wolf over a slow card is worse than staying quiet. main.js
+  // sets the flag as soon as its own code runs, so this only speaks when the module graph
+  // never came up at all - a 404 on a vendored file, or a syntax error in one of ours.
+  setTimeout(async () => {
+    if (window.__islandRunning) return;
+    const boot = document.getElementById('boot');
+    const text = document.getElementById('boot-text');
+    if (!boot || !text || boot.hidden || boot.classList.contains('gone')) return;
+
+    // The browser fires that error on the <script> which owns the graph rather than on
+    // the import that failed, so the page can tell something broke but not what. The
+    // server reads the disk and does know, so ask it before putting a name to anything.
+    let missing = [];
+    try {
+      const r = await fetch('/api/vendor', { cache: 'no-store' });
+      if (r.ok) missing = (await r.json()).missing || [];
+    } catch { /* a visitor, or the island is gone - the wording below covers both */ }
+
+    const safe = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    text.innerHTML = (missing.length
+      ? `The island is missing ${missing.length === 1 ? 'a file it needs' : 'files it needs'}.<br>`
+        + `<span class="muted">${missing.map(safe).join('<br>')}</span><br>`
+        + `<span class="muted">web/vendor is out of date in this checkout - run <b>npm run vendor</b>.</span><br>`
+      : `The island's code did not load.<br>`
+        + `<span class="muted">${failed.length ? `${safe(failed[0])} or one of its imports did not arrive` : 'Nothing out here knows why'} - the browser console has the error.</span><br>`)
+      + `<button class="btn" id="boot-retry">Reload</button>`;
+    document.getElementById('boot-retry').addEventListener('click', () => location.reload());
+
+    // The keeper's log should carry this too, so it is findable without a browser open.
+    // Only from the keeper's own machine: a visitor's trouble is not ours to write down.
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      try {
+        const said = missing.length ? `missing ${missing.join(', ')}` : `${failed[0] || 'the module graph'} did not load`;
+        navigator.sendBeacon('/api/log', new Blob([JSON.stringify({ message: `boot stalled: ${said}` })], { type: 'application/json' }));
+      } catch { /* the overlay says it either way */ }
+    }
+  }, 12000);
+})();
+</script>
 <link rel="stylesheet" href="/css/ui.css">
 <script type="importmap">
 {
