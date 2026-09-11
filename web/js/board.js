@@ -188,7 +188,16 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
   function onKey(e) {
     if (el.hidden) return;
     const k = e.key;
-    if (k === 'Escape') { e.preventDefault(); back(); return; }
+    if (k === 'Escape') {
+      // Stopped dead, not just from bubbling on: walk.js listens on this same window,
+      // and close() has just let its feet go - so it would read this very Escape as
+      // "back to the sky". stopPropagation cannot help with a listener on the same
+      // element; only stopImmediatePropagation can.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      back();
+      return;
+    }
     if (e.target.tagName === 'SELECT') return;        // let the dropdown have its arrows
     const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (dirs[k]) {
