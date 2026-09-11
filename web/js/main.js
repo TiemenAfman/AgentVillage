@@ -25,6 +25,7 @@ import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
+import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
 import { createThink } from './think.js';
@@ -246,7 +247,7 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, think: null,
+  props: null, panels: null, think: null,
   crops: null, market: null, garden: null,
 };
 
@@ -422,6 +423,9 @@ async function refreshProps({ animate = true } = {}) {
     const before = state.props.count();
     state.props.apply(body.props || [], { animate });
     const after = state.props.count();
+    // The same list, read a second time for its panels: props.js draws the woodwork and
+    // panels.js hangs the page in front of it.
+    if (state.panels) state.panels.apply(body.props || []);
     if (state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
     if (animate && after > before) {
       const n = after - before;
@@ -1970,6 +1974,10 @@ function frame(nowMs) {
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
+  if (state.panels) {
+    state.panels.setVisible(!state.inside);
+    state.panels.update(dt);
+  }
   if (state.crops) state.crops.update(dt);
 
   // per-building animated bits
@@ -2011,6 +2019,9 @@ function frame(nowMs) {
   if (state.mode !== 'walk') updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
+  // After the canvas, on its own layer above it. This one has no depth of its own - see
+  // the top of web/js/panels.js for what that costs.
+  if (state.panels) state.panels.render();
 }
 
 function updateLabels() {
@@ -2317,6 +2328,21 @@ async function boot() {
     onStatus: () => {},
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  // What a panel is allowed to know about the island: a handful of getters, so a face
+  // can say something live without reaching into the scene.
+  state.panels = createPanels({
+    camera,
+    terrain: state.terrain,
+    element: document.getElementById('panels'),
+    island: {
+      name: () => (state.village && state.village.island ? state.village.island.name : 'Promptholm'),
+      hour: () => currentHour(),
+      season: () => (state.world ? state.world.season() : seasonOf(new Date(timeNow()).getMonth())),
+      building: () => (state.village
+        ? state.village.buildings.filter((b) => b.active && b.kind !== 'civic').map((b) => b.name)
+        : []),
+    },
+  });
   refreshProps({ animate: false });
   state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });
   refreshGarden({ animate: false });
@@ -2376,6 +2402,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
+  if (state.panels) state.panels.resize();
   if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
 });
 

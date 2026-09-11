@@ -14,6 +14,7 @@ const files = [
   ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],
   ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page only
   ['examples/jsm/controls/TransformControls.js', 'addons/controls/TransformControls.js'],   // editor only
+  ['examples/jsm/renderers/CSS3DRenderer.js', 'addons/renderers/CSS3DRenderer.js'],         // the HTML panels
 
   ['LICENSE', 'LICENSE'],
 ];

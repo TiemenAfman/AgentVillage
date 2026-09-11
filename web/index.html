@@ -10,6 +10,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/island-192.png">
 <link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/panels.css">
 <script type="importmap">
 {
   "imports": {
@@ -22,6 +23,11 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
+
+<!-- The panels that stand on the island: real HTML, transformed into the scene by
+     web/js/panels.js. Here rather than made in script so its place in the stacking
+     order - over the canvas, under the UI - is written down where it can be seen. -->
+<div id="panels"></div>
 
 <div id="boot" class="boot"><div class="boot-inner"><div class="boot-mark">🏝️</div><div id="boot-text">Charting the island…</div></div></div>
 

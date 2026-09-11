@@ -192,6 +192,40 @@ function flag() {
   ]);
 }
 
+// A board on two posts with a page of the island on it. Only the woodwork is drawn
+// here: what the board says is real HTML, hung in front of it by web/js/panels.js.
+// Both sides have to agree on where that glass is, so the sums are in panelFace() and
+// neither side does them twice.
+const PANEL_RATIO = 0.625;     // 16:10, the shape every face is drawn at
+const PANEL_LIFT = 0.62;       // how high the bottom edge stands off the ground
+const PANEL_FRAME = 0.07;      // the lip of the frame around the glass
+const PANEL_DEPTH = 0.06;
+
+export function panelFace(p) {
+  const w = Math.min(8, Math.max(0.8, p.length || 2.4));
+  const h = w * PANEL_RATIO;
+  // y is the middle of the glass and z is how far it stands in front of the board, both
+  // in the prop's own space: panels.js turns and scales them with the rest of the prop.
+  return { w, h, y: PANEL_LIFT + h / 2, z: PANEL_DEPTH / 2 + 0.005 };
+}
+
+function panel(p) {
+  const { w, h } = panelFace(p);
+  const post = Math.max(0.1, w / 2 - 0.12);
+  const frameW = w + PANEL_FRAME * 2;
+  return merge([
+    box(0.12, PANEL_LIFT + 0.14, 0.12, WOOD, { x: -post }),
+    box(0.12, PANEL_LIFT + 0.14, 0.12, WOOD, { x: post }),
+    // The board behind the glass, dark, so the page reads as lit against it - and so
+    // there is still a board to look at from behind, where the page is not drawn.
+    box(w, h, PANEL_DEPTH, 0x1b1712, { y: PANEL_LIFT }),
+    box(frameW, PANEL_FRAME, PANEL_DEPTH + 0.03, PLANK, { y: PANEL_LIFT + h }),
+    box(frameW, PANEL_FRAME, PANEL_DEPTH + 0.03, PLANK, { y: PANEL_LIFT - PANEL_FRAME }),
+    box(PANEL_FRAME, h + PANEL_FRAME * 2, PANEL_DEPTH + 0.03, PLANK_DARK, { x: -(w + PANEL_FRAME) / 2, y: PANEL_LIFT - PANEL_FRAME }),
+    box(PANEL_FRAME, h + PANEL_FRAME * 2, PANEL_DEPTH + 0.03, PLANK_DARK, { x: (w + PANEL_FRAME) / 2, y: PANEL_LIFT - PANEL_FRAME }),
+  ]);
+}
+
 // name -> how to draw it, how much of the ground it takes up, and where it sits.
 const SHAPES = {
   tree: { build: tree, r: 0.42 },
@@ -200,7 +234,7 @@ const SHAPES = {
   rock: { build: rock, r: 0.36 },
   cairn: { build: cairn, r: 0.3 },
   bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75 },
-  fence: { build: fence, r: 0, run: 0.22 },
+  fence: { build: fence, r: 0, run: 0.22, wall: (p) => Math.max(1, p.length || 4) },
   bench: { build: bench, r: 0.45 },
   lamp: { build: lamp, r: 0.2 },
   signpost: { build: signpost, r: 0.2 },
@@ -208,6 +242,7 @@ const SHAPES = {
   statue: { build: statue, r: 0.55 },
   campfire: { build: campfire, r: 0.45 },
   flag: { build: flag, r: 0.22 },
+  panel: { build: panel, r: 0, run: 0.14, wall: (p) => panelFace(p).w },
 };
 
 // A bridge is the one shape that does not simply stand on the ground: it has to clear
@@ -303,8 +338,8 @@ export function createProps({ scene, terrain, material }) {
       const p = rec.spec;
       const shape = SHAPES[p.kind] || SHAPES.cairn;
       const scale = p.scale || 1;
-      if (shape.run && p.kind === 'fence') {
-        const len = Math.max(1, p.length || 4);
+      if (shape.wall) {
+        const len = shape.wall(p) * scale;
         const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
         const h = shape.run * scale;
         for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
