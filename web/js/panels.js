@@ -38,6 +38,12 @@ const FACE_H = 300;
 // is a hundred units out, so there is nothing to see.
 const MAX_DIST = 34;
 
+// That is a monitor's distance, though, and a board can be eight metres across. A
+// hoarding along the road has to carry further or it is a thing you can only read by
+// standing under it - so a board also reaches eight times its own width, which leaves
+// every board narrower than four metres exactly where it was.
+const SEE_WIDTHS = 8;
+
 // How close you have to be for E to reach the board. A little further than a door, since
 // a panel is something you stand in front of rather than walk into.
 const REACH = 2.4;
@@ -123,7 +129,8 @@ export function createPanels({
     object.add(glass);
     place(object, p);
     scene.add(object);
-    const rec = { spec: p, object, el, face, glass, state, driver: null, hands, sign, cursors: new Map() };
+    const see = Math.max(MAX_DIST, panelFace(p).w * SEE_WIDTHS);
+    const rec = { spec: p, object, el, face, glass, state, see, driver: null, hands, sign, cursors: new Map() };
     records.set(p.id, rec);
     fill(rec);
   }
@@ -392,7 +399,7 @@ export function createPanels({
       // In front of the board and near enough to read. The dot product is the whole of
       // the back-face test: walk round behind a panel and the page stops being drawn,
       // instead of hanging in the air the wrong way round.
-      const visible = shown && toCamera.lengthSq() < MAX_DIST * MAX_DIST && toCamera.dot(facing) > 0;
+      const visible = shown && toCamera.lengthSq() < rec.see * rec.see && toCamera.dot(facing) > 0;
       rec.object.visible = visible;
       if (visible && rec.face.update) rec.face.update(dt);
     }

@@ -205,8 +205,13 @@ const PANEL_DEPTH = 0.06;
 // see READ_RATIO in web/js/panels.js for why a wide board stops being clickable.
 export const PANEL_WIDE = 1.5;
 
+// And as wide as a board goes: a hoarding along the road, which is what the billboard
+// face is for. Exported because the build menu hands one out at exactly this width, and
+// a menu that offered a size the board then quietly clamped would be lying.
+export const PANEL_WIDEST = 8;
+
 export function panelFace(p) {
-  const w = Math.min(8, Math.max(0.6, p.length || PANEL_WIDE));
+  const w = Math.min(PANEL_WIDEST, Math.max(0.6, p.length || PANEL_WIDE));
   const h = w * PANEL_RATIO;
   // y is the middle of the glass and z is how far it stands in front of the board, both
   // in the prop's own space: panels.js turns and scales them with the rest of the prop.

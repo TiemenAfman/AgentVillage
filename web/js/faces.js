@@ -5,6 +5,10 @@
 // deliberate. It is same-origin and scriptable, which is what makes a click on a button
 // in here a small message everybody else's copy replays.
 //
+// One face breaks that rule on purpose - see billboard() at the bottom - and what it
+// gives up is exactly what the rule was buying: a cross-origin page cannot be aimed at,
+// read or shared. It is a thing to look at from a distance rather than a board to work.
+//
 // A face holds no state of its own. It gets `send(field, value)` to say what somebody
 // asked for, and `draw(state)` to be told what the island now holds - and the two are
 // never the same press: an intent goes to the server and the answer comes back to every
@@ -129,7 +133,66 @@ function tally({ prop, send }) {
   };
 }
 
-const FACES = { notice, clock, tally };
+// Somebody else's website, framed, on a board the size of a hoarding. The one face that
+// is not ours, and the one that needs the exception in the header above.
+//
+// What it costs is everything the same-origin rule was buying. A cross-origin page can
+// be drawn and nothing more: press() in web/js/panels.js hands its click to the <iframe>
+// element and gets no further in, we cannot read a line of it, and there is no state to
+// send anybody - two people standing at this board see the same site and neither can
+// press a thing on it. That is the whole bargain, and it is the right one here: a
+// billboard is read from the road.
+//
+// Nothing of ours is laid over the site except the strip with the address on it, which
+// earns its place twice: it is what a hoarding has, and it is the only part still
+// standing if the site ever starts refusing to be framed. That refusal is invisible from
+// this side - cross-origin, so there is no load error to catch - so the blank it would
+// leave has to read as a board with nothing on it rather than as a hole.
+// Exported because the build menu asks for this one before it hands a board over, and
+// fills the field with it. One address and one idea of what a usable one looks like,
+// read by both, so the menu can never accept something the board then quietly replaces.
+export const BILLBOARD = 'https://www.boikon.nl/';
+
+// A board carries the site it was put up with: `--note https://...` on the prop. Only a
+// whole https URL, because a bare host or a typo would frame nothing and there would be
+// no error to say so. Anything else falls back to the address above, so a mistake shows
+// the wrong billboard rather than a broken one. Only the keeper can put a prop up -
+// /api/build is not a public path - so this is the keeper's own choice, not a visitor's.
+export function siteUrl(note) {
+  try {
+    const u = new URL(String(note || '').trim());
+    return u.protocol === 'https:' ? u : null;
+  } catch { return null; }
+}
+
+function billboard({ prop }) {
+  const url = siteUrl(prop.note) || new URL(BILLBOARD);
+  const el = document.createElement('div');
+  el.className = 'face face-billboard';
+  el.innerHTML = `
+    <iframe class="bb-glass" title="${esc(prop.label || url.host)}" tabindex="-1"
+            sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+    <div class="bb-wait">${esc(url.host)}</div>
+    <div class="bb-strip">${esc(url.host)}</div>`;
+  const frame = el.querySelector('iframe');
+  // Fires for a cross-origin page too, which is as much as we are ever told about it.
+  frame.addEventListener('load', () => el.classList.add('lit'));
+
+  let asked = false;
+  return {
+    el,
+    update() {
+      // update() only runs while the board is in view, so an island that opens with a
+      // billboard behind a hill fetches nothing off somebody else's server until a
+      // person has walked round and looked at it.
+      if (asked) return;
+      asked = true;
+      frame.src = url.href;
+    },
+  };
+}
+
+const FACES = { notice, clock, tally, billboard };
 
 // The faces a board can carry, in the order they are written above - for the build menu,
 // which asks which one a new panel should show.
