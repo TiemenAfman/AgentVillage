@@ -30,6 +30,29 @@ export const SHAPES = {
 // The numbers every prop carries, whatever its shape.
 export const COMMON = ['x', 'z', 'rot', 'scale', 'label'];
 
+// The order the build menu offers them in, which is the order they are written above.
+export const KINDS = Object.keys(SHAPES);
+
+// What the wheel does for a shape you are holding.
+//
+// This is the one place `takes` stops being documentation. It has always listed which of
+// the optional numbers mean something for a shape; the build menu turns that into which
+// modifier does what, so nothing has to be memorised and no shape gets a control that
+// would do nothing.
+//
+// A round thing has no turn worth making, so plain scroll falls through to its size -
+// that is the catalogue earning its keep rather than a special case. `length` is the
+// stretch in one direction, and only the three shapes that have a length offer it.
+export function wheelsFor(kind) {
+  const takes = (SHAPES[String(kind)] || {}).takes || [];
+  const wheel = takes.includes('rot') ? 'rot' : takes.includes('scale') ? 'scale' : null;
+  return {
+    wheel,
+    ctrl: takes.includes('scale') && wheel !== 'scale' ? 'scale' : null,
+    shift: takes.includes('length') ? 'length' : null,
+  };
+}
+
 export function knownShape(kind) {
   return Object.prototype.hasOwnProperty.call(SHAPES, String(kind));
 }
