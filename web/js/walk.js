@@ -231,6 +231,11 @@ export function createWalkMode({
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') { e.preventDefault(); jump(); }
     if (k === 'control') { e.preventDefault(); crouchToggle(); }
+    // Past this point the keys are bare letters, and a letter with ctrl or alt on it
+    // belongs to the browser - ctrl+shift+B is Chrome's bookmarks bar, and on a Dutch
+    // layout AltGr arrives as ctrl+alt. Let those through untouched rather than firing
+    // both the island's command and the browser's.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // A thought needs nothing to stand in front of: it is about wherever you are.

@@ -63,8 +63,17 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
     if (n >= 1 && n <= 9 && KINDS[n - 1]) { e.preventDefault(); pick(KINDS[n - 1]); }
     e.stopPropagation();
   }
+  // The tiles promise what ctrl and shift do with the wheel, so this is the one place a
+  // reader is most likely to try it - and with nothing in hand yet, ctrl+wheel is still
+  // Chrome's zoom. Swallow it here; the shape itself takes over once the menu closes.
+  function onWheel(e) {
+    if (el.hidden) return;
+    if (e.ctrlKey || e.metaKey) e.preventDefault();
+  }
+
   el.addEventListener('keydown', (e) => e.stopPropagation());
   addEventListener('keydown', onKey);
+  addEventListener('wheel', onWheel, { capture: true, passive: false });
 
   function tile(kind, i) {
     const s = SHAPES[kind];
@@ -144,6 +153,7 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
 
   function dispose() {
     removeEventListener('keydown', onKey);
+    removeEventListener('wheel', onWheel, { capture: true });
     el.remove();
   }
 
