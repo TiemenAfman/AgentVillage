@@ -14,7 +14,7 @@ export const PALETTE = {
   unknown: { wall: 0x9a9a9a, trim: 0x6f6f6f, roof: 0x6f6f6f, accent: 0x555555, glow: 0xffffff, name: 'Unknown' },
 };
 
-const C = {
+export const C = {
   foundation: 0x8d8577, wood: 0x8b5e3c, darkWood: 0x5a3c28, canvas: 0xe9d8b4,
   stripe: 0xc86b4a, anvil: 0x3a3a3f, copper: 0xb87333, stone: 0xa8a59e,
   slate: 0x4c5566, plank: 0xb07a4a, blueprint: 0x4d7ec9, paper: 0xf5efe0,
@@ -62,29 +62,70 @@ function place(g, o = {}) {
   g.translate(o.x || 0, o.y || 0, o.z || 0);
   return g;
 }
+
+// ---------------------------------------------------------------- provenance
+// A merged mesh can no longer say that one of its faces used to be
+// `box(0.16, 0.26, 0.05, pal.accent, { z: 0.51 })`, and that is precisely what the model
+// editor needs in order to show you a door, let you nudge it, and hand back the line to
+// paste. So every primitive notes its own call on the geometry it returns. It costs one
+// small object per part, nothing on the island reads it, and the merge drops it again.
+let groupSeq = 0;
+let openGroup = null;
+
+// Some primitives only mean anything together: one box is a window, six are a bench.
+// Wrapping them marks every part inside as a single pickable thing, so the editor moves
+// the window and not the pane it happens to be made of.
+export function group(kind, fn, args = null) {
+  const outer = openGroup;
+  openGroup = { kind, id: ++groupSeq, args };
+  try { return fn(); } finally { openGroup = outer; }
+}
+function note(g, fn, args, hex, o) {
+  // `o` is copied: the editor writes to it, and the call sites hand in literals they
+  // reuse across a loop.
+  g.userData.part = { fn, args, hex, o: { ...o }, group: openGroup };
+  return g;
+}
+// Moves a finished part and keeps its note honest, for the one or two places that build
+// a piece around the origin and hoist it afterwards.
+function lift(g, dy) {
+  g.translate(0, dy, 0);
+  const p = g.userData.part;
+  if (p) p.o = { ...p.o, y: (p.o.y || 0) + dy };
+  return g;
+}
+
 // a box whose base sits at y = o.y
+// Water and soil are modelled flush with the rim that holds them, which puts two faces
+// on exactly the same plane and leaves the depth buffer to guess - the hatched surfaces
+// on the well, the fountain and the flower beds. Lifting the inner surface by a hair
+// settles it: far below anything the eye can see at this scale, far above the precision
+// the depth buffer has to work with. Filled to the brim rather than a hair short of it,
+// which is also the way a fountain should look.
+const BRIM = 0.004;
+
 export function box(w, h, d, hex, o = {}) {
   const g = new THREE.BoxGeometry(w, h, d);
   g.translate(0, h / 2, 0);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'box', [w, h, d], hex, o);
 }
 export function cylinder(rt, rb, h, seg, hex, o = {}) {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg);
   g.translate(0, h / 2, 0);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'cylinder', [rt, rb, h, seg], hex, o);
 }
 export function cone(r, h, seg, hex, o = {}) {
   const g = new THREE.ConeGeometry(r, h, seg);
   g.translate(0, h / 2, 0);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'cone', [r, h, seg], hex, o);
 }
 export function dome(r, hex, o = {}) {
   const g = new THREE.SphereGeometry(r, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'dome', [r], hex, o);
 }
 export function sphere(r, hex, o = {}) {
   const g = new THREE.SphereGeometry(r, 7, 5);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'sphere', [r], hex, o);
 }
 // gable roof: a triangular prism, base at y = o.y, ridge running along x
 export function prismRoof(w, d, h, hex, o = {}) {
@@ -104,21 +145,21 @@ export function prismRoof(w, d, h, hex, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
   g.setIndex(f);
-  return place(finish(g, hex, 0), o);
+  return note(place(finish(g, hex, 0), o), 'prismRoof', [w, d, h], hex, o);
 }
 export function pyramidRoof(w, d, h, hex, o = {}) {
   const g = new THREE.ConeGeometry(0.7071, h, 4);
   g.rotateY(Math.PI / 4);
   g.scale(w, 1, d);
   g.translate(0, h / 2, 0);
-  return place(finish(g, hex, 0), o);
+  return note(place(finish(g, hex, 0), o), 'pyramidRoof', [w, d, h], hex, o);
 }
 // A flat triangle or quad, given 3 or 4 points. Used for sails, fins and pennants.
 export function quad(pts, hex, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3));
   g.setIndex(pts.length === 3 ? [0, 1, 2, 0, 2, 1] : [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]);
-  return place(finish(g, hex, o.emissive || 0), o);
+  return note(place(finish(g, hex, o.emissive || 0), o), 'quad', [pts], hex, o);
 }
 
 function merge(parts) {
@@ -128,6 +169,76 @@ function merge(parts) {
   g.computeBoundingSphere();
   return g;
 }
+
+// ---------------------------------------------------------------- the kit
+// Places one piece inside a sub-assembly: its offset turns with the assembly, and so
+// does the piece, which is what lets a bench stand against a wall at an angle without
+// every number in it being rewritten by hand.
+function inside(a, o = {}) {
+  const c = Math.cos(a.ry || 0), s = Math.sin(a.ry || 0);
+  const x = o.x || 0, z = o.z || 0;
+  return {
+    ...o,
+    x: (a.x || 0) + x * c + z * s,
+    y: (a.y || 0) + (o.y || 0),
+    z: (a.z || 0) - x * s + z * c,
+    ry: (o.ry || 0) + (a.ry || 0),
+  };
+}
+
+// The pieces that keep coming back, each as one named thing rather than the boxes it
+// happens to be: a window, a door, a bench. The builders below reach for them, and the
+// model editor offers the same list when you want one more - which is the whole point
+// of giving them names. `defaults` is what the editor puts in its number fields; every
+// piece also takes the placement `{ x, y, z, ry }` that `inside` spreads over its parts.
+export const KIT = {
+  window: {
+    label: 'Window',
+    defaults: { w: 0.13, h: 0.17, d: 0.04, hex: C.glass },
+    build: (parts, a) => group('window', () => {
+      parts.push(box(a.w, a.h, a.d, a.hex, inside(a, { emissive: 1 })));
+    }, a),
+  },
+  door: {
+    label: 'Door',
+    defaults: { w: 0.16, h: 0.26, d: 0.05, hex: C.darkWood },
+    build: (parts, a) => group('door', () => {
+      parts.push(box(a.w, a.h, a.d, a.hex, inside(a, {})));
+    }, a),
+  },
+  bench: {
+    label: 'Bench',
+    defaults: { w: 0.46, hex: C.plank },
+    build: (parts, a) => group('bench', () => {
+      const lx = a.w / 2 - 0.05;
+      for (const x of [-lx, lx]) {
+        parts.push(box(0.04, 0.2, 0.04, C.iron, inside(a, { x, z: -0.05 })));
+        parts.push(box(0.04, 0.2, 0.04, C.iron, inside(a, { x, z: 0.05 })));
+      }
+      parts.push(box(a.w, 0.035, 0.16, a.hex, inside(a, { y: 0.2 })));
+      parts.push(box(a.w, 0.17, 0.03, a.hex, inside(a, { y: 0.22, z: -0.07, rx: -0.16 })));
+    }, a),
+  },
+  table: {
+    label: 'Table',
+    defaults: { r: 0.13, h: 0.2, hex: C.plank },
+    build: (parts, a) => group('table', () => {
+      parts.push(cylinder(0.035, 0.045, a.h, 6, C.darkWood, inside(a, {})));
+      parts.push(cylinder(a.r, a.r, 0.025, 8, a.hex, inside(a, { y: a.h })));
+    }, a),
+  },
+  chair: {
+    label: 'Chair',
+    defaults: { w: 0.09, h: 0.12, hex: C.plank },
+    build: (parts, a) => group('chair', () => {
+      for (const [lx, lz] of [[-0.032, -0.032], [0.032, -0.032], [-0.032, 0.032], [0.032, 0.032]]) {
+        parts.push(box(0.014, a.h, 0.014, C.darkWood, inside(a, { x: lx, z: lz })));
+      }
+      parts.push(box(a.w, 0.022, a.w, a.hex, inside(a, { y: a.h })));
+      parts.push(box(a.w, 0.12, 0.018, C.darkWood, inside(a, { y: a.h + 0.022, z: -0.036 })));
+    }, a),
+  },
+};
 
 // ---------------------------------------------------------------- pieces
 function windowsOn(parts, pal, { w, h, y0, count, ry = 0 }) {
@@ -139,24 +250,26 @@ function windowsOn(parts, pal, { w, h, y0, count, ry = 0 }) {
   ];
   for (let i = 0; i < Math.min(count, spots.length); i++) {
     const s = spots[i];
-    parts.push(box(0.13, 0.17, 0.04, pal.glow, { x: s.x, y: y0, z: s.z, ry: s.ry, emissive: 1 }));
+    KIT.window.build(parts, { ...KIT.window.defaults, hex: pal.glow, x: s.x, y: y0, z: s.z, ry: s.ry });
   }
   void h; void ry;
 }
 function door(parts, pal, w) {
-  parts.push(box(0.16, 0.26, 0.05, pal.accent, { x: 0, y: 0, z: w / 2 + 0.01 }));
+  KIT.door.build(parts, { ...KIT.door.defaults, hex: pal.accent, z: w / 2 + 0.01 });
 }
 function foundation(parts, w, d) {
-  parts.push(box(w + 0.12, 0.34, d + 0.12, C.foundation, { y: -0.3 }));
+  group('foundation', () => parts.push(box(w + 0.12, 0.34, d + 0.12, C.foundation, { y: -0.3 })));
 }
 
 function timberFrame(parts, w, h, d, hex) {
   const t = 0.035;
-  for (const [x, z, ry] of [[0, d / 2, 0], [0, -d / 2, 0], [w / 2, 0, Math.PI / 2], [-w / 2, 0, Math.PI / 2]]) {
-    parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : -w * 0.3), y: 0, z, ry }));
-    parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : w * 0.3), y: 0, z, ry }));
-    parts.push(box(w * 0.9, t, t, hex, { x, y: h - t, z, ry }));
-  }
+  group('frame', () => {
+    for (const [x, z, ry] of [[0, d / 2, 0], [0, -d / 2, 0], [w / 2, 0, Math.PI / 2], [-w / 2, 0, Math.PI / 2]]) {
+      parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : -w * 0.3), y: 0, z, ry }));
+      parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : w * 0.3), y: 0, z, ry }));
+      parts.push(box(w * 0.9, t, t, hex, { x, y: h - t, z, ry }));
+    }
+  });
 }
 
 // ---------------------------------------------------------------- houses
@@ -236,10 +349,7 @@ function houseBody(parts, spec, pal, rng) {
     parts.push(dome(0.25, pal.accent, { x: tx, y: th, z: tz }));
     parts.push(cone(0.05, 0.24, 6, C.copper, { x: tx, y: th + 0.2, z: tz }));
     parts.push(box(0.09, 0.12, 0.03, pal.glow, { x: tx, y: th - 0.28, z: tz + 0.22, emissive: 1 }));
-    const tel = cylinder(0.028, 0.04, 0.3, 6, C.copper, {});
-    tel.rotateZ(-0.6);
-    tel.translate(tx + 0.2, th + 0.12, tz + 0.06);
-    parts.push(tel);
+    parts.push(cylinder(0.028, 0.04, 0.3, 6, C.copper, { rz: -0.6, x: tx + 0.2, y: th + 0.12, z: tz + 0.06 }));
     top = Math.max(top, th + 0.42);
   }
   return { anchors, height: top, w: dims.w };
@@ -317,10 +427,7 @@ function shed(parts, spec, pal) {
     parts.push(cone(0.3, 0.5, 6, C.canvas, {}));
     parts.push(box(0.03, 0.3, 0.03, C.darkWood, { x: 0.24, z: 0.1, rz: 0.28 }));
     parts.push(box(0.03, 0.3, 0.03, C.darkWood, { x: 0.32, z: -0.06, rz: -0.18 }));
-    const tel = cylinder(0.028, 0.042, 0.28, 6, C.copper, {});
-    tel.rotateZ(-0.55);
-    tel.translate(0.3, 0.34, 0.02);
-    parts.push(tel);
+    parts.push(cylinder(0.028, 0.042, 0.28, 6, C.copper, { rz: -0.55, x: 0.3, y: 0.34, z: 0.02 }));
     return { anchors, height: 0.55 };
   }
   if (t === 'plan') {
@@ -364,6 +471,35 @@ function shed(parts, spec, pal) {
 }
 
 // ---------------------------------------------------------------- civic
+// Two boards stand on the square and they are the same piece of furniture in different
+// paint: posts, a panel, a frame, a little roof and one pinned note per open card. The
+// sprint board is cork under a plank roof; the island's own board is slate in an iron
+// frame under copper, so which is which reads from across the green.
+function noticeBoard(parts, spec, { panel, frame, roof, sign, note, pins }) {
+  const W = 1.7, H = 1.0;
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: -W / 2 + 0.08, z: 0 }));
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: W / 2 - 0.08, z: 0 }));
+  parts.push(box(W, H, 0.06, panel, { y: 0.62, z: 0.02 }));                     // the panel
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 0.58, z: 0.02 }));             // its frame
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 1.62, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: -W / 2 - 0.02, y: 0.58, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: W / 2 + 0.02, y: 0.58, z: 0.02 }));
+  parts.push(prismRoof(W + 0.34, 0.44, 0.22, roof, { y: 1.69, z: 0.02 }));
+  parts.push(box(0.62, 0.16, 0.03, sign, { y: 1.72, z: 0.2 }));                 // the sign
+  // one pinned card per open issue, up to twelve, in three rows
+  const cards = Math.max(1, Math.min(12, spec.cards == null ? 6 : spec.cards));
+  for (let i = 0; i < cards; i++) {
+    const col = i % 4, row = Math.floor(i / 4);
+    const x = -0.6 + col * 0.4, y = 1.34 - row * 0.31;
+    const tilt = ((i * 37) % 13 - 6) * 0.012;
+    parts.push(box(0.3, 0.23, 0.012, note, { x, y, z: 0.06, rz: tilt }));
+    parts.push(box(0.19, 0.018, 0.014, 0xb9b2a4, { x: x - 0.03, y: y + 0.06, z: 0.068, rz: tilt }));
+    parts.push(box(0.13, 0.018, 0.014, 0xb9b2a4, { x: x - 0.06, y: y + 0.02, z: 0.068, rz: tilt }));
+    parts.push(sphere(0.024, pins[i % pins.length], { x, y: y + 0.1, z: 0.078 }));
+  }
+  return 2.1;
+}
+
 function civic(parts, spec, rng) {
   const anchors = {};
   const animated = {};
@@ -392,7 +528,7 @@ function civic(parts, spec, rng) {
     }
     case 'well':
       parts.push(cylinder(0.3, 0.32, 0.36, 9, C.stone));
-      parts.push(cylinder(0.24, 0.24, 0.06, 9, 0x2a4a5a, { y: 0.3 }));
+      parts.push(cylinder(0.24, 0.24, 0.06, 9, 0x2a4a5a, { y: 0.3 + BRIM }));
       parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: -0.24, y: 0.36 }));
       parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: 0.24, y: 0.36 }));
       parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.86, ry: Math.PI / 2 }));
@@ -461,7 +597,7 @@ function civic(parts, spec, rng) {
       // a row of them is not four copies of the same red.
       const beds = [0xd94f3d, 0xe8a13a, 0xd96fa8, 0xf2e04a, 0x9a6fd9];
       parts.push(box(0.42, 0.18, 0.28, C.stone));
-      parts.push(box(0.34, 0.04, 0.2, 0x53402e, { y: 0.14 }));
+      parts.push(box(0.34, 0.04, 0.2, 0x53402e, { y: 0.14 + BRIM }));
       for (let i = 0; i < 5; i++) {
         const x = -0.13 + i * 0.065, z = rng.range(-0.05, 0.05);
         const h = 0.07 + rng.range(0, 0.05);
@@ -470,15 +606,9 @@ function civic(parts, spec, rng) {
       }
       return { anchors, animated, height: 0.36 };
     }
-    case 'bench': {
-      for (const x of [-0.18, 0.18]) {
-        parts.push(box(0.04, 0.2, 0.04, C.iron, { x, z: -0.05 }));
-        parts.push(box(0.04, 0.2, 0.04, C.iron, { x, z: 0.05 }));
-      }
-      parts.push(box(0.46, 0.035, 0.16, C.plank, { y: 0.2 }));
-      parts.push(box(0.46, 0.17, 0.03, C.plank, { y: 0.22, z: -0.07, rx: -0.16 }));
+    case 'bench':
+      KIT.bench.build(parts, { ...KIT.bench.defaults });
       return { anchors, animated, height: 0.42 };
-    }
     case 'terrace': {
       // Two little tables with a chair either side, and one parasol between them. Three
       // things were wrong before. The pole stood on the first table's own centre, so it
@@ -512,12 +642,12 @@ function civic(parts, spec, rng) {
       // below the rim so it catches the light instead of hiding in the shadow.
       parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
       parts.push(cylinder(0.44, 0.46, 0.28, 8, C.stone, { y: 0.1 }));         // 0.10 - 0.38
-      parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 }));       // the water
+      parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 + BRIM })); // the water
       parts.push(cylinder(0.48, 0.48, 0.05, 8, C.stone, { y: 0.36 }));        // the rim
       parts.push(box(0.26, 0.14, 0.26, C.stone, { y: 0.3 }));                 // 0.30 - 0.44
       parts.push(cylinder(0.09, 0.13, 0.4, 8, C.stone, { y: 0.44 }));         // 0.44 - 0.84
       parts.push(cylinder(0.26, 0.12, 0.1, 8, C.stone, { y: 0.8 }));          // the bowl
-      parts.push(cylinder(0.22, 0.22, 0.03, 8, 0x2f6f8f, { y: 0.87 }));
+      parts.push(cylinder(0.22, 0.22, 0.03, 8, 0x2f6f8f, { y: 0.87 + BRIM }));
       parts.push(cylinder(0.05, 0.08, 0.2, 8, C.stone, { y: 0.9 }));
       parts.push(sphere(0.07, C.copper, { y: 1.15 }));
       // four jets leaning out of the bowl and back down into the basin
@@ -537,11 +667,13 @@ function civic(parts, spec, rng) {
       parts.push(prismRoof(1.42, 1.06, 0.5, C.brick, { y: f + 0.62 }));
       parts.push(box(0.34, 0.5, 0.04, C.darkWood, { y: f, z: -0.46 }));
       for (const x of [-0.42, 0.42]) parts.push(box(0.2, 0.26, 0.03, C.glass, { x, y: f + 0.2, z: 0.46, emissive: 1 }));
+      // and two smaller ones either side of the back door
+      for (const x of [-0.39, 0.34]) KIT.window.build(parts, { ...KIT.window.defaults, x, y: f + 0.225, z: -0.44 });
       // the hanging sign
-      parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.94, z: -0.3 }));
+      parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.88, z: -0.6 }));
       parts.push(box(0.02, 0.06, 0.02, C.iron, { x: 0.64, y: 0.88, z: -0.46 }));
-      parts.push(box(0.03, 0.22, 0.28, 0x6b4a2f, { x: 0.64, y: 0.66, z: -0.46 }));
-      parts.push(sphere(0.05, C.gold, { x: 0.625, y: 0.77, z: -0.46 }));
+      parts.push(box(0.03, 0.22, 0.28, 0x6b4a2f, { x: 0.64, y: 0.67, z: -0.61 }));
+      parts.push(sphere(0.05, C.gold, { x: 0.642355, y: 0.77, z: -0.6 }));
       // barrels and a bench outside the door
       for (const bz of [-0.34, -0.06]) {
         parts.push(cylinder(0.11, 0.12, 0.24, 8, C.wood, { x: -0.68, z: bz }));
@@ -659,29 +791,22 @@ function civic(parts, spec, rng) {
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
-      const W = 1.7, H = 1.0;
-      parts.push(cylinder(0.06, 0.07, 1.05, 6, C.darkWood, { x: -W / 2 + 0.08, z: 0 }));
-      parts.push(cylinder(0.06, 0.07, 1.05, 6, C.darkWood, { x: W / 2 - 0.08, z: 0 }));
-      parts.push(box(W, H, 0.06, 0x8a6a44, { y: 0.62, z: 0.02 }));                 // cork
-      parts.push(box(W + 0.1, 0.07, 0.1, C.darkWood, { y: 0.58, z: 0.02 }));       // frame
-      parts.push(box(W + 0.1, 0.07, 0.1, C.darkWood, { y: 1.62, z: 0.02 }));
-      parts.push(box(0.07, H + 0.14, 0.1, C.darkWood, { x: -W / 2 - 0.02, y: 0.58, z: 0.02 }));
-      parts.push(box(0.07, H + 0.14, 0.1, C.darkWood, { x: W / 2 + 0.02, y: 0.58, z: 0.02 }));
-      parts.push(prismRoof(W + 0.34, 0.44, 0.22, C.plank, { y: 1.69, z: 0.02 }));
-      parts.push(box(0.62, 0.16, 0.03, C.paper, { y: 1.72, z: 0.2 }));             // "sprint" sign
-      // one pinned card per open issue, up to twelve, in three rows
-      const cards = Math.max(1, Math.min(12, spec.cards == null ? 6 : spec.cards));
-      const pinCols = [0xd94f3d, 0x3d7ed9, 0xd9a33d, 0x6fb84a, 0x9a6fd9];
-      for (let i = 0; i < cards; i++) {
-        const col = i % 4, row = Math.floor(i / 4);
-        const x = -0.6 + col * 0.4, y = 1.34 - row * 0.31;
-        const tilt = ((i * 37) % 13 - 6) * 0.012;
-        parts.push(box(0.3, 0.23, 0.012, C.paper, { x, y, z: 0.06, rz: tilt }));
-        parts.push(box(0.19, 0.018, 0.014, 0xb9b2a4, { x: x - 0.03, y: y + 0.06, z: 0.068, rz: tilt }));
-        parts.push(box(0.13, 0.018, 0.014, 0xb9b2a4, { x: x - 0.06, y: y + 0.02, z: 0.068, rz: tilt }));
-        parts.push(sphere(0.024, pinCols[i % pinCols.length], { x, y: y + 0.1, z: 0.078 }));
-      }
-      return { anchors, animated, height: 2.1 };
+      const height = noticeBoard(parts, spec, {
+        panel: 0x8a6a44, frame: C.darkWood, roof: C.plank, sign: C.paper, note: C.paper,
+        pins: [0xd94f3d, 0x3d7ed9, 0xd9a33d, 0x6fb84a, 0x9a6fd9],
+      });
+      return { anchors, animated, height };
+    }
+    case 'issues': {
+      // The island's own board: the same furniture in slate and iron under a copper
+      // roof, with a lamp over it, because the work on the island itself never stops.
+      const height = noticeBoard(parts, spec, {
+        panel: C.slate, frame: C.iron, roof: C.copper, sign: C.white, note: C.white,
+        pins: [0xd9a33d, 0xb87333, 0xf5efe0, 0xd9a33d, 0x8a8a8a],
+      });
+      parts.push(cylinder(0.018, 0.018, 0.16, 4, C.iron, { y: 1.95, z: 0.22 }));
+      parts.push(sphere(0.05, C.glass, { y: 1.99, z: 0.22, emissive: 1 }));
+      return { anchors, animated, height };
     }
     case 'office': {
       // A clerk's office: brick, a tiled roof, a lamp by the door and a board with the
@@ -859,7 +984,7 @@ export function buildBuilding(spec, ctx = {}) {
     parts.push(box(1.0, 0.08, 1.0, C.plank, { y: deck - 0.08 }));
     const inner = [];
     const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng);
-    for (const g of inner) { g.translate(0, deck, 0); parts.push(g); }
+    for (const g of inner) parts.push(lift(g, deck));
     parts.push(cylinder(0.05, 0.05, 0.36, 6, C.darkWood, { x: 0.44, y: deck, z: 0.44 }));
     parts.push(box(0.1, 0.12, 0.1, 0xffb347, { x: 0.44, y: deck + 0.36, z: 0.44, emissive: 1 }));
     anchors = r.anchors; height = deck + r.height; w = r.w;
@@ -876,9 +1001,10 @@ export function buildBuilding(spec, ctx = {}) {
   }
 
   const geometry = merge(parts);
-  // The board is built large for legibility and stands village sized; a house gets a
+  // Both boards are built large for legibility and stand village sized; a house gets a
   // touch of variety so a street of identical sessions still looks hand-made.
-  const s = spec.civicType === 'board' ? 0.6
+  const boardish = spec.civicType === 'board' || spec.civicType === 'issues';
+  const s = boardish ? 0.6
     : spec.kind !== 'civic' ? 0.96 + rng.next() * 0.08
       : 1;
   // The footprint is measured before the scale, so head height is measured there too.
@@ -889,11 +1015,19 @@ export function buildBuilding(spec, ctx = {}) {
     geometry.computeBoundingSphere();
     solids = scaleSolids(solids, s);
   }
-  if (spec.civicType === 'board') {
+  if (boardish) {
     height *= s;
     for (const k of Object.keys(anchors)) anchors[k] = anchors[k].map((v) => v * s);
   }
-  return { geometry, anchors, animated, height, width: w, bbox: geometry.boundingBox.clone(), solids };
+  // The editor asks for the pieces rather than the loaf: one geometry per primitive,
+  // still in the space the code was written in, each carrying the call that made it.
+  // Behind a flag, because the island builds hundreds of these and would sooner see the
+  // parts collected than held onto.
+  return {
+    geometry, anchors, animated, height, width: w,
+    bbox: geometry.boundingBox.clone(), solids,
+    ...(ctx.keepParts ? { parts, scale: s } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- extras

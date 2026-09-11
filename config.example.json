@@ -24,5 +24,12 @@
     "opening": "Pick up {key}",
     "skill": null,
     "language": "en"
+  },
+  "github": {
+    "repo": null,
+    "dispatch": {
+      "opening": "Pick up issue #{number}",
+      "skill": "issue-oppakken"
+    }
   }
 }

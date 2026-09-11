@@ -1,6 +1,7 @@
 // Every pixel that is not the island: the title card, the dossier, the legend,
 // the chronicle bar, the floating labels and the toasts.
 import { PALETTE, TIER_LABEL } from './buildings.js';
+import { CROPS, ripeIn } from 'shared/crops.mjs';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -87,6 +88,8 @@ export function createUI(handlers) {
   function syncSidebar() {
     const panelOpen = !el('dossier').hidden || !el('legend').hidden;
     el('building-now').hidden = walking || panelOpen || !hasBuilders;
+    const w = el('waiting-now');
+    if (w) w.hidden = walking || panelOpen || !w.querySelector('li');
     el('chronicle').hidden = walking;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
   }
@@ -139,13 +142,35 @@ export function createUI(handlers) {
   }
 
   // --- now building --------------------------------------------------------
-  function setBuilding(list) {
+  function setBuilding(list, waiting = []) {
     const ul = el('building-list');
+    renderWaiting(waiting);
     hasBuilders = list.length > 0;
     syncSidebar();
     if (!list.length) { ul.innerHTML = '<li class="empty">Nobody is building right now.</li>'; return; }
     ul.innerHTML = list.map((b) => `<li data-id="${esc(b.id)}"><span class="dot"></span>${esc(b.name)}<small>${esc(b.where)} · ${esc(b.since)}</small></li>`).join('');
     ul.querySelectorAll('li[data-id]').forEach((li) => li.addEventListener('click', () => handlers.onFocus(li.dataset.id)));
+  }
+
+  // --- who is waiting on you -----------------------------------------------
+  // The flags on the island say where; this says who, and what they asked. It sits
+  // above everything else because it is the one list with something owed in it.
+  function renderWaiting(waiting) {
+    const box = el('waiting-now');
+    if (!box) return;
+    box.hidden = !waiting.length;
+    if (!waiting.length) return;
+    const asked = waiting.filter((w) => w.asked).length;
+    el('waiting-head').textContent = asked
+      ? `${asked} question${asked > 1 ? 's' : ''} for you`
+      : `Waiting for you · ${waiting.length}`;
+    el('waiting-list').innerHTML = waiting.map((w) => `
+      <li data-id="${esc(w.id)}" class="${w.asked ? 'asked' : ''}">
+        <span class="pennant"></span>${esc(w.name)}
+        <small>${esc(w.since)} · ${esc(w.question || '')}</small>
+      </li>`).join('');
+    el('waiting-list').querySelectorAll('li[data-id]').forEach((li) =>
+      li.addEventListener('click', () => handlers.onFocus(li.dataset.id)));
   }
 
   // --- dossier -------------------------------------------------------------
@@ -246,6 +271,7 @@ export function createUI(handlers) {
     }
     html += `<p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       ${b.kind === 'civic' || !b.sessionId ? '' : '<button class="btn primary" id="talk-btn">Talk to them</button>'}
+      ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
       <button class="btn" id="focus-btn">Focus camera</button>
       ${b.kind === 'civic' ? '' : '<button class="btn danger" id="exile-btn">Send off the island</button>'}
     </p>`;
@@ -256,6 +282,8 @@ export function createUI(handlers) {
     body.querySelector('#focus-btn').addEventListener('click', () => handlers.onFocus(b.id));
     const talk = body.querySelector('#talk-btn');
     if (talk) talk.addEventListener('click', () => handlers.onTalk(b.id));
+    const stall = body.querySelector('#stall-btn');
+    if (stall) stall.addEventListener('click', () => handlers.onMarket());
     const exile = body.querySelector('#exile-btn');
     if (exile) exile.addEventListener('click', () => handlers.onSendAway(b.id));
     body.querySelectorAll('[data-goto]').forEach((n) => n.addEventListener('click', () => handlers.onFocus(n.dataset.goto)));
@@ -371,18 +399,37 @@ export function createUI(handlers) {
 
   // --- walking -------------------------------------------------------------
   let padConnected = false;
+  // Indoors most of the keys mean nothing - there is nothing to sow in a tavern and nobody
+  // to send off the island from a bar stool - so the row says what there is instead.
+  let indoors = false;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
+  function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
   function renderWalkKeys() {
+    if (indoors) {
+      el('walk-keys').innerHTML = padConnected
+        ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
+          + `<span class="lit"><kbd>A</kbd> sit down</span><span><kbd>B</kbd> step outside</span>`
+        : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
+          + `<span>drag to look, double-click to hold the mouse</span>`
+          + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
+          + `<span><kbd>Esc</kbd> step outside</span>`;
+      return;
+    }
     el('walk-keys').innerHTML = padConnected
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-        + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span><span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
+        + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span>`
+        + `<span class="lit"><kbd>D-pad ↑</kbd> sow</span><span><kbd>D-pad →</kbd> next seed</span>`
+        + `<span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span><span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span>`
+        + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
+        + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;
     walking = !!on;
-    if (!on) setConfirm(null);
+    if (!on) indoors = false;
+    if (!on) { setConfirm(null); setPouch(null); }
     el('walk-hud').hidden = !on;
     // Nothing drives the label layer on foot - `updateLabels` is skipped in walk mode -
     // so whatever was on screen when you stepped down stayed there, hanging in the air at
@@ -394,14 +441,55 @@ export function createUI(handlers) {
     if (on) { el('dossier').hidden = true; el('legend').hidden = true; renderWalkKeys(); }
     syncSidebar();
   }
+  // Both of these are called every frame while you walk, and both usually have nothing
+  // new to say - a countdown changes once a minute, a purse only when you trade. So the
+  // last thing written is kept and an unchanged line is not written again.
+  function once(id, html) {
+    const p = el(id);
+    if (p.dataset.said === html) return;
+    p.dataset.said = html;
+    p.innerHTML = html;
+  }
+
   function setWalkPrompt(near) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
     const key = padConnected ? 'A' : 'E';
-    p.innerHTML = near.kind === 'board'
-      ? `<b>${key}</b> read the sprint board`
-      : `<b>${key}</b> talk to ${esc(near.label)}`;
+    // Anything that carries its own wording says it itself. The rooms indoors do that: what
+    // a bar stool offers depends on whether you are already sitting on it.
+    once('walk-prompt', near.prompt ? `<b>${key}</b> ${esc(near.prompt)}`
+      : near.kind === 'board' ? `<b>${key}</b> read the sprint board`
+      : near.kind === 'issues' ? `<b>${key}</b> read the island board`
+        : near.kind === 'market' ? `<b>${key}</b> the seed stall`
+          : near.kind === 'bed' ? bedPrompt(near, key)
+            : `<b>${key}</b> talk to ${esc(near.label)}`);
+  }
+
+  // A bed says what it is and how long it still needs, counted down here rather than
+  // sent: the bed carries the hour it is due and the page can subtract.
+  function bedPrompt(bed, key) {
+    const c = CROPS[bed.crop];
+    const plural = c ? c.plural : 'them';
+    const left = bed.ripeAt - Date.now();
+    return left > 0
+      ? `<span class="muted">${esc(plural)} — another ${esc(ripeIn(left))}</span>`
+      : `<b>${key}</b> pull the ${esc(plural)}`;
+  }
+
+  // The purse, the seed in your hand and what is standing ready, while you walk. Only
+  // the keeper of the island farms it, so a visitor is never shown this.
+  function setPouch(garden) {
+    const p = el('walk-pouch');
+    if (!garden) { p.hidden = true; return; }
+    p.hidden = false;
+    const key = padConnected ? 'D-pad ↑' : 'P';
+    const held = garden.held && garden.seeds[garden.held];
+    once('walk-pouch', `<span class="coins">${garden.purse} coins</span>`
+      + (held
+        ? `<span class="held"><b>${esc(garden.heldName || garden.held)}</b> seed ×${held} — <kbd>${key}</kbd> to sow</span>`
+        : '<span class="none">no seed in the pouch</span>')
+      + (garden.ripe ? `<span class="ripe">${garden.ripe} bed${garden.ripe === 1 ? '' : 's'} ready</span>` : ''));
   }
 
   function boot(done, text) {
@@ -411,12 +499,13 @@ export function createUI(handlers) {
 
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
+  el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
 
   setupShell();
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPad, setConfirm,
+    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
   };
 }

@@ -444,3 +444,78 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 @media (max-width: 900px) {
   .think-panel { width: calc(100vw - 28px); }
 }
+
+/* --- the avatar studio ------------------------------------------------- */
+.av-panel { width: min(680px, calc(100vw - 32px)); }
+.av-body { display: flex; gap: 18px; margin-top: 6px; align-items: stretch; }
+.av-stage { flex: 0 0 210px; border: 1px solid var(--edge); border-radius: 12px; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 18%, rgba(127,199,217,.12), rgba(13,20,32,.5) 70%); min-height: 280px; }
+.av-stage canvas { display: block; width: 100%; height: 100%; }
+.av-controls { flex: 1; min-width: 0; }
+.av-controls h4 { margin: 12px 0 7px; }
+.av-controls h4:first-child { margin-top: 2px; }
+.av-swatches { display: flex; flex-wrap: wrap; gap: 7px; }
+.av-sw { width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: pointer;
+  background: var(--sw); border: 2px solid rgba(255,255,255,.14); box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .08s ease; }
+.av-sw:hover { transform: scale(1.12); }
+.av-sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,180,92,.35); }
+.av-hats { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-hat { cursor: pointer; }
+
+@media (max-width: 560px) {
+  .av-body { flex-direction: column; }
+  .av-stage { flex: 0 0 240px; }
+}
+
+/* --- who is waiting on you ---------------------------------------------- */
+.waiting-now { position: fixed; right: 14px; top: 108px; width: 246px; padding: 11px 13px; z-index: 11; max-height: 40vh; overflow: auto; border-color: rgba(224,72,58,.35); }
+.waiting-now h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #e8a33c; }
+#waiting-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+#waiting-list li { font-size: 12px; cursor: pointer; padding: 5px 7px; border-radius: 8px; border: 1px solid transparent; line-height: 1.35; }
+#waiting-list li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+#waiting-list li small { color: var(--ink-dim); display: block; margin-left: 14px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+#waiting-list .pennant { display: inline-block; width: 8px; height: 8px; margin-right: 6px; background: #e8a33c; clip-path: polygon(0 0, 100% 35%, 0 70%); }
+#waiting-list li.asked .pennant { background: #e0483a; animation: pulse 1.6s infinite; }
+#waiting-list li.asked { color: #ffd9d2; }
+/* The two right-hand lists share one column, so a raised flag pushes the builders down
+   instead of covering them. */
+.right-column { position: fixed; right: 14px; top: 108px; width: 246px; z-index: 11; display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
+.right-column > * { position: static !important; right: auto !important; top: auto !important; width: 100% !important; pointer-events: auto; }
+.right-column > [hidden] { display: none !important; }
+/* --- the seed stall, and the pouch you carry round the island ---------- */
+.market .ho-sum { max-width: 62ch; }
+.mk-purse { display: flex; align-items: baseline; gap: 12px; margin: 14px 0 2px;
+  padding: 9px 13px; border: 1px solid var(--edge); border-radius: 11px; background: rgba(232,180,92,.08); }
+.mk-coins { font-family: var(--font); font-size: 22px; color: var(--accent); }
+.mk-coins i { font-style: normal; font-size: 11px; color: var(--ink-dim); margin-left: 5px; letter-spacing: .06em; text-transform: uppercase; }
+.mk-purse .muted { margin: 0; }
+.mk-rows { display: grid; gap: 6px; }
+.mk-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 11px; align-items: center;
+  padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.mk-row.held { border-color: rgba(232,180,92,.5); background: rgba(232,180,92,.09); }
+.mk-swatch { width: 15px; height: 15px; border-radius: 50%; border: 2px solid; }
+.mk-what b { font-size: 13px; }
+.mk-what p { margin: 2px 0 3px; font-size: 12px; line-height: 1.4; color: var(--ink); opacity: .82; max-width: 56ch; }
+.mk-what small { display: block; font-size: 11px; color: var(--ink-dim); }
+.mk-what small b { color: var(--accent); font-size: 11px; }
+.mk-what small i { font-style: italic; }
+.mk-buy { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.mk-buy .btn.tiny { margin-left: 0; }
+.btn.off { opacity: .38; cursor: default; }
+.mk-sellall { margin-top: 10px; }
+.mk-empty { margin-top: 4px; }
+.mk-empty kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.mk-ledger { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--edge); }
+.ho-out kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* What is in the purse and the pouch, while walking. Sits above the key strip. */
+.walk-pouch { padding: 5px 13px; font-size: 12px; border-radius: 99px; display: flex; gap: 10px; align-items: center; }
+.walk-pouch .coins { color: var(--accent); font-weight: 600; }
+.walk-pouch .held { color: var(--ink); }
+.walk-pouch .held b { color: var(--accent-2); }
+.walk-pouch .none { color: var(--ink-dim); }
+.walk-pouch .ripe { color: #7fd08a; }
+.walk-pouch kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }

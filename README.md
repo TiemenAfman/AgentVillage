@@ -104,8 +104,46 @@ cannot set out for the horizon.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
 the on-screen hints switch to controller buttons. Left stick walks, right stick looks,
-right shoulder runs, **A** uses what you are standing at, **B** flies back up. Nothing needs a
-controller: mouse and keyboard do everything on their own.
+right shoulder runs, **A** uses what you are standing at, **B** flies back up, **D-pad up**
+sows a bed. Nothing needs a controller: mouse and keyboard do everything on their own.
+
+## Market gardening
+
+Once the village has earned its market stalls — ten settlers — one of them is a seed
+stall. Walk up to it and press **E**: it sells seed, and it buys back whatever you grow.
+You start with fifteen coins, which is seven beds of turnip or one long look at the
+pumpkin seed and a change of plan.
+
+**P** sows a bed where you are standing, **Q** takes the next kind of seed out of the
+pouch, and **E** at a bed that is ready pulls it up. What you pull goes in the basket and
+the basket is only worth anything back at the stall. **X** at a bed you have thought
+better of turns it over again; a bed that is ready is pulled rather than dug, so a
+mistyped key cannot cost you a pumpkin.
+
+| | Seed | Ready in | A bed gives | The stall pays |
+|---|---|---|---|---|
+| **Turnip** | 2 | 4 min | 3 | about 2 each |
+| **Carrot** | 4 | 8 min | 4 | about 3 |
+| **Beetroot** | 7 | 15 min | 4 | about 6 |
+| **Tidebean** | 12 | 25 min | 5 | about 8 |
+| **Moonleek** | 20 | 45 min | 5 | about 15 |
+| **Pumpkin** | 35 | 1 h 30 | 2 | about 90 |
+
+The clock is the real one, so the long crops are for an island left open beside your
+work and they pay better by the minute for it. Nothing rots: a bed that is ready waits
+until you come back for it.
+
+Where you sow matters twice. A bed needs earth — not the sea, not a river, not the
+beach, not the flagstones of the square, and not a slope the water would run off — and
+the **tidebean** wants salt in the air: sown within four paces of the water it sets two
+extra pods. The **moonleek** is worth growing for its own reason, which is that a ripe
+row is faintly lit and can be found after dark.
+
+What the stall pays moves about a quarter either way from one day to the next, the same
+for everyone looking at the same island, so a full basket carried over to tomorrow is a
+real decision. The purse, the pouch and the basket are yours alone: a visitor walking
+your island can see the beds standing in the ground, and that is all — the stall, like
+the tickets and the git, belongs to whoever lives here.
 
 ## Visitors and neighbours
 
@@ -219,10 +257,24 @@ agent is told comes from `config.json`:
 The `opening` is the first line of the prompt, so make it the phrase your own project
 skill triggers on. Name that skill in `skill` and the agent is told to follow it from
 beginning to end; leave it `null` and the agent is simply asked to work the ticket the
-way the project does. `{key}`, `{summary}`, `{settler}` and `{island}` are filled in.
+way the project does. `{key}`, `{number}`, `{summary}`, `{settler}` and `{island}` are
+filled in.
 
 The skill itself belongs in the repository the agent works in, next to the code it
 describes, not here. That is also where it stays private.
+
+The island's own board hands its cards over in the same shape, under `github`, and comes
+with sensible answers already, so this only needs writing if you disagree with them:
+
+```json
+"github": {
+  "repo": null,
+  "dispatch": { "opening": "Pick up issue #{number}", "skill": "issue-oppakken" }
+}
+```
+
+`repo` left null means the checkout's own `origin` remote. A skill is only ever named to
+an agent whose folder actually carries it.
 
 ## Inviting a session that already exists
 
@@ -312,6 +364,40 @@ within seconds, building in the same district. Its transcript log is kept under
 command** writes the exact command line instead of running it, for when you want to start
 it yourself in a terminal.
 
+## The island's own board
+
+A second noticeboard faces the sprint board across the square, in slate and iron under a
+copper roof rather than cork under planks. The sprint board carries the work of the
+village; this one carries the work on the village itself — the **GitHub issues of the
+repository the island is built from**, one note pinned per open issue. Walk up to it and
+press **E**, or click it.
+
+It reads through the `gh` command line, so there is nothing to configure and no second
+token to keep: the board sees the repository exactly as whoever `gh auth status` says is
+logged in. Which repository that is comes from the checkout's own `origin` remote, so a
+fork or a clone shows its own issues; `"github": { "repo": "owner/name" }` in
+`config.json` overrides it. The last answer is cached in `data/issues.json`, so the board
+still shows something when GitHub is unreachable, and the count of notes on the board
+outside follows it.
+
+GitHub has no columns to drag a card between, so what says an issue is taken is the
+`in progress` label the workflow puts on, or somebody being assigned to it. The cards are
+grouped as **Up for grabs**, **Being worked on**, **Done** and **Closed, not planned**,
+and the board opens on everyone rather than on you, because most issues here belong to
+nobody in particular.
+
+Everything else works as the sprint board does: the same keyboard, the same controller,
+the same hand-over. What differs is what the agent is told. **Hand it over** starts a
+session with `Pick up issue #11`, which triggers the repo's `issue-oppakken` skill:
+an issue first, then a branch from `origin/main` named after it, the issue marked as
+picked up, and when the work is done the branch pushed and the issue closed as completed.
+A folder that does not carry that skill gets the same route spelled out in the prompt
+instead, so a hand-over still lands somewhere sensible.
+
+Two warnings appear where they are earned: a folder without the skill, and the checkout
+the island itself is being served from — an agent branching there changes the island
+under your feet, so one of its worktrees is the quieter choice.
+
 ## How the village grows
 
 A session hook is installed in `~/.claude/settings.json`. It fires on `SessionStart` and
@@ -345,6 +431,15 @@ A project earns a hamlet - a green, a sign, a hedge - on its third session. Belo
 gets a lone farmhouse in the countryside, or a place on the town commons if the island has
 no room for one. When it reaches its third session it founds a hamlet, and the houses
 already standing keep their plots: they stay where they are for good.
+
+Every session of one project stands on that project's own land, and the boundary is what
+says so: it runs all the way round the parcel and opens only where a road crosses, with a
+gatepost either side. What it is made of is the district's own standing rather than a die
+roll - average the houses inside, tent 0 through keep 5, and the answer is post and rail
+below a hut, a hedge around cottages, and dry stone from a house upward. Thickness is the
+one number that only ever grows: sevenfold from a rail round a camp of tents to the wall
+of a village of keeps, and never doubling back where one material hands over to the next.
+Sheds and civic lots do not count - neither is anybody's house.
 
 **`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
 owned, and a change to how it is divided means re-planning every house and shed at once -
@@ -412,9 +507,12 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | On the island | In the data |
 |---|---|
 | Town Hall and founding stone | The session that founded the island |
+| A cork noticeboard on the square | The Jira sprint; one pinned note per open ticket |
+| A slate noticeboard facing it, under a copper roof | The GitHub issues of the island's own repository |
 | A house | One Claude Code session |
 | A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
-| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land; it opens where a road crosses it |
+| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
+| How stout that edge is | The houses inside it: a rail round tents and huts, a hedge round cottages, dry stone round houses and manors - and the grander the houses the thicker the stone |
 | A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the hedge steps back and the water does the job |
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
@@ -445,6 +543,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
 | Well, market, tavern, clock tower, tables, windmill, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 40, 45, 50, 70 and 100 settlers |
+| A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
+| A pale row that glows after dark | Moonleeks, ready to pull |
 | The school | 25 apprentices: it is where they are taught |
 | Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
@@ -473,6 +573,8 @@ a lower pixel ratio.
 | Running sessions | `~/.claude/sessions/<pid>.json` |
 | Session titles and models | `%APPDATA%\Claude\claude-code-sessions\…` |
 | Cowork tasks | `%APPDATA%\Claude\local-agent-mode-sessions\…` |
+| The sprint on the cork board | Jira REST v2, cached in `data/sprint.json` |
+| The issues on the island board | `gh issue list`, cached in `data/issues.json` |
 
 Transcripts are append-only, so the scanner remembers how far it read and only folds in
 new bytes. A first scan of a few hundred megabytes takes a second or two; every scan
@@ -482,10 +584,11 @@ after that takes a fraction of one.
 
 `http://localhost:4747/demo` draws every object the island can build on one field:
 each house tier in each model's colours, the sheds, the ornaments, every civic
-building and everything that stands on the square, with a night slider so the lit
-windows and the street lamps can be judged, and a wireframe toggle. Nothing on it
-reads the village, so a piece that no village has unlocked yet still shows up. Edit
-`web/js/buildings.js` and reload.
+building, everything that stands on the square, and every vegetable — each crop as
+you would buy it, and one turnip through all four of its looks — with a night slider
+so the lit windows, the street lamps and the moonleeks can be judged, and a wireframe
+toggle. Nothing on it reads the village or the garden, so a piece that no village has
+unlocked yet still shows up. Edit `web/js/buildings.js` and reload.
 
 **Hitbox** draws what walk mode cannot step through. Amber is the solid part of the
 shape: everything low enough for a settler to bump into, which leaves out roof
@@ -493,6 +596,52 @@ overhangs, bell towers and parasols because you walk under those. Red is where a
 settler's middle actually stops, the same box grown by half a body -- so if two red
 rings touch, nobody fits between those two objects. It is the view that answers why
 something on the island cannot be walked past.
+
+## The workbench
+
+`http://localhost:4747/editor` is the model sheet with its hands free. Pick a model, click
+a piece, and drag the arrows or tap an arrow key to move it; the panel on the right shows
+the line of code that says so, and **Save** puts it in `web/js/buildings.js`.
+
+It works because every primitive in `buildings.js` notes its own call on the geometry it
+returns -- `box`, the three numbers, the colour, the placement. The merged mesh could never
+say that one of its faces used to be a door; a piece that remembers being
+`box(0.16, 0.26, 0.05, pal.accent, { z: 0.51 })` can. Ask `buildBuilding` for
+`{ keepParts: true }` and you get those pieces back, still in the space the code was
+written in.
+
+The pieces that keep coming back are named rather than repeated. `KIT` holds a window, a
+door, a bench, a table and a chair, each one a handful of primitives under a single name,
+and `windowsOn()`, `door()` and the bench on the square all reach for it. So a window
+picks up as a window instead of as the pane it happens to be, and **Add a piece** puts
+another one down wherever you are.
+
+**Save** writes the changed lines into `buildings.js` itself. It is on purpose the dullest
+patcher imaginable: the page sends whole lines - the one standing in the file, and the one
+that takes its place - and the server writes nothing at all unless each is found exactly
+once. No line numbers, no diff format, nothing that can drift out of step, and loopback
+only, because this writes source.
+
+A line it cannot find is left alone and named, and that is the honest half of the feature.
+Plenty of lines in this file are not written literally: `{ y: f + 0.62 }`, or four windows
+out of `for (const x of [-0.42, 0.42])`, or a window whose numbers `windowsOn()` works out.
+Those have no literal to match, so the panel says which ones and why, and hands you the
+`+` line to place by hand.
+
+**Copy** is there for exactly that, and for the rest:
+
+- **Changes** lists what you moved as a `-` line to find in `buildings.js` and a `+` line
+  to put in its place.
+- **Whole model** writes the lot as one `case` for `civic()`, which is the short way to a
+  new model: load the nearest thing to what you want, rearrange it, paste it under a new
+  name.
+
+Until you save, what you have moved lives in this browser: a reload comes back to the model
+you were working on with your changes still on it, switching models asks before it drops
+them, and closing the tab asks too. Two things stay out of reach of the editor itself: the
+houses in `houseBody()` are drawn per tier with a little randomness, so they are shown but
+not composed here, and the one piece that is turned after it is placed -- the awning on the
+guide shed -- says so rather than pretending.
 
 ## Layout
 
@@ -502,10 +651,13 @@ serve.mjs       serve the island, push updates, rescan on a timer
 hooks/          the SessionStart / SessionEnd hook
 lib/            sources, incremental parsing, the village model, plot layout
 lib/access.mjs  who may do what: the keeper, a visitor, or nobody
+lib/garden.mjs  the purse, the seed pouch and every bed that has been sown
 lib/ws.mjs      a small WebSocket server, hand-written, no dependency
 lib/players.mjs who is walking the island right now
 lib/neighbours  the UDP beacon that finds other islands on the network
 lib/guestview   the island as a visitor is allowed to see it
+lib/sprint.mjs  the Jira sprint behind the cork board
+lib/issues.mjs  the GitHub issues behind the island's own board, read through gh
 shared/         the island generator, shared by Node and the browser
 web/            the viewer (three.js, no build step)
 data/           generated; safe to delete
@@ -521,6 +673,8 @@ terrain on load and warns in the console if the two ever disagree.
   start the village from now, or set it to an ISO date to include earlier sessions.
 - **Rename the island** or move the founding date: edit `config.json`.
 - **Start over**: delete `data/` and rescan. Houses will be placed afresh.
+- **The garden** is in `data/garden.json`, which the scanner never touches — but it is
+  still under `data/`, so deleting that takes the purse, the pouch and every bed with it.
 - **A house never moves.** `data/layout.json` records where every building stands and is
   only ever added to, so the town you know stays the town you know.
 - **Turn it off**: remove the two `Settlers` entries from `hooks` in

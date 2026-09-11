@@ -292,8 +292,11 @@ export function createProps({ scene, terrain, material }) {
     }
   }
 
-  // Circles the walker cannot step into. A fence is a line rather than a blob, so it
-  // gets one small circle per post instead of a single circle swallowing the field.
+  // What the walker cannot step into, in the shape walk mode reads: axis aligned
+  // rectangles, like the solids of a building. A round shape becomes a square of its own
+  // radius, which at the size of a tree is a difference nobody walks into. A fence is a
+  // line rather than a blob, so it gets one small square per post instead of a single
+  // one swallowing the field.
   function blockers() {
     const out = [];
     for (const rec of records.values()) {
@@ -303,13 +306,15 @@ export function createProps({ scene, terrain, material }) {
       if (shape.run && p.kind === 'fence') {
         const len = Math.max(1, p.length || 4);
         const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+        const h = shape.run * scale;
         for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
-          out.push({ x: p.x + s * t, z: p.z + c * t, r: shape.run * scale, id: p.id });
+          out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h, id: p.id });
         }
         continue;
       }
       if (!shape.r) continue;                        // a bridge is walked over, not around
-      out.push({ x: p.x, z: p.z, r: shape.r * scale, id: p.id });
+      const h = shape.r * scale;
+      out.push({ x: p.x, z: p.z, hx: h, hz: h, id: p.id });
     }
     return out;
   }

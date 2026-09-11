@@ -15,6 +15,7 @@ import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
+import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon } from './horizon.js';
@@ -24,8 +25,14 @@ import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
+import { createCrops } from './crops.js';
+import { createMarket, answerOf } from './market.js';
 import { createThink } from './think.js';
+import { createAvatarStudio } from './studio.js';
+import { loadAvatar } from './avatar.js';
+import { createWaitingFlags } from './waiting.js';
 import { createGamepad, BTN } from './gamepad.js';
+import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -189,6 +196,7 @@ async function openBoardWithoutIsland() {
       .filter((b) => (b.kind === 'house' || b.kind === 'camp') && b.cwd)
       .map((b) => ({
         id: b.id, name: b.name, cwd: b.cwd, model: b.model,
+        skills: b.skills || {},
         jira: !!(b.skills && b.skills.jira),
         modelLabel: (PALETTE[b.style] || PALETTE.unknown).name,
         districtName: (districts.get(b.district) || {}).name || null,
@@ -233,8 +241,13 @@ const state = {
   hover: null, selected: null, intro: null, tween: null, live: 'live',
   queue: [], running: false, flags: null, particles: null,
   walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
+  // The room you are standing in, if any. Walking and being indoors are not two modes:
+  // you are still on foot, the room simply owns the camera and the keyboard while you
+  // are in it.
+  inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   props: null, think: null,
+  crops: null, market: null, garden: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -307,12 +320,33 @@ function interactables() {
     const p = rec.group.position;
     if (rec.spec.civicType === 'board') {
       out.push({ id: rec.id, kind: 'board', x: p.x, z: p.z, r: 3.0, label: rec.spec.title || 'the sprint board' });
+    } else if (rec.spec.civicType === 'issues') {
+      out.push({ id: rec.id, kind: 'issues', x: p.x, z: p.z, r: 3.0, label: rec.spec.title || 'the island board' });
     } else if (rec.spec.civicType === 'office') {
       out.push({ id: rec.id, kind: 'office', x: p.x, z: p.z, r: 2.4, label: rec.spec.name });
     } else if (rec.spec.civicType === 'townhall') {
       out.push({ id: rec.id, kind: 'townhall', x: p.x, z: p.z, r: 3.2, label: 'the town hall' });
+    } else if (rec.spec.civicType === 'market') {
+      out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
+    } else if (rec.spec.civicType === 'tavern') {
+      out.push({
+        id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
+        label: 'the tavern', prompt: 'step into the tavern',
+      });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
+    }
+  }
+  // The vegetable beds. `label` names the place, for the panel and for "where am I";
+  // the prompt above the keys counts the last minutes down on its own.
+  if (state.crops) {
+    for (const bed of state.crops.list()) {
+      const c = CROPS[bed.kind];
+      out.push({
+        id: bed.id, kind: 'bed', crop: bed.kind, ripeAt: bed.ripeAt,
+        x: bed.x, z: bed.z, r: 1.1,
+        label: `a bed of ${c ? c.plural : bed.kind}`,
+      });
     }
   }
   return out;
@@ -361,7 +395,10 @@ function whatIsNear(w) {
   }
   if (best) return best;
   const p = state.props && state.props.nearest(w.pos.x, w.pos.z, 5);
-  return p ? (p.label || `a ${p.kind}`) : null;
+  if (p) return p.label || `a ${p.kind}`;
+  const bed = state.crops && state.crops.nearest(w.pos.x, w.pos.z, 4);
+  if (bed) return `a bed of ${(CROPS[bed.kind] || {}).plural || bed.kind}`;
+  return null;
 }
 
 // --------------------------------------------------------------- having a thought
@@ -395,6 +432,202 @@ async function refreshProps({ animate = true } = {}) {
   }
 }
 
+// --------------------------------------------------------------- market gardening
+// The purse and the pouch belong to whoever lives here, so the keeper reads the whole
+// garden and a visitor reads only the beds - shapes and places, like the props.
+let gardenComplaint = false;
+async function refreshGarden({ animate = true } = {}) {
+  if (!state.crops) return;
+  try {
+    if (state.guest) {
+      const body = await answerOf(await fetch('/api/crops', { cache: 'no-store' }));
+      state.crops.apply(body.crops || [], { animate });
+    } else {
+      const garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
+      state.garden = garden;
+      state.crops.apply(garden.beds || [], { animate });
+    }
+    if (state.mode === 'walk') state.walk.setInteractables(interactables());
+  } catch (e) {
+    // Said once. A page whose island cannot answer for the garden would otherwise
+    // repeat itself on every update, and the thing to do about it does not change.
+    console.warn('the garden could not be read', e);
+    if (!gardenComplaint) {
+      gardenComplaint = true;
+      state.ui.toast(escapeHtml(e.message || 'the garden could not be read'));
+    }
+  }
+}
+
+// Every button and key that changes the garden comes through here, so a refusal is
+// worded once and the beds, the purse and the prompts are brought back into line
+// together.
+async function tend(body, said) {
+  if (keeperOnly('do the farming here')) return null;
+  try {
+    const answer = await answerOf(await fetch('/api/garden', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+    state.garden = answer.garden;
+    state.crops.apply(answer.garden.beds || [], { animate: true });
+    if (state.mode === 'walk') state.walk.setInteractables(interactables());
+    if (said) state.ui.toast(said(answer));
+    return answer;
+  } catch (e) {
+    state.ui.toast(escapeHtml(e.message || 'the island did not answer'));
+    return null;
+  }
+}
+
+// A bed goes in under the gardener's feet. Walk mode already refuses to let anyone
+// stand inside a wall, so the only thing left to check here is that a bed - which is
+// wider than a person - still fits; the island itself judges the ground.
+function sowHere() {
+  if (state.mode !== 'walk') return;
+  if (keeperOnly('sow a bed on this island')) return;
+  const w = state.walk.state;
+  const g = state.garden;
+  if (!g || !g.held) {
+    state.ui.toast(g && Object.keys(g.seeds || {}).length
+      ? 'No seed in hand. <b>Q</b> takes the next kind out of the pouch.'
+      : 'Nothing to sow. The seed stall at the market sells turnip seed.');
+    return;
+  }
+  const x = w.pos.x, z = w.pos.z;
+  if (!state.walk.roomFor(x, z, BED_SIZE / 2 + 0.1)) {
+    state.ui.toast('There is no room for a bed here. Try a step into the open.');
+    return;
+  }
+  const c = CROPS[g.held];
+  tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
+}
+
+// Which seed is in hand, one press at a time, in the order the stall lists them.
+function nextSeed() {
+  if (keeperOnly('go through this island’s seed pouch')) return;
+  const g = state.garden;
+  const have = g ? CROP_KINDS.filter((k) => (g.seeds || {})[k]) : [];
+  if (!have.length) { state.ui.toast('The pouch is empty. The stall at the market sells seed.'); return; }
+  const next = have[(have.indexOf(g.held) + 1) % have.length];
+  tend({ op: 'hold', kind: next }, () => `<b>${escapeHtml(CROPS[next].name)}</b> seed in hand — ${(g.seeds || {})[next]} left.`);
+}
+
+function pullBed(id) {
+  const bed = state.crops && state.crops.list().find((b) => b.id === id);
+  if (!bed) return;
+  if (!bed.ripe) { state.ui.toast(`Another ${escapeHtml(ripeIn(bed.leftMs))} for those.`); return; }
+  tend({ op: 'harvest', id }, (a) => {
+    const c = CROPS[a.kind];
+    return `${a.count} ${escapeHtml(a.count === 1 ? c.name.toLowerCase() : c.plural)} in the basket. The stall at the market buys them.`;
+  });
+}
+
+function digBed(id) {
+  tend({ op: 'dig', id }, (a) => `The ${escapeHtml(CROPS[a.kind].name.toLowerCase())} bed is turned back over.`);
+}
+
+// What the strip along the bottom says while you walk. The ripe count is recounted
+// here rather than taken from the island: beds come ready while you are standing in
+// the field, and nothing needs to be asked of the server when they do.
+function pouch() {
+  const g = state.garden;
+  if (!g) return null;
+  const c = CROPS[g.held];
+  return {
+    purse: g.purse,
+    seeds: g.seeds || {},
+    held: g.held,
+    heldName: c ? c.name : g.held,
+    ripe: state.crops ? state.crops.list().filter((b) => b.ripe).length : 0,
+  };
+}
+
+function openMarket() {
+  if (keeperOnly('trade at the seed stall')) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.market.open();
+}
+
+// What the keys do while you are out on the island. Lifted out of `enterWalk` because
+// stepping back out of a room re-enters walk mode, and a second copy of this list would
+// drift away from the first one.
+function walkCallbacks() {
+  return {
+    onInteract: (it) => {
+      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open('jira'); }
+      else if (it.kind === 'issues') { if (keeperOnly('read the island board')) return; state.walk.setPaused(true); state.board.open('github'); }
+      else if (it.kind === 'office') openOffice(it.id);
+      else if (it.kind === 'townhall') openTownHall();
+      else if (it.kind === 'market') openMarket();
+      else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'bed') pullBed(it.id);
+      else talkTo(it.id);
+    },
+    onSendAway: (it) => {
+      if (it.kind === 'bed') { digBed(it.id); return; }
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'tavern'].includes(it.kind)) askToSendAway(it.id);
+    },
+    onThink: () => openThink(),
+    onPlant: () => sowHere(),
+    onNextSeed: () => nextSeed(),
+    onExit: () => exitWalk(),
+  };
+}
+
+// --------------------------------------------------------------- stepping inside
+// A room is built the first time you visit it and kept afterwards: its walk mode hangs
+// listeners on the window, so a fresh one per visit would pile them up.
+const rooms = new Map();
+let cameFrom = null;
+
+function enterInterior(room, at) {
+  if (state.inside || state.mode !== 'walk') return;
+  let inside = rooms.get(room);
+  if (!inside) {
+    try {
+      inside = createInterior({
+        room, camera, material: buildingMat, dom: renderer.domElement,
+        onLeave: () => leaveInterior(),
+      });
+    } catch (e) {
+      console.error('that room could not be built', e);
+      state.ui.toast('That door does not open yet.');
+      return;
+    }
+    rooms.set(room, inside);
+  }
+  // Where to put you back down, and what to face when you get there: the door you just
+  // walked through.
+  const w = state.walk.state;
+  cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
+  state.walk.exit();
+  state.inside = inside;
+  inside.enter({ avatar: loadAvatar() });
+  state.ui.setIndoors(true);
+  state.ui.setWalkPrompt(null);
+  if (state.net) state.net.setWalking(false);   // nobody out on the island can see you in here
+}
+
+function leaveInterior() {
+  if (!state.inside) return;
+  state.inside = null;
+  state.ui.setIndoors(false);
+  state.ui.setWalkPrompt(null);
+  if (state.net) state.net.setWalking(true);
+  // Still on foot: walk mode picks up again on the step outside the door.
+  state.walk.enter({
+    at: (cameFrom && cameFrom.at) || [0, 0],
+    facing: cameFrom && cameFrom.facing,
+    blockers: walkableBlockers(),
+    interactables: interactables(),
+    ...walkCallbacks(),
+  });
+  reportWhere({ final: true });
+}
+
 function enterWalk() {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
@@ -420,15 +653,7 @@ function enterWalk() {
     facing,
     blockers: walkableBlockers(),
     interactables: interactables(),
-    onInteract: (it) => {
-      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open(); }
-      else if (it.kind === 'office') openOffice(it.id);
-      else if (it.kind === 'townhall') openTownHall();
-      else talkTo(it.id);
-    },
-    onSendAway: (it) => { if (it.kind !== 'board' && it.kind !== 'townhall' && it.kind !== 'office') askToSendAway(it.id); },
-    onThink: () => openThink(),
-    onExit: () => exitWalk(),
+    ...walkCallbacks(),
   });
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
 }
@@ -437,6 +662,14 @@ function foundSettler() {
   if (keeperOnly('send for a new settler')) return;
   if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.newSettler.open();
+}
+
+// Dressing the settler you walk as. Anyone may do it - it is your own look, on your own
+// screen, and touches nothing that belongs to the island - so it is not behind keeperOnly.
+function openStudio() {
+  if (!state.studio || state.studio.isOpen()) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.studio.open();
 }
 
 // The town hall keeps the register of every session this machine remembers.
@@ -536,6 +769,14 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
+  // Straight from a bar stool to the sky: leave the room on the way out, or the island
+  // would still believe you were indoors when you next came down.
+  if (state.inside) {
+    const room = state.inside;
+    state.inside = null;
+    room.leave();
+    state.ui.setIndoors(false);
+  }
   state.mode = 'orbit';
   if (state.net) state.net.setWalking(false);
   state.walk.setPeerBlockers([]);
@@ -892,6 +1133,7 @@ function buildScene(village) {
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
+  state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
 
@@ -957,6 +1199,32 @@ function titleCaseName(s) {
     .join(' ');
 }
 
+// Where a hamlet's road leaves its land - the gate the welcome sign stands over. Derived
+// rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
+// on the wire, and the parcel says which of them are still on the hamlet's own ground.
+// Deriving it also means the chronicle gets it for nothing, because it filters the roads
+// it hands down and the gate follows whatever road is there.
+function gateOf(village, d, li, lobe) {
+  const lat = village.island && village.island.lattice;
+  const road = (village.paths || []).find((r) => r.id === `road:${d.id}:${li}`);
+  if (!lat || !road || road.cells.length < 2 || !lobe.parcel) return null;
+  const own = new Set();
+  const p = lobe.parcel;
+  for (let r = 0; r < p.h; r++) {
+    for (let c = 0; c < p.w; c++) if ((p.rows[r] || '')[c] === '1') own.add(`${p.i0 + c},${p.j0 + r}`);
+  }
+  const mine = ([gx, gz]) => own.has(
+    `${Math.floor((gx - lat.anchor[0]) / lat.pitch)},${Math.floor((gz - lat.anchor[1]) / lat.pitch)}`);
+  // The road starts inside and walks out, so the gate is the step where that stops
+  // being true - and if it never was, the first cell is close enough to the edge.
+  for (let i = 0; i < road.cells.length - 1; i++) {
+    if (mine(road.cells[i]) && !mine(road.cells[i + 1])) {
+      return { at: road.cells[i], next: road.cells[i + 1] };
+    }
+  }
+  return { at: road.cells[0], next: road.cells[1] };
+}
+
 function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
@@ -979,22 +1247,29 @@ function syncHamlets(village) {
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
       live.add(key);
-      const [gx, gz] = lobe.green || d.center;
+      // Over the road where it leaves the hamlet's land, square to it, so you read the
+      // name walking through rather than passing a placard in a field. The green it used
+      // to stand on is gone.
+      const gate = gateOf(village, d, li, lobe);
+      const [gx, gz] = gate ? gate.at : (lobe.green || d.center);
       const [x, z] = terrain.cellWorld(gx, gz);
-      const half = ((lobe.size || 3) - 1) / 2;
-      // On the green's edge facing away from its own middle, so it does not stand in the
-      // way of the well and the settlers who gather there.
-      const sx = x, sz = z + half + 0.2;
+      const sx = x, sz = z;
+      const along = gate ? Math.abs(gate.next[0] - gate.at[0]) > Math.abs(gate.next[1] - gate.at[1]) : false;
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name) { have.group.position.y = groundAt(sx, sz); continue; }
+      if (have && have.text === d.name && have.along === along) {
+        have.group.position.set(sx, groundAt(sx, sz), sz);
+        continue;
+      }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
-        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 0.95, posts: 2,
+        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
       });
+      // The arch straddles the road: its posts sit either side of the way through.
+      sign.group.rotation.y = along ? Math.PI / 2 : 0;
       sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, along, popped: !have });
     }
   }
   for (const [key, rec] of [...hamletSigns]) {
@@ -1329,6 +1604,7 @@ function applyVillage(next, { animate }) {
   // without this a changed island would keep the landscape drawn for the old one.
   shownKey = null;
   applyVisibility();
+  refreshWaitingFlags();
   refreshUI();
   if (state.walk && state.mode === 'walk') {
     state.walk.setBlockers(walkableBlockers());
@@ -1468,6 +1744,19 @@ async function sailIn(rec, district) {
 }
 
 // --------------------------------------------------------------- UI wiring
+// A pole over every house whose session has stopped and is waiting on a person.
+function refreshWaitingFlags() {
+  if (!state.waitingFlags) return;
+  const entries = [];
+  for (const rec of state.byId.values()) {
+    const w = rec.spec && rec.spec.waiting;
+    if (!w || !rec.group.visible) continue;
+    const p = rec.group.position;
+    entries.push({ id: rec.id, x: p.x, y: p.y, z: p.z, height: rec.built.height + 0.15, asked: !!w.asked });
+  }
+  state.waitingFlags.update(entries);
+}
+
 function refreshUI() {
   const v = state.village;
   state.ui.setVillage(v);
@@ -1481,7 +1770,18 @@ function refreshUI() {
       where: b.kind === 'shed' ? `${b.agentType} apprentice` : (state.districts.get(b.district) || {}).name || 'Somewhere',
       since: humanSince(now - new Date(b.startedAt).getTime()),
     }));
-  state.ui.setBuilding(list);
+  // Anyone who has stopped and is waiting on you, questions first, then whoever has
+  // been standing there longest.
+  const waiting = v.buildings
+    .filter((b) => b.waiting)
+    .sort((a, b) => (b.waiting.asked ? 1 : 0) - (a.waiting.asked ? 1 : 0) || b.waiting.quietFor - a.waiting.quietFor)
+    .map((b) => ({
+      id: b.id, name: b.name,
+      asked: !!b.waiting.asked,
+      question: b.waiting.question,
+      since: humanSince(b.waiting.quietFor),
+    }));
+  state.ui.setBuilding(list, waiting);
   if (state.selected) {
     const spec = specById(v).get(state.selected);
     if (spec) state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
@@ -1621,9 +1921,14 @@ function frame(nowMs) {
   }
 
   // ---- walking ------------------------------------------------------------
-  if (state.mode === 'walk') {
+  if (state.inside) {
+    const w = state.inside.update(dt);
+    state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
+  } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
   }
 
@@ -1654,14 +1959,18 @@ function frame(nowMs) {
   const month = new Date(timeNow()).getMonth();
   if (state.world) {
     state.world.update(dt, hour, month);
-    buildingMat.userData.uniforms.uNight.value = state.world.state.night;
+    // The island keeps its clock while you are indoors - it is the same afternoon when
+    // you come back out - but a room with its shutters closed does not brighten at noon.
+    buildingMat.userData.uniforms.uNight.value = state.inside ? INDOOR_GLOW : state.world.state.night;
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) state.settlers.update(dt, state.world ? state.world.state.night : 0);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
+  if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
+  if (state.crops) state.crops.update(dt);
 
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
@@ -1701,7 +2010,7 @@ function frame(nowMs) {
 
   if (state.mode !== 'walk') updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
-  renderer.render(scene, camera);
+  renderer.render(state.inside ? state.inside.scene : scene, camera);
 }
 
 function updateLabels() {
@@ -1891,6 +2200,24 @@ async function boot() {
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
+    onMarket: () => openMarket(),
+    onCustomize: () => openStudio(),
+  });
+
+  state.market = createMarket(document.body, {
+    onChange: (g) => {
+      state.garden = g;
+      if (state.crops) state.crops.apply(g.beds || [], { animate: true });
+      if (state.mode === 'walk') state.walk.setInteractables(interactables());
+    },
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+  });
+
+  state.studio = createAvatarStudio(document.body, {
+    // Re-dress the avatar the instant a swatch is picked, so if you are already walking
+    // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
+    onApply: (spec) => { if (state.walk) state.walk.setAvatar(spec); },
+    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
   state.townHall = createTownHall(document.body, {
@@ -1914,6 +2241,7 @@ async function boot() {
       .filter((b) => b.kind === 'house' || b.kind === 'camp')
       .map((b) => ({
         id: b.id, name: b.name, cwd: b.cwd, model: b.model,
+        skills: b.skills || {},
         jira: !!(b.skills && b.skills.jira),
         modelLabel: (PALETTE[b.style] || PALETTE.unknown).name,
         districtName: (state.districts.get(b.district) || {}).name || null,
@@ -1990,6 +2318,8 @@ async function boot() {
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   refreshProps({ animate: false });
+  state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });
+  refreshGarden({ animate: false });
   applyVillage(village, { animate: false });
   setLiveMode();
   // Arriving from a neighbour replaces the usual opening sweep with a landing.
@@ -2015,6 +2345,8 @@ function connect() {
     es.addEventListener('open', () => { if (state.chronicle.t == null) state.ui.setLive('live'); });
     // Something was built by hand, most likely by a thought somebody had while walking.
     es.addEventListener('props', debounce(() => refreshProps({ animate: true }), 150));
+    // A bed was sown, pulled or dug up - by another open page, or by whoever is walking.
+    es.addEventListener('garden', debounce(() => refreshGarden({ animate: true }), 150));
     // The server can ask for a reload after its own code changed underneath us.
     es.addEventListener('reload', () => location.reload());
     // Somebody on the network raised or struck their flag. Only the keeper is sent this.

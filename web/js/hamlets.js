@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash32 } from 'shared/rng.mjs';
+import { TIER_INDEX } from './buildings.js';
 
 export const NONE = -1, TOWN = -2;
 
@@ -71,61 +72,100 @@ export function decodeOwnership(village, size) {
 // to 0.6, so a rigid box on a border cell floats or sinks visibly. `buildPaths` already
 // solves this for footpaths by sampling the ground per corner; a hedge does the same one
 // level up, chaining collinear edges into runs and following the ground along each.
-const VARIANTS = [
-  { kind: 'hedge', h: 0.38, t: 0.20, jitter: 0.06, base: 0x4a6b39, top: 0x5d8347 },
-  { kind: 'rail', h: 0.34, t: 0.09, jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
-  { kind: 'wall', h: 0.30, t: 0.26, jitter: 0.11, base: 0x8a857c, top: 0x9a958c },
-];
+//
+// The outline is closed. Every session of one project stands on that project's own land -
+// that is what a district is - and an unbroken boundary is what says so from the air. It
+// opens only where a road crosses, leaving two gateposts behind, so a hamlet is enclosed
+// but never sealed. A river needs no code here: where one runs along a parcel edge the
+// outward cell is not land, so the `isLand` test below drops that segment and the water
+// does the job - the same test that already stops a hedge running out into the sea.
 
-// A closed outline around every hamlet is what turns the island into a set of pens, and
-// measuring it says why: because parcels may never touch, *every* border faces open
-// countryside and none of them faces a neighbour. So each hedge was a village fencing
-// itself off from an empty field, in unbroken runs up to twenty cells long.
+// What a hamlet puts up is its own standing rather than a die roll, and it is read off
+// the houses inside it: tent 0 through keep 5, averaged. Sheds belong to apprentices and
+// civic lots to the town, so neither has a say in the wall.
 //
-// Broken into lengths with gaps between them the same boundary reads as hedgerow: you
-// can still see where a hamlet's land ends, but nothing is enclosed. `GAP` is the share
-// of the outline left open; lengths are three to seven cells so the gaps are openings
-// rather than dashes.
+//   tents and huts    post and rail, thin enough to step over
+//   cottages          a hedge, grown thick enough to stop a sheep
+//   houses and above  dry stone, and the grander the houses the wider it gets
 //
-// A river is the other half of the answer, and it needs no code here: where one runs
-// along a parcel edge the outward cell is not land - the lip of a flooded valley shares
-// two corners with the water - so the `isLand` test below skips that segment, the same
-// test that already stops a hedge from running out into the sea. Measured over six
-// crowded islands, 45 segments come off the outline that way. Water is a boundary with
-// something on the other side of it, which is what a hedge was only pretending to be.
-const GAP = 34;
-function lengths(k, axis, fixed, from, to) {
-  const out = [];
-  let a = from;
-  while (a < to) {
-    const h = hash32(`${k}:${axis}:${fixed}:${a}`);
-    const len = 3 + (h % 5);
-    const b = Math.min(to, a + len);
-    if ((h >> 8) % 100 >= GAP) out.push([a, b]);
-    a = b;
+// Thickness ramps within a material as well as between them, and never doubles back at a
+// rung - it is the one number that only ever grows, sevenfold from end to end, so a
+// village of manors is visibly heavier than one of plain houses. Height follows at half
+// that rate: enough to keep a wall taller than it is wide, which is the difference
+// between a rampart and a very long bench.
+const BOUNDARY = [
+  { kind: 'rail', to: 1.2, h: [0.30, 0.34], t: [0.07, 0.14], jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
+  { kind: 'hedge', to: 2.8, h: [0.36, 0.46], t: [0.16, 0.30], jitter: 0.06, base: 0x4a6b39, top: 0x5d8347 },
+  { kind: 'wall', to: 5.0, h: [0.42, 0.56], t: [0.32, 0.50], jitter: 0.11, base: 0x8a857c, top: 0x9a958c },
+];
+const HEAVIEST = BOUNDARY[BOUNDARY.length - 1];
+const mix = ([a, b], f) => a + (b - a) * f;
+
+// Weight 0 - a parcel claimed but not yet built on - gets the lightest fence there is.
+function variantAt(weight) {
+  const w = Math.max(0, Math.min(HEAVIEST.to, Number(weight) || 0));
+  let from = 0;
+  for (const b of BOUNDARY) {
+    if (w < b.to || b === HEAVIEST) {
+      const f = Math.max(0, Math.min(1, (w - from) / (b.to - from)));
+      return { kind: b.kind, h: mix(b.h, f), t: mix(b.t, f), jitter: b.jitter, base: b.base, top: b.top };
+    }
+    from = b.to;
   }
+}
+
+// Weighed by the ground a house actually stands on rather than by the district it belongs
+// to on paper: a settler the island had no room for lodges on the commons, and it is the
+// town's own wall that has to answer for that one.
+function weighHouses(village, owner, size) {
+  const sum = new Map(), n = new Map();
+  for (const b of village.buildings || []) {
+    const t = TIER_INDEX[b.tier];
+    if (!(t >= 0) || !b.plot) continue;
+    const gx = b.plot.gx + ((b.plot.w || 1) >> 1), gz = b.plot.gz + ((b.plot.d || 1) >> 1);
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+    const k = owner[gx + gz * size];
+    if (k === NONE) continue;
+    sum.set(k, (sum.get(k) || 0) + t);
+    n.set(k, (n.get(k) || 0) + 1);
+  }
+  const out = new Map();
+  for (const [k, s] of sum) out.set(k, s / n.get(k));
   return out;
 }
-export const variantOf = (id) => VARIANTS[hash32(String(id)) % VARIANTS.length];
 
 export function buildBorders(village, terrain, owner, roadCells) {
   const size = terrain.size;
   const isRoad = (gx, gz) => roadCells.has(gx + gz * size);
   const ownerAt = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : owner[gx + gz * size]);
 
-  // One run per (owner, orientation, fixed coordinate): collect, then split on gaps.
+  // What every owner on this island puts up, measured once: a run asks for its own.
+  const weight = weighHouses(village, owner, size);
+  const variants = new Map();
+  const variantFor = (k) => {
+    if (!variants.has(k)) variants.set(k, variantAt(weight.get(k) || 0));
+    return variants.get(k);
+  };
+
+  // One run per (owner, orientation, fixed coordinate), each an unbroken length of edge.
   const runs = new Map();
   const posts = [];
   for (let gz = 0; gz < size; gz++) {
     for (let gx = 0; gx < size; gx++) {
       const k = ownerAt(gx, gz);
-      if (k === NONE) continue;
+      // The town puts up no hedge. A hamlet's edge says whose land you are standing on,
+      // which is worth drawing; the commons is simply the middle of the island, and a
+      // fence around it reads as a boundary between nothing and nothing - clearest on an
+      // early island, where it was one long line across empty grass.
+      if (k === NONE || k === TOWN) continue;
       for (const [dx, dz] of N4) {
         const nx = gx + dx, nz = gz + dz;
         if (ownerAt(nx, nz) === k) continue;
         // Two owners meeting would draw the hedge twice; the lower index draws it.
         const no = ownerAt(nx, nz);
-        if (no !== NONE && no < k) continue;
+        // The lower index draws a shared edge - but the town draws nothing now, so a
+        // hamlet meeting the commons has to put up its own side or the run breaks there.
+        if (no !== NONE && no !== TOWN && no < k) continue;
         // The coast is its own boundary, and a hedge over water looks like a mistake.
         if (!terrain.isLand(nx, nz)) continue;
         // Where a road crosses, the hedge opens and leaves two gateposts behind.
@@ -143,15 +183,13 @@ export function buildBorders(village, terrain, owner, roadCells) {
   const parts = [];
   const hueOf = (k) => (k === TOWN ? null : (village.districts[k] || {}).hue);
   for (const run of runs.values()) {
-    const v = variantOf(run.k === TOWN ? 'town' : (village.districts[run.k] || {}).id || 'x');
+    const v = variantFor(run.k);
     run.at.sort((a, b) => a - b);
     let start = null, prev = null;
     const flush = () => {
       if (start === null) return;
-      for (const [a, b] of lengths(run.k, run.axis, run.fixed, start, prev + 1)) {
-        const g = strip(terrain, run.axis, run.fixed, a, b, v, hueOf(run.k));
-        if (g) parts.push(g);
-      }
+      const g = strip(terrain, run.axis, run.fixed, start, prev + 1, v, hueOf(run.k));
+      if (g) parts.push(g);
     };
     for (const a of run.at) {
       if (prev !== null && a !== prev + 1) { flush(); start = a; }
@@ -161,7 +199,7 @@ export function buildBorders(village, terrain, owner, roadCells) {
     flush();
   }
   for (const [gx, gz, dx, dz, k] of posts) {
-    const v = variantOf(k === TOWN ? 'town' : (village.districts[k] || {}).id || 'x');
+    const v = variantFor(k);
     const axis = dx !== 0 ? 'x' : 'z';
     const fixed = dx !== 0 ? gx + (dx > 0 ? 1 : 0) : gz + (dz > 0 ? 1 : 0);
     const along = dx !== 0 ? gz : gx;
@@ -226,7 +264,10 @@ function post(terrain, axis, fixed, at, v) {
   const half = terrain.half;
   const x = axis === 'x' ? fixed - half : at - half;
   const z = axis === 'x' ? at - half : fixed - half;
-  const g = new THREE.BoxGeometry(0.13, v.h + 0.18, 0.13);
+  // A gatepost is as stout as the thing it holds up, or the gateway into a walled village
+  // would be two twigs either side of the road.
+  const w = Math.max(0.13, v.t * 0.8);
+  const g = new THREE.BoxGeometry(w, v.h + 0.18, w);
   g.translate(x, terrain.worldHeight(x, z) + (v.h + 0.18) / 2 - 0.05, z);
   const c = tmpColor.setHex(v.kind === 'wall' ? 0x8a857c : 0x6b4a2f);
   const col = new Float32Array(g.attributes.position.count * 3);

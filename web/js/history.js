@@ -3,8 +3,9 @@
 // Buildings have always known how to rewind: each carries its own `startedAt` and the
 // viewer hides the ones that had not been built. Land knew nothing. Scrub back to the
 // founding day and the houses went, but the roads still ran between the empty plots, the
-// plaza was still seven cells across, and every hamlet still had its hedges, its fields
-// and its name sign - a countryside laid out for a village that did not exist yet.
+// plaza was still paved to its full width, and every hamlet still had its hedges, its
+// fields, its green and its name sign - a finished countryside laid out for a village
+// that did not exist yet, with roads leading to nothing.
 //
 // Nothing here draws anything. It projects the village onto an earlier moment and hands
 // the result to the same functions that already build the landscape from a village -
@@ -145,6 +146,23 @@ export function projectVillage(village, t) {
   const paved = (town.paved || []).filter(([gx, gz]) =>
     Math.abs(gx - centre[0]) <= half && Math.abs(gz - centre[1]) <= half);
 
+  // The town commons is owned land too, and forgetting it was visible: 59 super-cells of
+  // it were stamped from the founding day on, which is what drew hedges around the
+  // centre and planted fields inside them before anybody lived there. Its core - the
+  // plaza and the civic lots, `coreR` across - was there from the start; everything
+  // beyond that was grown a cell at a time as guests arrived, so that part is trimmed
+  // like a hamlet's.
+  const coreR = town.coreR == null ? 2 : town.coreR;
+  const core = (2 * coreR + 1) * (2 * coreR + 1);
+  const settlersNow = (village.stats && village.stats.settlers) || 0;
+  let settlersThen = 0;
+  for (const n of pop.values()) settlersThen += n;
+  const townShare = settlersNow > 0 ? settlersThen / settlersNow : 1;
+  const townTotal = town.parcel ? cellsOf(town.parcel).length : 0;
+  const townKeep = Math.min(townTotal, core + Math.round(Math.max(0, townTotal - core) * townShare));
+  const townParcel = trimParcel(town.parcel, townKeep, superOf(lat, centre[0], centre[1]));
+  parts.push(`t${townKeep}`);
+
   const dates = pathDates(village);
   const paths = (village.paths || []).filter((p) => {
     const at = dates.get(p.id);
@@ -154,15 +172,25 @@ export function projectVillage(village, t) {
   const buildings = (village.buildings || []).filter((b) => +new Date(b.startedAt) <= t);
   const nP = poldersAt(village, t);
 
+
+  // The countryside's ploughed strips and orchards are planned from the terrain seed on
+  // land nobody owns, so they stood at full spread on the founding day - an island with
+  // one house on it and every field already turned. They are the village's work as much
+  // as its roads are, so their spread arrives with it. `planFields` keeps or drops a
+  // field by comparing a per-cell hash against the coverage, so a lower one is a subset
+  // of a higher one: fields appear where they will end up, rather than shuffling about.
+  const farmShare = townShare;
+
   return {
-    key: `${nP}|${size}|${paths.length}|${parts.join(',')}`,
+    key: `${nP}|${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
     polders: nP,
     village: {
       ...village,
       buildings,
       districts,
       paths,
-      island: { ...village.island, town: { ...town, paved } },
+      farmShare,
+      island: { ...village.island, town: { ...town, paved, parcel: townParcel } },
     },
   };
 }

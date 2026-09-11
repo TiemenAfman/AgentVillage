@@ -5,6 +5,19 @@
       "name": "settlers",
       "url": "http://localhost:4747",
       "autoPort": false
+    },
+    {
+      "name": "island-worktree",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve",
+        "--",
+        "--no-rescan",
+        "--no-open"
+      ],
+      "port": 4747,
+      "autoPort": true
     }
   ]
 }
