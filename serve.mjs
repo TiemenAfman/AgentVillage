@@ -813,7 +813,8 @@ async function handle(req, res) {
 
   const rel = p === '/' ? 'index.html'
     : p === '/demo' ? 'demo.html'          // the model sheet: every object on one field
-      : p.replace(/^\//, '');
+      : p === '/editor' ? 'editor.html'    // the workbench: pick a model apart and nudge it
+        : p.replace(/^\//, '');
   const f = safeJoin(WEB, rel);
   if (!f) { res.writeHead(400); res.end('Bad path'); return; }
   sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });

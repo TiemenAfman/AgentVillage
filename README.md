@@ -566,6 +566,42 @@ settler's middle actually stops, the same box grown by half a body -- so if two 
 rings touch, nobody fits between those two objects. It is the view that answers why
 something on the island cannot be walked past.
 
+## The workbench
+
+`http://localhost:4747/editor` is the model sheet with its hands free. Pick a model, click
+a piece, and drag the arrows or tap an arrow key to move it; the panel on the right hands
+back the line of code that says so, ready to paste into `web/js/buildings.js`.
+
+It works because every primitive in `buildings.js` notes its own call on the geometry it
+returns -- `box`, the three numbers, the colour, the placement. The merged mesh could never
+say that one of its faces used to be a door; a piece that remembers being
+`box(0.16, 0.26, 0.05, pal.accent, { z: 0.51 })` can. Ask `buildBuilding` for
+`{ keepParts: true }` and you get those pieces back, still in the space the code was
+written in.
+
+The pieces that keep coming back are named rather than repeated. `KIT` holds a window, a
+door, a bench, a table and a chair, each one a handful of primitives under a single name,
+and `windowsOn()`, `door()` and the bench on the square all reach for it. So a window
+picks up as a window instead of as the pane it happens to be, and **Add a piece** puts
+another one down wherever you are.
+
+Two ways out, both by way of the clipboard:
+
+- **Changes** lists what you moved as a `-` line to find in `buildings.js` and a `+` line
+  to put in its place. Where a piece came out of the kit or out of a shared helper there is
+  no `-` line to find, because the numbers in the file are worked out rather than written
+  down -- so it says which helper draws it, and that a change there is a change to every
+  house on the island.
+- **Whole model** writes the lot as one `case` for `civic()`, which is the short way to a
+  new model: load the nearest thing to what you want, rearrange it, paste it under a new
+  name.
+
+Nothing here writes to `buildings.js`. You copy the line and paste it, so the change goes
+through git like any other edit and nothing on the island moves behind your back. Two
+things stay out of reach: the houses in `houseBody()` are drawn per tier with a little
+randomness, so they are shown but not composed here, and the one piece that is turned
+after it is placed -- the awning on the guide shed -- says so rather than pretending.
+
 ## Layout
 
 ```

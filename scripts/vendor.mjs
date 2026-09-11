@@ -13,6 +13,7 @@ const files = [
   ['examples/jsm/controls/OrbitControls.js', 'addons/controls/OrbitControls.js'],
   ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],
   ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page only
+  ['examples/jsm/controls/TransformControls.js', 'addons/controls/TransformControls.js'],   // editor only
 
   ['LICENSE', 'LICENSE'],
 ];
