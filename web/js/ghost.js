@@ -193,6 +193,10 @@ export function createGhost({
     marks.length = 0;
   }
 
+  // The ghost is placed before the renderer runs too, and it is aimed at the ground mesh
+  // - which never moves, so last frame's matrix is this frame's. Only the props need the
+  // refresh above, because one can appear mid-frame.
+
   // ------------------------------------------------------------------ the wheel
   function onWheel(e) {
     if (!spec) return;
@@ -312,23 +316,37 @@ export function createGhost({
   }
 
   function updateTaking(got) {
-    clearMarks();
     target = null;
     const feet = player();
+    // This runs before the renderer does, so the matrices are last frame's - which is a
+    // frame too old for a prop that has only just arrived over the wire.
+    propsGroup.updateMatrixWorld(true);
     // Against the props themselves rather than a distance test, so a fence post as thin
     // as a finger is as easy to hit as a well. Every prop mesh already carries its id.
     const hit = got ? ray.intersectObjects(propsGroup.children, false)[0] : null;
+
+    // The overlays are pooled and re-pointed, never rebuilt: this runs every frame the
+    // mode is on, and a fresh mesh per prop per frame is a lot of rubbish for a tint.
+    let n = 0;
     for (const m of propsGroup.children) {
+      if (n >= marks.length && marks.length >= 24) break;
       if (feet && Math.hypot(m.position.x - feet.x, m.position.z - feet.z) > REACH) continue;
-      const mark = new THREE.Mesh(m.geometry, TAKE);
+      let mark = marks[n];
+      if (!mark) {
+        mark = new THREE.Mesh(m.geometry, TAKE);
+        mark.renderOrder = 3;
+        marks.push(mark);
+        scene.add(mark);
+      }
+      mark.geometry = m.geometry;   // shared with the real prop; never disposed here
       mark.position.copy(m.position);
       mark.rotation.copy(m.rotation);
       mark.scale.copy(m.scale).multiplyScalar(1.04);
-      mark.renderOrder = 3;
-      scene.add(mark);
-      marks.push(mark);
-      if (marks.length >= 24) break;
+      mark.visible = true;
+      n++;
     }
+    for (let i = n; i < marks.length; i++) marks[i].visible = false;
+
     if (hit && (!feet || Math.hypot(hit.object.position.x - feet.x, hit.object.position.z - feet.z) <= REACH)) {
       target = hit.object.userData.id || null;
     }
