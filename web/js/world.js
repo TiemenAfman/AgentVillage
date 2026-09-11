@@ -281,9 +281,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   oceanMat.transparent = false;
   oceanMat.depthWrite = true;
   const ocean = new THREE.Mesh(oceanGeo, oceanMat);
-  // Wave troughs reach -0.09, and this sheet rides the same ones, so it sits just under
-  // the patch rather than well below it: any deeper and the seam shows as a dark ring.
-  ocean.position.y = -0.06;
+  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
+  // disc carries the same wave, but with a vertex only at its centre and its rim it is
+  // flat where the patch is not, so the two do not dip together.
+  ocean.position.y = -0.2;
   ocean.renderOrder = 0;
   group.add(ocean);
 
@@ -780,8 +781,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     waterMat.uniforms.uSunDir.value.copy(dir);
     waterMat.uniforms.uSunColor.value.copy(d.key);
     waterMat.uniforms.uNight.value = d.night;
-    // The open sea shares these uniforms rather than a colour of its own, so it takes the
-    // sun and the nightfall from the lines above; there is nothing left to set here.
+    // The open sea used to be a plain colour that had to be dimmed by hand to follow the
+    // rest of the water into the evening. It shares these uniforms now, so it darkens on
+    // its own - one nightfall over the whole sea rather than two kept in step.
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
