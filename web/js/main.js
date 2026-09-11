@@ -31,7 +31,8 @@ import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
-import { createGamepad, BTN } from './gamepad.js';
+import { createGamepad } from './gamepad.js';
+import { createInput } from './input.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
 const params = new URLSearchParams(location.search);
@@ -240,7 +241,7 @@ const state = {
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
   hover: null, selected: null, intro: null, tween: null, live: 'live',
   queue: [], running: false, flags: null, particles: null,
-  walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
+  walk: null, board: null, chat: null, pad: null, input: null, padSeen: false, mode: 'orbit',
   // The room you are standing in, if any. Walking and being indoors are not two modes:
   // you are still on foot, the room simply owns the camera and the keyboard while you
   // are in it.
@@ -504,13 +505,14 @@ function sowHere() {
   tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
 }
 
-// Which seed is in hand, one press at a time, in the order the stall lists them.
-function nextSeed() {
+// Which seed is in hand, one press at a time, in the order the stall lists them. The
+// shoulder buttons go both ways round the pouch, so the step is a parameter.
+function cycleSeed(step) {
   if (keeperOnly('go through this island’s seed pouch')) return;
   const g = state.garden;
   const have = g ? CROP_KINDS.filter((k) => (g.seeds || {})[k]) : [];
   if (!have.length) { state.ui.toast('The pouch is empty. The stall at the market sells seed.'); return; }
-  const next = have[(have.indexOf(g.held) + 1) % have.length];
+  const next = have[(have.indexOf(g.held) + step + have.length) % have.length];
   tend({ op: 'hold', kind: next }, () => `<b>${escapeHtml(CROPS[next].name)}</b> seed in hand — ${(g.seeds || {})[next]} left.`);
 }
 
@@ -551,6 +553,13 @@ function openMarket() {
   state.market.open();
 }
 
+// Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
+// controller close all of them from one place instead of eight. Only one can be up at a
+// time in practice, so the first one found is the one holding the screen.
+const PANELS = () => [state.board, state.chat, state.think, state.market,
+  state.townHall, state.office, state.studio, state.newSettler];
+const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
+
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
 // stepping back out of a room re-enters walk mode, and a second copy of this list would
 // drift away from the first one.
@@ -572,7 +581,8 @@ function walkCallbacks() {
     },
     onThink: () => openThink(),
     onPlant: () => sowHere(),
-    onNextSeed: () => nextSeed(),
+    onNextSeed: () => cycleSeed(1),
+    onPrevSeed: () => cycleSeed(-1),
     onExit: () => exitWalk(),
   };
 }
@@ -1837,6 +1847,34 @@ const projected = new THREE.Vector3();
 
 // One bad frame must never stop the island: log it once and keep going.
 let frameErrors = 0;
+// The controller from up in the sky: right stick orbits, left stick pans, triggers zoom.
+// A drops you onto the island, B clears whatever panel is hanging over it.
+function orbitPad(a, dt) {
+  if (a.hit('walk') || a.hit('walkAlt')) { enterWalk(); return; }
+  if (a.hit('back')) state.ui.closeOverlays();
+  const look = a.look, move = a.move;
+  if (!(look.x || look.y || move.x || move.y || a.lt > 0.1 || a.rt > 0.1)) return;
+  const off = camera.position.clone().sub(controls.target);
+  const radius = off.length();
+  let theta = Math.atan2(off.x, off.z), phi = Math.acos(clamp(off.y / radius, -1, 1));
+  theta -= look.x * 1.7 * dt;
+  phi = clamp(phi + look.y * 1.2 * dt, 0.14, 1.34);
+  const r2 = clamp(radius * (1 + (a.lt - a.rt) * 1.1 * dt), controls.minDistance, controls.maxDistance);
+  // stick right slides along the camera's right, stick up slides away from the camera
+  const pan = radius * 0.5 * dt;
+  controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
+  controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
+  const wb = state.bounds;
+  controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
+  controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
+  camera.position.set(
+    controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
+    controls.target.y + r2 * Math.cos(phi),
+    controls.target.z + r2 * Math.sin(phi) * Math.cos(theta),
+  );
+  state.intro = null;
+}
+
 function tick(nowMs) {
   if (!contextLost) {
     try {
@@ -1855,45 +1893,8 @@ function frame(nowMs) {
   if (state.chronicle.playing) advanceChronicle(dt);
 
   // ---- controller ---------------------------------------------------------
-  const pad = state.pad ? state.pad.poll() : null;
-  if (pad) {
-    if (!state.padSeen) {
-      state.padSeen = true;
-      state.ui.toast(`Controller connected. <b>A</b> to walk the island.`);
-      state.ui.setPad(true);
-    }
-    if (state.board && state.board.isOpen()) {
-      state.board.pad(pad, dt);           // the stick drives a cursor over the cards
-    } else if (state.mode === 'walk') {
-      state.walk.pad(pad, dt);
-      if (pad.hit(BTN.B) || pad.hit(BTN.START)) exitWalk();
-    } else {
-      if (pad.hit(BTN.A) || pad.hit(BTN.START)) enterWalk();
-      // right stick orbits, left stick pans, triggers zoom
-      const look = pad.look, move = pad.move;
-      if (look.x || look.y || move.x || move.y || pad.lt > 0.1 || pad.rt > 0.1) {
-        const off = camera.position.clone().sub(controls.target);
-        const radius = off.length();
-        let theta = Math.atan2(off.x, off.z), phi = Math.acos(clamp(off.y / radius, -1, 1));
-        theta -= look.x * 1.7 * dt;
-        phi = clamp(phi + look.y * 1.2 * dt, 0.14, 1.34);
-        const r2 = clamp(radius * (1 + (pad.lt - pad.rt) * 1.1 * dt), controls.minDistance, controls.maxDistance);
-        // stick right slides along the camera's right, stick up slides away from the camera
-        const pan = radius * 0.5 * dt;
-        controls.target.x += (Math.cos(theta) * move.x + Math.sin(theta) * move.y) * pan;
-        controls.target.z += (-Math.sin(theta) * move.x + Math.cos(theta) * move.y) * pan;
-        const wb = state.bounds;
-        controls.target.x = clamp(controls.target.x, wb.minX - 3, wb.maxX + 3);
-        controls.target.z = clamp(controls.target.z, wb.minZ - 3, wb.maxZ + 3);
-        camera.position.set(
-          controls.target.x + r2 * Math.sin(phi) * Math.sin(theta),
-          controls.target.y + r2 * Math.cos(phi),
-          controls.target.z + r2 * Math.sin(phi) * Math.cos(theta),
-        );
-        state.intro = null;
-      }
-    }
-  }
+  // Who gets it is decided in input.js; here it is one line.
+  if (state.input) state.input.frame(dt);
 
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
@@ -2265,6 +2266,33 @@ async function boot() {
       state.ui.toast(`Controller ready: ${String(id).slice(0, 40)}`);
     },
   });
+
+  // Who the controller is talking to. First one that says it is up, wins - a panel over
+  // a room, a room over the island, the island over the sky.
+  state.input = createInput(state.pad, {
+    onFirstPad: () => {
+      state.padSeen = true;
+      state.ui.setPad(true);
+      state.ui.toast('Controller connected. <b>A</b> to walk the island.');
+    },
+  });
+  state.input.mode('panel', {
+    active: () => !!openPanel(),
+    handle: (a, dt) => {
+      const p = openPanel();
+      if (p.pad) p.pad(a, dt);              // the boards steer a cursor of their own
+      else if (a.hit('back')) p.close();    // everything else: B is the way out
+    },
+  });
+  state.input.mode('inside', {
+    active: () => !!state.inside,
+    handle: (a, dt) => state.inside.pad(a, dt),
+  });
+  state.input.mode('walk', {
+    active: () => state.mode === 'walk' && !state.inside,
+    handle: (a, dt) => state.walk.pad(a, dt),
+  });
+  state.input.mode('orbit', { active: () => true, handle: orbitPad });
 
   // Who are we here: the keeper of this island, or somebody visiting it? The page only
   // uses this to decide what to offer; the server refuses the rest either way.

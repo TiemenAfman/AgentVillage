@@ -2,6 +2,7 @@
 // the chronicle bar, the floating labels and the toasts.
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
+import { padKey } from './input.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -392,7 +393,9 @@ export function createUI(handlers) {
     const p = el('walk-confirm');
     if (!item) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'X' : 'X';
+    // On the pad there is no cancel to offer - B crouches - so the way out is to wait:
+    // the confirmation lapses on its own.
+    const key = padConnected ? padKey('walk', 'secondary') : 'X';
     p.innerHTML = `Send <b>${esc(item.name)}</b> off the island? `
       + `<span class="muted">Press ${key} again to confirm${padConnected ? '' : ', Esc to leave them be'}</span>`;
   }
@@ -408,7 +411,9 @@ export function createUI(handlers) {
     if (indoors) {
       el('walk-keys').innerHTML = padConnected
         ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-          + `<span class="lit"><kbd>A</kbd> sit down</span><span><kbd>B</kbd> step outside</span>`
+          + `<span class="lit"><kbd>${padKey('inside', 'interact')}</kbd> sit down</span>`
+          + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
+          + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
           + `<span>drag to look, double-click to hold the mouse</span>`
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
@@ -417,9 +422,12 @@ export function createUI(handlers) {
     }
     el('walk-keys').innerHTML = padConnected
       ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
-        + `<span><kbd>A</kbd> talk</span><span><kbd>Y</kbd> think</span><span><kbd>X</kbd> send away</span>`
-        + `<span class="lit"><kbd>D-pad ↑</kbd> sow</span><span><kbd>D-pad →</kbd> next seed</span>`
-        + `<span><kbd>RB</kbd> run</span><span><kbd>B</kbd> back to the sky</span>`
+        + `<span><kbd>${padKey('walk', 'interact')}</kbd> talk</span><span class="lit"><kbd>${padKey('walk', 'think')}</kbd> think</span>`
+        + `<span><kbd>${padKey('walk', 'secondary')}</kbd> send away</span>`
+        + `<span class="lit"><kbd>${padKey('walk', 'primary')}</kbd> sow</span>`
+        + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
+        + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
+        + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>Ctrl</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> think</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
@@ -455,7 +463,7 @@ export function createUI(handlers) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'A' : 'E';
+    const key = padConnected ? padKey(indoors ? 'inside' : 'walk', 'interact') : 'E';
     // Anything that carries its own wording says it itself. The rooms indoors do that: what
     // a bar stool offers depends on whether you are already sitting on it.
     once('walk-prompt', near.prompt ? `<b>${key}</b> ${esc(near.prompt)}`
@@ -483,7 +491,7 @@ export function createUI(handlers) {
     const p = el('walk-pouch');
     if (!garden) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'D-pad ↑' : 'P';
+    const key = padConnected ? padKey('walk', 'primary') : 'P';
     const held = garden.held && garden.seeds[garden.held];
     once('walk-pouch', `<span class="coins">${garden.purse} coins</span>`
       + (held
@@ -507,6 +515,8 @@ export function createUI(handlers) {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
+    // What B clears from up in the sky: neither of these is modal, so nothing else changes.
+    closeOverlays: () => { close('dossier'); close('legend'); },
   };
 }
 

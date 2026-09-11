@@ -141,6 +141,7 @@ export function createWalkMode({
     onThink: null,
     onPlant: null,
     onNextSeed: null,
+    onPrevSeed: null,
     onExit: null,
     moving: false,
     running: false,
@@ -158,6 +159,17 @@ export function createWalkMode({
     state.lying = false;
     state.sitting = null;
     state.ctrlSince = 0;
+  }
+
+  // Jumping and crouching live here rather than in the key handler because the controller
+  // does both as well, and two copies of "only from the ground" would drift apart.
+  function jump() {
+    if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
+    if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
+  }
+  function crouchToggle() {
+    if (state.lying) standUp();                 // pressing it again is how you get up
+    else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
   }
 
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
@@ -184,16 +196,8 @@ export function createWalkMode({
       e.preventDefault();
     }
     // Only from the ground, so holding space does not climb the sky.
-    if (k === ' ') {
-      e.preventDefault();
-      if (state.sitting) standUp();          // stand before you jump, not off the stool
-      else if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
-    }
-    if (k === 'control') {
-      e.preventDefault();
-      if (state.lying) standUp();                    // pressing it again is how you get up
-      else if (!state.crouching) { state.crouching = true; state.ctrlSince = performance.now(); }
-    }
+    if (k === ' ') { e.preventDefault(); jump(); }
+    if (k === 'control') { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // A thought needs nothing to stand in front of: it is about wherever you are.
@@ -283,7 +287,7 @@ export function createWalkMode({
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onPrevSeed, onExit }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.onInteract = onInteract;
@@ -291,6 +295,7 @@ export function createWalkMode({
     state.onThink = onThink;
     state.onPlant = onPlant;
     state.onNextSeed = onNextSeed;
+    state.onPrevSeed = onPrevSeed;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
@@ -332,20 +337,35 @@ export function createWalkMode({
   const forward = new THREE.Vector3();
   const right = new THREE.Vector3();
 
-  // Controller input, folded into the same movement the keyboard uses.
+  // Controller input, folded into the same movement the keyboard uses. The actions come in
+  // by name, so this one function serves the island and the rooms indoors both: what a
+  // room's map leaves out - sowing, sending anyone away - never fires there.
   const stick = { x: 0, z: 0, run: false };
+  let padCrouch = false;
   function pad(p, dt) {
-    if (!state.active) return;
+    if (!state.active || state.paused) return;   // an overlay has the controller
     stick.x = p.move.x;
     stick.z = -p.move.y;                       // pushing up on the stick walks forward
-    stick.run = p.down(5) || p.rt > 0.4;       // right shoulder or right trigger
+    // A tap keeps you running until you stand still; holding it down works too.
+    if (!stick.x && !stick.z) stick.run = false;
+    if (p.hit('sprint')) stick.run = !stick.run;
+    if (p.down('sprint')) stick.run = true;
     state.camYaw -= p.look.x * 2.6 * dt;
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
-    if (p.hit(0) && state.near) state.onInteract && state.onInteract(state.near);
-    if (p.hit(2) && state.near) state.onSendAway && state.onSendAway(state.near);   // X on the pad
-    if (p.hit(3)) state.onThink && state.onThink();                                 // Y: have a thought
-    if (p.hit(12)) state.onPlant && state.onPlant();                                // D-pad up: sow a bed
-    if (p.hit(15)) state.onNextSeed && state.onNextSeed();                          // D-pad right: next seed
+    if (p.hit('jump')) jump();
+    if (p.hit('crouch')) crouchToggle();
+    // Only the pad's own release stands you up again - a pad lying untouched on the desk
+    // must not undo a crouch somebody started with Ctrl.
+    const held = p.down('crouch');
+    if (padCrouch && !held) releaseCrouch();
+    padCrouch = held;
+    if (p.hit('interact') && state.near) state.onInteract && state.onInteract(state.near);
+    if (p.hit('secondary') && state.near) state.onSendAway && state.onSendAway(state.near);
+    if (p.hit('think')) state.onThink && state.onThink();
+    if (p.hit('primary')) state.onPlant && state.onPlant();
+    if (p.hit('nextTool')) state.onNextSeed && state.onNextSeed();
+    if (p.hit('prevTool')) state.onPrevSeed && state.onPrevSeed();
+    if (p.hit('exit') || p.hit('exitAlt')) state.onExit && state.onExit();
   }
 
   function setPaused(v) {
