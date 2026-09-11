@@ -11,6 +11,9 @@ import { hash32 } from 'shared/rng.mjs';
 
 const NEAR = 150;
 const FAR = 190;
+// The haze has to know where they lie, or it starts before they do - see applyNeighbours
+// in main.js. One ring, named once.
+export const RING = { near: NEAR, far: FAR };
 // Every other cell. Out here the silhouette is all that survives the haze, and half the
 // triangles draw it just as well.
 const STEP = 2;
