@@ -339,7 +339,10 @@ export function createUI(handlers) {
       if (!it) { d.style.display = 'none'; return; }
       d.style.display = '';
       d.textContent = it.text;
-      d.className = `label${it.build ? ' build' : ''}`;
+      // `above` arrives from a beacon on the network, so it is written as an attribute and
+      // drawn by the stylesheet: attr() puts text on the page, never markup.
+      if (it.above) d.dataset.above = it.above; else delete d.dataset.above;
+      d.className = `label${it.build ? ' build' : ''}${it.above ? ' over' : ''}`;
       d.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -100%)`;
     });
   }

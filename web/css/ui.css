@@ -118,6 +118,12 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 #labels { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
 .label { position: absolute; transform: translate(-50%, -100%); font-size: 10.5px; letter-spacing: .02em; padding: 2px 7px; border-radius: 99px; background: rgba(20,16,12,.72); border: 1px solid var(--edge); color: var(--ink); white-space: nowrap; }
 .label.build { color: var(--accent); border-color: rgba(232,180,92,.4); }
+/* A neighbour that is somebody's working copy names the work over its own name. The text
+   comes off the network, so it arrives as an attribute and is drawn with attr(): that puts
+   text on the page and never markup. */
+.label.over { text-align: center; white-space: normal; }
+.label.over::before { content: attr(data-above); display: block; font-size: 9px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent); opacity: .9; }
 .label.build::before { content: "🔨 "; }
 /* A hamlet name reads as a caption on a map, not as a tooltip: no pill, no border,
    just letterspaced small caps with enough shadow to survive a bright meadow. */
