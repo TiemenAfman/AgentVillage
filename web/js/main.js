@@ -31,7 +31,6 @@ import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
-import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
@@ -286,7 +285,7 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, panels: null, think: null, buildMenu: null, ghost: null,
+  props: null, panels: null, buildMenu: null, ghost: null,
   crops: null, market: null, garden: null,
 };
 
@@ -446,17 +445,6 @@ function whatIsNear(w) {
 }
 
 // --------------------------------------------------------------- having a thought
-// Wherever you are standing, T opens a session in the island's own repository and
-// tells it where you are. It can answer, and it can build.
-function openThink() {
-  if (keeperOnly('think out loud here')) return;   // it starts a session on this machine
-  if (!state.think || state.think.isOpen()) return;
-  if (state.walk) state.walk.setPaused(true);
-  state.ui.closeDossier();
-  reportWhere({ final: true });
-  state.think.open();
-}
-
 // --------------------------------------------------------------- what was built
 async function refreshProps({ animate = true } = {}) {
   if (!state.props) return;
@@ -622,7 +610,7 @@ function openMarket() {
 // Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
-const PANELS = () => [state.board, state.chat, state.think, state.market,
+const PANELS = () => [state.board, state.chat, state.market,
   state.townHall, state.office, state.studio, state.newSettler, state.buildMenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
@@ -646,7 +634,6 @@ function walkCallbacks() {
       if (it.kind === 'bed') { digBed(it.id); return; }
       if (!['board', 'issues', 'townhall', 'office', 'market', 'tavern'].includes(it.kind)) askToSendAway(it.id);
     },
-    onThink: () => openThink(),
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
     onPrevSeed: () => cycleSeed(-1),
@@ -919,7 +906,6 @@ function exitWalk() {
   reportWhere({ final: true });   // write down where you left off, and that you left
   state.walk.exit();
   state.board.close();
-  if (state.think) state.think.close();
   state.ui.setWalking(false);
   controls.enabled = true;
   frameIsland();
@@ -2451,16 +2437,6 @@ async function boot() {
 
   state.office = createOffice(document.body, {
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
-  });
-
-  state.think = createThink(document.body, {
-    getWhere: () => {
-      const w = state.walk && state.walk.state;
-      if (!w || !w.pos) return null;
-      return { x: w.pos.x, y: w.pos.y, z: w.pos.z, yaw: w.yaw, near: whatIsNear(w) };
-    },
-    onClose: () => { if (state.walk) state.walk.setPaused(false); },
-    onBuilt: () => refreshProps({ animate: true }),
   });
 
   state.chat = createChat(document.body, {
