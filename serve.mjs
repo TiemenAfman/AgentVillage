@@ -516,7 +516,7 @@ async function handle(req, res) {
   if (p === '/api/log' && req.method === 'POST') {
     let body = {};
     try { body = await readBody(req, 16 * 1024); } catch { /* keep going */ }
-    log(`page: ${String(body.message || '').slice(0, 500)}${body.stack ? ` | ${String(body.stack).slice(0, 800)}` : ''}`);
+    log(`page: ${String(body.message || '').slice(0, 500)}${body.stack ? ` | ${String(body.stack).slice(0, 6000)}` : ''}`);
     return json(res, 200, { ok: true });
   }
 
