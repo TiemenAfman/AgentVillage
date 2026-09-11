@@ -430,6 +430,7 @@ async function refreshProps({ animate = true } = {}) {
     // The same list, read a second time for its panels: props.js draws the woodwork and
     // panels.js hangs the page in front of it.
     if (state.panels) state.panels.apply(body.props || []);
+    handOutDecks();                                   // a bridge that has just gone up
     if (state.mode === 'walk') {
       state.walk.setBlockers(walkableBlockers());
       state.walk.setInteractables(interactables());   // a board that has just gone up
@@ -1247,8 +1248,22 @@ function syncBridges(village) {
     bridgeGroup.add(m);
     bridgeMeshes.set(key, m);
   }
-  if (state.settlers) state.settlers.setDecks(decks);
-  if (state.walk) state.walk.setDecks(decks);
+  handOutDecks();
+}
+
+// The crossings the layout laid, plus the ones somebody built by hand. Two sources, one
+// map: walk mode and the settlers read it without caring which a plank came from.
+//
+// Called from both sides, because the two lists arrive at different moments - the
+// layout's with a village update, a built one with the props - and whichever came last
+// used to win by replacing the other.
+function handOutDecks() {
+  const all = new Map(decks);
+  if (state.props && state.terrain) {
+    for (const [cell, y] of state.props.deckCells(state.terrain)) all.set(cell, y);
+  }
+  if (state.settlers) state.settlers.setDecks(all);
+  if (state.walk) state.walk.setDecks(all);
 }
 
 // The road network a settler may walk: the paths, the squares, and the decks - a bridge
@@ -2396,7 +2411,7 @@ async function boot() {
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
   state.walk = createWalkMode({ scene, camera, terrain: state.terrain, material: buildingMat, dom: renderer.domElement });
-  state.walk.setDecks(decks);        // buildScene ran before there was a walk mode to tell
+  handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
   state.peers = createPeers({
     scene, material: buildingMat, terrain: state.terrain,
