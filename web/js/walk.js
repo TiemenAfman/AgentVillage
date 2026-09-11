@@ -36,6 +36,17 @@ const LIE_AFTER_MS = 2000;
 // the key that walked you up to it: without a moment's grace the same press that sat you down
 // stood you straight back up, and it looked as though the stools could not be sat on at all.
 const SIT_HOLD_MS = 400;
+// The keys the feet use. Lifted out of onKeyDown because a board being worked hands
+// every other key to the page and keeps only these.
+const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
+
+// A field on a board takes its letters. In here w is a w, not a step, so the feet keep
+// out of it entirely - which is the whole of "type quit and you plant a tree".
+function typingInto(el) {
+  if (!el || !el.tagName) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
+}
+
 const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
@@ -142,6 +153,11 @@ export function createWalkMode({
     onPlant: null,
     onNextSeed: null,
     onExit: null,
+    // The board you are standing at and working, or null. While one is held the page on
+    // it owns the keyboard and the mouse; only the keys that walk you away are still the
+    // island's. See setWorking.
+    working: null,
+    onRelease: null,
     moving: false,
     running: false,
     paused: false,   // true while an overlay owns the input
@@ -179,7 +195,15 @@ export function createWalkMode({
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
     const k = e.key.toLowerCase();
-    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
+    // A board being worked has the keyboard. Escape hands it back wherever the focus is,
+    // and the feet keep their own keys so that walking away is still a way out - except
+    // inside a field, where those keys are letters somebody is typing.
+    if (state.working) {
+      if (k === 'escape') { e.preventDefault(); release(); return; }
+      if (!typingInto(e.target) && MOVE_KEYS.includes(k)) { keys.add(k); e.preventDefault(); }
+      return;
+    }
+    if (MOVE_KEYS.includes(k)) {
       keys.add(k);
       e.preventDefault();
     }
@@ -243,7 +267,9 @@ export function createWalkMode({
   dom.addEventListener('pointerdown', onDown);
   addEventListener('pointerup', onUp);
   addEventListener('pointermove', onMove);
-  dom.addEventListener('dblclick', () => { if (state.active) dom.requestPointerLock?.(); });
+  // Not while a board is held: pointer lock turns off DOM events entirely, so taking it
+  // back would kill every click on the page hanging in front of you.
+  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.(); });
 
   // A bridge deck is the ground as far as walking is concerned; without this you walk out
   // over a river and drop into it. This is also where the decks meet the wading rule,
@@ -283,10 +309,12 @@ export function createWalkMode({
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit, onRelease }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
+    state.working = null;
     state.onInteract = onInteract;
+    state.onRelease = onRelease;
     state.onSendAway = onSendAway;
     state.onThink = onThink;
     state.onPlant = onPlant;
@@ -308,6 +336,7 @@ export function createWalkMode({
   }
 
   function exit() {
+    release();
     state.active = false;
     avatar.visible = false;
     lounge.visible = false;
@@ -336,6 +365,12 @@ export function createWalkMode({
   const stick = { x: 0, z: 0, run: false };
   function pad(p, dt) {
     if (!state.active) return;
+    // A board held with a controller can only be let go of: there is no cursor to press
+    // anything on it with, so A and B both step back rather than doing nothing at all.
+    if (state.working) {
+      if (p.hit(0) || p.hit(1)) release();
+      return;
+    }
     stick.x = p.move.x;
     stick.z = -p.move.y;                       // pushing up on the stick walks forward
     stick.run = p.down(5) || p.rt > 0.4;       // right shoulder or right trigger
@@ -351,6 +386,26 @@ export function createWalkMode({
   function setPaused(v) {
     state.paused = !!v;
     if (v) { keys.clear(); stick.x = 0; stick.z = 0; }
+  }
+
+  // Step up to a board and work it. Pointer lock is the thing that has to go: while the
+  // pointer is locked no DOM element gets a mouse event at all, so a panel in front of
+  // you would look alive and answer nothing. The keys are handed over in onKeyDown.
+  //
+  // Not setPaused: that is for an overlay that owns the whole screen, and standing at a
+  // board is not that - you are still out on the island, and a step away is a way out.
+  function setWorking(it) {
+    state.working = it || null;
+    if (!state.working) return;
+    keys.clear();
+    if (document.pointerLockElement === dom) document.exitPointerLock?.();
+  }
+
+  function release() {
+    if (!state.working) return;
+    const was = state.working;
+    state.working = null;
+    if (state.onRelease) state.onRelease(was);
   }
 
   function update(dt) {
@@ -474,6 +529,11 @@ export function createWalkMode({
       if (d < (it.r || 2.6) && d < bestD) { bestD = d; near = it; }
     }
     state.near = near;
+    // Walking out of reach of the board you are working is the other way out, and the
+    // one you take without thinking about it. Compared by id, not by identity: the list
+    // of what is within reach is rebuilt whenever the island changes, and a board that
+    // was rebuilt is still the same board to stand at.
+    if (state.working && (!near || near.id !== state.working.id)) release();
     return { near, pos: state.pos, distance: bestD };
   }
 
@@ -501,7 +561,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {

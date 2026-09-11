@@ -455,7 +455,10 @@ export function createUI(handlers) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
-    const key = padConnected ? 'A' : 'E';
+    // Whatever is within reach normally answers to E, or to A on a controller. A board
+    // you are already standing at is the exception: it names its own key, because what it
+    // offers is the way back out.
+    const key = near.key || (padConnected ? 'A' : 'E');
     // Anything that carries its own wording says it itself. The rooms indoors do that: what
     // a bar stool offers depends on whether you are already sitting on it.
     once('walk-prompt', near.prompt ? `<b>${key}</b> ${esc(near.prompt)}`

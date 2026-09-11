@@ -338,6 +338,10 @@ function interactables() {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
   }
+  // The boards with a page on them. They come from the panel layer rather than from the
+  // props, because that is the half that knows how wide a board is and whether its page
+  // is up yet.
+  if (state.panels) out.push(...state.panels.interactables());
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
   // the prompt above the keys counts the last minutes down on its own.
   if (state.crops) {
@@ -426,7 +430,10 @@ async function refreshProps({ animate = true } = {}) {
     // The same list, read a second time for its panels: props.js draws the woodwork and
     // panels.js hangs the page in front of it.
     if (state.panels) state.panels.apply(body.props || []);
-    if (state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+    if (state.mode === 'walk') {
+      state.walk.setBlockers(walkableBlockers());
+      state.walk.setInteractables(interactables());   // a board that has just gone up
+    }
     if (animate && after > before) {
       const n = after - before;
       state.ui.toast(`${n === 1 ? 'Something was' : `${n} things were`} built on the island.`);
@@ -568,6 +575,7 @@ function walkCallbacks() {
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
+      else if (it.kind === 'panel') workPanel(it);
       else talkTo(it.id);
     },
     onSendAway: (it) => {
@@ -577,8 +585,34 @@ function walkCallbacks() {
     onThink: () => openThink(),
     onPlant: () => sowHere(),
     onNextSeed: () => nextSeed(),
+    onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
   };
+}
+
+// --------------------------------------------------------------- standing at a board
+// Stepping up to a panel: the page on it takes the mouse and, through walk.js, every
+// key that is not a step. Nothing about this leaves the screen - what you do on a board
+// is still yours alone, and the other people on the island see a settler standing still.
+function workPanel(it) {
+  if (!state.panels || !state.panels.take(it.id)) return;
+  state.walk.setWorking(it);
+}
+
+// Called by walk mode, whichever way you left: Escape, a step away, the controller, or
+// walking out of the mode altogether.
+function releasePanel() {
+  if (state.panels) state.panels.release();
+}
+
+// A board you are already working says how to let go of it, not how to take it.
+function promptFor(near) {
+  if (!near) return null;
+  const held = state.walk.state.working;
+  if (near.kind === 'panel' && held && held.id === near.id) {
+    return { ...near, key: 'Esc', prompt: `step back from ${near.label}` };
+  }
+  return near;
 }
 
 // --------------------------------------------------------------- stepping inside
@@ -1816,9 +1850,19 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   pointerScreen = { x: e.clientX, y: e.clientY };
   if (downAt) moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  // The board you are standing at gets the mouse before the island does. It takes no
+  // pointer events of its own - see the top of web/js/panels.js - so this is what lights
+  // up a button under the cursor.
+  if (state.panels) state.panels.point(pointer);
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
-renderer.domElement.addEventListener('pointerup', () => {
+renderer.domElement.addEventListener('pointerup', (e) => {
+  // Aimed from the event rather than from the last move: a tap on a touch screen never
+  // sends one, and a click that lands a finger's width off a button is worse than none.
+  pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  // A click on the board you are working is the board's, and never also picks whatever
+  // building happens to stand behind it.
+  if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
     if (hit && String(hit).startsWith('neighbour:')) askToVisit(hit);
@@ -1931,7 +1975,7 @@ function frame(nowMs) {
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
-    state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setWalkPrompt(promptFor(w && w.near));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
   }

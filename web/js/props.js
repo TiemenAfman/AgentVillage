@@ -201,8 +201,12 @@ const PANEL_LIFT = 0.62;       // how high the bottom edge stands off the ground
 const PANEL_FRAME = 0.07;      // the lip of the frame around the glass
 const PANEL_DEPTH = 0.06;
 
+// A board is about the size of a large monitor by default, and that is not only taste:
+// see READ_RATIO in web/js/panels.js for why a wide board stops being clickable.
+export const PANEL_WIDE = 1.5;
+
 export function panelFace(p) {
-  const w = Math.min(8, Math.max(0.8, p.length || 2.4));
+  const w = Math.min(8, Math.max(0.6, p.length || PANEL_WIDE));
   const h = w * PANEL_RATIO;
   // y is the middle of the glass and z is how far it stands in front of the board, both
   // in the prop's own space: panels.js turns and scales them with the rest of the prop.

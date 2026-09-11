@@ -23,7 +23,7 @@ export const SHAPES = {
   statue: { what: 'A settler on a plinth', takes: ['rot', 'scale'] },
   campfire: { what: 'Logs and a flame', takes: ['scale'] },
   flag: { what: 'A pole with a pennant', takes: ['scale'] },
-  panel: { what: 'A board with a page of the island on it, readable up close', takes: ['rot', 'scale', 'length', 'face'] },
+  panel: { what: 'A board with a page of the island on it, read and worked up close', takes: ['rot', 'scale', 'length', 'face'] },
   cairn: { what: 'A stack of stones. What an unknown shape becomes.', takes: ['scale'] },
 };
 

@@ -39,8 +39,10 @@ const USAGE = `The island's command line - ${BASE}
       --rot <radians>     which way it faces, or runs
       --scale <n>         0.15 to 6, 1 by default
       --length <n>        how far a bridge or a fence reaches, or how wide a
-                          panel is
-      --face <name>       which page a panel carries: notice, clock
+                          panel is. A panel is a monitor rather than a
+                          billboard by default: a much wider one can be read
+                          but only worked with the keyboard up close.
+      --face <name>       which page a panel carries: notice, clock, tally
       --label "<text>"    a name for it
       --note "<text>"     why it is there
 
