@@ -71,7 +71,7 @@ const HALF_W = 3.0;          // to the inner face of the east and west walls
 const HALF_D = 2.5;          // to the inner face of the north and south walls
 const WALL = 0.12;
 const DOOR_HALF = 0.38;      // half the opening; a body is 0.32 across and needs the room
-const CEILING = 1.05;        // about four metres, and clear of the 0.38 a jump rises
+const CEILING = 1.25;        // about five metres, and well clear of the 0.38 a jump rises
 const STAGE_H = 0.08;        // a step up onto the stage
 
 function buildTavern() {
@@ -81,6 +81,12 @@ function buildTavern() {
   const lights = [];
   const figures = [];
   const add = (...g) => parts.push(...g);
+  // Everything overhead goes in its own pile. The camera is allowed through the ceiling when a
+  // room is too tight to get behind you any other way, and then this is what has to disappear:
+  // the slabs, the beams, and every fixture hanging off them. The lights they stand for stay
+  // on, so what you get is the room lit from above with its lid off.
+  const roof = [];
+  const addRoof = (...g) => roof.push(...g);
 
   const outer = (half) => half + WALL / 2;
   const face = (half) => half - 0.011;       // where something flat sits against a wall
@@ -119,9 +125,9 @@ function buildTavern() {
   add(box(DOOR_HALF * 2, 0.015, WALL + 0.12, C.stone, { y: FLOOR - 0.015, z: outer(HALF_D) }));
 
   // Ceiling and the beams under it. Above head height, so neither is a blocker.
-  add(box(HALF_W * 2 + WALL * 2, 0.1, HALF_D * 2 + WALL * 2, C.plank, { y: FLOOR + CEILING }));
+  addRoof(box(HALF_W * 2 + WALL * 2, 0.1, HALF_D * 2 + WALL * 2, C.plank, { y: FLOOR + CEILING }));
   for (let i = -3; i <= 3; i++) {
-    add(box(0.1, 0.085, HALF_D * 2, C.darkWood, { x: i * 0.9, y: FLOOR + CEILING - 0.085 }));
+    addRoof(box(0.1, 0.085, HALF_D * 2, C.darkWood, { x: i * 0.9, y: FLOOR + CEILING - 0.085 }));
   }
 
   // Windows: two either side of the door, and one down the east wall clear of the stage.
@@ -258,16 +264,16 @@ function buildTavern() {
   // it faced whoever was standing on the stage and nobody else -- and before that it was drawn
   // at 0.42 up with nothing underneath it at all.
   const TV_Y = FLOOR + 0.82, TV_H = 0.2;
-  add(cylinder(0.012, 0.012, FLOOR + CEILING - TV_Y - TV_H, 4, C.iron, { x: STAGE.x0, y: TV_Y + TV_H, z: sMidZ }));
-  add(box(0.05, TV_H, 0.28, 0x1a2430, { x: STAGE.x0, y: TV_Y, z: sMidZ }));
+  addRoof(cylinder(0.012, 0.012, FLOOR + CEILING - TV_Y - TV_H, 4, C.iron, { x: STAGE.x0, y: TV_Y + TV_H, z: sMidZ }));
+  addRoof(box(0.05, TV_H, 0.28, 0x1a2430, { x: STAGE.x0, y: TV_Y, z: sMidZ }));
   for (const sgn of [-1, 1]) {
-    add(box(0.012, TV_H - 0.04, 0.24, 0x4fd9c4, { x: STAGE.x0 + sgn * 0.029, y: TV_Y + 0.02, z: sMidZ, emissive: 0.55 }));
+    addRoof(box(0.012, TV_H - 0.04, 0.24, 0x4fd9c4, { x: STAGE.x0 + sgn * 0.029, y: TV_Y + 0.02, z: sMidZ, emissive: 0.55 }));
   }
   // A pair of coloured lamps over it, which is as far as the disco goes for now.
   for (const sz of [sMidZ - 0.42, sMidZ + 0.42]) {
-    add(cylinder(0.009, 0.009, 0.14, 4, C.iron, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.14, z: sz }));
-    add(cone(0.06, 0.075, 8, C.iron, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.14, z: sz, rx: Math.PI }));
-    add(sphere(0.038, C.stageLamp, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.225, z: sz, emissive: 1 }));
+    addRoof(cylinder(0.009, 0.009, 0.14, 4, C.iron, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.14, z: sz }));
+    addRoof(cone(0.06, 0.075, 8, C.iron, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.14, z: sz, rx: Math.PI }));
+    addRoof(sphere(0.038, C.stageLamp, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.225, z: sz, emissive: 1 }));
   }
 
   // ---- the washroom, through the door in the west wall --------------------
@@ -284,7 +290,7 @@ function buildTavern() {
   const wcW = WC.x1 - WC.x0, wcD = WC.z1 - WC.z0;
   add(box(wcW, 0.24, wcD + WALL * 2, C.floor, { x: wcMidX, y: FLOOR - 0.24, z: wcMidZ }));
   add(box(wcW, 0.015, wcD, C.tile, { x: wcMidX, y: FLOOR - 0.008, z: wcMidZ }));
-  add(box(wcW + WALL * 2, 0.1, wcD + WALL * 2, C.plank, { x: wcMidX, y: FLOOR + CEILING, z: wcMidZ }));
+  addRoof(box(wcW + WALL * 2, 0.1, wcD + WALL * 2, C.plank, { x: wcMidX, y: FLOOR + CEILING, z: wcMidZ }));
   for (const [x, z, hx, hz] of [
     [WC.x0 - WALL / 2, wcMidZ, WALL / 2, (wcD + WALL * 2) / 2],       // west
     [wcMidX, WC.z0 - WALL / 2, wcW / 2, WALL / 2],                    // north
@@ -384,9 +390,9 @@ function buildTavern() {
   // (x = i * 0.9), so they hang off a beam rather than out of the plaster.
   const SHADE_Y = FLOOR + CEILING - 0.19;
   for (const [lx, lz] of [[-0.9, -1.3], [0.9, -1.3], ...TABLES]) {
-    add(cylinder(0.008, 0.008, 0.19, 4, C.iron, { x: lx, y: SHADE_Y, z: lz }));
-    add(cone(0.075, 0.06, 8, C.iron, { x: lx, y: SHADE_Y, z: lz, rx: Math.PI }));
-    add(sphere(0.048, C.glass, { x: lx, y: SHADE_Y - 0.075, z: lz, emissive: 1 }));
+    addRoof(cylinder(0.008, 0.008, 0.19, 4, C.iron, { x: lx, y: SHADE_Y, z: lz }));
+    addRoof(cone(0.075, 0.06, 8, C.iron, { x: lx, y: SHADE_Y, z: lz, rx: Math.PI }));
+    addRoof(sphere(0.048, C.glass, { x: lx, y: SHADE_Y - 0.075, z: lz, emissive: 1 }));
   }
 
   // ---- the barman ----------------------------------------------------------
@@ -409,7 +415,7 @@ function buildTavern() {
 
   return {
     name: 'the tavern',
-    parts, blockers, seats, lights, figures,
+    parts, roof, blockers, seats, lights, figures,
     fireAt: [FX + 0.24, FLOOR + 0.03, FZ],
     // The cells the stage covers, handed to walk mode as a deck to stand on.
     stage: { ...STAGE, height: FLOOR + STAGE_H },
@@ -473,6 +479,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // primitives and has no business being a few hundred draw calls.
   const shell = new THREE.Mesh(mergeGeom(def.parts), material);
   scene.add(shell);
+
+  // The lid, kept apart so it can be taken off. In a room too small to get the camera behind
+  // you, the only way out is up -- and a ceiling that stays put makes that useless, because
+  // the camera stops a hand under it and stares down at your hat.
+  const roofMesh = def.roof && def.roof.length ? new THREE.Mesh(mergeGeom(def.roof), material) : null;
+  if (roofMesh) scene.add(roofMesh);
 
   // The fire is its own mesh because it is pulsed, and geometry that gets scaled has to be
   // built about the origin or it walks away from the hearth as it flickers.
@@ -580,14 +592,15 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // rafters; the ceiling clamp below is what keeps it out of the beams instead.
     v.x = px + dx * t;
     v.z = pz + dz * t;
-    // The height comes in with the reach, so the angle stays roughly what it was. Climbing
-    // instead -- which is the obvious thing to try -- is exactly backwards: in a small room
-    // there is no reach left to lose, the climb tops out at the ceiling, and you spend the
-    // visit looking down on your own hat. The floor of 0.18 over the aim point is what keeps
-    // it from swinging under and staring at the rafters.
+    // What the reach cannot give, the height does: the camera climbs by roughly what it lost
+    // going sideways, so the distance to you stays about the same and the room simply gets
+    // looked down into. Nothing caps the climb -- capping it under the ceiling was what left
+    // the camera a hand's width over your head in the washroom -- and the floor of 0.18 above
+    // the aim point keeps it from swinging under and staring at the rafters.
     const yNear = p.y + CAM.aim + 0.18;
-    v.y = yNear + (v.y - yNear) * t;
-    v.y = clamp(v.y, FLOOR + 0.22, FLOOR + CEILING - 0.12);
+    v.y = Math.max(yNear, v.y + (1 - t) * len * 0.8);
+    // Once it is up through the ceiling, the ceiling is in the way of the only view there is.
+    roofWanted = v.y < FLOOR + CEILING - 0.04;
   }
 
   // Over the shoulder, as everywhere else on the island, but closer in, lower, and aimed at
@@ -642,9 +655,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   let t = 0;
+  let roofWanted = true;
   function update(dt) {
     if (left) return null;
+    roofWanted = true;
     const w = walk.update(dt);
+    if (roofMesh) roofMesh.visible = roofWanted;
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
@@ -678,6 +694,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     walk.exit();
     walk.dispose();
     shell.geometry.dispose();
+    if (roofMesh) roofMesh.geometry.dispose();
     fire.geometry.dispose();
     pint.dispose();
     snack.dispose();
