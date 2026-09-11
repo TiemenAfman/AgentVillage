@@ -47,7 +47,16 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
 
   function onKey(e) {
     if (el.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') {
+      // Stopped dead, not just from bubbling on: walk.js listens on this same window,
+      // and close() has just let its feet go - so it would read this very Escape as
+      // "back to the sky". stopPropagation cannot help with a listener on the same
+      // element; only stopImmediatePropagation can.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
+      return;
+    }
     // The number keys reach for the first nine tiles, which is what a menu you open
     // twenty times an hour wants.
     const n = Number(e.key);
