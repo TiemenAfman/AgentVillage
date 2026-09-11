@@ -1,7 +1,7 @@
 // Boot, camera, the live feed and the animation queue that turns a data diff into
 // something you can watch happen.
 import * as THREE from 'three';
-import { createRecovery, renderSnapshot } from './graphics-health.js';
+import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { clamp, hash32 } from 'shared/rng.mjs';
@@ -69,10 +69,8 @@ function setVisiting(guest) {
 // An island that never answers is treated as our own, or a crash during boot would
 // leave no trace at all.
 setTimeout(() => setVisiting(false), 4000);
-let graphicsReports = 0;
-function report(message, stack, graphics = false) {
-  if (visiting === true) return;
-  if (graphics ? graphicsReports++ >= 12 : reported++ > 6) return;
+function report(message, stack) {
+  if (reported++ > 6 || visiting === true) return;
   if (visiting === null) { held.push([message, stack]); return; }
   post(message, stack);
 }
@@ -117,11 +115,9 @@ function recoverCanvas(error) {
   recoveryScheduled = true;
   const attempt = recovery.reserve();
   if (attempt === null) {
-    report('graphics automatic recovery stopped', 'Retry limit reached or session storage unavailable.', true);
     showCanvasTrouble(error);
     return;
   }
-  report('graphics recovery scheduled', `attempt ${attempt} of ${MAX_RETRIES}`, true);
   countdownReload(2 + (attempt - 1) * 2, attempt);
 }
 
@@ -130,7 +126,7 @@ try {
   renderer = makeRenderer();
 } catch (e) {
   console.error(e);
-  report('could not create a webgl context', String(e && e.message), true);
+  report('could not create a webgl context', String(e && e.message));
   recoverCanvas(e);
   throw e;
 }
@@ -161,18 +157,10 @@ function countdownReload(seconds, attempt) {
 let contextLost = false;
 // Cache GPU identity while the context is alive; querying after loss returns unknown.
 const graphicsGpu = gpuName();
-const graphicsAttributes = renderer.getContext().getContextAttributes();
-const graphicsSamples = [];
-let nextGraphicsSample = 0;
-let nextGraphicsLog = 0;
-function graphicsDetails() {
-  return JSON.stringify({ gpu: graphicsGpu, attributes: graphicsAttributes,
-    visibility: document.visibilityState, samples: graphicsSamples });
-}
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
   contextLost = true;
-  report('webgl context lost', graphicsDetails(), true);
+  report('webgl context lost', `renderer: ${graphicsGpu}`);
   recoverCanvas(new Error('The island lost its 3D canvas.'));
 });
 
@@ -188,7 +176,6 @@ function gpuName() {
 // likely thing to fall over, so ask it for less.
 const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
 canvas.addEventListener('webglcontextrestored', () => {
-  report('webgl context restored', `renderer: ${graphicsGpu}`, true);
   recoverCanvas(new Error('The island needs to rebuild its 3D canvas.'));
 });
 
@@ -236,7 +223,7 @@ async function openBoardWithoutIsland() {
 }
 
 const modest = MODEST_GPU.test(graphicsGpu);
-report(`island drawing on: ${graphicsGpu}`, JSON.stringify(graphicsAttributes), true);
+report(`island drawing on: ${graphicsGpu}`);
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
@@ -2041,22 +2028,9 @@ function tick(nowMs) {
     try {
       frame(nowMs);
       recovery.frame(nowMs, document.visibilityState === 'visible');
-      if (nowMs >= nextGraphicsSample) {
-        graphicsSamples.push(renderSnapshot(renderer, nowMs));
-        if (graphicsSamples.length > 3) graphicsSamples.shift();
-        nextGraphicsSample = nowMs + 5000;
-        // A periodic checkpoint survives even a browser process crash with no loss event.
-        if (nowMs >= nextGraphicsLog) {
-          if (visiting === false) post('graphics checkpoint', graphicsDetails());
-          nextGraphicsLog = nowMs + 60000;
-        }
-      }
     } catch (e) {
       recovery.failed();
-      if (frameErrors++ < 3) {
-        console.error('frame failed', e);
-        report(`frame failed: ${e && e.message || e}`, `${e && e.stack || ''}\n${graphicsDetails()}`, true);
-      }
+      if (frameErrors++ < 3) console.error('frame failed', e);
     }
   }
   requestAnimationFrame(tick);
