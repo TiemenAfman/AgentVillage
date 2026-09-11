@@ -1,0 +1,97 @@
+/* The island's brass-and-evergreen HUD. No filters or extra compositing layers. */
+:root {
+  --ink: #f6f0df;
+  --ink-dim: #b7c5ba;
+  --panel: rgba(18, 37, 36, .95);
+  --panel-solid: #122524;
+  --edge: rgba(221, 205, 157, .22);
+  --accent: #e8c17c;
+  --accent-2: #93d0c3;
+  --radius: 16px;
+  --shadow: 0 8px 24px rgba(5, 22, 24, .24), inset 0 1px rgba(255, 244, 208, .06);
+}
+.card, .panel, .chip {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.card, .panel {
+  background: linear-gradient(145deg, rgba(32, 53, 49, .97), var(--panel));
+}
+.titlecard { padding: 17px 19px 14px; min-width: 250px; }
+.titlecard::before {
+  content: "THE LIVING ISLAND";
+  display: block;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .24em;
+  margin-bottom: 6px;
+}
+.titlecard h1 { font-size: 27px; font-weight: 500; letter-spacing: -.025em; }
+.titlecard #founded { margin-top: 5px; font-size: 10px; }
+.counts { padding-top: 10px; border-top: 1px solid var(--edge); gap: 7px; }
+.counts span { border: 0; background: rgba(236, 219, 176, .06); padding: 4px 8px; }
+.counts b { color: #f0ce92; }
+.live { font-size: 9px; letter-spacing: .12em; }
+.live i { background: #a4ce97; box-shadow: 0 0 5px #a4ce9750; }
+.topright { gap: 9px; }
+.topright .chips {
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 4px 15px #061b2020;
+  gap: 3px;
+}
+.chip { padding: 7px 11px; font-size: 11px; transition: background .15s, color .15s, border-color .15s; }
+.topright .chips .chip { background: transparent; border-color: transparent; border-radius: 8px; }
+.topright .chips .chip.on { background: #e8c17c; color: #203530; }
+.chip:hover, .topright .chips .chip:hover { background: #ffffff12; color: var(--ink); border-color: var(--edge); }
+.topright .chips .chip.on:hover { background: #f4d79d; color: #203530; }
+#walk-btn { color: var(--accent); font-weight: 650; }
+#walk-btn.on { color: #203530; }
+.right-column, .building-now, .panel { top: 160px; }
+#clock-chip { border-radius: 8px; padding: 7px 12px; letter-spacing: .05em; }
+.btn, .fab { box-shadow: inset 0 1px #ffffff08; }
+.btn:hover { border-color: #e8c17c70; }
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+}
+.panel-head { padding: 16px; }
+.panel-head h2 { font-size: 19px; font-weight: 500; }
+.panel-body { padding: 15px 16px; line-height: 1.65; }
+.chronicle { border-radius: 14px; padding: 11px 15px; gap: 14px; }
+#play-btn { background: #e8c17c; color: #203530; border-color: transparent; }
+#chronicle-speed { background: #ffffff09; padding: 5px 8px; }
+select option { color: var(--ink); background: var(--panel-solid); }
+.toast { border-left: 2px solid var(--accent); padding: 12px 15px; line-height: 1.6; }
+.walk-prompt { padding: 11px 18px; border-radius: 12px; }
+.walk-keys { padding: 7px 12px; border-radius: 8px; background: var(--panel); }
+.boot { background: radial-gradient(ellipse at 50% 42%, #31534c, #102826 70%); }
+.boot-inner { padding: 34px; }
+.boot-mark { font-size: 56px; }
+#boot-text { color: #e5d8b7; letter-spacing: .07em; line-height: 1.8; }
+@media (max-width: 1100px) {
+  #toasts { bottom: 80px; max-width: calc(100vw - 80px); }
+}
+@media (max-width: 780px) {
+  .titlecard { min-width: 0; padding: 12px; max-width: 190px; }
+  .titlecard h1 { font-size: 22px; }
+  .titlecard::before { font-size: 8px; letter-spacing: .16em; }
+  .topright { max-width: calc(100vw - 225px); }
+  .topright .chips { flex-wrap: wrap; justify-content: flex-end; }
+  .topright .chip { padding: 6px 8px; }
+  .right-column, .panel { top: 230px; }
+}
+@media (max-width: 480px) {
+  .titlecard { max-width: 155px; }
+  .titlecard h1 { font-size: 20px; }
+  .titlecard .row { flex-wrap: wrap; gap: 5px; }
+  .topright { max-width: calc(100vw - 183px); }
+  .chronicle { padding: 8px; gap: 8px; }
+  .right-column, .panel { top: 285px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
