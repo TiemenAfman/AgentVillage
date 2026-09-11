@@ -20,6 +20,10 @@
 export const FACES = {
   notice: {},
   clock: {},
+  // A billboard carries somebody else's site and so has nothing of its own to remember -
+  // it is here rather than left out so that the server still knows the name, and E at one
+  // reads as a board you may stand at and find nothing to press.
+  billboard: {},
   tally: {
     tab: { kind: 'one-of', of: ['count', 'note'], start: 'count' },
     count: { kind: 'number', min: -9999, max: 9999, start: 0 },

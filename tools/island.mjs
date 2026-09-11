@@ -42,9 +42,11 @@ const USAGE = `The island's command line - ${BASE}
                           panel is. A panel is a monitor rather than a
                           billboard by default: a much wider one can be read
                           but only worked with the keyboard up close.
-      --face <name>       which page a panel carries: notice, clock, tally
+      --face <name>       which page a panel carries: notice, clock, tally,
+                          billboard
       --label "<text>"    a name for it
-      --note "<text>"     why it is there
+      --note "<text>"     why it is there - or, on a billboard, the https
+                          address of the site it carries
 
   node tools/island.mjs garden
       The purse, the seed in the pouch, the basket, and every bed that is

@@ -188,6 +188,70 @@
 .face-tally input.under,
 .face-tally textarea.under { border-color: var(--ink-dim); }
 
+/* --- billboard --------------------------------------------------------- */
+/* Somebody else's site, given the whole board: no padding, no heading, none of the
+   island's own chrome over it. See billboard() in web/js/faces.js for what that costs. */
+.face-billboard {
+  position: relative;
+  padding: 0;
+  gap: 0;
+  background: #fff;      /* what a page stands on before it has painted anything */
+  overflow: hidden;
+}
+
+/* The site is laid out at a desktop width and then folded down to the face. Ask a page
+   to lay itself out in the 480 pixels a face is drawn at and it answers with its phone
+   layout, and a phone layout eight metres wide is not a billboard.
+
+   The width is a multiple of the board rather than a pixel count on purpose: 266.667%
+   scaled by .375 is exactly 100% whatever FACE_W in web/js/panels.js becomes, so the
+   page always gets a viewport 2.67 times the board - 1280 x 800 at today's numbers, the
+   same 16:10 the board is, so nothing crops and nothing letterboxes. */
+.face-billboard .bb-glass {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 266.6667%;
+  height: 266.6667%;
+  border: 0;
+  transform: scale(.375);
+  transform-origin: 0 0;
+  /* Nothing on this layer takes the mouse, and a frame least of all: a click cannot
+     reach into a cross-origin page anyway, and one that took the pointer would swallow
+     the drag meant for the island. */
+  pointer-events: none;
+}
+
+/* Until the site has painted. Over the frame rather than under it, so an empty board
+   says whose it is instead of standing there white. */
+.face-billboard .bb-wait {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font);
+  font-size: 40px;
+  color: #8b8378;
+  background: #fff;
+}
+
+.face-billboard.lit .bb-wait { display: none; }
+
+/* The address along the bottom: the one part of this board that is ours, and what is
+   left to read if the site ever refuses to be framed. Short rather than full width, so
+   the strip web/js/panels.js puts there for whoever is working a board still fits. */
+.face-billboard .bb-strip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 7px 16px;
+  font-family: var(--font);
+  font-size: 19px;
+  letter-spacing: .02em;
+  color: #14100c;
+  background: var(--accent);
+}
+
 /* --- other people at the same board ----------------------------------- */
 /* A cursor and a name have to be DOM inside the panel. Nothing drawn in WebGL can lie
    over this layer, so a pointer made of geometry would disappear behind the very page
