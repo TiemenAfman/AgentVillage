@@ -604,6 +604,7 @@ function walkCallbacks() {
     onThink: () => openThink(),
     onPlant: () => sowHere(),
     onNextSeed: () => nextSeed(),
+    onBuild: () => openBuild(),
     onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
   };

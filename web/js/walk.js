@@ -160,6 +160,7 @@ export function createWalkMode({
     onThink: null,
     onPlant: null,
     onNextSeed: null,
+    onBuild: null,
     onExit: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
@@ -233,6 +234,9 @@ export function createWalkMode({
     // Sowing is the same kind of thing: it happens where the feet are, not at a door.
     if (k === 'p') { e.preventDefault(); state.onPlant && state.onPlant(); }
     if (k === 'q') { e.preventDefault(); state.onNextSeed && state.onNextSeed(); }
+    // The catalogue. Like a thought, it is about wherever you happen to be standing, so
+    // it needs nothing within reach.
+    if (k === 'b') { e.preventDefault(); state.onBuild && state.onBuild(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -356,7 +360,7 @@ export function createWalkMode({
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onExit, onRelease }) {
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant, onNextSeed, onBuild, onExit, onRelease }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.working = null;
@@ -366,6 +370,7 @@ export function createWalkMode({
     state.onThink = onThink;
     state.onPlant = onPlant;
     state.onNextSeed = onNextSeed;
+    state.onBuild = onBuild;
     state.onExit = onExit;
     let [x, z] = at;
     // step back until we are standing somewhere legal
