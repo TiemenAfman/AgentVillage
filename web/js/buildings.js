@@ -667,11 +667,13 @@ function civic(parts, spec, rng) {
       parts.push(prismRoof(1.42, 1.06, 0.5, C.brick, { y: f + 0.62 }));
       parts.push(box(0.34, 0.5, 0.04, C.darkWood, { y: f, z: -0.46 }));
       for (const x of [-0.42, 0.42]) parts.push(box(0.2, 0.26, 0.03, C.glass, { x, y: f + 0.2, z: 0.46, emissive: 1 }));
+      // and two smaller ones either side of the back door
+      for (const x of [-0.39, 0.34]) KIT.window.build(parts, { ...KIT.window.defaults, x, y: f + 0.225, z: -0.44 });
       // the hanging sign
-      parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.94, z: -0.3 }));
+      parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.88, z: -0.6 }));
       parts.push(box(0.02, 0.06, 0.02, C.iron, { x: 0.64, y: 0.88, z: -0.46 }));
-      parts.push(box(0.03, 0.22, 0.28, 0x6b4a2f, { x: 0.64, y: 0.66, z: -0.46 }));
-      parts.push(sphere(0.05, C.gold, { x: 0.625, y: 0.77, z: -0.46 }));
+      parts.push(box(0.03, 0.22, 0.28, 0x6b4a2f, { x: 0.64, y: 0.67, z: -0.61 }));
+      parts.push(sphere(0.05, C.gold, { x: 0.642355, y: 0.77, z: -0.6 }));
       // barrels and a bench outside the door
       for (const bz of [-0.34, -0.06]) {
         parts.push(cylinder(0.11, 0.12, 0.24, 8, C.wood, { x: -0.68, z: bz }));
