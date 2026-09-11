@@ -2,13 +2,19 @@
 // which hangs it on a board somewhere on the island.
 //
 // A face is plain DOM and nothing else: no canvas, no iframe, no shadow root. That is
-// deliberate. It is same-origin and scriptable, which is what makes a panel readable
-// now and workable later - a click on a button in here can become a small message
-// everybody else's copy replays.
+// deliberate. It is same-origin and scriptable, which is what makes a click on a button
+// in here a small message everybody else's copy replays.
+//
+// A face holds no state of its own. It gets `send(field, value)` to say what somebody
+// asked for, and `draw(state)` to be told what the island now holds - and the two are
+// never the same press: an intent goes to the server and the answer comes back to every
+// copy of the board at once, ours included. What a face may store is declared in
+// shared/panels.mjs, which the server reads too.
 //
 // Adding a face: write a builder, key it into FACES under a name that would pass for a
-// kind, and give it a rule or two in web/css/panels.css. A name nobody has written a
-// face for falls back to the notice board, so a panel never comes up blank.
+// kind, give it a rule or two in web/css/panels.css, and - if it remembers anything -
+// declare its fields in shared/panels.mjs. A name nobody has written a face for falls
+// back to the notice board, so a panel never comes up blank.
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const SEASON_MARK = { spring: '🌱', summer: '☀️', autumn: '🍂', winter: '❄️' };
@@ -70,13 +76,13 @@ function clock({ island }) {
 //
 // Its state is its own and goes no further than this screen. Somebody standing next to
 // you sees a settler at a board and nothing on it.
-function tally({ prop }) {
+function tally({ prop, send }) {
   const el = document.createElement('div');
   el.className = 'face face-tally';
   el.innerHTML = `
     <h1>${esc(prop.label || 'Tally')}</h1>
     <nav class="tabs">
-      <button type="button" class="tab on" data-tab="count">Count</button>
+      <button type="button" class="tab" data-tab="count">Count</button>
       <button type="button" class="tab" data-tab="note">Note</button>
     </nav>
     <section class="tab-body" data-body="count">
@@ -94,25 +100,33 @@ function tally({ prop }) {
 
   const out = el.querySelector('.tally-n');
   const what = el.querySelector('.tally-what');
-  let n = 0;
-
-  const draw = () => {
-    const name = what.value.trim();
-    out.textContent = name ? `${n} ${name}` : String(n);
-  };
+  const note = el.querySelector('.tally-note');
+  let held = { count: 0, what: '', note: '', tab: 'count' };
 
   el.addEventListener('click', (e) => {
     const step = e.target.closest('[data-step]');
-    if (step) { n += Number(step.dataset.step); draw(); return; }
-    if (e.target.closest('[data-reset]')) { n = 0; draw(); return; }
+    if (step) { send('count', held.count + Number(step.dataset.step)); return; }
+    if (e.target.closest('[data-reset]')) { send('count', 0); return; }
     const tab = e.target.closest('[data-tab]');
-    if (!tab) return;
-    for (const b of el.querySelectorAll('[data-tab]')) b.classList.toggle('on', b === tab);
-    for (const body of el.querySelectorAll('[data-body]')) body.hidden = body.dataset.body !== tab.dataset.tab;
+    if (tab) send('tab', tab.dataset.tab);
   });
-  what.addEventListener('input', draw);
+  what.addEventListener('input', () => send('what', what.value));
+  note.addEventListener('input', () => send('note', note.value));
 
-  return { el };
+  return {
+    el,
+    draw(state) {
+      held = state;
+      const name = String(state.what || '').trim();
+      out.textContent = name ? `${state.count} ${name}` : String(state.count);
+      // A field somebody is typing into is left alone. Writing the server's value back
+      // under their hands would jump the caret to the end on every keystroke.
+      if (document.activeElement !== what) what.value = state.what;
+      if (document.activeElement !== note) note.value = state.note;
+      for (const b of el.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === state.tab);
+      for (const body of el.querySelectorAll('[data-body]')) body.hidden = body.dataset.body !== state.tab;
+    },
+  };
 }
 
 const FACES = { notice, clock, tally };
@@ -121,8 +135,9 @@ export function knownFace(name) {
   return Object.prototype.hasOwnProperty.call(FACES, String(name));
 }
 
-// ctx is { prop, island }: what was written on this particular board, and a handful of
-// getters onto the island for a face that wants to say something live.
+// ctx is { prop, island, send }: what was written on this particular board, a handful of
+// getters onto the island for a face that wants to say something live, and the way to
+// ask for a field to change.
 export function createFace(name, ctx) {
   const build = FACES[name] || FACES.notice;
   return build(ctx);

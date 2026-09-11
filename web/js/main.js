@@ -605,6 +605,31 @@ function releasePanel() {
   if (state.panels) state.panels.release();
 }
 
+// Who somebody is, by the id the island knows them under. Ours is not in the roster -
+// the peers only hold other people - so it is named here.
+function peerName(id) {
+  if (state.net && id === state.net.id()) return playerName() || 'you';
+  return state.peers ? state.peers.nameOf(id) : 'Somebody';
+}
+
+// What the island says the boards say. Everything that changes a panel comes through
+// here - our own presses included, which went out as a request and come back as fact.
+function applyPanelMessage(m) {
+  if (!state.panels) return;
+  if (m.kind === 'all') { state.panels.all(m.boards); return; }
+  if (m.kind === 'ui') { state.panels.field(m.id, m.action, m.value); return; }
+  if (m.kind === 'drove') {
+    // The roster is where an id becomes a name, so the name is put on here rather than
+    // in the panel layer, which has never heard of players.
+    if (m.driver) state.panels.drivenBy(m.id, peerName(m.driver));
+    const taken = state.panels.driven(m.id, m.driver);
+    if (taken) {
+      state.walk.setWorking(null);
+      state.ui.toast(`<b>${escapeHtml(peerName(taken))}</b> is working that board. You can read over their shoulder.`);
+    }
+  }
+}
+
 // A board you are already working says how to let go of it, not how to take it.
 function promptFor(near) {
   if (!near) return null;
@@ -2362,7 +2387,12 @@ async function boot() {
   state.walk = createWalkMode({ scene, camera, terrain: state.terrain, material: buildingMat, dom: renderer.domElement });
   state.walk.setDecks(decks);        // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
-  state.peers = createPeers({ scene, material: buildingMat, terrain: state.terrain });
+  state.peers = createPeers({
+    scene, material: buildingMat, terrain: state.terrain,
+    // Somebody else's hand on a board. It rides in with their pose, so it arrives here
+    // rather than as a message of its own - see web/js/net.js.
+    onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
+  });
   state.horizon = createHorizon({ scene, pickables: state.pickables });
   if (!state.guest) refreshNeighbours();
   state.net = createNet({
@@ -2370,6 +2400,7 @@ async function boot() {
     walk: state.walk,
     name: playerName(),
     onStatus: () => {},
+    onPanels: (m) => applyPanelMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   // What a panel is allowed to know about the island: a handful of getters, so a face
@@ -2386,6 +2417,13 @@ async function boot() {
         ? state.village.buildings.filter((b) => b.active && b.kind !== 'civic').map((b) => b.name)
         : []),
     },
+    // Nothing a board says is decided here. A press asks the island, the island answers
+    // every copy at once, and applyPanelMessage below is where the answer lands.
+    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(id, action, value); },
+    onTake: (id) => { if (state.net) state.net.takePanel(id); },
+    onDrop: (id) => { if (state.net) state.net.dropPanel(id); },
+    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at); },
+    self: () => (state.net ? state.net.id() : null),
   });
   refreshProps({ animate: false });
   state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });

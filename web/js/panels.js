@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { panelFace } from './props.js';
 import { createFace } from './faces.js';
+import { startState, applyUi } from 'shared/panels.mjs';
 
 // How big a face is in its own pixels: the same 16:10 as the board it hangs on, so
 // nothing has to letterbox, and comfortably more than a panel is drawn at on screen,
@@ -58,7 +59,14 @@ const REACH = 2.4;
 // reads straight off as a position on the page.
 const GLASS = new THREE.PlaneGeometry(1, 1);
 
-export function createPanels({ camera, terrain, island, element }) {
+// Everything a board says is the server's, not ours: a press sends an intent and the
+// answer comes back for every copy at once, including our own. That is what makes two
+// people at one panel agree without either of them winning, and what lets somebody who
+// walks up late be handed the whole board. lib/panelstate.mjs has the reasoning.
+export function createPanels({
+  camera, terrain, island, element,
+  onAction = () => {}, onTake = () => {}, onDrop = () => {}, onCursor = () => {}, self = () => null,
+}) {
   const css = new CSS3DRenderer(element ? { element } : {});
   css.setSize(innerWidth, innerHeight);
   // The one rule that keeps the island usable. Without it this layer lies over the whole
@@ -69,12 +77,26 @@ export function createPanels({ camera, terrain, island, element }) {
   // Its own scene: the WebGL renderer has no business walking over a tree of objects it
   // cannot draw, and this one only ever holds panels.
   const scene = new THREE.Scene();
-  const records = new Map();     // id -> { spec, object, el, face, glass }
+  const records = new Map();     // id -> { spec, object, el, face, glass, state, driver, hands }
   let shown = true;
-  let held = null;               // the record somebody is standing at and working
+  let held = null;               // the record we are standing at and working
 
   function add(p) {
-    const face = createFace(p.face || 'notice', { prop: p, island });
+    const name = p.face || 'notice';
+    const state = startState(name);
+    // A press is applied here at once and asked for in the same breath.
+    //
+    // Both halves are needed. Without the first, two presses in a row are both counted
+    // from the number the board still shows - the outgoing queue in web/js/net.js keeps
+    // only the last value per field, so the board would miss one. Without the second it
+    // would be ours alone. The island's answer arrives a beat later through field() and
+    // overwrites whatever this guessed, so a refusal corrects itself on its own.
+    let face = null;
+    const send = (action, value) => {
+      if (applyUi(name, state, action, value) !== null && face && face.draw) face.draw(state);
+      onAction(p.id, action, value);
+    };
+    face = createFace(name, { prop: p, island, send });
     const el = document.createElement('div');
     el.className = 'panel3d';
     el.style.width = `${FACE_W}px`;
@@ -84,13 +106,26 @@ export function createPanels({ camera, terrain, island, element }) {
     el.style.pointerEvents = 'none';
     el.appendChild(face.el);
 
+    // Other people's hands, and who is working the board. Both are DOM inside the panel
+    // because they have to be: a 3D object cannot be drawn over this layer, so a cursor
+    // made of geometry would disappear behind the very page it is pointing at.
+    const hands = document.createElement('div');
+    hands.className = 'panel-hands';
+    el.appendChild(hands);
+    const sign = document.createElement('div');
+    sign.className = 'panel-driver';
+    sign.hidden = true;
+    el.appendChild(sign);
+
     const object = new CSS3DObject(el);
     const glass = new THREE.Mesh(GLASS);
     glass.scale.set(FACE_W, FACE_H, 1);   // the object's own scale takes it back to metres
     object.add(glass);
     place(object, p);
     scene.add(object);
-    records.set(p.id, { spec: p, object, el, face, glass });
+    const rec = { spec: p, object, el, face, glass, state, driver: null, hands, sign, cursors: new Map() };
+    records.set(p.id, rec);
+    fill(rec);
   }
 
   // Where the glass sits: the board's own sums, turned and scaled with the prop, and
@@ -110,6 +145,8 @@ export function createPanels({ camera, terrain, island, element }) {
     const rec = records.get(id);
     if (!rec) return;
     if (rec === held) release();
+    for (const hand of rec.cursors.values()) hand.remove();
+    rec.cursors.clear();
     scene.remove(rec.object);      // CSS3DObject takes its element out of the page itself
     if (rec.face.dispose) rec.face.dispose();
     records.delete(id);
@@ -131,22 +168,132 @@ export function createPanels({ camera, terrain, island, element }) {
 
   // Stepping up to a board. From here the mouse is aimed at it by press(), and through
   // walk.js the keyboard is the page's: a button can be clicked and a field typed into.
+  //
+  // Taken here and asked for at the same moment, rather than waiting for the server to
+  // agree: E has to feel immediate. If somebody else already has it the answer comes
+  // back a beat later and driven() hands it straight back, with a word about who.
   function take(id) {
     release();
     const rec = records.get(id);
     if (!rec) return false;
     held = rec;
     rec.el.classList.add('worked');
+    onTake(id);
     return true;
   }
 
   function release() {
     if (!held) return;
-    held.el.classList.remove('worked');
+    const was = held;
+    held = null;
+    was.el.classList.remove('worked');
     hover(null);
     // A field left focused would keep every keystroke after you have walked away.
-    if (held.el.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
-    held = null;
+    if (was.el.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
+    onCursor(null);
+    onDrop(was.spec.id);
+  }
+
+  // ------------------------------------------------------------ what the boards say
+  // What the island last said, kept whether or not the board is standing here yet. The
+  // welcome arrives while the props are still being fetched, so without this a page
+  // that has just been opened reads a blank board until somebody presses something.
+  const known = new Map();   // id -> { state, driver }
+
+  function said(id) {
+    let have = known.get(id);
+    if (!have) { have = { state: {}, driver: null }; known.set(id, have); }
+    return have;
+  }
+
+  // One field, as the island has it. Ours came back the same way, so there is one place
+  // a value is ever written and no chance of two copies disagreeing.
+  function field(id, action, value) {
+    said(id).state[action] = value;
+    const rec = records.get(id);
+    if (!rec) return;
+    if (applyUi(rec.spec.face || 'notice', rec.state, action, value) === null) return;
+    if (rec.face.draw) rec.face.draw(rec.state);
+  }
+
+  // Who is standing at a board. A board that turns out to be somebody else's is let go
+  // of at once - see take().
+  function driven(id, driver) {
+    said(id).driver = driver || null;
+    const rec = records.get(id);
+    if (!rec) return null;
+    rec.driver = driver || null;
+    const mine = driver && driver === self();
+    rec.sign.hidden = !rec.driver || !!mine;
+    rec.el.classList.toggle('driven', !!rec.driver && !mine);
+    if (held === rec && rec.driver && !mine) {
+      release();
+      return rec.driver;      // the caller says whose it is; this file has no way to
+    }                         // put a sentence in front of the reader
+    return null;
+  }
+
+  // The name over a board somebody else is working. Set apart from driven() because the
+  // roster is the only place a player id becomes a name, and that is not this file's.
+  function drivenBy(id, name) {
+    said(id).name = name;
+    const rec = records.get(id);
+    if (rec) rec.sign.textContent = `${name} is working this`;
+  }
+
+  // Everything at once, for somebody who has just arrived.
+  function all(boards) {
+    known.clear();
+    for (const b of boards || []) {
+      const have = said(b.id);
+      have.state = { ...(b.state || {}) };
+      have.driver = b.driver || null;
+    }
+    for (const rec of records.values()) fill(rec);
+  }
+
+  // Bring one board in line with what the island last said. Called when a board is first
+  // drawn and again whenever it is rebuilt, so a panel that goes up while people are
+  // standing at it does not start from nothing.
+  function fill(rec) {
+    const id = rec.spec.id;
+    const face = rec.spec.face || 'notice';
+    const have = known.get(id);
+    // Emptied and refilled rather than replaced: the face's send() holds this very
+    // object, and handing it a new one would leave a press writing into the old.
+    for (const key of Object.keys(rec.state)) delete rec.state[key];
+    Object.assign(rec.state, startState(face));
+    if (have) for (const [action, value] of Object.entries(have.state)) applyUi(face, rec.state, action, value);
+    if (rec.face.draw) rec.face.draw(rec.state);
+    if (have && have.name) rec.sign.textContent = `${have.name} is working this`;
+    rec.driver = (have && have.driver) || null;
+    const mine = rec.driver && rec.driver === self();
+    rec.sign.hidden = !rec.driver || !!mine;
+    rec.el.classList.toggle('driven', !!rec.driver && !mine);
+  }
+
+  // Somebody else's hand on a board. A cursor is a DOM element inside the panel, for
+  // the same reason the driver's name is: nothing drawn in WebGL can lie over this
+  // layer, so a pointer made of geometry would vanish behind the page.
+  function peerCursor(who, at) {
+    for (const rec of records.values()) {
+      const had = rec.cursors.get(who);
+      if (had && (!at || at.board !== rec.spec.id)) { had.remove(); rec.cursors.delete(who); }
+    }
+    if (!at) return;
+    const rec = records.get(at.board);
+    if (!rec) return;
+    let hand = rec.cursors.get(who);
+    if (!hand) {
+      hand = document.createElement('div');
+      hand.className = `hand style-${String(at.style || 'unknown').replace(/[^a-z]/g, '')}`;
+      hand.innerHTML = '<svg viewBox="0 0 12 16" aria-hidden="true"><path d="M1 1l10 6-4.4 1.2L4.6 14z"/></svg><b></b>';
+      rec.hands.appendChild(hand);
+      rec.cursors.set(who, hand);
+    }
+    hand.querySelector('b').textContent = at.name || 'someone';
+    hand.style.left = `${(at.u * 100).toFixed(2)}%`;
+    hand.style.top = `${(at.v * 100).toFixed(2)}%`;
   }
 
   // What walk mode needs to know to put E over a board: where it stands, how close you
@@ -216,12 +363,17 @@ export function createPanels({ camera, terrain, island, element }) {
   function point(pointer) {
     const at = held && aim(pointer);
     hover(at ? elementAt(at) : null);
+    // Our own hand, for everybody else's copy of the board.
+    onCursor(at ? { id: held.spec.id, u: at.x / FACE_W, v: at.y / FACE_H } : null);
     return !!at;
   }
 
   function press(pointer) {
     const at = held && aim(pointer);
     if (!at) return false;
+    // Held here but not ours yet, or somebody else's: the board is still readable, it
+    // simply does not answer. One hand at a time is the whole of the rule.
+    if (held.driver && held.driver !== self()) return true;
     const el = elementAt(at);
     // Focus first: it is what makes a field take the keys walk.js has just let go of.
     if (el && el.focus) el.focus();
@@ -261,5 +413,8 @@ export function createPanels({ camera, terrain, island, element }) {
     bench.remove();
   }
 
-  return { apply, update, render, resize, setVisible, take, release, point, press, interactables, dispose, count: () => records.size };
+  return {
+    apply, update, render, resize, setVisible, take, release, point, press, interactables, dispose,
+    field, driven, drivenBy, all, peerCursor, count: () => records.size,
+  };
 }
