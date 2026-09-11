@@ -525,3 +525,36 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .walk-pouch .ripe { color: #7fd08a; }
 .walk-pouch kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
   border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* --- the build menu ---------------------------------------------------- */
+/* Modelled on the seed stall's rows (.mk-row above), so the two panels read as the same
+   island rather than two designs. */
+.bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 7px; }
+.bd-grid.one { grid-template-columns: 1fr; }
+.bd-tile {
+  padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px;
+  background: rgba(255,255,255,.03); cursor: pointer; transition: .14s;
+}
+.bd-tile:hover { border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.09); }
+.bd-tile.open { border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.06); }
+.bd-tile b { font-size: 13px; display: flex; justify-content: space-between; align-items: baseline; }
+.bd-tile b i { font-style: normal; font-size: 10px; opacity: .45; }
+.bd-tile p { margin: 2px 0 5px; font-size: 11.5px; line-height: 1.35; color: var(--ink); opacity: .78; }
+.bd-hint { font-size: 10.5px; color: var(--ink-dim); }
+.bd-hint kbd { font-size: 9.5px; }
+.bd-faces { display: flex; gap: 5px; margin-top: 7px; }
+.bd-tile.take { cursor: pointer; }
+.bd-tile.take b { color: var(--accent-2); }
+
+/* --- what is in your hand ---------------------------------------------- */
+/* Bottom centre, above the walk keys but clear of the pouch, and visible from the sky as
+   well as on foot - which is why it is not inside .walk-hud. */
+.build-hud {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 76px; z-index: 11;
+  padding: 7px 13px; font-size: 12px; display: flex; gap: 9px; align-items: center;
+  white-space: nowrap; pointer-events: none;
+}
+.build-hud b { color: var(--accent); font-weight: 650; }
+.build-hud .why { color: #e0574a; }
+.build-hud kbd { font-size: 10px; }
+.build-hud .muted { opacity: .62; }

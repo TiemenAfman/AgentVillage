@@ -50,6 +50,7 @@
   <div class="chips">
     <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
     <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
+    <button class="chip" id="build-btn" title="Put something on the island">Build</button>
     <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
     <button class="chip" id="legend-btn">Legend</button>
     <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
@@ -98,6 +99,10 @@
   <div class="card walk-pouch" id="walk-pouch" hidden></div>
   <div class="walk-keys" id="walk-keys"></div>
 </div>
+
+<!-- What is in your hand while building. Outside the walk HUD on purpose: that strip is
+     hidden whenever you are not on foot, and a ghost can be aimed from the sky too. -->
+<div class="card build-hud" id="build-hud" hidden></div>
 
 <div id="veil"></div>
 

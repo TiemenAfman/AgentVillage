@@ -28,6 +28,7 @@ import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
+import { createBuildMenu } from './buildmenu.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
@@ -247,7 +248,7 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, panels: null, think: null,
+  props: null, panels: null, think: null, buildMenu: null, ghost: null,
   crops: null, market: null, garden: null,
 };
 
@@ -514,6 +515,22 @@ function sowHere() {
   }
   const c = CROPS[g.held];
   tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
+}
+
+// --------------------------------------------------------------- building by hand
+// The catalogue, and then a thing in your hand. Everything after the menu closes is
+// web/js/ghost.js: the aiming, the wheel, and the one POST that puts it down.
+//
+// Pressing it again while something is already in hand puts that back, so the key is a
+// toggle rather than a way to open a menu on top of a ghost.
+function openBuild() {
+  if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
+  if (keeperOnly('build on this island')) return;
+  if (state.buildMenu.isOpen()) return;
+  if (state.ghost && state.ghost.holding()) { state.ghost.drop(); return; }
+  if (state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.buildMenu.open();
 }
 
 // Which seed is in hand, one press at a time, in the order the stall lists them.
@@ -2315,6 +2332,15 @@ async function boot() {
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
+    onBuild: () => openBuild(),
+  });
+
+  state.buildMenu = createBuildMenu(document.body, {
+    onPick: (spec) => { if (state.ghost) state.ghost.take(spec); },
+    onDemolish: () => { if (state.ghost) state.ghost.demolish(); },
+    // The menu is the only part of building that stops your feet. While a ghost is in
+    // your hand you keep walking, which is what makes "two steps left, then down" work.
+    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
   state.market = createMarket(document.body, {
