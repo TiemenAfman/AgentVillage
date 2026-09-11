@@ -671,7 +671,11 @@ function enterInterior(room, at) {
   inside.enter({ avatar: loadAvatar() });
   state.ui.setIndoors(true);
   state.ui.setWalkPrompt(null);
-  if (state.net) state.net.setWalking(false);   // nobody out on the island can see you in here
+  // The room is a place the others can be drawn in, and your pose now comes from its own
+  // walk mode. Switching presence off instead -- which is what this used to do -- made the
+  // tavern the one room on the island where nobody could keep you company.
+  if (state.peers) state.peers.place(inside.room, { scene: inside.scene, terrain: inside.terrain });
+  if (state.net) state.net.setRoom(inside.room, inside.walk);
 }
 
 function leaveInterior() {
@@ -679,7 +683,7 @@ function leaveInterior() {
   state.inside = null;
   state.ui.setIndoors(false);
   state.ui.setWalkPrompt(null);
-  if (state.net) state.net.setWalking(true);
+  if (state.net) state.net.setRoom(null, state.walk);
   // Still on foot: walk mode picks up again on the step outside the door.
   state.walk.enter({
     at: (cameFrom && cameFrom.at) || [0, 0],
@@ -841,7 +845,10 @@ function exitWalk() {
     state.ui.setIndoors(false);
   }
   state.mode = 'orbit';
-  if (state.net) state.net.setWalking(false);
+  // Back outdoors as far as the others are concerned, and the pose comes from the island's
+  // walk mode again. Leaving this pointed at a room you have left is how you come back down
+  // from the sky invisible: the room's walk mode is no longer active, so nothing is sent.
+  if (state.net) { state.net.setRoom(null, state.walk); state.net.setWalking(false); }
   state.walk.setPeerBlockers([]);
   reportWhere({ final: true });   // write down where you left off, and that you left
   state.walk.exit();
@@ -1990,7 +1997,9 @@ function frame(nowMs) {
   // somebody crossing the island.
   if (state.peers) {
     state.peers.update(dt);
-    if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
+    // Only the people in the room you are standing in are people you can bump into.
+    if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
+    else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
   }
 
   // ---- walking ------------------------------------------------------------

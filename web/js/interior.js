@@ -702,7 +702,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   return {
-    name: def.name, scene, walk, enter, update, leave, dispose,
+    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
     setPaused: (v) => walk.setPaused(v),
     isInside: () => !left,
   };
