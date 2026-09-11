@@ -18,7 +18,7 @@ import {
 } from './lib/garden.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { think } from './lib/think.mjs';
-import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
+import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { createWsServer } from './lib/ws.mjs';
@@ -269,6 +269,26 @@ if (ws) setInterval(() => roster.tick(), Math.max(33, Number(config.multiplayer.
 const islanderName = config.multiplayer.name || (() => {
   try { return os.userInfo().username; } catch { return os.hostname(); }
 })();
+// An island answering on a port of its own is somebody's working copy rather than the
+// island of this machine -- `--port`, PORT in the environment and autoPort in
+// launch.json all end up here -- and it says so on the horizon, with the branch it is
+// serving. Two Promptholms in the distance are then two pieces of work you can tell
+// apart, instead of a nameless twin of your own island.
+//
+// Read once, in the background: a beacon goes out every five seconds and none of them
+// deserves to shell out to git, and a server does not change branch under its own feet.
+const devPort = PORT !== Number(config.port || 4747);
+let devLabel = devPort ? 'development' : null;
+if (devPort) currentBranch(ROOT).then((b) => { devLabel = workLabel(b) || devLabel; }).catch(() => {});
+
+// The branches here are named <kind>/<issue>-<slug>, so `feature/25-dev-eiland-label`
+// reads back as `#25 dev-eiland-label`. Anything not in that shape is shown as it is.
+function workLabel(branch) {
+  if (!branch) return null;
+  const m = /^[^/]+\/(\d+)-(.+)$/.exec(branch);
+  return m ? `#${m[1]} ${m[2]}` : branch;
+}
+
 const neighbours = config.multiplayer.discovery ? createNeighbours({
   port: PORT,
   name: islanderName,
@@ -280,6 +300,7 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
     const v = readJson(VILLAGE_FILE, null);
     return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
   },
+  dev: () => devLabel,
   log,
   onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
 }) : null;

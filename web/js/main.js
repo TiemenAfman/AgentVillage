@@ -2039,10 +2039,12 @@ function updateLabels() {
       projected.set(m.x, m.y, m.z).project(camera);
       if (projected.z > 1) continue;
       const x = (projected.x + 1) / 2 * innerWidth, y = (1 - projected.y) / 2 * innerHeight;
+      const sub = `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'} · click to sail over`;
       if (hoverId === `neighbour:${m.id}`) {
-        hoverItem = { name: m.name, sub: `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'} · click to sail over`, x, y };
+        hoverItem = { name: m.name, sub: m.dev ? `${m.dev} · ${sub}` : sub, x, y };
       } else {
-        items.push({ text: m.name, x, y });
+        // A working copy says which work it is, over its own name.
+        items.push({ text: m.name, above: m.dev || null, x, y });
       }
     }
   }
