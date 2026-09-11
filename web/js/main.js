@@ -15,6 +15,7 @@ import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
+import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon } from './horizon.js';
@@ -28,6 +29,7 @@ import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
+import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad, BTN } from './gamepad.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
@@ -239,6 +241,10 @@ const state = {
   hover: null, selected: null, intro: null, tween: null, live: 'live',
   queue: [], running: false, flags: null, particles: null,
   walk: null, board: null, chat: null, pad: null, padSeen: false, mode: 'orbit',
+  // The room you are standing in, if any. Walking and being indoors are not two modes:
+  // you are still on foot, the room simply owns the camera and the keyboard while you
+  // are in it.
+  inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   props: null, think: null,
   crops: null, market: null, garden: null,
@@ -322,6 +328,11 @@ function interactables() {
       out.push({ id: rec.id, kind: 'townhall', x: p.x, z: p.z, r: 3.2, label: 'the town hall' });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
+    } else if (rec.spec.civicType === 'tavern') {
+      out.push({
+        id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
+        label: 'the tavern', prompt: 'step into the tavern',
+      });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
@@ -540,6 +551,83 @@ function openMarket() {
   state.market.open();
 }
 
+// What the keys do while you are out on the island. Lifted out of `enterWalk` because
+// stepping back out of a room re-enters walk mode, and a second copy of this list would
+// drift away from the first one.
+function walkCallbacks() {
+  return {
+    onInteract: (it) => {
+      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open('jira'); }
+      else if (it.kind === 'issues') { if (keeperOnly('read the island board')) return; state.walk.setPaused(true); state.board.open('github'); }
+      else if (it.kind === 'office') openOffice(it.id);
+      else if (it.kind === 'townhall') openTownHall();
+      else if (it.kind === 'market') openMarket();
+      else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'bed') pullBed(it.id);
+      else talkTo(it.id);
+    },
+    onSendAway: (it) => {
+      if (it.kind === 'bed') { digBed(it.id); return; }
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'tavern'].includes(it.kind)) askToSendAway(it.id);
+    },
+    onThink: () => openThink(),
+    onPlant: () => sowHere(),
+    onNextSeed: () => nextSeed(),
+    onExit: () => exitWalk(),
+  };
+}
+
+// --------------------------------------------------------------- stepping inside
+// A room is built the first time you visit it and kept afterwards: its walk mode hangs
+// listeners on the window, so a fresh one per visit would pile them up.
+const rooms = new Map();
+let cameFrom = null;
+
+function enterInterior(room, at) {
+  if (state.inside || state.mode !== 'walk') return;
+  let inside = rooms.get(room);
+  if (!inside) {
+    try {
+      inside = createInterior({
+        room, camera, material: buildingMat, dom: renderer.domElement,
+        onLeave: () => leaveInterior(),
+      });
+    } catch (e) {
+      console.error('that room could not be built', e);
+      state.ui.toast('That door does not open yet.');
+      return;
+    }
+    rooms.set(room, inside);
+  }
+  // Where to put you back down, and what to face when you get there: the door you just
+  // walked through.
+  const w = state.walk.state;
+  cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
+  state.walk.exit();
+  state.inside = inside;
+  inside.enter({ avatar: loadAvatar() });
+  state.ui.setIndoors(true);
+  state.ui.setWalkPrompt(null);
+  if (state.net) state.net.setWalking(false);   // nobody out on the island can see you in here
+}
+
+function leaveInterior() {
+  if (!state.inside) return;
+  state.inside = null;
+  state.ui.setIndoors(false);
+  state.ui.setWalkPrompt(null);
+  if (state.net) state.net.setWalking(true);
+  // Still on foot: walk mode picks up again on the step outside the door.
+  state.walk.enter({
+    at: (cameFrom && cameFrom.at) || [0, 0],
+    facing: cameFrom && cameFrom.facing,
+    blockers: walkableBlockers(),
+    interactables: interactables(),
+    ...walkCallbacks(),
+  });
+  reportWhere({ final: true });
+}
+
 function enterWalk() {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
@@ -565,23 +653,7 @@ function enterWalk() {
     facing,
     blockers: walkableBlockers(),
     interactables: interactables(),
-    onInteract: (it) => {
-      if (it.kind === 'board') { if (keeperOnly('read the sprint board')) return; state.walk.setPaused(true); state.board.open('jira'); }
-      else if (it.kind === 'issues') { if (keeperOnly('read the island board')) return; state.walk.setPaused(true); state.board.open('github'); }
-      else if (it.kind === 'office') openOffice(it.id);
-      else if (it.kind === 'townhall') openTownHall();
-      else if (it.kind === 'market') openMarket();
-      else if (it.kind === 'bed') pullBed(it.id);
-      else talkTo(it.id);
-    },
-    onSendAway: (it) => {
-      if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market'].includes(it.kind)) askToSendAway(it.id);
-    },
-    onThink: () => openThink(),
-    onPlant: () => sowHere(),
-    onNextSeed: () => nextSeed(),
-    onExit: () => exitWalk(),
+    ...walkCallbacks(),
   });
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
 }
@@ -697,6 +769,14 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
+  // Straight from a bar stool to the sky: leave the room on the way out, or the island
+  // would still believe you were indoors when you next came down.
+  if (state.inside) {
+    const room = state.inside;
+    state.inside = null;
+    room.leave();
+    state.ui.setIndoors(false);
+  }
   state.mode = 'orbit';
   if (state.net) state.net.setWalking(false);
   state.walk.setPeerBlockers([]);
@@ -1824,7 +1904,11 @@ function frame(nowMs) {
   }
 
   // ---- walking ------------------------------------------------------------
-  if (state.mode === 'walk') {
+  if (state.inside) {
+    const w = state.inside.update(dt);
+    state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
+  } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.ui.setPouch(state.guest ? null : pouch());
@@ -1858,7 +1942,9 @@ function frame(nowMs) {
   const month = new Date(timeNow()).getMonth();
   if (state.world) {
     state.world.update(dt, hour, month);
-    buildingMat.userData.uniforms.uNight.value = state.world.state.night;
+    // The island keeps its clock while you are indoors - it is the same afternoon when
+    // you come back out - but a room with its shutters closed does not brighten at noon.
+    buildingMat.userData.uniforms.uNight.value = state.inside ? INDOOR_GLOW : state.world.state.night;
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) state.settlers.update(dt, state.world ? state.world.state.night : 0);
@@ -1907,7 +1993,7 @@ function frame(nowMs) {
 
   if (state.mode !== 'walk') updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
-  renderer.render(scene, camera);
+  renderer.render(state.inside ? state.inside.scene : scene, camera);
 }
 
 function updateLabels() {

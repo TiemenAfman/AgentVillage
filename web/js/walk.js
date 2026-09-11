@@ -32,6 +32,10 @@ const SWIM_SINK = 0.07;
 const CROUCH_SCALE = 0.62;
 const CROUCH_SPEED = 1.7;
 const LIE_AFTER_MS = 2000;
+// Walking away is how you get off a seat, but you almost always sit down while still holding
+// the key that walked you up to it: without a moment's grace the same press that sat you down
+// stood you straight back up, and it looked as though the stools could not be sat on at all.
+const SIT_HOLD_MS = 400;
 const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
@@ -77,7 +81,23 @@ function loungeGeometry() {
   return g;
 }
 
-export function createWalkMode({ scene, camera, terrain, material, dom, avatar: avatarSpec }) {
+// The camera sits this far behind the shoulder out on the island, where there is room for
+// it, so both distances are options with the island's values as the default: a room indoors
+// has a ceiling and four walls and wants it closer in.
+//
+// `clampCam` gets the camera position just before it is aimed, which is the one moment a
+// room can pull it back inside its own walls and still have it looking at the right thing.
+// Hold it off a wall any later and it ends up on top of the very thing it is aiming at,
+// where `lookAt` has no direction left to choose and the whole view flips over.
+//
+// `camAim` is how high up the figure the camera looks. Out here that is 0.9, well over the
+// head of a settler half that tall, which is what gives the island its slight look down from
+// above; under a ceiling it has to come down to the chest or the camera is aiming at the
+// rafters and has to be put there to do it.
+export function createWalkMode({
+  scene, camera, terrain, material, dom, avatar: avatarSpec,
+  camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null,
+}) {
   const avatar = new THREE.Mesh(avatarPlayerGeometry(avatarSpec || loadAvatar()), material);
   // Yaw first, then the swimmer's pitch about its own axis. The default XYZ order would
   // tip the body in world space and then spin it. With x = 0 both orders agree, so the
@@ -106,6 +126,9 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     swimming: false,
     crouching: false,
     lying: false,
+    // Where you are sitting, or null. A seat carries its own height, so a bar stool holds
+    // you above the floor rather than sinking you into it.
+    sitting: null,
     ctrlSince: 0,
     blockers: [],
     // The other people, kept apart from the buildings on purpose: the building list is
@@ -133,7 +156,24 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
   function standUp() {
     state.crouching = false;
     state.lying = false;
+    state.sitting = null;
     state.ctrlSince = 0;
+  }
+
+  // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
+  // pose held until you walk out of it - except that it is entered deliberately, so
+  // nothing counts down to it and the seat says how high you end up.
+  function sitOn({ x, z, y, yaw = 0 }) {
+    state.crouching = false;
+    state.lying = false;
+    state.ctrlSince = 0;
+    state.sitting = { x, z, y: y != null ? y : groundAt(x, z), yaw, since: performance.now() };
+    state.pos.set(x, state.sitting.y, z);
+    keys.clear();                            // whatever walked you here is not walking you off
+    state.vy = 0;
+    state.grounded = true;
+    state.swimming = false;
+    state.yaw = yaw;
   }
 
   const onKeyDown = (e) => {
@@ -146,7 +186,8 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') {
       e.preventDefault();
-      if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
+      if (state.sitting) standUp();          // stand before you jump, not off the stool
+      else if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
     }
     if (k === 'control') {
       e.preventDefault();
@@ -188,6 +229,17 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     state.camYaw -= dx * 0.0042;
     state.camPitch = clamp(state.camPitch + dy * 0.0032, -0.25, 0.95);
   };
+  // The wheel pulls the camera in and pushes it out, the same as it does from the sky. It
+  // listens on the canvas and not the window, and gives up while an overlay owns the input,
+  // so scrolling a panel of text never also zooms the island behind it.
+  let back = camBack;
+  const onWheel = (e) => {
+    if (!state.active || state.paused) return;
+    e.preventDefault();
+    back = clamp(back * Math.exp(clamp(e.deltaY, -240, 240) * 0.0016), camBack * 0.35, camBack * 2.2);
+  };
+  dom.addEventListener('wheel', onWheel, { passive: false });
+
   dom.addEventListener('pointerdown', onDown);
   addEventListener('pointerup', onUp);
   addEventListener('pointermove', onMove);
@@ -315,7 +367,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
     const push = Math.min(1, Math.hypot(ix, iz));
-    const speed = (state.lying ? 0
+    const speed = (state.lying || state.sitting ? 0
       : state.swimming ? SWIM_SPEED
         : state.crouching ? CROUCH_SPEED
           : run ? RUN_SPEED : WALK_SPEED) * push * dt;
@@ -347,20 +399,25 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     const ground = groundAt(state.pos.x, state.pos.z);
     const inWater = ground < 0;
     const underfoot = inWater ? WATER_Y - SWIM_SINK : ground;
-    if (state.grounded) {
+    if (state.sitting) {
+      state.pos.y = state.sitting.y;         // the stool, not the floor
+    } else if (state.grounded) {
       state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
       state.pos.y += state.vy * dt;
       if (state.pos.y <= underfoot) { state.pos.y = underfoot; state.vy = 0; state.grounded = true; }
     }
-    state.swimming = state.grounded && inWater;
+    state.swimming = state.grounded && inWater && !state.sitting;
 
     // Standing still with Ctrl held long enough is a decision to stop for the day, and it
     // outlasts the key: once down, the settler stays down until they move or press Ctrl
     // again. While crouching, any movement puts the clock back to zero, so a crouch-walk
     // never ends in a nap.
-    if (state.lying) {
+    if (state.sitting) {
+      // The first step off is how you get up, once you have actually sat down.
+      if (state.moving && performance.now() - state.sitting.since > SIT_HOLD_MS) standUp();
+    } else if (state.lying) {
       if (state.moving || !state.grounded || state.swimming) standUp();
     } else if (state.crouching && state.grounded && !state.swimming) {
       if (state.moving) state.ctrlSince = performance.now();
@@ -376,6 +433,12 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
       avatar.rotation.set(-1.5, state.yaw, 0);
       lounge.position.set(state.pos.x, state.pos.y + 0.01, state.pos.z);
       lounge.rotation.set(0, state.yaw, 0);
+    } else if (state.sitting) {
+      // Upright but shortened, which at this scale is what reads as sitting: the figure is
+      // one merged mesh with no legs to fold, so the body itself does the folding.
+      avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
+      avatar.rotation.set(0, state.yaw, 0);
+      avatar.scale.set(1, 0.74, 1);
     } else if (state.swimming) {
       // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
       // limbs to animate - the whole body leans into it instead, which at this scale is
@@ -394,13 +457,14 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     }
 
     // camera sits behind and above, and never dips under the ground
-    const camBack = state.lying ? CAM_BACK * 1.7 : CAM_BACK;
-    const cx = state.pos.x - Math.sin(state.camYaw) * camBack * Math.cos(state.camPitch);
-    const cz = state.pos.z - Math.cos(state.camYaw) * camBack * Math.cos(state.camPitch);
-    const eyeDrop = state.lying ? CAM_UP * 0.55 : state.crouching ? CAM_UP * 0.3 : 0;
-    const cy = state.pos.y + CAM_UP - eyeDrop + Math.sin(state.camPitch) * camBack;
+    const dist = state.lying ? back * 1.7 : back;
+    const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
+    const cz = state.pos.z - Math.cos(state.camYaw) * dist * Math.cos(state.camPitch);
+    const eyeDrop = state.lying ? camUp * 0.55 : state.crouching || state.sitting ? camUp * 0.3 : 0;
+    const cy = state.pos.y + camUp - eyeDrop + Math.sin(state.camPitch) * dist;
     camera.position.set(cx, Math.max(cy, groundAt(cx, cz) + 0.55), cz);
-    camera.lookAt(state.pos.x, state.pos.y + (state.lying ? 0.2 : state.crouching ? EYE * 0.7 : EYE), state.pos.z);
+    if (clampCam) clampCam(camera.position);
+    camera.lookAt(state.pos.x, state.pos.y + (state.lying ? camAim * 0.22 : state.crouching ? camAim * 0.7 : camAim), state.pos.z);
 
     // what is within reach?
     let near = null, bestD = Infinity;
@@ -420,6 +484,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     removeEventListener('pointerup', onUp);
     removeEventListener('pointermove', onMove);
     dom.removeEventListener('pointerdown', onDown);
+    dom.removeEventListener('wheel', onWheel);
     scene.remove(avatar);
     avatar.geometry.dispose();
   }
@@ -436,7 +501,7 @@ export function createWalkMode({ scene, camera, terrain, material, dom, avatar: 
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, roomFor, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setBlockers, setPeerBlockers, setInteractables, setAvatar, setDecks, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {

@@ -35,6 +35,26 @@
   }
   #demo-labels .tag b { display: block; font-weight: 600; }
   #demo-labels .tag i { font-style: normal; opacity: .55; font-size: 10px; }
+  /* Walking the model sheet: the same furniture the island puts under your feet, so a
+     shape can be judged from the ground and an interior can be judged at all. */
+  #demo-walk {
+    position: fixed; left: 0; right: 0; bottom: 18px; z-index: 15;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none;
+  }
+  #demo-prompt {
+    padding: 6px 12px; border-radius: 999px;
+    background: rgba(12, 16, 24, .78); color: #f7efe0; font-size: 13px;
+  }
+  #demo-prompt b { color: #ffd9a0; }
+  #demo-keys {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px;
+    font-size: 11px; color: #e6ddcd; text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+  }
+  #demo-keys kbd {
+    display: inline-block; padding: 1px 5px; border-radius: 4px;
+    background: rgba(255, 255, 255, .14); font-family: inherit;
+  }
   #demo-labels .group {
     position: absolute; transform: translate(-50%, -50%);
     font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
@@ -54,6 +74,7 @@
     <button class="chip" id="d-grid">Grid</button>
     <button class="chip" id="d-wire">Wireframe</button>
     <button class="chip" id="d-hits">Hitbox</button>
+    <button class="chip" id="d-walk">Walk</button>
     <button class="chip" id="d-top">Top</button>
   </div>
   <div class="muted" id="d-hits-key" style="font-size:11px" hidden>
@@ -64,6 +85,11 @@
 </section>
 
 <div id="demo-labels"></div>
+
+<div id="demo-walk" hidden>
+  <div id="demo-prompt" hidden></div>
+  <div id="demo-keys"></div>
+</div>
 
 <script type="module" src="/js/demo.js"></script>
 </body>

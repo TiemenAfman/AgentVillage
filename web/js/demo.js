@@ -14,6 +14,8 @@ import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 import { bedGeometry } from './crops.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
+import { createWalkMode } from './walk.js';
+import { createInterior, INDOOR_GLOW } from './interior.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -56,6 +58,7 @@ const ORNAMENTS = [
 
 const PITCH = 3.6;                 // spacing between items on the field
 const ROW = 5.0;                   // spacing between rows
+const FIELD_Y = 0.06;              // the height walk mode is willing to stand on
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -78,11 +81,15 @@ const ground = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x8fae5a, roughness: 1 }),
 );
 ground.rotation.x = -Math.PI / 2;
+// Walk mode reads anything below 0.06 as water you cannot stand on, so the field is
+// raised to exactly that and everything on it sinks six centimetres into the grass -
+// which is what a foundation looks like anyway.
+ground.position.y = FIELD_Y;
 ground.receiveShadow = true;
 scene.add(ground);
 
 const grid = new THREE.GridHelper(200, 200 / PITCH * 2, 0x2f3d22, 0x2f3d22);
-grid.position.y = 0.01;
+grid.position.y = FIELD_Y + 0.01;
 grid.material.opacity = 0.25;
 grid.material.transparent = true;
 grid.visible = false;
@@ -93,6 +100,10 @@ scene.add(grid);
 // because you walk under them. Red is the line the player's middle stops at: the same
 // box grown by half a settler. If something on the island cannot be walked past, this
 // is the view that says why.
+// What walk mode cannot step through, gathered as the field is laid out.
+const blockers = [];
+const placed = new Map();          // spec id -> where it ended up, for the walk entrances
+
 const hitboxes = new THREE.Group();
 hitboxes.visible = false;
 scene.add(hitboxes);
@@ -108,9 +119,12 @@ function drawHitbox(built, x, z) {
   for (const r of built.solids) {
     const solid = new THREE.LineSegments(cubeEdges, solidLine);
     solid.position.set(x + r.x, WALK_CLEARANCE / 2, z + r.z);
+    // What walk mode is handed is the same rectangle, moved onto the field. Nothing on
+    // the model sheet is rotated, so there is no quarter turn to undo.
+    blockers.push({ x: x + r.x, z: z + r.z, hx: r.hx, hz: r.hz });
     solid.scale.set(Math.max(r.hx * 2, 0.004), WALK_CLEARANCE, Math.max(r.hz * 2, 0.004));
     const reach = new THREE.LineLoop(ring, reachLine);
-    reach.position.set(x + r.x, 0.02, z + r.z);
+    reach.position.set(x + r.x, FIELD_Y + 0.03, z + r.z);
     reach.scale.set((r.hx + WALK_BODY_R) * 2, 1, (r.hz + WALK_BODY_R) * 2);
     hitboxes.add(solid, reach);
   }
@@ -141,6 +155,7 @@ function place(spec, x, z, name, note) {
   const built = buildBuilding(spec, {});
   const mesh = new THREE.Mesh(built.geometry, material);
   mesh.position.set(x, 0, z);
+  mesh.userData.id = spec.id;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
@@ -153,6 +168,7 @@ function place(spec, x, z, name, note) {
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
+  placed.set(spec.id, { x, z, built });
   return built;
 }
 
@@ -549,6 +565,21 @@ const REAL = [
 
 // ---- camera --------------------------------------------------------------------
 const fieldDepth = (row - 1) * ROW;
+
+// The grass and the grid can only be sized now: how far the sheet reaches is decided by the
+// rows as they are laid out. Guessing 200 square at the top and centring it on the origin
+// left the last rows -- the bridges, the ground tint -- hanging over the edge of the world,
+// because the first row starts at z = 0 and every other one is further out. So both are cut
+// to the field and centred on the middle of it. The grid stays square, which is what a
+// GridHelper is, and its lines stay two pitches apart.
+const fieldSide = fieldDepth + ROW * 3;
+ground.geometry.dispose();
+ground.geometry = new THREE.PlaneGeometry(fieldSide, fieldSide);
+ground.position.set(0, FIELD_Y, fieldDepth / 2);
+grid.geometry.dispose();
+grid.geometry = new THREE.GridHelper(fieldSide, Math.round(fieldSide / (PITCH * 2)), 0x2f3d22, 0x2f3d22).geometry;
+grid.position.set(0, FIELD_Y + 0.01, fieldDepth / 2);
+
 controls.target.set(0, 0.6, fieldDepth / 2);
 camera.position.set(0, 26, fieldDepth / 2 + 40);
 controls.update();
@@ -597,6 +628,129 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+// ---- walking the field ---------------------------------------------------------
+// A model sheet you can only orbit is enough to judge a shape by, but not a room: an
+// interior can only be judged from inside it. So the field gets the island's own walk mode,
+// standing on a flat stand-in terrain, and the tavern gets a door.
+//
+// The rolling patches further down the sheet - the hedges, the fields, the bridges over
+// their little valleys - build their own ground and this terrain knows nothing about it, so
+// down there you walk over the water rather than through it. That is the model sheet being
+// a model sheet; what this is for is the near rows, and what is inside them.
+const walkHud = document.getElementById('demo-walk');
+const promptEl = document.getElementById('demo-prompt');
+const keysEl = document.getElementById('demo-keys');
+const walkBtn = document.getElementById('d-walk');
+
+const flatTerrain = {
+  size: 256, half: 128,
+  cellWorld: (gx, gz) => [gx - 128 + 0.5, gz - 128 + 0.5],
+  worldHeight: () => FIELD_Y,
+  heightAt: () => FIELD_Y,
+  slope: () => 0,
+  isLand: () => true, isWater: () => false, isBeach: () => false, isBuildable: () => true,
+};
+
+const KEYS_OUT = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
+  + '<span>drag to look, double-click to hold the mouse</span>'
+  + '<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span>'
+  + '<span><kbd>Ctrl</kbd> crouch</span><span><kbd>E</kbd> step inside</span>'
+  + '<span><kbd>Esc</kbd> back to the sky</span>';
+const KEYS_IN = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
+  + '<span>drag to look, double-click to hold the mouse</span>'
+  + '<span><kbd>E</kbd> sit down</span><span><kbd>Esc</kbd> step outside</span>';
+
+let walk = null;
+let inside = null;
+const rooms = new Map();
+
+function setPrompt(near) {
+  if (!near) { promptEl.hidden = true; return; }
+  promptEl.hidden = false;
+  promptEl.innerHTML = `<b>E</b> ${near.prompt || `look at ${near.label}`}`;
+}
+
+// The doors on the field. One for now; the next room is one more entry.
+function doors() {
+  const out = [];
+  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern']]) {
+    const at = placed.get(id);
+    if (at) out.push({ id, room, kind: 'door', x: at.x, z: at.z, r: 2.4, label, prompt: `step into ${label}` });
+  }
+  return out;
+}
+
+function enterField(at, facing) {
+  if (!walk) {
+    walk = createWalkMode({ scene, camera, terrain: flatTerrain, material, dom: renderer.domElement });
+  }
+  walk.enter({
+    at, facing,
+    blockers,
+    interactables: doors(),
+    onInteract: (it) => { if (it.kind === 'door') stepInside(it); },
+    onExit: () => leaveField(),
+  });
+  controls.enabled = false;
+  walkHud.hidden = false;
+  keysEl.innerHTML = KEYS_OUT;
+  labels.hidden = true;
+  walkBtn.classList.add('on');
+}
+
+function leaveField() {
+  if (inside) { const room = inside; inside = null; room.leave(); }
+  if (walk) walk.exit();
+  applyNight();                     // the slider owns the light again
+  controls.enabled = true;
+  walkHud.hidden = true;
+  promptEl.hidden = true;
+  labels.hidden = false;
+  walkBtn.classList.remove('on');
+}
+
+function stepInside(door) {
+  let room = rooms.get(door.room);
+  if (!room) {
+    room = createInterior({
+      room: door.room, camera, material, dom: renderer.domElement,
+      onLeave: () => stepOutside(door),
+    });
+    rooms.set(door.room, room);
+  }
+  walk.exit();
+  inside = room;
+  room.enter();
+  keysEl.innerHTML = KEYS_IN;
+  promptEl.hidden = true;
+}
+
+function stepOutside(door) {
+  inside = null;
+  applyNight();
+  enterField([door.x, door.z + 2.2], [door.x, door.z]);
+}
+
+// A handle on all of it from the console. The model sheet is a workbench, and "why will this
+// not let me walk there" is answered by looking at the numbers rather than by guessing:
+// __sheet.walk.state.pos, __sheet.inside.walk.state.sitting, __sheet.blockers.
+window.__sheet = {
+  get walk() { return inside ? inside.walk : walk; },
+  get inside() { return inside; },
+  blockers, placed, doors, camera, scene,
+};
+
+walkBtn.addEventListener('click', () => {
+  if (inside || (walk && walk.isActive())) { leaveField(); return; }
+  // A couple of paces in front of the tavern door, facing it, which is close enough to be
+  // inside the reach of it: there is nothing else on this field worth starting at.
+  const tavern = placed.get('c:tavern');
+  enterField(
+    tavern ? [tavern.x, tavern.z + 2.1] : [0, 0],
+    tavern ? [tavern.x, tavern.z] : null,
+  );
+});
+
 // ---- frame ----------------------------------------------------------------------
 const v = new THREE.Vector3();
 let last = performance.now();
@@ -606,11 +760,21 @@ function frame(now) {
   last = now;
   const spin = Number(spinInput.value);
   for (const s of spinners) s.rotation.z += dt * spin * 6;
-  controls.update();
-  renderer.render(scene, camera);
+
+  if (inside) {
+    const w = inside.update(dt);
+    setPrompt(w && w.near ? w.near : null);
+    uniforms.uNight.value = INDOOR_GLOW;      // the lamps are lit whatever the slider says
+  } else if (walk && walk.isActive()) {
+    const w = walk.update(dt);
+    setPrompt(w && w.near ? w.near : null);
+  } else {
+    controls.update();
+  }
+  renderer.render(inside ? inside.scene : scene, camera);
 
   // labels ride along with the objects they name
-  for (const t of tags) {
+  if (!labels.hidden) for (const t of tags) {
     v.copy(t.world).project(camera);
     const on = v.z < 1;
     t.el.style.display = on ? '' : 'none';
