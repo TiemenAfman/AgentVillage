@@ -41,6 +41,11 @@ import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
 
+// The boot watchdog in index.html waits on this: it is the one thing that tells it the
+// module graph came up at all. Set before anything below can throw, so that a later crash
+// stays main.js's own to report rather than something the watchdog has to guess at.
+window.__islandRunning = true;
+
 // Anything that goes wrong in the page is reported to the server, so a crash leaves a
 // trace in data/server.log instead of only a blank tab.
 // A visitor's crash is not ours to write into the log of a machine that is not theirs,
