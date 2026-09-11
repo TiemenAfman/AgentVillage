@@ -199,8 +199,14 @@ export function createGhost({
 
   // ------------------------------------------------------------------ the wheel
   function onWheel(e) {
-    if (!spec) return;
+    if (!busy()) return;
+    // Chrome reads ctrl+wheel as "zoom the page", and a trackpad pinch arrives as exactly
+    // that, so the gesture has to be swallowed even when there is nothing to work: in
+    // demolish mode the page would zoom out from under the thing you were aiming at.
     e.preventDefault();
+    // The camera keeps the wheel while you are only pointing at something, though - there
+    // is no shape to turn, and pulling the view back is how you find the next fence post.
+    if (!spec) return;
     e.stopPropagation();
     const sign = Math.sign(e.deltaY) || 1;
     const w = wheelsFor(spec.kind);
@@ -277,8 +283,20 @@ export function createGhost({
 
   function onKey(e) {
     if (!busy()) return;
+    // Alt snaps the turn to a notch, but on Windows a tap of Alt on its own sends Chrome
+    // to its menu bar and the next key lands there instead of on the island. Holding it
+    // over the wheel still works; it just never reaches the browser as a bare press.
+    if (e.key === 'Alt') { e.preventDefault(); return; }   // keyup too: that is the half Chrome acts on
+    if (e.type !== 'keydown') return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); drop(); return; }
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (taking) { if (target) take(target); } else put(); }
+  }
+
+  // Right-clicking while you aim is a slip of the hand, not a request for Chrome's menu.
+  function onContext(e) {
+    if (!busy()) return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   addEventListener('pointermove', onMove, { capture: true });
@@ -286,6 +304,8 @@ export function createGhost({
   addEventListener('pointerup', onUp, { capture: true });
   addEventListener('wheel', onWheel, { capture: true, passive: false });
   addEventListener('keydown', onKey, { capture: true });
+  addEventListener('keyup', onKey, { capture: true });
+  addEventListener('contextmenu', onContext, { capture: true });
 
   // ------------------------------------------------------------------ every frame
   function update() {
@@ -403,6 +423,8 @@ export function createGhost({
     removeEventListener('pointerup', onUp, { capture: true });
     removeEventListener('wheel', onWheel, { capture: true });
     removeEventListener('keydown', onKey, { capture: true });
+    removeEventListener('keyup', onKey, { capture: true });
+    removeEventListener('contextmenu', onContext, { capture: true });
     OK.dispose();
     BAD.dispose();
     TAKE.dispose();

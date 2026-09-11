@@ -543,8 +543,11 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .bd-hint { font-size: 10.5px; color: var(--ink-dim); }
 .bd-hint kbd { font-size: 9.5px; }
 .bd-faces { display: flex; gap: 5px; margin-top: 7px; }
-.bd-tile.take { cursor: pointer; }
-.bd-tile.take b { color: var(--accent-2); }
+/* The one tile that takes something away wears the island's warning red, the same as
+   .btn.danger above - it should never be mistaken for another shape to place. */
+.bd-tile.take { cursor: pointer; border-color: rgba(232,112,92,.35); }
+.bd-tile.take:hover { border-color: #e8705c; background: rgba(232,112,92,.15); }
+.bd-tile.take b { color: #e8705c; letter-spacing: .05em; }
 
 /* --- what is in your hand ---------------------------------------------- */
 /* Bottom centre, above the walk keys but clear of the pouch, and visible from the sky as
