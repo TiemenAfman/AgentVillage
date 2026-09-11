@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRecovery, renderSnapshot } from '../web/js/graphics-health.js';
+import { createRecovery } from '../web/js/graphics-health.js';
 
 function storage() {
   const values = new Map();
@@ -44,21 +44,4 @@ test('unavailable or corrupt persistence disables automatic reloads', () => {
     assert.equal(createRecovery({ getItem: () => value }).reserve(), null);
   }
   assert.equal(createRecovery({ getItem: () => null, setItem() {} }).reserve(), null);
-});
-
-test('diagnostics copy counters so later renders cannot change the pre-crash snapshot', () => {
-  const renderer = {
-    info: { render: { calls: 12, triangles: 300, points: 2, lines: 4 },
-      memory: { geometries: 8, textures: 9 }, programs: [{}, {}] },
-    domElement: { width: 1600, height: 1000 },
-    getPixelRatio: () => 1.15, shadowMap: { enabled: true },
-  };
-  const snapshot = renderSnapshot(renderer, 123.7);
-  renderer.info.render.calls = 0;
-  renderer.info.memory.textures = 0;
-  assert.equal(snapshot.calls, 12);
-  assert.equal(snapshot.textures, 9);
-  assert.equal(snapshot.programs, 2);
-  assert.equal(snapshot.atMs, 124);
-  assert.equal(snapshot.width, 1600);
 });

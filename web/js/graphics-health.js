@@ -25,14 +25,3 @@ export function createRecovery(storage, { maxRetries = 4, stableMs = 60000 } = {
     },
   };
 }
-
-export function renderSnapshot(renderer, now) {
-  const { render, memory, programs } = renderer.info;
-  return {
-    atMs: Math.round(now),
-    calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines,
-    geometries: memory.geometries, textures: memory.textures, programs: programs?.length || 0,
-    width: renderer.domElement.width, height: renderer.domElement.height,
-    pixelRatio: renderer.getPixelRatio(), shadows: renderer.shadowMap.enabled,
-  };
-}
