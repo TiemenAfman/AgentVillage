@@ -237,6 +237,29 @@ function panel(p) {
   ]);
 }
 
+// A wooden case with an LED matrix in the front of it, the way one of these sits on a
+// shelf and tells you something from across the room. The case, the foot and the bezel
+// are wood like everything else out here; the panel is the one thing on the island that
+// is a picture rather than a colour.
+//
+// The picture is not part of this geometry and cannot be: everything merged here shares
+// the island's one building material and has had its uvs deleted on the way in. So this
+// leaves a dark recess where the matrix goes, and the `screen` in SHAPES below says where
+// to hang the lit panel that actually carries the applet.
+function deskdisplay() {
+  return merge([
+    box(1.2, 0.07, 0.34, PLANK_DARK),                                    // the foot
+    box(1.12, 0.6, 0.26, WOOD, { y: 0.07 }),                             // the case
+    box(1.14, 0.04, 0.29, PLANK, { y: 0.63 }),                           // a cap over the top
+    box(1.06, 0.54, 0.03, PLANK, { y: 0.1, z: 0.12 }),                   // the bezel
+    // the matrix itself, dark: this is what is seen before the applet has rendered, and
+    // what a visitor - who is not allowed to run somebody's applet - sees for good.
+    box(0.98, 0.5, 0.012, 0x0c0c10, { y: 0.12, z: 0.135 }),
+    sphere(0.016, 0x6fb84a, { x: 0.47, y: 0.155, z: 0.15, emissive: 1 }),  // the power light
+    cylinder(0.03, 0.03, 0.12, 6, IRON, { y: 0.3, z: -0.19, rx: Math.PI / 2 }),  // the lead out of the back
+  ]);
+}
+
 // name -> how to draw it, how much of the ground it takes up, and where it sits.
 const SHAPES = {
   tree: { build: tree, r: 0.42 },
@@ -249,6 +272,9 @@ const SHAPES = {
   bench: { build: bench, r: 0.45 },
   lamp: { build: lamp, r: 0.2 },
   signpost: { build: signpost, r: 0.2 },
+  // `screen` is the face the applet is shown on, in the geometry's own units: how big,
+  // how far up, and how far forward of the middle. 0.96 by 0.48 is 64 by 32 exactly.
+  deskdisplay: { build: deskdisplay, r: 0.55, screen: { w: 0.96, h: 0.48, y: 0.37, z: 0.148 } },
   well: { build: well, r: 0.7 },
   statue: { build: statue, r: 0.55 },
   campfire: { build: campfire, r: 0.45 },
@@ -321,6 +347,85 @@ export function propReach(p) {
   return Math.max(shape.r * scale, wall, 0.4);
 }
 
+// ---------------------------------------------------------------- the lit panel
+// pixlet hands back an animated WebP, and an <img> is the only thing in a browser that
+// will play one. So the image is kept in the page - a pixel across, behind everything,
+// at no opacity - and copied onto a canvas that the texture reads from. It has to be
+// painted rather than hidden: display:none stops the animation, and a still frame is
+// exactly what this is not for.
+//
+// Nearest filtering both ways is the whole look. Without it a 64 by 32 panel blown up to
+// the size of a door is a smear, and the point of an LED matrix is that you can count
+// the pixels.
+const PANEL_W = 64, PANEL_H = 32;
+const PANEL_FPS = 12;              // it is 64 pixels across; nobody is going to miss the other 48 frames
+const PANEL_RELOAD_MS = 60000;     // ask again for the applet; the server re-renders on its own schedule
+
+// A display is the one prop whose label is what it shows rather than what it is called.
+function appletOf(p) {
+  return String(p.label || '').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'promptholm';
+}
+
+function makePanel(p, shape) {
+  const canvas = document.createElement('canvas');
+  canvas.width = PANEL_W;
+  canvas.height = PANEL_H;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#0c0c10';
+  ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+
+  // Basic rather than standard, and untouched by tone mapping: a panel of lit diodes is
+  // as bright at midnight as at noon, and takes no light from the island's own sun.
+  const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(shape.screen.w, shape.screen.h), mat);
+  mesh.position.set(0, shape.screen.y, shape.screen.z);
+
+  const img = document.createElement('img');
+  img.alt = '';
+  img.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;z-index:-1;pointer-events:none';
+  document.body.appendChild(img);
+  let ready = false;
+  img.addEventListener('load', () => { ready = true; });
+  // A visitor is not allowed to render somebody's applet and gets a 404 here. That is
+  // not a failure: the recess behind this panel is already dark, and dark is the answer.
+  img.addEventListener('error', () => { ready = false; });
+
+  const app = appletOf(p);
+  let reloadAt = 0;
+  let nextFrame = 0;
+
+  return {
+    mesh,
+    tick() {
+      const now = performance.now();
+      if (now >= reloadAt) {
+        reloadAt = now + PANEL_RELOAD_MS;
+        img.src = `/api/star/${encodeURIComponent(app)}.webp?t=${Math.round(now)}`;
+      }
+      if (!ready || now < nextFrame) return;
+      nextFrame = now + 1000 / PANEL_FPS;
+      try {
+        ctx.drawImage(img, 0, 0, PANEL_W, PANEL_H);
+        tex.needsUpdate = true;
+      } catch { /* caught mid-decode; the next frame is 80ms away */ }
+    },
+    dispose() {
+      img.src = '';
+      img.remove();
+      mesh.geometry.dispose();
+      mat.dispose();
+      tex.dispose();
+    },
+  };
+}
+
 export function createProps({ scene, terrain, material }) {
   const group = new THREE.Group();
   group.name = 'props';
@@ -329,6 +434,7 @@ export function createProps({ scene, terrain, material }) {
   const records = new Map();     // id -> { spec, mesh, grow }
   const growing = [];
   const cache = new Map();       // a shape drawn twice shares its geometry
+  const panels = new Set();      // the records carrying a lit face, ticked every frame
 
   function geometryFor(p) {
     const shape = SHAPES[p.kind] || SHAPES.cairn;
@@ -351,6 +457,14 @@ export function createProps({ scene, terrain, material }) {
     mesh.scale.setScalar(animate ? 0.001 : scale);
     group.add(mesh);
     const rec = { spec: p, mesh, scale };
+    // A display carries its own lit face. It hangs off the body, so it grows out of the
+    // ground, turns and scales with it without any of that having to be said twice.
+    const shape = SHAPES[p.kind] || SHAPES.cairn;
+    if (shape.screen) {
+      rec.panel = makePanel(p, shape);
+      mesh.add(rec.panel.mesh);
+      panels.add(rec);
+    }
     records.set(p.id, rec);
     if (animate) growing.push({ rec, t: 0 });
     return rec;
@@ -360,6 +474,7 @@ export function createProps({ scene, terrain, material }) {
     const rec = records.get(id);
     if (!rec) return;
     group.remove(rec.mesh);
+    if (rec.panel) { rec.panel.dispose(); panels.delete(rec); }
     records.delete(id);
     // the geometry is shared through the cache, so it is not disposed here
   }
@@ -389,6 +504,9 @@ export function createProps({ scene, terrain, material }) {
       g.rec.mesh.scale.setScalar(g.rec.scale * e * wobble);
       if (k >= 1) growing.splice(i, 1);
     }
+    // Every lit face gets a look in; whether it is time to copy the next frame across
+    // is the panel's own business.
+    for (const rec of panels) rec.panel.tick();
   }
 
   // What the walker cannot step into, in the shape walk mode reads: axis aligned
@@ -452,6 +570,8 @@ export function createProps({ scene, terrain, material }) {
 
   function dispose() {
     scene.remove(group);
+    for (const rec of panels) rec.panel.dispose();
+    panels.clear();
     for (const g of cache.values()) g.dispose();
     cache.clear();
     records.clear();

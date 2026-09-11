@@ -41,6 +41,7 @@ hooks/          the SessionStart / SessionEnd hook
 lib/            sources, incremental parsing, the village model, plot layout,
                 the sprint board, agent dispatch, conversations
 shared/         the island generator, identical in Node and in the browser
+star/           .star applets for the desk display, rendered by pixlet
 web/js/         the viewer: world, buildings, settlers, walking, board, chat
 data/           generated, gitignored, safe to delete
 ```
@@ -53,6 +54,39 @@ Useful while developing:
 - `data/server.log` collects the server's own output **and** anything the page reports,
   so a crash in the browser leaves a trace on disk.
 - `?nointro` skips the opening camera move, `?hour=21` freezes the time of day.
+
+## The desk display
+
+`build deskdisplay` puts a wooden box with a 64 by 32 LED matrix on the island. What
+the matrix shows is a [pixlet](https://github.com/tidbyt/pixlet) applet - the same .star
+files a Tidbyt or a Board & Base runs - rendered server side and hung on the panel as a
+texture.
+
+```
+node tools/island.mjs build deskdisplay --here --label promptholm
+```
+
+`--label` names the applet: `promptholm` is `star/promptholm.star`. Drop another .star
+in `star/` and it can be built the same day - a folder works too, for an applet that
+comes with its own files. Saving the file is enough: the render is keyed on the applet's
+own timestamp, so the panel picks the change up the next time it looks - within a minute,
+and without restarting anything.
+
+pixlet has to be installed, and the island looks for it on PATH and in the usual places.
+If yours lives somewhere else, say so in `config.json`:
+
+```json
+"star": { "pixlet": "C:/tools/pixlet.exe", "app": "promptholm", "refreshMs": 60000 }
+```
+
+`refreshMs` is how long a rendered frame is kept before pixlet is asked again - short for
+an applet that tells the time, long for one that draws a logo. An applet that wants a key
+or a URL of its own should read it from `config.json`, which is gitignored; nothing in
+`star/` is.
+
+Rendering is the keeper's, not a visitor's: `/api/star` is not in the public list in
+`lib/access.mjs`, because an applet is a small program that is free to go and fetch
+something private. Somebody walking your island sees the box with a dark panel.
 
 Two things to keep in mind when changing the code:
 
