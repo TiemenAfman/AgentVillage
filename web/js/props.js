@@ -260,6 +260,60 @@ function bridgeDeck(p, terrain) {
   return Math.max(a, b, 0.1) + 0.32;
 }
 
+// ---------------------------------------------------------------- the table, opened up
+// What the table above knows about a shape, for anyone who needs to draw or measure one
+// without a village behind them. The build menu holds a prop before it exists: there is
+// no record, no id and nothing on the server yet, only a spec somebody is aiming.
+//
+// These are the single source of truth on purpose. createProps() below calls the same
+// functions, so a thing you are about to put down cannot look or measure differently
+// from the thing you get.
+
+// The geometry for a spec, uncached. createProps keeps its own cache for the props that
+// are standing; a ghost holds one geometry and throws it away when the shape changes.
+export function propGeometry(p) {
+  return (SHAPES[p.kind] || SHAPES.cairn).build(p);
+}
+
+// How high it sits. A bridge clears what it crosses; everything else stands on the
+// ground, sunk three centimetres so it does not hover.
+export function propLift(p, terrain) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  return shape.lift ? shape.lift(p, terrain) : terrain.worldHeight(p.x, p.z) - 0.03;
+}
+
+// What it takes up, as the axis-aligned rectangles walk mode reads. A wall-like shape is
+// a line of small squares rather than one blob; a bridge takes up nothing at all, because
+// it is walked over rather than around.
+export function propFootprint(p) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  const scale = p.scale || 1;
+  const out = [];
+  if (shape.wall) {
+    const len = shape.wall(p) * scale;
+    const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+    const h = shape.run * scale;
+    for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
+      out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h });
+    }
+    return out;
+  }
+  if (!shape.r) return out;
+  const h = shape.r * scale;
+  out.push({ x: p.x, z: p.z, hx: h, hz: h });
+  return out;
+}
+
+// How far from its middle the thing reaches - for "am I standing in it" and for deciding
+// what a demolish cursor is pointing at. The floor keeps a lamp post from being a target
+// you have to hit dead centre.
+export function propReach(p) {
+  const shape = SHAPES[p.kind] || SHAPES.cairn;
+  const scale = p.scale || 1;
+  const wall = shape.wall ? (shape.wall(p) * scale) / 2 : 0;
+  return Math.max(shape.r * scale, wall, 0.4);
+}
+
 export function createProps({ scene, terrain, material }) {
   const group = new THREE.Group();
   group.name = 'props';
@@ -274,16 +328,15 @@ export function createProps({ scene, terrain, material }) {
     // Only the shapes that read a number off the prop need their own geometry; the
     // rest are the same every time and are worth keeping.
     const key = shape.run ? `${p.kind}:${p.length || 0}:${p.label ? 1 : 0}` : `${p.kind}:${p.label ? 1 : 0}`;
-    if (!cache.has(key)) cache.set(key, shape.build(p));
+    if (!cache.has(key)) cache.set(key, propGeometry(p));
     return cache.get(key);
   }
 
   function add(p, animate) {
-    const shape = SHAPES[p.kind] || SHAPES.cairn;
     const mesh = new THREE.Mesh(geometryFor(p), material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    const y = shape.lift ? shape.lift(p, terrain) : terrain.worldHeight(p.x, p.z) - 0.03;
+    const y = propLift(p, terrain);
     mesh.position.set(p.x, y, p.z);
     mesh.rotation.y = p.rot || 0;
     mesh.userData.id = p.id;
@@ -339,21 +392,7 @@ export function createProps({ scene, terrain, material }) {
   function blockers() {
     const out = [];
     for (const rec of records.values()) {
-      const p = rec.spec;
-      const shape = SHAPES[p.kind] || SHAPES.cairn;
-      const scale = p.scale || 1;
-      if (shape.wall) {
-        const len = shape.wall(p) * scale;
-        const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
-        const h = shape.run * scale;
-        for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
-          out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h, id: p.id });
-        }
-        continue;
-      }
-      if (!shape.r) continue;                        // a bridge is walked over, not around
-      const h = shape.r * scale;
-      out.push({ x: p.x, z: p.z, hx: h, hz: h, id: p.id });
+      for (const b of propFootprint(rec.spec)) out.push({ ...b, id: rec.spec.id });
     }
     return out;
   }

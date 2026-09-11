@@ -131,6 +131,10 @@ function tally({ prop, send }) {
 
 const FACES = { notice, clock, tally };
 
+// The faces a board can carry, in the order they are written above - for the build menu,
+// which asks which one a new panel should show.
+export const FACE_NAMES = Object.keys(FACES);
+
 export function knownFace(name) {
   return Object.prototype.hasOwnProperty.call(FACES, String(name));
 }

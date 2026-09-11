@@ -28,6 +28,8 @@ import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { createMarket, answerOf } from './market.js';
+import { createBuildMenu } from './buildmenu.js';
+import { createGhost } from './ghost.js';
 import { createThink } from './think.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
@@ -247,7 +249,7 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
-  props: null, panels: null, think: null,
+  props: null, panels: null, think: null, buildMenu: null, ghost: null,
   crops: null, market: null, garden: null,
 };
 
@@ -516,6 +518,22 @@ function sowHere() {
   tend({ op: 'plant', kind: g.held, x, z, rot: w.yaw }, (a) => `<b>${escapeHtml(c.name)}</b> sown${a.salt ? ' in the salt air, which sets two extra pods' : ''}. Ready in ${escapeHtml(ripeIn(a.bed.ripeAt - Date.now()))}.`);
 }
 
+// --------------------------------------------------------------- building by hand
+// The catalogue, and then a thing in your hand. Everything after the menu closes is
+// web/js/ghost.js: the aiming, the wheel, and the one POST that puts it down.
+//
+// Pressing it again while something is already in hand puts that back, so the key is a
+// toggle rather than a way to open a menu on top of a ghost.
+function openBuild() {
+  if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
+  if (keeperOnly('build on this island')) return;
+  if (state.buildMenu.isOpen()) return;
+  if (state.ghost && state.ghost.holding()) { state.ghost.drop(); return; }
+  if (state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.buildMenu.open();
+}
+
 // Which seed is in hand, one press at a time, in the order the stall lists them.
 function nextSeed() {
   if (keeperOnly('go through this island’s seed pouch')) return;
@@ -586,6 +604,7 @@ function walkCallbacks() {
     onThink: () => openThink(),
     onPlant: () => sowHere(),
     onNextSeed: () => nextSeed(),
+    onBuild: () => openBuild(),
     onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
   };
@@ -2116,7 +2135,10 @@ function frame(nowMs) {
     if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
   }
 
-  if (state.mode !== 'walk') updateLabels();
+  // After the camera is settled, so the ray it casts is the one you are looking down.
+  if (state.ghost) state.ghost.update(dt);
+  // Hover labels and a ghost fight over the same pointer, and the ghost wins.
+  if (state.mode !== 'walk' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
   // After the canvas, on its own layer above it. This one has no depth of its own - see
@@ -2315,6 +2337,15 @@ async function boot() {
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
+    onBuild: () => openBuild(),
+  });
+
+  state.buildMenu = createBuildMenu(document.body, {
+    onPick: (spec) => { if (state.ghost) state.ghost.take(spec); },
+    onDemolish: () => { if (state.ghost) state.ghost.demolish(); },
+    // The menu is the only part of building that stops your feet. While a ghost is in
+    // your hand you keep walking, which is what makes "two steps left, then down" work.
+    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
   state.market = createMarket(document.body, {
@@ -2436,6 +2467,17 @@ async function boot() {
     onPanels: (m) => applyPanelMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  // What a shape looks like before anybody has agreed to it. Built after the world and
+  // the props, because it aims at the ground mesh and measures against what is standing.
+  state.ghost = createGhost({
+    scene, camera, terrain: state.terrain, dom: renderer.domElement,
+    groundMesh: state.world.ground,
+    propsGroup: state.props.group,
+    player: () => (state.mode === 'walk' && !state.inside ? state.walk.state.pos : null),
+    blockers: () => walkableBlockers(),
+    hud: (info) => state.ui.setBuildHud(info),
+    toast: (html) => state.ui.toast(escapeHtml(html)),
+  });
   // What a panel is allowed to know about the island: a handful of getters, so a face
   // can say something live without reaching into the scene.
   state.panels = createPanels({
