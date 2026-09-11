@@ -38,7 +38,9 @@ const USAGE = `The island's command line - ${BASE}
 
       --rot <radians>     which way it faces, or runs
       --scale <n>         0.15 to 6, 1 by default
-      --length <n>        how far a bridge or a fence reaches
+      --length <n>        how far a bridge or a fence reaches, or how wide a
+                          panel is
+      --face <name>       which page a panel carries: notice, clock
       --label "<text>"    a name for it
       --note "<text>"     why it is there
 
@@ -107,6 +109,7 @@ function describe(p) {
   if (p.rot) bits.push(`rot ${p.rot}`);
   if (p.scale && p.scale !== 1) bits.push(`scale ${p.scale}`);
   if (p.length) bits.push(`length ${p.length}`);
+  if (p.face) bits.push(`face ${p.face}`);
   if (p.label) bits.push(`"${p.label}"`);
   if (p.unknown) bits.push('(no shape yet - standing as a cairn)');
   return bits.join('  ');
@@ -257,6 +260,7 @@ async function main() {
       rot: flags.rot === undefined ? undefined : Number(flags.rot),
       scale: flags.scale === undefined ? undefined : Number(flags.scale),
       length: flags.length === undefined ? undefined : Number(flags.length),
+      face: flags.face === true ? undefined : flags.face,
       label: flags.label === true ? undefined : flags.label,
       note: flags.note === true ? undefined : flags.note,
       by: 'a thought',
