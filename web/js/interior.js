@@ -705,6 +705,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   return {
     name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
     setPaused: (v) => walk.setPaused(v),
+    // The room has its own walk mode, so it needs its own way in for the controller.
+    pad: (a, dt) => walk.pad(a, dt),
     isInside: () => !left,
   };
 }
