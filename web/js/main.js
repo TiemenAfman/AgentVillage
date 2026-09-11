@@ -42,6 +42,11 @@ import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
 
+// The boot watchdog in index.html waits on this: it is the one thing that tells it the
+// module graph came up at all. Set before anything below can throw, so that a later crash
+// stays main.js's own to report rather than something the watchdog has to guess at.
+window.__islandRunning = true;
+
 // Anything that goes wrong in the page is reported to the server, so a crash leaves a
 // trace in data/server.log instead of only a blank tab.
 // A visitor's crash is not ours to write into the log of a machine that is not theirs,
@@ -51,6 +56,9 @@ const canvas = document.getElementById('stage');
 // The first report tends to come before the server has said who we are, so anything said
 // that early waits in the hall rather than going out and being refused.
 let reported = 0;
+// Written through setVisiting and nowhere else: that is where the queue below is
+// drained, so assigning this directly leaves everything said during boot in the hall
+// for good.
 let visiting = null;          // null until the island answers
 const held = [];
 function post(message, stack) {
@@ -61,14 +69,19 @@ function post(message, stack) {
   } catch { /* nothing more we can do */ }
 }
 function setVisiting(guest) {
-  if (visiting !== null) return;
+  // The hall is emptied once, by whoever settles this first. What the island says about
+  // us still wins after that, even if it takes its time answering: a visitor found out
+  // about late is still a visitor, and the rest of their session stays out of our log.
+  const first = visiting === null;
   visiting = guest;
+  if (!first) return;
   const queue = held.splice(0);
   if (!guest) for (const [m, s] of queue) post(m, s);
 }
 // An island that never answers is treated as our own, or a crash during boot would
-// leave no trace at all.
-setTimeout(() => setVisiting(false), 4000);
+// leave no trace at all. Only when nothing has answered: a real answer is not to be
+// talked over by the clock.
+setTimeout(() => { if (visiting === null) setVisiting(false); }, 4000);
 let graphicsReports = 0;
 function report(message, stack, graphics = false) {
   if (visiting === true) return;
@@ -2511,7 +2524,8 @@ async function boot() {
   // uses this to decide what to offer; the server refuses the rest either way.
   try {
     const hello = await fetch('/api/hello').then((r) => r.json());
-    state.guest = visiting = hello.role !== 'islander';
+    state.guest = hello.role !== 'islander';
+    setVisiting(state.guest);
     if (state.guest) {
       state.ui.toast(`You are visiting <b>${escapeHtml(hello.islandName || 'this island')}</b>. Walk where you like — the tickets, the chat and the git belong to whoever lives here.`);
     }
