@@ -17,7 +17,6 @@ import {
   cropsView, gardenView, buySeed, sellCrop, sellEverything, holdSeed, plantBed, harvestBed, digUpBed,
 } from './lib/garden.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
-import { think } from './lib/think.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
@@ -876,59 +875,6 @@ async function handle(req, res) {
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
     }
-  }
-
-  // ---- a thought, had while standing somewhere ---------------------------------
-  // Starts a session in this very repository and streams what it says back, the same
-  // way /api/say does for a settler. It is told where you are standing, which is what
-  // lets it act on "here".
-  if (p === '/api/think' && req.method === 'POST') {
-    let body;
-    try { body = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    const { text, sessionId, at, model } = body || {};
-
-    // Whatever the page says it knows about where you are is worth writing down, so
-    // the command line agrees with the prompt even if you have not moved in a while.
-    if (at && Number.isFinite(Number(at.x))) rememberPlayer({ ...at, walking: true }, { force: true });
-
-    let started;
-    try { started = think({ text, at: whereIsPlayer(), sessionId, model }); }
-    catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-
-    res.writeHead(200, {
-      'Content-Type': 'application/x-ndjson; charset=utf-8',
-      'Cache-Control': 'no-store',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    // The page needs the session id to carry the next thought on, and the stream's own
-    // init line does not always arrive first. Say it before anything else.
-    res.write(`${JSON.stringify({ type: 'settlers_thought', sessionId: started.sessionId, resumed: started.resumed })}\n`);
-    log(`thought ${started.resumed ? 'continued' : 'started'} ${started.sessionId}: ${String(text).replace(/\s+/g, ' ').slice(0, 120)}`);
-
-    const { child } = started;
-    let carry = '';
-    child.stdout.on('data', (chunk) => {
-      carry += chunk;
-      const lines = carry.split('\n');
-      carry = lines.pop();
-      for (const line of lines) if (line.trim()) res.write(line.trim() + '\n');
-    });
-    let stderr = '';
-    child.stderr.on('data', (c) => { stderr += c; });
-    child.on('error', (e) => {
-      try { res.write(JSON.stringify({ type: 'settlers_error', error: String(e.message || e) }) + '\n'); } catch { /* client gone */ }
-    });
-    child.on('close', (code) => {
-      if (carry.trim()) { try { res.write(carry.trim() + '\n'); } catch { /* client gone */ } }
-      if (code !== 0) {
-        log(`thought ${started.sessionId} exited ${code}: ${stderr.slice(0, 400)}`);
-        try { res.write(JSON.stringify({ type: 'settlers_error', error: stderr.trim().slice(0, 400) || `claude exited with ${code}` }) + '\n'); } catch { /* gone */ }
-      }
-      try { res.end(); } catch { /* gone */ }
-    });
-    req.on('close', () => { if (!child.killed) child.kill(); });
-    return;
   }
 
   if (p === '/api/agent-log') {
