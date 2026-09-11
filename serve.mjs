@@ -38,7 +38,10 @@ if (has('--public')) config.network = { ...config.network, public: true };
 if (argOf('--name', null)) config.multiplayer = { ...config.multiplayer, name: argOf('--name', null) };
 if (argOf('--seed', null)) config.seed = Number(argOf('--seed', config.seed));
 const ALL = has('--all');
-const PORT = Number(argOf('--port', config.port || 4747));
+// PORT from the environment sits between the flag and the file so a second island - one
+// run out of a worktree, say - can be handed a free port by whatever starts it, without
+// that ending up in config.json and without colliding with the island already up.
+const PORT = Number(argOf('--port', process.env.PORT || config.port || 4747));
 const OPEN = has('--open') && !has('--no-open');
 const RESCAN = has('--no-rescan') ? 0 : (config.rescanIntervalMs || 60000);
 const VILLAGE_FILE = filesFor({ all: ALL }).village;
