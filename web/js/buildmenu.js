@@ -9,7 +9,7 @@
 // Escape handling, same close-calls-onClose contract, so it behaves like every other
 // panel on the island rather than like a new kind of thing.
 import { SHAPES, KINDS, wheelsFor } from 'shared/shapes.mjs';
-import { FACE_NAMES } from './faces.js';
+import { FACE_NAMES, BILLBOARD, siteUrl } from './faces.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -44,6 +44,8 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
 
   // Which kind has its face row open. Only a panel has faces, and only one at a time.
   let opened = null;
+  // And whether that row has been replaced by the one question a billboard has to ask.
+  let asking = false;
 
   function onKey(e) {
     if (el.hidden) return;
@@ -71,9 +73,34 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
     if (e.ctrlKey || e.metaKey) e.preventDefault();
   }
 
-  el.addEventListener('keydown', (e) => e.stopPropagation());
+  el.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    const field = e.target.closest && e.target.closest('.bd-url');
+    if (!field) return;
+    if (e.key === 'Enter') { e.preventDefault(); takeSite(field); }
+    // Escape hands the row of faces back rather than closing the whole menu: you asked
+    // for a billboard, so the way out of the question is the list you asked it from.
+    if (e.key === 'Escape') { e.preventDefault(); asking = false; render(); }
+  });
   addEventListener('keydown', onKey);
   addEventListener('wheel', onWheel, { capture: true, passive: false });
+
+  // The one question the menu asks. A billboard carries somebody else's site and which
+  // one is the whole of what there is to decide about it, so it is decided here rather
+  // than by putting a board with a default on it in your hand and making you take it
+  // down again. The field starts on the address the face falls back to anyway, so
+  // Enter straight away is not a mistake.
+  function asker() {
+    return `
+      <div class="bd-url">
+        <label>Which site goes on it
+          <input class="bd-site" type="url" value="${esc(BILLBOARD)}" spellcheck="false" autocomplete="off">
+        </label>
+        <button class="btn tiny" data-site="1">Put it in my hand</button>
+        <span class="bd-hint muted">https only. Plenty of sites refuse to be framed and
+        leave the board blank, and there is no way to tell from here which ones.</span>
+      </div>`;
+  }
 
   function tile(kind, i) {
     const s = SHAPES[kind];
@@ -84,7 +111,7 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
         <b>${esc(kind)}${i < 9 ? `<i>${i + 1}</i>` : ''}</b>
         <p>${esc(s.what)}</p>
         ${hint ? `<span class="bd-hint">${hint}</span>` : '<span class="bd-hint muted">no wheel</span>'}
-        ${faces ? `<div class="bd-faces">${FACE_NAMES.map((f) => `<button class="btn tiny" data-face="${esc(f)}">${esc(f)}</button>`).join('')}</div>` : ''}
+        ${faces ? (asking ? asker() : `<div class="bd-faces">${FACE_NAMES.map((f) => `<button class="btn tiny" data-face="${esc(f)}">${esc(f)}</button>`).join('')}</div>`) : ''}
       </div>`;
   }
 
@@ -118,20 +145,49 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
 
   // A panel is the one shape with more than a size to decide, so picking it opens a row
   // of faces instead of going straight into your hand. Everything else has nothing to ask.
-  function pick(kind, face) {
+  function pick(kind, face, note) {
     if (kind === 'panel' && !face) {
       opened = opened === 'panel' ? null : 'panel';
+      asking = false;
       render();
       return;
     }
+    // And a billboard is the one face with something to ask before it can be held.
+    if (face === 'billboard' && !note) {
+      opened = 'panel';
+      asking = true;
+      render();
+      const input = el.querySelector('.bd-site');
+      if (input) { input.focus(); input.select(); }
+      return;
+    }
     remember(kind);
-    onPick({ kind, face: face || null });
+    onPick({ kind, face: face || null, note: note || null });
     close();
+  }
+
+  // Whatever is in the field this button or this Enter belongs to. Found from the node
+  // rather than from the menu, because the tile you last held is drawn twice - once at
+  // the top and once in the grid - and the answer has to come from the one being used.
+  function takeSite(node) {
+    const field = node.closest('.bd-url');
+    const input = field && field.querySelector('.bd-site');
+    const url = siteUrl(input && input.value);
+    if (!url) {
+      if (input) { input.classList.add('bad'); input.focus(); input.select(); }
+      return;
+    }
+    pick('panel', 'billboard', url.href);
   }
 
   el.addEventListener('click', (e) => {
     const take = e.target.closest('[data-take]');
     if (take) { onDemolish(); close(); return; }
+    const go = e.target.closest('[data-site]');
+    if (go) { takeSite(go); return; }
+    // The field sits inside the panel tile, and a click into it must not read as picking
+    // that tile again - which would fold the question away mid-sentence.
+    if (e.target.closest('.bd-url')) return;
     const face = e.target.closest('[data-face]');
     if (face) { pick('panel', face.dataset.face); return; }
     const t = e.target.closest('[data-kind]');
@@ -140,6 +196,7 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
 
   function open() {
     opened = null;
+    asking = false;
     el.hidden = false;
     render();
   }

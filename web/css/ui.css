@@ -543,6 +543,20 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .bd-hint { font-size: 10.5px; color: var(--ink-dim); }
 .bd-hint kbd { font-size: 9.5px; }
 .bd-faces { display: flex; gap: 5px; margin-top: 7px; }
+/* The one question the menu asks: which site a billboard carries. It takes the place of
+   the face row inside the same tile, so the answer is given where it was asked. */
+.bd-url { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; cursor: default; }
+.bd-url label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.bd-url input {
+  display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 11.5px;
+  padding: 5px 8px; color: var(--ink); background: rgba(0,0,0,.35);
+  border: 1px solid var(--edge); border-radius: 7px;
+}
+.bd-url input:focus { outline: none; border-color: rgba(232,180,92,.75); }
+/* Not an error worth a sentence: the field simply will not take that, and says so by
+   colour the moment you try to leave with it. */
+.bd-url input.bad { border-color: #e8705c; }
+.bd-url .btn { align-self: flex-start; }
 /* The one tile that takes something away wears the island's warning red, the same as
    .btn.danger above - it should never be mistaken for another shape to place. */
 .bd-tile.take { cursor: pointer; border-color: rgba(232,112,92,.35); }

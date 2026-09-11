@@ -24,7 +24,7 @@
 // put it down" work. That is also why walk mode is never paused while holding; only the
 // menu pauses it.
 import * as THREE from 'three';
-import { propGeometry, propLift, propFootprint, propReach } from './props.js';
+import { propGeometry, propLift, propFootprint, propReach, PANEL_WIDEST } from './props.js';
 import { wheelsFor } from 'shared/shapes.mjs';
 
 // How far you can reach on foot. From the sky there is no limit - you put it where you
@@ -52,6 +52,10 @@ const LEN_MAX = 30;
 // apply with their own Math.max, so the ghost cannot show a bridge shorter than one.
 const LEN_MIN = { bridge: 2, fence: 1, panel: 0.6 };
 const LEN_START = { bridge: 6, fence: 4, panel: 1.5 };
+// Except for the one face that is a hoarding rather than a monitor. It starts as wide as
+// a board goes - the wheel still shrinks it, but a billboard you have to stretch out of a
+// monitor by hand is a billboard nobody makes twice.
+const LEN_START_FACE = { billboard: PANEL_WIDEST };
 
 // Translucent, and lit rather than flat so the form still reads. depthWrite off keeps it
 // from carving a hole in whatever is behind it. Two materials, swapped on the fit result,
@@ -234,6 +238,9 @@ export function createGhost({
     if (w.wheel === 'scale' || w.ctrl === 'scale') body.scale = Math.round((spec.scale || 1) * 1000) / 1000;
     if (w.shift === 'length') body.length = Math.round((spec.length || 0) * 100) / 100;
     if (spec.face) body.face = spec.face;
+    // What a billboard is pointed at. It travels as the prop's note, which is where a
+    // thing put up by hand has always said why it is there - this one says where.
+    if (spec.note) body.note = spec.note;
 
     try {
       const r = await fetch('/api/build', {
@@ -384,7 +391,7 @@ export function createGhost({
   }
 
   // ------------------------------------------------------------------ the handle
-  function takeShape({ kind, face }) {
+  function takeShape({ kind, face, note }) {
     taking = false;
     clearMarks();
     spec = {
@@ -392,8 +399,9 @@ export function createGhost({
       x: 0, z: 0,
       rot: 0,
       scale: 1,
-      length: LEN_START[kind] || 0,
+      length: LEN_START_FACE[face] || LEN_START[kind] || 0,
       face: face || null,
+      note: note || null,
     };
     fits = null;
     update();
