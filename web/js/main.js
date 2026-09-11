@@ -1251,19 +1251,26 @@ function syncBridges(village) {
   handOutDecks();
 }
 
-// The crossings the layout laid, plus the ones somebody built by hand. Two sources, one
-// map: walk mode and the settlers read it without caring which a plank came from.
+// Everything that stands above the terrain and can be stood on: the crossings the layout
+// laid, plus the ones somebody built by hand. Two sources, one map.
 //
-// Called from both sides, because the two lists arrive at different moments - the
-// layout's with a village update, a built one with the props - and whichever came last
-// used to win by replacing the other.
+// Walk mode wants them as a list per cell, lowest first, because a cell can carry more
+// than one surface - see the note on `levels` in web/js/walk.js. The settlers still walk
+// the routes the layout plans and never leave the ground, so they keep the flat map they
+// have always had.
+//
+// Called from both sides: the two lists arrive at different moments - the layout's with a
+// village update, a built one with the props - and whichever came last used to win by
+// replacing the other.
 function handOutDecks() {
-  const all = new Map(decks);
+  const flat = new Map(decks);
   if (state.props && state.terrain) {
-    for (const [cell, y] of state.props.deckCells(state.terrain)) all.set(cell, y);
+    for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
-  if (state.settlers) state.settlers.setDecks(all);
-  if (state.walk) state.walk.setDecks(all);
+  const stacked = new Map();
+  for (const [cell, y] of flat) stacked.set(cell, [y]);
+  if (state.settlers) state.settlers.setDecks(flat);
+  if (state.walk) state.walk.setLevels(stacked);
 }
 
 // The road network a settler may walk: the paths, the squares, and the decks - a bridge
