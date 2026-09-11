@@ -698,7 +698,7 @@ function stepOutside(door) {
 window.__sheet = {
   get walk() { return inside ? inside.walk : walk; },
   get inside() { return inside; },
-  blockers, placed, doors,
+  blockers, placed, doors, camera, scene,
 };
 
 walkBtn.addEventListener('click', () => {

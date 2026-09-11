@@ -92,9 +92,14 @@ function buildTavern() {
     add(box(HALF_W * 2, 0.01, 0.028, C.darkWood, { y: FLOOR - 0.005, z: i * 0.145 }));
   }
 
+  // The west wall comes in two pieces as well: the gap in it is the way through to the
+  // washroom next door. A blocker grows by half a body on each side, so this 0.8 of plan is
+  // 0.48 of daylight, which is what a doorway needs to be at this size.
+  const WC_DOOR = [1.05, 1.85];
   for (const [x, z, hx, hz] of [
     [0, -outer(HALF_D), HALF_W + WALL, WALL / 2],                    // north, behind the bar
-    [-outer(HALF_W), 0, WALL / 2, HALF_D + WALL],                    // west, the fire
+    [-outer(HALF_W), (-(HALF_D + WALL) + WC_DOOR[0]) / 2, WALL / 2, (WC_DOOR[0] + HALF_D + WALL) / 2],
+    [-outer(HALF_W), (WC_DOOR[1] + HALF_D + WALL) / 2, WALL / 2, (HALF_D + WALL - WC_DOOR[1]) / 2],
     [outer(HALF_W), 0, WALL / 2, HALF_D + WALL],                     // east, the stage
   ]) {
     add(box(hx * 2, CEILING, hz * 2, C.plaster, { x, y: FLOOR, z }));
@@ -248,8 +253,16 @@ function buildTavern() {
     add(box(0.18, 0.34, 0.2, 0x2a2a2e, { x: STAGE.x1 - 0.2, y: FLOOR + STAGE_H, z: sz }));
     add(cylinder(0.065, 0.065, 0.015, 12, 0x4a4a50, { x: STAGE.x1 - 0.3, y: FLOOR + STAGE_H + 0.2, z: sz, rz: Math.PI / 2 }));
   }
-  add(box(0.035, 0.2, 0.3, 0x1a2430, { x: STAGE.x0 + 0.12, y: FLOOR + STAGE_H + 0.42, z: sMidZ }));
-  add(box(0.02, 0.16, 0.26, 0x4fd9c4, { x: STAGE.x0 + 0.1, y: FLOOR + STAGE_H + 0.44, z: sMidZ, emissive: 0.55 }));
+  // The words hang from the ceiling over the front of the stage, with a lit face on each side:
+  // the singer reads one from the boards, the room reads the other from the floor. On a stand
+  // it faced whoever was standing on the stage and nobody else -- and before that it was drawn
+  // at 0.42 up with nothing underneath it at all.
+  const TV_Y = FLOOR + 0.82, TV_H = 0.2;
+  add(cylinder(0.012, 0.012, FLOOR + CEILING - TV_Y - TV_H, 4, C.iron, { x: STAGE.x0, y: TV_Y + TV_H, z: sMidZ }));
+  add(box(0.05, TV_H, 0.28, 0x1a2430, { x: STAGE.x0, y: TV_Y, z: sMidZ }));
+  for (const sgn of [-1, 1]) {
+    add(box(0.012, TV_H - 0.04, 0.24, 0x4fd9c4, { x: STAGE.x0 + sgn * 0.029, y: TV_Y + 0.02, z: sMidZ, emissive: 0.55 }));
+  }
   // A pair of coloured lamps over it, which is as far as the disco goes for now.
   for (const sz of [sMidZ - 0.42, sMidZ + 0.42]) {
     add(cylinder(0.009, 0.009, 0.14, 4, C.iron, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.14, z: sz }));
@@ -257,31 +270,74 @@ function buildTavern() {
     add(sphere(0.038, C.stageLamp, { x: sMidX + 0.15, y: FLOOR + CEILING - 0.225, z: sz, emissive: 1 }));
   }
 
-  // ---- the toilets, round the corner in the south-west --------------------
-  // An alcove rather than a room with a door in it. A blocker grows by half a body on each
-  // side, so a gap in a wall gives up 0.32 before anybody can walk through it: the first cut
-  // of this had an L of partitions with half a metre between the two runs, which left six
-  // centimetres of daylight and nobody could get in at all. One partition and an open end is
-  // both simpler and passable -- you walk round it.
-  const TX = -1.9, TZ = 1.4;
-  add(box(WALL, CEILING, HALF_D + WALL - TZ, C.plaster, { x: TX, y: FLOOR, z: (TZ + HALF_D + WALL) / 2 }));
-  add(box(WALL + 0.03, 0.22, WALL + 0.03, C.wainscot, { x: TX, y: FLOOR, z: TZ + 0.06 }));   // the end post
-  blockers.push(rect(TX, (TZ + HALF_D + WALL) / 2, WALL / 2, (HALF_D + WALL - TZ) / 2));
-  // A lit panel on the end of it, so the corner is not a black hole seen from the hall.
-  add(box(0.05, 0.11, 0.2, C.glass, { x: TX + 0.08, y: FLOOR + CEILING - 0.3, z: TZ + 0.16, emissive: 0.5 }));
-  // The two cubicles.
-  for (const cz of [1.75, 2.25] ) {
-    add(box(0.04, 0.46, 0.32, C.darkWood, { x: -face(HALF_W), y: FLOOR + 0.04, z: cz }));
-    add(box(0.05, 0.49, 0.35, C.wainscot, { x: -HALF_W + 0.008, y: FLOOR + 0.03, z: cz }));
-    add(sphere(0.018, C.brass, { x: -HALF_W + 0.06, y: FLOOR + 0.27, z: cz + 0.12 }));
-    add(box(0.02, 0.07, 0.07, C.tile, { x: -HALF_W + 0.055, y: FLOOR + 0.42, z: cz, emissive: 0.3 }));
+  // ---- the washroom, through the door in the west wall --------------------
+  // Its own room rather than a screened-off corner of the hall, which is what lets it be shut
+  // in properly: a corner walled to the ceiling strands the camera behind the wall, but a room
+  // does not, because the camera is clipped to whichever room you are standing in.
+  //
+  // It runs deep rather than wide, and the cubicles are at the far end of that depth. A room
+  // is only as good as the distance the camera can take in it, and 2.1 of that has to come
+  // from somewhere: looking the short way across a washroom, it does not, and you end up with
+  // a close-up of the back of your own head.
+  const WC = { x0: -5.6, x1: -HALF_W - WALL, z0: -0.2, z1: HALF_D };   // its inner faces
+  const wcMidX = (WC.x0 + WC.x1) / 2, wcMidZ = (WC.z0 + WC.z1) / 2;
+  const wcW = WC.x1 - WC.x0, wcD = WC.z1 - WC.z0;
+  add(box(wcW, 0.24, wcD + WALL * 2, C.floor, { x: wcMidX, y: FLOOR - 0.24, z: wcMidZ }));
+  add(box(wcW, 0.015, wcD, C.tile, { x: wcMidX, y: FLOOR - 0.008, z: wcMidZ }));
+  add(box(wcW + WALL * 2, 0.1, wcD + WALL * 2, C.plank, { x: wcMidX, y: FLOOR + CEILING, z: wcMidZ }));
+  for (const [x, z, hx, hz] of [
+    [WC.x0 - WALL / 2, wcMidZ, WALL / 2, (wcD + WALL * 2) / 2],       // west
+    [wcMidX, WC.z0 - WALL / 2, wcW / 2, WALL / 2],                    // north
+    [wcMidX, WC.z1 + WALL / 2, wcW / 2, WALL / 2],                    // south
+  ]) {
+    add(box(hx * 2, CEILING, hz * 2, C.plaster, { x, y: FLOOR, z }));
+    add(box(hx * 2 - 0.006, 0.22, hz * 2 - 0.006, C.tile, { x, y: FLOOR, z }));
+    blockers.push(rect(x, z, hx, hz));
   }
-  // The basin, against the south wall inside, with a mirror over it.
-  add(box(0.25, 0.2, 0.17, C.porcelain, { x: -2.6, y: FLOOR, z: face(HALF_D) - 0.085 }));
-  add(cylinder(0.09, 0.075, 0.04, 12, C.porcelain, { x: -2.6, y: FLOOR + 0.2, z: HALF_D - 0.1 }));
-  add(cylinder(0.011, 0.011, 0.07, 6, C.brass, { x: -2.6, y: FLOOR + 0.23, z: HALF_D - 0.04 }));
-  add(box(0.24, 0.2, 0.015, C.mirror, { x: -2.6, y: FLOOR + 0.37, z: face(HALF_D) }));
-  add(box(0.8, 0.015, 0.5, C.tile, { x: -2.5, y: FLOOR - 0.008, z: HALF_D - 0.3 }));
+  // The door frame between the two rooms, seen from both sides.
+  for (const dz of WC_DOOR) {
+    add(cylinder(0.045, 0.05, CEILING, 8, C.wainscot, { x: -outer(HALF_W), y: FLOOR, z: dz }));
+  }
+  add(box(WALL + 0.06, 0.09, WC_DOOR[1] - WC_DOOR[0], C.wainscot, {
+    x: -outer(HALF_W), y: FLOOR + CEILING - 0.09, z: (WC_DOOR[0] + WC_DOOR[1]) / 2,
+  }));
+
+  // Two cubicles across the far end, shut. Side walls to 0.8 with a capping rail, a door on
+  // each, and one of them standing open so the room is not two blank panels.
+  const CUB = { x0: -5.5, x1: -3.9, z0: 1.95, z1: WC.z1, h: 0.8 };
+  const cubMidZ = (CUB.z0 + CUB.z1) / 2, cubMidX = (CUB.x0 + CUB.x1) / 2;
+  for (const dx of [CUB.x0, cubMidX, CUB.x1]) {
+    add(box(0.05, CUB.h, CUB.z1 - CUB.z0, C.plaster, { x: dx, y: FLOOR, z: cubMidZ }));
+    add(box(0.07, 0.03, CUB.z1 - CUB.z0, C.wainscot, { x: dx, y: FLOOR + CUB.h, z: cubMidZ }));
+  }
+  add(box(CUB.x1 - CUB.x0 + 0.07, 0.03, 0.07, C.wainscot, { x: cubMidX, y: FLOOR + CUB.h, z: CUB.z0 }));
+  blockers.push(rect(cubMidX, cubMidZ, (CUB.x1 - CUB.x0) / 2, (CUB.z1 - CUB.z0) / 2));
+  [[CUB.x0 + 0.4, 1], [CUB.x1 - 0.4, 0]].forEach(([cx, open]) => {
+    if (open) {
+      // ajar, swung back into the cubicle, with the pan showing behind it
+      add(box(0.04, CUB.h - 0.1, 0.5, C.wainscot, { x: cx - 0.22, y: FLOOR + 0.06, z: CUB.z0 + 0.26, ry: 1.15 }));
+      add(cylinder(0.075, 0.085, 0.14, 10, C.porcelain, { x: cx, y: FLOOR, z: CUB.z1 - 0.24 }));
+      add(cylinder(0.085, 0.085, 0.022, 10, C.linen, { x: cx, y: FLOOR + 0.14, z: CUB.z1 - 0.24 }));
+      add(box(0.16, 0.16, 0.1, C.porcelain, { x: cx, y: FLOOR + 0.28, z: CUB.z1 - 0.07 }));
+      add(cylinder(0.01, 0.01, 0.14, 6, C.brass, { x: cx, y: FLOOR + 0.16, z: CUB.z1 - 0.12 }));
+    } else {
+      add(box(0.58, CUB.h - 0.1, 0.04, C.wainscot, { x: cx, y: FLOOR + 0.06, z: CUB.z0 }));
+      add(sphere(0.018, C.brass, { x: cx + 0.22, y: FLOOR + 0.4, z: CUB.z0 - 0.04 }));
+      add(box(0.06, 0.06, 0.02, C.tile, { x: cx, y: FLOOR + 0.58, z: CUB.z0 - 0.035, emissive: 0.3 }));
+    }
+  });
+
+  // The basin under a mirror, on the wall you face coming in.
+  add(box(0.28, 0.22, 0.19, C.porcelain, { x: -4.6, y: FLOOR, z: WC.z0 + 0.095 }));
+  add(cylinder(0.1, 0.08, 0.045, 12, C.porcelain, { x: -4.6, y: FLOOR + 0.22, z: WC.z0 + 0.08 }));
+  add(cylinder(0.011, 0.011, 0.075, 6, C.brass, { x: -4.6, y: FLOOR + 0.25, z: WC.z0 + 0.02 }));
+  add(box(0.26, 0.22, 0.015, C.mirror, { x: -4.6, y: FLOOR + 0.4, z: WC.z0 + 0.011 }));
+  add(box(0.3, 0.03, 0.03, C.wainscot, { x: -4.6, y: FLOOR + 0.39, z: WC.z0 + 0.03 }));
+  blockers.push(rect(-4.6, WC.z0 + 0.095, 0.14, 0.095));
+  // A towel on a ring, and a lamp over the mirror.
+  add(cylinder(0.035, 0.035, 0.012, 10, C.brass, { x: -4.2, y: FLOOR + 0.38, z: WC.z0 + 0.03, rx: Math.PI / 2 }));
+  add(box(0.1, 0.16, 0.03, C.linen, { x: -4.2, y: FLOOR + 0.22, z: WC.z0 + 0.04 }));
+  add(box(0.3, 0.06, 0.05, C.glass, { x: -4.6, y: FLOOR + 0.66, z: WC.z0 + 0.03, emissive: 0.5 }));
 
   // ---- tables, benches, barrels -------------------------------------------
   // Six of them, kept out of the run between the door and the bar so the way in is a way in.
@@ -348,7 +404,7 @@ function buildTavern() {
     { hex: 0xffd9a0, intensity: 1.2, dist: 3.0, at: [1.2, FLOOR + 0.8, 1.1] },
     { hex: 0xff8c3a, intensity: 1.5, dist: 2.2, at: [FX + 0.22, FLOOR + 0.24, FZ], flicker: true },
     { hex: 0xd94fa8, intensity: 1.1, dist: 2.4, at: [sMidX + 0.15, FLOOR + CEILING - 0.28, sMidZ] },
-    { hex: 0xcfe2ea, intensity: 0.8, dist: 2.0, at: [-2.6, FLOOR + 0.85, 1.8] },
+    { hex: 0xcfe2ea, intensity: 1.2, dist: 3.2, at: [-4.4, FLOOR + 0.92, 1.1] },
   );
 
   return {
@@ -357,6 +413,12 @@ function buildTavern() {
     fireAt: [FX + 0.24, FLOOR + 0.03, FZ],
     // The cells the stage covers, handed to walk mode as a deck to stand on.
     stage: { ...STAGE, height: FLOOR + STAGE_H },
+    // The rooms, as the camera sees them: it is kept inside whichever one you are standing in,
+    // so a wall between two of them never ends up between you and it.
+    areas: [
+      { x0: -HALF_W, x1: HALF_W, z0: -HALF_D, z1: HALF_D },
+      { x0: WC.x0, x1: WC.x1, z0: WC.z0, z1: WC.z1 },
+    ],
     // Far enough in that the camera behind your shoulder has its full reach from the first
     // frame -- a step inside the door left it pressed against the south wall and looking at
     // the back of your hat -- and facing the bar, which is what you came for.
@@ -484,12 +546,25 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // camera ends up sitting on the very thing it is aiming at with no direction left to
   // choose -- the moment the whole view flips over.
   const CAM = def.camera || { back: 2.3, up: 1.0, aim: 0.3 };
+  const AREAS = def.areas || [{ x0: -HALF_W, x1: HALF_W, z0: -HALF_D, z1: HALF_D }];
   const MARGIN = 0.2;
   const MIN_BACK = 0.5;                // never closer than this, so `lookAt` keeps its aim
+  // Which room a point is in, or the nearest one if it is in a doorway between two.
+  function areaAt(x, z) {
+    let best = AREAS[0], bestD = Infinity;
+    for (const a of AREAS) {
+      const dx = Math.max(a.x0 - x, 0, x - a.x1), dz = Math.max(a.z0 - z, 0, z - a.z1);
+      const d = dx * dx + dz * dz;
+      if (d < bestD) { bestD = d; best = a; }
+    }
+    return best;
+  }
+
   function clampCam(v) {
     const p = walk.state.pos;
-    const px = clamp(p.x, -HALF_W + MARGIN, HALF_W - MARGIN);
-    const pz = clamp(p.z, -HALF_D + MARGIN, HALF_D - MARGIN);
+    const a = areaAt(p.x, p.z);
+    const px = clamp(p.x, a.x0 + MARGIN, a.x1 - MARGIN);
+    const pz = clamp(p.z, a.z0 + MARGIN, a.z1 - MARGIN);
     const dx = v.x - px, dz = v.z - pz;
     const len = Math.hypot(dx, dz);
     let t = 1;
@@ -497,17 +572,21 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       if (d > 1e-6) t = Math.min(t, (hi - o) / d);
       else if (d < -1e-6) t = Math.min(t, (lo - o) / d);
     };
-    clip(px, dx, -HALF_W + MARGIN, HALF_W - MARGIN);
-    clip(pz, dz, -HALF_D + MARGIN, HALF_D - MARGIN);
+    clip(px, dx, a.x0 + MARGIN, a.x1 - MARGIN);
+    clip(pz, dz, a.z0 + MARGIN, a.z1 - MARGIN);
     t = clamp(t, len > 0.001 ? Math.min(1, MIN_BACK / len) : 1, 1);
     // Only the sideways reach is shortened. Bringing the height in with it dropped the camera
     // below the point it aims at, which turned every step towards a wall into a look at the
     // rafters; the ceiling clamp below is what keeps it out of the beams instead.
     v.x = px + dx * t;
     v.z = pz + dz * t;
-    // What the camera loses in reach it takes in height: pressed against a wall it climbs and
-    // looks down over your shoulder rather than pushing its nose into the back of your head.
-    v.y += (1 - t) * CAM.back * 0.6;
+    // The height comes in with the reach, so the angle stays roughly what it was. Climbing
+    // instead -- which is the obvious thing to try -- is exactly backwards: in a small room
+    // there is no reach left to lose, the climb tops out at the ceiling, and you spend the
+    // visit looking down on your own hat. The floor of 0.18 over the aim point is what keeps
+    // it from swinging under and staring at the rafters.
+    const yNear = p.y + CAM.aim + 0.18;
+    v.y = yNear + (v.y - yNear) * t;
     v.y = clamp(v.y, FLOOR + 0.22, FLOOR + CEILING - 0.12);
   }
 
