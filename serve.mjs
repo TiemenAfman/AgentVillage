@@ -13,6 +13,7 @@ import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } fr
 import { banish, unbanish } from './lib/banish.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
 import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
+import { listApplets, renderApplet, starConfig } from './lib/star.mjs';
 import {
   cropsView, gardenView, buySeed, sellCrop, sellEverything, holdSeed, plantBed, harvestBed, digUpBed,
 } from './lib/garden.mjs';
@@ -828,6 +829,33 @@ async function handle(req, res) {
       forgetGonePanels();
     }
     return json(res, 200, { ok: true, removed });
+  }
+
+  // ---- what the desk display is showing -----------------------------------------
+  // A .star applet, rendered by pixlet into the 64 by 32 WebP the panel wears as a
+  // texture. Keeper-only, and on purpose: an applet is a small program that is free to
+  // go and fetch something, and the frame it returns is whatever it found. A visitor
+  // gets the box and a dark panel, which is as much of somebody else's desk as anyone
+  // needs. That is also why neither path is in access.mjs's public list.
+  if (p === '/api/star') return json(res, 200, { apps: listApplets(), app: starConfig(config).app });
+
+  if (p.startsWith('/api/star/') && p.endsWith('.webp')) {
+    const name = p.slice('/api/star/'.length, -'.webp'.length);
+    try {
+      const rec = await renderApplet(name, { config });
+      res.writeHead(200, {
+        'Content-Type': 'image/webp',
+        'Content-Length': rec.buf.length,
+        // The panel comes back on its own schedule and the render is already cached
+        // server side, so a browser holding onto a frame would only make it slower to
+        // notice that the applet changed.
+        'Cache-Control': 'no-store',
+      });
+      res.end(rec.buf);
+    } catch (e) {
+      json(res, 404, { error: String(e.message || e) });
+    }
+    return;
   }
 
   // ---- the market garden -------------------------------------------------------
