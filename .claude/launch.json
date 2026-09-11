@@ -18,6 +18,21 @@
       ],
       "port": 4747,
       "autoPort": true
+    },
+    {
+      "name": "island-buur",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve",
+        "--",
+        "--port",
+        "4748",
+        "--no-rescan",
+        "--no-open"
+      ],
+      "port": 4748,
+      "autoPort": false
     }
   ]
 }
