@@ -1,4 +1,5 @@
 using Godot;
+using Promptholm.Core;
 
 namespace Promptholm.Walking;
 
@@ -6,7 +7,8 @@ namespace Promptholm.Walking;
 /// Free-fly / orbital camera for looking around the island. Right mouse drag looks,
 /// WASD fly relative to the view, Q/E (and Space/Ctrl) move down/up, Shift boosts,
 /// the mouse wheel adjusts the base flight speed. Movement and rotation are smoothed
-/// with an exponential damp, so the camera glides rather than snaps.
+/// with an exponential damp, so the camera glides rather than snaps. Left-click inside
+/// a building (its static body on layer 4) publishes BuildingSelected for the dossier.
 /// </summary>
 [GlobalClass]
 public partial class FreeFlyCamera : Camera3D
@@ -50,6 +52,34 @@ public partial class FreeFlyCamera : Camera3D
 			AdjustSpeed(wheelUp.Pressed ? 1.25f : 1.0f / 1.25f);
 		else if (@event is InputEventMouseButton { ButtonIndex: MouseButton.WheelDown } wheelDown)
 			AdjustSpeed(wheelDown.Pressed ? 1.0f / 1.25f : 1.25f);
+		else if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left } click
+			&& click.Pressed && !_looking && IsCurrent())
+		{
+			PickBuilding(click.Position);
+		}
+	}
+
+	/// <summary>
+	/// Raycast from the viewport position onto the building layer (4). When a building's
+	/// StaticBody3D is hit, its building_id metadata is published so the dossier can open.
+	/// </summary>
+	private void PickBuilding(Vector2 viewportPos)
+	{
+		var space = GetWorld3D().DirectSpaceState;
+		var from = ProjectRayOrigin(viewportPos);
+		var to = from + ProjectRayNormal(viewportPos) * 3000.0f;
+		var query = PhysicsRayQueryParameters3D.Create(from, to, 1u << 3);
+		query.CollideWithAreas = false;
+		var hit = space.IntersectRay(query);
+		if (hit.Count == 0)
+			return;
+		if (hit.TryGetValue("collider", out var collider) && collider.AsGodotObject() is StaticBody3D body)
+		{
+			string id = body.GetMeta("building_id", "").AsString();
+			if (string.IsNullOrWhiteSpace(id) || EventBus.Instance is null)
+				return;
+			EventBus.Instance.PublishBuildingSelected(id);
+		}
 	}
 
 	/// <summary>Place the camera at <paramref name="position"/> looking at <paramref name="target"/>.</summary>

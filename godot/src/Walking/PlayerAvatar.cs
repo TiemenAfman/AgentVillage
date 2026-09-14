@@ -1,4 +1,6 @@
 using Godot;
+using Promptholm.Core;
+using Promptholm.World;
 
 namespace Promptholm.Walking;
 
@@ -33,6 +35,9 @@ public partial class PlayerAvatar : CharacterBody3D
 	/// <summary>The third-person camera that orients this avatar's movement.</summary>
 	[Export] public ThirdPersonCamera? Camera { get; set; }
 
+	/// <summary>The world manager that knows where every building's door lives on the island.</summary>
+	[Export] public WorldManager? World { get; set; }
+
 	public AvatarState State { get; private set; } = AvatarState.Walking;
 
 	private const float CollisionRadius = 0.35f;
@@ -44,11 +49,14 @@ public partial class PlayerAvatar : CharacterBody3D
 	private const float SwimAccel = 18.0f;
 	private const float BuoyancyStrength = 14.0f;
 	private const float TurnSpeed = 10.0f;
+	private const float InteractionRadius = 2.5f;
 
 	private Node3D? _visual;
 	private CollisionShape3D? _collision;
 	private bool _crouched;
 	private float _animTime;
+	private string? _lastPrompt;
+	private bool _lastInteractPushed;
 
 	public override void _Ready()
 	{
@@ -85,6 +93,8 @@ public partial class PlayerAvatar : CharacterBody3D
 
 		// Slight forward tilt with speed; bob stays subtle over water.
 		_visual.Rotation = new Vector3(-speed01 * 0.06f, _visual.Rotation.Y, 0.0f);
+
+		UpdateInteraction();
 	}
 
 	public override void _PhysicsProcess(double delta)
@@ -200,6 +210,29 @@ public partial class PlayerAvatar : CharacterBody3D
 
 		float targetYaw = Mathf.Atan2(-horiz.X, -horiz.Y);
 		_visual.Rotation = new Vector3(_visual.Rotation.X, Mathf.LerpAngle(_visual.Rotation.Y, targetYaw, 1.0f - Mathf.Exp(-TurnSpeed * d)), 0.0f);
+	}
+
+	/// <summary>
+	/// Proximity interaction: while the settler stands within InteractionRadius of a building
+	/// door, a "[E] Inspect &lt;name&gt;" HUD prompt is published. Pressing E (or gamepad X) there
+	/// publishes BuildingSelected for that building so the dossier opens. The prompt is only
+	/// republished when the target actually changes.
+	/// </summary>
+	private void UpdateInteraction()
+	{
+		var marker = World?.NearestDossier(GlobalPosition, InteractionRadius);
+		string? prompt = marker is null ? null : $"[E] Inspect {marker.Name}";
+
+		if (prompt != _lastPrompt && EventBus.Instance is not null)
+		{
+			_lastPrompt = prompt;
+			EventBus.Instance.PublishInteractionPrompt(prompt);
+		}
+
+		bool interact = Input.IsKeyPressed(Key.E) || Input.IsJoyButtonPressed(0, JoyButton.X);
+		if (interact && !_lastInteractPushed && marker is not null && EventBus.Instance is not null)
+			EventBus.Instance.PublishBuildingSelected(marker.Id);
+		_lastInteractPushed = interact;
 	}
 
 	private bool UpdateCrouch()

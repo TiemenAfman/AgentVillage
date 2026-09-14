@@ -33,7 +33,9 @@ Elke module krijgt een `kit: PmKitPrimitives` via `_init(p_kit)`. Publieke API i
 ### Directorystructuur
 ```
 godot/src/
-├── Core/           # EventBus: singleton autoload, C# events + [Signal]s, Publish*
+├── Core/           # EventBus: singleton autoload, C# events + [Signal]s, Publish*. Events: VillageDataLoaded,
+│   │               #   TerrainGenerated([Signal]), BuildingSelected([Signal], C#: BuildingSelected(string)),
+│   │               #   InteractionPromptChanged(string?)
 ├── Data/
 │   ├── VillageClient.cs    # [GlobalClass] Node: pollt /village.json elke 5s, CallDeferred
 │   │                       #   naar de main-thread, fallback res://village.json
@@ -54,19 +56,26 @@ godot/src/
 │   ├── WorldManager.cs       # [GlobalClass] Node3D: ArrayMesh-ondergrond (hoogtegradiënt-normals + vertex-color materiaal) + gebouwen via
 │   │   │               #   BuildingAssembler + BuildRoads/BuildBridges (cobble MultiMesh + houten brug met railings/steunpunten;
 │   │   │               #   _roadRoot onder GroundRoot, _bridgeRoot onder ObjectsRoot; gedeelde _plankMat/_railingMat/_stoneMat/_cobbleMat)
+│   │   │               #   + StaticBody3D per gebouw (CollisionLayer=4, meta building_id, box pw×2×pd) + BuildingMarker-record
+│   │   │               #   + NearestDossier(pos, radius), IsBuildingCell(gx,gz), PlotCells, BuildMarker, BuildingDisplayName
 │   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: oneindig-ogend semi-transparant vlak op y=0 (2000×2000, HorizonSize 2000,
 │   │   │               #   diep oceaanblauw (0.02,0.14,0.32) + Roughness 0.18, shadow off), als child van GroundRoot
 │   └── PropSpawner.cs        # [GlobalClass] Node3D: deterministische trees/rocks via MultiMesh op land-cellen, plot-vermijding,
 │       │               #   clamp op WorldHeight; bomen ~3.5 m (trunk 1.7 + foliage 1.9/1.2), scale 0.75+forestN*0.2+rng*0.3
 ├── Main.cs          # [GlobalClass] Node3D, is de main.tscn-script: luistert naar EventBus.VillageDataLoaded; maakt
 │   │               # WorldManager + FreeFlyCamera(Initialize((32,15,60), centrum)) + WalkModeManager(FlyCamera, World)
-│   │               # + zon (DirectionalLight3D) + WorldEnvironment (ProceduralSky); LoadFallbackVillage() leest
-│   │               #   res://village.json via Godot.FileAccess (dummy-island enkel als laatste redmiddel)
+│   │               # + zon (DirectionalLight3D) + WorldEnvironment (ProceduralSky) + een Atmosphere-container
+│   │               #   (DayNightCycle + NightGlowManager + LighthouseController; NÁ EnsureLighting zodat de cycle
+│   │               #   de bestaande Sun/WorldEnvironment adopteert i.p.v. eigen te maken); LoadFallbackVillage()
+│   │               #   leest res://village.json via Godot.FileAccess (dummy-island enkel als laatste redmiddel)
 ├── Tools/
 │   ├── VerifyTerrainRunner.cs # SceneTree-runner: headless hash-check
 │   ├── VerifyWorldRunner.cs   # self-contained: 4 sample-gebouwen → mesh 4225 verts, ≥7 pieces/gebouw
 │   ├── VerifyLiveRunner.cs    # E2E tegen lokale server (poort 4747): aantallen zijn data-afhankelijk (snapshot village.json = 163 gebouwen, live kan anders zijn)
 │   ├── VerifyWalkRunner.cs    # echte physics-frames: EnterWalkMode → 80 ticks op de grond (IsOnFloor), teleport in het water → 120 ticks (State=Swimming)
+│   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
+│   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, geen glow) / 23:00 (nacht, windows+lampen emissie,
+│   │   │               #   vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
 │   └── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
 ├── Buildings/
 │   ├── Slots/
@@ -74,7 +83,9 @@ godot/src/
 │   │   ├── IBuildingPiece.cs        # interface: PieceId, TargetSlot, ClearanceSize
 │   │   └── BuildingSlot3D.cs        # [GlobalClass] Marker3D: CanAttach/Attach/ClearAttached + editor gizmo
 │   ├── Data/
-│   │   ├── BuildingPieceResource.cs # [GlobalClass] Resource: PieceId, PieceScene, TargetSlot, TierReq, ModelStyle
+│   │   ├── BuildingPieceResource.cs # [GlobalClass] Resource: PieceId, TargetSlot, TierReq, ModelStyle
+│   │   │               #   + MeshOverride/MaterialOverride én runtime MeshNode (NIET PackedScene — zie valkuil);
+│   │   │               #   AttachPiece dupliceert MeshNode, maakt anders een MeshInstance3D, valt terug op PieceScene
 │   │   └── BuildingCatalog.cs       # statische mesh-fabrieken: Make*Foundation/Wall/Roof/Door/Window/Ornament
 │   │                               #   → Node3D-boom met vaste Promptholm-materialen (pleister/balk/steen/tile/thatch/...)
 │   ├── Prefabs/                     # [Tool]-prefabs: ToolPrefabBase + PmPrefab{FoundationStone,WallTimber,WallStone,
@@ -84,14 +95,37 @@ godot/src/
 │   │   └── ModelSheetShowroom.cs    # [Tool] [GlobalClass]: galerij 6 tiers × 3 stijlen op sokkels + Label3D +
 │   │                               #   key/fill/rim licht + orbital camera; rendert direct in editor (model_sheet.tscn)
 │   └── BuildingAssembler.cs         # [GlobalClass] Node3D: slot-inventory, Assemble(style, tier, ornaments), ClearPieces
+├── Atmosphere/       # Fase 2 stap 8: dag/nacht (namespace Promptholm.Atmosphere)
+│   ├── DayNightCycle.cs       # [GlobalClass] Node3D: echte klok sync via DateTime.Now.TimeOfDay of ForceHour (0-24);
+│   │   │               #   adoptie van Sun/Moon/WorldEnvironment elders in de tree (FindUpstream), anders eigen childs;
+│   │   │               #   elevatie 0°@6u / 90°@12u / 0°@18u / −90°@0u; DayFactor=clamp(el/10); sun 0.03..1.25,
+│   │   │               #   moon 0.35..0, ambient 0.12..0.6; GlowThresholdDeg=1° (IsDuskOrNight); pub API Hour,
+│   │   │               #   SunElevationDeg, DayFactor, NightFactor, Sun/Moon, SunEnergy/MoonEnergy/AmbientEnergy,
+│   │   │               #   ApplyHour(Hour), statics ElevationDegAt/IsNightTime/IsDuskOrNight
+│   ├── NightGlowManager.cs  # [GlobalClass] Node3D: windows emissie = kleur GlowColour (1.0,0.75,0.35) op de
+│   │   │               #   window slot-materialen (AttachedPiece Node3D-boom → eerst MeshInstance3D-kind mat);
+│   │   │               #   eigen straatlantaarns langs GroundRoot/Roads cobble MultiMesh (elke 6e instancetransform,
+│   │   │               #   cap 96, steel-paal+glas emissief, gedeeld glas-materiaal in _lampGlass); Cycle/World exports
+│   └── LighthouseController.cs # [GlobalClass] Node3D: vindt ObjectRoot-building waarvan naam "lighthouse" bevat;
+│       │               #   lantern op y≈2.7 (lanternglow OmniLight3D + BeamRotator met SpotLight3D SpotAngle 12/
+│       │               #   SpotRange 42/energy 3.0 en additive emissie-cone CylinderMesh); 1 omwenteling/8 s via
+│       │               #   Advance(seconds) + Mathf.Wrap, pitch −12°; alleen zichtbaar bij IsDuskOrNight; pub BeamYawDeg
+├── UI/
+│   └── BuildingDossierUI.cs    # [GlobalClass] CanvasLayer (Layer=10): dossier-overlay + interactie-prompt
+│       │                   #   Open: BuildingSelected via EventBus → SetVillage+village.ByID → panel + AnimateOpen
+│       │                   #   Sluiten: Esc, X-knop, buiten-klik; verbergt prompt-bar ook op InteractionPromptChanged(null)
+│       │                   #   Paden: DossierOverlay/Center/DossierPanel/Body/{Header,Meta,InfoCard/CardBody,StatsGrid,Apprentices}
 └── Walking/
     ├── FreeFlyCamera.cs    # [GlobalClass] Camera3D: RMB-look, WASD/QE/Space+Ctrl, Shift-boost, wheel-speed, damp
+    │                       #   + linkermuis-raycast (mask 1u<<3 = laag 4) → PickBuilding → PublishBuildingSelected
     ├── SettlerMeshBuilder.cs # statisch: BuildSettler() → settler met strohoed + PoseWalk(root,time,speed01)
     ├── PlayerAvatar.cs     # [GlobalClass] CharacterBody3D: capsule r=0.35/h=1.5; Walk/Run/Swim/Jump, crouch (C),
-    │   │                   #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1
+    │                       #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1
+    │                       #   + [Export] WorldManager? World, InteractionRadius=2.5f, E/Joypad-X deur-interactie
     ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1) + Camera3D; RMB-look, wheel-zoom
     └── WalkModeManager.cs  # [GlobalClass] Node3D: Tab-switch tussen fly/walk; HeightMapShape3D-terreincollider,
-                            #   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35), avatar+camera opbouwen; rebuildt collider bij VillageDataLoaded
+#   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35, skipt building-cellen), avatar+camera opbouwen;
+                            #   rebuildt collider bij VillageDataLoaded; DisableWalk publiceert prompt-null
 └── UI/                      # V1 Island HUD (fase 2 stap 10): volledig programmatisch opgebouwde Controls
     ├── IslandCard.cs        # top-links: "THE LIVING ISLAND", stats-pills, milestone-badge (kijkt naar Stats.NextMilestone)
     ├── ActivitySidebar.cs   # rechts: "WAITING FOR YOU" / "NOW BUILDING", klikbare sessiekaarten → SessionClicked
@@ -112,6 +146,8 @@ godot/src/
   - `VerifyWorldRunner.cs` — self-contained (seed 1337, 4 sample-gebouwen): hash `f7ec71ac`, grondmesh `(size+1)²` = 4225 verts, elk gebouw ≥ 7 pieces geassembleerd → PASS.
   - `VerifyLiveRunner.cs` — haalt écht `village.json` van `localhost:4747`, parst via `VillageJson`, bouwt wereld: aantallen data-afhankelijk (snapshot 163, live kan anders zijn), hash `f7ec71ac` → PASS.
   - `VerifyWalkRunner.cs` — draait échte physics-frames in de SceneTree (`--quit-after` werkt niet, zelf `Quit(0/1)`): EnterWalkMode → 80 ticks op de grond (IsOnFloor, collider, Y>0.5), teleport (40,-2,40) → 120 ticks (State=Swimming, Y in (-0.3,1.2)) → PASS.
+  - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
+  - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
   - Wrap `Run()` in try/catch met `Quit(1)` erin: zonder `Quit` hangt een `--script`-runner eindeloos.
 
 ### Modulair building-piecesysteem (fase 2 stap 7)
@@ -141,6 +177,11 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - village.json is partieel untyped: `districtsRev` kan een number zijn, `outpost` een object → maak `DistrictsRev` `[JsonConverter(FlexibleStringConverter)]` en `Outpost` type `object?` (polymorf, zoals `District`).
 - **C# heeft geen `ConeMesh`** (ook niet in 4.7) → kegel maken als `CylinderMesh` met `TopRadius = 0`.
 - **`Basis * Basis` compileert niet in Godot C#** (er is geen operator; de compiler zoekt dan foutief de Quaternion-overload). Basis-multiply (bovendien basisen): zelf samenstellen, bijv. per kolom zoals `PropSpawner.RotScale` (`M = Ryaw·Rtilt·S` berekend per basis-vector, want Basis is column-major).
+- **`_UnhandledKeyInput(InputEventKey)` bestaat niet** in de Godot C#-bindings — gebruik `override _UnhandledInput(InputEvent @event)` met een pattern-match (`@event is InputEventKey { Pressed: true, Keycode: Key.Escape }`).
+- **`BoxContainer.Separation` is géén property** in C# — gebruik `AddThemeConstantOverride("separation", <int>)`.
+- **`SizeFlags` is génormeerd als `Control.SizeFlags`** (niet als platte `SizeFlags.ExpandFill`).
+- **`AddThemeConstantOverride` verwacht `int`**, niet `float` (ook voor `h_separation`/`v_separation`).
+- **`PackedScene.Pack()` op een off-tree node verliest z'n children** (C# 4.7): Pack+Instantiate rondt een Node3D met MeshInstance3D-child af tot een lege Node3D (`children=0`). Daarom bouwen de building-pieces hun mesh via `BuildingPieceResource.MeshOverride/MaterialOverride` (AttachPiece maakt zelf een `MeshInstance3D`), en niet via PackedScene — zie pitfall-regel voor windows: material pakken uit `MaterialOverride` (AttachPiece is nu direct een MeshInstance3D).
 - **MultiMesh readonly-na-gebruik:** bij rebuild eerst oude childs `RemoveChild`+`QueueFree` (niet `Free()` direct — nodes met instanties geven anders "Leaked instance dependency"-ruis); transforms vul je via `mm.InstanceCount = n; mm.SetInstanceTransform(i, tf)`.
 - **`Environment` is ambigu** tussen `System.Environment` en `Godot.Environment` → volledige `Godot.Environment`-kwalificatie (in Main.cs). De C#-naamgeving van `Environment` is anders dan GDScript: `BackgroundMode`-enum is `BGMode`, tonemap-property is `TonemapMode` (enum `ToneMapper`, waarden Linear/Reinhardt/Filmic/Aces/Agx), en "sky contribution" zit in `AmbientLightSkyContribution` (er is géén `SkyContribution`).
 - **UI-enums zitten genest in `Control`** — `LayoutPreset`, `GrowDirection` en `MouseFilterEnum` bestaan NIET globaal in C# (anders dan GDScript): gebruik `Control.LayoutPreset.TopLeft`, `Control.GrowDirection.End`, `Control.MouseFilterEnum.Pass` (binnen een Control-subclass volstaat `MouseFilterEnum`).

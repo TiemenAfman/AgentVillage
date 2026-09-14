@@ -119,6 +119,9 @@ public partial class WalkModeManager : Node3D
 		FlyCamera?.SetProcess(true);
 		FlyCamera?.MakeCurrent();
 
+		if (EventBus.Instance is not null)
+			EventBus.Instance.PublishInteractionPrompt(null);
+
 		GD.Print("[WalkMode] back to inspection view; Tab drops in as the settler.");
 	}
 
@@ -128,6 +131,7 @@ public partial class WalkModeManager : Node3D
 		{
 			Name = "SettlerAvatar",
 			Camera = _walkCamera,
+			World = World,
 		};
 		AddChild(avatar);
 		return avatar;
@@ -202,6 +206,9 @@ public partial class WalkModeManager : Node3D
 			var (wx, wz) = terrain.CellWorld(cell.X, cell.Z);
 			double h = terrain.WorldHeight(wx, wz);
 			if (h < 0.35)
+				continue;
+			// Never spawn inside a building's plot; the door is the entry point.
+			if (World?.IsBuildingCell(cell.X, cell.Z) == true)
 				continue;
 			double d2 = wx * wx + wz * wz;
 			if (d2 >= bestDist)

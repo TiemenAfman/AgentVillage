@@ -1,4 +1,5 @@
 using Godot;
+using Promptholm.Atmosphere;
 using Promptholm.Core;
 using Promptholm.Data;
 using Promptholm.Data.Models;
@@ -44,10 +45,25 @@ public partial class Main : Node3D
 		};
 		AddChild(walkManager);
 
-		// Phase-2 step 10: unified island HUD overlay (src/UI/ — self-contained, no world coupling).
+// Phase-2 step 10: unified island HUD overlay (src/UI/ — self-contained, no world coupling).
 		AddChild(new IslandHud());
 
+		// Dossier overlay driven by EventBus; invisible until a building is selected.
+		var dossier = new BuildingDossierUI { Name = "BuildingDossierUI" };
+		AddChild(dossier);
+
 		EnsureLighting();
+
+		// Day/night sky: drives the real-clock sun/moon and sky, and switches on window/lamp
+		// glow + the rotating lighthouse beam once the sun dips below the horizon. The cycle
+		// adopts the Sun/WorldEnvironment created above (added after EnsureLighting on purpose),
+		// so no duplicate lights/environments are made.
+		var cycle = new DayNightCycle { Name = "DayNightCycle" };
+		var atmosphere = new Node3D { Name = "Atmosphere" };
+		AddChild(atmosphere);
+		atmosphere.AddChild(cycle);
+		atmosphere.AddChild(new NightGlowManager { Name = "NightGlowManager", Cycle = cycle, World = _worldManager });
+		atmosphere.AddChild(new LighthouseController { Name = "LighthouseController", Cycle = cycle, World = _worldManager });
 
 		if (EventBus.Instance is not null)
 		{
