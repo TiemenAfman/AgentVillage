@@ -1,0 +1,22 @@
+extends SceneTree
+
+func _init() -> void:
+	var w = load('res://scripts/walk_mode.gd').new()
+	print('walk: ', w)
+	var m = load('res://scripts/main.gd')
+	print('main ok')
+	var p = load('res://scripts/kit_primitives.gd')
+	print('kit_primitives ok')
+	var h = load('res://scripts/kit_houses.gd')
+	print('kit_houses ok')
+	var c = load('res://scripts/kit_civics.gd')
+	print('kit_civics ok')
+	var s = load('res://scripts/kit_sheds.gd')
+	print('kit_sheds ok')
+	var t = load('res://scripts/kit_towers.gd')
+	print('kit_towers ok')
+	var pr = load('res://scripts/kit_props.gd')
+	print('kit_props ok')
+	var k = load('res://scripts/building_kit.gd').new()
+	print('kit: ', k)
+	quit()

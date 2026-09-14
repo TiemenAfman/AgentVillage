@@ -8,6 +8,9 @@ const REFRESH_SECONDS := 5.0
 const WALK_SPEED := 14.0
 const LOOK_SPEED := 0.005
 
+const MODE_ORBIT := "orbit"
+const MODE_WALK := "walk"
+
 const SEASONS := {
 	"spring": { "meadow": Color8(0x93, 0xcf, 0x62), "upland": Color8(0x74, 0xad, 0x4c), "summit": Color8(0xa3, 0x9d, 0x90) },
 	"summer": { "meadow": Color8(0x8f, 0xbf, 0x5a), "upland": Color8(0x6f, 0xa6, 0x4a), "summit": Color8(0xa3, 0x9d, 0x90) },
@@ -25,6 +28,13 @@ var player := Vector3(0.0, 26.0, 44.0)
 var yaw := 0.0
 var pitch := -0.5
 var dragging := false
+
+# Orbit (free fly) vs walk (third person on foot). Walk drives the same camera and
+# positions the avatar; it reads nothing back but the world, and writes nothing to it.
+var mode := MODE_ORBIT
+var walk: PmWalkMode
+var avatar: PmPlayerAvatar
+var interact_label: Label
 
 var terrain: PmTerrain
 var village := {}
@@ -45,6 +55,12 @@ func _ready() -> void:
 	_make_materials()
 	_fetch_world()
 	_update_camera()
+	walk = PmWalkMode.new()
+	walk.camera = camera
+	walk.render_height_func = _render_height
+	walk.on_interact = _walk_interact
+	# The grid size is only known once village.json arrives; _walk_refresh fills it in.
+	_walk_refresh()
 	var timer := Timer.new()
 	timer.wait_time = REFRESH_SECONDS
 	timer.timeout.connect(_fetch_world)
@@ -52,6 +68,12 @@ func _ready() -> void:
 	timer.start()
 
 func _process(delta: float) -> void:
+	if mode == MODE_WALK:
+		_walk_process(delta)
+		return
+	_orbital_process(delta)
+
+func _orbital_process(delta: float) -> void:
 	var input := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W): input.y -= 1.0
 	if Input.is_key_pressed(KEY_S): input.y += 1.0
@@ -73,6 +95,16 @@ func _process(delta: float) -> void:
 	_update_camera()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_TAB:
+			_toggle_mode()
+			return
+		if mode == MODE_WALK and event.keycode == KEY_ESCAPE:
+			_set_mode(MODE_ORBIT)
+			return
+	if mode == MODE_WALK:
+		walk.handle_input(event)
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		dragging = event.pressed
 		return
@@ -84,6 +116,174 @@ func _unhandled_input(event: InputEvent) -> void:
 func _update_camera() -> void:
 	camera.position = player
 	camera.rotation = Vector3(pitch, yaw, 0.0)
+
+# ---- walk mode --------------------------------------------------------------
+
+func _toggle_mode() -> void:
+	_set_mode(MODE_ORBIT if mode == MODE_WALK else MODE_WALK)
+
+func _set_mode(next: String) -> void:
+	if next == mode:
+		return
+	mode = next
+	avatar.visible = mode == MODE_WALK
+	if mode == MODE_WALK:
+		var spawn := _walk_spawn()
+		var centre := Vector2.ZERO
+		walk.enter(spawn, centre)
+		interact_label.visible = true
+	else:
+		walk.exit()
+		interact_label.visible = false
+		_update_camera()
+
+func _walk_process(delta: float) -> void:
+	var result: Dictionary = walk.update(delta)
+	if not result.is_empty():
+		avatar.position = result.pos
+		avatar.rotation = Vector3(0.0, walk.yaw, 0.0)
+		var near: Dictionary = result.near
+		if not near.is_empty():
+			interact_label.text = "E - %s" % str(near.get("label", near.get("kind", "")))
+			interact_label.visible = true
+		else:
+			interact_label.visible = false
+
+func _walk_interact(near: Dictionary) -> void:
+	# Phase 2: detection only, no server state is touched. The panels come later.
+	print("Interact: ", str(near.get("kind", "?")), " - ", str(near.get("label", "")))
+
+# After a rebuild the terrain, blockers, interactables and levels may all have changed.
+# Walk mode reads its world from these, so it gets a fresh set with every island.
+func _walk_refresh() -> void:
+	if walk == null or terrain == null:
+		return
+	walk.grid_size = terrain.size
+	walk.grid_half = terrain.half
+	walk.set_blockers(_build_blockers())
+	walk.set_interactables(_build_interactables())
+	walk.set_levels(_build_levels())
+
+func _build_blockers() -> Array:
+	var out: Array = []
+	for b in village.get("buildings", []):
+		var plot = b.get("plot", null)
+		if typeof(plot) != TYPE_DICTIONARY:
+			continue
+		var gx := float(plot.get("gx", 32))
+		var gz := float(plot.get("gz", 32))
+		var pw := float(plot.get("w", 1))
+		var pd := float(plot.get("d", 1))
+		var x := gx + pw * 0.5 - terrain.half
+		var z := gz + pd * 0.5 - terrain.half
+		var kind := str(b.get("kind", "house"))
+		var tier := str(b.get("tier", kind))
+		var fw := maxf(0.55, pw * 0.72)
+		var fd := maxf(0.55, pd * 0.72)
+		# The blocker is the box the drawer puts down, so what you bump into is what
+		# you see. A tent is a cone, round; everything else is the rectangle.
+		if tier == "tent":
+			var r := maxf(fw, fd) * 0.62
+			out.append({ "x": x, "z": z, "hx": r, "hz": r, "id": str(b.get("id", "")) })
+		else:
+			out.append({ "x": x, "z": z, "hx": fw * 0.5, "hz": fd * 0.5, "id": str(b.get("id", "")) })
+	for p in props_data:
+		var px := float(p.get("x", 0.0))
+		var pz := float(p.get("z", 0.0))
+		var scale := float(p.get("scale", 1.0))
+		match str(p.get("kind", "prop")):
+			# A panel is a thin board. The layout may leave `length` out or set it to
+			# null; take the same default the drawer does, so blocker and picture agree.
+			"panel":
+				var pnl_len := 1.5
+				if p.get("length", null) != null:
+					pnl_len = float(p.get("length"))
+				pnl_len *= scale
+				out.append({ "x": px, "z": pz, "hx": pnl_len * 0.35, "hz": pnl_len * 0.35, "id": str(p.get("id", "")) })
+			# Everything else with a footprint is one square of its radius.
+			_:
+				var rad := _prop_rad(str(p.get("kind", "prop"))) * scale
+				if rad > 0.0:
+					out.append({ "x": px, "z": pz, "hx": rad, "hz": rad, "id": str(p.get("id", "")) })
+	return out
+
+func _prop_rad(kind: String) -> float:
+	match kind:
+		"tree": return 0.42
+		"pine": return 0.4
+		"bush": return 0.3
+		"rock": return 0.36
+		"cairn": return 0.3
+		"bench": return 0.45
+		"lamp": return 0.2
+		"signpost": return 0.2
+		"deskdisplay": return 0.55
+		"well": return 0.7
+		"statue": return 0.55
+		"campfire": return 0.45
+		"flag": return 0.22
+		"fence": return 0.22
+		"bridge": return 0.0
+		_: return 0.3
+
+func _build_interactables() -> Array:
+	var out: Array = []
+	for b in village.get("buildings", []):
+		var plot = b.get("plot", null)
+		if typeof(plot) != TYPE_DICTIONARY:
+			continue
+		var gx := float(plot.get("gx", 32))
+		var gz := float(plot.get("gz", 32))
+		var pw := float(plot.get("w", 1))
+		var pd := float(plot.get("d", 1))
+		var x := gx + pw * 0.5 - terrain.half
+		var z := gz + pd * 0.5 - terrain.half
+		var kind := str(b.get("kind", "house"))
+		var r := 3.2 if kind == "civic" else 2.0 if kind == "shed" else 1.9
+		var label := str(b.get("name", b.get("label", kind)))
+		out.append({ "id": str(b.get("id", "")), "kind": kind, "x": x, "z": z, "r": r, "label": label })
+	return out
+
+# What stands above the terrain per cell, lowest first: today only bridge decks, which
+# tells walk mode what it may step up onto. Mirrors _build_bridges() exactly, so the
+# walker's feet and the drawn deck can never disagree about height.
+func _build_levels() -> Dictionary:
+	var out: Dictionary = {}
+	for b in village.get("bridges", []):
+		var cells: Array = b.get("cells", [])
+		if cells.size() == 0:
+			continue
+		var along := Vector2i(1, 0) if str(b.get("axis", "x")) == "x" else Vector2i(0, 1)
+		var first := Vector2i(int(cells[0][0]), int(cells[0][1]))
+		var last := Vector2i(int(cells[cells.size() - 1][0]), int(cells[cells.size() - 1][1]))
+		var bank_a := _cell_height(first.x - along.x, first.y - along.y)
+		var bank_b := _cell_height(last.x + along.x, last.y + along.y)
+		# The deck box is 0.12 tall and centred at deck_y, so its top is 0.06 up.
+		var deck_y: float = maxf(maxf(bank_a, bank_b), 0.0) + 0.3 + 0.06
+		for cell in cells:
+			var gx := int(cell[0])
+			var gz := int(cell[1])
+			var key := gx + gz * terrain.size
+			if not out.has(key):
+				out[key] = []
+			(out[key] as Array).append(deck_y)
+	return out
+
+# Where the walker first stands. Near the town hall when there is one; otherwise the
+# first building; otherwise a spot off the coast in view of the island.
+func _walk_spawn() -> Vector2:
+	var pick := []
+	for b in village.get("buildings", []):
+		var plot = b.get("plot", null)
+		if typeof(plot) != TYPE_DICTIONARY:
+			continue
+		pick = [float(plot.get("gx", 32)), float(plot.get("gz", 32)),
+			float(plot.get("w", 1)), float(plot.get("d", 1))]
+		if str(b.get("kind", "")) == "civic":
+			break
+	if pick.size() == 4:
+		return Vector2(pick[0] + pick[2] * 0.5 - terrain.half, pick[1] + pick[3] * 0.5 - terrain.half)
+	return Vector2(0.0, 44.0)
 
 func _build_shell() -> void:
 	ground_root = Node3D.new()
@@ -100,6 +300,11 @@ func _build_shell() -> void:
 	camera.fov = 60.0
 	camera.far = 2000.0
 	add_child(camera)
+
+	avatar = PmPlayerAvatar.new()
+	avatar.name = "Avatar"
+	avatar.visible = false
+	add_child(avatar)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0)
@@ -140,6 +345,16 @@ func _build_shell() -> void:
 	status.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	status.add_theme_constant_override("outline_size", 6)
 	canvas.add_child(status)
+	# The interact prompt, hidden until the walker is near something to talk to.
+	interact_label = Label.new()
+	interact_label.position = Vector2(18, 80)
+	interact_label.add_theme_font_size_override("font_size", 22)
+	interact_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.85))
+	interact_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	interact_label.add_theme_constant_override("outline_size", 7)
+	interact_label.text = ""
+	interact_label.visible = false
+	canvas.add_child(interact_label)
 
 func _mat(color: Color, roughness: float = 0.95) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -165,19 +380,8 @@ func _make_materials() -> void:
 	materials.ocean.metallic = 0.3
 	materials.path = _mat(Color8(0x9d, 0x8c, 0x6e))
 	materials.paved = _mat(Color8(0x8d, 0x88, 0x7c))
-	materials.wall = _mat(Color8(0xd8, 0xc6, 0xa4))
-	materials.roof = _mat(Color8(0xa5, 0x52, 0x36))
-	materials.civic_wall = _mat(Color8(0xe4, 0xd8, 0xb4))
-	materials.civic_roof = _mat(Color8(0x6d, 0x7f, 0x8c))
-	materials.shed = _mat(Color8(0x9a, 0x7c, 0x57))
-	materials.shed_roof = _mat(Color8(0x6e, 0x5a, 0x42))
 	materials.deck = _mat(Color8(0x8a, 0x6a, 0x46))
 	materials.rail = _mat(Color8(0x6b, 0x50, 0x36))
-	materials.trunk = _mat(Color8(0x5a, 0x40, 0x2c))
-	materials.leaf = _mat(Color8(0x2f, 0x6b, 0x31))
-	materials.lamp = _mat(Color8(0xff, 0xd4, 0x7a))
-	materials.dark = _mat(Color8(0x2d, 0x22, 0x18))
-	materials.panel = _mat(Color8(0xe8, 0xec, 0xe4))
 	materials.active = _mat(Color8(0xff, 0xc8, 0x54))
 
 # ---- data -------------------------------------------------------------------
@@ -231,6 +435,7 @@ func _done_request() -> void:
 		return
 	last_signature = signature
 	_rebuild()
+	_walk_refresh()
 
 func _signature() -> String:
 	var island: Dictionary = village.get("island", {})
@@ -505,19 +710,15 @@ func _build_water() -> void:
 
 # ---- what stands on the island ----------------------------------------------
 
-const TIER_HEIGHT := {
-	"tent": 0.85, "hut": 1.05, "cottage": 1.45, "house": 1.85,
-	"manor": 2.6, "shed": 0.7, "civic": 2.3,
-}
-
 func _build_objects() -> void:
 	_clear(objects_root)
+	var kit := PmKit.new()
 	_build_cells(village.get("cleared", []), materials.paved, 0.02, 0.92)
 	_build_paths()
 	_build_bridges()
 	_build_districts()
-	_build_buildings()
-	_build_props()
+	_build_buildings(kit)
+	_build_props(kit)
 
 func _build_cells(cells: Array, mat: Material, lift: float, footprint: float) -> void:
 	for cell in cells:
@@ -607,7 +808,7 @@ func _build_districts() -> void:
 		_add_cylinder(Vector3(w.x, y + 0.08, w.y), 0.5, 0.16, mat)
 		_add_label(str(d.get("name", "district")), Vector3(w.x, y + 1.1, w.y), 22)
 
-func _build_buildings() -> void:
+func _build_buildings(kit: PmKit) -> void:
 	var active := {}
 	for id in village.get("active", []):
 		active[str(id)] = true
@@ -624,72 +825,30 @@ func _build_buildings() -> void:
 		var z := gz + pd * 0.5 - terrain.half
 		var ground := _render_height(x, z)
 		var kind := str(b.get("kind", "house"))
-		var tier := str(b.get("tier", kind))
-		var body_h: float = TIER_HEIGHT.get(tier, 1.4)
-		var fw := maxf(0.55, pw * 0.72)
-		var fd := maxf(0.55, pd * 0.72)
-		var wall_mat: Material = materials.wall
-		var roof_mat: Material = materials.roof
-		if kind == "civic":
-			wall_mat = materials.civic_wall
-			roof_mat = materials.civic_roof
-		elif kind == "shed":
-			wall_mat = materials.shed
-			roof_mat = materials.shed_roof
-
-		if tier == "tent":
-			_add_cone(Vector3(x, ground, z), maxf(fw, fd) * 0.62, body_h, roof_mat)
-		else:
-			_add_box(Vector3(x, ground + body_h * 0.5, z), Vector3(fw, body_h, fd), wall_mat)
-			var roof_h := 0.36 + 0.14 * maxf(fw, fd)
-			var roof := MeshInstance3D.new()
-			var prism := PrismMesh.new()
-			prism.size = Vector3(fw * 1.08, roof_h, fd * 1.08)
-			roof.mesh = prism
-			roof.position = Vector3(x, ground + body_h + roof_h * 0.5, z)
-			roof.rotation = Vector3(0, PI * 0.5 * rot, 0)
-			roof.material_override = roof_mat
-			objects_root.add_child(roof)
-
+		var root := Node3D.new()
+		root.position = Vector3(x, ground, z)
+		root.rotation.y = rot * PI / 2.0
+		var result := kit.build(b, root)
+		objects_root.add_child(root)
+		var body_h: float = float(result.get("height", 1.0))
 		if active.has(str(b.get("id", ""))) or bool(b.get("active", false)):
 			_add_sphere(Vector3(x, ground + body_h + 0.95, z), 0.16, materials.active)
 		if kind == "civic":
-			var label := str(b.get("label", b.get("name", "")))
-			if label != "":
-				_add_label(label, Vector3(x, ground + body_h + 0.75, z), 18)
+			var label_text := str(b.get("label", b.get("name", "")))
+			if label_text != "":
+				_add_label(label_text, Vector3(x, ground + body_h + 0.75, z), 18)
 
-func _build_props() -> void:
+func _build_props(kit: PmKit) -> void:
 	for p in props_data:
 		var x := float(p.get("x", 0.0))
 		var z := float(p.get("z", 0.0))
 		var scale := float(p.get("scale", 1.0))
 		var y := _render_height(x, z)
-		match str(p.get("kind", "prop")):
-			"tree", "pine":
-				_add_cylinder(Vector3(x, y + 0.3 * scale, z), 0.1 * scale, 0.6 * scale, materials.trunk)
-				_add_cone(Vector3(x, y + 0.55 * scale, z), 0.42 * scale, 1.1 * scale, materials.leaf)
-			"lamp":
-				_add_cylinder(Vector3(x, y + 0.4 * scale, z), 0.06 * scale, 0.8 * scale, materials.dark)
-				_add_sphere(Vector3(x, y + 0.88 * scale, z), 0.14 * scale, materials.lamp)
-			"panel":
-				var length := 1.5
-				if p.get("length", null) != null:
-					length = float(p.get("length"))
-				var post_h := 0.7 * scale
-				_add_box(Vector3(x, y + post_h * 0.5, z), Vector3(0.09, post_h, 0.09), materials.dark)
-				var board := MeshInstance3D.new()
-				var bm := BoxMesh.new()
-				bm.size = Vector3(length * scale, 0.85 * scale, 0.07)
-				board.mesh = bm
-				board.position = Vector3(x, y + post_h + 0.42 * scale, z)
-				board.rotation = Vector3(0, float(p.get("rot", 0.0)), 0)
-				board.material_override = materials.panel
-				objects_root.add_child(board)
-				var text := str(p.get("label", "")) if p.get("label", null) != null else ""
-				if text != "":
-					_add_label(text, Vector3(x, y + post_h + 1.05 * scale, z), 16)
-			_:
-				_add_box(Vector3(x, y + 0.18, z), Vector3(0.36, 0.36, 0.36), materials.civic_wall)
+		var root := Node3D.new()
+		root.position = Vector3(x, y, z)
+		root.scale = Vector3(scale, scale, scale)
+		kit.build_prop(p, root)
+		objects_root.add_child(root)
 
 # queue_free() only takes effect at the end of the frame, so a rebuild that simply
 # queued the old island would draw both of them over each other until then.
