@@ -1,0 +1,18 @@
+; Godot 4 project for the Promptholm native-client spike.
+; Open with D:\Software\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64.exe
+
+config_version=5
+
+[application]
+config/name="Promptholm Godot Spike"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7")
+config/icon="res://icon.svg"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="forward_plus"
