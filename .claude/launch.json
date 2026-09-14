@@ -33,6 +33,20 @@
       ],
       "port": 4748,
       "autoPort": false
+    },
+    {
+      "name": "island-open",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve",
+        "--",
+        "--public",
+        "--no-rescan",
+        "--no-open"
+      ],
+      "port": 4747,
+      "autoPort": false
     }
   ]
 }

@@ -276,19 +276,33 @@ async function rescan(reason) {
 // their own machine, so it never has to answer anybody but the computer it runs on -
 // which also means an open island does not put a fetching proxy on the network.
 const BILLBOARD_PORT = PORT + 1;
-const billboardOrigin = `http://localhost:${BILLBOARD_PORT}`;
-const islandOrigin = `http://localhost:${PORT}`;
+
+// Both origins are worked out per request rather than fixed at startup, and that is not
+// tidiness: a visitor who reaches the island at 192.168.2.7:4747 must be sent to
+// 192.168.2.7:4748 for its boards. Pinned to localhost they would be pointed at their own
+// machine, where nothing is listening, and every board on an open island would come up
+// blank - with nothing on screen to say why.
+//
+// The name is taken from the Host the browser actually used, so however the island was
+// reached, its boards are reached the same way.
+function hostName(req) {
+  const host = String((req && req.headers && req.headers.host) || '').trim();
+  const name = host.replace(/:\d+$/, '');
+  return name || 'localhost';
+}
+const boardOriginFor = (req) => `http://${hostName(req)}:${BILLBOARD_PORT}`;
+const islandOriginFor = (req) => `http://${hostName(req)}:${PORT}`;
 
 const billboardServer = http.createServer((req, res) => {
-  const url = new URL(req.url, billboardOrigin);
+  const url = new URL(req.url, boardOriginFor(req));
   const p = decodeURIComponent(url.pathname);
   // Everything a page of our own is made of - its stylesheet, its script, its pictures -
   // comes off this same origin, which is the whole reason such a page works where a
   // proxied site half does. data/boards/ is the folder; lib/billboard.mjs guards it.
   if (p !== '/billboard') {
-    return serveBoardFile(p, res, { island: islandOrigin });
+    return serveBoardFile(p, res, { island: islandOriginFor(req) });
   }
-  serveBillboard(url, res, { origin: billboardOrigin, island: islandOrigin })
+  serveBillboard(url, res, { origin: boardOriginFor(req), island: islandOriginFor(req) })
     .catch((e) => {
       log(`billboard failed ${req.url}: ${e && e.message ? e.message : e}`);
       try { if (!res.headersSent) { res.writeHead(502, { 'content-type': 'text/plain' }); res.end('the board stumbled'); } else res.end(); } catch { /* gone */ }
@@ -306,7 +320,7 @@ const server = http.createServer((req, res) => {
 // dangerous half of it only ever answers this computer. Visitors, when the island is
 // open, get the island and each other and nothing else. The reasoning behind the three
 // checks that decide this lives in lib/access.mjs.
-const access = createAccess({ port: PORT, config, boardOrigin: billboardOrigin });
+const access = createAccess({ port: PORT, config, boardPort: BILLBOARD_PORT });
 
 // Everyone who opens the page gets a body to walk around in. The upgrade event is a
 // second front door - handle() below never sees it - so the same classification has to
@@ -386,7 +400,7 @@ async function handle(req, res) {
   // module script will not load across that unless we say so. Static files only - see
   // isSharedWithBoards in lib/access.mjs for why the API is not on that list.
   if (isSharedWithBoards(p)) {
-    res.setHeader('Access-Control-Allow-Origin', billboardOrigin);
+    res.setHeader('Access-Control-Allow-Origin', boardOriginFor(req));
     // Without this the answer is cached under the path alone, so a copy fetched before
     // the board port existed - or fetched by the island itself, which sends no Origin -
     // gets handed back to the board with no header on it and the browser refuses it. The
@@ -415,7 +429,7 @@ async function handle(req, res) {
       islandName: config.islandName,
       // Where the billboards are served from. A port rather than a path, because the
       // whole safety of it is that it is not this origin - see lib/billboard.mjs.
-      billboards: billboardOrigin,
+      billboards: boardOriginFor(req),
       multiplayer: {
         enabled: !!config.multiplayer.enabled,
         maxPlayers: config.multiplayer.maxPlayers,
@@ -1083,8 +1097,8 @@ if (access.open) {
   server.requestTimeout = 30000;
   server.maxConnections = 128;
 }
-billboardServer.listen(BILLBOARD_PORT, '127.0.0.1', () => {
-  log(`billboards are served from ${billboardOrigin}`);
+billboardServer.listen(BILLBOARD_PORT, access.open ? undefined : '127.0.0.1', () => {
+  log(`billboards are served from port ${BILLBOARD_PORT}${access.open ? ' (open, like the island)' : ' (this computer only)'}`);
 });
 billboardServer.on('error', (e) => log(`the billboard port could not be opened: ${e && e.message ? e.message : e}`));
 

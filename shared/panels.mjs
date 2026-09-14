@@ -104,22 +104,17 @@ export const BILLBOARD = 'https://www.boikon.nl/';
 // say so. Anything else falls back to the address above, so a mistake shows the wrong
 // billboard rather than a broken one.
 //
-// https, or http when it is this machine talking to itself. That exception is not a
-// loosening: plain http to anywhere else would be the island fetching over the open
-// network in the clear, while http to loopback cannot leave the machine - and it is the
-// only way to hang the island's own pages on a board, which is worth having.
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
-
-export function isLoopbackHost(host) {
-  return LOOPBACK.has(String(host || '').toLowerCase());
-}
-
+// http as well as https, deliberately. Plain http means the page travels the network in
+// the clear, which is a fair thing to refuse on the open web - but the addresses people
+// actually want on a board are as often as not a box on their own network that has never
+// had a certificate: a dashboard, a printer, a server in the meter cupboard, the island
+// itself. Refusing those makes the board useless for the thing it is most wanted for,
+// and the fetch is the keeper's own choice on the keeper's own network. Only the keeper
+// can put a prop up - /api/build is not a public path - so nobody else picks this.
 export function siteUrl(note) {
   try {
     const u = new URL(String(note || '').trim());
-    if (u.protocol === 'https:') return u;
-    if (u.protocol === 'http:' && isLoopbackHost(u.hostname)) return u;
-    return null;
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? u : null;
   } catch { return null; }
 }
 
@@ -128,7 +123,7 @@ export function siteUrl(note) {
 // something up for the people on the island to read, without it having to exist on the
 // web at all.
 //
-// Written as a plain name - `--note welcome` or `--note welcome.html` - because a name is
+// Written as a plain name - `--note welkom` or `--note welkom.html` - because a name is
 // what a person has in their head, and anything with a scheme in it is a site. Kept to
 // one segment of safe characters, which is also what keeps it from walking out of the
 // folder it lives in: no slashes, no dots doubling back, nothing to escape with.

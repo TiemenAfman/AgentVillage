@@ -10,6 +10,7 @@
 // panel on the island rather than like a new kind of thing.
 import { SHAPES, KINDS, wheelsFor } from 'shared/shapes.mjs';
 import { FACE_NAMES, BILLBOARD, siteUrl } from './faces.js';
+import { boardPage } from 'shared/panels.mjs';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -94,11 +95,12 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
     return `
       <div class="bd-url">
         <label>Which site goes on it
-          <input class="bd-site" type="url" value="${esc(BILLBOARD)}" spellcheck="false" autocomplete="off">
+          <input class="bd-site" type="text" value="${esc(BILLBOARD)}" spellcheck="false" autocomplete="off">
         </label>
         <button class="btn tiny" data-site="1">Put it in my hand</button>
-        <span class="bd-hint muted">https only. Plenty of sites refuse to be framed and
-        leave the board blank, and there is no way to tell from here which ones.</span>
+        <span class="bd-hint muted">A whole address, http or https — or the name of a page
+        of your own from <code>data/boards/</code>, like <code>welkom</code>. A site that
+        is built entirely by script may come up blank; a page of your own never does.</span>
       </div>`;
   }
 
@@ -172,12 +174,17 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
   function takeSite(node) {
     const field = node.closest('.bd-url');
     const input = field && field.querySelector('.bd-site');
-    const url = siteUrl(input && input.value);
-    if (!url) {
+    const typed = String((input && input.value) || '').trim();
+    // Either shape the island understands: a site to fetch, or a page of ours to serve.
+    // Both are checked by the same rules the server uses - see shared/panels.mjs - so the
+    // menu can never hand over something the board then quietly replaces with the default.
+    const url = siteUrl(typed);
+    const page = url ? null : boardPage(typed);
+    if (!url && !page) {
       if (input) { input.classList.add('bad'); input.focus(); input.select(); }
       return;
     }
-    pick('panel', 'billboard', url.href);
+    pick('panel', 'billboard', url ? url.href : page);
   }
 
   el.addEventListener('click', (e) => {
