@@ -91,7 +91,11 @@ public partial class VerifyAtmosphereRunner : SceneTree
 
 		var windowMat = FindWindowMaterial();
 		Check(windowMat is not null, "found a window material on a sample building");
-		Check(windowMat?.EmissionEnabled == false, "window glow is off during daylight");
+		Check(windowMat is not null
+			&& windowMat.EmissionEnabled
+			&& windowMat.EmissionEnergyMultiplier >= 0.15f
+			&& windowMat.EmissionEnergyMultiplier <= 0.6f,
+			$"window panes keep a subtle warm glow during daylight ({windowMat?.EmissionEnergyMultiplier:0.00})");
 
 		Check(_glow.LampCount > 0, $"street lamps were spawned along the roads ({_glow.LampCount})");
 		var lampGlass = FindLampGlass();

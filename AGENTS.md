@@ -63,21 +63,31 @@ godot/src/
 │   │   │               #   langs de lange as, orchards 3×3 fruitbomen (trunk+crown ArrayMesh, MultiMesh, scale 0.46+hash%20);
 │   │   │               #   cleared = polder.dike + village.Cleared + building plots ±1; retourneert IReadOnlySet<(int,int)>
 │   │   │               #   fieldCells voor PropSpawner; pub counts FieldCount/OrchardCount
-│   ├── WorldManager.cs       # [GlobalClass] Node3D: ArrayMesh-ondergrond (hoogtegradiënt-normals + vertex-color materiaal) + gebouwen via
+│   ├── CivicDecorator.cs     # [GlobalClass] Node3D (fase 2 stap 12): plaza-decor — ronde fontein op de
+│   │   │               #   civic:fountain-plot (standaard gx:32,gz:32) + gestreepte marktkramen op
+│   │   │               #   civic:market (standaard gx:36,gz:26); leest de plots uit village.json en valt
+│   │   │               #   terug op de coördinaten hierboven; static Handles(b) → WorldManager skipt het
+│   │   │               #   generieke civic-gebouw én het collider op die plots, registreert de cellen wél
+│   │   │               #   (prop-trail/farmland-avoidance); pub counts FountainCount/StallCount/FountainPosition
+│   ├── WorldManager.cs       # [GlobalClass] Node3D: ArrayMesh-ondergrond (hoogtegradiënt-normals + vertex-color
+│   │   │               #   materiaal; storybook-band-kleuren: meer teal (0.20,0.32,0.35), goudstrand (0.90,0.82,0.58),
+│   │   │               #   weilandgroen (0.40,0.64,0.26), heuvelgroen (0.38,0.61,0.25)) + gebouwen via
 │   │   │               #   BuildingAssembler + BuildRoads/BuildBridges (cobble MultiMesh + houten brug met railings/steunpunten;
 │   │   │               #   _roadRoot onder GroundRoot, _bridgeRoot onder ObjectsRoot; gedeelde _plankMat/_railingMat/_stoneMat/_cobbleMat)
 │   │   │               #   + StaticBody3D per gebouw (CollisionLayer=4, meta building_id, box pw×2×pd) + BuildingMarker-record
 │   │   │               #   + NearestDossier(pos, radius), IsBuildingCell(gx,gz), PlotCells, BuildMarker, BuildingDisplayName;
-│   │   │               #   BuildWorld-volgorde: ground → water → DistrictDecorator → FarmlandSpawner → PropSpawner(fieldCells) → roads → bridges
-│   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: oneindig-ogend semi-transparant vlak op y=0 (2000×2000, HorizonSize 2000,
-│   │   │               #   diep oceaanblauw (0.02,0.14,0.32) + Roughness 0.18, shadow off), als child van GroundRoot
+│   │   │               #   BuildWorld-volgorde: ground → water → DistrictDecorator → FarmlandSpawner → PropSpawner(fieldCells)
+│   │   │               #   → roads → bridges → buildings → CivicDecorator.BuildCivics
+│   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: water via ShaderMaterial ↔ res://shaders/water.gdshader
+│   │   │               #   op y=0 (2000×2000, HorizonSize 2000, shadow off, diepte-gradiënt + schuimlijn via DEPTH_TEXTURE),
+│   │   │               #   als child van GroundRoot
 │   └── PropSpawner.cs        # [GlobalClass] Node3D: deterministische trees/rocks via MultiMesh op land-cellen, plot-vermijding +
 │       │               #   fieldCells-param (door FarmlandSpawner teruggegeven) óók geblockt, clamp op WorldHeight;
 │       │               #   tree-densiteit +boost nabij hill (HillCentre, r<8 → ×1.0..1.5); bomen ~3.5 m (trunk 1.7 + foliage 1.9/1.2)
 ├── Main.cs          # [GlobalClass] Node3D, is de main.tscn-script: luistert naar EventBus.VillageDataLoaded; maakt
 │   │               # WorldManager + FreeFlyCamera(Initialize((32,15,60), centrum)) + WalkModeManager(FlyCamera, World)
-│   │               # + zon (DirectionalLight3D) + WorldEnvironment (ProceduralSky) + een Atmosphere-container
-│   │               #   (DayNightCycle + NightGlowManager + LighthouseController; NÁ EnsureLighting zodat de cycle
+│   │               # + zon (DirectionalLight3D) + WorldEnvironment (ProceduralSky, Filmic tonemap, Glow/bloom) + een Atmosphere-container
+│   │               #   (DayNightCycle + NightGlowManager + LighthouseController + CloudManager; NÁ EnsureLighting zodat de cycle
 │   │               #   de bestaande Sun/WorldEnvironment adopteert i.p.v. eigen te maken); LoadFallbackVillage()
 │   │               #   leest res://village.json via Godot.FileAccess (dummy-island enkel als laatste redmiddel)
 ├── Tools/
@@ -86,11 +96,15 @@ godot/src/
 │   ├── VerifyLiveRunner.cs    # E2E tegen lokale server (poort 4747): aantallen zijn data-afhankelijk (snapshot village.json = 163 gebouwen, live kan anders zijn)
 │   ├── VerifyWalkRunner.cs    # echte physics-frames: EnterWalkMode → 80 ticks op de grond (IsOnFloor), teleport in het water → 120 ticks (State=Swimming)
 │   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
-│   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, geen glow) / 23:00 (nacht, windows+lampen emissie,
-│   │   │               #   vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
+│   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, raam-glans blijft subtiel warm 0.35, lampen uit) / 23:00 (nacht,
+│   │   │               #   windows+lampen emissie, vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
 │   ├── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
-│   └── VerifyDistrictRunner.cs   # Phase 2 stap 9: laadt echte res://village.json, bouwt wereld, assert hedges>0,
-│                               #   field/orchard>0 (falls toevallig 0 op een lege island — met fallback-village 164/16+21)
+│   ├── VerifyDistrictRunner.cs   # Phase 2 stap 9: laadt echte res://village.json, bouwt wereld, assert hedges>0,
+│   │                               #   field/orchard>0 (falls toevallig 0 op een lege island — met fallback-village 164/16+21)
+│   └── VerifyVisualRunner.cs     # Fase 2 stap 12: storybook-verificatie (20 checks) — water shader/materiaal, palette-hele
+│                               #   kleuren + half-timber slankheid, plaza-fontein+stalletjes, per-vertex grondkleuren,
+│                               #   wolken (aantal/hoogte/schaduw/drift/wrap); zelfde 161 !is_inside_tree()-ruis als
+│                               #   VerifyDistrictRunner (preëxistent, bij gebouwassembly) + EXIT=0
 ├── Buildings/
 │   ├── Slots/
 │   │   ├── SlotType.cs              # enum: Foundation/Wall/Roof/Door/Window/Ornament/Sign
@@ -118,8 +132,13 @@ godot/src/
 │   │   │               #   ApplyHour(Hour), statics ElevationDegAt/IsNightTime/IsDuskOrNight
 │   ├── NightGlowManager.cs  # [GlobalClass] Node3D: windows emissie = kleur GlowColour (1.0,0.75,0.35) op de
 │   │   │               #   window slot-materialen (AttachedPiece Node3D-boom → eerst MeshInstance3D-kind mat);
-│   │   │               #   eigen straatlantaarns langs GroundRoot/Roads cobble MultiMesh (elke 6e instancetransform,
-│   │   │               #   cap 96, steel-paal+glas emissief, gedeeld glas-materiaal in _lampGlass); Cycle/World exports
+│   │   │               #   overdag houden ramen een subtiele warme gloed (WindowDayGlow 0.35, SetGlow heeft nu
+│   │   │               #   een dayEnergy-param); eigen straatlantaarns langs GroundRoot/Roads cobble MultiMesh
+│   │   │               #   (elke 6e instancetransform, cap 96, steel-paal+glas emissief, gedeeld glas-materiaal
+│   │   │               #   in _lampGlass); Cycle/World exports
+│   ├── CloudManager.cs      # [GlobalClass] Node3D (fase 2 stap 12): laaghangende diorama-wolken — 5..7 bollen
+│   │   │               #   (PmRng fork "clouds"), y-band 22..26, WorldHalf 60, drift 1.2 m/s met z-verhouding 0.22,
+│   │   │               #   wrap rond de wereldrand, shadow casting aan; pub CloudCount/CloudAltitudeBand/Advance/Rebuild
 │   └── LighthouseController.cs # [GlobalClass] Node3D: vindt ObjectRoot-building waarvan naam "lighthouse" bevat;
 │       │               #   lantern op y≈2.7 (lanternglow OmniLight3D + BeamRotator met SpotLight3D SpotAngle 12/
 │       │               #   SpotRange 42/energy 3.0 en additive emissie-cone CylinderMesh); 1 omwenteling/8 s via
@@ -163,11 +182,13 @@ godot/src/
   - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
   - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
   - `VerifyDistrictRunner.cs` — laadt echte res://village.json via VillageJson, bouwt wereld, assert DistrictDecorator-hedges>0 en FarmlandSpawner fields+orchards>0 (fallback-village 1337: 164 hedges, 12 gateposts, 5 archways, 16 fields, 21 orchards) → PASS.
+  - `VerifyVisualRunner.cs` — stap 12: laadt echte village.json, assert water-shader + ShaderMaterial, palette-kleur getters (`BuildingCatalog.PlasterColour` etc.), fountain+3 stallletjes + terrain-clamp, per-vertex ground-kleurbanden, cloudveld 5..7 (altitude 22..26, schaduw, drift, wrap) → 20 checks PASS. De 161 `Condition "!is_inside_tree()"`-regels die tijdens gebouwassembly verschijnen zijn preëxistent (DistrictRunner geeft identiek) → enkel op EXIT=0 + `[OK]` letten.
   - Wrap `Run()` in try/catch met `Quit(1)` erin: zonder `Quit` hangt een `--script`-runner eindeloos.
 
 ### Modulair building-piecesysteem (fase 2 stap 7)
 `BuildingCatalog.cs` (statisch) bevat mesh-fabrieken voor elke piece-type met vaste Promptholm-materialen (pleister/balk/steen/tile/thatch/ijzer/koper). Elke fabriek retourneert een `Node3D`-boom met `MeshInstance3D`-children. `WorldManager.BuildCatalog()` roept deze fabrieken aan (niet meer inline `BoxMesh`). Gebruikte materialen: `_plaster` (warm beige), `_beam` (donkerbruin), `_stone` (grijs), `_roofTile` (terracotta), `_thatch` (strogeel), `_wood`/`_woodLight`, `_iron` (donker metaal), `_glass` (semi-transparant blauw), `_copper` (oranje-brons), `_smoke` (grijs, semi-transparant).
 Prefab `.tscn`-scenes staan in `prefabs/` met `[Tool]` scripts die in de editor én runtime zelf bouwen via `ToolPrefabBase.EnsureMeshes()`. De [.tscn]-paden: `prefabs/foundations/foundation_stone.tscn`, `prefabs/walls/wall_timber.tscn`, `prefabs/walls/wall_stone.tscn`, `prefabs/roofs/roof_gable_tiles.tscn`, `prefabs/roofs/roof_thatch.tscn`, `prefabs/openings/door_wood.tscn`, `prefabs/openings/window_frame.tscn`, `prefabs/ornaments/ornament_forge.tscn`, `prefabs/ornaments/ornament_weathervane.tscn`.
+Word-vrijwaring palette (fase 2 stap 12): plaster (0.94,0.90,0.82), balk (0.32,0.20,0.11, `TimberBeamWidth=0.05`), steen (0.60,0.58,0.55), dakpan (0.74,0.32,0.18), glas (0.98,0.88,0.52, alpha 0.92, emissie 0.35 warm). Openbare kleur-getters op `BuildingCatalog` (PlasterColour/BeamTimberColour/FieldstoneColour/RoofTileColour/WindowGlassColour) zodat runners de kleuren kunnen asserten.
 Model Sheet showroom: `scenes/model_sheet.tscn` met `ModelSheetShowroom.cs` [Tool] galerij (6 tiers × 3 styles + ornaments + key/fill/rim licht + orbital camera).
 Valkuil: `ToolPrefabBase._Ready()` mag niet door `Engine.IsEditorHint()` worden geblokkeerd als de scenes ook runtime-gebruikt moeten worden (bijv. als PieceScene); `ClearMeshChildren` ruimt eerst op, `AddMeshesFrom` verplaatst meshes en freed de temp-node.
 
@@ -187,7 +208,7 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - `--script` SceneTree-runners: `_Ready()` op custom nodes wordt **niet gegarandeerd** aangeroepen voor nodes die je in `_Initialize()` aan `Root` toevoegt → gebruik lazy `EnsureRoots()` of aanmaak vóór dat AddChild.
 - SceneTree-loop-semantiek: `true` retourneren uit `_Process`/`_PhysicsProcess` **beeindigt de loop** (MainLoop-semantiek) → in runners altijd `false` returnen en stoppen via `Quit(0/1)`.
 - `HeightMapShape3D` positioneer je op `(0.5, 0, 0.5)` (cel=corner bij gx/gz) en MapWidth/MapDepth = `N`; data is `double[N*N]` (`terrain.H`) → casten naar `float[]`.
-- ArrayMesh-arrays: gebruik standaard C# arrays (`Vector3[]`, `Color[]`, `int[]`), géén `PackedVector3Array` (die type bestaat niet in C#-API). `SurfaceGetArrayLength` bestaat niet → pak de array via `SurfaceGetArrays(0)` en check de Vertex-array-lengte.
+- ArrayMesh-arrays: gebruik standaard C# arrays (`Vector3[]`, `Color[]`, `int[]`), géén `PackedVector3Array` (die type bestaat niet in C#-API). `SurfaceGetArrays(0)` geeft een `Godot.Collections.Array` met Variant-waarden → elementen casten met `.As<Color[]>()` / `.As<Vector3[]>()`. `SurfaceGetArrayLength` bestaat niet → pak de array via `SurfaceGetArrays(0)` en check de Vertex-array-lengte.
 - `HttpClient` is ambig tussen `Godot.HttpClient` en `System.Net.Http.HttpClient` → voeg `using HttpClient = System.Net.Http.HttpClient;` toe (ook in Tools-runners).
 - village.json is partieel untyped: `districtsRev` kan een number zijn, `outpost` een object → maak `DistrictsRev` `[JsonConverter(FlexibleStringConverter)]` en `Outpost` type `object?` (polymorf, zoals `District`).
 - **C# heeft geen `ConeMesh`** (ook niet in 4.7) → kegel maken als `CylinderMesh` met `TopRadius = 0`.
@@ -211,4 +232,5 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - `SphereMesh` heeft **`radial_segments`** + `rings`, niet `segments` (Godot 3).
 - `StandardMaterial3D`: gebruik `emission_enabled` / `emission` / `emission_energy`, **niet** `emissive_enabled` / `emissive` / `emissive_energy` — die geven remapping-warnings en zetten emission niet aan.
 - Bij nieuwe `class_name`-scripts: eerst `--import` draaien, anders ziet `--script` de class niet.
+- Water-shader (`res://shaders/water.gdshader`, stap 12): in een transparent/blend pass diepte uitlezen via `DEPTH_TEXTURE` + reconstructie `vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0); depth = view.z / view.w` (wateroppervlak = `-VERTEX.z`); `render_mode blend_mix, depth_draw_never, cull_back, specular_disabled` zodat je door het water naar de wereldbodem kijkt. `ConeMesh` → `CylinderMesh` met `TopRadius=0`.
 - `verify_objects.gd` bouwt zelf, niet via `root.add_child(kit.build(...))` — `build()` retourneert een Dictionary, geen Node.

@@ -13,6 +13,7 @@ namespace Promptholm;
 public partial class Main : Node3D
 {
 	private WorldManager? _worldManager;
+	private CloudManager? _cloudManager;
 
 	public override void _Ready()
 	{
@@ -65,6 +66,9 @@ public partial class Main : Node3D
 		atmosphere.AddChild(new NightGlowManager { Name = "NightGlowManager", Cycle = cycle, World = _worldManager });
 		atmosphere.AddChild(new LighthouseController { Name = "LighthouseController", Cycle = cycle, World = _worldManager });
 
+		_cloudManager = new CloudManager { Name = "CloudManager" };
+		atmosphere.AddChild(_cloudManager);
+
 		if (EventBus.Instance is not null)
 		{
 			EventBus.Instance.VillageDataLoaded += OnVillageDataLoaded;
@@ -82,6 +86,7 @@ public partial class Main : Node3D
 			{
 				GD.Print($"[Main] Using res://village.json fallback: island={fallback.Island.Name}, seed={fallback.Island.Seed}, buildings={fallback.Buildings.Count}");
 				_worldManager.BuildWorld(fallback);
+				_cloudManager?.Rebuild(fallback.Island.Seed);
 			}
 			else
 			{
@@ -92,6 +97,7 @@ public partial class Main : Node3D
 					Grid = new GridData { Size = 64 }
 				};
 				_worldManager.BuildWorld(defaultVillage);
+				_cloudManager?.Rebuild(1337);
 			}
 		}
 	}
@@ -175,6 +181,10 @@ public partial class Main : Node3D
 				AmbientLightSkyContribution = 0.4f,
 				AmbientLightEnergy = 0.6f,
 				TonemapMode = Godot.Environment.ToneMapper.Filmic,
+				GlowEnabled = true,
+				GlowIntensity = 0.7f,
+				GlowBloom = 0.1f,
+				GlowHdrThreshold = 1.0f,
 			};
 
 			AddChild(new WorldEnvironment { Name = "WorldEnvironment", Environment = environment });
@@ -185,5 +195,6 @@ public partial class Main : Node3D
 	{
 		GD.Print($"[Main] Received VillageData: island={village.Island.Name}, seed={village.Island.Seed}, buildings={village.Buildings.Count}");
 		_worldManager?.BuildWorld(village);
+		_cloudManager?.Rebuild(village.Island.Seed);
 	}
 }

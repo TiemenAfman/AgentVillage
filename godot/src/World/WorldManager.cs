@@ -18,6 +18,7 @@ public partial class WorldManager : Node3D
 	private DistrictDecorator? _districtDecorator;
 	private FarmlandSpawner? _farmlandSpawner;
 	private PropSpawner? _propSpawner;
+	private CivicDecorator? _civicDecorator;
 	private MeshInstance3D? _islandMesh;
 	private Node3D? _roadRoot;
 	private Node3D? _bridgeRoot;
@@ -62,6 +63,11 @@ public partial class WorldManager : Node3D
 			_propSpawner = new PropSpawner { Name = "PropSpawner" };
 			_objectsRoot.AddChild(_propSpawner);
 		}
+		if (_civicDecorator is null)
+		{
+			_civicDecorator = new CivicDecorator { Name = "CivicDecorator" };
+			_objectsRoot!.AddChild(_civicDecorator);
+		}
 
 		if (_roadRoot is null)
 		{
@@ -105,6 +111,14 @@ public partial class WorldManager : Node3D
 			if (b.Plot is null)
 				continue;
 
+			// Fountain & market plots are owned by the CivicDecorator (visual only): their
+			// cells still count as occupied, but no generic civic house is drawn on top.
+			if (_civicDecorator is not null && CivicDecorator.Handles(b))
+			{
+				_buildingCells.UnionWith(PlotCells(b));
+				continue;
+			}
+
 			float gx = b.Plot.Gx;
 			float gz = b.Plot.Gz;
 			float pw = Math.Max(0.8f, b.Plot.W);
@@ -138,6 +152,8 @@ public partial class WorldManager : Node3D
 			assembler.Catalog = catalog;
 			assembler.Assemble(style, tier, OrnamentIds(b));
 		}
+
+		_civicDecorator?.BuildCivics(_terrain, village);
 
 		GD.Print("[WorldManager] World build complete.");
 	}
@@ -382,13 +398,13 @@ public partial class WorldManager : Node3D
 
 				Color col;
 				if (h < 0.0f)
-					col = new Color(0.25f, 0.41f, 0.48f);
+					col = new Color(0.20f, 0.32f, 0.35f);      // lake & river bed
 				else if (h < 0.35f)
-					col = new Color(0.88f, 0.82f, 0.65f);
+					col = new Color(0.90f, 0.82f, 0.58f);      // golden beach
 				else if (h < 3.4f)
-					col = new Color(0.57f, 0.75f, 0.38f);
+					col = new Color(0.40f, 0.64f, 0.26f);      // meadow green
 				else
-					col = new Color(0.5f, 0.5f, 0.5f);
+					col = new Color(0.38f, 0.61f, 0.25f);      // hilltop green
 
 				colors[idx] = col;
 			}

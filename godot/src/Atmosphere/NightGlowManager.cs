@@ -21,6 +21,9 @@ public partial class NightGlowManager : Node3D
 	/// <summary>Warm candle/lantern yellow emitted from windows and lamp glass at night.</summary>
 	public static readonly Color GlowColour = new(1.0f, 0.75f, 0.35f);
 
+	/// <summary>Subtle warm glow the warm-lit window panes keep during daylight hours.</summary>
+	public const float WindowDayGlow = 0.35f;
+
 	private static readonly Color LampMetal = new(0.14f, 0.14f, 0.16f);
 
 	[Export]
@@ -74,18 +77,18 @@ public partial class NightGlowManager : Node3D
 		EnsureLamps();
 
 		foreach (var mat in _windowMaterials)
-			SetGlow(mat, on);
+			SetGlow(mat, on, WindowDayGlow);
 		foreach (var mat in _lampGlass)
-			SetGlow(mat, on);
+			SetGlow(mat, on, 0.0f);
 
 		_glowOn = on;
 	}
 
-	private void SetGlow(StandardMaterial3D mat, bool on)
+	private static void SetGlow(StandardMaterial3D mat, bool on, float dayEnergy)
 	{
 		mat.Emission = GlowColour;
-		mat.EmissionEnabled = on;
-		mat.EmissionEnergyMultiplier = on ? 1.2f : 0.0f;
+		mat.EmissionEnabled = on || dayEnergy > 0.0f;
+		mat.EmissionEnergyMultiplier = on ? 1.2f : dayEnergy;
 	}
 
 	private WorldManager? ResolveWorld()

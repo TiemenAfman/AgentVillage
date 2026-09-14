@@ -10,35 +10,38 @@ namespace Promptholm.Buildings.Data;
 /// </summary>
 public static class BuildingCatalog
 {
+    /// <summary>Half-width of the visible half-timber beams on <see cref="MakeWallTimber"/>.</summary>
+    public const float TimberBeamWidth = 0.05f;
+
     // ---- Shared materials ----
 
     private static readonly StandardMaterial3D _plaster = new()
     {
-        AlbedoColor = new Color(0.88f, 0.82f, 0.71f),
+        AlbedoColor = new Color(0.94f, 0.90f, 0.82f),
         Roughness = 0.92f,
     };
 
     private static readonly StandardMaterial3D _beam = new()
     {
-        AlbedoColor = new Color(0.24f, 0.16f, 0.10f),
+        AlbedoColor = new Color(0.32f, 0.20f, 0.11f),
         Roughness = 0.78f,
     };
 
     private static readonly StandardMaterial3D _stone = new()
     {
-        AlbedoColor = new Color(0.56f, 0.55f, 0.54f),
+        AlbedoColor = new Color(0.60f, 0.58f, 0.55f),
         Roughness = 0.90f,
     };
 
     private static readonly StandardMaterial3D _stoneDark = new()
     {
-        AlbedoColor = new Color(0.46f, 0.45f, 0.44f),
+        AlbedoColor = new Color(0.52f, 0.50f, 0.47f),
         Roughness = 0.90f,
     };
 
     private static readonly StandardMaterial3D _roofTile = new()
     {
-        AlbedoColor = new Color(0.62f, 0.30f, 0.20f),
+        AlbedoColor = new Color(0.74f, 0.32f, 0.18f),
         Roughness = 0.80f,
     };
 
@@ -69,9 +72,12 @@ public static class BuildingCatalog
 
     private static readonly StandardMaterial3D _glass = new()
     {
-        AlbedoColor = new Color(0.60f, 0.78f, 0.92f, 0.45f),
+        AlbedoColor = new Color(0.98f, 0.88f, 0.52f, 0.92f),
         Roughness = 0.10f,
         Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+        EmissionEnabled = true,
+        Emission = new Color(0.98f, 0.88f, 0.52f),
+        EmissionEnergyMultiplier = 0.35f,
     };
 
     private static readonly StandardMaterial3D _copper = new()
@@ -87,6 +93,14 @@ public static class BuildingCatalog
         Roughness = 1.0f,
         Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
     };
+
+    // ---- Storybook palette (exposed for the headless verifier) ----
+
+    public static Color PlasterColour => _plaster.AlbedoColor;
+    public static Color BeamTimberColour => _beam.AlbedoColor;
+    public static Color FieldstoneColour => _stone.AlbedoColor;
+    public static Color RoofTileColour => _roofTile.AlbedoColor;
+    public static Color WindowGlassColour => _glass.AlbedoColor;
 
     // ---- Foundations ----
 
@@ -121,7 +135,7 @@ public static class BuildingCatalog
         };
         root.AddChild(new MeshInstance3D { Mesh = plaster });
 
-        const float bw = 0.08f;
+        const float bw = TimberBeamWidth;
         float bFront = -depth * 0.5f - bw * 0.25f;
         float halfH = h * 0.5f;
         float halfW = w * 0.5f;

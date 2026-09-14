@@ -4,8 +4,8 @@ namespace Promptholm.World;
 
 /// <summary>
 /// Flat sea surface laid at sea level (y = 0). One enormous plane so the ocean meets the
-/// horizon in every direction; the deep-blue tint is only lightly opaque, so the sandy
-/// shallows under the coast read through and the far sea feels like deep water.
+/// horizon in every direction; a custom shader depth-fades from warm turquoise shallows
+/// under the coast to deep navy blue offshore and draws a pulsing foam line on the banks.
 /// </summary>
 [GlobalClass]
 public partial class WaterPlane : MeshInstance3D
@@ -16,7 +16,7 @@ public partial class WaterPlane : MeshInstance3D
 	/// <summary>Side length of the square water sheet; far beyond the island and terrain bounds.</summary>
 	[Export] public float HorizonSize { get; set; } = 2000.0f;
 
-	private StandardMaterial3D? _waterMaterial;
+	private ShaderMaterial? _waterMaterial;
 
 	public void Build(TerrainGenerator terrain)
 	{
@@ -33,18 +33,13 @@ public partial class WaterPlane : MeshInstance3D
 		MaterialOverride = WaterMaterial();
 	}
 
-	private StandardMaterial3D WaterMaterial()
+	private ShaderMaterial WaterMaterial()
 	{
 		if (_waterMaterial is not null)
 			return _waterMaterial;
 
-		_waterMaterial = new StandardMaterial3D
-		{
-			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-			AlbedoColor = new Color(0.02f, 0.14f, 0.32f, 0.82f),
-			Metallic = 0.0f,
-			Roughness = 0.18f,
-		};
+		var shader = GD.Load<Shader>("res://shaders/water.gdshader");
+		_waterMaterial = new ShaderMaterial { Shader = shader };
 		return _waterMaterial;
 	}
 }
