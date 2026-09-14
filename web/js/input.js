@@ -19,7 +19,6 @@ export const MAPS = {
     jump:      { hit: BTN.A, label: 'A' },
     crouch:    { hit: BTN.B, down: BTN.B, label: 'B' },      // hold it to lie down
     interact:  { hit: BTN.X, label: 'X' },
-    think:     { hit: BTN.Y, label: 'Y' },
     prevTool:  { hit: BTN.LB, label: 'LB' },
     nextTool:  { hit: BTN.RB, label: 'RB' },
     secondary: { hit: BTN.LT, label: 'LT' },                 // the destructive one

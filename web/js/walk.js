@@ -160,7 +160,6 @@ export function createWalkMode({
     near: null,
     onInteract: null,
     onSendAway: null,
-    onThink: null,
     onPlant: null,
     onNextSeed: null,
     onPrevSeed: null,
@@ -241,8 +240,6 @@ export function createWalkMode({
     if (k === 'c') { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
-    // A thought needs nothing to stand in front of: it is about wherever you are.
-    if (k === 't') { e.preventDefault(); state.onThink && state.onThink(); }
     // Sowing is the same kind of thing: it happens where the feet are, not at a door.
     if (k === 'p') { e.preventDefault(); state.onPlant && state.onPlant(); }
     if (k === 'q') { e.preventDefault(); state.onNextSeed && state.onNextSeed(); }
@@ -372,7 +369,7 @@ export function createWalkMode({
     return false;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onThink, onPlant,
+  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onExit, onRelease }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
@@ -380,7 +377,6 @@ export function createWalkMode({
     state.onInteract = onInteract;
     state.onRelease = onRelease;
     state.onSendAway = onSendAway;
-    state.onThink = onThink;
     state.onPlant = onPlant;
     state.onNextSeed = onNextSeed;
     state.onPrevSeed = onPrevSeed;
@@ -460,7 +456,6 @@ export function createWalkMode({
     padCrouch = held;
     if (p.hit('interact') && state.near) state.onInteract && state.onInteract(state.near);
     if (p.hit('secondary') && state.near) state.onSendAway && state.onSendAway(state.near);
-    if (p.hit('think')) state.onThink && state.onThink();
     if (p.hit('primary')) state.onPlant && state.onPlant();
     if (p.hit('nextTool')) state.onNextSeed && state.onNextSeed();
     if (p.hit('prevTool')) state.onPrevSeed && state.onPrevSeed();

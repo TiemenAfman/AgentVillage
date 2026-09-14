@@ -408,48 +408,35 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   border: 1px solid var(--edge); border-radius: 8px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; }
 #office-merge-ref:focus { outline: none; border-color: var(--accent); }
 
-/* --- a thought, had while standing somewhere ---------------------------- */
-/* The chat panel takes the right-hand side, so a thought takes the left: you can be
-   halfway through a conversation with a settler and still ask the island something. */
-.think-panel { position: fixed; left: 14px; top: 14px; bottom: 78px; width: min(410px, calc(100vw - 28px));
-  z-index: 27; display: flex; flex-direction: column; animation: risein .2s ease; }
-.think-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 12px 14px 10px; border-bottom: 1px solid var(--edge); }
-.think-head h2 { font-family: var(--font); font-size: 17px; margin: 0; }
-.think-head .muted { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
-.think-head-right { display: flex; align-items: center; gap: 6px; }
-.think-head-right .btn.tiny { margin-left: 0; white-space: nowrap; }
-.think-log { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-.think-msg .who { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); margin-bottom: 4px; }
-.think-msg .body { font-size: 13px; line-height: 1.5; }
-.think-msg .body p { margin: 0 0 8px; }
-.think-msg .body p:last-child { margin-bottom: 0; }
-.think-msg .body code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: rgba(255,255,255,.09); padding: 1px 4px; border-radius: 4px; }
-.think-msg .body pre { margin: 8px 0; padding: 9px 11px; background: rgba(0,0,0,.32); border: 1px solid var(--edge);
-  border-radius: 9px; overflow-x: auto; }
-.think-msg .body pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
-.think-msg.user { align-self: flex-end; max-width: 88%; background: rgba(127,199,217,.12); border: 1px solid rgba(127,199,217,.3);
-  border-radius: 12px 12px 3px 12px; padding: 9px 12px; }
-.think-msg.user .who { color: var(--accent-2); }
-.think-msg.assistant { max-width: 96%; }
-.think-tools { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
-.think-tools .tool { font-size: 10.5px; color: var(--ink-dim); background: rgba(255,255,255,.05);
-  border: 1px solid var(--edge); border-radius: 7px; padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.think-tools .tool b { color: var(--accent-2); font-weight: 600; }
-.think-note { font-size: 11.5px; color: var(--ink-dim); font-style: italic; text-align: center; padding: 3px 0; }
-.think-compose { display: flex; gap: 7px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--edge); }
-.think-compose textarea { flex: 1; font: inherit; font-size: 13px; resize: none; color: var(--ink);
-  background: rgba(255,255,255,.07); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; line-height: 1.4; }
-.think-compose textarea:focus { outline: none; border-color: rgba(127,199,217,.5); }
-.think-foot { margin: 0; padding: 0 14px 11px; font-size: 10.5px; color: var(--ink-dim); }
-.think-panel.busy .think-log { opacity: .92; }
-/* T is the one key on the walking strip that is not about something in front of you. */
+/* --- talking to the people on the island -------------------------------- */
+/* Bottom left, which is also where the toasts land. This sits over them on purpose: a
+   toast is gone in five seconds and a conversation is not, so covering one is better
+   than having a notice drop on the line somebody is reading. */
+.islandchat { position: fixed; left: 14px; bottom: 16px; z-index: 12;
+  width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 7px; }
+.islandchat-log { max-height: 34vh; overflow: auto; display: flex; flex-direction: column; gap: 3px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 9px 11px; backdrop-filter: blur(5px); }
+.islandchat-log p { margin: 0; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.islandchat-log p b { color: var(--accent-2); font-weight: 600; }
+.islandchat-log p.mine b { color: var(--accent); }
+/* Who the island belongs to, so a visitor can tell whose house they are standing in. */
+.islandchat-home { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 0 5px; margin-left: 5px; white-space: nowrap; }
+.islandchat-note { color: var(--ink-dim); font-style: italic; }
+.islandchat-input { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 7px 13px; box-shadow: var(--shadow); }
+.islandchat-input:focus { outline: none; border-color: rgba(127,199,217,.5); }
+.islandchat-input::placeholder { color: var(--ink-dim); }
+/* Peeking is the log on its own: what was said stays readable, and the keyboard stays
+   with whoever is walking somewhere. */
+.islandchat.peeking .islandchat-input { display: none; }
+.islandchat.peeking .islandchat-log { background: rgba(28, 24, 20, 0.62); }
+
+/* The keys on the walking strip that are about where you are standing rather than what
+   is in front of you: sitting down, sowing, opening the catalogue. */
 .walk-keys .lit { color: var(--accent-2); }
 .walk-keys .lit kbd { background: rgba(127,199,217,.17); border-color: rgba(127,199,217,.4); }
-
-@media (max-width: 900px) {
-  .think-panel { width: calc(100vw - 28px); }
-}
 
 /* --- the avatar studio ------------------------------------------------- */
 .av-panel { width: min(680px, calc(100vw - 32px)); }
