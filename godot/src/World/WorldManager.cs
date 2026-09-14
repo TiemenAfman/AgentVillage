@@ -20,6 +20,12 @@ public partial class WorldManager : Node3D
 	private Node3D? _roadRoot;
 	private Node3D? _bridgeRoot;
 
+	private readonly List<BuildingMarker> _buildingMarkers = new();
+	private readonly HashSet<(int, int)> _buildingCells = new();
+
+	/// <summary>Logical handle for click/proximity selection of a placed building.</summary>
+	public sealed record BuildingMarker(string Id, string Name, Vector2 Door, string Kind);
+
 	public override void _Ready()
 	{
 		EnsureRoots();
@@ -77,6 +83,8 @@ public partial class WorldManager : Node3D
 		BuildBridges(_terrain, village);
 
 		ClearBuildings();
+		_buildingMarkers.Clear();
+		_buildingCells.Clear();
 
 		foreach (var b in village.Buildings)
 		{
@@ -101,6 +109,10 @@ public partial class WorldManager : Node3D
 			};
 			_objectsRoot!.AddChild(buildingRoot);
 
+			AddBuildingCollider(buildingRoot, b, pw, pd);
+			_buildingCells.UnionWith(PlotCells(b));
+			_buildingMarkers.Add(BuildMarker(buildingRoot, b, pw, pd));
+
 			var assembler = new BuildingAssembler { Name = "BuildingAssembler" };
 			buildingRoot.AddChild(assembler);
 
@@ -114,6 +126,53 @@ public partial class WorldManager : Node3D
 		}
 
 		GD.Print("[WorldManager] World build complete.");
+	}
+
+	/// <summary>Static body + plot-sized box on the building layer so clicks and the settler find it.</summary>
+	private static void AddBuildingCollider(Node3D root, BuildingData b, float w, float d)
+	{
+		var body = new StaticBody3D
+		{
+			Name = "BuildingCollider",
+			CollisionLayer = 4,
+			CollisionMask = 0,
+		};
+		body.SetMeta("building_id", b.Id);
+		body.SetMeta("building_kind", string.IsNullOrWhiteSpace(b.Kind) ? "house" : b.Kind);
+		body.AddChild(new CollisionShape3D
+		{
+			Name = "Collision",
+			Shape = new BoxShape3D { Size = new Vector3(w, 2.0f, d) },
+			Position = new Vector3(0.0f, 1.0f, 0.0f),
+		});
+		root.AddChild(body);
+	}
+
+	private static IEnumerable<(int, int)> PlotCells(BuildingData b)
+	{
+		int w = Math.Max(1, b.Plot.W);
+		int d = Math.Max(1, b.Plot.D);
+		for (int cx = 0; cx < w; cx++)
+			for (int cz = 0; cz < d; cz++)
+				yield return (b.Plot.Gx + cx, b.Plot.Gz + cz);
+	}
+
+	/// <summary>
+	/// World-space interaction point: the door on the front wall (relative to the building's
+	/// yaw), so the settler stands in front of the entrance rather than at the plot centre.
+	/// </summary>
+	private static BuildingMarker BuildMarker(Node3D root, BuildingData b, float w, float d)
+	{
+		var doorLocal = new Vector3(0.0f, 0.0f, -d * 0.5f + 0.12f);
+		var doorWorld = root.GlobalTransform * doorLocal;
+		return new BuildingMarker(b.Id, BuildingDisplayName(b), new Vector2(doorWorld.X, doorWorld.Z), b.Kind);
+	}
+
+	private static string BuildingDisplayName(BuildingData b)
+	{
+		if (!string.IsNullOrWhiteSpace(b.Name)) return b.Name!;
+		if (!string.IsNullOrWhiteSpace(b.Label)) return b.Label!;
+		return string.IsNullOrWhiteSpace(b.Id) ? "Unknown" : b.Id;
 	}
 
 	private static string[] OrnamentIds(BuildingData b)
@@ -138,6 +197,32 @@ public partial class WorldManager : Node3D
 			if (child.Name.ToString().StartsWith("Building_", StringComparison.Ordinal))
 				child.QueueFree();
 		}
+	}
+
+	/// <summary>True when the grid cell falls inside a building's plot (used for spawn avoidance).</summary>
+	public bool IsBuildingCell(int gx, int gz)
+		=> _buildingCells.Contains((gx, gz));
+
+	/// <summary>
+	/// The building whose door (or origin) is closest to <paramref name="worldPos"/>, provided it
+	/// is within <paramref name="maxDistance"/>. Returns null when nobody is within reach.
+	/// </summary>
+	public BuildingMarker? NearestDossier(Vector3 worldPos, float maxDistance)
+	{
+		BuildingMarker? best = null;
+		float bestDist = maxDistance;
+		foreach (var m in _buildingMarkers)
+		{
+			float dx = worldPos.X - m.Door.X;
+			float dz = worldPos.Z - m.Door.Y;
+			float dist = Mathf.Sqrt(dx * dx + dz * dz);
+			if (dist <= bestDist)
+			{
+				bestDist = dist;
+				best = m;
+			}
+		}
+		return best;
 	}
 
 	// ---- modular assembly -------------------------------------------------------
@@ -213,18 +298,12 @@ public partial class WorldManager : Node3D
 			AlbedoColor = colour,
 			Roughness = 0.85f,
 		};
-		mesh.Material = mat;
-
-		var holder = new Node3D();
-		holder.AddChild(new MeshInstance3D { Mesh = mesh });
-
-		var scene = new PackedScene();
-		scene.Pack(holder);
 
 		return new BuildingPieceResource
 		{
 			PieceId = id,
-			PieceScene = scene,
+			MeshOverride = mesh,
+			MaterialOverride = mat,
 			TargetSlot = slot,
 			TierRequirement = 0,
 			ModelStyle = string.Empty,

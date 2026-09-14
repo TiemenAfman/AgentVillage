@@ -19,6 +19,9 @@ public partial class EventBus : Node
 	/// <summary>An error-free village.json arrived (body parsed on the main thread).</summary>
 	public event Action<VillageData>? VillageDataLoaded;
 
+	/// <summary>Walk-mode HUD prompt for the nearest interactive building; null hides it.</summary>
+	public event Action<string?>? InteractionPromptChanged;
+
 	[Signal]
 	public delegate void TerrainGeneratedEventHandler(string terrainHash);
 
@@ -38,6 +41,9 @@ public partial class EventBus : Node
 
 	public void PublishVillageData(VillageData data)
 		=> VillageDataLoaded?.Invoke(data);
+
+	public void PublishInteractionPrompt(string? text)
+		=> InteractionPromptChanged?.Invoke(text);
 
 	public void PublishTerrainGenerated(string terrainHash)
 		=> EmitSignal(SignalName.TerrainGenerated, terrainHash);
