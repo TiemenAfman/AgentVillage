@@ -15,6 +15,8 @@ public partial class WorldManager : Node3D
 	private Node3D? _objectsRoot;
 	private TerrainGenerator? _terrain;
 	private WaterPlane? _waterPlane;
+	private DistrictDecorator? _districtDecorator;
+	private FarmlandSpawner? _farmlandSpawner;
 	private PropSpawner? _propSpawner;
 	private MeshInstance3D? _islandMesh;
 	private Node3D? _roadRoot;
@@ -44,6 +46,16 @@ public partial class WorldManager : Node3D
 		{
 			_waterPlane = new WaterPlane { Name = "WaterPlane" };
 			_groundRoot!.AddChild(_waterPlane);
+		}
+		if (_districtDecorator is null)
+		{
+			_districtDecorator = new DistrictDecorator { Name = "DistrictDecorator" };
+			_objectsRoot!.AddChild(_districtDecorator);
+		}
+		if (_farmlandSpawner is null)
+		{
+			_farmlandSpawner = new FarmlandSpawner { Name = "FarmlandSpawner" };
+			_objectsRoot!.AddChild(_farmlandSpawner);
 		}
 		if (_propSpawner is null)
 		{
@@ -78,7 +90,9 @@ public partial class WorldManager : Node3D
 		_terrain = new TerrainGenerator(seed, size);
 		BuildGroundMesh(_terrain);
 		_waterPlane?.Build(_terrain);
-		_propSpawner?.SpawnProps(_terrain, village);
+		_districtDecorator?.DecorateDistricts(_terrain, village);
+		var fieldCells = _farmlandSpawner?.SpawnFields(_terrain, village);
+		_propSpawner?.SpawnProps(_terrain, village, fieldCells);
 		BuildRoads(_terrain, village);
 		BuildBridges(_terrain, village);
 

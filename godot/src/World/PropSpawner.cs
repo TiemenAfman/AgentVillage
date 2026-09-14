@@ -21,13 +21,15 @@ public partial class PropSpawner : Node3D
 
 	/// <summary>
 	/// Deterministic prop placement on land tiles, drawn as MultiMesh so a thousand trees
-	/// and rocks cost a handful of draw calls. Beach cells and building plots (plus a
-	/// one-cell margin) are skipped. The distribution is derived from the island seed
-	/// (PmRng "props" + a "forest" simplex), so the same seed always scatters the same
-	/// props. Every instance is clamped strictly to the terrain elevation via
-	/// TerrainGenerator.WorldHeight so nothing floats or sinks.
+	/// and rocks cost a handful of draw calls. Beach cells, building plots (plus a
+	/// one-cell margin), and farmland cells are skipped. The distribution is derived from
+	/// the island seed (PmRng "props" + a "forest" simplex), so the same seed always
+	/// scatters the same props. Every instance is clamped strictly to the terrain elevation
+	/// via TerrainGenerator.WorldHeight so nothing floats or sinks. Tree density is boosted
+	/// near the hill centre.
 	/// </summary>
-	public void SpawnProps(TerrainGenerator terrain, VillageData village)
+	public void SpawnProps(TerrainGenerator terrain, VillageData village,
+		IReadOnlySet<(int, int)>? fieldCells = null)
 	{
 		foreach (var child in GetChildren())
 		{
@@ -36,12 +38,22 @@ public partial class PropSpawner : Node3D
 		}
 
 		var blocked = CollectBlockedCells(terrain, village);
+		if (fieldCells is not null)
+		{
+			int size = terrain.Size;
+			foreach (var (fx, fz) in fieldCells)
+				blocked.Add((long)fz * size + fx);
+		}
 
 		var rng = new PmRng(terrain.IslandSeed).Fork("props");
 		var forest = new PmSimplex(PmRng.Hash32(terrain.IslandSeed.ToString() + ":forest"));
 
 		var trees = new List<Transform3D>();
 		var rocks = new List<Transform3D>();
+
+		double hillX = terrain.HillCentre.X;
+		double hillZ = terrain.HillCentre.Y;
+		double hillR = 8.0;
 
 		foreach (var cell in terrain.LandCells)
 		{
@@ -53,6 +65,12 @@ public partial class PropSpawner : Node3D
 			var (wx, wz) = terrain.CellWorld(cell.X, cell.Z);
 			double forestN = forest.Noise2(wx * 0.10, wz * 0.10);
 			double treeDensity = Math.Clamp(0.055 + forestN * 0.045, 0.01, 0.16);
+
+			double dx = wx - hillX, dz = wz - hillZ;
+			double dist = Math.Sqrt(dx * dx + dz * dz);
+			if (dist < hillR)
+				treeDensity *= 1.0 + (1.0 - dist / hillR) * 0.5;
+
 			double roll = rng.Next();
 			double ground = terrain.WorldHeight(wx, wz);
 

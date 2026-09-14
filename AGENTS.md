@@ -52,16 +52,28 @@ godot/src/
 ├── World/          # bewerking ≠ pure .NET meer sinds water/props (nodes, maar wél headless testbaar)
 │   ├── PmRng.cs              # hash32/mulberry32/js_round/fork
 │   ├── PmSimplex.cs          # 2D simplex + fbm2 + smoothstep_js
-│   ├── TerrainGenerator.cs   # bit-exacte port van terrain.gd + query-API (WorldHeight/Corner, SeaLevel=0, Land/BeachCells)
+│   ├── TerrainGenerator.cs   # bit-exacte port van terrain.gd + query-API (WorldHeight/Corner/Slope, SeaLevel=0, Land/BeachCells)
+│   ├── DistrictDecorator.cs  # ParcelRaster (lobe-parcel RLE → fine-cell ownership map, gedeeld met FarmlandSpawner) +
+│   │   │               #   [GlobalClass] Node3D: boundary hedges (BoxMesh 0.8×0.65×0.35 langs district grenzen, hue-tint),
+│   │   │               #   gateposts (paar bij weg-kruisingen) + naam-archways (houten palen + plank + Label3D + hue-band)
+│   │   │               #   per lobe; archway vindt gate via `road:{districtId}:{lobeIndex}` pad, valt terug op groen/centrum;
+│   │   │               #   pub counts HedgeCount/ArchwayCount; alles MultiMesh + clamp op WorldHeight
+│   ├── FarmlandSpawner.cs    # [GlobalClass] Node3D: ploughed fields + orchards op het platteland (owner==None, niet cleared,
+│   │   │               #   isLand, niet beach, slope<0.35, hash-coverage 0.35); fields 3×4/4×5 loam-brown slabs + furrow-richels
+│   │   │               #   langs de lange as, orchards 3×3 fruitbomen (trunk+crown ArrayMesh, MultiMesh, scale 0.46+hash%20);
+│   │   │               #   cleared = polder.dike + village.Cleared + building plots ±1; retourneert IReadOnlySet<(int,int)>
+│   │   │               #   fieldCells voor PropSpawner; pub counts FieldCount/OrchardCount
 │   ├── WorldManager.cs       # [GlobalClass] Node3D: ArrayMesh-ondergrond (hoogtegradiënt-normals + vertex-color materiaal) + gebouwen via
 │   │   │               #   BuildingAssembler + BuildRoads/BuildBridges (cobble MultiMesh + houten brug met railings/steunpunten;
 │   │   │               #   _roadRoot onder GroundRoot, _bridgeRoot onder ObjectsRoot; gedeelde _plankMat/_railingMat/_stoneMat/_cobbleMat)
 │   │   │               #   + StaticBody3D per gebouw (CollisionLayer=4, meta building_id, box pw×2×pd) + BuildingMarker-record
-│   │   │               #   + NearestDossier(pos, radius), IsBuildingCell(gx,gz), PlotCells, BuildMarker, BuildingDisplayName
+│   │   │               #   + NearestDossier(pos, radius), IsBuildingCell(gx,gz), PlotCells, BuildMarker, BuildingDisplayName;
+│   │   │               #   BuildWorld-volgorde: ground → water → DistrictDecorator → FarmlandSpawner → PropSpawner(fieldCells) → roads → bridges
 │   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: oneindig-ogend semi-transparant vlak op y=0 (2000×2000, HorizonSize 2000,
 │   │   │               #   diep oceaanblauw (0.02,0.14,0.32) + Roughness 0.18, shadow off), als child van GroundRoot
-│   └── PropSpawner.cs        # [GlobalClass] Node3D: deterministische trees/rocks via MultiMesh op land-cellen, plot-vermijding,
-│       │               #   clamp op WorldHeight; bomen ~3.5 m (trunk 1.7 + foliage 1.9/1.2), scale 0.75+forestN*0.2+rng*0.3
+│   └── PropSpawner.cs        # [GlobalClass] Node3D: deterministische trees/rocks via MultiMesh op land-cellen, plot-vermijding +
+│       │               #   fieldCells-param (door FarmlandSpawner teruggegeven) óók geblockt, clamp op WorldHeight;
+│       │               #   tree-densiteit +boost nabij hill (HillCentre, r<8 → ×1.0..1.5); bomen ~3.5 m (trunk 1.7 + foliage 1.9/1.2)
 ├── Main.cs          # [GlobalClass] Node3D, is de main.tscn-script: luistert naar EventBus.VillageDataLoaded; maakt
 │   │               # WorldManager + FreeFlyCamera(Initialize((32,15,60), centrum)) + WalkModeManager(FlyCamera, World)
 │   │               # + zon (DirectionalLight3D) + WorldEnvironment (ProceduralSky) + een Atmosphere-container
@@ -76,7 +88,9 @@ godot/src/
 │   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
 │   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, geen glow) / 23:00 (nacht, windows+lampen emissie,
 │   │   │               #   vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
-│   └── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
+│   ├── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
+│   └── VerifyDistrictRunner.cs   # Phase 2 stap 9: laadt echte res://village.json, bouwt wereld, assert hedges>0,
+│                               #   field/orchard>0 (falls toevallig 0 op een lege island — met fallback-village 164/16+21)
 ├── Buildings/
 │   ├── Slots/
 │   │   ├── SlotType.cs              # enum: Foundation/Wall/Roof/Door/Window/Ornament/Sign
@@ -148,6 +162,7 @@ godot/src/
   - `VerifyWalkRunner.cs` — draait échte physics-frames in de SceneTree (`--quit-after` werkt niet, zelf `Quit(0/1)`): EnterWalkMode → 80 ticks op de grond (IsOnFloor, collider, Y>0.5), teleport (40,-2,40) → 120 ticks (State=Swimming, Y in (-0.3,1.2)) → PASS.
   - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
   - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
+  - `VerifyDistrictRunner.cs` — laadt echte res://village.json via VillageJson, bouwt wereld, assert DistrictDecorator-hedges>0 en FarmlandSpawner fields+orchards>0 (fallback-village 1337: 164 hedges, 12 gateposts, 5 archways, 16 fields, 21 orchards) → PASS.
   - Wrap `Run()` in try/catch met `Quit(1)` erin: zonder `Quit` hangt een `--script`-runner eindeloos.
 
 ### Modulair building-piecesysteem (fase 2 stap 7)
@@ -177,6 +192,7 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - village.json is partieel untyped: `districtsRev` kan een number zijn, `outpost` een object → maak `DistrictsRev` `[JsonConverter(FlexibleStringConverter)]` en `Outpost` type `object?` (polymorf, zoals `District`).
 - **C# heeft geen `ConeMesh`** (ook niet in 4.7) → kegel maken als `CylinderMesh` met `TopRadius = 0`.
 - **`Basis * Basis` compileert niet in Godot C#** (er is geen operator; de compiler zoekt dan foutief de Quaternion-overload). Basis-multiply (bovendien basisen): zelf samenstellen, bijv. per kolom zoals `PropSpawner.RotScale` (`M = Ryaw·Rtilt·S` berekend per basis-vector, want Basis is column-major).
+- **`Basis(Vector3, Quaternion)` bestaat niet** in Godot C# (er is géén scale+rotation constructor). Voor een pure schaal-basis de 3-kolommen-constructor gebruiken: `new Basis(new Vector3(sx,0,0), new Vector3(0,sy,0), new Vector3(0,0,sz))`.
 - **`_UnhandledKeyInput(InputEventKey)` bestaat niet** in de Godot C#-bindings — gebruik `override _UnhandledInput(InputEvent @event)` met een pattern-match (`@event is InputEventKey { Pressed: true, Keycode: Key.Escape }`).
 - **`BoxContainer.Separation` is géén property** in C# — gebruik `AddThemeConstantOverride("separation", <int>)`.
 - **`SizeFlags` is génormeerd als `Control.SizeFlags`** (niet als platte `SizeFlags.ExpandFill`).
