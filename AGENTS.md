@@ -92,6 +92,13 @@ godot/src/
     ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1) + Camera3D; RMB-look, wheel-zoom
     └── WalkModeManager.cs  # [GlobalClass] Node3D: Tab-switch tussen fly/walk; HeightMapShape3D-terreincollider,
                             #   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35), avatar+camera opbouwen; rebuildt collider bij VillageDataLoaded
+└── UI/                      # V1 Island HUD (fase 2 stap 10): volledig programmatisch opgebouwde Controls
+    ├── IslandCard.cs        # top-links: "THE LIVING ISLAND", stats-pills, milestone-badge (kijkt naar Stats.NextMilestone)
+    ├── ActivitySidebar.cs   # rechts: "WAITING FOR YOU" / "NOW BUILDING", klikbare sessiekaarten → SessionClicked
+    │   │                    #   filters: Code=house, Cowork=shed, Apprentices=Skills.Jira||Issue (heuristiek, makkelijk te tunen)
+    ├── TopNavBar.cs         # top-rechts: filtertoggles + Walk/Overview; events i.p.v. directe koppeling
+    └── IslandHud.cs         # CanvasLayer(100): componeert bovenstaande, luistert EventBus.VillageDataLoaded;
+                            #   WalkManager/FlyCamera vindt hij via GetParent().GetNodeOrNull — geen dependency op Main
 ```
 
 ### Geteste C# CLI-werkwijze (headless)
@@ -136,6 +143,11 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - **`Basis * Basis` compileert niet in Godot C#** (er is geen operator; de compiler zoekt dan foutief de Quaternion-overload). Basis-multiply (bovendien basisen): zelf samenstellen, bijv. per kolom zoals `PropSpawner.RotScale` (`M = Ryaw·Rtilt·S` berekend per basis-vector, want Basis is column-major).
 - **MultiMesh readonly-na-gebruik:** bij rebuild eerst oude childs `RemoveChild`+`QueueFree` (niet `Free()` direct — nodes met instanties geven anders "Leaked instance dependency"-ruis); transforms vul je via `mm.InstanceCount = n; mm.SetInstanceTransform(i, tf)`.
 - **`Environment` is ambigu** tussen `System.Environment` en `Godot.Environment` → volledige `Godot.Environment`-kwalificatie (in Main.cs). De C#-naamgeving van `Environment` is anders dan GDScript: `BackgroundMode`-enum is `BGMode`, tonemap-property is `TonemapMode` (enum `ToneMapper`, waarden Linear/Reinhardt/Filmic/Aces/Agx), en "sky contribution" zit in `AmbientLightSkyContribution` (er is géén `SkyContribution`).
+- **UI-enums zitten genest in `Control`** — `LayoutPreset`, `GrowDirection` en `MouseFilterEnum` bestaan NIET globaal in C# (anders dan GDScript): gebruik `Control.LayoutPreset.TopLeft`, `Control.GrowDirection.End`, `Control.MouseFilterEnum.Pass` (binnen een Control-subclass volstaat `MouseFilterEnum`).
+- **Geen `SeparationOverride` op BoxContainer** (bestaat alleen in Godot 3) → `AddThemeConstantOverride("separation", N)`.
+- **`Label` kent geen `AutoSize`** en geen `character_spacing`-theme-constante — Labels groeien automatisch mee met hun tekst; letter-spacing vereist een custom font.
+- **Control positioneren:** `SetAnchorsPreset(Control.LayoutPreset.*)` + offsets; bij content-sized panelen `GrowHorizontal/GrowVertical` zetten zodat ze vanaf het anker groeien.
+- **MouseFilter op een CanvasLayer-HUD:** root-panelen `Pass` zodat 3D-kliks doorkomen, alleen echte interactieve elementen (buttons/sessiekaarten) krijgen `Stop`.
 - Headless-exit-warnings ("RID allocations leaked", "Pages in use exist at exit", ObjectDB leaks) zijn bekende teardown-ruis van de dummy-renderer en tellen niet als test-falen — let op `EXIT=0` en de `[OK]`-regels.
 
 ## Bekende Godot-4 valkuilen (nieuw)

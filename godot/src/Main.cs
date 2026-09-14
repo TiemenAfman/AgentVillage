@@ -2,6 +2,7 @@ using Godot;
 using Promptholm.Core;
 using Promptholm.Data;
 using Promptholm.Data.Models;
+using Promptholm.UI;
 using Promptholm.Walking;
 using Promptholm.World;
 
@@ -42,6 +43,9 @@ public partial class Main : Node3D
 			World = _worldManager,
 		};
 		AddChild(walkManager);
+
+		// Phase-2 step 10: unified island HUD overlay (src/UI/ — self-contained, no world coupling).
+		AddChild(new IslandHud());
 
 		EnsureLighting();
 
