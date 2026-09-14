@@ -96,6 +96,13 @@ public partial class BuildingAssembler : Node3D
 
 	private void AttachPiece(BuildingPieceResource piece, BuildingSlot3D slot)
 	{
+		// Runtime Node3D template (BuildingCatalog): deep-duplicate so each slot/building gets
+		// its own instance — PackedScene.Pack() would lose the children of off-tree nodes.
+		if (piece.MeshNode is not null)
+		{
+			slot.Attach(piece.MeshNode.Duplicate() as Node3D ?? piece.MeshNode);
+			return;
+		}
 		if (piece.MeshOverride is not null)
 		{
 			var mi = new MeshInstance3D { Mesh = piece.MeshOverride.Duplicate() as Mesh ?? piece.MeshOverride };

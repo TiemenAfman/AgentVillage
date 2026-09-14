@@ -262,19 +262,26 @@ public partial class WorldManager : Node3D
 
 	private static BuildingPieceResource[] BuildCatalog(BuildingData b, float w, float d)
 	{
-		var tier = string.IsNullOrWhiteSpace(b.Tier) ? b.Kind : b.Tier;
-		var colour = TierColour(tier);
-		var roofColour = colour.Darkened(0.35f);
+		var style = string.IsNullOrWhiteSpace(b.Style) ? b.Tier : b.Style;
+		bool isStone = string.Equals(style, "opus", StringComparison.OrdinalIgnoreCase);
+		bool isThatch = string.Equals(style, "haiku", StringComparison.OrdinalIgnoreCase);
+		const float wallH = 2.0f;
 
 		var list = new List<BuildingPieceResource>
 		{
-			Piece(SlotType.Foundation, "foundation", new BoxMesh { Size = new Vector3(w + 0.3f, 0.24f, d + 0.3f) }, colour),
-			Piece(SlotType.Wall, "wall", new BoxMesh { Size = new Vector3(w, 2.0f, 0.12f) }, colour),
-			Piece(SlotType.Wall, "wall_side", new BoxMesh { Size = new Vector3(d, 2.0f, 0.12f) }, colour),
-			Piece(SlotType.Roof, "roof", new BoxMesh { Size = new Vector3(w + 0.3f, 0.14f, d + 0.3f) }, roofColour),
-			Piece(SlotType.Door, "door", new BoxMesh { Size = new Vector3(0.8f, 1.5f, 0.09f) }, new Color(0.321f, 0.196f, 0.121f)),
-			Piece(SlotType.Window, "window", new BoxMesh { Size = new Vector3(0.6f, 0.6f, 0.06f) }, new Color(0.549f, 0.788f, 0.941f)),
-			Piece(SlotType.Sign, "sign", new BoxMesh { Size = new Vector3(0.9f, 0.4f, 0.06f) }, new Color(0.85f, 0.72f, 0.35f)),
+			Piece(SlotType.Foundation, "foundation", BuildingCatalog.MakeFoundationStone(w, d)),
+			Piece(SlotType.Wall, "wall_front_back",
+				isStone ? BuildingCatalog.MakeWallStone(w, wallH, 0.12f)
+				        : BuildingCatalog.MakeWallTimber(w, wallH, 0.12f)),
+			Piece(SlotType.Wall, "wall_sides",
+				isStone ? BuildingCatalog.MakeWallStone(d, wallH, 0.12f)
+				        : BuildingCatalog.MakeWallTimber(d, wallH, 0.12f)),
+			Piece(SlotType.Roof, "roof",
+				isThatch ? BuildingCatalog.MakeRoofThatch(w, d)
+				         : BuildingCatalog.MakeRoofGableTiles(w, d)),
+			Piece(SlotType.Door, "door", BuildingCatalog.MakeDoorWood()),
+			Piece(SlotType.Window, "window", BuildingCatalog.MakeWindowFrame()),
+			Piece(SlotType.Sign, "sign", MkGoldSign()),
 		};
 
 		if (b.Ornaments != null)
@@ -284,45 +291,39 @@ public partial class WorldManager : Node3D
 				var s = o?.ToString();
 				if (string.IsNullOrWhiteSpace(s))
 					continue;
-				list.Add(Piece(SlotType.Ornament, s, new BoxMesh { Size = new Vector3(0.3f, 0.3f, 0.3f) }, new Color(0.85f, 0.55f, 0.25f)));
+				var node = string.Equals(s, "forge", StringComparison.OrdinalIgnoreCase)
+					? BuildingCatalog.MakeOrnamentForge()
+					: BuildingCatalog.MakeOrnamentWeathervane();
+				list.Add(Piece(SlotType.Ornament, s, node));
 			}
 		}
 
 		return list.ToArray();
 	}
 
-	private static BuildingPieceResource Piece(SlotType slot, string id, BoxMesh mesh, Color colour)
+	private static Node3D MkGoldSign()
 	{
-		var mat = new StandardMaterial3D
+		var sign = new BoxMesh { Size = new Vector3(0.9f, 0.35f, 0.06f) };
+		sign.Material = new StandardMaterial3D
 		{
-			AlbedoColor = colour,
-			Roughness = 0.85f,
+			AlbedoColor = new Color(0.85f, 0.72f, 0.35f),
+			Roughness = 0.6f,
+			Metallic = 0.3f,
 		};
+		var root = new Node3D();
+		root.AddChild(new MeshInstance3D { Mesh = sign });
+		return root;
+	}
 
+	private static BuildingPieceResource Piece(SlotType slot, string id, Node3D node)
+	{
 		return new BuildingPieceResource
 		{
 			PieceId = id,
-			MeshOverride = mesh,
-			MaterialOverride = mat,
+			MeshNode = node,
 			TargetSlot = slot,
 			TierRequirement = 0,
 			ModelStyle = string.Empty,
-		};
-	}
-
-	private static Color TierColour(string tier)
-	{
-		return tier switch
-		{
-			"tent"    => new Color(0.80f, 0.73f, 0.58f),
-			"hut"     => new Color(0.60f, 0.47f, 0.33f),
-			"cottage" => new Color(0.71f, 0.55f, 0.38f),
-			"house"   => new Color(0.72f, 0.43f, 0.34f),
-			"manor"   => new Color(0.62f, 0.58f, 0.52f),
-			"keep"    => new Color(0.47f, 0.48f, 0.50f),
-			"civic"   => new Color(0.85f, 0.78f, 0.45f),
-			"church"  => new Color(0.66f, 0.50f, 0.46f),
-			_         => new Color(0.66f, 0.62f, 0.56f),
 		};
 	}
 

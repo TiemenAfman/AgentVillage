@@ -162,9 +162,12 @@ public partial class VerifyAtmosphereRunner : SceneTree
 	{
 		var slot = Root.GetNodeOrNull<BuildingSlot3D>(
 			"WorldManager/ObjectsRoot/Building_b-house/BuildingAssembler/WindowLeft");
-		if (slot?.AttachedPiece is MeshInstance3D mi)
-			return mi.MaterialOverride as StandardMaterial3D;
-		return null;
+		var piece = slot?.AttachedPiece;
+		if (piece is MeshInstance3D direct)
+			return direct.MaterialOverride as StandardMaterial3D;
+		var first = piece?.GetChildOrNull<MeshInstance3D>(0);
+		return first?.MaterialOverride as StandardMaterial3D
+			?? first?.Mesh?.SurfaceGetMaterial(0) as StandardMaterial3D;
 	}
 
 	private StandardMaterial3D? FindLampGlass()

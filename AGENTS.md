@@ -74,50 +74,58 @@ godot/src/
 │   ├── VerifyLiveRunner.cs    # E2E tegen lokale server (poort 4747): aantallen zijn data-afhankelijk (snapshot village.json = 163 gebouwen, live kan anders zijn)
 │   ├── VerifyWalkRunner.cs    # echte physics-frames: EnterWalkMode → 80 ticks op de grond (IsOnFloor), teleport in het water → 120 ticks (State=Swimming)
 │   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
-│   └── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, none-glow) / 23:00 (nacht, windows+lampen emissie, vuurtoren
-│       │               #   beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
-│   ├── Buildings/
-│   │   ├── Slots/
-│   │   │   ├── SlotType.cs              # enum: Foundation/Wall/Roof/Door/Window/Ornament/Sign
-│   │   │   ├── IBuildingPiece.cs        # interface: PieceId, TargetSlot, ClearanceSize
-│   │   │   └── BuildingSlot3D.cs        # [GlobalClass] Marker3D: CanAttach/Attach/ClearAttached + editor gizmo
-│   │   ├── Data/
-│   │   │   └── BuildingPieceResource.cs # [GlobalClass] Resource: PieceId, TargetSlot, TierReq, ModelStyle
-│   │   │               #   + MeshOverride/MaterialOverride (runtime-attach, NIET PackedScene — zie valkuil)
-│   │   └── BuildingAssembler.cs         # [GlobalClass] Node3D: slot-inventory, Assemble(style, tier, ornaments), ClearPieces;
-│   │       │               #   AttachPiece prefereert MeshOverride (creëert MeshInstance3D), valt terug op PieceScene
-│   ├── Atmosphere/       # Fase 2 stap 8: dag/nacht (namespace Promptholm.Atmosphere)
-│   │   ├── DayNightCycle.cs       # [GlobalClass] Node3D: echte klok sync via DateTime.Now.TimeOfDay of ForceHour (0-24);
-│   │   │   │               #   adoptie van Sun/Moon/WorldEnvironment elders in de tree (FindUpstream), anders eigen childs;
-│   │   │   │               #   elevatie 0°@6u / 90°@12u / 0°@18u / −90°@0u; DayFactor=clamp(el/10); sun 0.03..1.25,
-│   │   │   │               #   moon 0.35..0, ambient 0.12..0.6; GlowThresholdDeg=1° (IsDuskOrNight); pub API Hour,
-│   │   │   │               #   SunElevationDeg, DayFactor, NightFactor, Sun/Moon, SunEnergy/MoonEnergy/AmbientEnergy,
-│   │   │   │               #   ApplyHour(Hour), statics ElevationDegAt/IsNightTime/IsDuskOrNight
-│   │   ├── NightGlowManager.cs  # [GlobalClass] Node3D: windows emissie = kleur GlowColour (1.0,0.75,0.35) op WindowLeft/Right
-│   │   │   │               #   slot-materialen (AttachedPiece is MeshInstance3D → MaterialOverride); eigen straatlantaarns
-│   │   │   │               #   langs GroundRoot/Roads cobble MultiMesh (elke 6e instancetransform, cap 96, steel-paal+glas
-│   │   │   │               #   emissief, gedeeld glas-materiaal in _lampGlass); Sync() bij ForceHour/klok; Cycle/World exports
-│   │   └── LighthouseController.cs # [GlobalClass] Node3D: vindt ObjectRoot-building waarvan naam "lighthouse" bevat;
-│   │       │               #   lantern op y≈2.7 (lanternglow OmniLight3D + BeamRotator met SpotLight3D SpotAngle 12/
-│   │       │               #   SpotRange 42/energy 3.0 en additive emissie-cone CylinderMesh); 1 omwenteling/8 s via
-│   │       │               #   Advance(seconds) + Mathf.Wrap, pitch −12°; alleen zichtbaar bij IsDuskOrNight; pub BeamYawDeg
-│   ├── UI/
-│   │   └── BuildingDossierUI.cs    # [GlobalClass] CanvasLayer (Layer=10): dossier-overlay + interactie-prompt
-│   │       │                   #   Open: BuildingSelected via EventBus → SetVillage+village.ByID → panel + AnimateOpen
-│   │       │                   #   Sluiten: Esc, X-knop, buiten-klik; verbergt prompt-bar ook op InteractionPromptChanged(null)
-│   │       │                   #   Paden: DossierOverlay/Center/DossierPanel/Body/{Header,Meta,InfoCard/CardBody,StatsGrid,Apprentices}
-│   └── Walking/
-│       ├── FreeFlyCamera.cs    # [GlobalClass] Camera3D: RMB-look, WASD/QE/Space+Ctrl, Shift-boost, wheel-speed, damp
-│       │   │               #   + linkermuis-raycast (mask 1u<<3 = laag 4) → PickBuilding → PublishBuildingSelected
-│       ├── SettlerMeshBuilder.cs # statisch: BuildSettler() → settler met strohoed + PoseWalk(root,time,speed01)
-│       ├── PlayerAvatar.cs     # [GlobalClass] CharacterBody3D: capsule r=0.35/h=1.5; Walk/Run/Swim/Jump, crouch (C),
-│       │   │                   #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1
-│       │   │                   #   + [Export] WorldManager? World, InteractionRadius=2.5f, E/Joypad-X deur-interactie
-│       ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1) + Camera3D; RMB-look, wheel-zoom
-│       └── WalkModeManager.cs  # [GlobalClass] Node3D: Tab-switch tussen fly/walk; HeightMapShape3D-terreincollider,
-│                               #   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35, skipt building-cellen), avatar+camera opbouwen;
-│                               #   rebuildt collider bij VillageDataLoaded; DisableWalk publiceert prompt-null
-```
+│   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, geen glow) / 23:00 (nacht, windows+lampen emissie,
+│   │   │               #   vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
+│   └── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
+├── Buildings/
+│   ├── Slots/
+│   │   ├── SlotType.cs              # enum: Foundation/Wall/Roof/Door/Window/Ornament/Sign
+│   │   ├── IBuildingPiece.cs        # interface: PieceId, TargetSlot, ClearanceSize
+│   │   └── BuildingSlot3D.cs        # [GlobalClass] Marker3D: CanAttach/Attach/ClearAttached + editor gizmo
+│   ├── Data/
+│   │   ├── BuildingPieceResource.cs # [GlobalClass] Resource: PieceId, TargetSlot, TierReq, ModelStyle
+│   │   │               #   + MeshOverride/MaterialOverride én runtime MeshNode (NIET PackedScene — zie valkuil);
+│   │   │               #   AttachPiece dupliceert MeshNode, maakt anders een MeshInstance3D, valt terug op PieceScene
+│   │   └── BuildingCatalog.cs       # statische mesh-fabrieken: Make*Foundation/Wall/Roof/Door/Window/Ornament
+│   │                               #   → Node3D-boom met vaste Promptholm-materialen (pleister/balk/steen/tile/thatch/...)
+│   ├── Prefabs/                     # [Tool]-prefabs: ToolPrefabBase + PmPrefab{FoundationStone,WallTimber,WallStone,
+│   │   │                           #   RoofGableTiles,RoofThatch,DoorWood,WindowFrame,OrnamentForge,OrnamentWeathervane}
+│   │   ├── ToolPrefabBase.cs        # RebuildMeshes() in _Ready — zónder editor-guard, dus ook runtime zelfbouwend;
+│   │   │                           #   headless runners: instantieer .tscn en roep EnsureMeshes() aan
+│   │   └── ModelSheetShowroom.cs    # [Tool] [GlobalClass]: galerij 6 tiers × 3 stijlen op sokkels + Label3D +
+│   │                               #   key/fill/rim licht + orbital camera; rendert direct in editor (model_sheet.tscn)
+│   └── BuildingAssembler.cs         # [GlobalClass] Node3D: slot-inventory, Assemble(style, tier, ornaments), ClearPieces
+├── Atmosphere/       # Fase 2 stap 8: dag/nacht (namespace Promptholm.Atmosphere)
+│   ├── DayNightCycle.cs       # [GlobalClass] Node3D: echte klok sync via DateTime.Now.TimeOfDay of ForceHour (0-24);
+│   │   │               #   adoptie van Sun/Moon/WorldEnvironment elders in de tree (FindUpstream), anders eigen childs;
+│   │   │               #   elevatie 0°@6u / 90°@12u / 0°@18u / −90°@0u; DayFactor=clamp(el/10); sun 0.03..1.25,
+│   │   │               #   moon 0.35..0, ambient 0.12..0.6; GlowThresholdDeg=1° (IsDuskOrNight); pub API Hour,
+│   │   │               #   SunElevationDeg, DayFactor, NightFactor, Sun/Moon, SunEnergy/MoonEnergy/AmbientEnergy,
+│   │   │               #   ApplyHour(Hour), statics ElevationDegAt/IsNightTime/IsDuskOrNight
+│   ├── NightGlowManager.cs  # [GlobalClass] Node3D: windows emissie = kleur GlowColour (1.0,0.75,0.35) op de
+│   │   │               #   window slot-materialen (AttachedPiece Node3D-boom → eerst MeshInstance3D-kind mat);
+│   │   │               #   eigen straatlantaarns langs GroundRoot/Roads cobble MultiMesh (elke 6e instancetransform,
+│   │   │               #   cap 96, steel-paal+glas emissief, gedeeld glas-materiaal in _lampGlass); Cycle/World exports
+│   └── LighthouseController.cs # [GlobalClass] Node3D: vindt ObjectRoot-building waarvan naam "lighthouse" bevat;
+│       │               #   lantern op y≈2.7 (lanternglow OmniLight3D + BeamRotator met SpotLight3D SpotAngle 12/
+│       │               #   SpotRange 42/energy 3.0 en additive emissie-cone CylinderMesh); 1 omwenteling/8 s via
+│       │               #   Advance(seconds) + Mathf.Wrap, pitch −12°; alleen zichtbaar bij IsDuskOrNight; pub BeamYawDeg
+├── UI/
+│   └── BuildingDossierUI.cs    # [GlobalClass] CanvasLayer (Layer=10): dossier-overlay + interactie-prompt
+│       │                   #   Open: BuildingSelected via EventBus → SetVillage+village.ByID → panel + AnimateOpen
+│       │                   #   Sluiten: Esc, X-knop, buiten-klik; verbergt prompt-bar ook op InteractionPromptChanged(null)
+│       │                   #   Paden: DossierOverlay/Center/DossierPanel/Body/{Header,Meta,InfoCard/CardBody,StatsGrid,Apprentices}
+└── Walking/
+    ├── FreeFlyCamera.cs    # [GlobalClass] Camera3D: RMB-look, WASD/QE/Space+Ctrl, Shift-boost, wheel-speed, damp
+    │                       #   + linkermuis-raycast (mask 1u<<3 = laag 4) → PickBuilding → PublishBuildingSelected
+    ├── SettlerMeshBuilder.cs # statisch: BuildSettler() → settler met strohoed + PoseWalk(root,time,speed01)
+    ├── PlayerAvatar.cs     # [GlobalClass] CharacterBody3D: capsule r=0.35/h=1.5; Walk/Run/Swim/Jump, crouch (C),
+    │                       #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1
+    │                       #   + [Export] WorldManager? World, InteractionRadius=2.5f, E/Joypad-X deur-interactie
+    ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1) + Camera3D; RMB-look, wheel-zoom
+    └── WalkModeManager.cs  # [GlobalClass] Node3D: Tab-switch tussen fly/walk; HeightMapShape3D-terreincollider,
+                            #   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35, skipt building-cellen), avatar+camera opbouwen;
+                            #   rebuildt collider bij VillageDataLoaded; DisableWalk publiceert prompt-null
 
 ### Geteste C# CLI-werkwijze (headless)
 - `--script` pakt een **C# SceneTree-subclass direct** (geen GDScript-shim nodig). Na `dotnet build`:
@@ -133,6 +141,12 @@ godot/src/
   - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
   - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
   - Wrap `Run()` in try/catch met `Quit(1)` erin: zonder `Quit` hangt een `--script`-runner eindeloos.
+
+### Modulair building-piecesysteem (fase 2 stap 7)
+`BuildingCatalog.cs` (statisch) bevat mesh-fabrieken voor elke piece-type met vaste Promptholm-materialen (pleister/balk/steen/tile/thatch/ijzer/koper). Elke fabriek retourneert een `Node3D`-boom met `MeshInstance3D`-children. `WorldManager.BuildCatalog()` roept deze fabrieken aan (niet meer inline `BoxMesh`). Gebruikte materialen: `_plaster` (warm beige), `_beam` (donkerbruin), `_stone` (grijs), `_roofTile` (terracotta), `_thatch` (strogeel), `_wood`/`_woodLight`, `_iron` (donker metaal), `_glass` (semi-transparant blauw), `_copper` (oranje-brons), `_smoke` (grijs, semi-transparant).
+Prefab `.tscn`-scenes staan in `prefabs/` met `[Tool]` scripts die in de editor én runtime zelf bouwen via `ToolPrefabBase.EnsureMeshes()`. De [.tscn]-paden: `prefabs/foundations/foundation_stone.tscn`, `prefabs/walls/wall_timber.tscn`, `prefabs/walls/wall_stone.tscn`, `prefabs/roofs/roof_gable_tiles.tscn`, `prefabs/roofs/roof_thatch.tscn`, `prefabs/openings/door_wood.tscn`, `prefabs/openings/window_frame.tscn`, `prefabs/ornaments/ornament_forge.tscn`, `prefabs/ornaments/ornament_weathervane.tscn`.
+Model Sheet showroom: `scenes/model_sheet.tscn` met `ModelSheetShowroom.cs` [Tool] galerij (6 tiers × 3 styles + ornaments + key/fill/rim licht + orbital camera).
+Valkuil: `ToolPrefabBase._Ready()` mag niet door `Engine.IsEditorHint()` worden geblokkeerd als de scenes ook runtime-gebruikt moeten worden (bijv. als PieceScene); `ClearMeshChildren` ruimt eerst op, `AddMeshesFrom` verplaatst meshes en freed de temp-node.
 
 ### Bewezen Mulberry32/uint-determinisme (C# port regels)
 De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terrain.gd`. Regels die dat garanderen:

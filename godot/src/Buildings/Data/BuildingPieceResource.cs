@@ -17,6 +17,13 @@ public partial class BuildingPieceResource : Resource
 	[Export]
 	public Material? MaterialOverride { get; set; }
 
+	/// <summary>
+	/// Runtime Node3D tree (mesh instances) created by BuildingCatalog. Transient, not
+	/// serialized: PackedScene.Pack() drops children of off-tree nodes, so the assembler
+	/// duplicates this template directly instead of going through a scene file.
+	/// </summary>
+	public Node3D? MeshNode { get; set; }
+
 	[Export]
 	public Slots.SlotType TargetSlot { get; set; }
 
