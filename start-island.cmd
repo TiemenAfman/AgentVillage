@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-node serve.mjs --open
+node serve.mjs --open --public
