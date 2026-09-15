@@ -58,7 +58,17 @@ public static class BuildingMassing
 	/// rather than in a slot of its own: a slot is a draw call and an entry in every piece count,
 	/// and a lean-to over the door is not a part anybody assembles separately.
 	/// </summary>
-	public static Node3D MakeFoundation(BuildingForm form, float w, float d)
+	public static Node3D MakeFoundation(BuildingForm form, float w, float d) =>
+		MakeFoundation(form, w, d, 0.0f);
+
+	/// <summary>
+	/// `skirt` is how far the stonework reaches below the floor. A building stands at the lowest
+	/// ground under its footprint (<see cref="Promptholm.World.GroundFit"/>), which is the only
+	/// height at which no corner floats — but it leaves open air under the downhill side, and the
+	/// 0.24 m plinth was never deep enough to hide a metre of hillside. This is the retaining
+	/// course that fills it. Flat ground passes zero and gets the plain plinth.
+	/// </summary>
+	public static Node3D MakeFoundation(BuildingForm form, float w, float d, float skirt)
 	{
 		var m = new FacetMesh();
 		var stone = Palette.Fieldstone;
@@ -67,10 +77,17 @@ public static class BuildingMassing
 		if (form.IsTower)
 		{
 			float r = MathF.Min(w, d) * 0.5f + 0.16f;
+			if (skirt > 0.02f)
+				m.Drum(Transform3D.Identity.Translated(new Vector3(0, -0.12f - skirt * 0.5f, 0)),
+					r * 0.97f, r * 0.97f, skirt, 8, stoneDark, stoneDark);
 			m.Drum(Transform3D.Identity.Translated(new Vector3(0, -0.12f, 0)), r, r * 0.94f, 0.26f, 8, stone, stoneDark);
 		}
 		else
 		{
+			// Inset a little so it reads as the course the plinth sits on, not a wider box.
+			if (skirt > 0.02f)
+				m.Box(new Vector3(0, -(skirt + 0.12f) * 0.5f + 0.06f, 0),
+					new Vector3(w + 0.18f, skirt + 0.12f, d + 0.18f), stoneDark);
 			m.Box(new Vector3(0, 0, 0), new Vector3(w + 0.26f, 0.24f, d + 0.26f), stone);
 			m.Box(new Vector3(0, 0.10f, 0), new Vector3(w + 0.34f, 0.07f, d + 0.34f), stoneDark);
 		}

@@ -103,6 +103,17 @@ public partial class DistrictDecorator : Node3D
 	private const float HedgeH = 0.65f;
 	private const float HedgeDepth = 0.35f;
 
+	/// <summary>Half the block's length as a fraction of a lot; the mesh is HedgeLen * lot long.</summary>
+	private const float HedgeHalfLen = HedgeLen * 0.5f;
+
+	/// <summary>
+	/// How far the block is pushed into the ground. Tilting it to the slope lines the base up with
+	/// the two endpoints, but the ground between them is not a straight line — it dips — so a block
+	/// resting exactly on its ends still shows daylight in the middle. Burying a tenth of a metre
+	/// costs nothing visually and closes that.
+	/// </summary>
+	private const float HedgeSink = 0.1f;
+
 	private static readonly Color HedgeColor = new(0.16f, 0.38f, 0.14f);
 	private static readonly Color GatepostColor = new(0.42f, 0.30f, 0.16f);
 	private static readonly Color SignWood = new(0.45f, 0.32f, 0.17f);
@@ -191,22 +202,34 @@ public partial class DistrictDecorator : Node3D
 					}
 
 					float midX, midZ;
-					Basis basis;
+					// Endpoints of the block's own length axis. A boundary follows a parcel edge,
+					// which crosses the contour lines rather than running along them, so this is
+					// the one thing on the island guaranteed to sit on a slope. Sampling only the
+					// midpoint left a 3.2 m block with both ends in the air — over a metre of it on
+					// the steeper flanks, against a hedge 0.65 m tall.
+					float ax, az, bx, bz;
 					if (dx != 0)
 					{
 						midX = (gx + (dx > 0 ? 1 : 0) - half) * lot;
 						midZ = (gz - half + 0.5f) * lot;
-						basis = RotY90();
+						ax = bx = midX;
+						az = midZ - HedgeHalfLen * lot;
+						bz = midZ + HedgeHalfLen * lot;
 					}
 					else
 					{
 						midX = (gx - half + 0.5f) * lot;
 						midZ = (gz + (dz > 0 ? 1 : 0) - half) * lot;
-						basis = Basis.Identity;
+						az = bz = midZ;
+						ax = midX - HedgeHalfLen * lot;
+						bx = midX + HedgeHalfLen * lot;
 					}
-					float h = (float)terrain.WorldHeight(midX, midZ);
-					hedgeTfs.Add(new Transform3D(basis,
-						new Vector3(midX, h + HedgeH * 0.5f, midZ)));
+
+					float ay = (float)terrain.WorldHeight(ax, az);
+					float by = (float)terrain.WorldHeight(bx, bz);
+					var a = new Vector3(ax, ay, az);
+					var b = new Vector3(bx, by, bz);
+					hedgeTfs.Add(SlopedBlock(a, b, HedgeH, HedgeSink));
 				}
 			}
 		}
@@ -384,6 +407,34 @@ public partial class DistrictDecorator : Node3D
 		new Vector3(0, 0, 1),
 		Vector3.Up,
 		new Vector3(-1, 0, 0));
+
+	/// <summary>
+	/// A box whose length axis runs from ground point `a` to ground point `b`, tilted to the slope
+	/// between them and stretched to span it.
+	///
+	/// The mesh is built one lot long on its local X, so laying it along a slope needs two things:
+	/// a basis rotated to the real 3D direction, and an X scale of (sloped length / flat length),
+	/// because a run that climbs is longer than its map distance. Without the stretch, tilting
+	/// alone opens a gap at every joint — which looks exactly like the floating it was meant to fix.
+	/// </summary>
+	private static Transform3D SlopedBlock(Vector3 a, Vector3 b, float height, float sink)
+	{
+		var delta = b - a;
+		float flat = new Vector2(delta.X, delta.Z).Length();
+		if (flat < 0.001f)
+			return new Transform3D(Basis.Identity, new Vector3(a.X, a.Y + height * 0.5f - sink, a.Z));
+
+		var xAxis = delta.Normalized();
+		// Horizontal and perpendicular to the run: the block's thickness never leans.
+		var zAxis = xAxis.Cross(Vector3.Up).Normalized();
+		var yAxis = zAxis.Cross(xAxis).Normalized();
+
+		float stretch = delta.Length() / flat;
+		var basis = new Basis(xAxis * stretch, yAxis, zAxis);
+
+		var mid = (a + b) * 0.5f;
+		return new Transform3D(basis, mid + yAxis * (height * 0.5f - sink));
+	}
 
 	private static MultiMeshInstance3D FillMulti(Mesh mesh, List<Transform3D> tfs)
 	{

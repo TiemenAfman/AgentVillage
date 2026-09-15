@@ -278,13 +278,19 @@ public partial class WorldManager : Node3D
 			var (cornerX, cornerZ) = _terrain.CellCorner((int)gx, (int)gz);
 			float x = (float)cornerX + _terrain.Span(b.Plot.W * 0.5);
 			float z = (float)cornerZ + _terrain.Span(b.Plot.D * 0.5);
-			float ground = (float)_terrain.WorldHeight(x, z);
+			// The lowest ground under the whole footprint, not the height at its centre: a plot is
+			// six metres across and six metres of this hillside drops over a metre, so a building
+			// pinned to its centre hangs a corner in the air downhill. `Drop` is what the
+			// foundation skirt then has to reach down to cover.
+			float rotY = rot * MathF.PI / 2.0f;
+			var fit = GroundFit.Sample(_terrain, x, z, pw, pd, rotY);
+			float ground = fit.Min;
 
 			var buildingRoot = new Node3D
 			{
 				Name = $"Building_{b.Id}",
 				Position = new Vector3(x, ground, z),
-				Rotation = new Vector3(0, rot * MathF.PI / 2.0f, 0),
+				Rotation = new Vector3(0, rotY, 0),
 			};
 			_objectsRoot!.AddChild(buildingRoot);
 
@@ -301,7 +307,7 @@ public partial class WorldManager : Node3D
 			// The slots and the catalog have to agree on how tall this building is, so the form is
 			// resolved once by BuildSlots and handed on rather than worked out twice.
 			var form = BuildSlots(assembler, b, pw, pd);
-			assembler.Catalog = BuildCatalog(b, form, pw, pd);
+			assembler.Catalog = BuildCatalog(b, form, pw, pd, fit.Drop);
 			assembler.Assemble(style, tier, OrnamentIds(b));
 		}
 
@@ -513,7 +519,7 @@ public partial class WorldManager : Node3D
 	/// to take the slot: <c>roof_townhall_cupola</c> claims exactly one building, <c>roof_gable</c>
 	/// would claim every gable on the island at once. See <c>PrefabOverrides</c>.
 	/// </summary>
-	private static BuildingPieceResource[] BuildCatalog(BuildingData b, BuildingForm form, float w, float d)
+	private static BuildingPieceResource[] BuildCatalog(BuildingData b, BuildingForm form, float w, float d, float skirt)
 	{
 		// All four wall slots draw the same piece — BuildingAssembler.SelectPiece matches on slot
 		// *type*, and there is one Wall type. Every plot the server publishes is square, so one
@@ -523,7 +529,7 @@ public partial class WorldManager : Node3D
 
 		var list = new List<BuildingPieceResource>
 		{
-			Piece(SlotType.Foundation, "foundation", BuildingMassing.MakeFoundation(form, w, d)),
+			Piece(SlotType.Foundation, "foundation", BuildingMassing.MakeFoundation(form, w, d, skirt)),
 			Piece(SlotType.Wall, form.IsTower ? "tower_shaft" : "wall",
 				form.IsTower
 					? BuildingMassing.MakeTowerShaft(form, w, d)
