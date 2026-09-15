@@ -4,7 +4,7 @@
   "founders": [],
   "seed": 1337,
   "port": 4747,
-  "gridSize": 80,
+  "gridSize": 256,
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
   "network": {
