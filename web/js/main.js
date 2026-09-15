@@ -1140,14 +1140,35 @@ function currentHour() {
   return d.getHours() + d.getMinutes() / 60;
 }
 
+// Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from
+// shared/terrain.mjs, which is the same line the terrain itself uses to decide where the
+// sand stops, so a house is treated as standing in the water by exactly the rule that
+// draws the water.
+const HARBOUR_WATERLINE = 0.35;
+
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
   const group = new THREE.Group();
   const [x, z] = cellCentre(spec.plot);
   let y = groundAt(x, z);
-  if (spec.harbour) y = Math.max(-0.35, Math.min(y, 0.05));
+  // A harbour house stands on stilts, and this pins its deck just above the waterline.
+  // That is right for one built out over the water at the end of a pier, and ruinous for
+  // one whose plot turned out to be dry land: The Quay's ground runs from 1.65 to 1.99
+  // and all nineteen of its harbour houses were pinned at 0.05, which buried the house,
+  // the stilts and everything but the ridge of the roof. From the air a district of them
+  // reads as green wedges lying in the grass. So the clamp only applies where there is
+  // actually water to stand in - anything above the beach line stands on the ground like
+  // any other building, stilts and all, which is what a house on a quayside does anyway.
+  if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
   group.position.set(x, y, z);
-  group.rotation.y = (spec.plot.rot || 0) * Math.PI / 2;
+  // The layout's convention, shared by scan.mjs's doorOf and settlers.js's DOOR_DIR, is
+  // that rot 0 faces -z, 1 faces +x, 2 faces +z, 3 faces -x. Turning by rot * 90 degrees
+  // gets two of those four right: it sends a front on local +z to world +x at rot 1 and
+  // to world -x at rot 3, which is correct, but to world +z at rot 0 and -z at rot 2 -
+  // the opposite of what the layout asked for. So every building on a north-south plot
+  // has stood with its back to the street, which is why the tavern's door opened onto
+  // grass while the square was behind it. Mirroring the turn agrees with all four.
+  group.rotation.y = Math.PI - (spec.plot.rot || 0) * Math.PI / 2;
 
   const built = buildBuilding(spec);
   const mesh = new THREE.Mesh(built.geometry, buildingMat);
