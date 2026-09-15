@@ -1,5 +1,59 @@
 # AgentVillage projectnotities
 
+## Serverkant: het vangnet (sinds sept 2026)
+
+`npm test` draait de suite met `node --test`. Vijfentwintig tests, ~1 s, geen dependencies.
+Ze bewaken de belofte waar het hele eiland op rust en die tot nu toe alleen proza was in
+`docs/branches.md`:
+
+| bestand | bewaakt |
+|---|---|
+| `tests/layout-sticky.test.mjs` | een huis verhuist nooit; de aankomstvolgorde beslist niets; teruggegeven land gaat naar de volgende aankomst |
+| `tests/layout-idempotent.test.mjs` | twee (en drie, en vier) scans laten `layout.json` byte-identiek |
+| `tests/layout-town.test.mjs` | `town.centre` en het lattice-anker bewegen nooit; het plein groeit alleen op zijn drempels en bevat altijd het vorige |
+| `tests/layout-land.test.mjs` | geen wijk verliest een super-cel; geen cel heeft twee eigenaren; de groengordel houdt |
+| `tests/layout-gates.test.mjs` | de vier invalidatiepoorten: `v`/seed/size, `terrainHash`, `PARCEL_VERSION`, `ROAD_VERSION` |
+
+Drie dingen die je moet weten voor je erin werkt:
+
+- **`node --test tests/` werkt niet op Node 24** — dat leest het pad als een module. Het script
+  gebruikt daarom een glob: `node --test "tests/**/*.test.mjs"`. Die sluit `tests/helpers/`
+  meteen uit.
+- **`requireIslandStopped()`** (in `tests/helpers/island-stopped.mjs`) weigert te draaien zolang
+  er iets op 4747 antwoordt. Meten terwijl de server zijn eigen rescan doet heeft ooit een halve
+  dag gekost. Let op: stoppen van `serve.mjs` is **niet genoeg** — de `SessionStart`-hook in
+  `~/.claude/settings.json` draait óók een scan, bij elke Claude-sessie.
+- **`SETTLERS_DATA`** overschrijft `DATA` in `lib/paths.mjs`, zodat een test zijn eigen datamap
+  krijgt. Naast de al bestaande `SETTLERS_CLAUDE_HOME`.
+
+### Het levende eiland staat niet in deze checkout
+
+`data/` is hier leeg. De echte historie staat in `D:\git\Martijn\AgentVillage\data\` en de
+hook wijst daar ook heen, dus werk in deze checkout raakt het levende eiland niet. Wil je tegen
+echte data draaien, doe dat met kopieën en alle drie de overrides:
+
+```
+SETTLERS_DATA=$SCRATCH node scan.mjs --out $SCRATCH/village.json --layout-file $SCRATCH/layout.json --cache-file $SCRATCH/cache.json
+```
+
+Wijst `--layout-file` naar een pad dat niet bestaat, dan geeft `loadLayout` een lege layout terug
+— dat is een volledige herfundering in kladbestanden, zonder één regel nieuwe code.
+
+### Gevonden door het vangnet
+
+- **Een eiland lag pas na twee scans stil.** Een eenzame hoeve zonder eigen perceel
+  (`tier === 'farmstead'` met `lobes: []`) kreeg bij aanmaak geen `square`/`paved`; de
+  greens-retirement-lus bovenaan `placeAll` stempelde ze er bij de vólgende scan alsnog op.
+  Geen huis bewoog, maar "twee scans zijn byte-identiek" was onwaar. Nu zet de farmstead-tak
+  beide velden onvoorwaardelijk.
+- **De overlap van 131 van de 157 gebouwen is een client-probleem, niet een layout-probleem.**
+  Gemeten: geen twee 3×3-huisplots overlappen, en de groengordel (`BELT = 1`) houdt overal. Een
+  schuur zit wél binnen het 3×3-lot van zijn meester — dat is de "schuur in de tuin" uit de
+  README, en precies daarom mag de client een huis niet over zijn hele plot tekenen.
+- **Het eiland is vol.** Op de echte data staan 21 van de 39 huizen op de commons in plaats van
+  op de grond van hun eigen wijk, en alle 13 wijken zijn `guest`. Dat is de aanleiding voor de
+  serverherschrijving in één cijfer.
+
 ## Godot-spike
 - Lokale Godot-installatie: `D:\Software\Godot_v4.7.2-stable_mono_win64`.
 - Spike-project: `godot/`.
