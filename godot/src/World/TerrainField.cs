@@ -26,6 +26,13 @@ public sealed class TerrainField
 	/// published chunk always wins on the seam between the two.</summary>
 	public const float UnpublishedY = -34.0f;
 
+	/// <summary>
+	/// Newest world format this build understands. Raise it when the server's
+	/// <c>WORLD_VERSION</c> moves and the chunk bytes still decode — keep it where it is when
+	/// they do not, because that is the whole point of the check.
+	/// </summary>
+	public const int MaxWorldVersion = 4;
+
 	public WorldManifest Manifest { get; private init; } = new();
 
 	/// <summary>Samples per side of the whole envelope, corner lattice.</summary>
@@ -61,8 +68,18 @@ public sealed class TerrainField
 		var manifest = JsonSerializer.Deserialize<WorldManifest>(manifestBytes, VillageJson.DefaultOptions)
 			?? throw new InvalidOperationException("the world manifest did not parse");
 
-		if (manifest.WorldV != 2)
-			throw new InvalidOperationException($"world format v{manifest.WorldV}, this build reads v2");
+		// v2 through v4 are the same world to a reader. What the later versions added, the server
+		// added *beside* what was already there: v3 split worldRev from bakeRev, v4 grows islets
+		// and publishes the skerry ring, and both only put new keys in the manifest. The chunk
+		// bytes never moved — still PHC1, same header, same quantised heights and class byte — so
+		// the decoder below is untouched by either.
+		//
+		// The gate was an equality check, which meant a client built against v2 refused a v4 world
+		// outright rather than ignoring two keys it had no use for. That is how the build ended up
+		// rendering a stale copy of the old island: nobody could hand it a new one.
+		if (manifest.WorldV < 2 || manifest.WorldV > MaxWorldVersion)
+			throw new InvalidOperationException(
+				$"world format v{manifest.WorldV}, this build reads v2 to v{MaxWorldVersion}");
 
 		int n = (int)Math.Round(manifest.EnvelopeM / manifest.MetresPerSample) + 1;
 		var heights = new float[n * n];
