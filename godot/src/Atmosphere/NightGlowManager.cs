@@ -4,6 +4,7 @@ using Godot;
 using Promptholm.Buildings;
 using Promptholm.Buildings.Slots;
 using Promptholm.World;
+using Promptholm.Visual;
 
 namespace Promptholm.Atmosphere;
 
@@ -37,6 +38,7 @@ public partial class NightGlowManager : Node3D
 
 	private readonly List<StandardMaterial3D> _windowMaterials = new();
 	private readonly List<StandardMaterial3D> _lampGlass = new();
+	private readonly List<OmniLight3D> _lampLights = new();
 	private WorldManager? _resolvedWorld;
 	private DayNightCycle? _resolvedCycle;
 	private bool _lampsBuilt;
@@ -51,6 +53,9 @@ public partial class NightGlowManager : Node3D
 	/// <summary>Number of street lamps spawned along the roads.</summary>
 	public int LampCount => _lampGlass.Count;
 
+	/// <summary>Number of lanterns that actually cast light, as opposed to only glowing.</summary>
+	public int LampLightCount => _lampLights.Count;
+
 	/// <summary>The current hour used for decisions: forced debug hour, else the synced cycle.</summary>
 	public float Hour
 	{
@@ -64,22 +69,52 @@ public partial class NightGlowManager : Node3D
 		}
 	}
 
-	public override void _Process(double delta)
+	public override void _Ready()
 	{
+		// Driven by the cycle instead of by the frame. Sync walks all 163 buildings to toggle a
+		// handful of materials; doing that sixty times a second for a value that changes over
+		// minutes was pure waste.
+		SetProcess(false);
+		var cycle = ResolveCycle();
+		if (cycle is not null)
+			cycle.AtmosphereChanged += OnAtmosphereChanged;
 		Sync();
+	}
+
+	public override void _ExitTree()
+	{
+		if (_resolvedCycle is not null)
+			_resolvedCycle.AtmosphereChanged -= OnAtmosphereChanged;
+	}
+
+	private void OnAtmosphereChanged(float hour, float windowGlow, float lampEnergy)
+	{
+		RebuildIfNeeded();
+		ApplyGlow(DayNightCycle.IsDuskOrNight(hour), lampEnergy);
 	}
 
 	/// <summary>Re-evaluates the glow state for the current hour and toggles all materials.</summary>
 	public void Sync()
 	{
-		bool on = DayNightCycle.IsDuskOrNight(Hour);
+		RebuildIfNeeded();
+		float hour = Hour;
+		ApplyGlow(DayNightCycle.IsDuskOrNight(hour), AtmospherePalette.Sample(hour).LampEnergy);
+	}
+
+	private void RebuildIfNeeded()
+	{
 		CollectWindowMaterials();
 		EnsureLamps();
+	}
 
+	private void ApplyGlow(bool on, float lampEnergy)
+	{
 		foreach (var mat in _windowMaterials)
 			SetGlow(mat, on, WindowDayGlow);
 		foreach (var mat in _lampGlass)
 			SetGlow(mat, on, 0.0f);
+		foreach (var lamp in _lampLights)
+			lamp.LightEnergy = on ? Mathf.Max(0.25f, lampEnergy) * 0.85f : 0.0f;
 
 		_glowOn = on;
 	}
@@ -218,13 +253,9 @@ public partial class NightGlowManager : Node3D
 			MaterialOverride = Solid(LampMetal),
 		});
 
-		var glass = new StandardMaterial3D
-		{
-			AlbedoColor = GlowColour,
-			Roughness = 0.6f,
-			Emission = GlowColour,
-			EmissionEnergyMultiplier = 1.4f,
-		};
+		// One shared material for every lantern: they all switch on together, and a private
+		// StandardMaterial3D per post meant ninety-odd identical resources.
+		var glass = Palette.Emissive(GlowColour, GlowColour, 1.4f, 0.6f);
 		root.AddChild(new MeshInstance3D
 		{
 			Name = "Glass",
@@ -232,7 +263,8 @@ public partial class NightGlowManager : Node3D
 			Position = new Vector3(0.0f, 1.67f, 0.0f),
 			MaterialOverride = glass,
 		});
-		_lampGlass.Add(glass);
+		if (!_lampGlass.Contains(glass))
+			_lampGlass.Add(glass);
 
 		root.AddChild(new MeshInstance3D
 		{
@@ -241,10 +273,29 @@ public partial class NightGlowManager : Node3D
 			Position = new Vector3(0.0f, 1.84f, 0.0f),
 			MaterialOverride = Solid(LampMetal),
 		});
+
+		// The lantern used to be emissive glass and nothing else: it looked lit but threw no
+		// light, so the night streets stayed as dark as the fields. A real omni, shadowless and
+		// distance-faded, is cheap under clustered shading — and with a volumetric contribution
+		// each one gets a halo in the fog, which is most of what makes a lit village read.
+		var lamp = new OmniLight3D
+		{
+			Name = "Lantern",
+			Position = new Vector3(0.0f, 1.67f, 0.0f),
+			LightColor = GlowColour,
+			LightEnergy = 0.0f,
+			OmniRange = 9.0f,
+			ShadowEnabled = false,
+			LightVolumetricFogEnergy = 1.5f,
+			DistanceFadeEnabled = true,
+			DistanceFadeBegin = 60.0f,
+			DistanceFadeLength = 20.0f,
+		};
+		root.AddChild(lamp);
+		_lampLights.Add(lamp);
 	}
 
-	private static StandardMaterial3D Solid(Color colour)
-		=> new() { AlbedoColor = colour, Roughness = 0.82f };
+	private static StandardMaterial3D Solid(Color colour) => Palette.Solid(colour, 0.82f);
 
 	/// <summary>Breadth-first search from the tree root for a node with the given name/types.</summary>
 	private static T? FindNodeInTree<T>(string name) where T : Node

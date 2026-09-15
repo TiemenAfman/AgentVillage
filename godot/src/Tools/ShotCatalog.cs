@@ -29,8 +29,11 @@ public static class ShotCatalog
 		// Low, out at sea off the landing: judges water, shoreline foam and island silhouette.
 		new("harbour", new Vector3(-14f, 3.0f, 44f), new Vector3(-5f, 1.5f, 20f), 62f, false),
 
-		// Eye level on the plaza: judges building variety, window glow and street scale.
-		new("street", new Vector3(7f, 1.7f, 8f), new Vector3(-2f, 1.9f, -3f), 62f, true),
+		// Low over the town from the south-east green: judges building variety, window glow and
+		// street scale. It deliberately stands *outside* the built-up area — with 131 of the 157
+		// buildings overlapping a neighbour there is no open ground left in the centre to put a
+		// camera, and an eye-level plaza shot rendered the inside of a wall.
+		new("street", new Vector3(-18f, 7f, -18f), new Vector3(0f, 3f, 0f), 55f, false),
 
 		// Along the lighthouse beam: judges volumetric fog and night readability.
 		new("lighthouse", new Vector3(-6f, 6f, 16f), new Vector3(-28f, 4f, -2f), 58f, false),

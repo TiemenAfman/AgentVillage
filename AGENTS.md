@@ -210,6 +210,47 @@ Vijf valkuilen, alle vijf gemeten:
 Capture gebeurt op `RenderingServer.FramePostDraw` (niet in `_Process`, dat draait vóór de draw)
 en pas na 120 frames, zodat SDFGI en volumetrische mist geconvergeerd zijn.
 
+### Beta-build: `scripts/build.ps1`
+`godot/export_presets.cfg` (preset "Windows Desktop", met de hand geschreven zodat een schone
+checkout kan exporteren zonder de editor te openen) + `scripts/build.ps1` leveren
+`dist/Promptholm-<versie>-win64.zip`: `dotnet build -c ExportRelease` → `--import` →
+`--export-release` → zip, inclusief `LEESMIJ.txt` en `VERSION.txt`.
+
+```
+./scripts/build.ps1                      # versie = <datum>-<sha>[-dirty]
+./scripts/build.ps1 -Version 0.3.0-beta
+./scripts/build.ps1 -InstallTemplates    # eenmalig, downloadt ~1,1 GB
+```
+
+Vijf dingen die niet vanzelf goed gaan, alle vijf gemeten:
+- **`godot/Promptholm.sln` moet bestaan.** Zonder solution slaat de .NET-exportplugin *elke*
+  C#-assembly over, meldt dat als "completed with warnings" en eindigt met exit 0: je krijgt
+  een `.exe` + `.pck` zonder een regel code, die start en niets doet. De eerste beta-zip was
+  precies dat. Let op bij hergenereren: `dotnet new sln` maakt onder dotnet 10 een `.slnx`, en
+  daar kijkt Godot niet naar - gebruik `--format sln` en vul `ExportDebug`/`ExportRelease` aan.
+  `build.ps1` checkt de solution vooraf en de aanwezigheid van `Promptholm.dll` achteraf.
+- **Een export-build sterft op exceptions die de editor slikt.** `LighthouseController` hield
+  het `Building_lighthouse`-object vast dat `WorldManager.ClearBuildings()` bij een rebuild
+  vrijgeeft - en die rebuild gebeurt al bij een gewone start, zodra de tweede `VillageData`
+  binnenkomt. In de editor een rode regel, in de release-build meteen einde proces. Wie een
+  wereld-node cachet, controleert hem met `GodotObject.IsInstanceValid` voor gebruik.
+- **Export-templates zijn een aparte, eenmalige download** van exact deze Godot-versie
+  (`%APPDATA%\Godot\export_templates\4.7.2.stable.mono\`). Zonder templates faalt de export;
+  het script stopt vooraf met de URL in plaats van een half product af te leveren.
+- **`include_filter="*.json"`.** `village.json` is geen Godot-resource maar een gewoon bestand,
+  dus zonder die filter valt het uit de `.pck` en start de build zonder dorp zodra de
+  localserver niet draait (`VillageClient.FallbackToResource`).
+- **`--import` vóór de export.** Op een schone checkout bestaat `.godot/` niet en exporteert
+  Godot anders een lege `.pck`.
+
+De build is niet ondertekend: SmartScreen waarschuwt over een onbekende uitgever. Naast
+`Promptholm.exe` komt `Promptholm.console.exe` mee, zodat een betatester logs kan plakken
+(`debug/export_console_wrapper=2`; 1 betekent "debug only" en levert bij een release niets op).
+
+Een exportbuild valt niet met de screenshot-harness te controleren - `--script` bestaat daar
+niet. Verificatie is: starten, 45 s laten lopen, stderr moet leeg blijven, en het venster
+vastleggen met `Graphics.CopyFromScreen` over de client-rect van `MainWindowHandle`.
+
 ### Geteste C# CLI-werkwijze (headless)
 - `--script` pakt een **C# SceneTree-subclass direct** (geen GDScript-shim nodig). Na `dotnet build`:
   ```
@@ -256,6 +297,59 @@ stonden:
 - **`f7ec71ac` is nog een nuttige regressiecheck, geen contract.** Zolang `shared/terrain.mjs`
   bestaat bewijst hij dat de C#-port bit-exact is. Zodra de generator verandert is het gewoon een
   nieuwe verwachte waarde, geen blokkade.
+
+### Atmosfeer: één bron, keyframes, en een echte zonnebaan
+`src/Atmosphere/` heeft nu drie lagen die strikt gescheiden zijn:
+- **`AtmosphereState`** — alle sfeervelden voor één moment als pure data (geen nodes), zodat het
+  headless te samplen en te asserten is. Eén `Lerp` over de hele struct, dus alle velden bewegen
+  op dezelfde `t` en de lucht kan niet uit de pas lopen met de mist die hij verlicht.
+- **`AtmospherePalette`** — acht geschreven momenten + `Sample(hour)`. Vervangt een dozijn losse
+  lerps op `DayFactor`/`nightBlend`/`horizonGlow`.
+- **`EnvironmentFactory`** — de enige plek die environment, sky en lichten schrijft (`Apply`),
+  en de enige plek die ze bouwt. Verving drie uiteenlopende kopieën.
+
+Drie fouten in de oude curve die de screenshots blootlegden:
+- `ElevationDegAt` was `asin(sin(hourAngle))` → **zon in het zenit om 12:00**, het vlakste licht
+  dat er is. Nu een boog met een top van 58°.
+- `SunYawDeg` stond de hele dag op **50°**, dus schaduwen groeiden en krompen maar bewogen nooit.
+  Nu een azimut die van 95° naar 265° veegt.
+- `DayFactor = clamp(el/10)` op een curve die 90 haalde maakte de schemering ~40 minuten breed:
+  18:20 was pikdonker. Nu `clamp(el/12)` op de vlakkere boog.
+
+**Sleutelmomenten horen op de baan te liggen.** De eerste versie schreef "gouden uur" op 18.2,
+maar daar staat de zon al 3° ónder de horizon: volle warme energie en nul schaduwen. Gouden uur
+is 17.2 (zon op 12°). De uren van de shot-matrix volgen dezelfde baan.
+
+`ClockSource` is standaard `Simulated` (24 minuten per dag), niet `RealClock`. Het beeld hing
+anders af van wanneer je F5 drukte — 's nachts openen gaf een zwart scherm dat op kapot leek.
+`ForceHour` wint altijd, dus alle runners blijven werken.
+
+`DayNightCycle._Process` heeft twee lagen: rotaties elke frame (twee node-transforms), sky/env/
+fog alleen als het uur merkbaar is verschoven (`HourEpsilonRad`, ~1,2 gesimuleerde minuten). Het
+signaal `AtmosphereChanged` vervangt de per-frame `Sync()` van `NightGlowManager`.
+
+### Kleurruimte-val: vertexkleuren zijn lineair
+Godot leest `ArrayMesh`-vertexkleuren als **lineair** en converteert ze niet. De grondbanden
+waren als sRGB geschreven, dus 0.40 kwam eruit als 0.40 lineair (≈ 0.66 sRGB) in plaats van
+0.13. Het hele eiland was daardoor een uitgebeten mint. `BuildGroundMesh` doet nu
+`.SrgbToLinear()` op de bandkleur; `GroundBandColour` blijft de sRGB-bron en `VerifyVisualRunner`
+converteert mee. Dit was de grootste enkele verbetering van het beeld.
+
+### Terrein-shader en de ruis-val
+`shaders/stylized_terrain.gdshader` houdt de vertexkleur als biome en breekt hem op met ruis,
+voegt hellings-gestuurd rots toe en kwantiseert de belichting (`light()` met wrapped diffuse).
+
+**De ruis komt uit `NoiseTexture2D` (FastNoiseLite), niet uit een hash in de shader.** Een
+hand-gerolde value-noise is geprobeerd en zijn interpolatie klapte op dit invoerbereik dicht tot
+een constante — het gras bleef exact even vlak en het leek alsof de shader niet werd toegepast.
+Dat kost veel tijd om te zien. Valkuil daarbij: schaal. Bij `macro_scale 0.03` beslaat het hele
+eiland van 64 m nog geen halve ruiscel. Schalen worden expliciet vanuit `WorldManager` gezet, niet
+als shader-default, juist omdat ze met de eilandgrootte mee moeten.
+
+### Waterplaat moet tot de horizon reiken
+`HorizonSize` stond op 2000 m, dus de plaat hield ongeveer een kilometer uit de kust op — ruim
+vóór de echte horizon. In het gat zag je de donkere "grond"-helft van de sky-material als een
+zwarte band boven de zee. Nu 12000 m; de kosten zijn nihil (40×40 subdivisies).
 
 ### Eén palet: `src/Visual/Palette.cs`
 Zes losse kleursets waren gegroeid over `BuildingCatalog`, `WorldManager`, `PropSpawner`,

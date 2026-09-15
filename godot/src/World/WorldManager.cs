@@ -33,22 +33,22 @@ public partial class WorldManager : Node3D
 	public const float FootprintScale = 0.65f;
 
 	/// <summary>
-	/// How far past the data grid, in metres, the seabed keeps sinking before it levels off at
-	/// <see cref="SeabedFloorY"/>. The data square is only ~40% land, so without this apron the
-	/// seabed plate stops dead in open water and the water shader draws that straight edge as a
-	/// hard-edged halo — which is exactly what the square "halo" around the island was.
+	/// How far the tidal flats run out from the coastline before the bottom starts dropping.
+	/// The island sits on a shelf like a Wadden island: a long stretch of barely-deepening sand
+	/// first, then the fall to open water. A short falloff made it read as a plug of rock
+	/// dropped into the sea.
 	/// </summary>
-	public const float SeabedFalloffMetres = 42.0f;
+	public const float SeabedFlatMetres = 150.0f;
 
-	/// <summary>
-	/// How far, in metres, noise pushes the shelf edge in and out. Without it the falloff is
-	/// measured from the square data grid and the shallow shelf reads as a rounded square.
-	/// </summary>
-	public const float SeabedShelfWarp = 20.0f;
+	/// <summary>Depth the flats settle at; shallow enough to stay lit and coloured.</summary>
+	public const float SeabedFlatY = -1.9f;
+
+	/// <summary>Distance over which the bottom falls away once the flats end.</summary>
+	public const float SeabedFalloffMetres = 110.0f;
 
 	/// <summary>
 	/// Outer radius of the rendered seabed. Past the falloff the rings grow geometrically, so
-	/// reaching beyond the 2000 m water plane costs very few vertices.
+	/// reaching beyond the water plane costs very few vertices.
 	/// </summary>
 	public const float SeabedReachMetres = 1300.0f;
 
@@ -61,7 +61,20 @@ public partial class WorldManager : Node3D
 	/// <summary>Depth below which ground colour starts darkening toward open-ocean floor.</summary>
 	public const float SeabedShelfY = -3.0f;
 
-	/// <summary>Amplitude of the noise that breaks up the apron so it is not a smooth cone.</summary>
+	/// <summary>
+	/// How far, in metres, noise pushes the shelf edge in and out. Large on purpose: real flats
+	/// are broad on one flank and pinched on another, never a constant width.
+	/// </summary>
+	public const float SeabedShelfWarp = 55.0f;
+
+	/// <summary>
+	/// Height of the sandbanks on the flats. Tall enough that the crests actually break the
+	/// waterline — below that they are just a ripple in the tint and you never see sand. The
+	/// height band above zero already paints them with the beach colour.
+	/// </summary>
+	public const float SeabedBankHeight = 3.6f;
+
+	/// <summary>Amplitude of the noise that breaks up the deep floor.</summary>
 	public const float SeabedRelief = 2.5f;
 
 	/// <summary>Logical handle for click/proximity selection of a placed building.</summary>
@@ -551,12 +564,27 @@ public partial class WorldManager : Node3D
 				float oz = wz - czf;
 				float fromLand = coast[ci + cj * n] + MathF.Sqrt(ox * ox + oz * oz);
 
-				// Low-frequency warp: real shelves are broad on one flank and drop off sharply
-				// on another rather than sitting at a constant width all the way round.
-				float warp = (float)seabedNoise.Fbm2(wx * 0.010, wz * 0.010, 2) * SeabedShelfWarp;
-				float fall = Mathf.SmoothStep(0.0f, 1.0f, (fromLand + warp) / SeabedFalloffMetres);
+				// Low-frequency warp: real shelves are broad on one flank and pinched on
+				// another rather than sitting at a constant width all the way round.
+				float warp = (float)seabedNoise.Fbm2(wx * 0.006, wz * 0.006, 2) * SeabedShelfWarp;
+				float distance = MathF.Max(0.0f, fromLand + warp);
+
+				// Stage one: the tidal flats. Over SeabedFlatMetres the bottom barely deepens,
+				// which is what gives a Wadden island its long shallow apron instead of a rim.
+				float ontoFlats = Mathf.SmoothStep(0.0f, 1.0f, distance / SeabedFlatMetres);
+				float shelf = Mathf.Lerp(edge, SeabedFlatY, ontoFlats);
+
+				// Sandbanks on the flats. A few crest near the waterline, which is what makes
+				// the shallows read as banks and channels rather than as tinted glass.
+				float bank = (float)seabedNoise.Fbm2(wx * 0.011, wz * 0.011, 3);
+				shelf += (bank - 0.35f) * SeabedBankHeight * ontoFlats;
+
+				// Stage two: past the flats, the fall to open water.
+				float drop = Mathf.SmoothStep(
+					SeabedFlatMetres, SeabedFlatMetres + SeabedFalloffMetres, distance);
 				float relief = (float)seabedNoise.Fbm2(wx * 0.025, wz * 0.025, 3) * SeabedRelief;
-				heights[idx] = Mathf.Lerp(edge, SeabedFloorY + relief, fall);
+
+				heights[idx] = Mathf.Lerp(shelf, SeabedFloorY + relief, drop);
 			}
 		}
 
@@ -651,14 +679,57 @@ public partial class WorldManager : Node3D
 		return new Color(0.38f, 0.61f, 0.25f);          // hilltop green
 	}
 
-	/// <summary>Vertex-colored grass/sand/rock material for the island surface.</summary>
-	private static StandardMaterial3D GroundMaterial()
-		=> new()
+	/// <summary>
+	/// Painterly ground shader. The vertex colours stay as the biome the generator chose, and
+	/// the shader breaks them up with noise, adds slope-driven rock and quantises the shading.
+	/// A plain vertex-colour material left the island as one flat green over most of the frame.
+	/// </summary>
+	private static ShaderMaterial GroundMaterial()
+	{
+		_groundMaterial ??= new ShaderMaterial
 		{
-			VertexColorUseAsAlbedo = true,
-			Roughness = 0.85f,
-			SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
+			Shader = GD.Load<Shader>("res://shaders/stylized_terrain.gdshader"),
 		};
+
+		// Set explicitly rather than leaning on the shader's defaults: the scales are the one
+		// thing that has to track the island's size, so they belong next to the world that is
+		// being built. At 64 m across, 0.11 gives patches of roughly 9 m.
+		_groundMaterial.SetShaderParameter("macro_noise", TerrainNoise(0.9f, 1337));
+		_groundMaterial.SetShaderParameter("detail_noise", TerrainNoise(2.4f, 91));
+
+		// World metres per noise-texture tile. 0.035 makes one tile span about 28 m, so the
+		// patchiness reads as terrain character; the detail layer tiles every ~3 m for grain.
+		_groundMaterial.SetShaderParameter("macro_scale", 0.035f);
+		_groundMaterial.SetShaderParameter("detail_scale", 0.33f);
+		_groundMaterial.SetShaderParameter("macro_amount", 0.80f);
+		_groundMaterial.SetShaderParameter("detail_amount", 0.16f);
+
+		// Two greens far enough apart to read as different ground, not as one colour with a
+		// gradient on it: a cool meadow and a dry, sun-bleached olive.
+		_groundMaterial.SetShaderParameter("lush_colour", new Color(0.19f, 0.46f, 0.20f));
+		_groundMaterial.SetShaderParameter("dry_colour", new Color(0.62f, 0.60f, 0.28f));
+		_groundMaterial.SetShaderParameter("rock_colour", new Color(0.38f, 0.36f, 0.33f));
+
+		return _groundMaterial;
+	}
+
+	private static ShaderMaterial? _groundMaterial;
+
+	/// <summary>Seamless fBm tile for the ground shader's colour variation.</summary>
+	private static NoiseTexture2D TerrainNoise(float frequency, int seed) => new()
+	{
+		Noise = new FastNoiseLite
+		{
+			NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+			Frequency = frequency / 64.0f,
+			FractalOctaves = 4,
+			Seed = seed,
+		},
+		Width = 256,
+		Height = 256,
+		Seamless = true,
+		GenerateMipmaps = true,
+	};
 
 	// ---- roads & paved square ------------------------------------------------
 

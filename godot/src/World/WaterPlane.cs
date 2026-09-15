@@ -13,8 +13,12 @@ public partial class WaterPlane : MeshInstance3D
 	/// <summary>TerrainGenerator.SeaLevel, kept in sync so water always meets land.</summary>
 	public const float SeaLevelY = 0.0f;
 
-	/// <summary>Side length of the square water sheet; far beyond the island and terrain bounds.</summary>
-	[Export] public float HorizonSize { get; set; } = 2000.0f;
+	/// <summary>
+	/// Side length of the square water sheet. At 2000 m the sheet ended about a kilometre out,
+	/// well short of the real horizon from any camera height, and the gap showed as a black band
+	/// above the sea — the dark ground half of the sky material seen past the edge of the water.
+	/// </summary>
+	[Export] public float HorizonSize { get; set; } = 12000.0f;
 
 	/// <summary>Caustics pattern cell size in texels (generated once as a seamless noise texture).</summary>
 	[Export] public int CausticsTexelSize { get; set; } = 512;

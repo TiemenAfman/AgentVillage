@@ -198,6 +198,20 @@ public static class EnvironmentFactory
 		// that widens with distance from the caster, which is the difference between a shadow
 		// that reads as drawn and one that reads as a stencil.
 		LightAngularDistance = 1.2f,
+
+		// Bounded deliberately. The rendered ground now reaches 1300 m so the sea has a floor,
+		// and on Godot's defaults the cascades stretched across all of it: long smeared streaks
+		// over the seabed and a hard line in the water where the last split ended. The island is
+		// 64 m, so 220 m covers it and a generous margin of sea at full resolution.
+		DirectionalShadowMaxDistance = 220.0f,
+		DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits,
+		DirectionalShadowSplit1 = 0.06f,
+		DirectionalShadowSplit2 = 0.16f,
+		DirectionalShadowSplit3 = 0.40f,
+		DirectionalShadowBlendSplits = true,
+		DirectionalShadowFadeStart = 0.9f,
+		ShadowNormalBias = 1.2f,
+
 		Rotation = new Vector3(Mathf.DegToRad(-42.0f), Mathf.DegToRad(50.0f), 0.0f),
 	};
 

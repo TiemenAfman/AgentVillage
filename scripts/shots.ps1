@@ -19,7 +19,11 @@
 [CmdletBinding()]
 param(
     [string[]] $Shots = @('overlook', 'harbour', 'street', 'lighthouse'),
-    [double[]] $Hours = @(6.4, 9.0, 12.5, 18.2, 20.2, 23.0),
+
+    # Placed on the solar arc, which peaks at 58 degrees and crosses the horizon at 06:00 and
+    # 18:00: sunrise (6 deg), morning (41), noon (58), golden hour (12), dusk (-12), night (-50).
+    # Keep in step with ShotCatalog.Hours — these are the numbers that actually drive the matrix.
+    [double[]] $Hours = @(6.4, 9.0, 12.5, 17.2, 18.8, 23.0),
     [string]   $Size = '1600x1000',
     [string]   $Label,
     [string]   $Godot = 'D:\Software\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe',
