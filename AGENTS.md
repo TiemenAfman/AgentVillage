@@ -217,6 +217,8 @@ node scripts/island.mjs --publish out/world    chunks + manifest, ~1,2 s
 | `shape.mjs` | de omtrek: smooth-union van negen schijven door een vervormd domein |
 | `relief.mjs` | hoogte: geridgede ruis, terrasseren naar treden van 7,5 m, strandprofiel |
 | `classify.mjs` | één byte per monster: strand, duin, weide, bos, puin, rots |
+| `water.mjs` | rivieren en meren, in het gebakken raster gesneden |
+| `features.mjs` | landmassa's, toppen en aanlandingsplekken benoemen |
 | `bake.mjs` | één pas over de envelop, plus de hellingcap |
 | `chunks.mjs` | het schijfformaat, delta-gecodeerd en gegzipt |
 | `publish.mjs` | chunks + `manifest.json` met `worldRev` |
@@ -248,4 +250,38 @@ Meetlat voor een eiland van 208 m straal: 8,4 ha land, top ~35 m, helling p50 0,
 en grofweg weide 36% · bos 16% · strand 15% · puin 11% · duin 11% · rots 9%. Loopt een van die
 ver weg, dan is er iets kapot — de eerste afstelling leverde een kwart strand en een derde kale
 rots op, en dat zag je meteen.
+
+### Water, eilandjes en features
+
+- **Zoet water is geen hoogte maar een klasse.** De oude generator kon wegkomen met "onder
+  zeeniveau is water" omdat het eiland maar 5 m hoog was; op 46 m is een beek op 30 m hoogte nog
+  steeds een beek. Het wateroppervlak ligt daarom een vaste diepte boven de bedding
+  (`RIVER_DEPTH 1.1`, `LAKE_DEPTH 2.2`), en die twee getallen staan in het manifest.
+- **Een rivier volgt een BFS-afstandsveld naar zee, niet de helling.** Steilste afdaling loopt
+  vast in de eerste kuil — de oude generator schreef die les al op — en op getrapt terrein is het
+  erger, want een vlakke trede hééft geen afdaling. `coast` volgen werkt ook niet: ná de domain
+  warp is dat geen afstandsveld meer en heeft het lokale maxima. Gemeten: rivieren strandden
+  50 m voor de kust. Met een BFS-veld komt elke rivier aan.
+- **Een meer heeft een vlakke bodem.** Een constante diepte over een gebogen kom geeft geen vlak
+  oppervlak, en dat is het enige wat elk meer ter wereld gemeen heeft.
+- **Eilandjes worden met `max` verenigd, niet met smooth-min.** Twee landmassa's die samensmelten
+  doen precies teniet waar ze voor zijn: een wijk op zijn eigen eiland. Hun plekken komen uit een
+  vast rooster over de hele envelop, berekend op t=0, dus eilandje 4 landt waar eilandje 4 landt
+  of 1 tot 3 nu bestaan of niet.
+- **`islandStats` meet het hoofdeiland via `mainCoast`.** De eilandjes meetellen liet het
+  landoppervlak 1,13× variëren tussen seeds terwijl er in werkelijkheid alleen een andere zandplaat
+  in beeld stond. En het meet op een echte bake: rivieren, meren en de hellingcap bestaan pas
+  als er een raster is, dus de continue weg zou een eiland rapporteren dat niemand ooit ziet.
+- **Het manifest benoemt wat het eiland ís** — landmassa's met zwaartepunt, grenzen en top, plus
+  aanlandingsplekken, rivieren en meren. De client leidde `HillCentre`, `LakeCentre` en `Rivers`
+  vroeger uit zijn eigen kopie van de generator af; met het terrein als bytes is er niets meer om
+  dat uit af te leiden.
+
+### `docs/island-preview.html`
+
+`node scripts/preview.mjs` bundelt de generator tot één HTML-pagina die hem in de browser draait:
+seed intypen, pijltjes om te stappen, en een knop om van eiland naar archipel te zoomen. Hij roept
+dezelfde `bakeField` aan, dus wat je ziet is wat er gepubliceerd wordt. Voeg een nieuwe module toe
+aan de generator, dan moet hij ook in `MODULES` in `scripts/preview.mjs` — anders faalt de pagina
+met een `ReferenceError` en verder niets.
 

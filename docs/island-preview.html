@@ -108,6 +108,15 @@
   button:hover { border-color: var(--accent); color: var(--accent); }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .hint { margin: 0; color: var(--ink-faint); font-size: 12px; }
+  .seg { display: flex; gap: 0; }
+  .seg button { flex: 1 1 0; border-radius: 0; }
+  .seg button:first-child { border-radius: 2px 0 0 2px; }
+  .seg button:last-child { border-radius: 0 2px 2px 0; margin-left: -1px; }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--panel);
+  }
+  .seg button[aria-pressed="true"]:hover { color: var(--panel); }
 
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; }
   dt { color: var(--ink-soft); font-size: 13px; }
@@ -163,6 +172,10 @@
           <button id="next" type="button" aria-label="Next seed">+</button>
         </div>
         <button id="random" type="button">Random seed</button>
+        <div class="seg" role="group" aria-label="View">
+          <button id="view-island" type="button" aria-pressed="true">Island</button>
+          <button id="view-all" type="button" aria-pressed="false">Archipelago</button>
+        </div>
         <p class="hint">Arrow keys step through seeds.</p>
       </div>
 
@@ -175,6 +188,8 @@
           <dt>Benches</dt><dd id="s-bench">&mdash;</dd>
           <dt>Slope p50</dt><dd id="s-p50">&mdash;</dd>
           <dt>Slope p90</dt><dd id="s-p90">&mdash;</dd>
+          <dt>Rivers</dt><dd id="s-rivers">&mdash;</dd>
+          <dt>Skerries</dt><dd id="s-skerries">&mdash;</dd>
           <dt>Shaved by cap</dt><dd id="s-cap">&mdash;</dd>
         </dl>
         <p class="flag" id="flag" hidden></p>
@@ -396,11 +411,15 @@ const WARP_NEAR_M = 17, WARP_NEAR_SCALE = 42;
 // that fills its own bounding circle is a circle; the missing third is bays and open water.
 const TARGET_FILL = 0.62;
 
+// How many outlying islets the envelope holds. Fixed, and baked whether or not they are
+// published yet - see the note by `skerries` below.
+const ISLETS = 6;
+
 /**
  * @param {number|string} seed
- * @param {{radiusM?: number}} opts  radiusM is the island's nominal half-width in metres.
+ * @param {{radiusM?: number, envelopeM?: number, islets?: number}} opts
  */
-function makeShape(seed, { radiusM = 208 } = {}) {
+function makeShape(seed, { radiusM = 208, envelopeM = 1024, islets = ISLETS } = {}) {
   const rng = makeRng(seed).fork('shape');
   const scale = radiusM / 208;              // every metre below is quoted for a 416 m island
 
@@ -487,15 +506,78 @@ function makeShape(seed, { radiusM = 208 } = {}) {
   }
   const fit = (lo + hi) / 2;
 
-  /**
-   * Signed distance to the coastline in metres: positive inland, negative at sea.
-   * This is the one function the rest of the generator asks about the island's outline.
-   */
-  function coast(x, z) {
+  function mainCoast(x, z) {
     return warped(x / fit, z / fit) * fit;
   }
 
-  return { coast, raw, lobes, radiusM, fit };
+  // ---- the skerries ---------------------------------------------------------------
+  // Sites come from a fixed lattice computed for the whole envelope at t=0, never from what
+  // has been published: islet 4 lands where islet 4 lands whether or not islets 1 to 3 exist.
+  // That is what lets the island grow into an archipelago without anything already standing
+  // having to move.
+  //
+  // A district is a git repository, and `lib/layout.mjs` already insists with BELT that no two
+  // parcels touch - "the gap between them is the countryside". An islet makes that separation
+  // physical and permanent, which is the strongest reason to have them at all.
+  const skerries = [];
+  {
+    const rr = makeRng(seed).fork('skerries');
+    const reach = envelopeM / 2;
+    const rings = [reach * 0.58, reach * 0.80];
+    const bearing0 = rr.range(0, Math.PI * 2);
+    for (let k = 0; k < islets; k++) {
+      const ring = rings[k % rings.length];
+      // Golden-angle spacing so consecutive islets never land side by side, jittered so the
+      // ring does not read as a ring.
+      const angle = bearing0 + k * 2.39996 + rr.range(-0.22, 0.22);
+      const dist = ring + rr.range(-28, 28) * scale;
+      const cx = Math.cos(angle) * dist;
+      const cz = Math.sin(angle) * dist;
+      const lobeCount = 2 + rr.int(3);
+      const lobes = [];
+      for (let i = 0; i < lobeCount; i++) {
+        const a = rr.range(0, Math.PI * 2);
+        const step = i === 0 ? 0 : rr.range(12, 34) * scale;
+        lobes.push({
+          x: cx + Math.cos(a) * step,
+          z: cz + Math.sin(a) * step,
+          r: (16 + rr.range(0, 26)) * scale,
+        });
+      }
+      skerries.push({ index: k, x: cx, z: cz, lobes });
+    }
+  }
+
+  const skerryBlend = 7 * scale;
+  function skerryCoast(x, z) {
+    let best = -Infinity;
+    for (const s of skerries) {
+      // Cheap rejection first: an islet is at most ~60 m across and there are several.
+      if (Math.abs(x - s.x) > 140 * scale || Math.abs(z - s.z) > 140 * scale) continue;
+      let d = Math.hypot(x - s.lobes[0].x, z - s.lobes[0].z) - s.lobes[0].r;
+      for (let i = 1; i < s.lobes.length; i++) {
+        const l = s.lobes[i];
+        d = smoothMin(d, Math.hypot(x - l.x, z - l.z) - l.r, skerryBlend);
+      }
+      if (-d > best) best = -d;
+    }
+    return best;
+  }
+
+  /**
+   * Signed distance to the nearest coastline in metres: positive inland, negative at sea.
+   * This is the one function the rest of the generator asks about the island's outline.
+   *
+   * `max` and not a smooth union: two landmasses that merged into one would defeat the whole
+   * point of putting a district on its own islet.
+   */
+  function coast(x, z) {
+    const main = mainCoast(x, z);
+    if (!skerries.length) return main;
+    return Math.max(main, skerryCoast(x, z));
+  }
+
+  return { coast, mainCoast, raw, lobes, skerries, radiusM, envelopeM, fit };
 }
 
 // ---- lib/world/relief.mjs ----------------------------------------------
@@ -707,6 +789,261 @@ function makeClassifier(seed, shape, relief) {
   return { classify, slopeAt };
 }
 
+// ---- lib/world/water.mjs -----------------------------------------------
+// Rivers and lakes, cut into the baked grid.
+//
+// The old generator could get away with defining water as "below sea level": its island was
+// only five metres tall, so a channel cut to -0.55 m was a river anywhere on it. On a 46 m
+// island that stops working - a stream at 30 m elevation is still a stream. So fresh water here
+// is not defined by height but by class, and its surface sits a fixed depth above the bed it
+// runs in. One constant, no extra channel in the chunk format, and a river can climb a hill.
+//
+// This runs on the grid rather than on the continuous field, and it has to: a river is a walk
+// from one sample to the next, and that only exists once there are samples.
+
+const RIVER_DEPTH = 1.1;        // metres from bed to surface
+const LAKE_DEPTH = 2.2;
+
+const SOURCE_MIN_FRAC = 0.55;          // a spring starts on the upper part of the massif
+const SOURCE_MIN_INLAND = 55;          // metres, so a river is not a gully in the beach
+const BANK_RISE = 1.35;                // how fast the bank climbs out of the bed, per metre
+const WOBBLE = 0.35;                   // metres of hashed noise on the descent, so it meanders
+
+/**
+ * Cut watercourses into a baked field. Mutates `height` and writes into `waterClass`.
+ *
+ * @param {{height: Float32Array, coast: Float32Array, n: number, envelopeM: number,
+ *          metresPerSample: number}} grid
+ * @param {number|string} seed
+ * @param {{rivers?: number, lakes?: number, scale?: number}} opts
+ * @returns {{waterClass: Uint8Array, rivers: object[], lakes: object[]}}
+ */
+function carveWater(grid, seed, { rivers = 2, lakes = 1, scale = 1 } = {}) {
+  const { height, coast, n, envelopeM, metresPerSample } = grid;
+  const half = envelopeM / 2;
+  const at = (i, j) => i + j * n;
+  const inGrid = (i, j) => i >= 0 && j >= 0 && i < n && j < n;
+  const worldOf = (i) => i * metresPerSample - half;
+
+  const waterClass = new Uint8Array(n * n);
+  const rng = makeRng(seed).fork('water');
+
+  // Steps to open water, by breadth-first search from every sea sample at once.
+  //
+  // The obvious thing is to follow `coast`, which is already a signed distance to the shore -
+  // but only before the domain warp. Warped, it has local maxima, and a descent that insists on
+  // decreasing it dead-ends against them; measured, rivers stopped 50 m short of the sea. A BFS
+  // field is monotone by construction, so a walk down it always arrives.
+  const toSea = new Int32Array(n * n).fill(-1);
+  {
+    const queue = new Int32Array(n * n);
+    let head = 0, tail = 0;
+    for (let k = 0; k < toSea.length; k++) {
+      if (coast[k] <= 0) { toSea[k] = 0; queue[tail++] = k; }
+    }
+    while (head < tail) {
+      const k = queue[head++];
+      const i = k % n, j = (k - (k % n)) / n;
+      const d = toSea[k] + 1;
+      if (i > 0 && toSea[k - 1] < 0) { toSea[k - 1] = d; queue[tail++] = k - 1; }
+      if (i < n - 1 && toSea[k + 1] < 0) { toSea[k + 1] = d; queue[tail++] = k + 1; }
+      if (j > 0 && toSea[k - n] < 0) { toSea[k - n] = d; queue[tail++] = k - n; }
+      if (j < n - 1 && toSea[k + n] < 0) { toSea[k + n] = d; queue[tail++] = k + n; }
+    }
+  }
+
+  // Only the main island gets watercourses: an islet 60 m across has no catchment worth
+  // speaking of, and a river on one would be a drain.
+  let peak = 0, peakAt = -1;
+  for (let k = 0; k < height.length; k++) {
+    if (coast[k] > 0 && height[k] > peak) { peak = height[k]; peakAt = k; }
+  }
+  if (peakAt < 0) return { waterClass, rivers: [], lakes: [] };
+
+  // ---- springs ---------------------------------------------------------------------
+  // High ground, well inland, and spread out: two rivers leaving by the same flank divide
+  // nothing, and the whole point of a river here is that it cuts the island into parts a
+  // bridge has to reach across.
+  const candidates = [];
+  for (let j = 2; j < n - 2; j++) {
+    for (let i = 2; i < n - 2; i++) {
+      const k = at(i, j);
+      if (toSea[k] < SOURCE_MIN_INLAND * scale) continue;
+      if (height[k] < peak * SOURCE_MIN_FRAC) continue;
+      candidates.push(k);
+    }
+  }
+  if (!candidates.length) return { waterClass, rivers: [], lakes: [] };
+
+  const springs = [];
+  const minApart = 70 * scale;
+  for (let attempt = 0; attempt < 400 && springs.length < rivers; attempt++) {
+    const k = candidates[rng.int(candidates.length)];
+    const x = worldOf(k % n), z = worldOf(Math.floor(k / n));
+    if (springs.every((s) => Math.hypot(x - s.x, z - s.z) > minApart)) springs.push({ k, x, z });
+  }
+
+  const courses = [];
+  for (const spring of springs) {
+    const course = descend(spring.k);
+    if (course.length >= 12) courses.push(course);
+  }
+
+  // ---- lakes ------------------------------------------------------------------------
+  // On a shoulder rather than in a hole: a bowl scooped into gentle high ground reads as a
+  // tarn, and the outflow is simply where a river passes.
+  const pools = [];
+  // A lake wants gentle ground, not high ground, so it draws from its own list: a tarn on a
+  // low shoulder is as good as one near the summit, and insisting on the summit found none at
+  // all on most seeds.
+  const basins = [];
+  for (let j = 2; j < n - 2; j++) {
+    for (let i = 2; i < n - 2; i++) {
+      const k = at(i, j);
+      if (coast[k] < 50 * scale) continue;
+      if (height[k] < 3 || height[k] > peak * 0.85) continue;
+      basins.push(k);
+    }
+  }
+  for (let attempt = 0; attempt < 600 && pools.length < lakes && basins.length; attempt++) {
+    const k = basins[rng.int(basins.length)];
+    const i = k % n, j = Math.floor(k / n);
+    const radius = (14 + rng.range(0, 12)) * scale;
+    const r = Math.ceil(radius / metresPerSample);
+    if (i - r < 1 || j - r < 1 || i + r > n - 2 || j + r > n - 2) continue;
+    // Refuse anywhere steep: a lake on a slope is a waterfall standing still.
+    let lo = Infinity, hi = -Infinity;
+    for (let dj = -r; dj <= r; dj += 2) {
+      for (let di = -r; di <= r; di += 2) {
+        const h = height[at(i + di, j + dj)];
+        if (h < lo) lo = h;
+        if (h > hi) hi = h;
+      }
+    }
+    if (hi - lo > 9 * scale) continue;
+    if (pools.some((p) => Math.hypot(p.i - i, p.j - j) * metresPerSample < 90 * scale)) continue;
+    pools.push({ i, j, radius, level: lo });
+  }
+
+  for (const pool of pools) carveLake(pool);
+  for (const course of courses) carveRiver(course);
+
+  return {
+    waterClass,
+    rivers: courses.map((c, index) => ({
+      id: `river:${index}`,
+      mouth: worldPoint(c[c.length - 1].k),
+      source: worldPoint(c[0].k),
+      lengthM: Math.round((c.length - 1) * metresPerSample),
+      spine: simplify(c.map((p) => worldPoint(p.k)), 12 * scale),
+    })),
+    lakes: pools.map((p, index) => ({
+      id: `lake:${index}`,
+      centre: [round1(worldOf(p.i)), round1(worldOf(p.j))],
+      radiusM: round1(p.radius),
+      surfaceY: round1(p.level),
+    })),
+  };
+
+  // ---- the walk ---------------------------------------------------------------------
+  // Steepest descent, four-connected, with a hashed wobble so it meanders rather than running
+  // dead down the fall line. A pure gradient walk on fractal ground stalls in every pit it
+  // meets; when that happens here the course steps to the lowest neighbour regardless and the
+  // carve smooths it out, which is what a real stream does to a hollow.
+  function descend(startK) {
+    const course = [];
+    let k = startK;
+    let level = height[k];
+
+    for (let step = 0; step < n * 3; step++) {
+      course.push({ k, level });
+      if (coast[k] <= 0) break;                       // reached the sea: this is the mouth
+
+      const i = k % n, j = Math.floor(k / n);
+      // Only neighbours a step nearer the sea are eligible, and the lowest of those wins: the
+      // water finds its way down within a corridor that is guaranteed to arrive.
+      let best = -1, bestScore = Infinity;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di, nj = j + dj;
+        if (!inGrid(ni, nj)) continue;
+        const nk = at(ni, nj);
+        if (toSea[nk] >= toSea[k]) continue;
+        const wob = ((hash32(`${seed}:river:${ni}:${nj}`) % 2000) / 2000 - 0.5) * 2 * WOBBLE;
+        const score = height[nk] + wob;
+        if (score < bestScore) { bestScore = score; best = nk; }
+      }
+      if (best < 0) break;
+      k = best;
+      // The surface only ever falls. Without this a course that crosses a rise would carry its
+      // water uphill, and the carve would gouge a trench through the hill to let it.
+      level = Math.min(level, height[k]);
+    }
+    return course;
+  }
+
+  function carveRiver(course) {
+    const last = course.length - 1;
+    for (let s = 0; s <= last; s++) {
+      const { k, level } = course[s];
+      const i = k % n, j = Math.floor(k / n);
+      // A river widens as it goes: a brook at the spring, something a bridge has to span at
+      // the mouth.
+      const wM = (1.6 + 3.4 * (s / Math.max(1, last))) * scale;
+      const reach = Math.ceil((wM + (RIVER_DEPTH + 1.2) / BANK_RISE) / metresPerSample);
+
+      for (let dj = -reach; dj <= reach; dj++) {
+        for (let di = -reach; di <= reach; di++) {
+          const ni = i + di, nj = j + dj;
+          if (!inGrid(ni, nj)) continue;
+          const nk = at(ni, nj);
+          if (coast[nk] <= 0) continue;                 // the sea has its own profile
+          const dist = Math.hypot(di, dj) * metresPerSample;
+          const bed = level - RIVER_DEPTH + BANK_RISE * Math.max(0, dist - wM);
+          if (bed < height[nk]) height[nk] = bed;
+          if (dist <= wM && !waterClass[nk]) waterClass[nk] = CLASS.RIVER;
+        }
+      }
+    }
+  }
+
+  function carveLake(pool) {
+    const r = Math.ceil(pool.radius / metresPerSample);
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        const ni = pool.i + di, nj = pool.j + dj;
+        if (!inGrid(ni, nj)) continue;
+        const nk = at(ni, nj);
+        if (coast[nk] <= 0) continue;
+        const dist = Math.hypot(di, dj) * metresPerSample;
+        if (dist > pool.radius) continue;
+        // Flat bottom, so the surface a fixed depth above it is flat too - which is the one
+        // thing every lake in the world has in common.
+        const bed = pool.level - LAKE_DEPTH + BANK_RISE * Math.max(0, dist - (pool.radius - 4 * scale));
+        if (bed < height[nk]) height[nk] = bed;
+        if (dist <= pool.radius - 4 * scale) waterClass[nk] = CLASS.LAKE;
+      }
+    }
+  }
+
+  function worldPoint(k) {
+    return [round1(worldOf(k % n)), round1(worldOf(Math.floor(k / n)))];
+  }
+}
+
+function round1(v) { return Math.round(v * 10) / 10; }
+
+/** Drop points a straight line already covers, so a spine travels as a dozen points not a thousand. */
+function simplify(points, minStep) {
+  const out = [points[0]];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= minStep) out.push(p);
+  }
+  const end = points[points.length - 1];
+  if (out[out.length - 1] !== end) out.push(end);
+  return out;
+}
+
 // ---- lib/world/bake.mjs ------------------------------------------------
 // One pass over the whole envelope.
 //
@@ -730,7 +1067,7 @@ const CHUNK_M = 64;                       // 64 m: one chunk, one navmesh tile, 
  * @param {{envelopeM?: number, radiusM?: number, onProgress?: (frac: number) => void}} opts
  */
 function bakeField(seed, { envelopeM = 1024, radiusM = 208, onProgress = null } = {}) {
-  const shape = makeShape(seed, { radiusM });
+  const shape = makeShape(seed, { radiusM, envelopeM });
   const relief = makeRelief(seed, shape);
   const classifier = makeClassifier(seed, shape, relief);
 
@@ -774,24 +1111,39 @@ function bakeField(seed, { envelopeM = 1024, radiusM = 208, onProgress = null } 
     if (onProgress && j % 64 === 0) onProgress(0.35 + (j / n) * 0.35);
   }
 
-  // ---- pass 3: the gradient cap ---------------------------------------------------
+  // ---- pass 3: fresh water ----------------------------------------------------------
+  // Before the cap, so a ravine the river cuts is subject to the same 45-degree rule as the
+  // rest of the island, and before classification, so the banks are classified as banks.
+  const water = carveWater(
+    { height, coast, n, envelopeM, metresPerSample: METRES_PER_SAMPLE },
+    seed, { scale: relief.scale });
+  if (onProgress) onProgress(0.74);
+
+  // ---- pass 4: the gradient cap ---------------------------------------------------
   const capped = capGradient(height, n, METRES_PER_SAMPLE, MAX_GRADIENT);
   if (onProgress) onProgress(0.78);
 
-  // ---- pass 4: classification ------------------------------------------------------
+  // ---- pass 5: classification ------------------------------------------------------
   for (let j = 0; j < n; j++) {
     const z = worldX(j);
     for (let i = 0; i < n; i++) {
       const k = at(i, j);
       const gx = (height[at(Math.min(i + 1, n - 1), j)] - height[at(Math.max(i - 1, 0), j)]) / (2 * METRES_PER_SAMPLE);
       const gz = (height[at(i, Math.min(j + 1, n - 1))] - height[at(i, Math.max(j - 1, 0))]) / (2 * METRES_PER_SAMPLE);
-      classes[k] = classifier.classify(worldX(i), z, height[k], coast[k], Math.hypot(gx, gz));
+      // Water wins: a carved channel is a river whatever its slope says.
+      classes[k] = water.waterClass[k] || classifier.classify(worldX(i), z, height[k], coast[k], Math.hypot(gx, gz));
     }
     if (onProgress && j % 64 === 0) onProgress(0.78 + (j / n) * 0.22);
   }
   if (onProgress) onProgress(1);
 
-  return { seed, n, envelopeM, radiusM, metresPerSample: METRES_PER_SAMPLE, height, classes, coast, cappedSamples: capped, shape, relief };
+  return {
+    seed, n, envelopeM, radiusM, metresPerSample: METRES_PER_SAMPLE,
+    height, classes, coast,
+    cappedSamples: capped,
+    rivers: water.rivers, lakes: water.lakes,
+    shape, relief,
+  };
 }
 
 /**
@@ -831,7 +1183,7 @@ function capGradient(height, n, metresPerSample, maxGradient) {
 }
 
 
-const SPAN = 576;                      // metres across the map, and so samples per side
+let SPAN = 576;                        // metres across the map, and so samples per side
 const COLOUR = {
   [CLASS.SEA]: [10, 30, 62],
   [CLASS.SHALLOW]: [28, 106, 130],
@@ -961,6 +1313,10 @@ function show(seed) {
     $('s-bench').textContent = String(m.benches);
     $('s-p50').textContent = m.p50.toFixed(2);
     $('s-p90').textContent = m.p90.toFixed(2);
+    $('s-rivers').textContent = field.rivers.length
+      ? field.rivers.map((r) => r.lengthM + ' m').join(', ')
+      : 'none';
+    $('s-skerries').textContent = String(field.shape.skerries.length);
     $('s-cap').textContent = m.capped.toLocaleString('en-GB');
 
     const flag = $('flag');
@@ -1039,6 +1395,15 @@ function go(seed) {
   $('seed').value = String(s);
   show(s);
 }
+
+function setView(span) {
+  SPAN = span;
+  $('view-island').setAttribute('aria-pressed', String(span === 576));
+  $('view-all').setAttribute('aria-pressed', String(span !== 576));
+  show(Number($('seed').value));
+}
+$('view-island').addEventListener('click', () => setView(576));
+$('view-all').addEventListener('click', () => setView(1024));
 
 $('seed').addEventListener('change', (e) => go(Number(e.target.value)));
 $('prev').addEventListener('click', () => go(Number($('seed').value) - 1));

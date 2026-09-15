@@ -108,6 +108,15 @@
   button:hover { border-color: var(--accent); color: var(--accent); }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .hint { margin: 0; color: var(--ink-faint); font-size: 12px; }
+  .seg { display: flex; gap: 0; }
+  .seg button { flex: 1 1 0; border-radius: 0; }
+  .seg button:first-child { border-radius: 2px 0 0 2px; }
+  .seg button:last-child { border-radius: 0 2px 2px 0; margin-left: -1px; }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--panel);
+  }
+  .seg button[aria-pressed="true"]:hover { color: var(--panel); }
 
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; }
   dt { color: var(--ink-soft); font-size: 13px; }
@@ -163,6 +172,10 @@
           <button id="next" type="button" aria-label="Next seed">+</button>
         </div>
         <button id="random" type="button">Random seed</button>
+        <div class="seg" role="group" aria-label="View">
+          <button id="view-island" type="button" aria-pressed="true">Island</button>
+          <button id="view-all" type="button" aria-pressed="false">Archipelago</button>
+        </div>
         <p class="hint">Arrow keys step through seeds.</p>
       </div>
 
@@ -175,6 +188,8 @@
           <dt>Benches</dt><dd id="s-bench">&mdash;</dd>
           <dt>Slope p50</dt><dd id="s-p50">&mdash;</dd>
           <dt>Slope p90</dt><dd id="s-p90">&mdash;</dd>
+          <dt>Rivers</dt><dd id="s-rivers">&mdash;</dd>
+          <dt>Skerries</dt><dd id="s-skerries">&mdash;</dd>
           <dt>Shaved by cap</dt><dd id="s-cap">&mdash;</dd>
         </dl>
         <p class="flag" id="flag" hidden></p>
@@ -205,7 +220,7 @@
 <script>
 /*__GENERATOR__*/
 
-const SPAN = 576;                      // metres across the map, and so samples per side
+let SPAN = 576;                        // metres across the map, and so samples per side
 const COLOUR = {
   [CLASS.SEA]: [10, 30, 62],
   [CLASS.SHALLOW]: [28, 106, 130],
@@ -335,6 +350,10 @@ function show(seed) {
     $('s-bench').textContent = String(m.benches);
     $('s-p50').textContent = m.p50.toFixed(2);
     $('s-p90').textContent = m.p90.toFixed(2);
+    $('s-rivers').textContent = field.rivers.length
+      ? field.rivers.map((r) => r.lengthM + ' m').join(', ')
+      : 'none';
+    $('s-skerries').textContent = String(field.shape.skerries.length);
     $('s-cap').textContent = m.capped.toLocaleString('en-GB');
 
     const flag = $('flag');
@@ -413,6 +432,15 @@ function go(seed) {
   $('seed').value = String(s);
   show(s);
 }
+
+function setView(span) {
+  SPAN = span;
+  $('view-island').setAttribute('aria-pressed', String(span === 576));
+  $('view-all').setAttribute('aria-pressed', String(span !== 576));
+  show(Number($('seed').value));
+}
+$('view-island').addEventListener('click', () => setView(576));
+$('view-all').addEventListener('click', () => setView(1024));
 
 $('seed').addEventListener('change', (e) => go(Number(e.target.value)));
 $('prev').addEventListener('click', () => go(Number($('seed').value) - 1));

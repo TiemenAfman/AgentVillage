@@ -63,7 +63,8 @@ if (wantStats) {
       .join('  ');
     console.log(
       `seed ${st.seed}  ${st.landHa.toFixed(1)} ha  ${st.extent[0]}x${st.extent[1]} m  ` +
-      `top ${st.maxHeight.toFixed(0)} m  helling p50 ${st.slope.p50.toFixed(2)} p90 ${st.slope.p90.toFixed(2)}`);
+      `top ${st.maxHeight.toFixed(0)} m  slope p50 ${st.slope.p50.toFixed(2)} p90 ${st.slope.p90.toFixed(2)}  ` +
+      `${st.rivers} rivers  ${st.lakes} lakes`);
     console.log(`          ${share}`);
   }
   process.exit(0);

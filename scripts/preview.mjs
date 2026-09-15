@@ -16,6 +16,7 @@ const MODULES = [
   'lib/world/shape.mjs',
   'lib/world/relief.mjs',
   'lib/world/classify.mjs',
+  'lib/world/water.mjs',
   'lib/world/bake.mjs',
 ];
 
