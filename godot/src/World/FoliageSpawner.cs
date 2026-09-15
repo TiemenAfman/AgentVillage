@@ -355,15 +355,23 @@ public sealed class FoliageSpawner
 	/// <summary>
 	/// Where the instance's origin has to be for the plant to stand on the ground.
 	///
-	/// The two card layers need lifting and the two mesh layers do not, and that asymmetry is
-	/// Terrain3D's: a generated texture card always has its base at local y = -0.5 no matter what
-	/// height is asked for, so an instance placed exactly on the ground is half a card underground.
-	/// <see cref="FoliageMesh"/> builds its own meshes with the root at y = 0 precisely so this
-	/// correction does not have to guess which kind it is holding.
+	/// The card layers used to be lifted half a card, on the belief that a Terrain3D generated
+	/// texture card hangs its base at local y = -0.5 regardless of the size asked for. It does
+	/// not: the card it builds for <c>generated_type = TYPE_TEXTURE_CARD</c> stands *on* its
+	/// origin, so the lift was a correction for a problem that was not there and it put every
+	/// blade and every patch of cover exactly half its own height into the air.
+	///
+	/// That is the floating grass from the rondgang of 15 September, and it was not a sampling
+	/// error: the height under each plant was always read at the jittered position. The measure
+	/// that settles it is <c>VerifyGroundedRunner</c>, which compares the mesh's own AABB floor
+	/// against the terrain rather than the instance origin — median clearance was +0.50 m on a
+	/// scale of about one, which is 0.5 × scale to the centimetre.
+	///
+	/// <see cref="FoliageMesh"/> builds its meshes with the root at y = 0 for the same reason, so
+	/// neither kind needs lifting now; only the bushes are deliberately settled into the ground.
 	/// </summary>
 	private static float Seat(Layer layer, float scale) => layer switch
 	{
-		Layer.Cover or Layer.Blades => 0.5f * scale,
 		Layer.Bushes => -BushSink * scale,
 		_ => 0.0f,
 	};
