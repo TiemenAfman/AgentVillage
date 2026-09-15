@@ -141,35 +141,29 @@ public static class RockMesh
 	/// without an unwrap, two rocks lying against each other line up, and a rock scaled to
 	/// fifteen metres does not smear the way a UV-mapped one would.
 	///
-	/// The detail is a normal map only, generated from noise rather than photographed. That is
-	/// the whole stylised-versus-photoscan decision in one place: the silhouette and the facets
-	/// carry the shape, and this adds the suggestion of grain under raking light without putting
-	/// a photograph of granite on a hand-made block.
+	/// The detail is generated brush strokes rather than a photograph. That is the whole
+	/// stylised-versus-photoscan decision in one place: the silhouette and the facets carry the
+	/// shape, and the strokes carry the surface - painted, with a step at each edge, instead of
+	/// a picture of granite on a hand-made block.
 	/// </summary>
 	private static StandardMaterial3D StoneMaterial()
 	{
 		if (_stone is not null) return _stone;
 
-		var noise = new FastNoiseLite
-		{
-			NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
-			Frequency = 0.035f,
-			FractalOctaves = 4,
-		};
-		var grain = new NoiseTexture2D
-		{
-			Noise = noise,
-			Width = 512,
-			Height = 512,
-			Seamless = true,
-			AsNormalMap = true,
-			BumpStrength = 3.5f,
-		};
+		// Brush strokes, not noise. Walk up to a rock in the reference and the surface is
+		// painted: elongated marks, laid over one another, each with a visible edge where it
+		// stops. Noise cannot get there because noise is isotropic and a stroke has a direction.
+		// See BrushTexture - the posterisation is the part that reads as painted.
+		var strokes = BrushTexture.Strokes(2701u, 512, strokes: 260, steps: 5, lean: 0.55f, low: 0.84f, high: 1.09f);
+		var strokeNormals = BrushTexture.StrokeNormals(2701u, 512, strength: 2.4f, strokes: 260, steps: 5, lean: 0.55f);
 
 		_stone = Palette.Solid(Stone, 0.92f);
+		// The strokes tint as well as catch the light: a painted surface varies in value, and
+		// leaving that to the normal map alone gives a flat colour with bumps on it.
+		_stone.AlbedoTexture = strokes;
 		_stone.NormalEnabled = true;
-		_stone.NormalTexture = grain;
-		_stone.NormalScale = 0.55f;
+		_stone.NormalTexture = strokeNormals;
+		_stone.NormalScale = 0.5f;
 		// Sampled from world position, not from UVs the mesh does not have. Sharpness keeps the
 		// three projections from mushing into each other on a facet that faces a corner.
 		_stone.Uv1Triplanar = true;

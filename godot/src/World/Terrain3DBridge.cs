@@ -527,6 +527,79 @@ public sealed class Terrain3DBridge
 		return (p - (a + ab * t)).Length();
 	}
 
+	// ---- the instancer ------------------------------------------------------------
+
+	/// <summary>
+	/// Register a mesh under an id, so instances of it can be scattered.
+	///
+	/// Terrain3D wants a <c>PackedScene</c>, which normally means a .tscn on disk — a procedural
+	/// world has no such file, so the scene is packed in memory. That was the one genuinely
+	/// uncertain part of this path and <c>SpikeInstancerRunner</c> settled it.
+	///
+	/// LOD ranges are read off the scene's node names by Terrain3D (a child called *LOD1 and so
+	/// on); a single-mesh scene simply has one level, which is right for a rock. The shadow chain
+	/// is capped separately because a shadow of a distant boulder is not worth a draw.
+	/// </summary>
+	public void AddMeshAsset(int id, string name, Mesh mesh, float heightOffset = 0.0f)
+	{
+		var assets = Node.Get("assets").AsGodotObject();
+		if (assets is null) { GD.PushWarning("Terrain3D exposes no asset list"); return; }
+
+		var asset = ClassDB.Instantiate("Terrain3DMeshAsset").AsGodotObject();
+		if (asset is null) { GD.PushWarning("Terrain3DMeshAsset would not instantiate"); return; }
+
+		var holder = new MeshInstance3D { Name = name, Mesh = mesh };
+		var scene = new PackedScene();
+		if (scene.Pack(holder) != Error.Ok)
+		{
+			GD.PushWarning($"could not pack a scene for mesh asset '{name}'");
+			return;
+		}
+
+		asset.Set("name", name);
+		asset.Set("id", id);
+		asset.Set("scene_file", scene);
+		asset.Set("height_offset", heightOffset);
+		asset.Set("cast_shadows", (int)GeometryInstance3D.ShadowCastingSetting.On);
+		assets.Call("set_mesh_asset", id, asset);
+	}
+
+	/// <summary>
+	/// Scatter a batch of one mesh.
+	///
+	/// Batched deliberately: every call to the instancer is a GDExtension crossing, and
+	/// <c>update_mmis</c> rebuilds the whole MultiMesh tree. So the transforms go in with
+	/// <c>update = false</c> and the rebuild happens once, in <see cref="FinishInstances"/>.
+	///
+    /// An instance outside a published region has nowhere to be stored and is dropped silently,
+	/// which is why the caller filters on the field first rather than trusting this to complain.
+	/// </summary>
+	public void AddInstances(int meshId, Godot.Collections.Array transforms, Color[] colours)
+	{
+		if (transforms.Count == 0) return;
+		var instancer = Node.Call("get_instancer").AsGodotObject();
+		if (instancer is null) { GD.PushWarning("Terrain3D exposes no instancer"); return; }
+		instancer.Call("add_transforms", meshId, transforms, colours, false);
+	}
+
+	/// <summary>Rebuild the MultiMesh tree once, after every batch is in.</summary>
+	public void FinishInstances()
+	{
+		var instancer = Node.Call("get_instancer").AsGodotObject();
+		instancer?.Call("update_mmis", true);
+	}
+
+	/// <summary>Instances actually rendered, counted from the scene rather than from a return
+	/// value: stored and drawn are different claims, and this is the one that matters.</summary>
+	public int InstanceCount => CountInstances(Node);
+
+	private static int CountInstances(Node node)
+	{
+		int n = node is MultiMeshInstance3D mmi && mmi.Multimesh is not null ? mmi.Multimesh.InstanceCount : 0;
+		foreach (var child in node.GetChildren()) n += CountInstances(child);
+		return n;
+	}
+
 	/// <summary>
 	/// Cut a hole at a world position: the ground stops existing there, in the mesh and in the
 	/// collision both. This is what a tunnel mouth or a cave entrance is made of, and it is the
