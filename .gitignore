@@ -22,3 +22,13 @@ config.json
 .env.*
 *.log
 *.log.1
+
+# build-uitvoer: scripts/build.ps1 zet hier de losstaande Windows-build neer (~250 MB)
+dist/
+# schermafdrukken van de Godot-harness, opnieuw te maken met scripts/shots.ps1
+godot/.captures/
+# De screenshot-matrix zelf is ~94 MB aan PNG's en wordt opnieuw gemaakt met
+# scripts/shots.ps1. Het contactvel blijft wel: dat legt vast wat er wanneer is
+# geschoten, ook als de beelden er niet meer bij zitten.
+docs/shots/**/*.png
+docs/shots/**/*.jpg
