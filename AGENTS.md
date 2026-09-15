@@ -164,7 +164,7 @@ godot/src/
 │   ├── VerifyWalkRunner.cs    # echte physics-frames: EnterWalkMode → 80 ticks op de grond (IsOnFloor), teleport in het water → 120 ticks (State=Swimming)
 │   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
 │   ├── VerifyAtmosphereRunner.cs # dag/nacht: 12:00 (dag, raam-glans blijft subtiel warm 0.35, lampen uit) / 23:00 (nacht,
-│   │   │               #   windows+lampen emissie, vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 28 checks
+│   │   │               #   windows+lampen emissie, vuurtoren beam aan + rotatie ~45°/s) / 19:30 (schemer, glow+lighthouse aan) — 35 checks
 │   ├── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
 │   ├── VerifyDistrictRunner.cs   # Phase 2 stap 9: laadt echte res://village.json, bouwt wereld, assert hedges>0,
 │   │                               #   field/orchard>0 (falls toevallig 0 op een lege island — met fallback-village 164/16+21)
@@ -205,9 +205,10 @@ godot/src/
 │   ├── NightGlowManager.cs  # [GlobalClass] Node3D: windows emissie = kleur GlowColour (1.0,0.75,0.35) op de
 │   │   │               #   window slot-materialen (AttachedPiece Node3D-boom → eerst MeshInstance3D-kind mat);
 │   │   │               #   overdag houden ramen een subtiele warme gloed (WindowDayGlow 0.35, SetGlow heeft nu
-│   │   │               #   een dayEnergy-param); eigen straatlantaarns langs GroundRoot/Roads cobble MultiMesh
-│   │   │               #   (elke 6e instancetransform, cap 96, steel-paal+glas emissief, gedeeld glas-materiaal
-│   │   │               #   in _lampGlass); Cycle/World exports
+│   │   │               #   een dayEnergy-param); eigen straatlantaarns langs WorldManager.PathRuns
+│   │   │               #   (LotsPerLamp 5, MinRunLots 2, cap 96 via stride-thinning, verge-offset 0.45 lot,
+│   │   │               #   PmRng.Hash32 voor fase+zijde, skip brug-/watercellen, y = WorldHeight;
+│   │   │               #   steel-paal+glas emissief, gedeeld glas-materiaal in _lampGlass); Cycle/World exports
 │   ├── CloudManager.cs      # [GlobalClass] Node3D (fase 2 stap 12): laaghangende diorama-wolken — 5..7 bollen
 │   │   │               #   (PmRng fork "clouds"), y-band 22..26, WorldHalf 60, drift 1.2 m/s met z-verhouding 0.22,
 │   │   │               #   wrap rond de wereldrand, shadow casting aan; pub CloudCount/CloudAltitudeBand/Advance/Rebuild
@@ -327,7 +328,7 @@ vastleggen met `Graphics.CopyFromScreen` over de client-rect van `MainWindowHand
   - `VerifyLiveRunner.cs` — haalt écht `village.json` van `localhost:4747`, parst via `VillageJson`, bouwt wereld: aantallen data-afhankelijk (snapshot 163, live kan anders zijn), hash `f7ec71ac` → PASS.
   - `VerifyWalkRunner.cs` — draait échte physics-frames in de SceneTree (`--quit-after` werkt niet, zelf `Quit(0/1)`): EnterWalkMode → 80 ticks op de grond (IsOnFloor, collider, Y>0.5), teleport (40,-2,40) → 120 ticks (State=Swimming, Y in (-0.3,1.2)) → PASS.
   - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
-  - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
+  - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 35 checks PASS.
   - `VerifyDistrictRunner.cs` — laadt echte res://village.json via VillageJson, bouwt wereld, assert DistrictDecorator-hedges>0 en FarmlandSpawner fields+orchards>0 (fallback-village 1337: 164 hedges, 12 gateposts, 5 archways, 16 fields, 21 orchards) → PASS.
   - `VerifyVisualRunner.cs` — stap 12: laadt echte village.json, assert water-shader + ShaderMaterial, palette-kleur getters (`BuildingCatalog.PlasterColour` etc.), fountain+3 stallletjes + terrain-clamp, per-vertex ground-kleurbanden, cloudveld 5..7 (altitude 22..26, schaduw, drift, wrap) → 20 checks PASS.
 
@@ -391,6 +392,21 @@ anders af van wanneer je F5 drukte — 's nachts openen gaf een zwart scherm dat
 `DayNightCycle._Process` heeft twee lagen: rotaties elke frame (twee node-transforms), sky/env/
 fog alleen als het uur merkbaar is verschoven (`HourEpsilonRad`, ~1,2 gesimuleerde minuten). Het
 signaal `AtmosphereChanged` vervangt de per-frame `Sync()` van `NightGlowManager`.
+
+### Straatlantaarns volgen `WorldManager.PathRuns`, niet de scene-tree
+Sinds de paden via `Terrain3DBridge.PaintPaving` in de Terrain3D-controlmap worden geschilderd
+is `GroundRoot/Roads` leeg: er is geen weg-geometrie meer om uit te lezen. `NightGlowManager`
+las daar zijn lantaarnposities uit, dus het eiland stond 's nachts zonder straatverlichting.
+**Wie een weg wil volgen, leest `WorldManager.PathRuns`** — dezelfde lot-runs die de schilder
+krijgt, gevuld vóór de Terrain3D-check zodat ze er ook zijn zonder de extensie. Bruggen staan
+in `WorldManager.IsBridgeCell`; plant daar niets op.
+
+Het "gebouwd?"-vlaggetje is een *layout-hash* (`LampLayout`), geen bool. Een bool vóór de check
+liet het eiland donker op de live-data-route (de poll komt ná de eerste `Sync()`), en een bool
+erná laat de lampen langs de straten van gisteren staan zodra er een nieuw dorp binnenkomt.
+
+`LampCount` telt de palen (`_lampLights`), niet `_lampGlass`: dat glas is één Palette-gecachet
+materiaal dat alle lantaarns delen, dus die telling gaf altijd 1 — ook voor een volle 74.
 
 ### Kleurruimte-val: vertexkleuren zijn lineair
 Godot leest `ArrayMesh`-vertexkleuren als **lineair** en converteert ze niet. De grondbanden

@@ -11,8 +11,8 @@ namespace Promptholm.Atmosphere;
 /// <summary>
 /// Switches on the warm candle/lantern glow the moment the sun dips below the horizon: it
 /// enables emission on every building window material and on the glass of the street lamps
-/// it places along the roads. Lamps are spawned from the cobblestone MultiMesh instances of
-/// WorldManager.GroundRoot/Roads, so lamp positions always follow the actual road layout.
+/// it places along the roads. Lamps follow <see cref="WorldManager.PathRuns"/> - the same lot
+/// runs the paving painter gets - so they sit on the roads the village actually has.
 /// The manager is self-contained: it accepts an explicit WorldManager / DayNightCycle export
 /// and falls back to a tree-wide lookup of a node named "WorldManager" / "DayNightCycle".
 /// </summary>
@@ -24,6 +24,18 @@ public partial class NightGlowManager : Node3D
 
 	/// <summary>Subtle warm glow the warm-lit window panes keep during daylight hours.</summary>
 	public const float WindowDayGlow = 0.35f;
+
+	/// <summary>One lantern per this many lots along a run: lots are 4 m, so a lamp every 20 m.</summary>
+	public const int LotsPerLamp = 5;
+
+	/// <summary>Runs shorter than this are a stub of paving rather than a street, and stay dark.</summary>
+	public const int MinRunLots = 2;
+
+	/// <summary>Ceiling on the lantern count. Beyond it the candidates are thinned, not cut off.</summary>
+	public const int MaxLamps = 96;
+
+	/// <summary>How far off the centre of its lot a post stands, as a fraction of the lot.</summary>
+	private const float VergeFraction = 0.45f;
 
 	private static readonly Color LampMetal = new(0.14f, 0.14f, 0.16f);
 
@@ -41,7 +53,7 @@ public partial class NightGlowManager : Node3D
 	private readonly List<OmniLight3D> _lampLights = new();
 	private WorldManager? _resolvedWorld;
 	private DayNightCycle? _resolvedCycle;
-	private bool _lampsBuilt;
+	private string? _lampLayout;
 	private bool _glowOn;
 
 	/// <summary>Whether the glow is currently enabled (night/dusk window).</summary>
@@ -50,11 +62,15 @@ public partial class NightGlowManager : Node3D
 	/// <summary>Number of distinct building window materials being lit.</summary>
 	public int WindowGlowCount => _windowMaterials.Count;
 
-	/// <summary>Number of street lamps spawned along the roads.</summary>
-	public int LampCount => _lampGlass.Count;
+	/// <summary>
+	/// Number of street lamps spawned along the roads. Counted off the posts' lights, one each:
+	/// the glass is a single Palette-cached material shared by every lantern, so counting those
+	/// answered "1" for a fully lit village and "1" for a village with one lamp in it.
+	/// </summary>
+	public int LampCount => _lampLights.Count;
 
-	/// <summary>Number of lanterns that actually cast light, as opposed to only glowing.</summary>
-	public int LampLightCount => _lampLights.Count;
+	/// <summary>Number of distinct emissive materials on the lamp glass (shared across posts).</summary>
+	public int LampGlassCount => _lampGlass.Count;
 
 	/// <summary>The current hour used for decisions: forced debug hour, else the synced cycle.</summary>
 	public float Hour
@@ -188,47 +204,136 @@ public partial class NightGlowManager : Node3D
 	}
 
 	/// <summary>
-	/// Spawns lantern posts along the cobble tiles (roads + paved square). Built once; each
-	/// lamp carries a small emissive glass box whose material lands in <see cref="_lampGlass"/>.
+	/// Spawns lantern posts along the village's paths. Each lamp carries a small emissive glass
+	/// box whose material lands in <see cref="_lampGlass"/>.
+	///
+	/// This used to read lamp positions out of the cobblestone MultiMesh under GroundRoot/Roads.
+	/// That node has been empty since the paving became a texture painted into the Terrain3D
+	/// control map: there is no road geometry left to walk. The roads survive only as the lot
+	/// runs WorldManager hands the painter, so that is what the lamps follow now - which also
+	/// means they no longer need Terrain3D to be loaded at all.
 	/// </summary>
 	private void EnsureLamps()
 	{
-		if (_lampsBuilt)
-			return;
-
-		// The flag used to be set before this check. GroundRoot/Roads exists as soon as
-		// EnsureRoots has run but stays empty until BuildWorld fills it, so on the live-data
-		// path — where VillageClient's poll arrives after the first Sync — this ran against an
-		// empty Roads node, found no positions, and latched _lampsBuilt: the island then never
-		// got a single street lamp. Only the village.json fallback path worked, by accident.
 		var world = ResolveWorld();
-		var roads = world?.GetNodeOrNull<Node3D>("GroundRoot/Roads");
-		if (roads is null)
+		var terrain = world?.Terrain;
+		var runs = world?.PathRuns;
+		if (terrain is null || runs is null || runs.Count == 0)
 			return;
 
-		var positions = new List<Vector3>();
-		foreach (var roadChild in roads.GetChildren())
+		// Keyed on the layout rather than latched on a bool. A bool set before the roads existed
+		// was what left the island dark on the live-data path, where VillageClient's poll arrives
+		// after the first Sync; and a bool set after is still wrong the moment a new village comes
+		// in over the same session, because the lamps would then stand along yesterday's streets.
+		string layout = LampLayout(terrain, runs);
+		if (layout == _lampLayout)
+			return;
+
+		ClearLamps();
+		_lampLayout = layout;
+
+		var spots = LampSpots(terrain, world!, runs);
+		// Thinned rather than truncated: taking the first 96 would light one half of the village
+		// and leave the other half black, because the runs arrive in path order, not in map order.
+		int stride = Math.Max(1, (spots.Count + MaxLamps - 1) / MaxLamps);
+		for (int i = 0; i < spots.Count; i += stride)
+			BuildLampAt(spots[i]);
+
+		GD.Print($"[NightGlow] {_lampLights.Count} street lamps along {runs.Count} path runs");
+	}
+
+	/// <summary>A cheap fingerprint of the road layout: changes exactly when the streets do.</summary>
+	private static string LampLayout(TerrainField terrain, IReadOnlyList<IReadOnlyList<(int Gx, int Gz)>> runs)
+	{
+		uint h = PmRng.Hash32(terrain.WorldRev);
+		foreach (var run in runs)
 		{
-			if (roadChild is not MultiMeshInstance3D mmi || mmi.Multimesh is null)
+			if (run.Count == 0)
 				continue;
-			int count = mmi.Multimesh.InstanceCount;
-			for (int i = 0; i < count; i += 6)
-				positions.Add(mmi.Multimesh.GetInstanceTransform(i).Origin);
+			h = PmRng.Hash32($"{h}:{run.Count}:{run[0].Gx},{run[0].Gz}");
 		}
+		return $"{terrain.IslandSeed}:{runs.Count}:{h:x8}";
+	}
 
-		if (positions.Count == 0)
-			return;
+	/// <summary>Picks the lots that get a lantern and works out where on each lot the post goes.</summary>
+	private static List<Vector3> LampSpots(
+		TerrainField terrain, WorldManager world, IReadOnlyList<IReadOnlyList<(int Gx, int Gz)>> runs)
+	{
+		var spots = new List<Vector3>();
+		var taken = new HashSet<(int, int)>();
 
-		_lampsBuilt = true;
-
-		int placed = 0;
-		foreach (var pos in positions)
+		foreach (var run in runs)
 		{
-			if (placed >= 96)
-				break;
-			BuildLampAt(pos);
-			placed++;
+			if (run.Count < MinRunLots)
+				continue;
+
+			// Where the first lamp of a run lands is fixed by the run's own first lot, so the
+			// same village always lights the same corners while two parallel streets do not line
+			// their posts up with each other. Short runs still get exactly one.
+			int span = Math.Min(LotsPerLamp, run.Count);
+			uint start = PmRng.Hash32($"{terrain.IslandSeed}:lamp:{run[0].Gx},{run[0].Gz}") % (uint)span;
+
+			for (int i = (int)start; i < run.Count; i += LotsPerLamp)
+			{
+				var cell = run[i];
+				if (!taken.Add((cell.Gx, cell.Gz)))
+					continue;
+				// A deck over open water carries no post: a bridge is a plank, not ground, and a
+				// crossing the server never bridged is water all the same.
+				if (world.IsBridgeCell(cell.Gx, cell.Gz) || terrain.IsWater(cell.Gx, cell.Gz))
+					continue;
+				spots.Add(LampSpot(terrain, run, i));
+			}
 		}
+		return spots;
+	}
+
+	/// <summary>
+	/// A lamp stands beside the path, not in the middle of it. The post is pushed to the verge
+	/// along the perpendicular of the run's local direction; if that verge turns out to be water
+	/// or off the island it keeps to the centre line rather than wading in.
+	/// </summary>
+	private static Vector3 LampSpot(TerrainField terrain, IReadOnlyList<(int Gx, int Gz)> run, int i)
+	{
+		var cell = run[i];
+		var (cx, cz) = terrain.CellWorld(cell.Gx, cell.Gz);
+
+		var back = run[Math.Max(0, i - 1)];
+		var ahead = run[Math.Min(run.Count - 1, i + 1)];
+		float dx = ahead.Gx - back.Gx;
+		float dz = ahead.Gz - back.Gz;
+		float len = Mathf.Sqrt(dx * dx + dz * dz);
+		float perpX = len > 0.0f ? -dz / len : 1.0f;
+		float perpZ = len > 0.0f ? dx / len : 0.0f;
+
+		// Which verge, decided per lot, so a street gets lamps left and right instead of a guard
+		// of honour down one side.
+		float side = (PmRng.Hash32($"lamp:side:{cell.Gx},{cell.Gz}") & 1u) == 0u ? 1.0f : -1.0f;
+		float reach = (float)terrain.MetresPerLot * VergeFraction * side;
+
+		float x = (float)cx + perpX * reach;
+		float z = (float)cz + perpZ * reach;
+		if (!terrain.IsLandAt(x, z))
+		{
+			x = (float)cx;
+			z = (float)cz;
+		}
+		return new Vector3(x, (float)terrain.WorldHeight(x, z), z);
+	}
+
+	/// <summary>Frees the current lantern posts. Detached at once, not merely queued, because the
+	/// rebuild that follows walks the children again in the same frame.</summary>
+	private void ClearLamps()
+	{
+		foreach (var child in GetChildren())
+		{
+			if (!child.Name.ToString().StartsWith("StreetLamp", StringComparison.Ordinal))
+				continue;
+			RemoveChild(child);
+			child.QueueFree();
+		}
+		_lampGlass.Clear();
+		_lampLights.Clear();
 	}
 
 	/// <summary>Small stylised lantern post: tall pole, dark cap, emissive glass and cone topper.</summary>

@@ -28,6 +28,8 @@ public partial class WorldManager : Node3D
 
 	private readonly List<BuildingMarker> _buildingMarkers = new();
 	private readonly HashSet<(int, int)> _buildingCells = new();
+	private readonly List<IReadOnlyList<(int Gx, int Gz)>> _pathRuns = new();
+	private readonly HashSet<(int, int)> _bridgeCells = new();
 
 	/// <summary>
 	/// Buildings are drawn at this fraction of their plot, centred on it, so adjacent plots
@@ -142,6 +144,18 @@ public partial class WorldManager : Node3D
 	}
 
 	public TerrainField? Terrain => _terrain;
+
+	/// <summary>
+	/// The village paths split into continuous runs of lots, as handed to the paving painter.
+	/// Published because the paths are no longer geometry anyone can read back: they are a
+	/// texture in the Terrain3D control map, so whatever wants to follow a road - the street
+	/// lamps, next whatever else - has to follow this list instead of the scene tree.
+	/// </summary>
+	public IReadOnlyList<IReadOnlyList<(int Gx, int Gz)>> PathRuns => _pathRuns;
+
+	/// <summary>True when the grid cell is spanned by a bridge deck, so nothing should be
+	/// planted on it: it is a plank over water, not ground.</summary>
+	public bool IsBridgeCell(int gx, int gz) => _bridgeCells.Contains((gx, gz));
 
 	/// <summary>The Terrain3D bridge, or null when the extension is not loaded and the fallback
 	/// chunk meshes are being drawn instead.</summary>
@@ -638,15 +652,21 @@ public partial class WorldManager : Node3D
 	private void BuildRoads(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_roadRoot!);
+
+		// Split first, paint second. The runs are what the village *is*, the painting is one
+		// consumer of them; computing them behind the Terrain3D check would mean a build without
+		// the extension has no roads at all rather than only invisible ones.
+		_pathRuns.Clear();
+		foreach (var path in village.Paths)
+			_pathRuns.AddRange(SplitRuns(path.Cells));
+
 		if (_bridge is null)
 		{
 			GD.PushWarning("no Terrain3D, so no paving: the paths are painted into the terrain");
 			return;
 		}
 
-		var runs = new List<IReadOnlyList<(int Gx, int Gz)>>();
-		foreach (var path in village.Paths)
-			runs.AddRange(SplitRuns(path.Cells));
+		var runs = new List<IReadOnlyList<(int Gx, int Gz)>>(_pathRuns);
 		// The square is one block of ground rather than a line, so each of its lots goes in as a
 		// run of its own and the distance field unions them into one paved area.
 		if (village.Island.Town?.Paved is not null)
@@ -688,10 +708,16 @@ public partial class WorldManager : Node3D
 	private void BuildBridges(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_bridgeRoot!);
+		_bridgeCells.Clear();
 
 		int n = 0;
 		foreach (var bridge in village.Bridges)
 		{
+			// Recorded whether or not a deck comes out of it: the cells are a crossing either
+			// way, and nothing should be planted on them.
+			foreach (var c in bridge.Cells)
+				if (c.Count >= 2) _bridgeCells.Add((c[0], c[1]));
+
 			var deck = TryBuildBridge(terrain, bridge);
 			if (deck is null)
 				continue;
