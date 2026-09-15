@@ -16,6 +16,7 @@ public partial class IslandHud : CanvasLayer
 	private IslandCard _islandCard = null!;
 	private ActivitySidebar _activitySidebar = null!;
 	private TopNavBar _topNavBar = null!;
+	private ControlsLegend _controlsLegend = null!;
 
 	private WalkModeManager? _walkManager;
 	private FreeFlyCamera? _flyCamera;
@@ -37,6 +38,7 @@ public partial class IslandHud : CanvasLayer
 
 		_lastWalkState = _walkManager?.InWalkMode ?? false;
 		_topNavBar.UpdateWalkState(_lastWalkState);
+		_controlsLegend.SetWalkMode(_lastWalkState);
 	}
 
 	public override void _ExitTree()
@@ -52,6 +54,7 @@ public partial class IslandHud : CanvasLayer
 		{
 			_lastWalkState = walkState;
 			_topNavBar.UpdateWalkState(walkState);
+			_controlsLegend.SetWalkMode(walkState);
 		}
 	}
 
@@ -90,6 +93,18 @@ public partial class IslandHud : CanvasLayer
 		_activitySidebar.GrowVertical = Control.GrowDirection.Both;
 		_activitySidebar.MouseFilter = Control.MouseFilterEnum.Pass;
 		AddChild(_activitySidebar);
+
+		// -- ControlsLegend: bottom, centred, under the dossier's interaction prompt --
+		_controlsLegend = new ControlsLegend();
+		_controlsLegend.AnchorLeft = 0.5f;
+		_controlsLegend.AnchorRight = 0.5f;
+		_controlsLegend.AnchorTop = 1.0f;
+		_controlsLegend.AnchorBottom = 1.0f;
+		_controlsLegend.OffsetTop = -16.0f;
+		_controlsLegend.OffsetBottom = -16.0f;
+		_controlsLegend.GrowHorizontal = Control.GrowDirection.Both;
+		_controlsLegend.GrowVertical = Control.GrowDirection.Begin;
+		AddChild(_controlsLegend);
 	}
 
 	private void FindWorldReferences()

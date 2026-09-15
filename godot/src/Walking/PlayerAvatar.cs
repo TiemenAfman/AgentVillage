@@ -57,6 +57,7 @@ public partial class PlayerAvatar : CharacterBody3D
 	private float _animTime;
 	private string? _lastPrompt;
 	private bool _lastInteractPushed;
+	private bool _lastJumpHeld;
 
 	public override void _Ready()
 	{
@@ -104,26 +105,31 @@ public partial class PlayerAvatar : CharacterBody3D
 		var input = ReadMoveInput();
 		bool inWater = GlobalPosition.Y <= WaterSurfaceY;
 
+		// Sampled once per frame as an edge: one jump per press, no bunny-hop while held (#60).
+		bool jumpHeld = Input.IsKeyPressed(Key.Space);
+		bool jumpPressed = jumpHeld && !_lastJumpHeld;
+		_lastJumpHeld = jumpHeld;
+
 		if (inWater)
 		{
 			Swim(d, input);
 		}
 		else
 		{
-			Move(d, input);
+			Move(d, input, jumpPressed);
 		}
 
 		FaceMovementDirection(d);
 	}
 
-	private void Move(float d, Vector2 input)
+	private void Move(float d, Vector2 input, bool jumpPressed)
 	{
 		bool grounded = IsOnFloor();
 
 		if (grounded)
 		{
 			State = _crouched ? AvatarState.Crouching : AvatarState.Walking;
-			if (Input.IsKeyPressed(Key.Space))
+			if (jumpPressed)
 				Velocity = new Vector3(Velocity.X, JumpVelocity, Velocity.Z);
 		}
 		else

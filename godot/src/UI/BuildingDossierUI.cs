@@ -334,6 +334,8 @@ public partial class BuildingDossierUI : CanvasLayer
 			Name = "CloseButton",
 			Text = "X",
 			CustomMinimumSize = new Vector2(34.0f, 30.0f),
+			// Keyboard focus here would swallow Space as ui_accept; Esc already closes (#60).
+			FocusMode = Control.FocusModeEnum.None,
 		};
 		closeBtn.AddThemeStyleboxOverride("normal", Flat(new Color(0.22f, 0.26f, 0.32f), 8, 8, 8, 6, 6));
 		closeBtn.AddThemeStyleboxOverride("hover", Flat(new Color(0.34f, 0.38f, 0.46f), 8, 8, 8, 6, 6));

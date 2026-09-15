@@ -105,6 +105,11 @@ public partial class TopNavBar : HBoxContainer
 
 	private void StyleButton(Button btn, Color activeBg)
 	{
+		// Never take keyboard focus. A focused Button turns every Space press into ui_accept,
+		// so clicking "Walk" here meant the next Space re-fired this button instead of letting
+		// the settler jump (#60). The bar is pointer-operated; Tab already toggles walk mode.
+		btn.FocusMode = Control.FocusModeEnum.None;
+
 		btn.AddThemeFontSizeOverride("font_size", 11);
 		btn.AddThemeColorOverride("font_color", TextGray);
 		btn.AddThemeColorOverride("font_hover_color", TextWhite);
@@ -136,7 +141,10 @@ public partial class TopNavBar : HBoxContainer
 
 	public void UpdateWalkState(bool inWalkMode)
 	{
-		_walkBtn.ButtonPressed = inWalkMode;
+		// SetPressedNoSignal, never the property: assigning ButtonPressed emits Toggled, which
+		// lands back in IslandHud.OnWalkToggled and flips the mode again. The island then
+		// ping-pongs between walking and the sky view every single frame (#60).
+		_walkBtn.SetPressedNoSignal(inWalkMode);
 		var bg = _walkBtn.GetThemeStylebox("pressed") as StyleBoxFlat;
 		if (bg is not null)
 		{
