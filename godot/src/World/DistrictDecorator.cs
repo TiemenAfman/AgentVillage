@@ -114,6 +114,9 @@ public partial class DistrictDecorator : Node3D
 	/// </summary>
 	private const float HedgeSink = 0.1f;
 
+	/// <summary>Distance between the archway posts, so the ground fit covers what it straddles.</summary>
+	private const float ArchSpanM = 2.4f;
+
 	private static readonly Color HedgeColor = new(0.16f, 0.38f, 0.14f);
 	private static readonly Color GatepostColor = new(0.42f, 0.30f, 0.16f);
 	private static readonly Color SignWood = new(0.45f, 0.32f, 0.17f);
@@ -267,11 +270,15 @@ public partial class DistrictDecorator : Node3D
 				}
 
 				var (wx, wz) = terrain.CellWorld(gx, gz);
-				float ground = (float)terrain.WorldHeight(wx, wz);
 				bool along = gate.HasValue
 					&& Math.Abs(gate.Value.NextGx - gate.Value.AtGx)
 					   > Math.Abs(gate.Value.NextGz - gate.Value.AtGz);
 				float yaw = along ? MathF.PI / 2f : 0f;
+
+				// The lowest ground across the span, not the height at the midpoint: the posts
+				// stand 2.2 m apart, so on a slope a midpoint reading leaves the downhill one in
+				// the air. An arch settled a little into the bank is what a real gate looks like.
+				float ground = GroundFit.SitOn(terrain, (float)wx, (float)wz, ArchSpanM, 0.5f, yaw);
 
 				SpawnArchway(new Vector3((float)wx, ground, (float)wz),
 					yaw, d.Name!, d.Hue);
@@ -295,7 +302,11 @@ public partial class DistrictDecorator : Node3D
 		};
 
 		var postMat = SolidMat(SignWoodDark);
-		float h = pos.Y;
+		// Local space. Every child below used to be placed at `pos.Y + something` while the root
+		// was already standing at `pos`, so the ground height was counted twice and the gate hung
+		// exactly one terrain-height above the ground it was meant to straddle — metres, on a
+		// hillside. That is the floating gate from the rondgang of 15 September.
+		const float h = 0.0f;
 		float span = 1.1f;
 		float postH = 2.2f;
 
