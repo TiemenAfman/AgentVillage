@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
+import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -806,7 +806,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
     const bg = buildBorders(v, terrain, own.owner, roads);
     if (bg) {
-      borderMesh = new THREE.Mesh(bg, groundMat());
+      // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
+      // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
+      // material reads that, projecting from three axes so nothing needs a UV. It dresses
+      // itself when the sheets land, and draws the flat colours until they do.
+      borderMesh = new THREE.Mesh(bg, createBoundaryMaterial());
       borderMesh.castShadow = true;
       borderMesh.receiveShadow = true;
       group.add(borderMesh);

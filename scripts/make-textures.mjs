@@ -149,6 +149,28 @@ const SHEETS = {
       return detail(0.68 + 0.24 * (lit * 0.72 + fine(x, y) * 0.28), -1);
     });
   },
+  // Leaf mass for a hedge. The same piling-up as `foliage` above and for the same reason
+  // - leaves have no joints, so nothing here goes near cells() - but at hedge scale: a
+  // hedge is a metre and a half of clipped growth rather than a canopy, so the clumps are
+  // a quarter the size and there are five times as many. That scale has to be drawn in
+  // rather than dialled in on the mesh: a canopy sheet shrunk down far enough to read as
+  // hedge leaves takes its fine noise with it, and what arrives at the eye is mush.
+  //
+  // Quieter than foliage as well, 0.70 to 0.92. A boundary is a line across the island
+  // and the eye follows it; a loud sheet on it would read as a hedge full of holes.
+  'hedge-leaf': () => {
+    const leaves = sites(16, 16, 1.0, 12021);
+    const reach = (N / 16) * 1.05;
+    const fine = fbm(12022, [24, 52]);
+    return draw((x, y) => {
+      let lit = 0;
+      for (const s of leaves) {
+        const d = Math.hypot(wrapD(x, s.x), wrapD(y, s.y)) / reach;
+        if (d < 1) lit = Math.max(lit, (1 - d * d) * s.tone);
+      }
+      return detail(0.70 + 0.22 * (lit * 0.68 + fine(x, y) * 0.32), -1);
+    });
+  },
   // Tilled soil: clods, and the ridge and hollow of the plough running one way. The
   // furrow decals the island already draws lie along the same axis.
   field: () => {

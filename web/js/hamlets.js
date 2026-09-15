@@ -209,10 +209,128 @@ export function buildBorders(village, terrain, owner, roadCells) {
     }
   }
   if (!parts.length) return null;
+  // mergeGeometries will only weld shapes that agree on which attributes exist, so one
+  // piece built without `aSheet` stops the whole island at boot rather than coming out
+  // untextured. Filling the gaps here instead of remembering to set it in every place a
+  // part is made is the difference between a rule and a thing you have to remember: a
+  // piece says which sheet it wants when it wants one, and whatever is left says nothing
+  // and gets nothing, which is the same zero the shader reads as "leave this flat".
+  let sheeted = 0;
+  for (const g of parts) if (g.attributes.aSheet) sheeted++;
+  if (sheeted && sheeted < parts.length) {
+    for (const g of parts) {
+      if (g.attributes.aSheet) continue;
+      g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    }
+  }
   const merged = mergeGeometries(parts);
   for (const g of parts) g.dispose();
   merged.computeVertexNormals();
   return merged;
+}
+
+// ---- the sheets a boundary is built out of ----------------------------------
+// Three surfaces on one mesh, done the way buildings.js does it rather than the obvious
+// way: a sheet index carried per vertex and one branch in the fragment shader. Every
+// hedge, fence and wall on the island goes into a single mergeGeometries - that is what
+// keeps the whole lot to one draw call - and material groups would cut that back up into
+// three, one per kind, for no gain at all.
+//
+// There is no uv anywhere on a boundary either. A run is a swept profile and a gatepost
+// is a cylinder, and the two merge into one loaf, so the sheet is projected from the
+// three axes at once and blended by how far the face turns towards each. That turns out
+// to be exactly what a fence wants, for nothing: the flank of a run has a normal across
+// the run, so the projection it takes is the one whose boards lie along it. A fence
+// going east-west gets its grain going east-west without being told which way it faces.
+//
+// The wall takes the stacked stone the plinths already use and the rail takes the sawn
+// boards off the decking - both were drawn for this kind of job. Only the hedge needed a
+// sheet of its own, because nothing on the island was leaves at hedge scale.
+const TEXTURES = 'textures/';
+const SHEET_INDEX = { hedge: 1, rail: 2, wall: 3 };
+// One white pixel until a sheet lands, and for good if none ever does: white multiplies
+// out, so a boundary with no sheets is the boundary the island drew before there were any.
+const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+BLANK.needsUpdate = true;
+// One uniform block for every boundary material ever handed out. world.js throws its
+// material away and asks for a new one each time a hamlet changes, and a list of past
+// materials to keep up to date would only ever grow; sharing the block means a sheet
+// that arrives late reaches the material built after it as well as the one before.
+const SHEETS = { uLeaf: { value: BLANK }, uPlank: { value: BLANK }, uStone: { value: BLANK } };
+for (const [name, slot] of [['hedge-leaf', 'uLeaf'], ['plank', 'uPlank'], ['stone-stacked', 'uStone']]) {
+  new THREE.TextureLoader().load(`${TEXTURES}${name}.png`, (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
+    SHEETS[slot].value = tex;
+  }, undefined, () => {
+    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+  });
+}
+
+// The material world.js draws the merged boundary mesh with. Same base as the ground it
+// stands on - vertex colours, flat shaded, unpolished - with the projection welded on.
+export function createBoundaryMaterial() {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uLeaf = SHEETS.uLeaf;
+    shader.uniforms.uPlank = SHEETS.uPlank;
+    shader.uniforms.uStone = SHEETS.uStone;
+    const glsl = (...lines) => lines.join(String.fromCharCode(10));
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'attribute float aSheet;',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;'))
+      .replace('#include <begin_vertex>', glsl(
+        '#include <begin_vertex>',
+        'vSheet = aSheet;',
+        'vSheetPos = position;',
+        'vSheetNrm = normal;'));
+    // Every sheet is multiplied over a vertex colour that is already the right colour, and
+    // a sheet averages well under one, so each is lifted back to an average of about one
+    // first and then mixed in by `k`. What is left is a swing either side of the colour
+    // the boundary always had - grain rather than gloom, and no risk of a hedge turning
+    // into a dark stripe across the island. The stacked stone is the loudest sheet in the
+    // set by a distance and takes the smallest `k` of the three for it: the paving is
+    // meant to keep the deepest tone on the island and nothing here may go near it.
+    //
+    // The third number is how many times the sheet repeats in a world unit, and a unit is
+    // four metres: leaves at one to the unit come out a hand's width across, boards at 1.3
+    // about half a metre wide, and the rubble at 0.6 lands three stones across the width
+    // of a wall. All three were set by eye against a run standing on open ground.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;',
+        'uniform sampler2D uLeaf;',
+        'uniform sampler2D uPlank;',
+        'uniform sampler2D uStone;',
+        'vec3 islandSheet(sampler2D m, vec3 p, vec3 n, float s) {',
+        '  vec3 w = n * n;',
+        '  w /= max(1e-4, w.x + w.y + w.z);',
+        '  return texture2D(m, p.zy * s).rgb * w.x',
+        '       + texture2D(m, p.xz * s).rgb * w.y',
+        '       + texture2D(m, p.xy * s).rgb * w.z;',
+        '}'))
+      .replace('#include <color_fragment>', glsl(
+        '#include <color_fragment>',
+        'if (vSheet > 0.5) {',
+        '  vec3 sn = normalize(vSheetNrm);',
+        '  vec3 sc = vec3(1.0);',
+        '  float k = 0.7, lift = 1.0;',
+        '  if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 0.60); k = 0.42; lift = 1.75; }',
+        '  else if (vSheet > 1.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.30); k = 0.70; lift = 1.32; }',
+        '  else { sc = islandSheet(uLeaf, vSheetPos, sn, 1.00); k = 0.75; lift = 1.55; }',
+        '  diffuseColor.rgb *= mix(vec3(1.0), sc * lift, k);',
+        '}'));
+  };
+  mat.customProgramCacheKey = () => 'settlers-boundary';
+  return mat;
 }
 
 // The cross-section each kind of boundary is swept along, from the ground up: half-width
@@ -303,6 +421,7 @@ function strip(terrain, axis, fixed, a, b, v, hue) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aSheet', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3).fill(SHEET_INDEX[v.kind] || 0), 1));
   g.setIndex(idx);
   return g;
 }
@@ -323,8 +442,12 @@ function post(terrain, axis, fixed, at, v) {
   const col = new Float32Array(g.attributes.position.count * 3);
   for (let i = 0; i < g.attributes.position.count; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  // A merge needs every piece to carry the same attributes, and the strips are position
-  // and colour only; normals are computed once over the merged whole.
+  // A gatepost stands in the run's own material, so it takes the run's own sheet: a post
+  // in a dry stone wall is a standing stone and one in a hedge is a piece of sawn wood.
+  g.setAttribute('aSheet', new THREE.Float32BufferAttribute(
+    new Float32Array(g.attributes.position.count).fill(SHEET_INDEX[v.kind === 'wall' ? 'wall' : 'rail']), 1));
+  // A merge needs every piece to carry the same attributes, and the strips are position,
+  // colour and sheet only; normals are computed once over the merged whole.
   g.deleteAttribute('normal');
   g.deleteAttribute('uv');
   return g;
@@ -390,7 +513,7 @@ export function planFields(village, terrain, owner, cleared, { coverage = 0.35 }
 //
 // `field.png` is brightness only, around 0.8 - the vertex colours underneath carry the
 // season, so a stubble field in autumn stays stubble-coloured and merely gains a tilth.
-const FIELD_SHEET = 'textures/field.png';
+const FIELD_SHEET = `${TEXTURES}field.png`;
 let fieldSheet = null, fieldSheetAsked = false;
 const awaitingSheet = new Set();
 
