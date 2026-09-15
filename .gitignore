@@ -23,11 +23,17 @@ config.json
 *.log
 *.log.1
 
-# Screenshot-matrices van scripts/shots.ps1: ~30 MB per run, lokaal houden.
-docs/shots/
-
 # Gegenereerde codedump voor externe AI (ai_studio_code.ps1); regenereerbaar, hoort niet in git.
 codebase.txt
 
-# Windows-builds van scripts/build.ps1: ~200 MB per release, hoort niet in git.
+# Windows-builds van scripts/build.ps1: ~250 MB per release.
 dist/
+
+# Schermafdrukken van de Godot-harness, opnieuw te maken met scripts/shots.ps1.
+godot/.captures/
+
+# De screenshot-matrix zelf is ~94 MB aan PNG's en komt terug uit scripts/shots.ps1. Het
+# contactvel per label blijft wel in git: 12 kB, en het legt vast wat er wanneer geschoten is,
+# ook als de beelden er niet bij zitten.
+docs/shots/**/*.png
+docs/shots/**/*.jpg
