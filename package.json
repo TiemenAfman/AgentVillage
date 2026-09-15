@@ -12,6 +12,7 @@
     "setup:remove": "node scripts/setup.mjs --uninstall",
     "scan": "node scan.mjs",
     "scan:all": "node scan.mjs --all",
+    "world": "node scripts/island.mjs --publish data/world",
     "serve": "node serve.mjs",
     "dev": "node serve.mjs --open",
     "vendor": "node scripts/vendor.mjs",

@@ -137,6 +137,21 @@ function sendFile(res, file, { noStore = false, cache = null } = {}) {
   });
 }
 
+/**
+ * A file from the published world, or null when it is not there.
+ *
+ * Two places, in order: data/world/ is what this machine generated, and godot/world/ is the copy
+ * baked into the client for when no server is running. Serving the baked one as a fallback means
+ * a fresh checkout shows an island before anybody has run the generator.
+ */
+function worldFile(rel) {
+  for (const base of [path.join(DATA, 'world'), path.join(ROOT, 'godot', 'world')]) {
+    const file = safeJoin(base, rel);
+    if (file && fs.existsSync(file)) return file;
+  }
+  return null;
+}
+
 function safeJoin(base, rel) {
   const p = path.normalize(path.join(base, rel));
   // the separator matters: without it, a sibling folder named web-x would pass
@@ -612,6 +627,30 @@ async function handle(req, res) {
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end('{"started":true}');
     rescan('api');
+    return;
+  }
+
+  // ---- the world ------------------------------------------------------------------
+  // The island itself, as chunks. Split from village.json on purpose: the population changes on
+  // every scan and the ground almost never, so they want different cache rules. A chunk is named
+  // after a hash of its own bytes, which means an unchanged chunk keeps its URL and can be cached
+  // for a year; the manifest is the only thing that has to be revalidated.
+  if (p === '/world/manifest.json') {
+    const file = worldFile('manifest.json');
+    if (!file) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('no world published'); return; }
+    sendFile(res, file, { cache: 'no-cache' });
+    return;
+  }
+
+  if (p.startsWith('/world/chunk/')) {
+    const name = p.slice('/world/chunk/'.length);
+    // Names come from the manifest and are content-hashed; anything else is somebody probing.
+    if (!/^-?\d+_-?\d+\.[0-9a-f]{8}\.bin$/.test(name)) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('bad chunk name'); return;
+    }
+    const file = worldFile(path.join('chunk', name));
+    if (!file) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    sendFile(res, file);           // immutable: the hash is in the name
     return;
   }
 
