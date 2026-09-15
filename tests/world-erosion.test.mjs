@@ -129,10 +129,10 @@ test('the same seed weathers the same way, every time', () => {
 
 test('the window the island is baked in does not change how it weathers', () => {
   // Same island, same droplets, two grid sizes. A pass that read the grid's `coast` would find
-  // the skerries, which are placed on a lattice over the *envelope*, so it would weather one
-  // island at 640 m and a different one at 1024 m - and `islandStats` bakes at 640 while
-  // `publishWorld` bakes at 1024. The mask comes from `mainCoast`, which is a function of the
-  // seed and the radius alone, so the two runs have to agree sample for sample.
+  // the skerries too, and weather a rock 60 m across as if it were a mountainside. The mask
+  // comes from `mainCoast`, which is a function of the seed and the radius alone, so the two
+  // runs have to agree sample for sample - and `islandStats` bakes at 640 while `publishWorld`
+  // bakes at 1024, so this is the difference the island actually gets measured against.
   const small = cone({ envelopeM: 128 });
   const large = cone({ envelopeM: 192 });
   const a = erodeField(small.grid, 1337, { shape: small.shape });

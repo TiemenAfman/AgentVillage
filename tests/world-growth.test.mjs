@@ -15,7 +15,7 @@ import { growWorld, isletsWanted, isletSpecs, MAIN } from '../lib/world/growth.m
 //   monotone      - more settlers never publishes fewer chunks
 //   sticky        - a chunk once published is never taken back
 
-const ENVELOPE = 512;             // the smallest window that holds all six skerries
+const ENVELOPE = 768;             // the smallest window that holds all sixteen skerries
 const RADIUS = 148;
 const SEED = 1337;
 
@@ -67,7 +67,10 @@ test('a founding publishes the mainland and nothing else', () => {
     const file = path.join(baked, 'chunk', `${c.cx}_${c.cz}.${c.hash}.bin`);
     assert.ok(fs.existsSync(file), `${path.basename(file)} was baked but not written`);
   }
-  assert.ok(atlas.islets.length >= 4, `only ${atlas.islets.length} islets baked - is this window too small?`);
+  // Sixteen rocks are baked and every one of them has to survive as its own landmass, or the
+  // ladder runs out of rocks long before the village runs out of repositories. Fourteen is the
+  // floor the placement rule promises; see `world-skerries.test.mjs` for what it costs.
+  assert.ok(atlas.islets.length >= 14, `only ${atlas.islets.length} islets baked - is this window too small?`);
 });
 
 test('the same village publishes the same island', () => {

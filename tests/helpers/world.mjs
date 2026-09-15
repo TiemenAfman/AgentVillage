@@ -19,12 +19,13 @@ const cache = new Map();
 export const TEST_ENVELOPE_M = 384;
 export const TEST_RADIUS_M = 148;
 // The archipelago wants a bigger island than the rest of the layout tests do, and for two
-// reasons. The skerries sit 26 to 78 m off a coastline that is itself 150 to 260 m out, so at
-// 384 m of envelope they fall outside the window and there is nothing to test against. And
-// they scale with the island: at `TEST_RADIUS_M` they come out at 0.2 ha and hold one
-// super-cell, which is not a hamlet, so every district would be turned away as not fitting.
-// At the real radius they are 0.4 to 0.9 ha, the same rocks the live island has. 1.4 s.
-export const TEST_ISLET_ENVELOPE_M = 640;
+// reasons. The skerries sit 20 to 64 m off a coastline that is itself 110 to 320 m out and the
+// last of them stand off the first ones, so the whole ring reaches 450 m: at 384 m of envelope
+// they fall outside the window and there is nothing to test against. And they scale with the
+// island: at `TEST_RADIUS_M` they come out at 0.2 ha and hold one super-cell, which is not a
+// hamlet, so every district would be turned away as not fitting. At the real radius and the
+// real envelope they are the rocks the live island has, which is the point. 2.2 s.
+export const TEST_ISLET_ENVELOPE_M = 1024;
 export const TEST_ISLET_RADIUS_M = 208;
 
 export function testLots(seed, { envelopeM = TEST_ENVELOPE_M, radiusM = TEST_RADIUS_M } = {}) {

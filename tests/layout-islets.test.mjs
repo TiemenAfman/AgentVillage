@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { emptyLayout, placeAll, MIN_HAMLET } from '../lib/layout.mjs';
+import { emptyLayout, placeAll, MIN_HAMLET, BRIDGE_MAX_M } from '../lib/layout.mjs';
 import { makeModel } from './helpers/model.mjs';
 import { testLots, testIslets, TEST_ISLET_ENVELOPE_M, TEST_ISLET_RADIUS_M } from './helpers/world.mjs';
 import { findLandmasses } from '../lib/world/features.mjs';
@@ -42,7 +42,7 @@ function isletAtLot(lx, lz) {
   return groups.get(id);
 }
 
-// Small on purpose: these rocks hold three to seven houses, and a project only gets one it
+// Small on purpose: these rocks hold four to twenty-two houses, and a project only gets one it
 // fits on. A twenty-house district would be turned away, which is the point of the last test
 // in this file but would make every other one vacuous.
 const VILLAGE = [
@@ -66,7 +66,7 @@ test.before(() => requireIslandStopped());
 test('the island under this test really is an archipelago', () => {
   // Without this the rest would pass on an island that has no islets at all: every district
   // would settle ashore and every "nothing moved" assertion would be trivially true.
-  assert.ok(ISLETS.length >= 4, `only ${ISLETS.length} islets in a ${TEST_ISLET_ENVELOPE_M} m window`);
+  assert.ok(ISLETS.length >= 14, `only ${ISLETS.length} islets in a ${TEST_ISLET_ENVELOPE_M} m window`);
   assert.equal(new Set(ISLETS.map((i) => i.index)).size, ISLETS.length);
 });
 
@@ -157,7 +157,7 @@ test('a farmstead keeps the land it was already given', () => {
 });
 
 test('a project bigger than any rock stays ashore', () => {
-  // The rule that costs the least homelessness: an islet holds three to seven houses here,
+  // The rule that costs the least homelessness: an islet holds four to twenty-two houses here,
   // and a district cut off by water cannot spread into the countryside next door.
   const layout = plan([{ name: 'big', houses: 40 }, { name: 'small', houses: 3 }]);
   assert.equal(isletOf(layout, 'big'), null, 'a forty-house project was marooned on a rock');
@@ -223,4 +223,63 @@ test('an island with no islets published behaves exactly as it did before', () =
   placeAll(without, makeModel(VILLAGE), { lots, seed: SEED, worldRev });
   assert.equal(JSON.stringify(with_), JSON.stringify(without));
   assert.ok(Object.values(with_.districts).every((r) => !Number.isInteger(r.islet)));
+});
+
+// The archipelago is sixteen rocks now rather than six, and two promises come with that
+// number: a rock is big enough to be worth giving away, and it can be got to. Both are asked
+// of the production path - `placeAll` hands out the rocks and lays the crossings - because
+// both are properties of the layout and not of the shape.
+test('every rock is big enough for a hamlet, and the town can reach all of them', () => {
+  const many = ISLETS.map((_, k) => ({ name: `rock-${k}`, houses: MIN_HAMLET }));
+  const layout = plan(many);
+
+  const taken = Object.values(layout.districts).map((r) => r.islet).filter(Number.isInteger);
+  assert.equal(new Set(taken).size, taken.length, 'two districts were given the same rock');
+  assert.equal(taken.length, ISLETS.length,
+    `${ISLETS.length - taken.length} of ${ISLETS.length} rocks were too small for ${MIN_HAMLET} houses`);
+
+  // Reachability, read back off `layout.links` rather than trusted: flood the lot field into
+  // landmasses, start on the one the town stands on, and cross every bridge on record.
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const label = new Int16Array(SIZE * SIZE).fill(-1);
+  let count = 0;
+  for (let j = 0; j < SIZE; j++) {
+    for (let i = 0; i < SIZE; i++) {
+      if (!lots.isLand(i, j) || label[i + j * SIZE] >= 0) continue;
+      const id = count++;
+      const q = [[i, j]];
+      label[i + j * SIZE] = id;
+      while (q.length) {
+        const [a, b] = q.pop();
+        for (const [dx, dz] of N4) {
+          const x = a + dx, z = b + dz;
+          if (x < 0 || z < 0 || x >= SIZE || z >= SIZE) continue;
+          if (!lots.isLand(x, z) || label[x + z * SIZE] >= 0) continue;
+          label[x + z * SIZE] = id;
+          q.push([x, z]);
+        }
+      }
+    }
+  }
+  const labelAt = (c) => (c[0] >= 0 && c[1] >= 0 && c[0] < SIZE && c[1] < SIZE ? label[c[0] + c[1] * SIZE] : -1);
+
+  const reached = new Set([labelAt(layout.town.centre)]);
+  for (let pass = 0; pass < layout.links.length + 1; pass++) {
+    for (const link of layout.links) {
+      const a = labelAt(link.from), b = labelAt(link.to);
+      if (reached.has(a) && b >= 0) reached.add(b);
+      if (reached.has(b) && a >= 0) reached.add(a);
+    }
+  }
+  for (const [id, rec] of Object.entries(layout.districts)) {
+    if (!Number.isInteger(rec.islet)) continue;
+    const home = labelAt(rec.lobes[0].centre);
+    assert.ok(reached.has(home), `${id} lives on islet ${rec.islet} and nothing crosses to it`);
+  }
+  // And every crossing is a crossing somebody could build: `linkLandmasses` will not lay one
+  // longer than BRIDGE_MAX_M, so anything beyond that means a rock was quietly written off.
+  for (const link of layout.links) {
+    assert.ok(link.lengthM <= BRIDGE_MAX_M, `a ${link.lengthM} m ${link.kind} is not a bridge`);
+  }
+  assert.ok(layout.links.some((l) => l.kind === 'causeway'), 'not one rock is close enough to walk to');
 });

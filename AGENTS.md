@@ -698,6 +698,27 @@ vallen waar ze vertragen. Erosie gaat met een kwast van 3 m, depositie bilineair
   aanlandingsplekken, rivieren en meren. De client leidde `HillCentre`, `LakeCentre` en `Rivers`
   vroeger uit zijn eigen kopie van de generator af; met het terrein als bytes is er niets meer om
   dat uit af te leiden.
+- ⚠️ **`findLandmasses` hergebruikte labels.** De id was `masses.length`, maar een rots onder
+  400 m² wordt wél gelabeld en dan weggegooid, dus de volgende échte landmassa erfde zijn nummer.
+  Twee landmassa's onder één label lieten een spikkel de vastelandgroep dragen en maakten van
+  35 m water een gemeten afstand van 1,4 m. Eigen teller nu.
+- ⚠️ **De emmer-wachtrij van `routeFlow` hing aan de envelop.** `b = floor((v - lo)/STEP)` met
+  `lo` = het diepste monster van het ráster: de zeebodemvloer wordt op 1024 m gehaald en op 640 m
+  niet altijd, dus de emmergrenzen schoven een fractie van een emmer op, de vulling bereikte een
+  kuil van de andere kant en het eiland kreeg een rivier van 14 m korter. Zelfde seed, ander stuk
+  zee in beeld. De grenzen liggen nu op absolute veelvouden van `STEP`.
+- **Zoet water is van het hoofdeiland**, expliciet. `carveWater` krijgt `mainC` mee: `basins`
+  vroeg een monster 50 m landinwaarts en een rots van 1,1 ha heeft er zo een, dus een rots die
+  toevallig in beeld stond veranderde de lotenlijst waar `rng.int()` het meer uit trekt.
+- **Een rots reikt 310 m ver in het kustveld** (`SKERRY_REACH_M`), niet "zo breed als de rots".
+  `relief.height` laat de zeebodem vanaf de dichtstbijzijnde kust aflopen en pas na ~300 m vlak
+  worden, dus kap je de rots eerder af dan staat er een vierkant diep water om elk eilandje —
+  dat stond er bij de oude 140 m ook al, alleen verder weg. De zeebodem rond de archipel is
+  daardoor nu één doorlopende plaat; leest dat verkeerd in Godot, dan is dit de knop. Kost
+  ~0,5 s bake (2,1 → 2,65 s); snoeien met de omschreven cirkel haalt daar 0,3 s van terug.
+- **`ensureWorld` bakt alleen opnieuw bij een andere `seed`, `worldV` of `radiusM`.** Een
+  generatorwijziging binnen één `worldV` merkt een dev-checkout dus niet; `data/world` met de
+  hand weggooien, of `WORLD_VERSION` ophogen zoals A1b deed (3 → 4).
 
 ### `docs/island-preview.html`
 
@@ -801,11 +822,33 @@ layout af**, niet op de plek waar het besloten wordt.
 
 ### Oversteken: het eiland is een archipel
 
-Skerries worden geplaatst **vanaf de kustlijn**, niet vanaf het middelpunt
-(`lib/world/shape.mjs`, `reachAlong()`). Op vaste ringen kwam het water tussen eilandje en
-kust op 74 tot 228 m uit, omdat de kustlijn zelf tussen 150 en 260 m schommelt — zes van de
-twaalf projecten stonden onbereikbaar. Nu: `GAP_MIN_M 26` tot `GAP_MAX_M 78`, gemeten
-27–72 m over drie seeds.
+Skerries worden geplaatst met een **wandeling om het front**, niet vanaf het middelpunt en
+niet met een gulden-hoek-waaier (`lib/world/shape.mjs`). Vaste ringen legden het water tussen
+eilandje en kust op 74 tot 228 m (de kustlijn zelf schommelt tussen 150 en 260 m); een waaier
+verdeelt in *hoek* terwijl een rots *booglengte* kost — bij veertien lagen eilandje 0 en 8 op
+seed 1337 nog 34 m uit elkaar met stralen 51 en 63, één landmassa. Het front is hoe ver de
+archipel langs elk van 512 vaste peilingen reikt: het begint als de kustlijn van het hoofdeiland
+en stijgt bij elke gelegde rots. Een rots valt `GAP_MIN_M 20` tot `GAP_MAX_M 64` voorbij de
+eerstvolgende kust vóór hem — het vasteland in de eerste ronde, een eerdere rots daarna — en
+`SKERRY_GAP_M 16` van zijn buren, lob tegen lob in plaats van cirkel tegen cirkel. Is de
+binnenring vol, dan komt de wandeling verderop opnieuw langs; dat is de tweede ring, geen
+foutgeval. De kust van het hoofdeiland is een **puntenwolk met álle kruisingen** per peiling,
+niet alleen de buitenste: alleen de buitenste bewaren legde rotsen op 1,4 m van een kop die
+radiaal binnen een verder gelegen lob lag. Het venster waarin een kustpunt in de weg kan liggen
+is `asin(want/d)` en níet de eigen silhouetbreedte van de rots — een kaap *achter* de rots ligt
+nergens bij zijn omtrek en toch pal in de weg.
+
+Een rots wordt als **oppervlak** geloot (0,50–1,25 ha, kwadratisch dus klein is de regel en
+groot een gebeurtenis), niet als straal, en de omtrek wordt opnieuw geloot als hij minder dan
+0,70 van zijn omschreven cirkel vult: een pinda van twee lobben houdt na 4–19 m strand aan elke
+rand niets droogs over (gemeten: 0,48 ha die één huis droeg). Gemeten op seeds 1337/4242/90210
+(envelop 1024, straal 208): **16 van de 16** rotsen zijn hun eigen landmassa, de smalste
+vaargeul tussen twee landmassa's is 21,4 / 27,3 / 21,9 m, de nauwste geul naar het vasteland
+25,0 / 22,8 / 29,7 m, elke rots draagt ≥ 4 huizen op het rooster dat het dorp gebruikt en 10–16
+ervan ≥ 8. `linkLandmasses` verbindt ze alle zestien; langste oversteek 56–68 m. Open smaakpunt:
+de rotsen zijn allemaal rondachtig en de spreiding is regelmatig — de vulvloer die de
+één-huis-rotsen wegnam, nam ook de spichtige mee. Afstellen vóór de eerste echte publicatie,
+want daarna ligt de vorm vast.
 
 `linkLandmasses()` in `layout.mjs` verbindt elke landmassa waar iemand woont met die van het
 dorp, kortste oversteek eerst, en legt ze vast in `layout.links` (append-only, plakkend).
@@ -843,18 +886,25 @@ byte overschreven, dus grond waar een huis op staat kan niet verschuiven. `growW
   commons of het grootste gehucht over een kanaal van 26 m heen, want een super-cel is 16 m.
   Een gehucht dat zijn rots ontgroeit annexeert aan wal (`ensureParcel` laat `within` juist daar
   vallen); zijn er geen rotsen meer, dan blijft het district gewoon aan wal.
-- **`ISLETS 6` is te weinig voor ~12 repo's.** Verhogen kan niet zomaar: de gulden-hoek-spreiding
-  in `shape.mjs` botst voorbij ~6 — bij 14 liggen eilandje 0 en 8 nog 34 m uit elkaar met stralen
-  van 51 en 63 m, dus ze versmelten. Meer rotsen vraagt een andere plaatsing, niet een hoger
-  getal.
-- **De chunk is het kwantum.** Waar een eilandje in een chunk reikt die het vasteland ook
-  gebruikt, komt de punt ervan vroeg boven water (seed 1337: chunk 2,1). De chunk achterhouden
-  zou een gat in de eigen kust van het vasteland slaan, en dat is erger.
+- **`ISLETS` is 16.** Het echte dorp heeft twaalf repo's waarvan er acht `MIN_HAMLET` halen, en
+  er komen er bij; na de eerste publicatie ligt de vorm voor altijd vast, dus die ruimte moet je
+  nú kopen. Het getal verhogen kon niet zonder een andere plaatsingsregel — zie "Oversteken".
+  De archipel reikt nu 439–452 m in een envelop van 1024 m: nog eens verhogen vraagt een grotere
+  envelop, niet alleen een groter getal.
+- **De chunk blijft het kwantum, maar het werd béter.** Een geul is 21–36 m en een chunk 64,
+  dus een chunk met vastelandkust heeft soms ook de punt van een rots, en die komt dan vroeg
+  boven water. De chunk achterhouden zou een gat in de eigen kust van het vasteland slaan, en
+  dat is erger. Gemeten op seed 1337: **7** gedeelde chunks bij zestien rotsen, tegen **18** bij
+  zes — de oude waaier mat zijn gat langs één peiling en liet een rots daarbuiten tot 1,4 m van
+  de kust drijven.
 
 `node scripts/growth-series.mjs --out <dir>` plant hetzelfde dorp op 50/100/300 settlers en
 schrijft een datamap per maat, zodat `village-map.mjs` de groei kan tekenen. Gemeten op seed
-1337: 78 → 89 → 111 chunks, 3 → 4 → 6 eilandjes, 3 → 2 → 4 districten erop. `--no-islets` geeft
-het voor-plaatje. `--all` laat de wereld met rust: dat is een kijkrichting, geen dorp, en groei
+1337 met zestien rotsen: 60 → 66 → 95 chunks, 3 → 4 → 8 eilandjes, 3 → 4 → 5 districten erop,
+0 → 3 → 188 daklozen op 50/100/300 settlers (zonder eilandjes 0 → 2 → 162; vóór de frontregel
+78 → 89 → 111 chunks en 0 → 12 → 186 daklozen). De rotsen betalen zich terug tot ~100 settlers;
+bij 300 is het eiland hoe dan ook vol — dat is het capaciteitsplafond, een ander probleem.
+`--no-islets` geeft het voor-plaatje. `--all` laat de wereld met rust: dat is een kijkrichting, geen dorp, en groei
 is onomkeerbaar.
 
 ### Mist hoort bij de wereld, niet bij de runner

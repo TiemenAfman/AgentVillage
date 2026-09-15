@@ -16,7 +16,10 @@ import { MAX_GRADIENT } from '../lib/world/relief.mjs';
 const ENVELOPE = 256;              // small enough to bake in a test, big enough to be real
 // The island is 300-500 m across, so anything at ENVELOPE would be clipped by the rim and
 // every chunk would touch land. The publish tests need room around it to have any sea to skip.
-const OPEN_ENVELOPE = 640;
+// The full 1024 and not the old 640: the archipelago reaches 450 m out from the middle now
+// (sixteen rocks, and the last of them stand off the first ones), so 640 is a window the
+// island really does run off the edge of - which is what `clipped` is there to say.
+const OPEN_ENVELOPE = 1024;
 
 let field;
 test.before(() => { field = bakeField(1337, { envelopeM: ENVELOPE }); });
