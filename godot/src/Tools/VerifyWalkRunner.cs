@@ -31,7 +31,14 @@ public partial class VerifyWalkRunner : SceneTree
 		Done,
 	}
 
-	public override void _Initialize()
+	private bool _built;
+
+	/// <summary>
+	/// Deliberately not _Initialize. The tree is not live there, and a world built in it gets a
+	/// Terrain3D with no data object - so this would quietly test the fallback chunk meshes
+	/// instead of the terrain the game actually draws.
+	/// </summary>
+	private void Setup()
 	{
 		try
 		{
@@ -55,6 +62,13 @@ public partial class VerifyWalkRunner : SceneTree
 
 	public override bool _PhysicsProcess(double delta)
 	{
+		if (!_built)
+		{
+			_built = true;
+			Setup();
+			return false;
+		}
+
 		// Leave the avatar parked in walk mode from the start so its state settles.
 		if (_ticks == 0)
 			_manager?.EnterWalkMode();

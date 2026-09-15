@@ -166,72 +166,40 @@ public partial class VerifyVisualRunner : SceneTree
 
 	private void CheckGroundColours(WorldManager world)
 	{
-		var terrain = world.Terrain;
-		if (terrain is null)
+		// This used to walk the ground mesh and compare every vertex colour against a band table.
+		// Terrain3D draws the ground itself, so there are no vertices of ours to walk - and the
+		// question has moved somewhere better anyway. Ground colour comes from the terrain class
+		// the server shipped, so what matters is that every class the island actually contains
+		// has a colour to wear, and that the island contains the range it should.
+		var field = world.Terrain;
+		if (field is null)
 		{
-			Check(false, "terrain chunks available for colour sampling");
+			Check(false, "the world has terrain to colour");
 			return;
 		}
 
-		// Every chunk, not one: a single 64 m square holds beach or meadow or rock, rarely all
-		// three, so sampling one and asking whether every band occurs is a question about which
-		// chunk you happened to pick.
-		var colourList = new System.Collections.Generic.List<Color>();
-		var positionList = new System.Collections.Generic.List<Vector3>();
-		int chunks = 0;
-		foreach (var mi in TerrainChunks(world))
+		var counts = new int[256];
+		foreach (byte c in field.Classes) counts[c]++;
+
+		int present = 0;
+		for (int c = 0; c < counts.Length; c++)
 		{
-			var a = mi.Mesh!.SurfaceGetArrays(0);
-			var c = a[(int)Mesh.ArrayType.Color].As<Color[]>();
-			var v = a[(int)Mesh.ArrayType.Vertex].As<Vector3[]>();
-			if (c is null || v is null || c.Length != v.Length) continue;
-			colourList.AddRange(c);
-			positionList.AddRange(v);
-			chunks++;
+			if (counts[c] == 0) continue;
+			present++;
+			var colour = Palette.Terrain((byte)c);
+			// Magenta is the fallback in Palette.Terrain: it means a class arrived that nobody
+			// chose a colour for, which is exactly the drift this check exists to catch.
+			Check(!(colour.R > 0.9f && colour.G < 0.1f && colour.B > 0.9f),
+				$"class {TerrainClass.Name((byte)c)} has a colour in the palette");
 		}
-		Color[]? colours = colourList.ToArray();
-		Vector3[]? positions = positionList.ToArray();
-		Check(chunks > 0 && colours.Length == positions.Length,
-			$"the terrain chunks carry one colour per vertex ({chunks} chunks, {colours.Length} vertices)");
+		GD.Print($"ground       : {present} terrain classes present");
 
-		// Compared in linear space, because that is what the mesh stores: the palette is authored
-		// in sRGB and converted on the way in.
-		// Checked as a property of the mesh, not against a duplicated colour table: every band
-		// the palette defines must actually occur, and every vertex colour must agree with the
-		// shared WorldManager.GroundBandColour. That way the palette can change without
-		// rewriting the test, but the mesh and the palette can never drift apart.
-		bool sawDeep = false, sawLake = false, sawBeach = false, sawGrass = false, sawHill = false;
-		int mismatches = 0;
-
-		if (colours is not null && positions is not null)
-		{
-			for (int idx = 0; idx < positions.Length; idx++)
-			{
-				// Ground colour comes from the terrain class the server shipped, not from a height
-				// threshold applied here - that is the whole point of the class byte. So the
-				// property to check is that every vertex wears *a* terrain colour from the
-				// palette, rather than that it wears the one a band table would have picked.
-				if (!IsAnyTerrainColour(colours[idx]))
-				{
-					mismatches++;
-					continue;
-				}
-
-				float h = positions[idx].Y;
-				if (h < -8.0f) sawDeep = true;
-				else if (h < 0.0f) sawLake = true;
-				else if (h < 2.0f) sawBeach = true;
-				else if (h < 14.0f) sawGrass = true;
-				else sawHill = true;
-			}
-		}
-
-		Check(mismatches == 0, $"every vertex colour matches the shared palette ({mismatches} off)");
-		Check(sawDeep, "the sea has a floor well below the shelf");
-		Check(sawLake, "lake/river bed painted teal slate");
-		Check(sawBeach, "beaches painted golden sand");
-		Check(sawGrass, "meadows painted rich green");
-		Check(sawHill, "the island reaches real height");
+		Check(counts[TerrainClass.Beach] > 0, "the island has beaches");
+		Check(counts[TerrainClass.Meadow] > 0, "and meadow");
+		Check(counts[TerrainClass.Wood] > 0, "and woodland");
+		Check(counts[TerrainClass.Rock] + counts[TerrainClass.Scree] > 0, "and bare rock");
+		Check(counts[TerrainClass.Sea] > 0, "and open sea around it");
+		Check(counts[TerrainClass.Shallow] > 0, "with shallows against the shore");
 	}
 
 	/// <summary>Is this one of the palette's terrain colours, linearised as the mesh stores them?</summary>

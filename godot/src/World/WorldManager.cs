@@ -16,6 +16,7 @@ public partial class WorldManager : Node3D
 	private Node3D? _objectsRoot;
 	private TerrainField? _terrain;
 	private WaterPlane? _waterPlane;
+	private Terrain3DBridge? _bridge;
 	private DistrictDecorator? _districtDecorator;
 	private FarmlandSpawner? _farmlandSpawner;
 	private PropSpawner? _propSpawner;
@@ -134,6 +135,10 @@ public partial class WorldManager : Node3D
 
 	public TerrainField? Terrain => _terrain;
 
+	/// <summary>The Terrain3D bridge, or null when the extension is not loaded and the fallback
+	/// chunk meshes are being drawn instead.</summary>
+	public Terrain3DBridge? Bridge => _bridge;
+
 	public void BuildWorld(VillageData village)
 	{
 		EnsureRoots();
@@ -161,9 +166,24 @@ public partial class WorldManager : Node3D
 			terrainMeshRoot = new Node3D { Name = "Terrain" };
 			_groundRoot.AddChild(terrainMeshRoot);
 		}
-		var meshStats = TerrainMeshBuilder.BuildInto(terrainMeshRoot, _terrain, GroundMaterial());
-		GD.Print($"[WorldManager] terrain {_terrain.WorldRev}: {meshStats.Chunks} chunks, "
-			+ $"{meshStats.Triangles:N0} tris in {meshStats.Milliseconds} ms");
+
+		// Terrain3D when it is there, our own chunk meshes when it is not. The fallback is not
+		// ceremony: the extension is a platform-specific binary, and a build without one for the
+		// platform in hand should still show an island rather than an empty sea.
+		var clock = Time.GetTicksMsec();
+		_bridge = Terrain3DBridge.Build(terrainMeshRoot, _terrain);
+		if (_bridge is not null)
+		{
+			GD.Print($"[WorldManager] terrain {_terrain.WorldRev}: Terrain3D, "
+				+ $"{_bridge.RegionCount} regions in {Time.GetTicksMsec() - clock} ms");
+		}
+		else
+		{
+			var meshStats = TerrainMeshBuilder.BuildInto(terrainMeshRoot, _terrain, GroundMaterial());
+			GD.Print($"[WorldManager] terrain {_terrain.WorldRev}: {meshStats.Chunks} chunk meshes, "
+				+ $"{meshStats.Triangles:N0} tris in {meshStats.Milliseconds} ms");
+		}
+
 		_waterPlane?.Build();
 		_districtDecorator?.DecorateDistricts(_terrain, village);
 		var fieldCells = _farmlandSpawner?.SpawnFields(_terrain, village);

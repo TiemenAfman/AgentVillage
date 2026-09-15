@@ -235,17 +235,26 @@ public partial class VerifyMetricsRunner : SceneTree
 
 	private void MeasureRelief(WorldManager world)
 	{
-		var island = HighestTerrainChunk(world);
-		if (island?.Mesh is null)
+		// From the field rather than from a mesh. Terrain3D draws the ground internally, so there
+		// is no geometry of ours to measure - and the island's own numbers were always the better
+		// question anyway.
+		var field = world.Terrain;
+		if (field is null)
 		{
-			Check(false, "the terrain chunks are under GroundRoot/Terrain");
+			Check(false, "the world has terrain");
 			return;
 		}
 
-		var aabb = island.Mesh.GetAabb();
-		float peak = aabb.Position.Y + aabb.Size.Y;
-		GD.Print($"island       : {aabb.Size.X:0} m across, floor {aabb.Position.Y:0.0} m, peak {peak:0.00} m");
+		float peak = float.MinValue, floor = float.MaxValue;
+		foreach (float h in field.Heights) { if (h > peak) peak = h; if (h < floor) floor = h; }
+
+		var main = field.MainLandmass;
+		float across = MathF.Max(main.Bounds[2] - main.Bounds[0], main.Bounds[3] - main.Bounds[1]);
+		GD.Print($"island       : {across:0} m across, {main.AreaHa:0.0} ha, floor {floor:0.0} m, peak {peak:0.00} m");
+		GD.Print($"landmasses   : {field.Manifest.Landmasses.Count}   rivers {field.Manifest.Rivers.Count}   lakes {field.Manifest.Lakes.Count}");
+
 		Check(peak > 0.0f, "the island rises above sea level");
+		Check(across > 120.0f, $"the island is a place and not a rock ({across:0} m across)");
 	}
 
 	// ---- plumbing -------------------------------------------------------------

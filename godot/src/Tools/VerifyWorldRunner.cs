@@ -73,33 +73,33 @@ public partial class VerifyWorldRunner : SceneTree
 		Check(field.ChunkCount == field.Manifest.Chunks.Count,
 			$"every chunk the manifest names was loaded ({field.ChunkCount}/{field.Manifest.Chunks.Count})");
 
-		int meshes = 0, verts = 0;
-		var aabb = new Aabb();
-		bool first = true;
-		foreach (var mi in TerrainChunkMeshes(world))
+		// The ground is drawn by Terrain3D, which renders internally - there are no MeshInstance3D
+		// children to measure. That is a better place to be: these checks were about our mesh, and
+		// what they should always have been about is the island. So ask the field.
+		Check(world.Bridge is not null || TerrainChunkMeshes(world).GetEnumerator().MoveNext(),
+			"the ground is drawn, by Terrain3D or by the fallback meshes");
+		if (world.Bridge is not null)
+			Check(world.Bridge.RegionCount == field.Manifest.Chunks.Count,
+				$"every published chunk became a region ({world.Bridge.RegionCount}/{field.Manifest.Chunks.Count})");
+
+		float peak = float.MinValue, floor = float.MaxValue;
+		foreach (float h in field.Heights) { if (h > peak) peak = h; if (h < floor) floor = h; }
+		GD.Print($"ground       : {field.N}x{field.N} samples over {field.EnvelopeM} m, {floor:0.0} .. {peak:0.0} m");
+
+		Check(field.EnvelopeM > field.Manifest.RadiusM * 3.0f,
+			$"the world reaches well past the island ({field.EnvelopeM:0} m across)");
+		Check(floor < -20.0f, $"the sea has a floor ({floor:0.0} m)");
+		Check(peak > 15.0f, $"the island has relief ({peak:0.0} m)");
+
+		// And Terrain3D has to agree with the field about where the ground is, or the picture and
+		// the collision are describing two different islands.
+		if (world.Bridge is not null)
 		{
-			var arrays = mi.Mesh!.SurfaceGetArrays(0);
-			verts += ((Vector3[])arrays[(int)Mesh.ArrayType.Vertex]!).Length;
-			var box = mi.Mesh.GetAabb();
-			aabb = first ? box : aabb.Merge(box);
-			first = false;
-			meshes++;
+			var at = field.MainLandmass.Peak;
+			float theirs = world.Bridge.HeightAt(new Vector3(at.At[0], 0.0f, at.At[1]));
+			Check(!float.IsNaN(theirs) && Mathf.Abs(theirs - at.Y) < 0.5f,
+				$"Terrain3D agrees with the field at the island's peak ({theirs:0.00} m against {at.Y:0.00} m)");
 		}
-		GD.Print($"ground       : {meshes} chunk meshes, {verts} vertices, aabb {aabb.Position} size {aabb.Size}");
-
-		Check(meshes > 0, "the ground is meshed under GroundRoot/Terrain");
-		// The published world has to reach past the island on every side, or its edge shows
-		// through the water - which is what the old seabed apron was invented to hide.
-		Check(aabb.Size.X > field.Manifest.RadiusM * 3.0f,
-			$"the ground reaches well past the island ({aabb.Size.X:0} m across)");
-		Check(aabb.Position.Y < -20.0f, $"the sea has a floor ({aabb.Position.Y:0.0} m)");
-
-		// The mesh must reach as high as the samples say the island does.
-		float peak = float.MinValue;
-		foreach (var h in field.Heights)
-			peak = Math.Max(peak, h);
-		Check(Mathf.Abs(aabb.Position.Y + aabb.Size.Y - peak) < 0.01f,
-			$"the mesh reaches the island's own peak ({peak:0.00} m)");
 
 		var buildings = world.GetNodeOrNull<Node3D>("ObjectsRoot");
 		Check(buildings is not null, "ObjectsRoot exists");

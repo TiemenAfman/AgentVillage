@@ -85,8 +85,19 @@ public sealed class Terrain3DBridge
 		node.Call("change_region_size", RegionSize);
 		node.Set("vertex_spacing", field.MetresPerSample);
 
-		var data = node.Get("data").AsGodotObject()
-			?? throw new InvalidOperationException("Terrain3D has no data object");
+		var data = node.Get("data").AsGodotObject();
+		if (data is null)
+		{
+			// Terrain3D builds its data object when it enters the tree, so this is what you get
+			// for calling from _Initialize - where the tree is not live yet. Returning null lets
+			// the caller fall back to the chunk meshes instead of taking the whole run down.
+			GD.PushWarning(
+				"Terrain3D has no data object yet; was the world built from _Initialize? " +
+				"Build on the first frame instead. Falling back to chunk meshes.");
+			parent.RemoveChild(node);
+			node.QueueFree();
+			return null;
+		}
 
 		var bridge = new Terrain3DBridge { Node = node, Data = data };
 		bridge.LoadTextures();
