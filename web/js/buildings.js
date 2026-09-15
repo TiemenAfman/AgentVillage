@@ -978,7 +978,14 @@ function civic(parts, spec, rng) {
       parts.push(box(0.22, 0.36, 0.05, C.darkWood, { y: 0, z: 0.44 }));
       parts.push(cylinder(0.4, 0.4, 0.05, 9, C.plank, { y: 1.12 }));
       parts.push(dome(0.38, 0x5a3c28, { y: 1.5 }));
-      animated.blades = { at: [0, 1.62, 0.42], r: 0.6 };
+      // The windshaft, and it has to be a real length rather than a stub. The sails turn
+      // in the one plane their hub sits in, and at z 0.42 that plane cut the tower: the
+      // tower is 0.48 across at the foot and 0.34 at the head, so anything below about
+      // two thirds of its height is wider than the sails were standing off, and every
+      // turn swept the descending sail through the brickwork. At 0.56 the plane clears
+      // the widest course there is, which is also why a real mill's shaft sticks out.
+      parts.push(box(0.09, 0.09, 0.44, C.darkWood, { y: 1.575, z: 0.34 }));
+      animated.blades = { at: [0, 1.62, 0.56], r: 0.6 };
       return { anchors, animated, height: 2.1 };
     case 'lighthouse': {
       const bands = 4;
@@ -1418,10 +1425,13 @@ export function buildBladesGeometry() {
   const parts = [];
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
-    const arm = box(0.07, 1.05, 0.02, 0xd9c7a3, { y: 0.52 });
+    // box() stands a shape on o.y rather than centring it there, so `y: 0.52` put the
+    // foot of each arm half its own length out from the hub: four spars orbiting a gap,
+    // with nothing joining them to the mill. They start at the hub and run outward.
+    const arm = box(0.07, 1.05, 0.02, 0xd9c7a3, { y: 0 });
     arm.rotateZ(a);
     parts.push(arm);
-    const spar = box(0.02, 1.05, 0.03, C.darkWood, { y: 0.52 });
+    const spar = box(0.02, 1.05, 0.03, C.darkWood, { y: 0 });
     spar.rotateZ(a);
     parts.push(spar);
   }

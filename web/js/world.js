@@ -418,6 +418,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
+  // Before the fields are planned, not after: clearedBase is what planFields reads to
+  // decide where a patch may go.
+  wallVerge(own.owner, clearedBase);
+  wallVerge(own.owner, cleared);
   let fieldPlan = planFields(village, terrain, own.owner, clearedBase, fieldOpts(village));
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
@@ -434,10 +438,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // half a wall leaves 0.25, and the canopy alone is 0.44. So the wall gets a verge, and
   // a cell that touches a boundary is simply not planted.
   //
+  // It began as a rule about trees, on the reasoning that a field may run right up to a
+  // wall. It may not: a patch is a rectangle laid over whole cells and it will happily
+  // take the cells either side of a boundary, so the ploughing ran under the wall and out
+  // into the next hamlet's land. The verge is now the same for both - nothing is planted
+  // and nothing is tilled on a cell that touches a boundary, which also gives every wall
+  // the strip of grass along it that a wall in a field has anyway.
+  //
   // This mirrors the test in buildBorders(): the town puts up no hedge and the coast is
-  // its own boundary, so neither of those earns a verge. It goes in `cleared` rather than
-  // `clearedBase` on purpose - a field may run right up to a wall, only a tree may not.
-  const wallVerge = (ownerArr, into) => {
+  // its own boundary, so neither of those earns a verge.
+  function wallVerge(ownerArr, into) {
     const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
     const walled = (o) => o !== NONE && o !== TOWN;
     for (let gz = 0; gz < size; gz++) {
@@ -452,8 +462,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
         }
       }
     }
-  };
-  wallVerge(own.owner, cleared);
+  }
 
   const rng = makeRng(terrain.seed).fork('flora');
   const forest = makeSimplex2D(hash32(terrain.seed + ':forest'));
@@ -823,6 +832,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
+    wallVerge(own.owner, clearedBase);
     fieldPlan = planFields(v, terrain, own.owner, clearedBase, fieldOpts(v));
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);

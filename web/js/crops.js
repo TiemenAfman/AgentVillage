@@ -30,9 +30,18 @@ function merge(parts) {
 // ---------------------------------------------------------------- the ground
 // Tilled earth with the furrows still in it, a little proud of the grass so the bed
 // reads as dug rather than painted on.
+// A bed is 1.2 across - near five metres - and it was a slab nine centimetres thick laid
+// at whatever the ground happened to be under its middle. On any slope that buried one
+// end and left the other hanging, which is most of this island: the beds are sown on
+// meadow, and meadow is where the ground moves. So the earth runs deep enough to reach
+// the low corner and the bed is hung from its high one, the same trick the buildings use
+// for their porches. On flat ground none of it shows - it is all under the grass.
+const BED_SKIRT = 0.3;
+
 function soil() {
   const s = BED_SIZE;
-  const parts = [box(s, 0.09, s, EARTH, { y: -0.06 })];
+  // The top face stays exactly where it was; the box only grows downward.
+  const parts = [box(s, 0.09 + BED_SKIRT, s, EARTH, { y: -0.015 - (0.09 + BED_SKIRT) / 2 })];
   for (let i = 0; i < 4; i++) {
     parts.push(box(s - 0.08, 0.05, 0.17, RIDGE, { y: 0.02, z: -s * 0.375 + i * (s * 0.25) }));
   }
@@ -181,6 +190,20 @@ export function createCrops({ scene, terrain, material }) {
   const records = new Map();     // id -> { spec, mesh, stage, pop }
   const cache = new Map();       // kind:stage -> geometry, shared by every bed like it
 
+  // The highest ground the bed stands over, not the ground under its middle: sit it on the
+  // average and the uphill corner is under the turf. The corners are sampled square to the
+  // world rather than to the bed's own turn, which overstates the reach of a bed at 45
+  // degrees by a few centimetres and costs nothing, since the skirt hides the difference.
+  function bedY(x, z) {
+    const h = BED_SIZE / 2;
+    let top = -Infinity;
+    for (const [dx, dz] of [[-h, -h], [h, -h], [-h, h], [h, h]]) {
+      const y = terrain.worldHeight(x + dx, z + dz);
+      if (y > top) top = y;
+    }
+    return top - 0.02;
+  }
+
   function geometryFor(kind, stage) {
     const key = `${kind}:${stage}`;
     if (!cache.has(key)) cache.set(key, bedGeometry(kind, stage));
@@ -192,7 +215,7 @@ export function createCrops({ scene, terrain, material }) {
     const mesh = new THREE.Mesh(geometryFor(spec.kind, stage), material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.position.set(spec.x, terrain.worldHeight(spec.x, spec.z) - 0.02, spec.z);
+    mesh.position.set(spec.x, bedY(spec.x, spec.z), spec.z);
     mesh.rotation.y = spec.rot || 0;
     mesh.userData.id = spec.id;
     mesh.scale.setScalar(animate ? 0.001 : 1);
