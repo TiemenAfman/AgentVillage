@@ -25,7 +25,11 @@ public partial class WaterPlane : MeshInstance3D
 
 	private ShaderMaterial? _waterMaterial;
 
-	public void Build(TerrainGenerator terrain)
+	/// <summary>
+	/// Lay the sea. Takes nothing: the plane is a fixed sheet at sea level and the shader works
+	/// out depth from the depth buffer, so it never needed the terrain it used to be handed.
+	/// </summary>
+	public void Build()
 	{
 		var plane = new PlaneMesh
 		{

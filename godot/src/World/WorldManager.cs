@@ -146,7 +146,7 @@ public partial class WorldManager : Node3D
 
 		_terrain = new TerrainGenerator(seed, size);
 		BuildGroundMesh(_terrain);
-		_waterPlane?.Build(_terrain);
+		_waterPlane?.Build();
 		_districtDecorator?.DecorateDistricts(_terrain, village);
 		var fieldCells = _farmlandSpawner?.SpawnFields(_terrain, village);
 		_propSpawner?.SpawnProps(_terrain, village, fieldCells);

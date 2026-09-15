@@ -592,3 +592,37 @@ dezelfde `bakeField` aan, dus wat je ziet is wat er gepubliceerd wordt. Voeg een
 aan de generator, dan moet hij ook in `MODULES` in `scripts/preview.mjs` — anders faalt de pagina
 met een `ReferenceError` en verder niets.
 
+## Terrein als data in de client (sinds sept 2026)
+
+`godot/src/World/TerrainField.cs` laadt het manifest en de chunks die de server publiceert;
+`TerrainChunk.cs` is de decoder van het binaire formaat uit `lib/world/chunks.mjs`. Houd die twee
+in de pas — magic en monsteraantal worden gecontroleerd, dus een mismatch faalt luid.
+
+`TerrainMeshBuilder.cs` maakt er geometrie van: **één mesh per gepubliceerde chunk**. Land op volle
+resolutie, chunks met alleen zee op stride 4. Eén mesh voor het hele eiland was prima op 64 m,
+maar op een envelop van 1024 m valt daar niets aan te cullen en teken je vanaf het strand de
+achterkant van de heuvel mee.
+
+`WorldPreviewRunner.cs` rendert die wereld met de atmosfeer eroverheen en verder niets:
+
+```
+Godot..._console.exe --path godot --fixed-fps 60 --script res://src/Tools/WorldPreviewRunner.cs -- --hour 9.0 --out shot.png
+```
+
+Bewust niet de hele `Main`-scene: het dorp staat nog op het oude grid van 64 m, dus zijn huizen
+zouden allemaal in één hoek belanden en het plaatje zou meer over dát zeggen dan over het terrein.
+
+### Twee dingen die me hier zijn opgevallen
+
+- **Windingvolgorde.** `a,b,c` en `b,d,c` — dezelfde als in `WorldManager.BuildGroundMesh`.
+  Andersom wordt elke driehoek weggecruld en rendert het eiland als een handvol slivers. Dat leest
+  als een kapotte mesh, niet als een omgedraaide, en daar ben ik een halfuur op blijven zoeken.
+- **De mist was op 64 m afgesteld.** `EnvironmentFactory.DepthReachM` is nu instelbaar en schaalt
+  begin, eind, dichtheid en volumetrische lengte mee. Op de oude waarde (600) verandert er niets.
+  ⚠️ De dichtheidscorrectie is **kwadratisch en empirisch**, geen natuurkunde: het palet is
+  geschreven voor een wereld waarin niets ooit honderd meter weg was, en lineair corrigeren liet
+  het eiland bij gouden uur nog steeds in een muur van nevel staan. Dit hoort vervangen te worden
+  door dichtheden die op de nieuwe schaal opnieuw zijn afgesteld, beoordeeld op de shot-matrix.
+- **De watershader moet dezelfde behandeling krijgen.** Zijn dieptetint is afgesteld op een zee van
+  2,5 m diep; die gaat nu tot 34 m, dus alles leest als "diep".
+

@@ -52,6 +52,44 @@ public static class Palette
 	public static readonly Color Grass = new(0.40f, 0.64f, 0.26f);
 	public static readonly Color GrassUpland = new(0.38f, 0.61f, 0.25f);
 
+	// Terrain classes, as the server ships them. One colour per class of ground, and the class
+	// is the server's verdict rather than a threshold applied here - which is the whole point.
+	// Before this, `BEACH_MAX` and `BUILD_SLOPE_MAX` were written out in both JS and C# and a
+	// hash existed to notice when the two copies drifted apart.
+	public static readonly Color Shallow = new(0.16f, 0.44f, 0.48f);
+	public static readonly Color Dune = new(0.84f, 0.79f, 0.57f);
+	public static readonly Color Scree = new(0.58f, 0.55f, 0.48f);
+	public static readonly Color RockFace = new(0.50f, 0.47f, 0.44f);
+	public static readonly Color Cliff = new(0.42f, 0.39f, 0.37f);
+	public static readonly Color RiverBed = new(0.30f, 0.45f, 0.40f);
+	public static readonly Color LakeBed = new(0.24f, 0.40f, 0.42f);
+	public static readonly Color Polder = new(0.47f, 0.66f, 0.34f);
+
+	/// <summary>
+	/// The albedo a terrain class paints on the ground mesh, as a vertex colour.
+	///
+	/// Remember that Godot reads ArrayMesh vertex colours as linear, so whatever uses this owes
+	/// it a <c>SrgbToLinear()</c> on the way into the buffer. Writing these numbers straight in
+	/// turned the whole island a bleached mint once, and it is not visible as a bug - it just
+	/// looks like a bad palette.
+	/// </summary>
+	public static Color Terrain(byte cls) => cls switch
+	{
+		0 => SeabedDeep,        // sea
+		1 => Shallow,
+		2 => Sand,              // beach
+		3 => Dune,
+		4 => Grass,             // meadow
+		5 => FoliageDark,       // wood
+		6 => Scree,
+		7 => RockFace,
+		8 => Cliff,
+		9 => RiverBed,
+		10 => LakeBed,
+		11 => Polder,
+		_ => Grass,
+	};
+
 	// props & decoration
 	public static readonly Color Foliage = new(0.24f, 0.62f, 0.30f);
 	public static readonly Color FoliageDark = new(0.15f, 0.48f, 0.24f);

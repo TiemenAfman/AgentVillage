@@ -21,6 +21,17 @@ public static class EnvironmentFactory
 	public static readonly Color GroundHorizonDay = new(0.55f, 0.60f, 0.68f);
 
 	public static readonly Color SunColourDay = new(1.0f, 0.96f, 0.88f);
+
+	/// <summary>
+	/// How far the world reaches, in metres. Every distance in the fog is a fraction of this, so
+	/// one number moves them all together.
+	///
+	/// It has to be set, not assumed. The depth range below was tuned against a 64 m island where
+	/// nothing was ever more than about a hundred metres away; on a 400 m island in a 1024 m
+	/// envelope the same numbers bury the whole thing in haze, and it reads as a washed-out
+	/// palette rather than as fog reaching too far. 600 is what the small island used.
+	/// </summary>
+	public static float DepthReachM { get; set; } = 600.0f;
 	public static readonly Color MoonColour = new(0.72f, 0.78f, 0.96f);
 
 	/// <summary>Sky material carrying the daylight gradient; DayNightCycle animates it.</summary>
@@ -151,7 +162,17 @@ public static class EnvironmentFactory
 		environment.FogLightColor = state.FogColour;
 		environment.FogLightEnergy = 1.0f;
 		environment.FogSunScatter = 0.32f;
-		environment.FogDensity = state.FogDensity;
+		// Density is per metre of depth, and fog accumulates along the ray - so stretching the
+		// range without thinning the fog does not keep the look, it multiplies it. The square is
+		// empirical rather than physical: the palette's numbers were authored against a world
+		// where nothing was ever a hundred metres away, and a linear correction still left the
+		// island in a wall of haze at golden hour.
+		//
+		// This is a stopgap and should be replaced by densities re-tuned against the new scale,
+		// judged on the screenshot matrix. The multiplier keeps the old island identical
+		// (DepthReachM 600 gives exactly 1) so nothing already tuned moves.
+		float fogScale = (600.0f / DepthReachM) * (600.0f / DepthReachM);
+		environment.FogDensity = state.FogDensity * fogScale;
 
 		// The one setting that produces layered silhouettes: a ridge at 200 m takes most of its
 		// colour from the sky behind it, one at 80 m only half, so two ridges become two tones
@@ -164,21 +185,22 @@ public static class EnvironmentFactory
 
 		// Low-lying, so roofs and trees stand out above it.
 		environment.FogHeight = 1.5f;
-		environment.FogHeightDensity = state.FogHeightDensity;
+		environment.FogHeightDensity = state.FogHeightDensity * fogScale;
 
 		// Foreground stays crisp; without this the whole frame turns to soup and there is no
-		// near/middle/far to read.
-		environment.FogDepthBegin = 40.0f;
-		environment.FogDepthEnd = 600.0f;
+		// near/middle/far to read. Both ends scale with the world so the ratio between them -
+		// which is what actually produces the layering - stays put.
+		environment.FogDepthBegin = DepthReachM * (40.0f / 600.0f);
+		environment.FogDepthEnd = DepthReachM;
 		environment.FogDepthCurve = 1.6f;
 
 		environment.VolumetricFogEnabled = true;
-		environment.VolumetricFogDensity = state.VolumetricDensity;
+		environment.VolumetricFogDensity = state.VolumetricDensity * (600.0f / DepthReachM);
 		environment.VolumetricFogAlbedo = state.VolumetricAlbedo;
 		environment.VolumetricFogEmission = state.VolumetricEmission;
 		environment.VolumetricFogEmissionEnergy = state.VolumetricEmissionEnergy;
 		environment.VolumetricFogAnisotropy = 0.38f;
-		environment.VolumetricFogLength = 256.0f;
+		environment.VolumetricFogLength = Mathf.Clamp(DepthReachM * 0.43f, 128.0f, 1024.0f);
 		environment.VolumetricFogDetailSpread = 2.0f;
 		environment.VolumetricFogAmbientInject = 0.30f;
 		environment.VolumetricFogSkyAffect = 0.0f;
