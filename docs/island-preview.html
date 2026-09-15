@@ -1,0 +1,1419 @@
+<title>Island Survey</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #e8ecee;
+    --panel: #f5f7f8;
+    --edge: #c5ced2;
+    --ink: #16212a;
+    --ink-soft: #55676f;
+    --ink-faint: #8798a0;
+    --accent: #10796f;
+    --warn: #8f540f;
+    --shadow: 0 1px 2px rgba(22, 33, 42, .10), 0 8px 24px rgba(22, 33, 42, .06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d1418;
+      --panel: #141e23;
+      --edge: #263338;
+      --ink: #e3ebee;
+      --ink-soft: #9dafb6;
+      --ink-faint: #6b7f87;
+      --accent: #45c3b6;
+      --warn: #d79a4e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .3);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d1418;
+    --panel: #141e23;
+    --edge: #263338;
+    --ink: #e3ebee;
+    --ink-soft: #9dafb6;
+    --ink-faint: #6b7f87;
+    --accent: #45c3b6;
+    --warn: #d79a4e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .3);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding-block: 28px 40px;
+    padding-left: 20px;
+    padding-right: 20px;
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.55 Archivo, system-ui, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+  h1 {
+    margin: 0; font: 600 26px/1.1 "Archivo Narrow", Archivo, sans-serif;
+    letter-spacing: .01em; text-wrap: balance;
+  }
+  .sub { margin: 0; color: var(--ink-soft); font-size: 14px; max-width: 60ch; }
+
+  .label {
+    font: 600 11px/1 "Archivo Narrow", Archivo, sans-serif;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint);
+  }
+
+  .board { display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .board { grid-template-columns: minmax(0, 1fr); } }
+
+  .chart {
+    position: relative; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 3px; box-shadow: var(--shadow); overflow: hidden; line-height: 0;
+  }
+  canvas { display: block; width: 100%; height: auto; max-width: 100%; }
+  .scalebar {
+    position: absolute; left: 14px; bottom: 12px; display: flex; align-items: center; gap: 8px;
+    font: 500 11px/1 "IBM Plex Mono", monospace; color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+  }
+  .scalebar i { display: block; height: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+  .busy {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--panel) 76%, transparent);
+    font: 600 11px/1 "Archivo Narrow", sans-serif; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-soft); opacity: 0; pointer-events: none; transition: opacity .12s;
+  }
+  .busy[data-on="1"] { opacity: 1; }
+
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 3px;
+    padding: 14px 15px; display: flex; flex-direction: column; gap: 11px;
+  }
+
+  .seedrow { display: flex; gap: 6px; align-items: stretch; }
+  input[type="number"] {
+    flex: 1 1 auto; min-width: 0; background: var(--ground); color: var(--ink);
+    border: 1px solid var(--edge); border-radius: 2px; padding: 7px 9px;
+    font: 500 15px/1 "IBM Plex Mono", monospace; -moz-appearance: textfield;
+  }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  button {
+    background: var(--ground); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 2px; padding: 7px 11px; cursor: pointer;
+    font: 600 12px/1 "Archivo Narrow", sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { margin: 0; color: var(--ink-faint); font-size: 12px; }
+  .seg { display: flex; gap: 0; }
+  .seg button { flex: 1 1 0; border-radius: 0; }
+  .seg button:first-child { border-radius: 2px 0 0 2px; }
+  .seg button:last-child { border-radius: 0 2px 2px 0; margin-left: -1px; }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--panel);
+  }
+  .seg button[aria-pressed="true"]:hover { color: var(--panel); }
+
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; }
+  dt { color: var(--ink-soft); font-size: 13px; }
+  dd {
+    margin: 0; text-align: right;
+    font: 500 14px/1.3 "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+  }
+
+  .mix { display: flex; height: 9px; border-radius: 2px; overflow: hidden; border: 1px solid var(--edge); }
+  .mix span { display: block; }
+  .key { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+  .key div { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+  .key i { width: 9px; height: 9px; border-radius: 1px; flex: none; }
+  .key b { margin-left: auto; font: 500 12px/1 "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .flag { margin: 0; color: var(--warn); font-size: 12px; }
+
+  .strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
+  @media (max-width: 620px) { .strip { grid-template-columns: repeat(3, 1fr); } }
+  .strip button { padding: 0; overflow: hidden; background: var(--panel); }
+  .strip button[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .strip span {
+    display: block; padding: 3px 0 4px; font: 500 10px/1 "IBM Plex Mono", monospace;
+    color: var(--ink-faint); text-transform: none; letter-spacing: .02em;
+  }
+
+  footer { color: var(--ink-faint); font-size: 12px; max-width: 74ch; }
+  code { font: 500 12px/1 "IBM Plex Mono", monospace; color: var(--ink-soft); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Island Survey</h1>
+    <p class="sub">The Promptholm world generator, running here in the page. Each seed is baked
+      exactly as the server bakes it, gradient cap included, so what is drawn is what gets
+      published.</p>
+  </header>
+
+  <div class="board">
+    <div class="chart">
+      <canvas id="map" width="577" height="577"></canvas>
+      <div class="scalebar"><i id="bar"></i><span>100 m</span></div>
+      <div class="busy" id="busy">surveying</div>
+    </div>
+
+    <div class="rail">
+      <div class="card">
+        <span class="label">Seed</span>
+        <div class="seedrow">
+          <button id="prev" type="button" aria-label="Previous seed">&minus;</button>
+          <input id="seed" type="number" value="1337" step="1" aria-label="Seed">
+          <button id="next" type="button" aria-label="Next seed">+</button>
+        </div>
+        <button id="random" type="button">Random seed</button>
+        <div class="seg" role="group" aria-label="View">
+          <button id="view-island" type="button" aria-pressed="true">Island</button>
+          <button id="view-all" type="button" aria-pressed="false">Archipelago</button>
+        </div>
+        <p class="hint">Arrow keys step through seeds.</p>
+      </div>
+
+      <div class="card">
+        <span class="label">Survey</span>
+        <dl>
+          <dt>Land</dt><dd id="s-area">&mdash;</dd>
+          <dt>Extent</dt><dd id="s-extent">&mdash;</dd>
+          <dt>Highest point</dt><dd id="s-peak">&mdash;</dd>
+          <dt>Benches</dt><dd id="s-bench">&mdash;</dd>
+          <dt>Slope p50</dt><dd id="s-p50">&mdash;</dd>
+          <dt>Slope p90</dt><dd id="s-p90">&mdash;</dd>
+          <dt>Rivers</dt><dd id="s-rivers">&mdash;</dd>
+          <dt>Skerries</dt><dd id="s-skerries">&mdash;</dd>
+          <dt>Shaved by cap</dt><dd id="s-cap">&mdash;</dd>
+        </dl>
+        <p class="flag" id="flag" hidden></p>
+      </div>
+
+      <div class="card">
+        <span class="label">Ground cover</span>
+        <div class="mix" id="mix"></div>
+        <div class="key" id="key"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <span class="label">Nearby seeds</span>
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <footer>
+    Land area is normalised across seeds: the silhouette is free to vary, the capacity is not, or
+    a seed would decide how many settlers fit. Benches sit 7.5&nbsp;m apart, four times the height
+    of a settler. The slope cap is 45&deg;, and whatever it shaves off belongs to a rock shell,
+    which is separate geometry a heightfield cannot express. Rebuild this page with
+    <code>node scripts/preview.mjs</code>.
+  </footer>
+</div>
+
+<script>
+// ---- shared/rng.mjs ----------------------------------------------------
+// Deterministic randomness shared by the Node scanner and the browser viewer.
+// Rule: nothing in shared/ may call Math.random or the transcendental functions --
+// only integer maths, + - * /, Math.floor/abs/min/max/sqrt -- so both runtimes agree
+// bit for bit and a house never lands in the sea on one side and on grass on the other.
+
+function hash32(input) {
+  const s = String(input);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeRng(seed) {
+  const s = typeof seed === 'number' ? seed >>> 0 : hash32(seed);
+  const next = mulberry32(s);
+  return {
+    seed: s,
+    next,
+    int: (n) => Math.floor(next() * n),
+    range: (a, b) => a + next() * (b - a),
+    pick: (arr) => arr[Math.floor(next() * arr.length)],
+    chance: (p) => next() < p,
+    fork: (label) => makeRng(hash32(s + ':' + label)),
+  };
+}
+
+// 2D simplex noise (Gustavson), permutation shuffled by the seed.
+const GRAD2 = [
+  [1, 1], [-1, 1], [1, -1], [-1, -1],
+  [1, 0], [-1, 0], [1, 0], [-1, 0],
+  [0, 1], [0, -1], [0, 1], [0, -1],
+];
+const F2 = 0.3660254037844386;   // 0.5 * (sqrt(3) - 1)
+const G2 = 0.21132486540518713;  // (3 - sqrt(3)) / 6
+
+function makeSimplex2D(seed) {
+  const rand = mulberry32(typeof seed === 'number' ? seed : hash32(seed));
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const t = p[i]; p[i] = p[j]; p[j] = t;
+  }
+  const perm = new Uint8Array(512);
+  const permMod12 = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; permMod12[i] = perm[i] % 12; }
+
+  return function noise2(xin, yin) {
+    let n0 = 0, n1 = 0, n2 = 0;
+    const s = (xin + yin) * F2;
+    const i = Math.floor(xin + s), j = Math.floor(yin + s);
+    const t = (i + j) * G2;
+    const x0 = xin - (i - t), y0 = yin - (j - t);
+    const i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+    const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+    const x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    const ii = i & 255, jj = j & 255;
+    const gi0 = permMod12[ii + perm[jj]];
+    const gi1 = permMod12[ii + i1 + perm[jj + j1]];
+    const gi2 = permMod12[ii + 1 + perm[jj + 1]];
+    let t0 = 0.5 - x0 * x0 - y0 * y0;
+    if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * (GRAD2[gi0][0] * x0 + GRAD2[gi0][1] * y0); }
+    let t1 = 0.5 - x1 * x1 - y1 * y1;
+    if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * (GRAD2[gi1][0] * x1 + GRAD2[gi1][1] * y1); }
+    let t2 = 0.5 - x2 * x2 - y2 * y2;
+    if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * (GRAD2[gi2][0] * x2 + GRAD2[gi2][1] * y2); }
+    return 70 * (n0 + n1 + n2);
+  };
+}
+
+function fbm2(noise, x, y, opts) {
+  const octaves = (opts && opts.octaves) || 4;
+  const lacunarity = (opts && opts.lacunarity) || 2;
+  const gain = (opts && opts.gain) || 0.5;
+  let amp = 1, freq = 1, sum = 0, norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * noise(x * freq, y * freq);
+    norm += amp;
+    amp *= gain;
+    freq *= lacunarity;
+  }
+  return sum / norm;
+}
+
+function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function smoothstep(a, b, x) {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+// ---- lib/world/noise.mjs -----------------------------------------------
+// Noise for the island generator.
+//
+// The rule at the top of shared/rng.mjs - no Math.random, no transcendental functions - existed
+// so that Node, the browser and the C# client could evaluate the same heightfield bit for bit.
+// With the terrain shipped as data there is one evaluator, it runs once per island on the
+// server, and that constraint is repealed. Everything below uses exp, pow and abs freely; what
+// must stay stable is the *output*, which is quantised and written to disk, not the function.
+//
+// The simplex itself is still the one from shared/rng.mjs: it was already a proper Gustavson
+// implementation and never needed the transcendentals in the first place.
+
+function makeNoise(seed, label) {
+  return makeSimplex2D(hash32(`${seed}:${label}`));
+}
+
+/** Plain fractal noise, roughly -1..1. */
+function fbm(noise, x, y, { octaves = 4, lacunarity = 2.0, gain = 0.5, freq = 1 } = {}) {
+  let amp = 1, f = freq, sum = 0, norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * noise(x * f, y * f);
+    norm += amp;
+    amp *= gain;
+    f *= lacunarity;
+  }
+  return sum / norm;
+}
+
+/**
+ * Ridged fractal noise, 0..1, with crests where plain fbm has zero crossings. This is what
+ * gives a spine and side ridges instead of the blobby hills plain fbm produces - and a ridge
+ * is what a terrace pass can cut into believable benches.
+ */
+function ridged(noise, x, y, { octaves = 4, lacunarity = 2.07, gain = 0.5, freq = 1 } = {}) {
+  let amp = 1, f = freq, sum = 0, norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    const n = 1 - Math.abs(noise(x * f, y * f));
+    sum += amp * n * n;
+    norm += amp;
+    amp *= gain;
+    f *= lacunarity;
+  }
+  return sum / norm;
+}
+
+/**
+ * Polynomial smooth minimum (Quilez). The whole reason the coastline gets necks, isthmuses and
+ * bays: two overlapping discs joined with a plain `min` meet in a crease, joined with this they
+ * meet in a waist. `k` is the blend width, in the same units as `a` and `b` - metres here.
+ *
+ * Polynomial rather than the exponential form on purpose. The exponential one subtracts
+ * k*ln(2) even where the two shapes are nowhere near each other, so every lobe silently grows
+ * by ~8 m at k=12 and the island inflates. This one is exactly `min` once |a-b| exceeds k.
+ */
+function smoothMin(a, b, k) {
+  if (k <= 0) return Math.min(a, b);
+  const h = clamp(0.5 + (0.5 * (b - a)) / k, 0, 1);
+  return lerp(b, a, h) - k * h * (1 - h);
+}
+
+// Re-exported so a module needs only one import for the maths it uses. The definitions live
+// in shared/rng.mjs; duplicating them here made two copies that could quietly disagree.
+
+// ---- lib/world/shape.mjs -----------------------------------------------
+// The island's outline.
+//
+// The old generator added noise to a *radius*: `d = |p| / coastScale + 0.18 * fbm(p)`. That
+// can only ever produce a wobbly circle - the topology is fixed before the noise is applied.
+// Here the outline is the smooth union of a handful of overlapping discs, sampled through a
+// warped domain. Two discs whose centres are further apart than their radii sum meet in a
+// neck; the warp then bends the whole thing so no part of it reads as a circle.
+//
+// The result is a signed field: positive on land, in metres from the waterline, and it keeps
+// meaning something well out to sea (that is what the shore profile and the seabed need).
+
+const LOBES = 9;
+const BLEND_M = 12;              // smooth-union width: the waist where two lobes meet
+
+// Two scales of domain warp. The large one makes headlands and deep bays; the small one puts
+// the 10-20 m crenellation on a spit that makes it read as a spit rather than as a finger.
+const WARP_FAR_M = 46, WARP_FAR_SCALE = 210;
+const WARP_NEAR_M = 17, WARP_NEAR_SCALE = 42;
+
+// How much of the nominal disc of `radiusM` ends up as land. Well under 1 because an island
+// that fills its own bounding circle is a circle; the missing third is bays and open water.
+const TARGET_FILL = 0.62;
+
+// How many outlying islets the envelope holds. Fixed, and baked whether or not they are
+// published yet - see the note by `skerries` below.
+const ISLETS = 6;
+
+/**
+ * @param {number|string} seed
+ * @param {{radiusM?: number, envelopeM?: number, islets?: number}} opts
+ */
+function makeShape(seed, { radiusM = 208, envelopeM = 1024, islets = ISLETS } = {}) {
+  const rng = makeRng(seed).fork('shape');
+  const scale = radiusM / 208;              // every metre below is quoted for a 416 m island
+
+  // ---- the lobe skeleton -------------------------------------------------------
+  // A random walk rather than a ring: a ring of discs is a circle again. Each new centre
+  // hangs off one already placed, and its bearing is pushed away from the running centroid
+  // so the island spreads instead of piling up on itself.
+  const lobes = [{ x: 0, z: 0, r: (78 + rng.range(-8, 14)) * scale }];
+  let cx = 0, cz = 0;
+  for (let i = 1; i < LOBES; i++) {
+    const from = lobes[rng.int(lobes.length)];
+    const away = Math.atan2(from.z - cz, from.x - cx);
+    const bearing = away + rng.range(-1.05, 1.05);
+    const step = (40 + rng.range(0, 50)) * scale;
+    const lobe = {
+      x: from.x + Math.cos(bearing) * step,
+      z: from.z + Math.sin(bearing) * step,
+      r: (34 + rng.range(0, 68)) * scale,
+    };
+    lobes.push(lobe);
+    cx = lobes.reduce((s, l) => s + l.x, 0) / lobes.length;
+    cz = lobes.reduce((s, l) => s + l.z, 0) / lobes.length;
+  }
+
+  // Recentre on the lobes' own middle, so the island sits on the origin whatever the walk did.
+  const mx = lobes.reduce((s, l) => s + l.x, 0) / lobes.length;
+  const mz = lobes.reduce((s, l) => s + l.z, 0) / lobes.length;
+  for (const l of lobes) { l.x -= mx; l.z -= mz; }
+
+  const warpFarX = makeNoise(seed, 'warp:far:x');
+  const warpFarZ = makeNoise(seed, 'warp:far:z');
+  const warpNearX = makeNoise(seed, 'warp:near:x');
+  const warpNearZ = makeNoise(seed, 'warp:near:z');
+
+  const blend = BLEND_M * scale;
+
+  /** Unwarped: metres inside the coast, negative at sea. */
+  function raw(x, z) {
+    // Seeded with the first lobe rather than Infinity: the polynomial smin interpolates, and
+    // `lerp(b, Infinity, 0)` is `b + Infinity * 0`, which is NaN.
+    let d = Math.hypot(x - lobes[0].x, z - lobes[0].z) - lobes[0].r;
+    for (let i = 1; i < lobes.length; i++) {
+      const l = lobes[i];
+      d = smoothMin(d, Math.hypot(x - l.x, z - l.z) - l.r, blend);
+    }
+    return -d;
+  }
+
+  /** Unnormalised: the warped field, before the island is sized to its target. */
+  function warped(x, z) {
+    const far = WARP_FAR_SCALE * scale, near = WARP_NEAR_SCALE * scale;
+    const fx = WARP_FAR_M * scale * fbm(warpFarX, x / far, z / far, { octaves: 3 });
+    const fz = WARP_FAR_M * scale * fbm(warpFarZ, x / far, z / far, { octaves: 3 });
+    const nx = WARP_NEAR_M * scale * fbm(warpNearX, x / near, z / near, { octaves: 4 });
+    const nz = WARP_NEAR_M * scale * fbm(warpNearZ, x / near, z / near, { octaves: 4 });
+    return raw(x + fx + nx, z + fz + nz);
+  }
+
+  // ---- size the island -----------------------------------------------------------
+  // The lobe walk gives a different silhouette per seed, which is the point - but it also
+  // gives a different *area* per seed, measured at nearly 2x between the widest and the
+  // narrowest. The layout engine needs a predictable amount of buildable land or a seed
+  // decides how many settlers fit, so the whole field is scaled about the origin until the
+  // land area hits its target. Shape stays free; size does not.
+  //
+  // Scaling the domain rather than the radii keeps the warp in proportion: an island stretched
+  // by 15% gets a coastline 15% coarser, not the same crenellation on a larger blob.
+  const targetAreaM2 = Math.PI * radiusM * radiusM * TARGET_FILL;
+  const probe = (k) => {
+    let land = 0;
+    const step = radiusM / 24;                    // ~50x50 samples over the bounding window
+    const reach = radiusM * 2.2;
+    for (let z = -reach; z <= reach; z += step) {
+      for (let x = -reach; x <= reach; x += step) {
+        if (warped(x / k, z / k) > 0) land += step * step;
+      }
+    }
+    return land;
+  };
+  let lo = 0.45, hi = 2.2;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    if (probe(mid) < targetAreaM2) lo = mid; else hi = mid;
+  }
+  const fit = (lo + hi) / 2;
+
+  function mainCoast(x, z) {
+    return warped(x / fit, z / fit) * fit;
+  }
+
+  // ---- the skerries ---------------------------------------------------------------
+  // Sites come from a fixed lattice computed for the whole envelope at t=0, never from what
+  // has been published: islet 4 lands where islet 4 lands whether or not islets 1 to 3 exist.
+  // That is what lets the island grow into an archipelago without anything already standing
+  // having to move.
+  //
+  // A district is a git repository, and `lib/layout.mjs` already insists with BELT that no two
+  // parcels touch - "the gap between them is the countryside". An islet makes that separation
+  // physical and permanent, which is the strongest reason to have them at all.
+  const skerries = [];
+  {
+    const rr = makeRng(seed).fork('skerries');
+    const reach = envelopeM / 2;
+    const rings = [reach * 0.58, reach * 0.80];
+    const bearing0 = rr.range(0, Math.PI * 2);
+    for (let k = 0; k < islets; k++) {
+      const ring = rings[k % rings.length];
+      // Golden-angle spacing so consecutive islets never land side by side, jittered so the
+      // ring does not read as a ring.
+      const angle = bearing0 + k * 2.39996 + rr.range(-0.22, 0.22);
+      const dist = ring + rr.range(-28, 28) * scale;
+      const cx = Math.cos(angle) * dist;
+      const cz = Math.sin(angle) * dist;
+      const lobeCount = 2 + rr.int(3);
+      const lobes = [];
+      for (let i = 0; i < lobeCount; i++) {
+        const a = rr.range(0, Math.PI * 2);
+        const step = i === 0 ? 0 : rr.range(12, 34) * scale;
+        lobes.push({
+          x: cx + Math.cos(a) * step,
+          z: cz + Math.sin(a) * step,
+          r: (16 + rr.range(0, 26)) * scale,
+        });
+      }
+      skerries.push({ index: k, x: cx, z: cz, lobes });
+    }
+  }
+
+  const skerryBlend = 7 * scale;
+  function skerryCoast(x, z) {
+    let best = -Infinity;
+    for (const s of skerries) {
+      // Cheap rejection first: an islet is at most ~60 m across and there are several.
+      if (Math.abs(x - s.x) > 140 * scale || Math.abs(z - s.z) > 140 * scale) continue;
+      let d = Math.hypot(x - s.lobes[0].x, z - s.lobes[0].z) - s.lobes[0].r;
+      for (let i = 1; i < s.lobes.length; i++) {
+        const l = s.lobes[i];
+        d = smoothMin(d, Math.hypot(x - l.x, z - l.z) - l.r, skerryBlend);
+      }
+      if (-d > best) best = -d;
+    }
+    return best;
+  }
+
+  /**
+   * Signed distance to the nearest coastline in metres: positive inland, negative at sea.
+   * This is the one function the rest of the generator asks about the island's outline.
+   *
+   * `max` and not a smooth union: two landmasses that merged into one would defeat the whole
+   * point of putting a district on its own islet.
+   */
+  function coast(x, z) {
+    const main = mainCoast(x, z);
+    if (!skerries.length) return main;
+    return Math.max(main, skerryCoast(x, z));
+  }
+
+  return { coast, mainCoast, raw, lobes, skerries, radiusM, envelopeM, fit };
+}
+
+// ---- lib/world/relief.mjs ----------------------------------------------
+// Elevation.
+//
+// The old generator added two round bumps to a radial falloff and got a hill. The shape that
+// actually reads as Sea of Thieves is a *bench*: a flat top, a steep face, another flat top.
+// So the relief here is built continuous and then quantised to benches, under a mask - because
+// terracing the whole island turns it into a wedding cake, and terracing none of it leaves the
+// smooth hill we are trying to get rid of.
+//
+// One hard rule: the gradient is capped. A heightfield sampled every metre cannot express a
+// cliff - a 25 m drop across one quad is an 87-degree triangle, which is what "shark fin"
+// looked like from close up, and stretching Y only makes more of them. Anything steeper than
+// the cap is clamped here and belongs to a rock shell, which is separate geometry.
+
+const H_MAX = 46;              // metres, for a 416 m island
+const BENCH = 7.5;             // metres between bench tops: 4x avatar height
+const CLIFF_FRAC = 0.30;              // share of a bench's horizontal run spent on its face
+const TERRACE = 0.82;                 // 0 = smooth hill, 1 = wedding cake
+// 45 degrees. NOT enforced by `height()` - a continuous function cannot clamp its own
+// gradient - but by the bake pass that samples it onto the chunk grid, where a neighbour
+// exists to compare against. Anything the cap shaves off belongs to a rock shell, which is
+// separate geometry. Exported so the bake and the tests read the same number.
+const MAX_GRADIENT = 1.0;
+
+const SEABED_FLOOR = -32;             // metres: below this the ocean is a plain
+const GRAIN_M = 1.1;                  // surface texture added after terracing
+const MASSIF_INLAND = 70;             // metres before the relief is allowed its full height
+const BACKSHORE_M = 16;               // dune belt behind the beach
+const BEACH_MIN = 4, BEACH_SWING = 15;
+
+function makeRelief(seed, shape) {
+  const rng = makeRng(seed).fork('relief');
+  const spine = makeNoise(seed, 'spine');
+  const mid = makeNoise(seed, 'mid');
+  const grain = makeNoise(seed, 'grain');
+  const terraceNoise = makeNoise(seed, 'terrace');
+  const scale = shape.radiusM / 208;
+
+  // Where the weather comes from. One angle, drawn once, and it is what makes one coast a
+  // wide flat beach and the opposite one a cliff with a wave-cut notch.
+  const swell = rng.range(0, Math.PI * 2);
+  const swellX = Math.cos(swell), swellZ = Math.sin(swell);
+
+  /** Outward coast normal at a point, from the gradient of the coast field. */
+  function coastNormal(x, z) {
+    const e = 2 * scale;
+    const gx = shape.coast(x + e, z) - shape.coast(x - e, z);
+    const gz = shape.coast(x, z + e) - shape.coast(x, z - e);
+    const len = Math.hypot(gx, gz) || 1;
+    return [-gx / len, -gz / len];            // coast() grows inland, so negate to face the sea
+  }
+
+  /** How exposed this stretch of coast is to the swell, 0..1. */
+  function exposure(x, z) {
+    const [nx, nz] = coastNormal(x, z);
+    return 0.5 + 0.5 * (nx * swellX + nz * swellZ);
+  }
+
+  function beachWidth(x, z) {
+    return (BEACH_MIN + BEACH_SWING * exposure(x, z)) * scale;
+  }
+
+  /**
+   * The continuous relief potential, 0..1, before terracing.
+   *
+   * Deliberately smooth. Terracing is a quantiser, so whatever frequency goes in comes out as
+   * benches of that frequency - feed it the 26 m grain and the island turns into crumpled
+   * foil rather than into plateaus. Everything fine-grained is added *after* the quantiser,
+   * below, where it textures a surface instead of chopping it up.
+   */
+  function potential(x, z) {
+    const r = ridged(spine, x / (250 * scale), z / (250 * scale), { octaves: 2, lacunarity: 2.07 });
+    const m = fbm(mid, x / (170 * scale), z / (170 * scale), { octaves: 2 }) * 0.5 + 0.5;
+    return clamp(0.62 * r + 0.38 * m, 0, 1);
+  }
+
+  /** Bench-quantise a height. Returns the terraced value at full strength. */
+  function terrace(raw) {
+    const k = raw / BENCH;
+    const floorK = Math.floor(k);
+    const t = k - floorK;
+    const s = smoothstep(1 - CLIFF_FRAC, 1, t);
+    return (floorK + s) * BENCH;
+  }
+
+  /**
+   * Height in metres at a world position. Negative at sea.
+   * This is the function the whole generator is for.
+   */
+  /**
+   * @param d       metres inland, negative at sea. Pass it in when you already have it: the
+   *                bake pass computes the coast field once over the whole grid, and letting
+   *                this resample it made every height cost five coast evaluations instead of
+   *                one - `beachWidth` alone needs four, for the gradient.
+   * @param wBeach  beach width at this point, likewise.
+   */
+  function height(x, z, d = shape.coast(x, z), wBeach = null) {
+
+    if (d <= 0) {
+      // Seaward: a shelving foreshore, then the bottom falls away to a floor.
+      //
+      // The floor matters for more than realism. Without it the seabed followed the warped
+      // coast field all the way to the rim of the envelope, so every sample of open ocean was
+      // a different number and a chunk of pure sea compressed to 5 kB - as much as a chunk of
+      // island. Levelling off makes the deep ocean constant, which is what it looks like and
+      // what gzip wants.
+      const out = -d;
+      if (out < 25 * scale) return -0.06 * out;
+      if (out < 90 * scale) return -1.5 - 0.075 * (out - 25 * scale);
+      const shelf = -6.4 - 0.12 * (out - 90 * scale);
+      return Math.max(shelf, SEABED_FLOOR * scale);
+    }
+
+    if (wBeach === null) wBeach = beachWidth(x, z);
+    // Beach, then dune, then the massif takes over.
+    const beach = d < wBeach
+      ? lerp(-0.2, 1.6, d / wBeach)
+      : 1.6 + 2.4 * smoothstep(0, BACKSHORE_M * scale, d - wBeach);
+
+    const massif = smoothstep(0, MASSIF_INLAND * scale, d);
+    if (massif <= 0) return beach;
+
+    const raw = potential(x, z) * H_MAX * scale * massif;
+    // Half the island hard mesa country, half rolling meadow. Without this mask the terrace
+    // pass runs everywhere and the whole island is a wedding cake; with it, two places on one
+    // island feel like two places.
+    const mask = smoothstep(0.35, 0.70, fbm(terraceNoise, x / (150 * scale), z / (150 * scale), { octaves: 2 }) * 0.5 + 0.5);
+    let benched = lerp(raw, terrace(raw), TERRACE * mask);
+
+    // Surface grain, on top of the quantiser rather than through it. Small enough that a
+    // bench top still reads as flat, big enough that it is not a drawing.
+    benched += GRAIN_M * scale * fbm(grain, x / (34 * scale), z / (34 * scale), { octaves: 3 });
+
+    return lerp(beach, Math.max(beach, benched), massif);
+  }
+
+  return { height, potential, beachWidth, exposure, swell, scale };
+}
+
+// ---- lib/world/classify.mjs --------------------------------------------
+// What each sample of ground *is*.
+//
+// This is the field that replaces `island.terrainHash` as the thing keeping the two sides
+// honest. Today `BEACH_MAX 0.35`, `BUILD_SLOPE_MAX 0.6` and `BUILD_HEIGHT_MAX 4.2` are written
+// out in both shared/terrain.mjs and TerrainGenerator.cs, and the hash exists to notice when
+// the two copies drift apart. Ship the server's verdict as a byte per sample and that entire
+// class of bug stops existing rather than being detected.
+//
+// One byte, so it packs beside the height in a chunk.
+
+const CLASS = {
+  SEA: 0,
+  SHALLOW: 1,
+  BEACH: 2,
+  DUNE: 3,
+  MEADOW: 4,
+  WOOD: 5,
+  SCREE: 6,
+  ROCK: 7,
+  CLIFF: 8,
+  RIVER: 9,
+  LAKE: 10,
+  POLDER: 11,
+};
+
+const CLASS_NAME = Object.fromEntries(Object.entries(CLASS).map(([k, v]) => [v, k]));
+
+// Slope above which the ground stops being walkable meadow and starts being bare rock. Well
+// below the heightfield's own gradient cap (1.0), because what the cap refuses is a *cliff* -
+// separate geometry - and this is the scree and bedrock on the way up to it.
+const SCREE_SLOPE = 0.62;
+const ROCK_SLOPE = 0.92;
+
+function makeClassifier(seed, shape, relief) {
+  const forest = makeNoise(seed, 'forest');
+  const scale = relief.scale;
+
+  function slopeAt(x, z) {
+    const e = 1.5 * scale;
+    const gx = (relief.height(x + e, z) - relief.height(x - e, z)) / (2 * e);
+    const gz = (relief.height(x, z + e) - relief.height(x, z - e)) / (2 * e);
+    return Math.hypot(gx, gz);
+  }
+
+  /**
+   * @param slope  pass it in from a baked grid where you have one; recomputing it here costs
+   *               four more height evaluations, each of which costs a coast evaluation.
+   */
+  function classify(x, z, h = relief.height(x, z), d = shape.coast(x, z), slope = null) {
+    if (d <= 0) return h > -2.5 ? CLASS.SHALLOW : CLASS.SEA;
+
+    const beach = relief.beachWidth(x, z);
+    if (d < beach) return CLASS.BEACH;
+    if (d < beach + 10 * scale && h < 3.0) return CLASS.DUNE;
+
+    if (slope === null) slope = slopeAt(x, z);
+    if (slope > ROCK_SLOPE) return CLASS.ROCK;
+    if (slope > SCREE_SLOPE) return CLASS.SCREE;
+
+    // Tree cover: clustered rather than a uniform sprinkle, and thinner on the exposed coast
+    // where the salt gets at it.
+    const cover = fbm(forest, x / (58 * scale), z / (58 * scale), { octaves: 3 }) * 0.5 + 0.5;
+    const salt = 1 - smoothstep(0, 90 * scale, d);
+    return cover - 0.30 * salt > 0.44 ? CLASS.WOOD : CLASS.MEADOW;
+  }
+
+  return { classify, slopeAt };
+}
+
+// ---- lib/world/water.mjs -----------------------------------------------
+// Rivers and lakes, cut into the baked grid.
+//
+// The old generator could get away with defining water as "below sea level": its island was
+// only five metres tall, so a channel cut to -0.55 m was a river anywhere on it. On a 46 m
+// island that stops working - a stream at 30 m elevation is still a stream. So fresh water here
+// is not defined by height but by class, and its surface sits a fixed depth above the bed it
+// runs in. One constant, no extra channel in the chunk format, and a river can climb a hill.
+//
+// This runs on the grid rather than on the continuous field, and it has to: a river is a walk
+// from one sample to the next, and that only exists once there are samples.
+
+const RIVER_DEPTH = 1.1;        // metres from bed to surface
+const LAKE_DEPTH = 2.2;
+
+const SOURCE_MIN_FRAC = 0.55;          // a spring starts on the upper part of the massif
+const SOURCE_MIN_INLAND = 55;          // metres, so a river is not a gully in the beach
+const BANK_RISE = 1.35;                // how fast the bank climbs out of the bed, per metre
+const WOBBLE = 0.35;                   // metres of hashed noise on the descent, so it meanders
+
+/**
+ * Cut watercourses into a baked field. Mutates `height` and writes into `waterClass`.
+ *
+ * @param {{height: Float32Array, coast: Float32Array, n: number, envelopeM: number,
+ *          metresPerSample: number}} grid
+ * @param {number|string} seed
+ * @param {{rivers?: number, lakes?: number, scale?: number}} opts
+ * @returns {{waterClass: Uint8Array, rivers: object[], lakes: object[]}}
+ */
+function carveWater(grid, seed, { rivers = 2, lakes = 1, scale = 1 } = {}) {
+  const { height, coast, n, envelopeM, metresPerSample } = grid;
+  const half = envelopeM / 2;
+  const at = (i, j) => i + j * n;
+  const inGrid = (i, j) => i >= 0 && j >= 0 && i < n && j < n;
+  const worldOf = (i) => i * metresPerSample - half;
+
+  const waterClass = new Uint8Array(n * n);
+  const rng = makeRng(seed).fork('water');
+
+  // Steps to open water, by breadth-first search from every sea sample at once.
+  //
+  // The obvious thing is to follow `coast`, which is already a signed distance to the shore -
+  // but only before the domain warp. Warped, it has local maxima, and a descent that insists on
+  // decreasing it dead-ends against them; measured, rivers stopped 50 m short of the sea. A BFS
+  // field is monotone by construction, so a walk down it always arrives.
+  const toSea = new Int32Array(n * n).fill(-1);
+  {
+    const queue = new Int32Array(n * n);
+    let head = 0, tail = 0;
+    for (let k = 0; k < toSea.length; k++) {
+      if (coast[k] <= 0) { toSea[k] = 0; queue[tail++] = k; }
+    }
+    while (head < tail) {
+      const k = queue[head++];
+      const i = k % n, j = (k - (k % n)) / n;
+      const d = toSea[k] + 1;
+      if (i > 0 && toSea[k - 1] < 0) { toSea[k - 1] = d; queue[tail++] = k - 1; }
+      if (i < n - 1 && toSea[k + 1] < 0) { toSea[k + 1] = d; queue[tail++] = k + 1; }
+      if (j > 0 && toSea[k - n] < 0) { toSea[k - n] = d; queue[tail++] = k - n; }
+      if (j < n - 1 && toSea[k + n] < 0) { toSea[k + n] = d; queue[tail++] = k + n; }
+    }
+  }
+
+  // Only the main island gets watercourses: an islet 60 m across has no catchment worth
+  // speaking of, and a river on one would be a drain.
+  let peak = 0, peakAt = -1;
+  for (let k = 0; k < height.length; k++) {
+    if (coast[k] > 0 && height[k] > peak) { peak = height[k]; peakAt = k; }
+  }
+  if (peakAt < 0) return { waterClass, rivers: [], lakes: [] };
+
+  // ---- springs ---------------------------------------------------------------------
+  // High ground, well inland, and spread out: two rivers leaving by the same flank divide
+  // nothing, and the whole point of a river here is that it cuts the island into parts a
+  // bridge has to reach across.
+  const candidates = [];
+  for (let j = 2; j < n - 2; j++) {
+    for (let i = 2; i < n - 2; i++) {
+      const k = at(i, j);
+      if (toSea[k] < SOURCE_MIN_INLAND * scale) continue;
+      if (height[k] < peak * SOURCE_MIN_FRAC) continue;
+      candidates.push(k);
+    }
+  }
+  if (!candidates.length) return { waterClass, rivers: [], lakes: [] };
+
+  const springs = [];
+  const minApart = 70 * scale;
+  for (let attempt = 0; attempt < 400 && springs.length < rivers; attempt++) {
+    const k = candidates[rng.int(candidates.length)];
+    const x = worldOf(k % n), z = worldOf(Math.floor(k / n));
+    if (springs.every((s) => Math.hypot(x - s.x, z - s.z) > minApart)) springs.push({ k, x, z });
+  }
+
+  const courses = [];
+  for (const spring of springs) {
+    const course = descend(spring.k);
+    if (course.length >= 12) courses.push(course);
+  }
+
+  // ---- lakes ------------------------------------------------------------------------
+  // On a shoulder rather than in a hole: a bowl scooped into gentle high ground reads as a
+  // tarn, and the outflow is simply where a river passes.
+  const pools = [];
+  // A lake wants gentle ground, not high ground, so it draws from its own list: a tarn on a
+  // low shoulder is as good as one near the summit, and insisting on the summit found none at
+  // all on most seeds.
+  const basins = [];
+  for (let j = 2; j < n - 2; j++) {
+    for (let i = 2; i < n - 2; i++) {
+      const k = at(i, j);
+      if (coast[k] < 50 * scale) continue;
+      if (height[k] < 3 || height[k] > peak * 0.85) continue;
+      basins.push(k);
+    }
+  }
+  for (let attempt = 0; attempt < 600 && pools.length < lakes && basins.length; attempt++) {
+    const k = basins[rng.int(basins.length)];
+    const i = k % n, j = Math.floor(k / n);
+    const radius = (14 + rng.range(0, 12)) * scale;
+    const r = Math.ceil(radius / metresPerSample);
+    if (i - r < 1 || j - r < 1 || i + r > n - 2 || j + r > n - 2) continue;
+    // Refuse anywhere steep: a lake on a slope is a waterfall standing still.
+    let lo = Infinity, hi = -Infinity;
+    for (let dj = -r; dj <= r; dj += 2) {
+      for (let di = -r; di <= r; di += 2) {
+        const h = height[at(i + di, j + dj)];
+        if (h < lo) lo = h;
+        if (h > hi) hi = h;
+      }
+    }
+    if (hi - lo > 9 * scale) continue;
+    if (pools.some((p) => Math.hypot(p.i - i, p.j - j) * metresPerSample < 90 * scale)) continue;
+    pools.push({ i, j, radius, level: lo });
+  }
+
+  for (const pool of pools) carveLake(pool);
+  for (const course of courses) carveRiver(course);
+
+  return {
+    waterClass,
+    rivers: courses.map((c, index) => ({
+      id: `river:${index}`,
+      mouth: worldPoint(c[c.length - 1].k),
+      source: worldPoint(c[0].k),
+      lengthM: Math.round((c.length - 1) * metresPerSample),
+      spine: simplify(c.map((p) => worldPoint(p.k)), 12 * scale),
+    })),
+    lakes: pools.map((p, index) => ({
+      id: `lake:${index}`,
+      centre: [round1(worldOf(p.i)), round1(worldOf(p.j))],
+      radiusM: round1(p.radius),
+      surfaceY: round1(p.level),
+    })),
+  };
+
+  // ---- the walk ---------------------------------------------------------------------
+  // Steepest descent, four-connected, with a hashed wobble so it meanders rather than running
+  // dead down the fall line. A pure gradient walk on fractal ground stalls in every pit it
+  // meets; when that happens here the course steps to the lowest neighbour regardless and the
+  // carve smooths it out, which is what a real stream does to a hollow.
+  function descend(startK) {
+    const course = [];
+    let k = startK;
+    let level = height[k];
+
+    for (let step = 0; step < n * 3; step++) {
+      course.push({ k, level });
+      if (coast[k] <= 0) break;                       // reached the sea: this is the mouth
+
+      const i = k % n, j = Math.floor(k / n);
+      // Only neighbours a step nearer the sea are eligible, and the lowest of those wins: the
+      // water finds its way down within a corridor that is guaranteed to arrive.
+      let best = -1, bestScore = Infinity;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di, nj = j + dj;
+        if (!inGrid(ni, nj)) continue;
+        const nk = at(ni, nj);
+        if (toSea[nk] >= toSea[k]) continue;
+        const wob = ((hash32(`${seed}:river:${ni}:${nj}`) % 2000) / 2000 - 0.5) * 2 * WOBBLE;
+        const score = height[nk] + wob;
+        if (score < bestScore) { bestScore = score; best = nk; }
+      }
+      if (best < 0) break;
+      k = best;
+      // The surface only ever falls. Without this a course that crosses a rise would carry its
+      // water uphill, and the carve would gouge a trench through the hill to let it.
+      level = Math.min(level, height[k]);
+    }
+    return course;
+  }
+
+  function carveRiver(course) {
+    const last = course.length - 1;
+    for (let s = 0; s <= last; s++) {
+      const { k, level } = course[s];
+      const i = k % n, j = Math.floor(k / n);
+      // A river widens as it goes: a brook at the spring, something a bridge has to span at
+      // the mouth.
+      const wM = (1.6 + 3.4 * (s / Math.max(1, last))) * scale;
+      const reach = Math.ceil((wM + (RIVER_DEPTH + 1.2) / BANK_RISE) / metresPerSample);
+
+      for (let dj = -reach; dj <= reach; dj++) {
+        for (let di = -reach; di <= reach; di++) {
+          const ni = i + di, nj = j + dj;
+          if (!inGrid(ni, nj)) continue;
+          const nk = at(ni, nj);
+          if (coast[nk] <= 0) continue;                 // the sea has its own profile
+          const dist = Math.hypot(di, dj) * metresPerSample;
+          const bed = level - RIVER_DEPTH + BANK_RISE * Math.max(0, dist - wM);
+          if (bed < height[nk]) height[nk] = bed;
+          if (dist <= wM && !waterClass[nk]) waterClass[nk] = CLASS.RIVER;
+        }
+      }
+    }
+  }
+
+  function carveLake(pool) {
+    const r = Math.ceil(pool.radius / metresPerSample);
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        const ni = pool.i + di, nj = pool.j + dj;
+        if (!inGrid(ni, nj)) continue;
+        const nk = at(ni, nj);
+        if (coast[nk] <= 0) continue;
+        const dist = Math.hypot(di, dj) * metresPerSample;
+        if (dist > pool.radius) continue;
+        // Flat bottom, so the surface a fixed depth above it is flat too - which is the one
+        // thing every lake in the world has in common.
+        const bed = pool.level - LAKE_DEPTH + BANK_RISE * Math.max(0, dist - (pool.radius - 4 * scale));
+        if (bed < height[nk]) height[nk] = bed;
+        if (dist <= pool.radius - 4 * scale) waterClass[nk] = CLASS.LAKE;
+      }
+    }
+  }
+
+  function worldPoint(k) {
+    return [round1(worldOf(k % n)), round1(worldOf(Math.floor(k / n)))];
+  }
+}
+
+function round1(v) { return Math.round(v * 10) / 10; }
+
+/** Drop points a straight line already covers, so a spine travels as a dozen points not a thousand. */
+function simplify(points, minStep) {
+  const out = [points[0]];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= minStep) out.push(p);
+  }
+  const end = points[points.length - 1];
+  if (out[out.length - 1] !== end) out.push(end);
+  return out;
+}
+
+// ---- lib/world/bake.mjs ------------------------------------------------
+// One pass over the whole envelope.
+//
+// This is the step that makes growth possible. The generator does not run again, ever: the
+// entire 1024 m world - main island, shelf, sub-islands, open sea - is evaluated once at
+// founding and written as immutable chunks. Growing the island later publishes chunks that
+// already exist rather than generating new ground, so every metre of land that anyone has
+// built on is byte-identical forever and no house can move.
+//
+// It is also the only place the gradient cap can be applied. A continuous height function
+// cannot clamp its own slope - there is no neighbour to compare against - so the cap runs
+// here, on the grid, as a relaxation pass.
+
+const METRES_PER_SAMPLE = 1;
+const CHUNK_M = 64;                       // 64 m: one chunk, one navmesh tile, one LOD unit
+
+/**
+ * Evaluate the whole envelope onto one grid.
+ *
+ * @param {number|string} seed
+ * @param {{envelopeM?: number, radiusM?: number, onProgress?: (frac: number) => void}} opts
+ */
+function bakeField(seed, { envelopeM = 1024, radiusM = 208, onProgress = null } = {}) {
+  const shape = makeShape(seed, { radiusM, envelopeM });
+  const relief = makeRelief(seed, shape);
+  const classifier = makeClassifier(seed, shape, relief);
+
+  const n = envelopeM / METRES_PER_SAMPLE + 1;    // samples per side, corner lattice
+  if (!Number.isInteger(n)) throw new Error(`envelope ${envelopeM} is not a whole number of samples`);
+  const half = envelopeM / 2;
+  const at = (i, j) => i + j * n;
+  const worldX = (i) => i * METRES_PER_SAMPLE - half;
+
+  const coast = new Float32Array(n * n);
+  const height = new Float32Array(n * n);
+  const classes = new Uint8Array(n * n);
+
+  // ---- pass 1: the coast field ---------------------------------------------------
+  for (let j = 0; j < n; j++) {
+    const z = worldX(j);
+    for (let i = 0; i < n; i++) coast[at(i, j)] = shape.coast(worldX(i), z);
+    if (onProgress && j % 64 === 0) onProgress((j / n) * 0.35);
+  }
+
+  // ---- pass 2: heights -----------------------------------------------------------
+  // The beach width needs the coast normal, which is the gradient of the field from pass 1.
+  // Reading it off the grid rather than resampling turns five coast evaluations per sample
+  // into none.
+  const swellX = Math.cos(relief.swell), swellZ = Math.sin(relief.swell);
+  for (let j = 0; j < n; j++) {
+    const z = worldX(j);
+    for (let i = 0; i < n; i++) {
+      const k = at(i, j);
+      const d = coast[k];
+      let wBeach = null;
+      if (d > 0) {
+        const gx = coast[at(Math.min(i + 1, n - 1), j)] - coast[at(Math.max(i - 1, 0), j)];
+        const gz = coast[at(i, Math.min(j + 1, n - 1))] - coast[at(i, Math.max(j - 1, 0))];
+        const len = Math.hypot(gx, gz) || 1;
+        const exposure = 0.5 + 0.5 * ((-gx / len) * swellX + (-gz / len) * swellZ);
+        wBeach = (4 + 15 * exposure) * relief.scale;
+      }
+      height[k] = relief.height(worldX(i), z, d, wBeach);
+    }
+    if (onProgress && j % 64 === 0) onProgress(0.35 + (j / n) * 0.35);
+  }
+
+  // ---- pass 3: fresh water ----------------------------------------------------------
+  // Before the cap, so a ravine the river cuts is subject to the same 45-degree rule as the
+  // rest of the island, and before classification, so the banks are classified as banks.
+  const water = carveWater(
+    { height, coast, n, envelopeM, metresPerSample: METRES_PER_SAMPLE },
+    seed, { scale: relief.scale });
+  if (onProgress) onProgress(0.74);
+
+  // ---- pass 4: the gradient cap ---------------------------------------------------
+  const capped = capGradient(height, n, METRES_PER_SAMPLE, MAX_GRADIENT);
+  if (onProgress) onProgress(0.78);
+
+  // ---- pass 5: classification ------------------------------------------------------
+  for (let j = 0; j < n; j++) {
+    const z = worldX(j);
+    for (let i = 0; i < n; i++) {
+      const k = at(i, j);
+      const gx = (height[at(Math.min(i + 1, n - 1), j)] - height[at(Math.max(i - 1, 0), j)]) / (2 * METRES_PER_SAMPLE);
+      const gz = (height[at(i, Math.min(j + 1, n - 1))] - height[at(i, Math.max(j - 1, 0))]) / (2 * METRES_PER_SAMPLE);
+      // Water wins: a carved channel is a river whatever its slope says.
+      classes[k] = water.waterClass[k] || classifier.classify(worldX(i), z, height[k], coast[k], Math.hypot(gx, gz));
+    }
+    if (onProgress && j % 64 === 0) onProgress(0.78 + (j / n) * 0.22);
+  }
+  if (onProgress) onProgress(1);
+
+  return {
+    seed, n, envelopeM, radiusM, metresPerSample: METRES_PER_SAMPLE,
+    height, classes, coast,
+    cappedSamples: capped,
+    rivers: water.rivers, lakes: water.lakes,
+    shape, relief,
+  };
+}
+
+/**
+ * Clamp the heightfield so no step between neighbours exceeds `maxGradient` metres per metre.
+ *
+ * Iterative and symmetric: each sweep pulls the *higher* of an offending pair down, so a cliff
+ * face is shaved rather than a valley filled, and the island never grows. Anything shaved off
+ * here is what a rock shell will put back as real geometry, with an undercut a heightfield
+ * could never express.
+ */
+function capGradient(height, n, metresPerSample, maxGradient) {
+  const maxStep = maxGradient * metresPerSample;
+  const diag = maxStep * Math.SQRT2;
+  let touched = 0;
+
+  for (let sweep = 0; sweep < 24; sweep++) {
+    let changed = 0;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const k = i + j * n;
+        const h = height[k];
+        if (h <= 0) continue;                        // the sea shelf has its own profile
+        for (const [di, dj, limit] of [[1, 0, maxStep], [0, 1, maxStep], [1, 1, diag], [1, -1, diag]]) {
+          const ni = i + di, nj = j + dj;
+          if (ni < 0 || nj < 0 || ni >= n || nj >= n) continue;
+          const nk = ni + nj * n;
+          const diff = height[k] - height[nk];
+          if (diff > limit) { height[k] = height[nk] + limit; changed++; }
+          else if (-diff > limit) { height[nk] = height[k] + limit; changed++; }
+        }
+      }
+    }
+    touched += changed;
+    if (!changed) break;
+  }
+  return touched;
+}
+
+
+let SPAN = 576;                        // metres across the map, and so samples per side
+const COLOUR = {
+  [CLASS.SEA]: [10, 30, 62],
+  [CLASS.SHALLOW]: [28, 106, 130],
+  [CLASS.BEACH]: [229, 214, 168],
+  [CLASS.DUNE]: [209, 201, 148],
+  [CLASS.MEADOW]: [125, 163, 84],
+  [CLASS.WOOD]: [74, 117, 64],
+  [CLASS.SCREE]: [148, 140, 120],
+  [CLASS.ROCK]: [128, 122, 116],
+  [CLASS.CLIFF]: [107, 100, 95],
+  [CLASS.RIVER]: [77, 140, 158],
+  [CLASS.LAKE]: [56, 115, 140],
+  [CLASS.POLDER]: [140, 168, 102],
+};
+const KEY_ORDER = [CLASS.MEADOW, CLASS.WOOD, CLASS.BEACH, CLASS.DUNE, CLASS.SCREE, CLASS.ROCK];
+const KEY_NAME = {
+  [CLASS.MEADOW]: 'Meadow', [CLASS.WOOD]: 'Wood', [CLASS.BEACH]: 'Beach',
+  [CLASS.DUNE]: 'Dune', [CLASS.SCREE]: 'Scree', [CLASS.ROCK]: 'Rock',
+};
+
+const $ = (id) => document.getElementById(id);
+const cache = new Map();
+
+function survey(seed, span) {
+  const key = seed + ':' + span;
+  if (cache.has(key)) return cache.get(key);
+  const field = bakeField(seed, { envelopeM: span });
+  if (cache.size > 20) cache.delete(cache.keys().next().value);
+  cache.set(key, field);
+  return field;
+}
+
+// Paint a baked field: class colour, tinted by height, lit from the north-west, with a contour
+// on every bench so the steps can be counted rather than guessed at.
+function paint(canvas, field) {
+  const n = field.n;
+  canvas.width = n;
+  canvas.height = n;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(n, n);
+  const px = img.data;
+
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const k = i + j * n;
+      const h = field.height[k];
+      const c = COLOUR[field.classes[k]] || [255, 0, 255];
+      let r = c[0], g = c[1], b = c[2];
+
+      if (h > 0) {
+        const tone = 1 - 0.24 * Math.min(1, h / 46);
+        const gx = (field.height[Math.min(i + 1, n - 1) + j * n] - field.height[Math.max(i - 1, 0) + j * n]) / 2;
+        const gz = (field.height[i + Math.min(j + 1, n - 1) * n] - field.height[i + Math.max(j - 1, 0) * n]) / 2;
+        const lit = 0.66 + 0.7 * (-gx * 0.7 - gz * 0.7) / Math.sqrt(1 + gx * gx + gz * gz);
+        const shade = Math.max(0.3, Math.min(1.4, lit)) * tone;
+        r *= shade; g *= shade; b *= shade;
+        const band = h / BENCH;
+        if (Math.abs(band - Math.round(band)) < 0.028) { r *= 0.84; g *= 0.84; b *= 0.84; }
+      }
+
+      const o = k * 4;
+      px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function measure(field) {
+  const n = field.n;
+  const tally = new Map();
+  const slopes = [];
+  let land = 0, peak = -Infinity;
+  let minX = n, maxX = -1, minZ = n, maxZ = -1;
+
+  for (let j = 1; j < n - 1; j++) {
+    for (let i = 1; i < n - 1; i++) {
+      const k = i + j * n;
+      if (field.coast[k] <= 0) continue;
+      land++;
+      tally.set(field.classes[k], (tally.get(field.classes[k]) || 0) + 1);
+      if (field.height[k] > peak) peak = field.height[k];
+      if (i < minX) minX = i;
+      if (i > maxX) maxX = i;
+      if (j < minZ) minZ = j;
+      if (j > maxZ) maxZ = j;
+      if (land % 4 === 0) {
+        const gx = (field.height[k + 1] - field.height[k - 1]) / 2;
+        const gz = (field.height[k + n] - field.height[k - n]) / 2;
+        slopes.push(Math.hypot(gx, gz));
+      }
+    }
+  }
+  slopes.sort((a, b) => a - b);
+  const q = (p) => slopes[Math.min(slopes.length - 1, Math.floor(slopes.length * p))] || 0;
+
+  let clipped = false;
+  const rim = n - 1;
+  for (let i = 0; i <= rim && !clipped; i++) {
+    if (field.height[i] > 0 || field.height[i + rim * n] > 0) clipped = true;
+    if (field.height[i * n] > 0 || field.height[rim + i * n] > 0) clipped = true;
+  }
+
+  return {
+    landHa: land / 10000,
+    extent: [maxX - minX, maxZ - minZ],
+    peak,
+    benches: Math.max(0, Math.floor(peak / BENCH)),
+    p50: q(0.5),
+    p90: q(0.9),
+    capped: field.cappedSamples,
+    clipped,
+    tally,
+    land,
+  };
+}
+
+function show(seed) {
+  $('busy').dataset.on = '1';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const field = survey(seed, SPAN);
+    paint($('map'), field);
+    const m = measure(field);
+
+    $('s-area').textContent = m.landHa.toFixed(1) + ' ha';
+    $('s-extent').innerHTML = m.extent[0] + ' &times; ' + m.extent[1] + ' m';
+    $('s-peak').textContent = m.peak.toFixed(1) + ' m';
+    $('s-bench').textContent = String(m.benches);
+    $('s-p50').textContent = m.p50.toFixed(2);
+    $('s-p90').textContent = m.p90.toFixed(2);
+    $('s-rivers').textContent = field.rivers.length
+      ? field.rivers.map((r) => r.lengthM + ' m').join(', ')
+      : 'none';
+    $('s-skerries').textContent = String(field.shape.skerries.length);
+    $('s-cap').textContent = m.capped.toLocaleString('en-GB');
+
+    const flag = $('flag');
+    flag.hidden = !m.clipped;
+    if (m.clipped) {
+      flag.textContent = 'This island reaches the edge of the survey window, so the coast there is the window and not the island.';
+    }
+
+    const mix = $('mix');
+    const key = $('key');
+    mix.replaceChildren();
+    key.replaceChildren();
+    for (const cls of KEY_ORDER) {
+      const pct = (100 * (tallyOf(m, cls))) / m.land;
+      const rgb = COLOUR[cls];
+      const css = 'rgb(' + rgb[0] + ' ' + rgb[1] + ' ' + rgb[2] + ')';
+
+      const seg = document.createElement('span');
+      seg.style.background = css;
+      seg.style.width = pct.toFixed(2) + '%';
+      mix.append(seg);
+
+      const row = document.createElement('div');
+      const swatch = document.createElement('i');
+      swatch.style.background = css;
+      const name = document.createElement('span');
+      name.textContent = KEY_NAME[cls];
+      const val = document.createElement('b');
+      val.textContent = pct.toFixed(0) + '%';
+      row.append(swatch, name, val);
+      key.append(row);
+    }
+
+    const shown = $('map').clientWidth || 560;
+    $('bar').style.width = Math.round((100 / SPAN) * shown) + 'px';
+
+    $('busy').dataset.on = '0';
+    drawStrip(seed);
+  }));
+}
+
+function tallyOf(m, cls) { return m.tally.get(cls) || 0; }
+
+let stripBase = null;
+function drawStrip(seed) {
+  const base = seed - 2;
+  if (stripBase === base) {
+    for (const btn of $('strip').children) {
+      btn.setAttribute('aria-current', String(Number(btn.dataset.seed) === seed));
+    }
+    return;
+  }
+  stripBase = base;
+  const strip = $('strip');
+  strip.replaceChildren();
+  for (let i = 0; i < 6; i++) {
+    const s = base + i;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.seed = String(s);
+    btn.setAttribute('aria-current', String(s === seed));
+    const cv = document.createElement('canvas');
+    const label = document.createElement('span');
+    label.textContent = String(s);
+    btn.append(cv, label);
+    btn.addEventListener('click', () => go(s));
+    strip.append(btn);
+    // Coarser sampling for the thumbnails: a ninth of the work, and at this size nobody can
+    // tell the difference.
+    paint(cv, survey(s, 192));
+  }
+}
+
+function go(seed) {
+  const s = Number.isFinite(seed) ? Math.trunc(seed) : 1337;
+  $('seed').value = String(s);
+  show(s);
+}
+
+function setView(span) {
+  SPAN = span;
+  $('view-island').setAttribute('aria-pressed', String(span === 576));
+  $('view-all').setAttribute('aria-pressed', String(span !== 576));
+  show(Number($('seed').value));
+}
+$('view-island').addEventListener('click', () => setView(576));
+$('view-all').addEventListener('click', () => setView(1024));
+
+$('seed').addEventListener('change', (e) => go(Number(e.target.value)));
+$('prev').addEventListener('click', () => go(Number($('seed').value) - 1));
+$('next').addEventListener('click', () => go(Number($('seed').value) + 1));
+$('random').addEventListener('click', () => go(Math.floor(Math.random() * 100000)));
+document.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); go(Number($('seed').value) + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); go(Number($('seed').value) - 1); }
+});
+
+go(1337);
+</script>

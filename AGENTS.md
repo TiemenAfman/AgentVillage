@@ -503,3 +503,92 @@ De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terr
 - Bij nieuwe `class_name`-scripts: eerst `--import` draaien, anders ziet `--script` de class niet.
 - Water-shader (`res://shaders/water.gdshader`, stap 12): in een transparent/blend pass diepte uitlezen via `DEPTH_TEXTURE` + reconstructie `vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0); depth = view.z / view.w` (wateroppervlak = `-VERTEX.z`); `render_mode blend_mix, depth_draw_never, cull_back, specular_disabled` zodat je door het water naar de wereldbodem kijkt. `ConeMesh` → `CylinderMesh` met `TopRadius=0`.
 - `verify_objects.gd` bouwt zelf, niet via `root.add_child(kit.build(...))` — `build()` retourneert een Dictionary, geen Node.
+
+## Wereldgenerator v2 (`lib/world/`, sinds sept 2026)
+
+Vervangt `shared/terrain.mjs`. Het terrein wordt niet meer afgeleid maar **verstuurd**: de
+generator draait één keer per eiland op de server en schrijft onveranderlijke chunks. Daarmee
+vervalt de regel bovenaan `shared/rng.mjs` die `sin`, `cos` en `pow` verbood — die bestond
+alleen omdat dezelfde code in Node, de browser en C# bit-identiek moest draaien.
+
+```
+node scripts/island.mjs                        bovenaanzicht als PNG
+node scripts/island.mjs --sheet 9              contactvel van negen seeds
+node scripts/island.mjs --stats --seeds 4      klassenverdeling en hellingen
+node scripts/island.mjs --publish out/world    chunks + manifest, ~1,2 s
+```
+
+| module | doet |
+|---|---|
+| `noise.mjs` | fbm, ridged fbm, polynomiale smooth-min |
+| `shape.mjs` | de omtrek: smooth-union van negen schijven door een vervormd domein |
+| `relief.mjs` | hoogte: geridgede ruis, terrasseren naar treden van 7,5 m, strandprofiel |
+| `classify.mjs` | één byte per monster: strand, duin, weide, bos, puin, rots |
+| `water.mjs` | rivieren en meren, in het gebakken raster gesneden |
+| `features.mjs` | landmassa's, toppen en aanlandingsplekken benoemen |
+| `bake.mjs` | één pas over de envelop, plus de hellingcap |
+| `chunks.mjs` | het schijfformaat, delta-gecodeerd en gegzipt |
+| `publish.mjs` | chunks + `manifest.json` met `worldRev` |
+| `png.mjs` (in `lib/`) | PNG-schrijver van zestig regels op `node:zlib`, geen dependency |
+
+### Wat je moet weten voordat je eraan draait
+
+- **Terrasseren is een kwantiseerder.** Wat je erin stopt komt eruit als treden van díé
+  frequentie. De fijne korrel gaat er daarom pas ná overheen; mee-kwantiseren maakte het eiland
+  verkreukeld folie in plaats van plateaus. `potential()` moet glad blijven — twee octaven, op
+  schalen van 170–250 m.
+- **`terraceMask` is niet optioneel.** Zonder masker is het hele eiland een bruidstaart.
+- **De omvang is genormaliseerd, de vorm niet.** Het veld wordt om de oorsprong geschaald tot
+  het landoppervlak zijn doel raakt (8,4 ha). Ongenormaliseerd scheelde het bijna een factor
+  twee tussen seeds, en dan beslist de seed hoeveel settlers erop passen.
+- **De hellingcap (45°) kan alleen in de bake.** Een continue functie heeft geen buurmonster om
+  tegen te klemmen. `capGradient` schaaft de hógere van een te steil paar af, dus een klif wordt
+  afgevlakt en een dal niet opgevuld — het eiland groeit er nooit van. Wat eraf gaat (~9.700
+  monsters, gemiddeld 1,4 m) is precies het materiaal dat later rotsschillen wordt.
+- **De zeebodem heeft een vloer op −32 m.** Niet alleen realisme: zonder vloer volgde de bodem
+  het vervormde kustveld tot aan de rand van de envelop, was elk monster open oceaan anders, en
+  woog een chunk pure zee 5 kB — even veel als een chunk eiland. Nu 95 bytes.
+- **Chunks hebben een gedupliceerde randrij** (65×65 voor 64 m). Dat is wat buren naadloos laat
+  aansluiten, en er staat een test op.
+- **Een chunk heet naar de hash van zijn eigen bytes.** Ongewijzigd betekent dezelfde naam, dus
+  `immutable` cachen kan en groeien is publiceren in plaats van herschrijven.
+
+Meetlat voor een eiland van 208 m straal: 8,4 ha land, top ~35 m, helling p50 0,34 / p90 0,91,
+en grofweg weide 36% · bos 16% · strand 15% · puin 11% · duin 11% · rots 9%. Loopt een van die
+ver weg, dan is er iets kapot — de eerste afstelling leverde een kwart strand en een derde kale
+rots op, en dat zag je meteen.
+
+### Water, eilandjes en features
+
+- **Zoet water is geen hoogte maar een klasse.** De oude generator kon wegkomen met "onder
+  zeeniveau is water" omdat het eiland maar 5 m hoog was; op 46 m is een beek op 30 m hoogte nog
+  steeds een beek. Het wateroppervlak ligt daarom een vaste diepte boven de bedding
+  (`RIVER_DEPTH 1.1`, `LAKE_DEPTH 2.2`), en die twee getallen staan in het manifest.
+- **Een rivier volgt een BFS-afstandsveld naar zee, niet de helling.** Steilste afdaling loopt
+  vast in de eerste kuil — de oude generator schreef die les al op — en op getrapt terrein is het
+  erger, want een vlakke trede hééft geen afdaling. `coast` volgen werkt ook niet: ná de domain
+  warp is dat geen afstandsveld meer en heeft het lokale maxima. Gemeten: rivieren strandden
+  50 m voor de kust. Met een BFS-veld komt elke rivier aan.
+- **Een meer heeft een vlakke bodem.** Een constante diepte over een gebogen kom geeft geen vlak
+  oppervlak, en dat is het enige wat elk meer ter wereld gemeen heeft.
+- **Eilandjes worden met `max` verenigd, niet met smooth-min.** Twee landmassa's die samensmelten
+  doen precies teniet waar ze voor zijn: een wijk op zijn eigen eiland. Hun plekken komen uit een
+  vast rooster over de hele envelop, berekend op t=0, dus eilandje 4 landt waar eilandje 4 landt
+  of 1 tot 3 nu bestaan of niet.
+- **`islandStats` meet het hoofdeiland via `mainCoast`.** De eilandjes meetellen liet het
+  landoppervlak 1,13× variëren tussen seeds terwijl er in werkelijkheid alleen een andere zandplaat
+  in beeld stond. En het meet op een echte bake: rivieren, meren en de hellingcap bestaan pas
+  als er een raster is, dus de continue weg zou een eiland rapporteren dat niemand ooit ziet.
+- **Het manifest benoemt wat het eiland ís** — landmassa's met zwaartepunt, grenzen en top, plus
+  aanlandingsplekken, rivieren en meren. De client leidde `HillCentre`, `LakeCentre` en `Rivers`
+  vroeger uit zijn eigen kopie van de generator af; met het terrein als bytes is er niets meer om
+  dat uit af te leiden.
+
+### `docs/island-preview.html`
+
+`node scripts/preview.mjs` bundelt de generator tot één HTML-pagina die hem in de browser draait:
+seed intypen, pijltjes om te stappen, en een knop om van eiland naar archipel te zoomen. Hij roept
+dezelfde `bakeField` aan, dus wat je ziet is wat er gepubliceerd wordt. Voeg een nieuwe module toe
+aan de generator, dan moet hij ook in `MODULES` in `scripts/preview.mjs` — anders faalt de pagina
+met een `ReferenceError` en verder niets.
+
