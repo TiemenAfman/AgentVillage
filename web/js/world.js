@@ -511,6 +511,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // ---- footpaths -----------------------------------------------------------
   let pathMesh = null;
+  let pathTexture = null;
   // Only the town square and a village green are laid in stone. A hamlet's green stays
   // grass - a plaza three cells across, thirty times over, reads as a rash of empty
   // patios - so the wire only names the ones that are actually paved.
@@ -526,22 +527,41 @@ export function createWorld(scene, terrain, village, opts = {}) {
     return out;
   }
 
+  // The stone itself. The sheet is seamless, so it is tiled in world space rather than
+  // per quad: a path running across three cells reads as one continuous piece of paving
+  // instead of the same stone stamped three times. A cell is one world unit and four
+  // metres, so a sheet to the unit puts a cobble at about half a metre across.
+  const PATH_TEXTURE = 'textures/path-cobble.png';
+  const PATH_TEX_UNITS = 1;
+  // Multiplied over the texture, so these are tints rather than colours: the square is
+  // laid in clean stone and a footpath in the same stone gone duller underfoot. With no
+  // texture to multiply they stand on their own, and are the sand and flagstone the
+  // island had before there was a sheet to lay.
+  const TINTED = { path: 0xd9d2c6, square: 0xffffff };
+  const PLAIN = { path: 0xcbb691, square: 0xd6cbb2 };
+
   function buildPaths(paths, squares = squareCells(village)) {
-    if (pathMesh) { group.remove(pathMesh); pathMesh.geometry.dispose(); pathMesh = null; }
-    const positions = [], colors = [], indices = [];
+    if (pathMesh) {
+      group.remove(pathMesh);
+      pathMesh.geometry.dispose();
+      pathMesh.material.dispose();
+      pathMesh = null;
+    }
+    const positions = [], colors = [], uvs = [], indices = [];
     let v = 0;
     // A track half a cell wide, widened towards whichever neighbours continue the path,
     // so a run of cells joins up into one continuous footpath. Squares are laid the same
     // way in a paler stone, which is what makes a road meet a plaza instead of stopping
     // a cell short of it.
+    const paint = pathTexture ? TINTED : PLAIN;
     const seen = new Set();
     const tiles = [];
-    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, 0xcbb691]); }
+    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, paint.path]); }
     for (const c of squares || []) {
       const k = c[0] + c[1] * terrain.size;
       if (seen.has(k)) continue;
       seen.add(k);
-      tiles.push([c, 0xd6cbb2]);
+      tiles.push([c, paint.square]);
     }
     const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
     const H = 0.26;
@@ -552,6 +572,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
         const z0 = z - (hasCell(gx, gz - 1) ? 0.5 : H), z1 = z + (hasCell(gx, gz + 1) ? 0.5 : H);
         for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
           positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
+          uvs.push(qx / PATH_TEX_UNITS, qz / PATH_TEX_UNITS);
           tmpColor.setHex(hex);
           colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
         }
@@ -563,16 +584,32 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     g.setIndex(indices);
     g.computeVertexNormals();
     pathMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      vertexColors: true, flatShading: true, roughness: 1,
+      map: pathTexture, vertexColors: true, flatShading: true, roughness: 1,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }));
     pathMesh.receiveShadow = true;
     group.add(pathMesh);
   }
   buildPaths(village.paths);
+
+  // The sheet arrives after the island is already standing, so the paving is laid twice:
+  // once in plain colour, and again the moment the texture lands. If it never lands - no
+  // file, a PNG the browser will not decode - the island keeps the colours it had, which
+  // is why the tints and the plain colours are two separate sets rather than one set the
+  // texture is expected to rescue.
+  new THREE.TextureLoader().load(PATH_TEXTURE, (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;        // the renderer clamps this to whatever the card allows
+    pathTexture = tex;
+    buildPaths(village.paths);
+  }, undefined, () => {
+    console.warn(`[island] no paving texture at web/${PATH_TEXTURE}; paths stay in plain colour`);
+  });
 
   // ---- riverbanks ----------------------------------------------------------
   // The water itself needs nothing drawn: it is under the same plane as the sea, and the
