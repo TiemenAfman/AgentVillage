@@ -42,3 +42,4 @@ docs/shots/**/*.jpg
 # Zestig megabyte binaries die git voor altijd bewaart, terwijl ze met een
 # commando terugkomen. Het manifest (assets/textures.json) staat er wel in.
 godot/assets/ambientcg/
+godot/assets/terrain-packed/

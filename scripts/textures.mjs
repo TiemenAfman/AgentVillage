@@ -18,20 +18,21 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { ROOT } from '../lib/paths.mjs';
 
-const API = 'https://ambientcg.com/api/v2/full_json';
-const OUT = path.join(ROOT, 'godot', 'assets', 'ambientcg');
-const MANIFEST = path.join(ROOT, 'godot', 'assets', 'textures.json');
-const KEEP = [
-  ['_Color.jpg', 'col'],
-  ['_NormalGL.jpg', 'nrm'],
-  ['_Roughness.jpg', 'rgh'],
-];
-
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--')
     ? process.argv[i + 1] : fallback;
 }
+
+const API = 'https://ambientcg.com/api/v2/full_json';
+const OUT = path.join(ROOT, 'godot', 'assets', 'ambientcg');
+const MANIFEST = path.join(ROOT, 'godot', 'assets', 'textures.json');
+const RES = arg('res', '1K');     // 1K | 2K | 4K | 8K - see the note in SOURCE.md
+const KEEP = [
+  ['_Color.jpg', 'col'],
+  ['_NormalGL.jpg', 'nrm'],
+  ['_Roughness.jpg', 'rgh'],
+];
 
 async function api(params) {
   const url = `${API}?${new URLSearchParams(params)}`;
@@ -50,7 +51,7 @@ async function fetchAsset(id) {
   const dir = path.join(OUT, id.toLowerCase());
   if (fs.existsSync(path.join(dir, `${id.toLowerCase()}_col.jpg`))) return 'already here';
 
-  const url = `https://ambientcg.com/get?file=${id}_1K-JPG.zip`;
+  const url = `https://ambientcg.com/get?file=${id}_${RES}-JPG.zip`;
   const res = await fetch(url, { headers: { 'User-Agent': 'promptholm/1.0 (local tool)' } });
   if (!res.ok) return `HTTP ${res.status}`;
   const zip = path.join(OUT, `${id}.zip`);
@@ -69,7 +70,7 @@ async function fetchAsset(id) {
   fs.mkdirSync(dir, { recursive: true });
   let kept = 0;
   for (const [suffix, short] of KEEP) {
-    const src = path.join(staging, `${id}_1K-JPG${suffix}`);
+    const src = path.join(staging, `${id}_${RES}-JPG${suffix}`);
     if (!fs.existsSync(src)) continue;
     fs.copyFileSync(src, path.join(dir, `${id.toLowerCase()}_${short}.jpg`));
     kept++;
@@ -113,7 +114,7 @@ async function main() {
   fs.writeFileSync(MANIFEST, `${JSON.stringify({
     source: 'https://ambientcg.com/',
     licence: 'CC0 1.0 Universal (public domain)',
-    variant: '1K-JPG',
+    variant: `${RES}-JPG`,
     maps: KEEP.map(([, short]) => short),
     note: 'The maps themselves are gitignored. `node scripts/textures.mjs` restores them.',
     assets: all,

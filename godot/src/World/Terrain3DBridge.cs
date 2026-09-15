@@ -120,13 +120,20 @@ public sealed class Terrain3DBridge
 		var assets = ClassDB.Instantiate("Terrain3DAssets").AsGodotObject();
 		if (assets is null) { GD.PushWarning("Terrain3DAssets would not instantiate"); return; }
 
-		AddTexture(assets, TextureGround, "ground", "res://assets/terrain/ground037", 0.34f);
-		AddTexture(assets, TextureRock, "rock", "res://assets/terrain/rock023", 0.22f);
+		// Packed pairs, not the loose maps from the pack, and that is not a detail.
+		//
+		// Terrain3D wants **albedo in RGB with height in alpha** - that is what the _alb_ht
+		// suffix means - and normal in RGB with roughness in alpha. A JPEG has no alpha, so
+		// feeding it one leaves the height at 1.0 everywhere and its height-based blending
+		// falls over: tried with 4K JPEGs from ambientCG and the island came back bleached
+		// white. Going to 4K is fine, but the maps have to be repacked into PNGs with the
+		// fourth channel filled first, and nothing does that yet.
+		AddTexture(assets, TextureGround, "ground", Packed("ground037"), 0.34f);
+		AddTexture(assets, TextureRock, "rock", Packed("rock023"), 0.22f);
 		// The paving is a separate pack rather than the packed pair the other two use, so it is
 		// loaded by its own maps. uv_scale is repeats per metre: this texture is about two metres
 		// of real ground across, and at 0.45 a cobble comes out the size of a cobble.
-		AddTextureMaps(assets, TexturePaving, "paving",
-			"res://assets/paving/rocks025_col.jpg", "res://assets/paving/rocks025_nrm.jpg", 0.42f);
+		AddTexture(assets, TexturePaving, "paving", Packed("rocks025"), 0.42f);
 
 		Node.Set("assets", assets);
 	}
@@ -149,6 +156,19 @@ public sealed class Terrain3DBridge
 		if (normal is not null) asset.Set("normal_texture", normal);
 		asset.Set("uv_scale", uvScale);
 		assets.Call("set_texture", slot, asset);
+	}
+
+	/// <summary>
+	/// The 4K pair if PackTexturesRunner has been run, otherwise the small one that ships in git.
+	/// Every texture in the array has to be the same format *and* the same size, so this is all
+	/// or nothing: one 4K slot beside two 1K ones is the error that started this.
+	/// </summary>
+	private static string Packed(string name)
+	{
+		string packed = $"res://assets/terrain-packed/{name}_alb_ht.png";
+		return Godot.FileAccess.FileExists(packed)
+			? $"res://assets/terrain-packed/{name}"
+			: $"res://assets/terrain/{name}";
 	}
 
 	private static void AddTexture(GodotObject assets, int slot, string name, string prefix, float uvScale)
@@ -174,8 +194,13 @@ public sealed class Terrain3DBridge
 		asset.Set("uv_scale", uvScale);
 		// And because a repeat every three metres would otherwise read as a chequerboard from
 		// the air, each tile is rotated and shifted a little against its neighbours.
-		asset.Set("detiling_rotation", 0.14f);
-		asset.Set("detiling_shift", 0.22f);
+		// Rotation was 0.14 and it was worse than the tiling it fixed: Terrain3D turns each
+		// repeat by a different amount, so every tile meets its neighbour at a seam and a rock
+		// face came out as a patchwork of squares. Shift alone slides the repeats past each
+		// other without turning them, which breaks the grid and leaves no edges behind; the
+		// large-scale variation comes from macro_variation instead.
+		asset.Set("detiling_rotation", 0.0f);
+		asset.Set("detiling_shift", 0.35f);
 		assets.Call("set_texture", slot, asset);
 	}
 
@@ -205,17 +230,31 @@ public sealed class Terrain3DBridge
 		//                      air. This modulates it over tens of metres so the grid dissolves.
 		//   dual scaling       A second scale for the distance, so the near ground can be fine
 		//                      without the far ground turning into noise.
-		material.Set("enable_projection", true);
-		material.Set("enable_macro_variation", true);
-		// Macro variation on its own does nothing: it multiplies the ground by two colours over
-		// tens of metres, and both default to white. Tiles of three metres are what a close-up
-		// needs, but three-metre tiles average to one flat green from two hundred metres away -
-		// this is what puts the large-scale mottling back, and it is the same trick a painter
-		// uses to keep a field from reading as a single wash.
-		material.Set("macro_variation1", new Color(0.82f, 0.88f, 0.74f));
-		material.Set("macro_variation2", new Color(0.74f, 0.70f, 0.58f));
-		material.Set("macro_variation_slope", 0.55f);
-		material.Set("dual_scaling", true);
+		// These live in the shader, not on the material object. `material.Set(name, value)` looks
+		// like it works and does nothing at all - it pushes a warning into a log nobody reads and
+		// the terrain comes back exactly as blurry as before. `set_shader_param` is the door.
+		void Param(string name, Variant value) => material.Call("set_shader_param", name, value);
+
+		//   projection      Terrain3D projects its textures straight down, so a slope of sixty
+		//                   degrees stretches the grass to twice its length and a cliff smears
+		//                   into vertical stripes. This is the second projection for steep ground.
+		//   mipmap_bias     Positive biases towards the blurrier mip. The default is tuned for a
+		//                   terrain you fly over; this one is walked on.
+		//   depth_blur      Blurs the distance on purpose. We already have fog for that.
+		//   macro variation Two colours modulated over tens of metres. Without them a texture
+		//                   that repeats every three metres reads as one flat green from far off,
+		//                   which is the price of making it sharp up close.
+		Param("enable_projection", true);
+
+		Param("depth_blur", 0.0f);
+		// Macro variation and dual scaling are OFF, and that is a finding rather than an
+		// omission. Both were tried: dual scaling with no near/far distances set broke the rock
+		// faces into a patchwork of squares, and macro variation on top of the colour map - which
+		// already tints every sample with the biome the server picked - turned the valleys neon.
+		// This island gets its large-scale colour from the generator, not from the shader, so the
+		// shader should stay out of it.
+		Param("enable_macro_variation", false);
+		material.Set("dual_scaling", false);
 
 		if (shaderOverride is null) return;
 		material.Call("set_shader_override", shaderOverride);

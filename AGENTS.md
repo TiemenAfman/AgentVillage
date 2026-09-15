@@ -823,3 +823,63 @@ wortel, anders kijk je loodrecht op een maquette.
 wijk, wegen, oversteken, civics, dorpsplein. `--zoom <m>` voor een uitsnede rond het
 centrum. Dit is waar je beoordeelt of het als dorp leest; `scripts/island.mjs` is voor de
 grond alleen.
+
+## Terreintexturen (sinds sept 2026)
+
+Komen van **ambientCG**, allemaal **CC0**, opgehaald met `scripts/textures.mjs`:
+
+```bash
+node scripts/textures.mjs                          # herstel wat textures.json noemt
+node scripts/textures.mjs --res 4K --add Ground037,Rock023,Rocks025
+node scripts/textures.mjs --category Ground --count 30
+```
+
+De **maps staan niet in git** (`godot/assets/ambientcg/` is gitignored): dertig 1K-sets is
+118 MB, vier 4K-sets is 250 MB, en git bewaart elke versie voor altijd. Het manifest
+(`godot/assets/textures.json`) staat er wél in, dus een verse checkout krijgt precies
+dezelfde set terug met één commando.
+
+⚠️ **Een verse clone heeft dus geen grondtexturen tot het script één keer gedraaid heeft**,
+en een build die je daarvoor maakt levert een grijs eiland. Dit is de prijs voor een repo
+die klein blijft; zet het in de leesmij van een release.
+
+### Wat een wazige grond veroorzaakt, op volgorde van effect
+
+Dit heeft een middag gekost en het was drie dingen tegelijk, waarvan er twee niets met
+resolutie te maken hadden:
+
+1. **`uv_scale`.** Die staat in herhalingen per meter. De foto's van ambientCG beslaan
+   ongeveer **2,1 × 2,1 m** (staat op de assetpagina), dus 1:1 is ~0,48. Wij stonden op
+   **0,06** — één herhaling per zeventien meter, dus acht keer uitgerekt. Dat is van
+   dichtbij een waas, hoeveel pixels de textuur ook heeft. Nu 0,34 voor gras, 0,22 voor
+   rots.
+2. **`enable_projection`.** Terrain3D projecteert recht van boven; een helling van 60°
+   rekt de textuur tot het dubbele en een klif smeert tot verticale strepen. Dit zet een
+   tweede projectie op steil terrein. **Let op:** dit is een *shader*-parameter, en
+   `material.Set(naam, waarde)` doet daar niets — het duwt een waarschuwing in een log
+   die niemand leest. Het moet via `material.Call("set_shader_param", naam, waarde)`.
+   `dual_scaling` en `texture_filtering` zijn wél echte materiaal-properties.
+3. **Resolutie.** Pas nádat 1 en 2 klopten werd dit de volgende grens: bij één herhaling
+   per 3 m geeft 1K 348 px/m, en op twee meter afstand vraagt een 1080p-scherm er ruim
+   duizend. Vandaar 4K voor de drie texturen die het terrein echt gebruikt. 8K is 438 MB
+   per materiaal en levert daarbovenop weinig.
+
+### Wat het juist lelijker maakte
+
+- **`dual_scaling` zonder near/far-afstanden** brak de rotswanden in een lappendeken van
+  vierkanten.
+- **`detiling_rotation`** draait elke herhaling anders en laat dus een naad achter tussen
+  elke twee tegels — erger dan de tegeling die het moest verbergen. `detiling_shift`
+  alleen schuift ze langs elkaar zonder randen.
+- **`enable_macro_variation`** bovenop de kleurkaart maakte de dalen neongroen. Dit eiland
+  krijgt zijn grootschalige kleur van de generator (de kleurkaart per monster), niet van
+  de shader — die moet eraf blijven.
+
+### De kleurkaart tint álles
+
+`BuildRegion` schrijft per monster `Palette.Terrain(cls)` in de kleurkaart, en Terrain3D
+vermenigvuldigt de gesplatte textuur daarmee. Dat is wat het eiland painterly houdt, maar
+het betekent ook: **wie een textuur ergens zichtbaar wil maken, moet daar ook de tint
+wegnemen.** Een geschilderd pad is geclassificeerd als weide — het ís weide met stenen
+erop — dus zonder dat kwamen de keien vermenigvuldigd met grasgroen door en waren ze
+onzichtbaar. Zie `PaintPaving` in `Terrain3DBridge`.

@@ -1,7 +1,7 @@
 {
   "source": "https://ambientcg.com/",
   "licence": "CC0 1.0 Universal (public domain)",
-  "variant": "1K-JPG",
+  "variant": "4K-JPG",
   "maps": [
     "col",
     "nrm",
@@ -38,6 +38,9 @@
     "Ground108",
     "Ground109",
     "Ground110",
-    "Ground111"
+    "Ground111",
+    "PavingStones138",
+    "Rock023",
+    "Rocks025"
   ]
 }
