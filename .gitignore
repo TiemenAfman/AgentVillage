@@ -37,3 +37,8 @@ godot/.captures/
 # ook als de beelden er niet bij zitten.
 docs/shots/**/*.png
 docs/shots/**/*.jpg
+
+# Texturen van ambientCG: opgehaald met scripts/textures.mjs, niet in git.
+# Zestig megabyte binaries die git voor altijd bewaart, terwijl ze met een
+# commando terugkomen. Het manifest (assets/textures.json) staat er wel in.
+godot/assets/ambientcg/

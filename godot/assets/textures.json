@@ -1,0 +1,43 @@
+{
+  "source": "https://ambientcg.com/",
+  "licence": "CC0 1.0 Universal (public domain)",
+  "variant": "1K-JPG",
+  "maps": [
+    "col",
+    "nrm",
+    "rgh"
+  ],
+  "note": "The maps themselves are gitignored. `node scripts/textures.mjs` restores them.",
+  "assets": [
+    "Ground037",
+    "Ground048",
+    "Ground054",
+    "Ground067",
+    "Ground068",
+    "Ground078",
+    "Ground079L",
+    "Ground079S",
+    "Ground080",
+    "Ground081",
+    "Ground082S",
+    "Ground085",
+    "Ground086",
+    "Ground087",
+    "Ground088",
+    "Ground091",
+    "Ground093A",
+    "Ground093C",
+    "Ground095A",
+    "Ground097",
+    "Ground102",
+    "Ground103",
+    "Ground104",
+    "Ground105",
+    "Ground106",
+    "Ground107",
+    "Ground108",
+    "Ground109",
+    "Ground110",
+    "Ground111"
+  ]
+}

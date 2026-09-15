@@ -550,108 +550,65 @@ public partial class WorldManager : Node3D
 
 	// ---- roads & paved square ------------------------------------------------
 
+	/// <summary>
+	/// The paving, painted into the terrain rather than laid over it.
+	///
+	/// Twice this was geometry and twice it looked like geometry: first a slab per lot floating
+	/// over the ground, then one continuous ribbon sitting on it. Both have the lot's square
+	/// edges and both stop dead at a boundary no path ever had. A path is the ground being a
+	/// different ground, and that is a texture with a metre or two of blend at its edge.
+	///
+	/// Falls back to nothing when Terrain3D is not loaded. That is deliberate: a village without
+	/// visible paths is a cosmetic loss, and drawing the old mesh as well would mean carrying two
+	/// answers to the same question forever.
+	/// </summary>
 	private void BuildRoads(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_roadRoot!);
-
-		// Every lot that is paved, road and plaza alike. A set, because a civic path and the
-		// square it arrives at share cells and a quad drawn twice z-fights with itself.
-		var paved = new HashSet<long>();
-		void Add(int gx, int gz) => paved.Add(((long)gx << 32) | (uint)gz);
-
-		foreach (var path in village.Paths)
-			foreach (var cell in path.Cells)
-				if (cell.Count >= 2) Add(cell[0], cell[1]);
-
-		if (village.Island.Town?.Paved is not null)
-			foreach (var cell in village.Island.Town.Paved)
-				if (cell.Count >= 2) Add(cell[0], cell[1]);
-
-		if (paved.Count == 0)
+		if (_bridge is null)
 		{
-			GD.Print("[WorldManager] no paved ground");
+			GD.PushWarning("no Terrain3D, so no paving: the paths are painted into the terrain");
 			return;
 		}
 
-		// One surface, not one box per lot.
-		//
-		// A road used to be a MultiMesh of slabs sitting three centimetres over the height at
-		// each lot's *centre*. On the old island, which was flat to within a metre, that read as
-		// a road. On ground with real relief every slab is level while the ground under it is
-		// not, so each one digs into the hill at one edge and hangs in the air at the other, and
-		// a street reads as a row of floating tiles - which is exactly what it looked like.
-		//
-		// Instead the surface is built from the terrain itself: a quad per lot whose four
-		// corners sit on the ground, so neighbouring lots meet exactly and the ribbon follows
-		// every dip and crown the way a laid road does. The lift is small and constant, enough
-		// to beat z-fighting and to read as a kerb from a standing eye.
-		const float Lift = 0.05f;
-		float lot = terrain.Span(1.0);
+		var runs = new List<IReadOnlyList<(int Gx, int Gz)>>();
+		foreach (var path in village.Paths)
+			runs.AddRange(SplitRuns(path.Cells));
+		// The square is one block of ground rather than a line, so each of its lots goes in as a
+		// run of its own and the distance field unions them into one paved area.
+		if (village.Island.Town?.Paved is not null)
+			foreach (var cell in village.Island.Town.Paved)
+				if (cell.Count >= 2) runs.Add(new[] { (cell[0], cell[1]) });
 
-		var vertices = new List<Vector3>(paved.Count * 6);
-		var normals = new List<Vector3>(paved.Count * 6);
-		var uvs = new List<Vector2>(paved.Count * 6);
-
-		// Corner heights are cached across lots: a lot shares two corners with each of its four
-		// neighbours, so without this the terrain is sampled four times for every point.
-		var cornerY = new Dictionary<long, float>();
-		float CornerY(int gx, int gz)
-		{
-			long key = ((long)gx << 32) | (uint)gz;
-			if (cornerY.TryGetValue(key, out float cached)) return cached;
-			var (wx, wz) = terrain.CellCorner(gx, gz);
-			float y = (float)terrain.WorldHeight(wx, wz) + Lift;
-			cornerY[key] = y;
-			return y;
-		}
-
-		foreach (long key in paved)
-		{
-			int gx = (int)(key >> 32), gz = (int)(uint)key;
-			var (x0, z0) = terrain.CellCorner(gx, gz);
-			float x1 = (float)x0 + lot, z1 = (float)z0 + lot;
-
-			var a = new Vector3((float)x0, CornerY(gx, gz), (float)z0);
-			var b = new Vector3(x1, CornerY(gx + 1, gz), (float)z0);
-			var c = new Vector3((float)x0, CornerY(gx, gz + 1), z1);
-			var d = new Vector3(x1, CornerY(gx + 1, gz + 1), z1);
-
-			// Two triangles, wound so the face points up. Getting this backwards is how the
-			// terrain mesh once rendered as slivers: a back-facing quad is not a dark quad, it
-			// is no quad at all.
-			AddTriangle(vertices, normals, uvs, a, b, c);
-			AddTriangle(vertices, normals, uvs, b, d, c);
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
-		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
-		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
-
-		var mesh = new ArrayMesh();
-		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		mesh.SurfaceSetMaterial(0, CobbleMat());
-
-		_roadRoot!.AddChild(new MeshInstance3D { Name = "Paving", Mesh = mesh });
-		GD.Print($"[WorldManager] paving: {paved.Count} lots, {vertices.Count / 3} triangles");
+		_bridge.PaintPaving(terrain, runs, terrain.MetresPerLot);
 	}
 
-	/// <summary>One triangle with a flat normal and world-space UVs, so the grain of the paving
-	/// runs with the ground rather than with whichever lot it happens to fall in.</summary>
-	private static void AddTriangle(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs,
-		Vector3 a, Vector3 b, Vector3 c)
+	/// <summary>
+	/// The cells of one path, split into continuous runs.
+	///
+	///  records only the cells a route freshly paves, so where a road joins one that
+	/// already exists its cell list simply jumps. Treating that list as one polyline would paint
+	/// a stripe straight across whatever lies between the two ends.
+	/// </summary>
+	private static List<IReadOnlyList<(int Gx, int Gz)>> SplitRuns(List<List<int>> cells)
 	{
-		var n = (b - a).Cross(c - a).Normalized();
-		if (n.Y < 0.0f) n = -n;
-		foreach (var v in new[] { a, b, c })
+		var runs = new List<IReadOnlyList<(int Gx, int Gz)>>();
+		List<(int Gx, int Gz)>? run = null;
+		foreach (var cell in cells)
 		{
-			vertices.Add(v);
-			normals.Add(n);
-			uvs.Add(new Vector2(v.X, v.Z));
+			if (cell.Count < 2) continue;
+			var here = (Gx: cell[0], Gz: cell[1]);
+			bool joins = run is not null
+				&& Math.Abs(here.Gx - run[^1].Gx) <= 1 && Math.Abs(here.Gz - run[^1].Gz) <= 1;
+			if (!joins)
+			{
+				run = new List<(int, int)>();
+				runs.Add(run);
+			}
+			run!.Add(here);
 		}
+		return runs;
 	}
-
 
 	// ---- bridges -------------------------------------------------------------
 

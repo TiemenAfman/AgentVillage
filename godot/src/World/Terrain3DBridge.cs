@@ -41,6 +41,7 @@ public sealed class Terrain3DBridge
 	/// this is coarse; it gets finer the moment there are more in the asset list.</summary>
 	public const int TextureGround = 0;
 	public const int TextureRock = 1;
+	public const int TexturePaving = 2;
 
 	public Node3D Node { get; private init; } = null!;
 	public GodotObject Data { get; private init; } = null!;
@@ -119,10 +120,35 @@ public sealed class Terrain3DBridge
 		var assets = ClassDB.Instantiate("Terrain3DAssets").AsGodotObject();
 		if (assets is null) { GD.PushWarning("Terrain3DAssets would not instantiate"); return; }
 
-		AddTexture(assets, TextureGround, "ground", "res://assets/terrain/ground037", 0.06f);
-		AddTexture(assets, TextureRock, "rock", "res://assets/terrain/rock023", 0.09f);
+		AddTexture(assets, TextureGround, "ground", "res://assets/terrain/ground037", 0.34f);
+		AddTexture(assets, TextureRock, "rock", "res://assets/terrain/rock023", 0.22f);
+		// The paving is a separate pack rather than the packed pair the other two use, so it is
+		// loaded by its own maps. uv_scale is repeats per metre: this texture is about two metres
+		// of real ground across, and at 0.45 a cobble comes out the size of a cobble.
+		AddTextureMaps(assets, TexturePaving, "paving",
+			"res://assets/paving/rocks025_col.jpg", "res://assets/paving/rocks025_nrm.jpg", 0.42f);
 
 		Node.Set("assets", assets);
+	}
+
+	/// <summary>The same, for a pack that ships its maps loose instead of packed in pairs.</summary>
+	private static void AddTextureMaps(GodotObject assets, int slot, string name, string albedoPath, string normalPath, float uvScale)
+	{
+		var albedo = GD.Load<Texture2D>(albedoPath);
+		if (albedo is null)
+		{
+			GD.PushWarning($"terrain texture {albedoPath} is missing; slot {slot} stays empty");
+			return;
+		}
+		var asset = ClassDB.Instantiate("Terrain3DTextureAsset").AsGodotObject();
+		if (asset is null) return;
+		asset.Set("name", name);
+		asset.Set("id", slot);
+		asset.Set("albedo_texture", albedo);
+		var normal = GD.Load<Texture2D>(normalPath);
+		if (normal is not null) asset.Set("normal_texture", normal);
+		asset.Set("uv_scale", uvScale);
+		assets.Call("set_texture", slot, asset);
 	}
 
 	private static void AddTexture(GodotObject assets, int slot, string name, string prefix, float uvScale)
@@ -142,8 +168,14 @@ public sealed class Terrain3DBridge
 		asset.Set("albedo_texture", albedo);
 		if (normal is not null) asset.Set("normal_texture", normal);
 		// UV scale is in texture repeats per metre: smaller means the grain is bigger on the
-		// ground. Rock wants a coarser grain than turf or it reads as sandpaper.
+		// ground. It was 0.06 - one repeat per seventeen metres - which stretched a two-metre
+		// photograph of turf over half a hillside, and from standing height that is a green blur.
+		// A third of a repeat per metre puts a blade of grass back at the size of a blade of grass.
 		asset.Set("uv_scale", uvScale);
+		// And because a repeat every three metres would otherwise read as a chequerboard from
+		// the air, each tile is rotated and shifted a little against its neighbours.
+		asset.Set("detiling_rotation", 0.14f);
+		asset.Set("detiling_shift", 0.22f);
 		assets.Call("set_texture", slot, asset);
 	}
 
@@ -153,13 +185,39 @@ public sealed class Terrain3DBridge
 	/// </summary>
 	private void ApplyMaterial(Shader? shaderOverride)
 	{
-		if (shaderOverride is null) return;
 		var material = Node.Get("material").AsGodotObject();
 		if (material is null)
 		{
-			GD.PushWarning("Terrain3D exposed no material to override");
+			GD.PushWarning("Terrain3D exposed no material");
 			return;
 		}
+
+		// Three settings that decide whether the ground looks like ground from two metres away.
+		// None of them is resolution: a close-up of this terrain came back smeared into streaks,
+		// and the honest diagnosis was projection and tiling scale, not pixels.
+		//
+		//   enable_projection  Terrain3D projects its textures straight down by default, so a
+		//                      slope of sixty degrees stretches the grass to twice its length
+		//                      and a cliff face smears into vertical stripes. This puts a second
+		//                      projection on the steep parts, which is the whole fix for that.
+		//   macro variation    Raising uv_scale to something sane means the texture repeats every
+		//                      few metres, and a repeat every few metres reads as a grid from the
+		//                      air. This modulates it over tens of metres so the grid dissolves.
+		//   dual scaling       A second scale for the distance, so the near ground can be fine
+		//                      without the far ground turning into noise.
+		material.Set("enable_projection", true);
+		material.Set("enable_macro_variation", true);
+		// Macro variation on its own does nothing: it multiplies the ground by two colours over
+		// tens of metres, and both default to white. Tiles of three metres are what a close-up
+		// needs, but three-metre tiles average to one flat green from two hundred metres away -
+		// this is what puts the large-scale mottling back, and it is the same trick a painter
+		// uses to keep a field from reading as a single wash.
+		material.Set("macro_variation1", new Color(0.82f, 0.88f, 0.74f));
+		material.Set("macro_variation2", new Color(0.74f, 0.70f, 0.58f));
+		material.Set("macro_variation_slope", 0.55f);
+		material.Set("dual_scaling", true);
+
+		if (shaderOverride is null) return;
 		material.Call("set_shader_override", shaderOverride);
 		material.Call("enable_shader_override", true);
 	}
@@ -285,6 +343,135 @@ public sealed class Terrain3DBridge
 		// Navigable where a settler could plausibly walk: on land, not up a cliff, not in water.
 		if (!TerrainClass.IsWater(cls) && field.SlopeOf(i, j) < 0.7f) word |= NavigationBit;
 		return word;
+	}
+
+	// ---- painting the paving ------------------------------------------------------
+
+	/// <summary>What the stone is tinted to where the paving is solid.</summary>
+	private static readonly Color PavingTint = new(0.66f, 0.64f, 0.60f);
+
+	/// <summary>Metres of solid paving either side of a path's centre line.</summary>
+	private const float PavingHalfW = 1.5f;
+	/// <summary>And how far past that it fades out into whatever the ground already was.</summary>
+	private const float PavingFade = 1.6f;
+
+	/// <summary>
+	/// Paint the roads into the terrain instead of laying a mesh over it.
+	///
+	/// A road drawn as geometry is a separate object sitting on the ground, and it looks like
+	/// one: it has the lot's own square edges, it z-fights where it meets a slope, and it stops
+	/// dead at a boundary no road ever had. What a path actually is, is the ground being a
+	/// different ground - and that is a texture, blended in over a metre or two.
+	///
+	/// This is done through Terrain3D's own per-position setters rather than by packing control
+	/// words into an image by hand. Writing the image is what this file has a long note about
+	/// further down: the words came out right and rendered white. `set_control_base_id` and
+	/// friends pack the same bits internally, so whatever was wrong about doing it by hand stops
+	/// being our problem.
+	///
+	/// The blend byte is what buys the gradient. 0 is all base, 255 is all overlay; a sample on
+	/// the centre line gets pure paving and one <see cref="PavingFade"/> metres out gets pure
+	/// meadow, with a smoothstep between so the edge has no line in it.
+	/// </summary>
+	public void PaintPaving(TerrainField field, IEnumerable<IReadOnlyList<(int Gx, int Gz)>> runs, double metresPerLot)
+	{
+		// Distance from each affected sample to the nearest path, in metres. Only samples near a
+		// path are ever touched, so this is a sparse map rather than a field over the envelope.
+		var distance = new Dictionary<(int I, int J), float>();
+		float reach = PavingHalfW + PavingFade;
+		float half = field.EnvelopeHalf;
+		float mps = field.MetresPerSample;
+
+		void Mark(Vector2 a, Vector2 b)
+		{
+			float minX = MathF.Min(a.X, b.X) - reach, maxX = MathF.Max(a.X, b.X) + reach;
+			float minZ = MathF.Min(a.Y, b.Y) - reach, maxZ = MathF.Max(a.Y, b.Y) + reach;
+			int i0 = (int)MathF.Floor((minX + half) / mps), i1 = (int)MathF.Ceiling((maxX + half) / mps);
+			int j0 = (int)MathF.Floor((minZ + half) / mps), j1 = (int)MathF.Ceiling((maxZ + half) / mps);
+
+			for (int j = j0; j <= j1; j++)
+			{
+				for (int i = i0; i <= i1; i++)
+				{
+					if (!field.InField(i, j)) continue;
+					var p = new Vector2(i * mps - half, j * mps - half);
+					float d = DistanceToSegment(p, a, b);
+					if (d > reach) continue;
+					var key = (i, j);
+					if (!distance.TryGetValue(key, out float best) || d < best) distance[key] = d;
+				}
+			}
+		}
+
+		foreach (var run in runs)
+		{
+			if (run.Count == 0) continue;
+			// A single lot is a doorstep: a segment of zero length, which the point-to-segment
+			// distance handles as a circle, and that is exactly right for it.
+			for (int k = 0; k < run.Count; k++)
+			{
+				var a = LotCentre(run[k], field, metresPerLot);
+				var b = LotCentre(run[Math.Min(k + 1, run.Count - 1)], field, metresPerLot);
+				Mark(a, b);
+			}
+		}
+
+		int painted = 0;
+		foreach (var (key, d) in distance)
+		{
+			var at = new Vector3(key.I * mps - half, 0.0f, key.J * mps - half);
+			// Terrain3D stores one control word per sample and finds it from a world position;
+			// outside a published region there is nothing to write to and it says so.
+			if (float.IsNaN(HeightAt(at))) continue;
+
+			float t = Mathf.Clamp((d - PavingHalfW) / PavingFade, 0.0f, 1.0f);
+			int blend = (int)MathF.Round(Mathf.SmoothStep(0.0f, 1.0f, t) * 255.0f);
+
+			Data.Call("set_control_auto", at, false);
+			Data.Call("set_control_base_id", at, TexturePaving);
+			Data.Call("set_control_overlay_id", at, TextureGround);
+			Data.Call("set_control_blend", at, blend);
+
+			// And take the biome tint off, in step with the same ramp.
+			//
+			// The colour map multiplies the splatted texture with whatever colour the server's
+			// classifier picked for that sample, which is what keeps the island painterly. A
+			// road is classified meadow - it is meadow, with stones on it - so without this the
+			// cobbles come through multiplied by grass green and the path is invisible. Found
+			// the hard way: the control map was written correctly and nothing appeared.
+			var (i, j) = (key.I, key.J);
+			var tint = Palette.Terrain(field.ClassOf(i, j));
+			// Towards stone, not towards white. Every other sample on the island is tinted *down*
+			// from its texture, so leaving the path at 1,1,1 made it the brightest thing in the
+			// frame - a chalk stripe over the meadow rather than a track through it.
+			float k = (float)blend / 255.0f;
+			Data.Call("set_color", at, new Color(
+				Mathf.Lerp(PavingTint.R, tint.R, k),
+				Mathf.Lerp(PavingTint.G, tint.G, k),
+				Mathf.Lerp(PavingTint.B, tint.B, k), 0.5f));
+			painted++;
+		}
+
+		Data.Call("update_maps");
+		GD.Print($"[Terrain3D] painted {painted} samples of paving");
+	}
+
+	private static Vector2 LotCentre((int Gx, int Gz) lot, TerrainField field, double metresPerLot)
+	{
+		double half = field.Size / 2.0;
+		return new Vector2(
+			(float)((lot.Gx - half + 0.5) * metresPerLot),
+			(float)((lot.Gz - half + 0.5) * metresPerLot));
+	}
+
+	/// <summary>Shortest distance from a point to a line segment; a zero-length segment is a point.</summary>
+	private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
+	{
+		var ab = b - a;
+		float len2 = ab.LengthSquared();
+		if (len2 < 1e-6f) return (p - a).Length();
+		float t = Mathf.Clamp((p - a).Dot(ab) / len2, 0.0f, 1.0f);
+		return (p - (a + ab * t)).Length();
 	}
 
 	/// <summary>
