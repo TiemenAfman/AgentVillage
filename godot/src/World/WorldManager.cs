@@ -28,10 +28,17 @@ public partial class WorldManager : Node3D
 	private readonly List<BuildingMarker> _buildingMarkers = new();
 	private readonly HashSet<(int, int)> _buildingCells = new();
 
-	/// <summary>Buildings are drawn at 65% of their plot, centred on the lot, so adjacent
-	/// plots (gap 0 in the data) get a green margin instead of touching walls. Density
-	/// relief without touching data; see AGENTS.md "Schaalsemantiek v1 vs v2".</summary>
-	public const float FootprintScale = 0.65f;
+	/// <summary>
+	/// Buildings are drawn at this fraction of their plot, centred on it, so adjacent plots
+	/// get a garden instead of touching walls.
+	///
+	/// It was 0.65, chosen when a 3x3 plot was three metres across and 65% of it was a shed.
+	/// On lots of four metres the same fraction makes a house nearly eight metres wide - a barn
+	/// standing over a path a metre and a half wide, which is what the village looked like. At
+	/// 0.42 a house is five metres on a twelve-metre plot: a cottage with a garden round it,
+	/// which is the shape the layout has always been describing.
+	/// </summary>
+	public const float FootprintScale = 0.42f;
 
 	/// <summary>
 	/// How far the tidal flats run out from the coastline before the bottom starts dropping.
@@ -543,11 +550,6 @@ public partial class WorldManager : Node3D
 
 	// ---- roads & paved square ------------------------------------------------
 
-	/// <summary>
-	/// Cobblestone tiles for every path cell and every paved plaza cell, clumped one
-	/// cell above the terrain (WorldHeight + 0.03) so the ribbon never z-fights with the
-	/// ground. Drawn as a single MultiMesh over the cell-slab primitive.
-	/// </summary>
 	private void BuildRoads(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_roadRoot!);
@@ -646,9 +648,10 @@ public partial class WorldManager : Node3D
 		{
 			vertices.Add(v);
 			normals.Add(n);
-			uvs.Add(new Vector2(v.X * 0.5f, v.Z * 0.5f));
+			uvs.Add(new Vector2(v.X, v.Z));
 		}
 	}
+
 
 	// ---- bridges -------------------------------------------------------------
 
@@ -849,11 +852,27 @@ public partial class WorldManager : Node3D
 	private static StandardMaterial3D RailingMat() => _railingMat;
 	private static StandardMaterial3D StoneMat() => _stoneMat;
 
+	/// <summary>
+	/// The paving: PavingStones138 from ambientCG, CC0 - cobbles with moss in the joints. See
+	/// assets/paving/SOURCE.md.
+	///
+	/// The UV scale is what decides whether this reads as a street or as gravel. The texture is
+	/// about two metres of real ground across, so at 0.5 repeats per metre a cobble comes out
+	/// the size of a cobble. Getting this wrong is the usual way a good texture looks cheap.
+	/// </summary>
 	private static StandardMaterial3D CobbleMat()
 		=> _cobbleMat ??= new StandardMaterial3D
 		{
-			AlbedoColor = new Color(0.44f, 0.46f, 0.50f),
-			Roughness = 0.85f,
+			// Tinted down: the photograph was lit for a product page and reads chalk-white next
+			// to this island's palette. The multiply keeps the stone's own variation.
+			AlbedoColor = new Color(0.72f, 0.71f, 0.68f),
+			AlbedoTexture = GD.Load<Texture2D>("res://assets/paving/paving138_col.jpg"),
+			NormalEnabled = true,
+			NormalTexture = GD.Load<Texture2D>("res://assets/paving/paving138_nrm.jpg"),
+			NormalScale = 0.8f,
+			RoughnessTexture = GD.Load<Texture2D>("res://assets/paving/paving138_rgh.jpg"),
+			Roughness = 1.0f,
+			Uv1Scale = new Vector3(0.5f, 0.5f, 0.5f),
 			SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
 		};
 
