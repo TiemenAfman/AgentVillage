@@ -826,27 +826,31 @@ grond alleen.
 
 ## Terreintexturen (sinds sept 2026)
 
-Komen van **ambientCG**, allemaal **CC0**, opgehaald met `scripts/textures.mjs`:
+**Gegenereerd, niet gefotografeerd.** De stijl is gestileerd (Sea of Thieves, chunky
+low-poly — zie het plan van 15 sept), en fotoscans vechten daarmee. De drie slots die het
+terrein gebruikt komen uit dezelfde penseelstreken als de rotsen (`BrushTexture.Strokes`):
 
-```bash
-node scripts/textures.mjs                          # herstel wat textures.json noemt
-node scripts/textures.mjs --res 4K --add Ground037,Rock023,Rocks025
-node scripts/textures.mjs --category Ground --count 30
+```
+Godot_..._console.exe --headless --path godot --script res://src/Tools/StrokeTexturesRunner.cs
 ```
 
-De **maps staan niet in git** (`godot/assets/ambientcg/` is gitignored): dertig 1K-sets is
-118 MB, vier 4K-sets is 250 MB, en git bewaart elke versie voor altijd. Het manifest
-(`godot/assets/textures.json`) staat er wél in, dus een verse checkout krijgt precies
-dezelfde set terug met één commando.
+schrijft gras, rots en bestrating (512², RGBA8, albedo met hoogte in alfa, normaal met
+ruwheid in alfa) naar `godot/assets/terrain-strokes/` — **wél in git**, 290 KiB, dus een
+verse clone heeft grond. De runner schrijft zijn eigen `.import` (mipmaps aan, geen
+detect_3d-herimport), want Terrain3D weigert de hele texturelijst als één slice afwijkt.
+De rots-slot gebruikt exact de parameters van `RockMesh.StoneMaterial`, zodat een rotshelling
+en de kei erop hetzelfde schilderij zijn. De albedo is een *modulatie* rond 1,0, geen kleur:
+de biome-kleur komt uit de kleurkaart (zie onder).
 
-⚠️ **Een verse clone heeft dus geen grondtexturen tot het script één keer gedraaid heeft**,
-en een build die je daarvoor maakt levert een grijs eiland. Dit is de prijs voor een repo
-die klein blijft; zet het in de leesmij van een release.
+`Terrain3DBridge.Painted` kiest alles-of-niets: strokes > `terrain-packed` (4K fotoscan,
+gitignored) > `terrain`. De ambientCG-route (`scripts/textures.mjs`, `godot/assets/textures.json`,
+CC0) bestaat nog als terugval en voor de foto's in `godot/assets/paving/`, maar is als look
+afgevallen; `godot/assets/ambientcg/` en `terrain-packed/` blijven buiten git.
 
 ### Wat een wazige grond veroorzaakt, op volgorde van effect
 
-Dit heeft een middag gekost en het was drie dingen tegelijk, waarvan er twee niets met
-resolutie te maken hadden:
+Dit heeft een middag gekost (in de fotoscan-periode) en het was drie dingen tegelijk,
+waarvan er twee niets met resolutie te maken hadden — en die twee gelden nog steeds:
 
 1. **`uv_scale`.** Die staat in herhalingen per meter. De foto's van ambientCG beslaan
    ongeveer **2,1 × 2,1 m** (staat op de assetpagina), dus 1:1 is ~0,48. Wij stonden op
@@ -859,10 +863,10 @@ resolutie te maken hadden:
    `material.Set(naam, waarde)` doet daar niets — het duwt een waarschuwing in een log
    die niemand leest. Het moet via `material.Call("set_shader_param", naam, waarde)`.
    `dual_scaling` en `texture_filtering` zijn wél echte materiaal-properties.
-3. **Resolutie.** Pas nádat 1 en 2 klopten werd dit de volgende grens: bij één herhaling
-   per 3 m geeft 1K 348 px/m, en op twee meter afstand vraagt een 1080p-scherm er ruim
-   duizend. Vandaar 4K voor de drie texturen die het terrein echt gebruikt. 8K is 438 MB
-   per materiaal en levert daarbovenop weinig.
+3. **Resolutie.** Pas nádat 1 en 2 klopten werd dit de volgende grens — voor fotoscans.
+   4K loste het niet op ("de 4k textures lossen inderdaad niks op"): een foto onder een
+   gefacetteerde heuvel blijft een foto. Met gegenereerde streken is 512 genoeg, want dat
+   is korrel, geen detail.
 
 ### Wat het juist lelijker maakte
 

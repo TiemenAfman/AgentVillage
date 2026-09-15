@@ -35,7 +35,11 @@ public static class BrushTexture
 	/// lightest. Leave at 0..1 for a height field; set them around 1 for an albedo, where this
 	/// has to *modulate* the colour rather than mask it — a field averaging 0.35 multiplied into
 	/// sandstone gives tar, which is exactly what the first attempt looked like.</param>
-	public static ImageTexture Strokes(uint seed, int size = 512, int strokes = 420, int steps = 5, float lean = 0.55f, float low = 0.0f, float high = 1.0f)
+	/// <param name="lengthScale">Stretches every mark. 1 is the rock's stroke; below 1 the marks
+	/// get short and dabbed, which is what worn flagstone looks like, and above 1 they become
+	/// long sweeps, which is what a meadow looks like. Width follows length, so this changes the
+	/// size of the mark and not its shape.</param>
+	public static ImageTexture Strokes(uint seed, int size = 512, int strokes = 420, int steps = 5, float lean = 0.55f, float low = 0.0f, float high = 1.0f, float lengthScale = 1.0f)
 	{
 		var field = new float[size * size];
 		var rng = new RandomNumberGenerator { Seed = seed };
@@ -50,7 +54,7 @@ public static class BrushTexture
 			// Three sizes, so the surface has a few broad sweeps and a lot of small marks - the
 			// same reason terrain noise has octaves.
 			int band = s % 3;
-			float length = size * (band == 0 ? 0.26f : band == 1 ? 0.13f : 0.06f) * rng.RandfRange(0.7f, 1.3f);
+			float length = size * (band == 0 ? 0.26f : band == 1 ? 0.13f : 0.06f) * rng.RandfRange(0.7f, 1.3f) * lengthScale;
 			float width = length * rng.RandfRange(0.10f, 0.19f);
 			float weight = (band == 0 ? 0.5f : band == 1 ? 0.8f : 1.0f) * rng.RandfRange(0.6f, 1.0f);
 
@@ -84,9 +88,9 @@ public static class BrushTexture
 	/// tinting. Derived from the height field rather than drawn again, which keeps the two
 	/// exactly in register.
 	/// </summary>
-	public static ImageTexture StrokeNormals(uint seed, int size = 512, float strength = 2.2f, int strokes = 420, int steps = 5, float lean = 0.55f)
+	public static ImageTexture StrokeNormals(uint seed, int size = 512, float strength = 2.2f, int strokes = 420, int steps = 5, float lean = 0.55f, float lengthScale = 1.0f)
 	{
-		var height = Strokes(seed, size, strokes, steps, lean).GetImage();
+		var height = Strokes(seed, size, strokes, steps, lean, lengthScale: lengthScale).GetImage();
 		var image = Image.CreateEmpty(size, size, true, Image.Format.Rgb8);
 		for (int y = 0; y < size; y++)
 		{

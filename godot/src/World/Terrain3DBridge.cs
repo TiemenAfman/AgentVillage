@@ -128,16 +128,24 @@ public sealed class Terrain3DBridge
 		// falls over: tried with 4K JPEGs from ambientCG and the island came back bleached
 		// white. Going to 4K is fine, but the maps have to be repacked into PNGs with the
 		// fourth channel filled first, and nothing does that yet.
-		// Elke textuur krijgt een tint mee. ambientCG levert *delit* albedo: de belichting is er
-		// met opzet uitgerekend zodat jouw licht het werk doet, en dat leest onder een vlakke
-		// middagzon als uitgewassen grijs. Dit zet het contrast en de kleur terug die de foto
-		// niet meer heeft - donkerder en verzadigder, en per materiaal een andere kant op.
-		AddTexture(assets, TextureGround, "ground", Packed("ground037"), 0.34f, new Color(0.56f, 0.70f, 0.40f));
-		AddTexture(assets, TextureRock, "rock", Packed("rock023"), 0.22f, new Color(0.62f, 0.60f, 0.56f));
-		// The paving is a separate pack rather than the packed pair the other two use, so it is
-		// loaded by its own maps. uv_scale is repeats per metre: this texture is about two metres
-		// of real ground across, and at 0.45 a cobble comes out the size of a cobble.
-		AddTexture(assets, TexturePaving, "paving", Packed("rocks025"), 0.42f, new Color(0.70f, 0.68f, 0.62f));
+		// De tint is neutraal van kleur en alleen donker van waarde, en dat is het hele punt van
+		// de geschilderde set: de strokes moduleren rond 1.0 in plaats van rond 0.5, dus wat er
+		// overblijft is de kleurkaart - de klasse die de generator koos, met korrel erover. Bij
+		// de foto's moest de tint de kleur nog terugzetten die het delitten eruit had gerekend;
+		// hier zou diezelfde tint de kleurkaart juist overstemmen.
+		//
+		// Waarom niet gewoon wit: met tint 1.0 komt de klassekleur er ongedempt uit en dat is
+		// ~1,3x helderder dan de fotoset. Gemeten op dezelfde shot werd gras neongroen en zand
+		// bijna wit (243,245,211 van de 255). Rond 0,78 zit hij weer op de helderheid van de
+		// foto's, maar dan als vlakke kleur in plaats van als foto. Blauw staat extra laag: de
+		// foto's waren warm en dempten blauw mee, en zonder dat wordt zand crème in plaats van
+		// oker. De rots krijgt daarbovenop een warme duw, zodat een rotshelling dezelfde kant op
+		// kleurt als de keien van RockMesh die erop staan.
+		AddTexture(assets, TextureGround, "ground", Painted("ground", "ground037"), 0.34f, new Color(0.76f, 0.78f, 0.68f));
+		AddTexture(assets, TextureRock, "rock", Painted("rock", "rock023"), 0.22f, new Color(0.84f, 0.80f, 0.72f));
+		// uv_scale is repeats per metre, so 0.42 puts one repeat of the flagstone strokes in
+		// about two and a half metres - a paving stone the size of a paving stone.
+		AddTexture(assets, TexturePaving, "paving", Painted("paving", "rocks025"), 0.42f, new Color(0.80f, 0.78f, 0.74f));
 
 		Node.Set("assets", assets);
 	}
@@ -162,17 +170,34 @@ public sealed class Terrain3DBridge
 		assets.Call("set_texture", slot, asset);
 	}
 
+	/// <summary>The three painted sets StrokeTexturesRunner writes, by slot order.</summary>
+	private static readonly string[] PaintedSet = ["ground", "rock", "paving"];
+
 	/// <summary>
-	/// The 4K pair if PackTexturesRunner has been run, otherwise the small one that ships in git.
-	/// Every texture in the array has to be the same format *and* the same size, so this is all
-	/// or nothing: one 4K slot beside two 1K ones is the error that started this.
+	/// The hand-painted set if StrokeTexturesRunner has been run, otherwise the photoscan, and
+	/// otherwise the small demo pair that ships in git so a fresh clone still has *a* ground.
+	///
+	/// All three slots switch together or none of them do. Every texture in the array has to be
+	/// the same format *and* the same size, so one 512 painted slot beside two 4K photographs is
+	/// exactly the mismatch that makes Terrain3D reject the whole list - and after that the
+	/// terrain has no material at all and every later change to it appears to do nothing.
 	/// </summary>
-	private static string Packed(string name)
+	private static string Painted(string painted, string photo)
 	{
-		string packed = $"res://assets/terrain-packed/{name}_alb_ht.png";
+		if (PaintedComplete()) return $"res://assets/terrain-strokes/{painted}";
+		string packed = $"res://assets/terrain-packed/{photo}_alb_ht.png";
 		return Godot.FileAccess.FileExists(packed)
-			? $"res://assets/terrain-packed/{name}"
-			: $"res://assets/terrain/{name}";
+			? $"res://assets/terrain-packed/{photo}"
+			: $"res://assets/terrain/{photo}";
+	}
+
+	private static bool PaintedComplete()
+	{
+		foreach (string name in PaintedSet)
+		{
+			if (!Godot.FileAccess.FileExists($"res://assets/terrain-strokes/{name}_alb_ht.png")) return false;
+		}
+		return true;
 	}
 
 	private static void AddTexture(GodotObject assets, int slot, string name, string prefix, float uvScale, Color? tint = null)
