@@ -458,48 +458,12 @@ public sealed class Terrain3DBridge
 	/// </summary>
 	public void PaintPaving(TerrainField field, IEnumerable<IReadOnlyList<(int Gx, int Gz)>> runs, double metresPerLot)
 	{
-		// Distance from each affected sample to the nearest path, in metres. Only samples near a
-		// path are ever touched, so this is a sparse map rather than a field over the envelope.
-		var distance = new Dictionary<(int I, int J), float>();
-		float reach = PavingHalfW + PavingFade;
-		float half = field.EnvelopeHalf;
-		float mps = field.MetresPerSample;
-
-		void Mark(Vector2 a, Vector2 b)
-		{
-			float minX = MathF.Min(a.X, b.X) - reach, maxX = MathF.Max(a.X, b.X) + reach;
-			float minZ = MathF.Min(a.Y, b.Y) - reach, maxZ = MathF.Max(a.Y, b.Y) + reach;
-			int i0 = (int)MathF.Floor((minX + half) / mps), i1 = (int)MathF.Ceiling((maxX + half) / mps);
-			int j0 = (int)MathF.Floor((minZ + half) / mps), j1 = (int)MathF.Ceiling((maxZ + half) / mps);
-
-			for (int j = j0; j <= j1; j++)
-			{
-				for (int i = i0; i <= i1; i++)
-				{
-					if (!field.InField(i, j)) continue;
-					var p = new Vector2(i * mps - half, j * mps - half);
-					float d = DistanceToSegment(p, a, b);
-					if (d > reach) continue;
-					var key = (i, j);
-					if (!distance.TryGetValue(key, out float best) || d < best) distance[key] = d;
-				}
-			}
-		}
-
-		foreach (var run in runs)
-		{
-			if (run.Count == 0) continue;
-			// A single lot is a doorstep: a segment of zero length, which the point-to-segment
-			// distance handles as a circle, and that is exactly right for it.
-			for (int k = 0; k < run.Count; k++)
-			{
-				var a = LotCentre(run[k], field, metresPerLot);
-				var b = LotCentre(run[Math.Min(k + 1, run.Count - 1)], field, metresPerLot);
-				Mark(a, b);
-			}
-		}
+		var distance = PavedDistance(field, runs, metresPerLot);
+		_paved = distance;
 
 		int painted = 0;
+		float mps = field.MetresPerSample;
+		float half = field.EnvelopeHalf;
 		foreach (var (key, d) in distance)
 		{
 			var at = new Vector3(key.I * mps - half, 0.0f, key.J * mps - half);
@@ -539,6 +503,74 @@ public sealed class Terrain3DBridge
 		GD.Print($"[Terrain3D] painted {painted} samples of paving");
 	}
 
+	/// <summary>
+	/// Distance from each sample near a paved run to the nearest one, in metres.
+	///
+	/// Split out of <see cref="PaintPaving"/> rather than copied, because the scatterers need the
+	/// same answer: nothing grows on a road, and "near a road" has to mean the same thing to the
+	/// paint and to the grass or the verge will not line up with the stones. Only samples within
+	/// <see cref="PavedReach"/> appear, so this is a sparse map and not a field over the envelope.
+	/// </summary>
+	private static Dictionary<(int I, int J), float> PavedDistance(
+		TerrainField field, IEnumerable<IReadOnlyList<(int Gx, int Gz)>> runs, double metresPerLot)
+	{
+		var distance = new Dictionary<(int I, int J), float>();
+		float reach = PavedReach;
+		float half = field.EnvelopeHalf;
+		float mps = field.MetresPerSample;
+
+		void Mark(Vector2 a, Vector2 b)
+		{
+			float minX = MathF.Min(a.X, b.X) - reach, maxX = MathF.Max(a.X, b.X) + reach;
+			float minZ = MathF.Min(a.Y, b.Y) - reach, maxZ = MathF.Max(a.Y, b.Y) + reach;
+			int i0 = (int)MathF.Floor((minX + half) / mps), i1 = (int)MathF.Ceiling((maxX + half) / mps);
+			int j0 = (int)MathF.Floor((minZ + half) / mps), j1 = (int)MathF.Ceiling((maxZ + half) / mps);
+
+			for (int j = j0; j <= j1; j++)
+			{
+				for (int i = i0; i <= i1; i++)
+				{
+					if (!field.InField(i, j)) continue;
+					var p = new Vector2(i * mps - half, j * mps - half);
+					float d = DistanceToSegment(p, a, b);
+					if (d > reach) continue;
+					var key = (i, j);
+					if (!distance.TryGetValue(key, out float best) || d < best) distance[key] = d;
+				}
+			}
+		}
+
+		foreach (var run in runs)
+		{
+			if (run.Count == 0) continue;
+			// A single lot is a doorstep: a segment of zero length, which the point-to-segment
+			// distance handles as a circle, and that is exactly right for it.
+			for (int k = 0; k < run.Count; k++)
+			{
+				var a = LotCentre(run[k], field, metresPerLot);
+				var b = LotCentre(run[Math.Min(k + 1, run.Count - 1)], field, metresPerLot);
+				Mark(a, b);
+			}
+		}
+
+		return distance;
+	}
+
+	/// <summary>The paved samples from the last <see cref="PaintPaving"/>, keyed the same way.</summary>
+	private Dictionary<(int I, int J), float>? _paved;
+
+	/// <summary>How far from a path's centre line the paving has any say at all, in metres.</summary>
+	public const float PavedReach = PavingHalfW + PavingFade;
+
+	/// <summary>
+	/// Whether a sample is close enough to a paved run that nothing should be growing on it.
+	///
+	/// False everywhere until <see cref="PaintPaving"/> has run, which is why the scatterers are
+	/// wired after the roads: a spawner that asks too early gets a truthful "no paving anywhere"
+	/// and sows grass down the middle of the high street.
+	/// </summary>
+	public bool IsPaved(int i, int j) => _paved is not null && _paved.ContainsKey((i, j));
+
 	private static Vector2 LotCentre((int Gx, int Gz) lot, TerrainField field, double metresPerLot)
 	{
 		double half = field.Size / 2.0;
@@ -560,38 +592,124 @@ public sealed class Terrain3DBridge
 	// ---- the instancer ------------------------------------------------------------
 
 	/// <summary>
-	/// Register a mesh under an id, so instances of it can be scattered.
+	/// How far an instanced kind is drawn, how softly it stops, and whether it casts a shadow.
+	/// </summary>
+	/// <param name="DrawRangeM">Metres at which the instance disappears. Zero leaves Terrain3D's
+	/// own defaults alone, which are 32 m for the first level of detail and 32 m more for each
+	/// one after — short enough that a single-mesh asset, which has exactly one level, is culled
+	/// at 32 m whether that was intended or not.</param>
+	/// <param name="FadeM">Metres of cross-fade before the range ends, so a kind thins out
+	/// instead of popping. Terrain3D clamps this to half the gap to the next level's range, which
+	/// is why the next range is set alongside it.</param>
+	/// <param name="Shadows">A shadow per blade of grass is a draw per blade of grass. Worth it
+	/// for a bush, not for ground cover.</param>
+	public readonly record struct MeshTuning(float DrawRangeM, float FadeM, bool Shadows)
+	{
+		/// <summary>Terrain3D's own settings, untouched.</summary>
+		public static readonly MeshTuning Default = new(0.0f, 0.0f, true);
+	}
+
+	/// <summary>
+	/// Next free slot in Terrain3D's mesh list.
+	///
+	/// Terrain3D grows that list one entry at a time, so registering id 3 while it holds one is
+	/// refused with "Mesh ID out of range" — and the refusal costs you the kind, silently apart
+	/// from an error nobody reads. Every caller used to hardcode its own block of ids, which works
+	/// exactly until two callers exist. This hands them out in call order instead.
+	/// </summary>
+	private int _nextMeshId;
+
+	/// <summary>
+	/// Register a mesh under the next free id, so instances of it can be scattered. Returns the id.
 	///
 	/// Terrain3D wants a <c>PackedScene</c>, which normally means a .tscn on disk — a procedural
 	/// world has no such file, so the scene is packed in memory. That was the one genuinely
 	/// uncertain part of this path and <c>SpikeInstancerRunner</c> settled it.
 	///
 	/// LOD ranges are read off the scene's node names by Terrain3D (a child called *LOD1 and so
-	/// on); a single-mesh scene simply has one level, which is right for a rock. The shadow chain
-	/// is capped separately because a shadow of a distant boulder is not worth a draw.
+	/// on); a single-mesh scene simply has one level, which is right for a rock or a bush.
 	/// </summary>
-	public void AddMeshAsset(int id, string name, Mesh mesh, float heightOffset = 0.0f)
+	public int RegisterMeshAsset(string name, Mesh mesh, float heightOffset = 0.0f,
+		MeshTuning? tuning = null, Material? material = null)
 	{
-		var assets = Node.Get("assets").AsGodotObject();
-		if (assets is null) { GD.PushWarning("Terrain3D exposes no asset list"); return; }
-
-		var asset = ClassDB.Instantiate("Terrain3DMeshAsset").AsGodotObject();
-		if (asset is null) { GD.PushWarning("Terrain3DMeshAsset would not instantiate"); return; }
+		var asset = NewMeshAsset(name, tuning ?? MeshTuning.Default);
+		if (asset is null) return -1;
 
 		var holder = new MeshInstance3D { Name = name, Mesh = mesh };
 		var scene = new PackedScene();
 		if (scene.Pack(holder) != Error.Ok)
 		{
 			GD.PushWarning($"could not pack a scene for mesh asset '{name}'");
-			return;
+			return -1;
 		}
 
-		asset.Set("name", name);
-		asset.Set("id", id);
 		asset.Set("scene_file", scene);
 		asset.Set("height_offset", heightOffset);
-		asset.Set("cast_shadows", (int)GeometryInstance3D.ShadowCastingSetting.On);
+		// Null leaves the mesh's own surface materials alone, which is what a rock wants: RockMesh
+		// builds its stone with one. A plant wants the wind shader instead, and one override across
+		// every variant is one pipeline state for the lot.
+		if (material is not null) asset.Set("material_override", material);
+		return Commit(asset);
+	}
+
+	/// <summary>
+	/// Register one of Terrain3D's own generated texture cards, under the next free id.
+	///
+	/// A card is a quad, or two or three of them crossed, with a cut-out texture on it — the
+	/// cheapest thing that can be a blade of grass. Terrain3D builds the geometry from
+	/// <paramref name="size"/> and <paramref name="faces"/>; what it does not have is an opinion
+	/// about the material, which is where the wind comes from.
+	///
+	/// Note what the geometry does and does not do with <paramref name="size"/>: the card's base
+	/// always sits at local y = -0.5 and grows upward from there, whatever height is asked for. So
+	/// a card is *not* anchored at its root, and an instance placed exactly on the ground sinks
+	/// half a metre into it. The spawner lifts it back; see FoliageSpawner.
+	/// </summary>
+	public int RegisterCardAsset(string name, Vector2 size, int faces, Material material, MeshTuning? tuning = null)
+	{
+		var asset = NewMeshAsset(name, tuning ?? MeshTuning.Default);
+		if (asset is null) return -1;
+
+		asset.Set("generated_type", CardType);
+		asset.Set("generated_faces", faces);
+		asset.Set("generated_size", size);
+		asset.Set("material_override", material);
+		return Commit(asset);
+	}
+
+	/// <summary>Terrain3DMeshAsset.TYPE_TEXTURE_CARD, which C# gets no enum for.</summary>
+	private const int CardType = 1;
+
+	private GodotObject? NewMeshAsset(string name, MeshTuning tuning)
+	{
+		var asset = ClassDB.Instantiate("Terrain3DMeshAsset").AsGodotObject();
+		if (asset is null) { GD.PushWarning("Terrain3DMeshAsset would not instantiate"); return null; }
+
+		asset.Set("name", name);
+		asset.Set("id", _nextMeshId);
+		asset.Set("cast_shadows", (int)(tuning.Shadows
+			? GeometryInstance3D.ShadowCastingSetting.On
+			: GeometryInstance3D.ShadowCastingSetting.Off));
+
+		if (tuning.DrawRangeM > 0.0f)
+		{
+			asset.Set("lod0_range", tuning.DrawRangeM);
+			// The next level's range only exists to give the fade something to clamp against:
+			// Terrain3D limits fade_margin to half the gap between lod0 and lod1, so leaving lod1
+			// at its 64 m default silently zeroes the fade on anything drawn further than that.
+			asset.Set("lod1_range", tuning.DrawRangeM * 1.6f);
+			asset.Set("fade_margin", tuning.FadeM);
+		}
+		return asset;
+	}
+
+	private int Commit(GodotObject asset)
+	{
+		var assets = Node.Get("assets").AsGodotObject();
+		if (assets is null) { GD.PushWarning("Terrain3D exposes no asset list"); return -1; }
+		int id = _nextMeshId++;
 		assets.Call("set_mesh_asset", id, asset);
+		return id;
 	}
 
 	/// <summary>
@@ -648,4 +766,12 @@ public sealed class Terrain3DBridge
 	/// <summary>Collision follows the camera rather than covering the whole envelope; without a
 	/// camera it has nothing to follow, and Terrain3D says so loudly every frame.</summary>
 	public void SetCamera(Camera3D camera) => Node.Call("set_camera", camera);
+
+	/// <summary>
+	/// Hide or show every instanced mesh at once — rocks, grass, ferns, bushes.
+	///
+	/// Terrain3D's own switch, and it hides rather than unloads, so the same frame can be measured
+	/// with and without the scatter and the difference is the scatter's bill and nothing else.
+	/// </summary>
+	public void SetShowInstances(bool show) => Node.Set("show_instances", show);
 }

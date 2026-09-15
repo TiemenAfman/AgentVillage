@@ -294,6 +294,14 @@ public partial class ScreenshotRunner : SceneTree
 					// frame, so judging the 3D look is easier without it.
 					_showHud = true;
 					break;
+				case "--layers":
+					// Bitmask into FoliageSpawner.Layer: 1 cover, 2 blades, 4 ferns, 8 bushes.
+					// A before/after of a visual change is the only honest way to judge it, and
+					// for ground vegetation "before" means the same frame without that layer -
+					// not a different commit, which would also move the buildings and the light.
+					World.FoliageSpawner.Enabled = (World.FoliageSpawner.Layer)int.Parse(value);
+					i++;
+					break;
 			}
 		}
 

@@ -24,6 +24,7 @@ public partial class WorldManager : Node3D
 	private MeshInstance3D? _islandMesh;
 	private Node3D? _roadRoot;
 	private Node3D? _bridgeRoot;
+	private FoliageSpawner? _foliage;
 
 	private readonly List<BuildingMarker> _buildingMarkers = new();
 	private readonly HashSet<(int, int)> _buildingCells = new();
@@ -146,6 +147,10 @@ public partial class WorldManager : Node3D
 	/// chunk meshes are being drawn instead.</summary>
 	public Terrain3DBridge? Bridge => _bridge;
 
+	/// <summary>The last scatter of ground vegetation, kept so the metrics runner can report what
+	/// it placed and where. Null when there is no Terrain3D to instance into.</summary>
+	public FoliageSpawner? Foliage => _foliage;
+
 	public void BuildWorld(VillageData village)
 	{
 		EnsureRoots();
@@ -220,6 +225,16 @@ public partial class WorldManager : Node3D
 			new RockSpawner().Spawn(_bridge, _terrain, village);
 		BuildRoads(_terrain, village);
 		BuildBridges(_terrain, village);
+
+		// And the ground cover over the rocks, from the same class byte - but only after the roads,
+		// which is not a preference. The paving is painted into the terrain by BuildRoads and the
+		// scatter asks the bridge which samples that covered; run first, it would be told there is
+		// no paving anywhere and would sow grass down the middle of the high street.
+		if (_bridge is not null)
+		{
+			_foliage = new FoliageSpawner();
+			_foliage.Spawn(_bridge, _terrain, village);
+		}
 
 		ClearBuildings();
 		_buildingMarkers.Clear();

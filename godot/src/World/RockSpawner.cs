@@ -31,10 +31,6 @@ public sealed class RockSpawner
 	/// texture.</summary>
 	private const int Variants = 3;
 
-	private const int FirstMassif = 0;
-	private const int FirstSlab = FirstMassif + Variants;
-	private const int FirstBoulder = FirstSlab + Variants;
-
 	/// <summary>Metres between candidate positions. Finer than this and neighbouring rocks
 	/// interpenetrate; coarser and the scatter reads as a grid.</summary>
 	private const int StrideM = 3;
@@ -62,14 +58,28 @@ public sealed class RockSpawner
 		// so registering id 3 while the list holds one entry is refused with "Mesh ID out of
 		// range". Interleaving the three kinds - which is what a loop over variants does - loses
 		// the last two ids silently apart from an error nobody reads.
+		//
+		// The ids used to be written out here as 0..8. They come from the bridge now, because the
+		// rocks are no longer the only thing being scattered and a second hardcoded block would
+		// have landed on top of this one.
+		int firstMassif = -1, firstSlab = -1, firstBoulder = -1;
 		for (int v = 0; v < Variants; v++)
-			bridge.AddMeshAsset(FirstMassif + v, $"massif{v}", RockMesh.Massif((uint)(v * 97 + 13)));
+		{
+			int id = bridge.RegisterMeshAsset($"massif{v}", RockMesh.Massif((uint)(v * 97 + 13)));
+			if (v == 0) firstMassif = id;
+		}
 		for (int v = 0; v < Variants; v++)
-			bridge.AddMeshAsset(FirstSlab + v, $"slab{v}", RockMesh.Slab((uint)(v * 89 + 31)));
+		{
+			int id = bridge.RegisterMeshAsset($"slab{v}", RockMesh.Slab((uint)(v * 89 + 31)));
+			if (v == 0) firstSlab = id;
+		}
 		for (int v = 0; v < Variants; v++)
-			bridge.AddMeshAsset(FirstBoulder + v, $"boulder{v}", RockMesh.Boulder((uint)(v * 71 + 53)));
+		{
+			int id = bridge.RegisterMeshAsset($"boulder{v}", RockMesh.Boulder((uint)(v * 71 + 53)));
+			if (v == 0) firstBoulder = id;
+		}
 
-		var cleared = ClearedLots(field, village);
+		var cleared = TerrainField.ClearedLots(village);
 		var batches = new Dictionary<int, (Godot.Collections.Array T, List<Color> C)>();
 
 		float half = field.EnvelopeHalf;
@@ -86,13 +96,19 @@ public sealed class RockSpawner
 
 				float wx = i * mps - half;
 				float wz = j * mps - half;
-				if (cleared.Contains(LotKey(field, wx, wz))) continue;
+				if (cleared.Contains(field.LotKeyAt(wx, wz))) continue;
 
 				// One hash decides everything about this stone, so the island is the same island
 				// on every machine and after every restart - and so that changing the density
 				// does not reshuffle the rocks that were already there.
 				uint h = PmRng.Hash32($"{field.IslandSeed}:rock:{i},{j}");
-				var (chance, minSize, maxSize, firstId) = kind.Value;
+				var (chance, minSize, maxSize, shape) = kind.Value;
+				int firstId = shape switch
+				{
+					Shape.Massif => firstMassif,
+					Shape.Slab => firstSlab,
+					_ => firstBoulder,
+				};
 				if ((h % 10000) / 10000.0f > chance) continue;
 
 				float y = field.HeightOf(i, j);
@@ -152,16 +168,19 @@ public sealed class RockSpawner
 	/// taller than a house or it is a boulder, and a scree plate has to be smaller than a person
 	/// or it is a massif. The chances are per candidate position, three metres apart.
 	/// </summary>
-	private static (float Chance, float Min, float Max, int FirstId)? KindFor(byte cls) => cls switch
+	private static (float Chance, float Min, float Max, Shape Shape)? KindFor(byte cls) => cls switch
 	{
-		TerrainClass.Rock or TerrainClass.Cliff => (0.10f, 2.0f, 8.5f, FirstMassif),
-		TerrainClass.Scree => (0.16f, 0.6f, 2.8f, FirstSlab),
-		TerrainClass.Beach or TerrainClass.Dune => (0.022f, 0.4f, 1.9f, FirstBoulder),
+		TerrainClass.Rock or TerrainClass.Cliff => (0.10f, 2.0f, 8.5f, Shape.Massif),
+		TerrainClass.Scree => (0.16f, 0.6f, 2.8f, Shape.Slab),
+		TerrainClass.Beach or TerrainClass.Dune => (0.022f, 0.4f, 1.9f, Shape.Boulder),
 		// A few strays out on the meadow, which is what stops the bare ground and the green
 		// reading as two separate rooms with a hard door between them.
-		TerrainClass.Meadow => (0.006f, 0.4f, 1.5f, FirstSlab),
+		TerrainClass.Meadow => (0.006f, 0.4f, 1.5f, Shape.Slab),
 		_ => null,
 	};
+
+	/// <summary>Which of the three silhouettes a class of ground grows.</summary>
+	private enum Shape { Massif, Slab, Boulder }
 
 	/// <summary>The lowest ground under a disc of this radius.</summary>
 	private static float Floor(TerrainField field, float x, float z, float radius)
@@ -176,20 +195,4 @@ public sealed class RockSpawner
 		return low;
 	}
 
-	/// <summary>The lots the village has taken, as a set. `village.Cleared` is in lots; the
-	/// scatter runs on samples, so the lookup converts rather than the other way round.</summary>
-	private static HashSet<long> ClearedLots(TerrainField field, VillageData village)
-	{
-		var set = new HashSet<long>();
-		foreach (var cell in village.Cleared)
-			if (cell.Count >= 2) set.Add(((long)cell[0] << 32) | (uint)cell[1]);
-		return set;
-	}
-
-	private static long LotKey(TerrainField field, float wx, float wz)
-	{
-		int gx = (int)Math.Floor(wx / field.MetresPerLot + field.Half);
-		int gz = (int)Math.Floor(wz / field.MetresPerLot + field.Half);
-		return ((long)gx << 32) | (uint)gz;
-	}
 }

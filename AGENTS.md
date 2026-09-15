@@ -939,3 +939,65 @@ het betekent ook: **wie een textuur ergens zichtbaar wil maken, moet daar ook de
 wegnemen.** Een geschilderd pad is geclassificeerd als weide — het ís weide met stenen
 erop — dus zonder dat kwamen de keien vermenigvuldigd met grasgroen door en waren ze
 onzichtbaar. Zie `PaintPaving` in `Terrain3DBridge`.
+
+## Begroeiing in vier lagen (sinds sept 2026)
+
+**De klassebyte beslist, de client kiest alleen hoe het eruitziet.** `FoliageSpawner` volgt
+`RockSpawner` op de letter: één `PmRng.Hash32("<seed>:<laag>:<i>,<j>")` per kandidaat bepaalt
+variant, maat, yaw, jitter en accent, dus twee runs zetten identiek dezelfde planten neer
+(`VerifyMetricsRunner` print de eerste tien transforms om dat te kunnen controleren). Vier lagen,
+elk met een eigen reden: grondbedekking (dicht, laag — sluit de harde lijn tussen terreintextuur
+en alles wat erop staat), grassprieten (hoger, rechtop — dit is de laag waarin de wind te zien is),
+varens en struiken (echte geometrie, `FoliageMesh`). Kaartjes zijn `TYPE_TEXTURE_CARD` uit
+Terrain3D zelf; de silhouetten komen uit `CardTexture` + `FoliageCardsRunner` naar
+`godot/assets/foliage-cards/`, met hun eigen `.import` — dezelfde route als `StrokeTexturesRunner`,
+maar hier **`process/fix_alpha_border=true`**: bij het terrein draagt alfa hoogte (en mag er niets
+inbloeden), bij een kaartje is het echte transparantie, en zonder de bleed krijgt elk gras een
+donkere rand zodra de mipmaps inzetten. Planten slaan `cleared`-lots over én de berm langs elk
+geschilderd pad (`Terrain3DBridge.IsPaved`, hetzelfde afstandsveld als `PaintPaving`) — dat
+laatste haalt zes procent van de kandidaten weg die de lot-toets alleen had doorgelaten.
+
+**Vijf Terrain3D-vallen die tijd hebben gekost.** (1) De basis van een gegenereerd kaartje ligt
+*altijd* op lokale y = −0,5, wat je ook in `generated_size` zet — een instance precies op de grond
+zakt er dus half in; `FoliageSpawner.Seat()` corrigeert dat, en `FoliageMesh` bouwt zijn eigen
+meshes juist mét de wortel op y = 0 zodat die correctie niet hoeft te raden. (2) `lod0_range`
+staat standaard op **32 m** en een asset met één mesh heeft één LOD, dus dat *is* zijn zichtafstand
+— zet `MeshTuning` bij het registreren, anders verdwijnt alles op 32 m. (3) `fade_margin` wordt
+geklemd op de helft van het gat naar `lod1_range`, dus alleen `lod0_range` zetten maakt de fade
+stilletjes nul; `RegisterMeshAsset`/`RegisterCardAsset` zetten `lod1_range` er daarom bij. (4) De
+instancer zet `use_colors` aan maar `use_custom_data` **uit** — de voorbeeld-grasshader van de
+addon leest `INSTANCE_CUSTOM` en werkt hier dus niet; die is voor `GPUParticles3D`. Onze wind
+(`shaders/foliage_wind.gdshaderinc`) neemt de fase uit wereldpositie + `TIME`, dus een
+`--fixed-fps`-frame is reproduceerbaar. (5) Mesh-id's moeten oplopend en aaneengesloten worden
+geregistreerd, anders "Mesh ID out of range" en je verliest de soort geruisloos. `RockSpawner` had
+0..8 hardgecodeerd; `Terrain3DBridge.RegisterMeshAsset`/`RegisterCardAsset` delen ze nu uit op
+volgorde van aanroep (rotsen, dan de vier lagen).
+
+**Kleurruimte, twee keer fout is goed.** De tint per instance gaat **zonder** `SrgbToLinear` de
+shader in, tegen de waarschuwing in `Palette` in — want de grond ernaast wordt getint door
+Terrain3D's kleurkaart, een gewone RGBA8-datatextuur die diezelfde `Palette.Terrain`-getallen
+ongeconverteerd doorgeeft. Converteer je hier wel, dan is de begroeiing half zo helder als de
+wei eronder en ligt het eiland vol donkere snippers. Wie de kleurruimte van het terrein ooit
+rechttrekt, moet dit in dezelfde commit meenemen. De kaarttextuur zelf is om dezelfde reden
+*niet* `source_color` gehint: het is een modulatie rond 1,0, geen kleur, en sRGB-decoderen maakte
+er 0,26..1,0 van — donkere wortels, uitgebeten toppen. (Gebouwen doen het andersom — zie
+*Silhouet boven textuur*: daar zit kleur in de vertexbuffer en gaat hij wél door `SrgbToLinear`.)
+
+**`BACKLIGHT` moet de kleur van de plant hebben, niet grijs.** Een grijze term optellen bij een
+groen met weinig blauw erin tilt juist dat blauwe kanaal het verst op: gemeten stond een struik
+op RGB 139/193/150 naast een wei van 140/189/112 — even helder, 38 punten blauwer, en dat leest
+als plastic. `BACKLIGHT = instance_tint.rgb * 0,3` en het probleem is weg.
+
+**Meten.** `VerifyMetricsRunner` draait nu in twee smaken: headless voor de geometrie (materialen,
+silhouetten, instances, determinisme) en **zonder `--headless` met `-- --frame`** voor draw calls,
+primitives en ms vanaf het `street`-standpunt op 1920×1080. `--layers <bitmask>` (1 bedekking,
+2 sprieten, 4 varens, 8 struiken) en `--no-instances` geven de A/B; `ScreenshotRunner` kent
+`--layers` ook, zodat een voor/na van dezelfde frame te maken is. Gemeten: de hele scatter (rotsen
+én vier lagen, 22.562 instanties) kost 460 draw calls en 100k primitives. Struiken zijn per stuk
+veruit het duurst (schaduw, 230 m bereik) — als er gesneden moet worden, daar, niet in een laag.
+
+**Wat bewust bleef liggen.** `PropSpawner`'s bomen: de den is een `ArrayMesh` met drie surfaces en
+drie materialen, en de instancer kent één `material_override` per asset — maar belangrijker, zijn
+plaatsing komt uit een eigen bos-simplex die het oneens is met de klassebyte. Naar de instancer
+verhuizen zonder de plaatsing uit `TerrainClass.Wood` af te leiden neemt die bug mee. Dat is een
+herschrijving van `PropSpawner`, geen laatste stap.

@@ -245,6 +245,31 @@ public sealed class TerrainField
 	public (double X, double Z) CellCorner(int gx, int gz)
 		=> ((gx - Half) * MetresPerLot, (gz - Half) * MetresPerLot);
 
+	/// <summary>
+	/// The lot a world position falls in, packed into one long so it can go in a set.
+	///
+	/// Every scatterer needs this and they all need the same answer: the scatter runs on samples
+	/// and the village's cleared ground is expressed in lots, so somebody has to convert, and two
+	/// spawners converting separately is one sign error away from a forest growing through the
+	/// market square.
+	/// </summary>
+	public long LotKeyAt(float wx, float wz)
+	{
+		int gx = (int)Math.Floor(wx / MetresPerLot + Half);
+		int gz = (int)Math.Floor(wz / MetresPerLot + Half);
+		return ((long)gx << 32) | (uint)gz;
+	}
+
+	/// <summary>The lots the village has taken — plots, roads, the square — in the same key space
+	/// as <see cref="LotKeyAt"/>. Nothing wild grows back on them.</summary>
+	public static HashSet<long> ClearedLots(VillageData village)
+	{
+		var set = new HashSet<long>();
+		foreach (var cell in village.Cleared)
+			if (cell.Count >= 2) set.Add(((long)cell[0] << 32) | (uint)cell[1]);
+		return set;
+	}
+
 	/// <summary>Ground height at a world position. Kept in double for the callers that were
 	/// written against the old generator.</summary>
 	public double WorldHeight(double x, double z) => HeightAt((float)x, (float)z);
