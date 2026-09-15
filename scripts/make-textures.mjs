@@ -130,15 +130,23 @@ const SHEETS = {
       return detail(0.62 + 0.3 * (ridge * 0.4 + fissure * 0.6), 1);
     });
   },
-  // Foliage: clumps rather than a wash, so a canopy reads as needles catching the light
-  // and not as a painted cone.
+  // Foliage: rounded clumps of leaf that overlap, each one brightest where it turns
+  // towards the light. The first version of this ran the same lattice through cells(),
+  // and that was a mistake with an obvious name - cells() draws the joint BETWEEN
+  // neighbours, which is cobblestones. It put a paved street on every canopy on the
+  // island. Leaves have no joints: they pile up, they overlap, and the only line in a
+  // tree is where one clump ends and the one behind it carries on.
   foliage: () => {
-    const clump = cells(sites(14, 14, 0.9, 88010));
-    const speck = fbm(88011, [64, 128]);
+    const puffs = sites(9, 9, 1.0, 88010);
+    const reach = (N / 9) * 0.95;
+    const fine = fbm(88011, [48, 96]);
     return draw((x, y) => {
-      const c = clump(x, y);
-      const body = Math.min(1, c.edge / 5);
-      return detail(0.58 + 0.34 * (c.tone * 0.5 + body * 0.35 + speck(x, y) * 0.15), -1);
+      let lit = 0;
+      for (const s of puffs) {
+        const d = Math.hypot(wrapD(x, s.x), wrapD(y, s.y)) / reach;
+        if (d < 1) lit = Math.max(lit, (1 - d * d) * s.tone);
+      }
+      return detail(0.68 + 0.24 * (lit * 0.72 + fine(x, y) * 0.28), -1);
     });
   },
   // Tilled soil: clods, and the ridge and hollow of the plough running one way. The
