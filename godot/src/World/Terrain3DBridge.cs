@@ -128,12 +128,16 @@ public sealed class Terrain3DBridge
 		// falls over: tried with 4K JPEGs from ambientCG and the island came back bleached
 		// white. Going to 4K is fine, but the maps have to be repacked into PNGs with the
 		// fourth channel filled first, and nothing does that yet.
-		AddTexture(assets, TextureGround, "ground", Packed("ground037"), 0.34f);
-		AddTexture(assets, TextureRock, "rock", Packed("rock023"), 0.22f);
+		// Elke textuur krijgt een tint mee. ambientCG levert *delit* albedo: de belichting is er
+		// met opzet uitgerekend zodat jouw licht het werk doet, en dat leest onder een vlakke
+		// middagzon als uitgewassen grijs. Dit zet het contrast en de kleur terug die de foto
+		// niet meer heeft - donkerder en verzadigder, en per materiaal een andere kant op.
+		AddTexture(assets, TextureGround, "ground", Packed("ground037"), 0.34f, new Color(0.56f, 0.70f, 0.40f));
+		AddTexture(assets, TextureRock, "rock", Packed("rock023"), 0.22f, new Color(0.62f, 0.60f, 0.56f));
 		// The paving is a separate pack rather than the packed pair the other two use, so it is
 		// loaded by its own maps. uv_scale is repeats per metre: this texture is about two metres
 		// of real ground across, and at 0.45 a cobble comes out the size of a cobble.
-		AddTexture(assets, TexturePaving, "paving", Packed("rocks025"), 0.42f);
+		AddTexture(assets, TexturePaving, "paving", Packed("rocks025"), 0.42f, new Color(0.70f, 0.68f, 0.62f));
 
 		Node.Set("assets", assets);
 	}
@@ -171,7 +175,7 @@ public sealed class Terrain3DBridge
 			: $"res://assets/terrain/{name}";
 	}
 
-	private static void AddTexture(GodotObject assets, int slot, string name, string prefix, float uvScale)
+	private static void AddTexture(GodotObject assets, int slot, string name, string prefix, float uvScale, Color? tint = null)
 	{
 		var albedo = GD.Load<Texture2D>($"{prefix}_alb_ht.png");
 		var normal = GD.Load<Texture2D>($"{prefix}_nrm_rgh.png");
@@ -192,6 +196,16 @@ public sealed class Terrain3DBridge
 		// photograph of turf over half a hillside, and from standing height that is a green blur.
 		// A third of a repeat per metre puts a blade of grass back at the size of a blade of grass.
 		asset.Set("uv_scale", uvScale);
+		if (tint.HasValue) asset.Set("albedo_color", tint.Value);
+		// The normal map is the only thing left that says the ground is not a flat photograph, and
+		// it is doing all of the work: Terrain3D's shader has sixteen parameters and not one of
+		// them is parallax or tessellation, so a stone can be *shaded* as if it stands out but
+		// never actually stand out. Pushed well past the default; beyond about three it stops
+		// reading as relief and starts reading as foil.
+		asset.Set("normal_depth", 2.8f);
+		// Ambient occlusion comes off the height in the albedo's alpha. With the displacement map
+		// in there it finally has something to occlude with.
+		asset.Set("ao_strength", 1.0f);
 		// And because a repeat every three metres would otherwise read as a chequerboard from
 		// the air, each tile is rotated and shifted a little against its neighbours.
 		// Rotation was 0.14 and it was worse than the tiling it fixed: Terrain3D turns each

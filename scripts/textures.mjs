@@ -10,7 +10,7 @@
 //   node scripts/textures.mjs --add Rocks025,PavingStones138
 //   node scripts/textures.mjs --list                what is on disk now
 //
-// Only three maps are kept per asset - colour, normal (OpenGL, which is what Godot wants) and
+// Only four maps are kept per asset - colour, normal (OpenGL, which is what Godot wants) and
 // roughness. Ambient occlusion and displacement are another 40% of the bytes and nothing here
 // reads them.
 import fs from 'node:fs';
@@ -32,6 +32,7 @@ const KEEP = [
   ['_Color.jpg', 'col'],
   ['_NormalGL.jpg', 'nrm'],
   ['_Roughness.jpg', 'rgh'],
+  ['_Displacement.jpg', 'dsp'],
 ];
 
 async function api(params) {

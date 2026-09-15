@@ -62,16 +62,18 @@ public partial class PackTexturesRunner : SceneTree
 		var colour = Load($"{Source}/{from}/{from}_col.jpg");
 		var normal = Load($"{Source}/{from}/{from}_nrm.jpg");
 		var rough = Load($"{Source}/{from}/{from}_rgh.jpg");
+		var height = Load($"{Source}/{from}/{from}_dsp.jpg");
 		if (colour is null || normal is null)
 		{
 			GD.PushWarning($"{from}: no colour or normal map in {Source}/{from}/");
 			return false;
 		}
 
-		// Height in the albedo's alpha. We do not keep the displacement map - it is a third of
-		// the download and Terrain3D only uses it to bias the blend between two textures - so a
-		// flat 0.5 goes in, which means "no opinion" rather than a wrong one.
-		var albedo = WithAlpha(colour, null, 0.5f);
+		// Height in the albedo's alpha, from the displacement map. This is not optional detail:
+		// Terrain3D reads it both to bias the blend between two textures *and* to shade the
+		// grain, so a flat 0.5 gives a surface with no relief in it at all - which is exactly
+		// how the island looked, washed out and plastic, before the map was carried along.
+		var albedo = WithAlpha(colour, height, 0.5f);
 		var nrmRgh = WithAlpha(normal, rough, 0.5f);
 
 		string dir = ProjectSettings.GlobalizePath(Target);

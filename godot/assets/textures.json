@@ -5,7 +5,8 @@
   "maps": [
     "col",
     "nrm",
-    "rgh"
+    "rgh",
+    "dsp"
   ],
   "note": "The maps themselves are gitignored. `node scripts/textures.mjs` restores them.",
   "assets": [
