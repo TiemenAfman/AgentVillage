@@ -75,6 +75,22 @@ function bandColour(h, season) {
   return s.summit;
 }
 
+// The sheets the island is drawn on, and the one place that knows how to fetch one.
+// Everything here is optional: a sheet that does not arrive leaves the surface exactly
+// as it was drawn before there were any, which is why nothing below waits on one.
+const TEXTURES = 'textures/';
+const texLoader = new THREE.TextureLoader();
+function sheet(name, onLoad) {
+  texLoader.load(`${TEXTURES}${name}.png`, (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
+    onLoad(tex);
+  }, undefined, () => {
+    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+  });
+}
+
 export function createWorld(scene, terrain, village, opts = {}) {
   const size = terrain.size, half = terrain.half, N = terrain.N;
   const season = seasonOf(opts.month ?? new Date().getMonth());
@@ -85,12 +101,19 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * N * 3);
   const col = new Float32Array(N * N * 3);
+  // Grass is a nap rather than a pattern, so the sheet is tiled small and often. Three
+  // units - twelve metres - is about as large as it can be before the eye starts to read
+  // the sheet itself instead of the ground.
+  const GRASS_UNITS = 3;
+  const uv = new Float32Array(N * N * 2);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const k = i + j * N;
       pos[k * 3] = i - half;
       pos[k * 3 + 1] = terrain.H[k];
       pos[k * 3 + 2] = j - half;
+      uv[k * 2] = (i - half) / GRASS_UNITS;
+      uv[k * 2 + 1] = (j - half) / GRASS_UNITS;
     }
   }
   const idx = new Uint32Array(size * size * 6);
@@ -104,6 +127,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
 
   // Whose land a ground vertex stands on, and how far inside it. A vertex touches up to
@@ -168,6 +192,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   ground.receiveShadow = true;
   ground.name = 'ground';
   group.add(ground);
+  // The bands, the season, the district tint and the meadow noise are all already in the
+  // vertex colours. The sheet is brightness only, so it grains the ground without having
+  // an opinion about any of them.
+  sheet('grass', (tex) => { ground.material.map = tex; ground.material.needsUpdate = true; });
 
   // ---- sea, the lake and the rivers ---------------------------------------
   // One surface for all the water there is: everything below SEA_LEVEL is under this
@@ -352,6 +380,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // because the first plan's own cells would have ruled every candidate out.
   const baseCleared = (v) => {
     const out = new Set((v.cleared || []).map(([gx, gz]) => gx + gz * size));
+    // The wire clears the paths but not every paved cell of a square, and a field
+    // planned over paving comes out as furrows running across the stones. It never
+    // showed while the paving was a flat sandy colour and the furrows were sandy too;
+    // against cobbles it is the first thing you see.
+    for (const [gx, gz] of squareCells(v)) out.add(gx + gz * size);
     // A dike is a wall and a causeway is a road. Neither is ground that grows anything,
     // and both are flat and high enough that the scatter below would otherwise plant
     // trees along the top of the sea wall.
@@ -393,15 +426,21 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const rng = makeRng(terrain.seed).fork('flora');
   const forest = makeSimplex2D(hash32(terrain.seed + ':forest'));
 
+  // The trunk runs 0 to 0.5 and the first cone now starts at 0.42, so its skirt closes
+  // over the wood instead of hanging above it. The tree loses a little height by it,
+  // which the trunk takes back: a conifer is mostly stem at the bottom anyway.
+  //
+  // Both are merged with groups, so trunk and canopy are separate draws off one geometry
+  // and can take bark and needles rather than one sheet stretched over the whole tree.
   const pineGeo = merge([
-    cyl(0.06, 0.09, 0.5, 5, 0x6b4a2f, 0.25),
-    cone(0.42, 0.8, 6, 0x3f7d47, 0.72),
-    cone(0.3, 0.7, 6, 0x478950, 1.15),
-  ]);
+    cyl(0.06, 0.09, 0.62, 5, 0x6b4a2f, 0.31),
+    cone(0.42, 0.8, 6, 0x3f7d47, 0.42),
+    cone(0.3, 0.7, 6, 0x478950, 0.85),
+  ], true);
   const oakGeo = merge([
-    cyl(0.07, 0.09, 0.45, 5, 0x6b4a2f, 0.22),
-    ico(0.45, 0x5c9a3f, 0.78, 0.85),
-  ]);
+    cyl(0.07, 0.09, 0.5, 5, 0x6b4a2f, 0.25),
+    ico(0.45, 0x5c9a3f, 0.72, 0.85),
+  ], true);
   const rockGeo = dodeca(0.22, 0x7f7a72, 0.1);
   const grassGeo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
   for (const g of [rockGeo, grassGeo]) g.computeVertexNormals();
@@ -438,13 +477,21 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  // Same material, twice, with a sheet each. Clones rather than new materials so that a
+  // tree with no textures at all is pixel for pixel the tree the island always drew.
+  const barkMat = treeMat.clone();
+  const foliageMat = treeMat.clone();
+  sheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
+  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliageMat.map = tex; foliageMat.needsUpdate = true; });
+  const pineMats = [barkMat, foliageMat, foliageMat];
+  const oakMats = [barkMat, foliageMat];
   const orchard = orchardTrees(fieldPlan, terrain);
   const ORCHARD_CAP = 1500;
-  const pineMesh = new THREE.InstancedMesh(pineGeo, treeMat, Math.max(1, pines.length));
-  const oakMesh = new THREE.InstancedMesh(oakGeo, treeMat, Math.max(1, oaks.length));
+  const pineMesh = new THREE.InstancedMesh(pineGeo, pineMats, Math.max(1, pines.length));
+  const oakMesh = new THREE.InstancedMesh(oakGeo, oakMats, Math.max(1, oaks.length));
   const rockMesh = new THREE.InstancedMesh(rockGeo, treeMat, Math.max(1, rocks.length));
   const grassMesh = new THREE.InstancedMesh(grassGeo, treeMat, Math.max(1, tufts.length));
-  const orchardMesh = new THREE.InstancedMesh(oakGeo, treeMat, ORCHARD_CAP);
+  const orchardMesh = new THREE.InstancedMesh(oakGeo, oakMats, ORCHARD_CAP);
   for (const m of [pineMesh, oakMesh, rockMesh, orchardMesh]) { m.castShadow = true; m.receiveShadow = true; }
   grassMesh.castShadow = false;
   group.add(pineMesh, oakMesh, rockMesh, grassMesh, orchardMesh);
@@ -531,8 +578,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // per quad: a path running across three cells reads as one continuous piece of paving
   // instead of the same stone stamped three times. A cell is one world unit and four
   // metres, so a sheet to the unit puts a cobble at about half a metre across.
-  const PATH_TEXTURE = 'textures/path-cobble.png';
   const PATH_TEX_UNITS = 1;
+  // How much of an outside corner is taken off. A path is about half a cell wide, so a
+  // fifth of a unit is a generous but still walkable easing - enough that a turn reads as
+  // worn rather than cut, and not so much that a single-cell stub becomes a disc.
+  const CORNER_R = 0.2;
+  const CORNER_SEG = 4;
   // Multiplied over the texture, so these are tints rather than colours: the square is
   // laid in clean stone and a footpath in the same stone gone duller underfoot. With no
   // texture to multiply they stand on their own, and are the sand and flagstone the
@@ -565,20 +616,51 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
     const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
     const H = 0.26;
-    {
-      for (const [[gx, gz], hex] of tiles) {
-        const [x, z] = terrain.cellWorld(gx, gz);
-        const x0 = x - (hasCell(gx - 1, gz) ? 0.5 : H), x1 = x + (hasCell(gx + 1, gz) ? 0.5 : H);
-        const z0 = z - (hasCell(gx, gz - 1) ? 0.5 : H), z1 = z + (hasCell(gx, gz + 1) ? 0.5 : H);
-        for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
-          positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
-          uvs.push(qx / PATH_TEX_UNITS, qz / PATH_TEX_UNITS);
-          tmpColor.setHex(hex);
-          colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-        }
-        indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-        v += 4;
+    // Each cell is a ring of points laid anticlockwise seen from above, fanned from its
+    // own middle. A square tile is four points and two triangles, exactly as before; a
+    // corner where the path stops turning is replaced by a quarter arc, which is the only
+    // reason the ring exists at all.
+    const arc = (out, px, pz, qx, qz, cx, cz) => {
+      let a0 = Math.atan2(pz - cz, px - cx);
+      let a1 = Math.atan2(qz - cz, qx - cx);
+      let d = a1 - a0;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const r = Math.hypot(px - cx, pz - cz);
+      for (let k = 0; k <= CORNER_SEG; k++) {
+        const t = a0 + (d * k) / CORNER_SEG;
+        out.push([cx + Math.cos(t) * r, cz + Math.sin(t) * r]);
       }
+    };
+    for (const [[gx, gz], hex] of tiles) {
+      const [x, z] = terrain.cellWorld(gx, gz);
+      const west = hasCell(gx - 1, gz), east = hasCell(gx + 1, gz);
+      const north = hasCell(gx, gz - 1), south = hasCell(gx, gz + 1);
+      const x0 = x - (west ? 0.5 : H), x1 = x + (east ? 0.5 : H);
+      const z0 = z - (north ? 0.5 : H), z1 = z + (south ? 0.5 : H);
+      // Only an outside corner is eased: one where the paving stops in both directions.
+      // Where the path runs on, the edge has to stay straight or the two cells would not
+      // meet, and a road would come out beaded rather than continuous.
+      const r = Math.min(CORNER_R, (x1 - x0) / 2, (z1 - z0) / 2);
+      const ring = [];
+      if (!west && !north) arc(ring, x0 + r, z0, x0, z0 + r, x0 + r, z0 + r); else ring.push([x0, z0]);
+      if (!west && !south) arc(ring, x0, z1 - r, x0 + r, z1, x0 + r, z1 - r); else ring.push([x0, z1]);
+      if (!east && !south) arc(ring, x1 - r, z1, x1, z1 - r, x1 - r, z1 - r); else ring.push([x1, z1]);
+      if (!east && !north) arc(ring, x1, z0 + r, x1 - r, z0, x1 - r, z0 + r); else ring.push([x1, z0]);
+
+      tmpColor.setHex(hex);
+      const vertex = (qx, qz) => {
+        positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
+        uvs.push(qx / PATH_TEX_UNITS, qz / PATH_TEX_UNITS);
+        colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      };
+      const centre = v;
+      vertex((x0 + x1) / 2, (z0 + z1) / 2);
+      for (const [qx, qz] of ring) vertex(qx, qz);
+      for (let k = 0; k < ring.length; k++) {
+        indices.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
+      }
+      v += ring.length + 1;
     }
     if (!positions.length) return;
     const g = new THREE.BufferGeometry();
@@ -597,19 +679,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   buildPaths(village.paths);
 
   // The sheet arrives after the island is already standing, so the paving is laid twice:
-  // once in plain colour, and again the moment the texture lands. If it never lands - no
-  // file, a PNG the browser will not decode - the island keeps the colours it had, which
-  // is why the tints and the plain colours are two separate sets rather than one set the
-  // texture is expected to rescue.
-  new THREE.TextureLoader().load(PATH_TEXTURE, (tex) => {
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;        // the renderer clamps this to whatever the card allows
-    pathTexture = tex;
-    buildPaths(village.paths);
-  }, undefined, () => {
-    console.warn(`[island] no paving texture at web/${PATH_TEXTURE}; paths stay in plain colour`);
-  });
+  // once in plain colour, and again the moment the texture lands. If it never lands the
+  // island keeps the colours it had, which is why the tints and the plain colours are two
+  // separate sets rather than one set the texture is expected to rescue.
+  sheet('path-cobble', (tex) => { pathTexture = tex; buildPaths(village.paths); });
 
   // ---- riverbanks ----------------------------------------------------------
   // The water itself needs nothing drawn: it is under the same plane as the sea, and the
@@ -929,7 +1002,8 @@ function paint(g, hex) {
   const arr = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-  g.deleteAttribute('uv');
+  // The UV stays: three's own cylinder and cone wrap sensibly, which is all a trunk or a
+  // cone of needles needs. (The normal goes because merge() recomputes it flat.)
   g.deleteAttribute('normal');
   return g;
 }
@@ -954,9 +1028,9 @@ function dodeca(r, hex, y) {
   g.translate(0, y, 0);
   return paint(g, hex);
 }
-function merge(geos) {
+function merge(geos, groups = false) {
   const flat = geos.map((g) => (g.index ? g.toNonIndexed() : g));
-  const out = mergeGeometries(flat, false);
+  const out = mergeGeometries(flat, groups);
   out.computeVertexNormals();
   return out;
 }
