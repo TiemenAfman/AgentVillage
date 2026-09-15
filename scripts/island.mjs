@@ -14,6 +14,7 @@ import path from 'node:path';
 import { encodePng, makeCanvas } from '../lib/png.mjs';
 import { renderIsland } from '../lib/world/render.mjs';
 import { islandStats } from '../lib/world/stats.mjs';
+import { publishWorld } from '../lib/world/publish.mjs';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -27,6 +28,27 @@ const radiusM = Number(arg('radius', 208));
 const sheet = Number(arg('sheet', 0));
 const outArg = arg('out', null);
 const wantStats = process.argv.includes('--stats');
+const publishTo = arg('publish', null);
+
+if (publishTo) {
+  const envelopeM = Number(arg('envelope', 1024));
+  const t0 = Date.now();
+  let last = '';
+  const { manifest, bytes } = publishWorld(seed, publishTo, {
+    envelopeM,
+    radiusM,
+    onProgress: (frac, what) => {
+      if (!process.stdout.isTTY) return;      // a carriage return in a log file is a hundred lines
+      const line = `${what} ${Math.round(frac * 100)}%`;
+      if (line !== last) { process.stdout.write(line.padEnd(24) + String.fromCharCode(13)); last = line; }
+    },
+  });
+  if (process.stdout.isTTY) process.stdout.write(''.padEnd(24) + String.fromCharCode(13));
+  console.log(`${publishTo}  seed ${seed}, envelop ${envelopeM} m`);
+  console.log(`  worldRev ${manifest.worldRev}  ${manifest.chunks.length} chunks  ` +
+    `${(bytes / 1024).toFixed(0)} kB  in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  process.exit(0);
+}
 
 if (wantStats) {
   // Numbers instead of a picture: the share of the island each terrain class takes, the
@@ -67,9 +89,8 @@ if (sheet > 0) {
       const src = y * cell * 3;
       sheetCanvas.rgb.set(one.rgb.subarray(src, src + cell * 3), ((oy + y) * cell * cols + ox) * 3);
     }
-    process.stdout.write(`seed ${seed + i} (${i + 1}/${sheet})` + String.fromCharCode(13));
+    if (process.stdout.isTTY) process.stdout.write(`seed ${seed + i} (${i + 1}/${sheet})` + String.fromCharCode(13));
   }
-  process.stdout.write(String.fromCharCode(10));
   const out = outArg || `islands-${seed}-x${sheet}.png`;
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, encodePng(sheetCanvas.width, sheetCanvas.height, sheetCanvas.rgb));
