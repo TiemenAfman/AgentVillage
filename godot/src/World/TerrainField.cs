@@ -33,7 +33,8 @@ public sealed class TerrainField
 
 	public float MetresPerSample { get; private init; } = 1.0f;
 	public float EnvelopeM { get; private init; }
-	public float Half { get; private init; }
+	/// <summary>Half the envelope, in metres: the distance from the origin to its rim.</summary>
+	public float EnvelopeHalf { get; private init; }
 
 	/// <summary>Height in metres per sample, row-major, N a side.</summary>
 	public float[] Heights { get; private init; } = Array.Empty<float>();
@@ -111,7 +112,7 @@ public sealed class TerrainField
 			N = n,
 			MetresPerSample = manifest.MetresPerSample,
 			EnvelopeM = manifest.EnvelopeM,
-			Half = half,
+			EnvelopeHalf = half,
 			Heights = heights,
 			Classes = classes,
 			ChunkCount = loaded,
@@ -132,11 +133,11 @@ public sealed class TerrainField
 
 	/// <summary>Sample index nearest a world position, clamped to the envelope.</summary>
 	public (int I, int J) SampleAt(float x, float z) => (
-		Math.Clamp((int)MathF.Round((x + Half) / MetresPerSample), 0, N - 1),
-		Math.Clamp((int)MathF.Round((z + Half) / MetresPerSample), 0, N - 1));
+		Math.Clamp((int)MathF.Round((x + EnvelopeHalf) / MetresPerSample), 0, N - 1),
+		Math.Clamp((int)MathF.Round((z + EnvelopeHalf) / MetresPerSample), 0, N - 1));
 
 	/// <summary>World position of a sample, in metres.</summary>
-	public (float X, float Z) WorldOf(int i, int j) => (i * MetresPerSample - Half, j * MetresPerSample - Half);
+	public (float X, float Z) WorldOf(int i, int j) => (i * MetresPerSample - EnvelopeHalf, j * MetresPerSample - EnvelopeHalf);
 
 	public float HeightOf(int i, int j) =>
 		InField(i, j) ? Heights[i + j * N] : UnpublishedY;
@@ -147,8 +148,8 @@ public sealed class TerrainField
 	/// <summary>Bilinear ground height at a world position. The one query everything stands on.</summary>
 	public float HeightAt(float x, float z)
 	{
-		float fx = Math.Clamp((x + Half) / MetresPerSample, 0.0f, N - 1.0001f);
-		float fz = Math.Clamp((z + Half) / MetresPerSample, 0.0f, N - 1.0001f);
+		float fx = Math.Clamp((x + EnvelopeHalf) / MetresPerSample, 0.0f, N - 1.0001f);
+		float fz = Math.Clamp((z + EnvelopeHalf) / MetresPerSample, 0.0f, N - 1.0001f);
 		int i = (int)fx, j = (int)fz;
 		float u = fx - i, v = fz - j;
 		float h00 = Heights[i + j * N];
@@ -193,6 +194,83 @@ public sealed class TerrainField
 		foreach (byte c in Classes) if (c == cls) n++;
 		return n;
 	}
+
+	// ---- the layout grid, for now -------------------------------------------------
+	//
+	// The village is still expressed in the old 64-cell grid: `plot.gx`, `path.cells`, every
+	// parcel bitmap. That grid is laid over the middle of this terrain, one metre to the cell,
+	// so everything that was placed on it lands on real ground at a real height - just on a
+	// village-sized patch of a much larger island.
+	//
+	// It is a bridge and it is meant to be short. When the layout is re-founded on metres these
+	// members go, and so does every caller that reads a cell coordinate.
+
+	/// <summary>Side of the layout grid in cells. Set from `village.grid.size`.</summary>
+	public int Size { get; set; } = 64;
+
+	/// <summary>Half the layout grid, in cells - which is also metres, at one metre to the cell.</summary>
+	public double Half => Size / 2.0;
+
+	/// <summary>The world seed, for the hashes that scatter props and fields.</summary>
+	public uint IslandSeed => (uint)Manifest.Seed;
+
+	public bool InGrid(int gx, int gz) => gx >= 0 && gz >= 0 && gx < Size && gz < Size;
+
+	/// <summary>Centre of a layout cell, in world metres.</summary>
+	public (double X, double Z) CellWorld(int gx, int gz) => (gx - Half + 0.5, gz - Half + 0.5);
+
+	/// <summary>Ground height at a world position. Kept in double for the callers that were
+	/// written against the old generator.</summary>
+	public double WorldHeight(double x, double z) => HeightAt((float)x, (float)z);
+
+	public double CellHeightAt(int gx, int gz)
+	{
+		var (x, z) = CellWorld(gx, gz);
+		return WorldHeight(x, z);
+	}
+
+	public bool IsLand(int gx, int gz)
+	{
+		if (!InGrid(gx, gz)) return false;
+		var (x, z) = CellWorld(gx, gz);
+		return IsLandAt((float)x, (float)z);
+	}
+
+	public bool IsWater(int gx, int gz) => !IsLand(gx, gz);
+
+	public bool IsBeach(int gx, int gz)
+	{
+		if (!InGrid(gx, gz)) return false;
+		var (x, z) = CellWorld(gx, gz);
+		return TerrainClass.IsSand(ClassAt((float)x, (float)z));
+	}
+
+	public double Slope(int gx, int gz)
+	{
+		var (x, z) = CellWorld(gx, gz);
+		var (i, j) = SampleAt((float)x, (float)z);
+		return SlopeOf(i, j);
+	}
+
+	/// <summary>Layout cells that are land. Built once and cached; the grid is small.</summary>
+	public List<(int X, int Z)> LandCells
+	{
+		get
+		{
+			if (_landCells is not null) return _landCells;
+			_landCells = new List<(int, int)>();
+			for (int gz = 0; gz < Size; gz++)
+				for (int gx = 0; gx < Size; gx++)
+					if (IsLand(gx, gz)) _landCells.Add((gx, gz));
+			return _landCells;
+		}
+	}
+
+	private List<(int X, int Z)>? _landCells;
+
+	/// <summary>Where the high ground is. The old generator knew because it put the hill there;
+	/// this reads it off the manifest, where the server named it.</summary>
+	public (double X, double Y) HillCentre => (MainLandmass.Peak.At[0], MainLandmass.Peak.At[1]);
 
 	/// <summary>The main island: the largest landmass, and where the town stands.</summary>
 	public LandmassInfo MainLandmass =>

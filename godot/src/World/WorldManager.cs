@@ -14,7 +14,7 @@ public partial class WorldManager : Node3D
 {
 	private Node3D? _groundRoot;
 	private Node3D? _objectsRoot;
-	private TerrainGenerator? _terrain;
+	private TerrainField? _terrain;
 	private WaterPlane? _waterPlane;
 	private DistrictDecorator? _districtDecorator;
 	private FarmlandSpawner? _farmlandSpawner;
@@ -132,7 +132,7 @@ public partial class WorldManager : Node3D
 		}
 	}
 
-	public TerrainGenerator? Terrain => _terrain;
+	public TerrainField? Terrain => _terrain;
 
 	public void BuildWorld(VillageData village)
 	{
@@ -144,8 +144,26 @@ public partial class WorldManager : Node3D
 		GD.Print($"[WorldManager] Building world for seed {seed}, size {size}, "
 			+ $"{village.Buildings.Count} buildings");
 
-		_terrain = new TerrainGenerator(seed, size);
-		BuildGroundMesh(_terrain);
+		// The island comes from the server now. `res://world/` is the copy baked into the build;
+		// when the client fetches a world over HTTP this is where that arrives instead.
+		_terrain = TerrainField.LoadFromResources();
+		_terrain.Size = size;                 // the layout grid the village is still expressed in
+		if (_terrain.IslandSeed != seed)
+		{
+			GD.PushWarning(
+				$"the published world is seed {_terrain.IslandSeed} but the village says {seed}; " +
+				"the houses were laid out on a different island");
+		}
+
+		var terrainMeshRoot = _groundRoot!.GetNodeOrNull<Node3D>("Terrain");
+		if (terrainMeshRoot is null)
+		{
+			terrainMeshRoot = new Node3D { Name = "Terrain" };
+			_groundRoot.AddChild(terrainMeshRoot);
+		}
+		var meshStats = TerrainMeshBuilder.BuildInto(terrainMeshRoot, _terrain, GroundMaterial());
+		GD.Print($"[WorldManager] terrain {_terrain.WorldRev}: {meshStats.Chunks} chunks, "
+			+ $"{meshStats.Triangles:N0} tris in {meshStats.Milliseconds} ms");
 		_waterPlane?.Build();
 		_districtDecorator?.DecorateDistricts(_terrain, village);
 		var fieldCells = _farmlandSpawner?.SpawnFields(_terrain, village);
@@ -425,259 +443,13 @@ public partial class WorldManager : Node3D
 		}
 	}
 
-	// ---- terrain mesh -----------------------------------------------------------
-
-	/// <summary>
-	/// Distance in cells from every grid corner to the nearest land corner, by two-pass chamfer.
-	/// The seabed apron falls off with distance from the coastline rather than with distance
-	/// from the square data grid, so the shallow shelf follows the island's actual shape —
-	/// including its bays — instead of reading as a rounded square.
-	/// </summary>
-	private static float[] CoastDistance(TerrainGenerator terrain)
-	{
-		int n = terrain.N;
-		var dist = new float[n * n];
-		const float Far = 1e9f;
-		const float Ortho = 1.0f;
-		const float Diag = 1.41421356f;
-
-		for (int i = 0; i < dist.Length; i++)
-			dist[i] = terrain.H[i] >= TerrainGenerator.SeaLevel ? 0.0f : Far;
-
-		// forward pass: up-left neighbourhood
-		for (int j = 0; j < n; j++)
-		{
-			for (int i = 0; i < n; i++)
-			{
-				int k = i + j * n;
-				float best = dist[k];
-				if (i > 0) best = MathF.Min(best, dist[k - 1] + Ortho);
-				if (j > 0) best = MathF.Min(best, dist[k - n] + Ortho);
-				if (i > 0 && j > 0) best = MathF.Min(best, dist[k - n - 1] + Diag);
-				if (i < n - 1 && j > 0) best = MathF.Min(best, dist[k - n + 1] + Diag);
-				dist[k] = best;
-			}
-		}
-
-		// backward pass: down-right neighbourhood
-		for (int j = n - 1; j >= 0; j--)
-		{
-			for (int i = n - 1; i >= 0; i--)
-			{
-				int k = i + j * n;
-				float best = dist[k];
-				if (i < n - 1) best = MathF.Min(best, dist[k + 1] + Ortho);
-				if (j < n - 1) best = MathF.Min(best, dist[k + n] + Ortho);
-				if (i < n - 1 && j < n - 1) best = MathF.Min(best, dist[k + n + 1] + Diag);
-				if (i > 0 && j < n - 1) best = MathF.Min(best, dist[k + n - 1] + Diag);
-				dist[k] = best;
-			}
-		}
-
-		return dist;
-	}
-
-	/// <summary>
-	/// World-space coordinates of the ground mesh along one axis: every data-grid corner at 1 m
-	/// spacing, then geometrically widening rings out to <see cref="SeabedReachMetres"/>.
-	/// Symmetric, so the same array serves X and Z.
-	/// </summary>
-	private static float[] GroundAxis(TerrainGenerator terrain)
-	{
-		var inner = new List<float>();
-		for (int i = 0; i < terrain.N; i++)
-			inner.Add((float)(i - terrain.Half));
-
-		var outer = new List<float>();
-		float step = 1.0f;
-		float at = inner[^1];
-		while (at < SeabedReachMetres)
-		{
-			step *= SeabedRingGrowth;
-			at += step;
-			outer.Add(at);
-		}
-
-		var axis = new float[outer.Count + inner.Count + outer.Count];
-		for (int i = 0; i < outer.Count; i++)
-			axis[i] = -outer[outer.Count - 1 - i];
-		inner.CopyTo(axis, outer.Count);
-		outer.CopyTo(axis, outer.Count + inner.Count);
-		return axis;
-	}
-
-	private void BuildGroundMesh(TerrainGenerator terrain)
-	{
-		if (_islandMesh is not null)
-		{
-			_groundRoot!.RemoveChild(_islandMesh);
-			_islandMesh.QueueFree();
-			_islandMesh = null;
-		}
-
-		var axis = GroundAxis(terrain);
-		int cols = axis.Length;
-		int count = cols * cols;
-		int n = terrain.N;
-		float half = (float)terrain.Half;
-
-		var verts = new Vector3[count];
-		var normals = new Vector3[count];
-		var colors = new Color[count];
-		var heights = new float[count];
-
-		// Broken-up seabed so the apron reads as ocean floor rather than a smooth cone.
-		var seabedNoise = new PmSimplex(PmRng.Hash32(terrain.IslandSeed.ToString() + ":seabed"));
-		var coast = CoastDistance(terrain);
-
-		// ---- heights -------------------------------------------------------------
-		// On a data-grid corner the height is terrain.H verbatim, so the terrain hash and every
-		// gameplay query stay untouched. Everywhere outside, the surface keeps running and sinks
-		// away to SeabedFloorY. That part is purely presentation.
-		for (int j = 0; j < cols; j++)
-		{
-			float wz = axis[j];
-			float czf = Mathf.Clamp(wz, -half, half);
-			int cj = Math.Clamp((int)MathF.Round(czf + half), 0, n - 1);
-
-			for (int i = 0; i < cols; i++)
-			{
-				float wx = axis[i];
-				float cxf = Mathf.Clamp(wx, -half, half);
-				int ci = Math.Clamp((int)MathF.Round(cxf + half), 0, n - 1);
-				int idx = i + j * cols;
-
-				float edge = (float)terrain.H[ci + cj * n];
-
-				// Land is never touched: terrain.H stays verbatim above sea level, so the hash,
-				// the walk collider and every placement query see exactly what they saw before.
-				if (edge >= (float)TerrainGenerator.SeaLevel)
-				{
-					heights[idx] = edge;
-					continue;
-				}
-
-				// Below sea level the data is a nearly flat plate at about -2.5 m across the
-				// whole 64x64 grid, which is what drew the square halo. Deepen it with distance
-				// from the coastline instead, so the shelf hugs the island and then drops away.
-				float ox = wx - cxf;
-				float oz = wz - czf;
-				float fromLand = coast[ci + cj * n] + MathF.Sqrt(ox * ox + oz * oz);
-
-				// Low-frequency warp: real shelves are broad on one flank and pinched on
-				// another rather than sitting at a constant width all the way round.
-				float warp = (float)seabedNoise.Fbm2(wx * 0.006, wz * 0.006, 2) * SeabedShelfWarp;
-				float distance = MathF.Max(0.0f, fromLand + warp);
-
-				// Stage one: the tidal flats. Over SeabedFlatMetres the bottom barely deepens,
-				// which is what gives a Wadden island its long shallow apron instead of a rim.
-				float ontoFlats = Mathf.SmoothStep(0.0f, 1.0f, distance / SeabedFlatMetres);
-				float shelf = Mathf.Lerp(edge, SeabedFlatY, ontoFlats);
-
-				// Sandbanks on the flats. A few crest near the waterline, which is what makes
-				// the shallows read as banks and channels rather than as tinted glass.
-				float bank = (float)seabedNoise.Fbm2(wx * 0.011, wz * 0.011, 3);
-				shelf += (bank - 0.35f) * SeabedBankHeight * ontoFlats;
-
-				// Stage two: past the flats, the fall to open water.
-				float drop = Mathf.SmoothStep(
-					SeabedFlatMetres, SeabedFlatMetres + SeabedFalloffMetres, distance);
-				float relief = (float)seabedNoise.Fbm2(wx * 0.025, wz * 0.025, 3) * SeabedRelief;
-
-				heights[idx] = Mathf.Lerp(shelf, SeabedFloorY + relief, drop);
-			}
-		}
-
-		// ---- positions, normals, colours ----------------------------------------
-		for (int j = 0; j < cols; j++)
-		{
-			for (int i = 0; i < cols; i++)
-			{
-				int idx = i + j * cols;
-				float h = heights[idx];
-
-				verts[idx] = new Vector3(axis[i], h, axis[j]);
-
-				// Surface normal from the heightfield gradient. The rings are not evenly spaced,
-				// so the differences are divided by the real world distance between neighbours.
-				int iL = Math.Max(0, i - 1), iR = Math.Min(cols - 1, i + 1);
-				int jU = Math.Max(0, j - 1), jD = Math.Min(cols - 1, j + 1);
-				float spanX = MathF.Max(0.001f, axis[iR] - axis[iL]);
-				float spanZ = MathF.Max(0.001f, axis[jD] - axis[jU]);
-				float dhdx = (heights[iR + j * cols] - heights[iL + j * cols]) / spanX;
-				float dhdz = (heights[i + jD * cols] - heights[i + jU * cols]) / spanZ;
-				normals[idx] = new Vector3(-dhdx, 1.0f, -dhdz).Normalized();
-
-				// Godot reads ArrayMesh vertex colours as linear and does not convert them, while
-				// the palette is authored in sRGB like every other colour in the project. Feeding
-				// sRGB numbers straight in renders 0.40 as if it were 0.40 linear — roughly 0.13
-				// sRGB — which is why the island was a pale washed-out mint instead of grass.
-				colors[idx] = GroundBandColour(h).SrgbToLinear();
-			}
-		}
-
-		int quads = cols - 1;
-		var indices = new int[quads * quads * 6];
-		int at = 0;
-		for (int j = 0; j < quads; j++)
-		{
-			for (int i = 0; i < quads; i++)
-			{
-				int a = i + j * cols;
-				int b = a + 1;
-				int c = a + cols;
-				int d = c + 1;
-
-				indices[at++] = a;
-				indices[at++] = b;
-				indices[at++] = c;
-
-				indices[at++] = b;
-				indices[at++] = d;
-				indices[at++] = c;
-			}
-		}
-
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = verts;
-		arrays[(int)Mesh.ArrayType.Normal] = normals;
-		arrays[(int)Mesh.ArrayType.Color] = colors;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-
-		var mesh = new ArrayMesh();
-		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
-		_islandMesh = new MeshInstance3D
-		{
-			Name = "IslandMesh",
-			Mesh = mesh,
-			MaterialOverride = GroundMaterial(),
-		};
-		_groundRoot!.AddChild(_islandMesh);
-	}
-
-	/// <summary>
-	/// Colour band for a ground height. Shared with VerifyVisualRunner so the expectation and
-	/// the implementation cannot drift apart.
-	/// </summary>
-	public static Color GroundBandColour(float h)
-	{
-		if (h < SeabedShelfY)
-		{
-			// Open-ocean floor: fades to near-black with depth so the water reads deep instead
-			// of showing a uniform teal plate out to the mesh edge.
-			float t = Mathf.Clamp((SeabedShelfY - h) / (SeabedShelfY - SeabedFloorY), 0.0f, 1.0f);
-			return new Color(0.20f, 0.32f, 0.35f).Lerp(new Color(0.03f, 0.07f, 0.12f), t);
-		}
-		if (h < 0.0f)
-			return new Color(0.20f, 0.32f, 0.35f);      // lake & river bed
-		if (h < 0.35f)
-			return new Color(0.90f, 0.82f, 0.58f);      // golden beach
-		if (h < 3.4f)
-			return new Color(0.40f, 0.64f, 0.26f);      // meadow green
-		return new Color(0.38f, 0.61f, 0.25f);          // hilltop green
-	}
+	// ---- terrain ----------------------------------------------------------------
+	//
+	// The ground is no longer built here. The server bakes the island once and publishes it as
+	// chunks; TerrainMeshBuilder turns those into one mesh each. What used to live in this space
+	// - a chamfer distance field, a geometrically growing axis out to 1300 m, a seabed apron
+	// invented on the client - was all machinery for hiding the fact that the island was a 64 m
+	// square with nothing around it. There is a real seabed now, so none of it is needed.
 
 	/// <summary>
 	/// Painterly ground shader. The vertex colours stay as the biome the generator chose, and
@@ -738,7 +510,7 @@ public partial class WorldManager : Node3D
 	/// cell above the terrain (WorldHeight + 0.03) so the ribbon never z-fights with the
 	/// ground. Drawn as a single MultiMesh over the cell-slab primitive.
 	/// </summary>
-	private void BuildRoads(TerrainGenerator terrain, VillageData village)
+	private void BuildRoads(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_roadRoot!);
 
@@ -780,7 +552,7 @@ public partial class WorldManager : Node3D
 
 	// ---- bridges -------------------------------------------------------------
 
-	private void BuildBridges(TerrainGenerator terrain, VillageData village)
+	private void BuildBridges(TerrainField terrain, VillageData village)
 	{
 		ClearChildren(_bridgeRoot!);
 
@@ -803,7 +575,7 @@ public partial class WorldManager : Node3D
 	/// waterline. Railings run along both long edges; short footings prop the deck ends
 	/// on the banks. The span under the deck stays empty, so swimmers pass clean through.
 	/// </summary>
-	private Node3D? TryBuildBridge(TerrainGenerator terrain, BridgeData bridge)
+	private Node3D? TryBuildBridge(TerrainField terrain, BridgeData bridge)
 	{
 		if (bridge.Cells.Count < 2)
 			return null;

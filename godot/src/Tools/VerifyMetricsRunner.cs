@@ -235,10 +235,10 @@ public partial class VerifyMetricsRunner : SceneTree
 
 	private void MeasureRelief(WorldManager world)
 	{
-		var island = world.GetNodeOrNull<MeshInstance3D>("GroundRoot/IslandMesh");
+		var island = HighestTerrainChunk(world);
 		if (island?.Mesh is null)
 		{
-			Check(false, "IslandMesh exists");
+			Check(false, "the terrain chunks are under GroundRoot/Terrain");
 			return;
 		}
 
@@ -299,4 +299,33 @@ public partial class VerifyMetricsRunner : SceneTree
 			_fails++;
 		}
 	}
+	/// <summary>
+	/// The ground is no longer one mesh: the server publishes the island as 64 m chunks and each
+	/// gets its own MeshInstance3D, so it can be culled, given a level of detail and occluded.
+	/// This picks the chunk that reaches highest - by volume the winner is a slab of open seabed,
+	/// which has plenty of mesh in it and no island at all.
+	/// </summary>
+	private static MeshInstance3D? HighestTerrainChunk(Node3D world)
+	{
+		MeshInstance3D? best = null;
+		float bestTop = float.MinValue;
+		foreach (var mi in TerrainChunks(world))
+		{
+			var aabb = mi.Mesh!.GetAabb();
+			float top = aabb.Position.Y + aabb.Size.Y;
+			if (top > bestTop) { bestTop = top; best = mi; }
+		}
+		return best;
+	}
+
+	private static System.Collections.Generic.IEnumerable<MeshInstance3D> TerrainChunks(Node3D world)
+	{
+		var terrain = world.GetNodeOrNull<Node3D>("GroundRoot/Terrain");
+		if (terrain is null) yield break;
+		foreach (var child in terrain.GetChildren())
+			if (child is MeshInstance3D mi && mi.Mesh is not null)
+				yield return mi;
+	}
+
+
 }

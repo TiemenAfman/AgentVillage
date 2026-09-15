@@ -111,7 +111,7 @@ public partial class DistrictDecorator : Node3D
 	public int HedgeCount { get; private set; }
 	public int ArchwayCount { get; private set; }
 
-	public void DecorateDistricts(TerrainGenerator terrain, VillageData village)
+	public void DecorateDistricts(TerrainField terrain, VillageData village)
 	{
 		foreach (var child in GetChildren())
 		{

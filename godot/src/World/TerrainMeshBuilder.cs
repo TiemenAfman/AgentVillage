@@ -74,8 +74,8 @@ public static class TerrainMeshBuilder
 		if (cols < 2) return null;
 
 		// Where this chunk starts in the field's own lattice.
-		int originI = (int)MathF.Round((info.Cx * field.Manifest.ChunkM + field.Half) / mps);
-		int originJ = (int)MathF.Round((info.Cz * field.Manifest.ChunkM + field.Half) / mps);
+		int originI = (int)MathF.Round((info.Cx * field.Manifest.ChunkM + field.EnvelopeHalf) / mps);
+		int originJ = (int)MathF.Round((info.Cz * field.Manifest.ChunkM + field.EnvelopeHalf) / mps);
 
 		var verts = new Vector3[cols * cols];
 		var colours = new Color[cols * cols];
@@ -164,11 +164,12 @@ public static class TerrainMeshBuilder
 				MapDepth = field.N,
 				MapData = data,
 			},
-			// A HeightMapShape3D is centred on its own middle, and its samples are one unit
-			// apart - which is exactly metresPerSample here, so no scaling is needed. The half
-			// sample offset puts sample 0 at the corner of the envelope rather than half a metre
-			// inside it.
-			Position = new Vector3(0.5f * field.MetresPerSample, 0.0f, 0.5f * field.MetresPerSample),
+			// A HeightMapShape3D spans (N-1) units centred on its own node, so with an odd sample
+			// count the middle sample sits exactly on the origin. The field puts sample i at
+			// world i - EnvelopeHalf, so the middle sample is the origin there too: the node
+			// belongs at zero, with no offset. The old collider carried a half-unit nudge that
+			// suited the 65-sample grid it was written for.
+			Position = Vector3.Zero,
 		};
 	}
 

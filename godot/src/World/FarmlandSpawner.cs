@@ -30,7 +30,7 @@ public partial class FarmlandSpawner : Node3D
 	/// set of cell coordinates occupied so <see cref="PropSpawner"/> can skip them.
 	/// </summary>
 	public IReadOnlySet<(int, int)> SpawnFields(
-		TerrainGenerator terrain, VillageData village)
+		TerrainField terrain, VillageData village)
 	{
 		foreach (var child in GetChildren())
 		{
@@ -101,7 +101,7 @@ public partial class FarmlandSpawner : Node3D
 
 	// ---- candidate checks -------------------------------------------------------
 
-	private static bool Candidate(int gx, int gz, TerrainGenerator terrain,
+	private static bool Candidate(int gx, int gz, TerrainField terrain,
 		short[] owner, HashSet<long> cleared)
 	{
 		int size = terrain.Size;
@@ -118,7 +118,7 @@ public partial class FarmlandSpawner : Node3D
 	}
 
 	private static bool Fits(int gx, int gz, int w, int d,
-		TerrainGenerator terrain, short[] owner, HashSet<long> cleared)
+		TerrainField terrain, short[] owner, HashSet<long> cleared)
 	{
 		for (int z = 0; z < d; z++)
 			for (int x = 0; x < w; x++)
@@ -137,7 +137,7 @@ public partial class FarmlandSpawner : Node3D
 
 	// ---- cleared set ------------------------------------------------------------
 
-	private static HashSet<long> BuildClearedSet(TerrainGenerator terrain,
+	private static HashSet<long> BuildClearedSet(TerrainField terrain,
 		VillageData village)
 	{
 		int size = terrain.Size;
@@ -189,7 +189,7 @@ public partial class FarmlandSpawner : Node3D
 	// ---- field mesh --------------------------------------------------------------
 
 	private static void BuildFieldSlabs(int gx, int gz, int w, int d,
-		TerrainGenerator terrain, List<Transform3D> slabTfs,
+		TerrainField terrain, List<Transform3D> slabTfs,
 		List<Transform3D> furrowTfs)
 	{
 		float half = (float)terrain.Half;
@@ -257,7 +257,7 @@ public partial class FarmlandSpawner : Node3D
 	// ---- orchard mesh ------------------------------------------------------------
 
 	private static void BuildOrchardTrees(int gx, int gz,
-		TerrainGenerator terrain, List<Transform3D> orchardTfs)
+		TerrainField terrain, List<Transform3D> orchardTfs)
 	{
 		float half = (float)terrain.Half;
 

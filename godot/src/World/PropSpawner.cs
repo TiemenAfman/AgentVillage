@@ -26,10 +26,10 @@ public partial class PropSpawner : Node3D
 	/// one-cell margin), and farmland cells are skipped. The distribution is derived from
 	/// the island seed (PmRng "props" + a "forest" simplex), so the same seed always
 	/// scatters the same props. Every instance is clamped strictly to the terrain elevation
-	/// via TerrainGenerator.WorldHeight so nothing floats or sinks. Tree density is boosted
+	/// via TerrainField.WorldHeight so nothing floats or sinks. Tree density is boosted
 	/// near the hill centre.
 	/// </summary>
-	public void SpawnProps(TerrainGenerator terrain, VillageData village,
+	public void SpawnProps(TerrainField terrain, VillageData village,
 		IReadOnlySet<(int, int)>? fieldCells = null)
 	{
 		foreach (var child in GetChildren())
@@ -100,10 +100,10 @@ public partial class PropSpawner : Node3D
 
 	/// <summary>
 	/// Cell indices covered by every building plot plus a one-cell margin, clamped to the
-	/// grid. Prop cells are keyed as gz * size + gx, the same space as TerrainGenerator
+	/// grid. Prop cells are keyed as gz * size + gx, the same space as TerrainField
 	/// cell coordinates.
 	/// </summary>
-	private static HashSet<long> CollectBlockedCells(TerrainGenerator terrain, VillageData village)
+	private static HashSet<long> CollectBlockedCells(TerrainField terrain, VillageData village)
 	{
 		var blocked = new HashSet<long>();
 		int size = terrain.Size;

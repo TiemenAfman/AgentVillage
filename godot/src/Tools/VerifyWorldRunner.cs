@@ -64,37 +64,42 @@ public partial class VerifyWorldRunner : SceneTree
 		world.BuildWorld(SampleVillage());
 		sw.Stop();
 
-		GD.Print($"terrain hash : {world.Terrain?.TerrainHash}   expected {ExpectedHash}");
-		Check(world.Terrain?.TerrainHash == ExpectedHash, "terrain hash matches the JS island");
+		var field = world.Terrain!;
+		GD.Print($"world        : {field.WorldRev}, seed {field.IslandSeed}, {field.ChunkCount} chunks");
+		// There is nothing left to agree with. The terrain used to be derived twice - once in JS,
+		// once in this port - and the hash existed to notice when the two drifted apart. The
+		// server bakes it once now, so the question is whether the client read what was written,
+		// and VerifyTerrainFieldRunner asks that one properly.
+		Check(field.ChunkCount == field.Manifest.Chunks.Count,
+			$"every chunk the manifest names was loaded ({field.ChunkCount}/{field.Manifest.Chunks.Count})");
 
-		var meshInstance = FindIslandMesh(world);
-		Check(meshInstance is not null, "ground ArrayMesh exists under GroundRoot");
-		if (meshInstance?.Mesh is Mesh am)
+		int meshes = 0, verts = 0;
+		var aabb = new Aabb();
+		bool first = true;
+		foreach (var mi in TerrainChunkMeshes(world))
 		{
-			var arrays = am.SurfaceGetArrays(0);
-			var positions = (Vector3[])(arrays[(int)Mesh.ArrayType.Vertex]!);
-			int verts = positions.Length;
-			var aabb = am.GetAabb();
-			GD.Print($"ground mesh  : {verts} vertices, aabb {aabb.Position} size {aabb.Size}");
-
-			// The old assertion pinned verts == (size+1)^2, which froze an implementation detail
-			// and blocked the seabed apron. What actually matters is the contract: every data
-			// corner is still represented, and the mesh reaches far enough past the island that
-			// its edge is never visible through the water.
-			Check(verts >= (Size + 1) * (Size + 1),
-				"ground mesh covers at least the data grid's corners");
-			Check(aabb.Size.X > 2.0f * WorldManager.SeabedReachMetres * 0.9f,
-				$"seabed reaches past the island so no mesh edge shows ({aabb.Size.X:0} m across)");
-			Check(aabb.Position.Y <= WorldManager.SeabedFloorY + WorldManager.SeabedRelief + 0.01f,
-				$"seabed sinks to the open-ocean floor ({aabb.Position.Y:0.0} m)");
-
-			// Land must be untouched by the apron: the highest point still comes from terrain.H.
-			double peak = 0.0;
-			foreach (var h in world.Terrain!.H)
-				peak = Math.Max(peak, h);
-			Check(Mathf.Abs(aabb.Position.Y + aabb.Size.Y - (float)peak) < 0.01f,
-				$"land heights are unchanged (peak {peak:0.00} m)");
+			var arrays = mi.Mesh!.SurfaceGetArrays(0);
+			verts += ((Vector3[])arrays[(int)Mesh.ArrayType.Vertex]!).Length;
+			var box = mi.Mesh.GetAabb();
+			aabb = first ? box : aabb.Merge(box);
+			first = false;
+			meshes++;
 		}
+		GD.Print($"ground       : {meshes} chunk meshes, {verts} vertices, aabb {aabb.Position} size {aabb.Size}");
+
+		Check(meshes > 0, "the ground is meshed under GroundRoot/Terrain");
+		// The published world has to reach past the island on every side, or its edge shows
+		// through the water - which is what the old seabed apron was invented to hide.
+		Check(aabb.Size.X > field.Manifest.RadiusM * 3.0f,
+			$"the ground reaches well past the island ({aabb.Size.X:0} m across)");
+		Check(aabb.Position.Y < -20.0f, $"the sea has a floor ({aabb.Position.Y:0.0} m)");
+
+		// The mesh must reach as high as the samples say the island does.
+		float peak = float.MinValue;
+		foreach (var h in field.Heights)
+			peak = Math.Max(peak, h);
+		Check(Mathf.Abs(aabb.Position.Y + aabb.Size.Y - peak) < 0.01f,
+			$"the mesh reaches the island's own peak ({peak:0.00} m)");
 
 		var buildings = world.GetNodeOrNull<Node3D>("ObjectsRoot");
 		Check(buildings is not null, "ObjectsRoot exists");
@@ -232,10 +237,13 @@ public partial class VerifyWorldRunner : SceneTree
 		};
 	}
 
-	private static MeshInstance3D? FindIslandMesh(Node3D root)
+	private static System.Collections.Generic.IEnumerable<MeshInstance3D> TerrainChunkMeshes(Node3D root)
 	{
-		var ground = root.GetNodeOrNull<Node3D>("GroundRoot");
-		return ground?.GetNodeOrNull<MeshInstance3D>("IslandMesh");
+		var terrain = root.GetNodeOrNull<Node3D>("GroundRoot/Terrain");
+		if (terrain is null) yield break;
+		foreach (var child in terrain.GetChildren())
+			if (child is MeshInstance3D mi && mi.Mesh is not null)
+				yield return mi;
 	}
 
 	private static int CountOccupiedSlots(BuildingAssembler assembler)

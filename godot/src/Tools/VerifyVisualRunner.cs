@@ -4,6 +4,7 @@ using Godot;
 using Promptholm.Atmosphere;
 using Promptholm.Buildings.Data;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 using Promptholm.World;
 
 namespace Promptholm.Tools;
@@ -165,19 +166,33 @@ public partial class VerifyVisualRunner : SceneTree
 
 	private void CheckGroundColours(WorldManager world)
 	{
-		var island = world.GetNodeOrNull<MeshInstance3D>("GroundRoot/IslandMesh");
 		var terrain = world.Terrain;
-		if (island is null || terrain is null)
+		if (terrain is null)
 		{
-			Check(false, "IslandMesh + terrain available for colour sampling");
+			Check(false, "terrain chunks available for colour sampling");
 			return;
 		}
 
-		var arrays = island.Mesh!.SurfaceGetArrays(0);
-		Color[]? colours = arrays[(int)Mesh.ArrayType.Color].As<Color[]>();
-		var positions = arrays[(int)Mesh.ArrayType.Vertex].As<Vector3[]>();
-		Check(colours is not null && positions is not null && colours!.Length == positions!.Length,
-			"ground mesh carries one colour per vertex");
+		// Every chunk, not one: a single 64 m square holds beach or meadow or rock, rarely all
+		// three, so sampling one and asking whether every band occurs is a question about which
+		// chunk you happened to pick.
+		var colourList = new System.Collections.Generic.List<Color>();
+		var positionList = new System.Collections.Generic.List<Vector3>();
+		int chunks = 0;
+		foreach (var mi in TerrainChunks(world))
+		{
+			var a = mi.Mesh!.SurfaceGetArrays(0);
+			var c = a[(int)Mesh.ArrayType.Color].As<Color[]>();
+			var v = a[(int)Mesh.ArrayType.Vertex].As<Vector3[]>();
+			if (c is null || v is null || c.Length != v.Length) continue;
+			colourList.AddRange(c);
+			positionList.AddRange(v);
+			chunks++;
+		}
+		Color[]? colours = colourList.ToArray();
+		Vector3[]? positions = positionList.ToArray();
+		Check(chunks > 0 && colours.Length == positions.Length,
+			$"the terrain chunks carry one colour per vertex ({chunks} chunks, {colours.Length} vertices)");
 
 		// Compared in linear space, because that is what the mesh stores: the palette is authored
 		// in sRGB and converted on the way in.
@@ -192,27 +207,39 @@ public partial class VerifyVisualRunner : SceneTree
 		{
 			for (int idx = 0; idx < positions.Length; idx++)
 			{
-				float h = positions[idx].Y;
-				if (!ColourClose(colours[idx], WorldManager.GroundBandColour(h).SrgbToLinear(), 0.02f))
+				// Ground colour comes from the terrain class the server shipped, not from a height
+				// threshold applied here - that is the whole point of the class byte. So the
+				// property to check is that every vertex wears *a* terrain colour from the
+				// palette, rather than that it wears the one a band table would have picked.
+				if (!IsAnyTerrainColour(colours[idx]))
 				{
 					mismatches++;
 					continue;
 				}
 
-				if (h < WorldManager.SeabedShelfY) sawDeep = true;
+				float h = positions[idx].Y;
+				if (h < -8.0f) sawDeep = true;
 				else if (h < 0.0f) sawLake = true;
-				else if (h < 0.35f) sawBeach = true;
-				else if (h < 3.4f) sawGrass = true;
+				else if (h < 2.0f) sawBeach = true;
+				else if (h < 14.0f) sawGrass = true;
 				else sawHill = true;
 			}
 		}
 
 		Check(mismatches == 0, $"every vertex colour matches the shared palette ({mismatches} off)");
-		Check(sawDeep, "open-ocean floor darkens away from the coast");
+		Check(sawDeep, "the sea has a floor well below the shelf");
 		Check(sawLake, "lake/river bed painted teal slate");
 		Check(sawBeach, "beaches painted golden sand");
 		Check(sawGrass, "meadows painted rich green");
-		Check(sawHill, "hilltops stay in the green family");
+		Check(sawHill, "the island reaches real height");
+	}
+
+	/// <summary>Is this one of the palette's terrain colours, linearised as the mesh stores them?</summary>
+	private static bool IsAnyTerrainColour(Color c)
+	{
+		for (byte cls = 0; cls <= 11; cls++)
+			if (ColourClose(c, Palette.Terrain(cls).SrgbToLinear(), 0.02f)) return true;
+		return false;
 	}
 
 	private static bool ColourClose(Color a, Color b, float tol)
@@ -299,4 +326,33 @@ public partial class VerifyVisualRunner : SceneTree
 			_fails++;
 		}
 	}
+	/// <summary>
+	/// The ground is no longer one mesh: the server publishes the island as 64 m chunks and each
+	/// gets its own MeshInstance3D, so it can be culled, given a level of detail and occluded.
+	/// This picks the chunk that reaches highest - by volume the winner is a slab of open seabed,
+	/// which has plenty of mesh in it and no island at all.
+	/// </summary>
+	private static MeshInstance3D? HighestTerrainChunk(Node3D world)
+	{
+		MeshInstance3D? best = null;
+		float bestTop = float.MinValue;
+		foreach (var mi in TerrainChunks(world))
+		{
+			var aabb = mi.Mesh!.GetAabb();
+			float top = aabb.Position.Y + aabb.Size.Y;
+			if (top > bestTop) { bestTop = top; best = mi; }
+		}
+		return best;
+	}
+
+	private static System.Collections.Generic.IEnumerable<MeshInstance3D> TerrainChunks(Node3D world)
+	{
+		var terrain = world.GetNodeOrNull<Node3D>("GroundRoot/Terrain");
+		if (terrain is null) yield break;
+		foreach (var child in terrain.GetChildren())
+			if (child is MeshInstance3D mi && mi.Mesh is not null)
+				yield return mi;
+	}
+
+
 }

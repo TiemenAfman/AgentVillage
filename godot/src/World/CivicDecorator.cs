@@ -45,7 +45,7 @@ public partial class CivicDecorator : Node3D
 	/// <summary>World-space centre of the fountain, used by the headless verifier.</summary>
 	public Vector3 FountainPosition { get; private set; }
 
-	public void BuildCivics(TerrainGenerator terrain, VillageData village)
+	public void BuildCivics(TerrainField terrain, VillageData village)
 	{
 		ClearDecos();
 
@@ -80,7 +80,7 @@ public partial class CivicDecorator : Node3D
 
 	// ---- fountain -------------------------------------------------------------
 
-	private void BuildFountain(TerrainGenerator terrain, int gx, int gz)
+	private void BuildFountain(TerrainField terrain, int gx, int gz)
 	{
 		var (wx, wz) = terrain.CellWorld(gx, gz);
 		float ground = (float)terrain.WorldHeight(wx, wz);
@@ -105,7 +105,7 @@ public partial class CivicDecorator : Node3D
 
 	// ---- market stalls --------------------------------------------------------
 
-	private void BuildMarket(TerrainGenerator terrain, int gx, int gz, int w, int d)
+	private void BuildMarket(TerrainField terrain, int gx, int gz, int w, int d)
 	{
 		int stalls = Math.Clamp(w, 1, 4);
 

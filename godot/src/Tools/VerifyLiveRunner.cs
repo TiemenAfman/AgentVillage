@@ -76,8 +76,8 @@ public partial class VerifyLiveRunner : SceneTree
 		world.BuildWorld(village);
 		sw.Stop();
 
-		GD.Print($"terrain hash : {world.Terrain?.TerrainHash}   expected {ExpectedHash}");
-		Check(world.Terrain?.TerrainHash == ExpectedHash, "live island matches the generated terrain");
+		GD.Print($"terrain hash : {world.Terrain?.WorldRev}   expected {ExpectedHash}");
+		Check(world.Terrain?.WorldRev == ExpectedHash, "live island matches the generated terrain");
 
 		var objects = world.GetNodeOrNull<Node3D>("ObjectsRoot");
 		Check(objects?.GetChildCount() is not null and > 0, "buildings were placed in the scene");

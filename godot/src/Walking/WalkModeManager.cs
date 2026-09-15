@@ -9,7 +9,7 @@ namespace Promptholm.Walking;
 /// Toggles between sky-inspection (FreeFlyCamera) and 3rd-person Walk-Mode (PlayerAvatar +
 /// ThirdPersonCamera). Tab switches; entering Walk-Mode builds a terrain heightmap collider
 /// once per world and spawns the settler on solid ground near the island centre, clamped to
-/// the TerrainGenerator.WorldHeight. When village data is reloaded (F5) the collider is
+/// the TerrainField.WorldHeight. When village data is reloaded (F5) the collider is
 /// rebuilt and a walking avatar is snapped back onto the new ground.
 /// </summary>
 [GlobalClass]
@@ -18,7 +18,7 @@ public partial class WalkModeManager : Node3D
 	/// <summary>The free-fly camera to deactivate while walking the island.</summary>
 	[Export] public FreeFlyCamera? FlyCamera { get; set; }
 
-	/// <summary>The world manager whose TerrainGenerator drives the collider and spawn point.</summary>
+	/// <summary>The world manager whose TerrainField drives the collider and spawn point.</summary>
 	[Export] public WorldManager? World { get; set; }
 
 	public bool InWalkMode => _walkMode;
@@ -28,7 +28,7 @@ public partial class WalkModeManager : Node3D
 	private PlayerAvatar? _avatar;
 	private ThirdPersonCamera? _walkCamera;
 	private StaticBody3D? _terrainCollider;
-	private TerrainGenerator? _colliderTerrain;
+	private TerrainField? _colliderTerrain;
 
 	public override void _Ready()
 	{
@@ -164,29 +164,15 @@ public partial class WalkModeManager : Node3D
 			_terrainCollider = null;
 		}
 
-		int n = terrain.N;
-		var heights = new float[n * n];
-		for (int i = 0; i < heights.Length; i++)
-			heights[i] = (float)terrain.H[i];
-
-		var shape = new HeightMapShape3D
-		{
-			MapWidth = n,
-			MapDepth = n,
-			MapData = heights,
-		};
-
+		// Still a heightfield, and deliberately: the generator caps its own gradient at 45
+		// degrees and hands anything steeper to separate geometry, so the ground stays
+		// single-valued and the cheapest large-area collider in the engine keeps working.
 		_terrainCollider = new StaticBody3D { Name = "TerrainCollider" };
-		var collider = new CollisionShape3D
-		{
-			Shape = shape,
-			Position = new Vector3(0.5f, 0.0f, 0.5f),
-		};
-		_terrainCollider.AddChild(collider);
+		_terrainCollider.AddChild(TerrainMeshBuilder.BuildCollider(terrain));
 		AddChild(_terrainCollider);
 		_colliderTerrain = terrain;
 
-		GD.Print($"[WalkMode] terrain collider built ({n}x{n} heightmap).");
+		GD.Print($"[WalkMode] terrain collider built ({terrain.N}x{terrain.N} heightmap).");
 	}
 
 	/// <summary>
@@ -199,7 +185,14 @@ public partial class WalkModeManager : Node3D
 		if (terrain is null)
 			return new Vector3(0.0f, 0.8f, 0.0f);
 
-		double bestDist = double.MaxValue;
+		// Flat ground, not merely the nearest ground. On the old 64 m island every land cell was
+		// within half a metre of level and "closest to the origin" was good enough; this island
+		// has real relief, and dropping the settler onto a 45-degree face leaves it sliding -
+		// CharacterBody3D reports IsOnFloor() false on anything steeper than FloorMaxAngle, so it
+		// never finishes arriving.
+		const double maxSpawnSlope = 0.30;
+
+		double bestScore = double.MaxValue;
 		double sx = 0.0, sz = 0.0, sh = 0.35;
 		foreach (var cell in terrain.LandCells)
 		{
@@ -210,13 +203,26 @@ public partial class WalkModeManager : Node3D
 			// Never spawn inside a building's plot; the door is the entry point.
 			if (World?.IsBuildingCell(cell.X, cell.Z) == true)
 				continue;
-			double d2 = wx * wx + wz * wz;
-			if (d2 >= bestDist)
+			double slope = terrain.Slope(cell.X, cell.Z);
+			if (slope > maxSpawnSlope)
 				continue;
-			bestDist = d2;
+			// Distance decides, with a nudge towards the flattest of the near candidates.
+			double score = wx * wx + wz * wz + slope * 400.0;
+			if (score >= bestScore)
+				continue;
+			bestScore = score;
 			sx = wx;
 			sz = wz;
 			sh = h;
+		}
+
+		if (bestScore == double.MaxValue)
+		{
+			GD.PushWarning("no gentle ground to stand on; falling back to the island's centroid");
+			var centre = terrain.MainLandmass.Centroid;
+            sx = centre[0];
+            sz = centre[1];
+			sh = terrain.WorldHeight(sx, sz);
 		}
 
 		return new Vector3((float)sx, (float)sh + 0.8f, (float)sz);

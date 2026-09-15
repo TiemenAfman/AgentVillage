@@ -1,3 +1,11 @@
+// COSMETIC ONLY - this never decides where anything stands.
+//
+// It used to. Both this and PmSimplex existed to reproduce the server's terrain bit for bit in
+// C#, and island.terrainHash was the assertion that they did. The server ships the terrain now,
+// so what is left is decoration: which way a tree faces, which patch of ground grows a field.
+// If you find yourself reaching for this to decide a position, a height or a classification,
+// that answer belongs on the server and should arrive as data.
+
 using System;
 
 namespace Promptholm.World;
