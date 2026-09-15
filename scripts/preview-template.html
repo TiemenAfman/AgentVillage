@@ -1,0 +1,428 @@
+<title>Island Survey</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #e8ecee;
+    --panel: #f5f7f8;
+    --edge: #c5ced2;
+    --ink: #16212a;
+    --ink-soft: #55676f;
+    --ink-faint: #8798a0;
+    --accent: #10796f;
+    --warn: #8f540f;
+    --shadow: 0 1px 2px rgba(22, 33, 42, .10), 0 8px 24px rgba(22, 33, 42, .06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d1418;
+      --panel: #141e23;
+      --edge: #263338;
+      --ink: #e3ebee;
+      --ink-soft: #9dafb6;
+      --ink-faint: #6b7f87;
+      --accent: #45c3b6;
+      --warn: #d79a4e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .3);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d1418;
+    --panel: #141e23;
+    --edge: #263338;
+    --ink: #e3ebee;
+    --ink-soft: #9dafb6;
+    --ink-faint: #6b7f87;
+    --accent: #45c3b6;
+    --warn: #d79a4e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .3);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding-block: 28px 40px;
+    padding-left: 20px;
+    padding-right: 20px;
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.55 Archivo, system-ui, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+  h1 {
+    margin: 0; font: 600 26px/1.1 "Archivo Narrow", Archivo, sans-serif;
+    letter-spacing: .01em; text-wrap: balance;
+  }
+  .sub { margin: 0; color: var(--ink-soft); font-size: 14px; max-width: 60ch; }
+
+  .label {
+    font: 600 11px/1 "Archivo Narrow", Archivo, sans-serif;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint);
+  }
+
+  .board { display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .board { grid-template-columns: minmax(0, 1fr); } }
+
+  .chart {
+    position: relative; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 3px; box-shadow: var(--shadow); overflow: hidden; line-height: 0;
+  }
+  canvas { display: block; width: 100%; height: auto; max-width: 100%; }
+  .scalebar {
+    position: absolute; left: 14px; bottom: 12px; display: flex; align-items: center; gap: 8px;
+    font: 500 11px/1 "IBM Plex Mono", monospace; color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+  }
+  .scalebar i { display: block; height: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+  .busy {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--panel) 76%, transparent);
+    font: 600 11px/1 "Archivo Narrow", sans-serif; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-soft); opacity: 0; pointer-events: none; transition: opacity .12s;
+  }
+  .busy[data-on="1"] { opacity: 1; }
+
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 3px;
+    padding: 14px 15px; display: flex; flex-direction: column; gap: 11px;
+  }
+
+  .seedrow { display: flex; gap: 6px; align-items: stretch; }
+  input[type="number"] {
+    flex: 1 1 auto; min-width: 0; background: var(--ground); color: var(--ink);
+    border: 1px solid var(--edge); border-radius: 2px; padding: 7px 9px;
+    font: 500 15px/1 "IBM Plex Mono", monospace; -moz-appearance: textfield;
+  }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  button {
+    background: var(--ground); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 2px; padding: 7px 11px; cursor: pointer;
+    font: 600 12px/1 "Archivo Narrow", sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { margin: 0; color: var(--ink-faint); font-size: 12px; }
+
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; }
+  dt { color: var(--ink-soft); font-size: 13px; }
+  dd {
+    margin: 0; text-align: right;
+    font: 500 14px/1.3 "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+  }
+
+  .mix { display: flex; height: 9px; border-radius: 2px; overflow: hidden; border: 1px solid var(--edge); }
+  .mix span { display: block; }
+  .key { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+  .key div { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+  .key i { width: 9px; height: 9px; border-radius: 1px; flex: none; }
+  .key b { margin-left: auto; font: 500 12px/1 "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .flag { margin: 0; color: var(--warn); font-size: 12px; }
+
+  .strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
+  @media (max-width: 620px) { .strip { grid-template-columns: repeat(3, 1fr); } }
+  .strip button { padding: 0; overflow: hidden; background: var(--panel); }
+  .strip button[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .strip span {
+    display: block; padding: 3px 0 4px; font: 500 10px/1 "IBM Plex Mono", monospace;
+    color: var(--ink-faint); text-transform: none; letter-spacing: .02em;
+  }
+
+  footer { color: var(--ink-faint); font-size: 12px; max-width: 74ch; }
+  code { font: 500 12px/1 "IBM Plex Mono", monospace; color: var(--ink-soft); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Island Survey</h1>
+    <p class="sub">The Promptholm world generator, running here in the page. Each seed is baked
+      exactly as the server bakes it, gradient cap included, so what is drawn is what gets
+      published.</p>
+  </header>
+
+  <div class="board">
+    <div class="chart">
+      <canvas id="map" width="577" height="577"></canvas>
+      <div class="scalebar"><i id="bar"></i><span>100 m</span></div>
+      <div class="busy" id="busy">surveying</div>
+    </div>
+
+    <div class="rail">
+      <div class="card">
+        <span class="label">Seed</span>
+        <div class="seedrow">
+          <button id="prev" type="button" aria-label="Previous seed">&minus;</button>
+          <input id="seed" type="number" value="1337" step="1" aria-label="Seed">
+          <button id="next" type="button" aria-label="Next seed">+</button>
+        </div>
+        <button id="random" type="button">Random seed</button>
+        <p class="hint">Arrow keys step through seeds.</p>
+      </div>
+
+      <div class="card">
+        <span class="label">Survey</span>
+        <dl>
+          <dt>Land</dt><dd id="s-area">&mdash;</dd>
+          <dt>Extent</dt><dd id="s-extent">&mdash;</dd>
+          <dt>Highest point</dt><dd id="s-peak">&mdash;</dd>
+          <dt>Benches</dt><dd id="s-bench">&mdash;</dd>
+          <dt>Slope p50</dt><dd id="s-p50">&mdash;</dd>
+          <dt>Slope p90</dt><dd id="s-p90">&mdash;</dd>
+          <dt>Shaved by cap</dt><dd id="s-cap">&mdash;</dd>
+        </dl>
+        <p class="flag" id="flag" hidden></p>
+      </div>
+
+      <div class="card">
+        <span class="label">Ground cover</span>
+        <div class="mix" id="mix"></div>
+        <div class="key" id="key"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <span class="label">Nearby seeds</span>
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <footer>
+    Land area is normalised across seeds: the silhouette is free to vary, the capacity is not, or
+    a seed would decide how many settlers fit. Benches sit 7.5&nbsp;m apart, four times the height
+    of a settler. The slope cap is 45&deg;, and whatever it shaves off belongs to a rock shell,
+    which is separate geometry a heightfield cannot express. Rebuild this page with
+    <code>node scripts/preview.mjs</code>.
+  </footer>
+</div>
+
+<script>
+/*__GENERATOR__*/
+
+const SPAN = 576;                      // metres across the map, and so samples per side
+const COLOUR = {
+  [CLASS.SEA]: [10, 30, 62],
+  [CLASS.SHALLOW]: [28, 106, 130],
+  [CLASS.BEACH]: [229, 214, 168],
+  [CLASS.DUNE]: [209, 201, 148],
+  [CLASS.MEADOW]: [125, 163, 84],
+  [CLASS.WOOD]: [74, 117, 64],
+  [CLASS.SCREE]: [148, 140, 120],
+  [CLASS.ROCK]: [128, 122, 116],
+  [CLASS.CLIFF]: [107, 100, 95],
+  [CLASS.RIVER]: [77, 140, 158],
+  [CLASS.LAKE]: [56, 115, 140],
+  [CLASS.POLDER]: [140, 168, 102],
+};
+const KEY_ORDER = [CLASS.MEADOW, CLASS.WOOD, CLASS.BEACH, CLASS.DUNE, CLASS.SCREE, CLASS.ROCK];
+const KEY_NAME = {
+  [CLASS.MEADOW]: 'Meadow', [CLASS.WOOD]: 'Wood', [CLASS.BEACH]: 'Beach',
+  [CLASS.DUNE]: 'Dune', [CLASS.SCREE]: 'Scree', [CLASS.ROCK]: 'Rock',
+};
+
+const $ = (id) => document.getElementById(id);
+const cache = new Map();
+
+function survey(seed, span) {
+  const key = seed + ':' + span;
+  if (cache.has(key)) return cache.get(key);
+  const field = bakeField(seed, { envelopeM: span });
+  if (cache.size > 20) cache.delete(cache.keys().next().value);
+  cache.set(key, field);
+  return field;
+}
+
+// Paint a baked field: class colour, tinted by height, lit from the north-west, with a contour
+// on every bench so the steps can be counted rather than guessed at.
+function paint(canvas, field) {
+  const n = field.n;
+  canvas.width = n;
+  canvas.height = n;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(n, n);
+  const px = img.data;
+
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const k = i + j * n;
+      const h = field.height[k];
+      const c = COLOUR[field.classes[k]] || [255, 0, 255];
+      let r = c[0], g = c[1], b = c[2];
+
+      if (h > 0) {
+        const tone = 1 - 0.24 * Math.min(1, h / 46);
+        const gx = (field.height[Math.min(i + 1, n - 1) + j * n] - field.height[Math.max(i - 1, 0) + j * n]) / 2;
+        const gz = (field.height[i + Math.min(j + 1, n - 1) * n] - field.height[i + Math.max(j - 1, 0) * n]) / 2;
+        const lit = 0.66 + 0.7 * (-gx * 0.7 - gz * 0.7) / Math.sqrt(1 + gx * gx + gz * gz);
+        const shade = Math.max(0.3, Math.min(1.4, lit)) * tone;
+        r *= shade; g *= shade; b *= shade;
+        const band = h / BENCH;
+        if (Math.abs(band - Math.round(band)) < 0.028) { r *= 0.84; g *= 0.84; b *= 0.84; }
+      }
+
+      const o = k * 4;
+      px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function measure(field) {
+  const n = field.n;
+  const tally = new Map();
+  const slopes = [];
+  let land = 0, peak = -Infinity;
+  let minX = n, maxX = -1, minZ = n, maxZ = -1;
+
+  for (let j = 1; j < n - 1; j++) {
+    for (let i = 1; i < n - 1; i++) {
+      const k = i + j * n;
+      if (field.coast[k] <= 0) continue;
+      land++;
+      tally.set(field.classes[k], (tally.get(field.classes[k]) || 0) + 1);
+      if (field.height[k] > peak) peak = field.height[k];
+      if (i < minX) minX = i;
+      if (i > maxX) maxX = i;
+      if (j < minZ) minZ = j;
+      if (j > maxZ) maxZ = j;
+      if (land % 4 === 0) {
+        const gx = (field.height[k + 1] - field.height[k - 1]) / 2;
+        const gz = (field.height[k + n] - field.height[k - n]) / 2;
+        slopes.push(Math.hypot(gx, gz));
+      }
+    }
+  }
+  slopes.sort((a, b) => a - b);
+  const q = (p) => slopes[Math.min(slopes.length - 1, Math.floor(slopes.length * p))] || 0;
+
+  let clipped = false;
+  const rim = n - 1;
+  for (let i = 0; i <= rim && !clipped; i++) {
+    if (field.height[i] > 0 || field.height[i + rim * n] > 0) clipped = true;
+    if (field.height[i * n] > 0 || field.height[rim + i * n] > 0) clipped = true;
+  }
+
+  return {
+    landHa: land / 10000,
+    extent: [maxX - minX, maxZ - minZ],
+    peak,
+    benches: Math.max(0, Math.floor(peak / BENCH)),
+    p50: q(0.5),
+    p90: q(0.9),
+    capped: field.cappedSamples,
+    clipped,
+    tally,
+    land,
+  };
+}
+
+function show(seed) {
+  $('busy').dataset.on = '1';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const field = survey(seed, SPAN);
+    paint($('map'), field);
+    const m = measure(field);
+
+    $('s-area').textContent = m.landHa.toFixed(1) + ' ha';
+    $('s-extent').innerHTML = m.extent[0] + ' &times; ' + m.extent[1] + ' m';
+    $('s-peak').textContent = m.peak.toFixed(1) + ' m';
+    $('s-bench').textContent = String(m.benches);
+    $('s-p50').textContent = m.p50.toFixed(2);
+    $('s-p90').textContent = m.p90.toFixed(2);
+    $('s-cap').textContent = m.capped.toLocaleString('en-GB');
+
+    const flag = $('flag');
+    flag.hidden = !m.clipped;
+    if (m.clipped) {
+      flag.textContent = 'This island reaches the edge of the survey window, so the coast there is the window and not the island.';
+    }
+
+    const mix = $('mix');
+    const key = $('key');
+    mix.replaceChildren();
+    key.replaceChildren();
+    for (const cls of KEY_ORDER) {
+      const pct = (100 * (tallyOf(m, cls))) / m.land;
+      const rgb = COLOUR[cls];
+      const css = 'rgb(' + rgb[0] + ' ' + rgb[1] + ' ' + rgb[2] + ')';
+
+      const seg = document.createElement('span');
+      seg.style.background = css;
+      seg.style.width = pct.toFixed(2) + '%';
+      mix.append(seg);
+
+      const row = document.createElement('div');
+      const swatch = document.createElement('i');
+      swatch.style.background = css;
+      const name = document.createElement('span');
+      name.textContent = KEY_NAME[cls];
+      const val = document.createElement('b');
+      val.textContent = pct.toFixed(0) + '%';
+      row.append(swatch, name, val);
+      key.append(row);
+    }
+
+    const shown = $('map').clientWidth || 560;
+    $('bar').style.width = Math.round((100 / SPAN) * shown) + 'px';
+
+    $('busy').dataset.on = '0';
+    drawStrip(seed);
+  }));
+}
+
+function tallyOf(m, cls) { return m.tally.get(cls) || 0; }
+
+let stripBase = null;
+function drawStrip(seed) {
+  const base = seed - 2;
+  if (stripBase === base) {
+    for (const btn of $('strip').children) {
+      btn.setAttribute('aria-current', String(Number(btn.dataset.seed) === seed));
+    }
+    return;
+  }
+  stripBase = base;
+  const strip = $('strip');
+  strip.replaceChildren();
+  for (let i = 0; i < 6; i++) {
+    const s = base + i;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.seed = String(s);
+    btn.setAttribute('aria-current', String(s === seed));
+    const cv = document.createElement('canvas');
+    const label = document.createElement('span');
+    label.textContent = String(s);
+    btn.append(cv, label);
+    btn.addEventListener('click', () => go(s));
+    strip.append(btn);
+    // Coarser sampling for the thumbnails: a ninth of the work, and at this size nobody can
+    // tell the difference.
+    paint(cv, survey(s, 192));
+  }
+}
+
+function go(seed) {
+  const s = Number.isFinite(seed) ? Math.trunc(seed) : 1337;
+  $('seed').value = String(s);
+  show(s);
+}
+
+$('seed').addEventListener('change', (e) => go(Number(e.target.value)));
+$('prev').addEventListener('click', () => go(Number($('seed').value) - 1));
+$('next').addEventListener('click', () => go(Number($('seed').value) + 1));
+$('random').addEventListener('click', () => go(Math.floor(Math.random() * 100000)));
+document.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); go(Number($('seed').value) + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); go(Number($('seed').value) - 1); }
+});
+
+go(1337);
+</script>
