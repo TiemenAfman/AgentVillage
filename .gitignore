@@ -37,7 +37,3 @@ godot/.captures/
 # ook als de beelden er niet bij zitten.
 docs/shots/**/*.png
 docs/shots/**/*.jpg
-
-# Terrain3D-spike: 51 MB aan platformbinaries. Pas committen als we hem echt adopteren,
-# en dan getrimd tot de platforms die we bouwen.
-godot/addons/terrain_3d/

@@ -1,0 +1,22 @@
+[configuration]
+
+entry_symbol = "terrain_3d_init"
+compatibility_minimum = 4.4
+
+[icons]
+
+Terrain3D = "res://addons/terrain_3d/icons/terrain3d.svg"
+
+[libraries]
+
+; Only the Windows binaries are kept. The release ships fourteen platform builds at 40 MB and
+; this project exports for Windows; add a platform back from the upstream release if that
+; changes, or Godot will fail to load the extension there with no obvious reason why.
+
+windows.debug.x86_64 = "res://addons/terrain_3d/bin/libterrain.windows.debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/terrain_3d/bin/libterrain.windows.release.x86_64.dll"
+
+
+
+
+
