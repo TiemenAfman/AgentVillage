@@ -975,7 +975,11 @@ function civic(parts, spec, rng) {
     }
     case 'windmill':
       parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
-      parts.push(box(0.22, 0.36, 0.05, C.darkWood, { y: 0, z: 0.44 }));
+      // The door has to stand proud of a tower that tapers. The wall is 0.48 out at the
+      // foot and the door was a five-centimetre board centred at 0.44, so the brickwork
+      // came through it and what you saw was a tower with a dark smear on it. Centred at
+      // 0.48 and thicker, its face clears the widest course and its back stays buried.
+      parts.push(box(0.22, 0.36, 0.07, C.darkWood, { y: 0, z: 0.48 }));
       parts.push(cylinder(0.4, 0.4, 0.05, 9, C.plank, { y: 1.12 }));
       parts.push(dome(0.38, 0x5a3c28, { y: 1.5 }));
       // The windshaft, and it has to be a real length rather than a stub. The sails turn
