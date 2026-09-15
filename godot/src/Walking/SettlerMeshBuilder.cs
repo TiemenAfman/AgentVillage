@@ -1,4 +1,5 @@
 using Godot;
+using Promptholm.Visual;
 
 namespace Promptholm.Walking;
 
@@ -19,53 +20,85 @@ public static class SettlerMeshBuilder
 	private static readonly Color SkinColour = new(0.91f, 0.74f, 0.58f);
 	private static readonly Color StrawColour = new(0.88f, 0.78f, 0.45f);
 
+	// ---- shared parts ----------------------------------------------------------
+	//
+	// Every settler is the same seven meshes in the same seven colours, so they are built once
+	// and handed out by reference. This used to allocate a fresh BoxMesh and a fresh
+	// StandardMaterial3D per limb per figure. With one avatar that cost seven of each and nobody
+	// noticed; with a crowd of thirty-one it is two hundred materials, and the material ceiling in
+	// VerifyMetricsRunner is there precisely because each one is a pipeline state.
+	//
+	// Palette.Solid caches on the whole recipe, so these are the same resources the rest of the
+	// island already uses rather than a private set that happens to hold the same numbers.
+
+	/// <summary>Head centre. Everything above it is measured from here so the hat cannot drift.</summary>
+	private const float HeadY = 1.12f;
+	private const float HeadRadius = 0.12f;
+	private const float BrimThick = 0.04f;
+	private const float CrownHeight = 0.16f;
+
+	private static readonly BoxMesh LegMesh = Mesh(new BoxMesh { Size = new Vector3(0.10f, 0.55f, 0.12f) }, TrousersColour);
+	private static readonly BoxMesh TorsoMesh = Mesh(new BoxMesh { Size = new Vector3(0.34f, 0.42f, 0.20f) }, ShirtColour);
+	private static readonly BoxMesh ArmMesh = Mesh(new BoxMesh { Size = new Vector3(0.07f, 0.42f, 0.09f) }, ShirtColour);
+	private static readonly SphereMesh HeadMesh = Mesh(
+		new SphereMesh { Radius = HeadRadius, Height = HeadRadius * 2.0f, RadialSegments = 12, Rings = 8 }, SkinColour);
+	private static readonly CylinderMesh BrimMesh = Mesh(
+		new CylinderMesh { TopRadius = 0.33f, BottomRadius = 0.35f, Height = BrimThick, RadialSegments = 16 }, StrawColour);
+	private static readonly CylinderMesh CrownMesh = Mesh(
+		new CylinderMesh { TopRadius = 0.16f, BottomRadius = 0.21f, Height = CrownHeight, RadialSegments = 14 }, StrawColour);
+
+	private static T Mesh<T>(T mesh, Color colour) where T : PrimitiveMesh
+	{
+		mesh.Material = Palette.Solid(colour, 0.85f);
+		return mesh;
+	}
+
 	/// <summary>Build the full settler scene root, feet at local y = 0.</summary>
 	public static Node3D BuildSettler()
 	{
 		var root = new Node3D { Name = "Settler" };
 
 		// Legs: blue trousers, swinging from hip pivots at y = 0.57.
-		var legMesh = new BoxMesh { Size = new Vector3(0.10f, 0.55f, 0.12f) };
-		legMesh.Material = Solid(TrousersColour);
-		root.AddChild(Pivot("LegPivotL", new Vector3(-0.08f, 0.57f, 0.0f), legMesh, "LegL", new Vector3(0.0f, -0.275f, 0.0f)));
-		root.AddChild(Pivot("LegPivotR", new Vector3(0.08f, 0.57f, 0.0f), legMesh, "LegR", new Vector3(0.0f, -0.275f, 0.0f)));
+		root.AddChild(Pivot("LegPivotL", new Vector3(-0.08f, 0.57f, 0.0f), LegMesh, "LegL", new Vector3(0.0f, -0.275f, 0.0f)));
+		root.AddChild(Pivot("LegPivotR", new Vector3(0.08f, 0.57f, 0.0f), LegMesh, "LegR", new Vector3(0.0f, -0.275f, 0.0f)));
 
 		// Torso: warm linen shirt, hips to shoulders.
-		var torso = new MeshInstance3D { Name = "Torso" };
-		var torsoMesh = new BoxMesh { Size = new Vector3(0.34f, 0.42f, 0.20f) };
-		torsoMesh.Material = Solid(ShirtColour);
-		torso.Mesh = torsoMesh;
-		torso.Position = new Vector3(0.0f, 0.78f, 0.0f);
-		root.AddChild(torso);
+		root.AddChild(new MeshInstance3D
+		{
+			Name = "Torso",
+			Mesh = TorsoMesh,
+			Position = new Vector3(0.0f, 0.78f, 0.0f),
+		});
 
-		// Arms: short shirt sleeves, handing from shoulder pivots at y = 0.96.
-		var armMesh = new BoxMesh { Size = new Vector3(0.07f, 0.42f, 0.09f) };
-		armMesh.Material = Solid(ShirtColour);
-		root.AddChild(Pivot("ArmPivotL", new Vector3(-0.205f, 0.96f, 0.02f), armMesh, "ArmL", new Vector3(-0.035f, -0.21f, 0.0f)));
-		root.AddChild(Pivot("ArmPivotR", new Vector3(0.205f, 0.96f, 0.02f), armMesh, "ArmR", new Vector3(0.035f, -0.21f, 0.0f)));
+		// Arms: short shirt sleeves, hanging from shoulder pivots at y = 0.96.
+		root.AddChild(Pivot("ArmPivotL", new Vector3(-0.205f, 0.96f, 0.02f), ArmMesh, "ArmL", new Vector3(-0.035f, -0.21f, 0.0f)));
+		root.AddChild(Pivot("ArmPivotR", new Vector3(0.205f, 0.96f, 0.02f), ArmMesh, "ArmR", new Vector3(0.035f, -0.21f, 0.0f)));
 
 		// Head: skin-toned sphere peeking out between the shoulders.
-		var head = new MeshInstance3D { Name = "Head" };
-		var headMesh = new SphereMesh { Radius = 0.12f, Height = 0.24f, RadialSegments = 12, Rings = 8 };
-		headMesh.Material = Solid(SkinColour);
-		head.Mesh = headMesh;
-		head.Position = new Vector3(0.0f, 1.12f, 0.0f);
-		root.AddChild(head);
+		root.AddChild(new MeshInstance3D
+		{
+			Name = "Head",
+			Mesh = HeadMesh,
+			Position = new Vector3(0.0f, HeadY, 0.0f),
+		});
 
-		// Straw hat: wide flat brim + short crowned top.
-		var brim = new MeshInstance3D { Name = "HatBrim" };
-		var brimMesh = new CylinderMesh { TopRadius = 0.33f, BottomRadius = 0.35f, Height = 0.04f, RadialSegments = 16 };
-		brimMesh.Material = Solid(StrawColour);
-		brim.Mesh = brimMesh;
-		brim.Position = new Vector3(0.0f, 1.30f, 0.0f);
-		root.AddChild(brim);
-
-		var top = new MeshInstance3D { Name = "HatTop" };
-		var topMesh = new CylinderMesh { TopRadius = 0.16f, BottomRadius = 0.21f, Height = 0.16f, RadialSegments = 14 };
-		topMesh.Material = Solid(StrawColour);
-		top.Mesh = topMesh;
-		top.Position = new Vector3(0.0f, 1.39f, 0.0f);
-		root.AddChild(top);
+		// Straw hat: wide flat brim + short crown, both measured off the crown of the head rather
+		// than written out as constants. They were, and the brim sat 6 cm clear of the skull — a
+		// floating hat, and one of the things the rondgang of 15 September picked out.
+		float skull = HeadY + HeadRadius;
+		float brimY = skull - 0.02f;                       // biting into the head, not resting above it
+		root.AddChild(new MeshInstance3D
+		{
+			Name = "HatBrim",
+			Mesh = BrimMesh,
+			Position = new Vector3(0.0f, brimY, 0.0f),
+		});
+		root.AddChild(new MeshInstance3D
+		{
+			Name = "HatTop",
+			Mesh = CrownMesh,
+			Position = new Vector3(0.0f, brimY + BrimThick * 0.5f + CrownHeight * 0.5f - 0.01f, 0.0f),
+		});
 
 		return root;
 	}
@@ -107,6 +140,4 @@ public static class SettlerMeshBuilder
 			pivot.Rotation = new Vector3(pitch, 0.0f, 0.0f);
 	}
 
-	private static StandardMaterial3D Solid(Color colour)
-		=> new() { AlbedoColor = colour, Roughness = 0.85f };
 }
