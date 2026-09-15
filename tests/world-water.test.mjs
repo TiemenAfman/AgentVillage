@@ -24,13 +24,48 @@ test('every island gets watercourses that reach the sea', () => {
     const f = field(seed);
     assert.ok(f.rivers.length > 0, `seed ${seed} has no rivers`);
     for (const river of f.rivers) {
-      assert.ok(river.lengthM > 40, `${river.id} is ${river.lengthM} m long - that is a puddle`);
+      assert.ok(river.lengthM > 110, `${river.id} is ${river.lengthM} m long - that is a gully`);
       const [mx, mz] = river.mouth;
       assert.ok(f.shape.coast(mx, mz) <= 8,
         `${river.id} stops ${f.shape.coast(mx, mz).toFixed(0)} m inland instead of at the sea`);
       // A spring is on high ground; a mouth is not.
       const [sx, sz] = river.source;
       assert.ok(f.shape.coast(sx, sz) > f.shape.coast(mx, mz), `${river.id} runs inland`);
+    }
+  }
+});
+
+test('a river is a course through the terrain, not a bar along a grid axis', () => {
+  // The first version of the walk descended a four-connected breadth-first distance to the sea.
+  // Four-connected, that distance falls along one or two neighbours out of the four, so "the
+  // lowest of the eligible ones" was not a choice, and every course came out as a straight bar:
+  // measured on seed 1337, 65 m of river running along x on an island 400 m across, and 59 m on
+  // the other flank. Both numbers here clear that by a factor of four, which is the point - a
+  // test that only asks whether a river exists passes on a bar.
+  for (const seed of SEEDS) {
+    for (const river of field(seed).rivers) {
+      const [sx, sz] = river.source, [mx, mz] = river.mouth;
+      const straight = Math.hypot(mx - sx, mz - sz);
+      assert.ok(river.lengthM / straight > 1.15,
+        `${river.id} runs ${river.lengthM} m to cover ${straight.toFixed(0)} m - it barely bends`);
+
+      // How far the course ever turns from one leg to another. A bar is under ten degrees; a
+      // course that follows the ground is over sixty.
+      const legs = [];
+      for (let i = 1; i < river.spine.length; i++) {
+        const dx = river.spine[i][0] - river.spine[i - 1][0];
+        const dz = river.spine[i][1] - river.spine[i - 1][1];
+        if (Math.hypot(dx, dz) >= 1) legs.push(Math.atan2(dz, dx));
+      }
+      let turn = 0;
+      for (let a = 0; a < legs.length; a++) {
+        for (let b = a + 1; b < legs.length; b++) {
+          const d = Math.abs(legs[a] - legs[b]);
+          turn = Math.max(turn, d > Math.PI ? 2 * Math.PI - d : d);
+        }
+      }
+      assert.ok(turn * 180 / Math.PI > 40,
+        `${river.id} never turns more than ${(turn * 180 / Math.PI).toFixed(0)} degrees - it is a straight bar`);
     }
   }
 });

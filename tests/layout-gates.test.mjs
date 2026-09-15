@@ -8,6 +8,7 @@ import {
   LAYOUT_VERSION, PARCEL_VERSION, ROAD_VERSION,
 } from '../lib/layout.mjs';
 import { makeModel } from './helpers/model.mjs';
+import { testLots } from './helpers/world.mjs';
 import { requireIslandStopped, scratchData, cleanup } from './helpers/island-stopped.mjs';
 
 // Four gates, in descending order of violence, and until now described only in prose:
@@ -21,7 +22,8 @@ import { requireIslandStopped, scratchData, cleanup } from './helpers/island-sto
 // assertion about what survives - not just about what goes.
 
 const SEED = 1337;
-const SIZE = 64;
+const { lots, worldRev } = testLots(SEED);
+const SIZE = lots.size;
 const VILLAGE = [
   { name: 'repo-a', houses: 6, sheds: 1 },
   { name: 'repo-b', houses: 4 },
@@ -34,7 +36,7 @@ test.after(() => cleanup(dir));
 
 function planted() {
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, makeModel(VILLAGE, { milestones: MILESTONES }), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE, { milestones: MILESTONES }), { lots, seed: SEED, worldRev });
   return layout;
 }
 
@@ -101,16 +103,20 @@ test('a re-routing drops the roads and leaves every building standing', () => {
   }
 });
 
-test('a changed heightfield re-founds the island, town and all', () => {
-  // This is the gate the server rewrite will deliberately trip once. It is the most violent
-  // one there is - it takes the town square with it - so it is worth stating out loud that
-  // this is intended behaviour and not an accident.
+test('new ground re-founds the island, town and all', () => {
+  // This is the gate the server rewrite trips once, on purpose. It is the most violent one
+  // there is - it takes the town square with it - so it is worth stating out loud that this
+  // is intended behaviour and not an accident.
   const layout = planted();
   assert.ok(layout.town, 'the fixture has a town');
-  layout.terrainHash = 'deadbeef';                       // as if the generator had been retuned
+  const town = JSON.stringify(layout.town);
+  layout.worldRev = 'deadbeef';                          // as if the island had been re-baked
 
-  placeAll(layout, makeModel(VILLAGE, { milestones: MILESTONES }), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE, { milestones: MILESTONES }), { lots, seed: SEED, worldRev });
 
-  assert.notEqual(layout.terrainHash, 'deadbeef', 'the hash should be re-recorded after replanning');
+  assert.equal(layout.worldRev, worldRev, 'the layout should record the world it was planned on');
   assert.ok(Object.keys(layout.plots).length > 0, 'and the island should be replanned, not left empty');
+  assert.ok(layout.refoundedAt, 'a village that moved should say when');
+  assert.equal(layout.previous.worldRev, 'deadbeef', 'and where it stood before');
+  assert.equal(JSON.stringify(layout.previous.town), town, 'keeping the old town on record');
 });

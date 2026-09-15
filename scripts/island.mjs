@@ -28,6 +28,11 @@ const radiusM = Number(arg('radius', 208));
 const sheet = Number(arg('sheet', 0));
 const outArg = arg('out', null);
 const wantStats = process.argv.includes('--stats');
+// `--raw` skips the hydraulic erosion pass; without it the pass runs at the tuned `WEATHERING`
+// blend. Being able to switch it off is the only way to see what it did: the alternative is to
+// remember what the island looked like last week, which is how a generator gets tuned in the
+// wrong direction for a fortnight.
+const erosion = process.argv.includes('--raw') ? 0 : undefined;
 const publishTo = arg('publish', null);
 
 if (publishTo) {
@@ -37,6 +42,7 @@ if (publishTo) {
   const { manifest, bytes } = publishWorld(seed, publishTo, {
     envelopeM,
     radiusM,
+    erosion,
     onProgress: (frac, what) => {
       if (!process.stdout.isTTY) return;      // a carriage return in a log file is a hundred lines
       const line = `${what} ${Math.round(frac * 100)}%`;
@@ -56,7 +62,9 @@ if (wantStats) {
   // up grey everywhere without anyone being able to say why.
   const count = Number(arg('seeds', 1));
   for (let i = 0; i < count; i++) {
-    const st = islandStats(seed + i, { radiusM });
+    const t0 = Date.now();
+    const st = islandStats(seed + i, { radiusM, erosion });
+    const ms = Date.now() - t0;
     const share = Object.entries(st.classes)
       .sort((a, b) => b[1] - a[1])
       .map(([name, pct]) => `${name} ${pct.toFixed(0)}%`)
@@ -64,7 +72,7 @@ if (wantStats) {
     console.log(
       `seed ${st.seed}  ${st.landHa.toFixed(1)} ha  ${st.extent[0]}x${st.extent[1]} m  ` +
       `top ${st.maxHeight.toFixed(0)} m  slope p50 ${st.slope.p50.toFixed(2)} p90 ${st.slope.p90.toFixed(2)}  ` +
-      `${st.rivers} rivers  ${st.lakes} lakes`);
+      `${st.rivers} rivers  ${st.lakes} lakes  ${(st.volumeM3 / 1000).toFixed(0)}k m3  ${ms} ms`);
     console.log(`          ${share}`);
   }
   process.exit(0);
@@ -72,7 +80,7 @@ if (wantStats) {
 
 function renderOne(s, size) {
   const canvas = makeCanvas(size, size);
-  renderIsland(canvas, { seed: s, span, radiusM });
+  renderIsland(canvas, { seed: s, span, radiusM, erosion });
   return canvas;
 }
 

@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 
 import { emptyLayout, placeAll } from '../lib/layout.mjs';
 import { makeModel } from './helpers/model.mjs';
+import { testLots } from './helpers/world.mjs';
 import { requireIslandStopped } from './helpers/island-stopped.mjs';
 
 // Land is owned, in super-cells, and ownership is as sticky as a plot. A district that lost
 // a super-cell would have a house standing on someone else's ground.
 
 const SEED = 1337;
-const SIZE = 64;
+const { lots, worldRev } = testLots(SEED);
+const SIZE = lots.size;
 const VILLAGE = [
   { name: 'repo-a', houses: 8, sheds: 2 },
   { name: 'repo-b', houses: 5, sheds: 1 },
@@ -30,10 +32,10 @@ test.before(() => requireIslandStopped());
 
 test('a district never loses a super-cell', () => {
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, makeModel(VILLAGE), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE), { lots, seed: SEED, worldRev });
   const before = ownedBy(layout);
 
-  placeAll(layout, makeModel(VILLAGE.map((s) => ({ ...s, houses: s.houses + 5 }))), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE.map((s) => ({ ...s, houses: s.houses + 5 }))), { lots, seed: SEED, worldRev });
   const after = ownedBy(layout);
 
   for (const [id, cells] of before) {
@@ -45,8 +47,8 @@ test('a district never loses a super-cell', () => {
 
 test('no super-cell is ever owned by two districts', () => {
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, makeModel(VILLAGE), { seed: SEED, size: SIZE });
-  placeAll(layout, makeModel(VILLAGE.map((s) => ({ ...s, houses: s.houses + 5 }))), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE), { lots, seed: SEED, worldRev });
+  placeAll(layout, makeModel(VILLAGE.map((s) => ({ ...s, houses: s.houses + 5 }))), { lots, seed: SEED, worldRev });
 
   const owner = new Map();
   for (const [id, cells] of ownedBy(layout)) {
@@ -61,7 +63,7 @@ test('two parcels never touch: the green belt holds', () => {
   // BELT = 1 in lib/layout.mjs. The gap between two hamlets is the countryside, and it is
   // what makes a hamlet read as its own place rather than as a suburb of its neighbour.
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, makeModel(VILLAGE), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE), { lots, seed: SEED, worldRev });
 
   const owner = new Map();
   for (const [id, cells] of ownedBy(layout)) for (const cell of cells) owner.set(cell, id);
@@ -82,7 +84,7 @@ test('two parcels never touch: the green belt holds', () => {
 
 test('no two houses share ground, and every shed sits in the yard of its master', () => {
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, makeModel(VILLAGE), { seed: SEED, size: SIZE });
+  placeAll(layout, makeModel(VILLAGE), { lots, seed: SEED, worldRev });
 
   const big = Object.entries(layout.plots).filter(([, p]) => p.w === 3);
   for (let a = 0; a < big.length; a++) {

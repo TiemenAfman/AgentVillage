@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { emptyLayout, placeAll } from '../lib/layout.mjs';
 import { makeModel, grow, plotsOf } from './helpers/model.mjs';
+import { testLots } from './helpers/world.mjs';
 import { requireIslandStopped } from './helpers/island-stopped.mjs';
 
 // The promise the whole island rests on: a house never moves. It is stated in README.md and
@@ -12,7 +13,8 @@ import { requireIslandStopped } from './helpers/island-stopped.mjs';
 // the placement rules and nothing else.
 
 const SEED = 1337;
-const SIZE = 64;
+const { lots, worldRev } = testLots(SEED);
+const SIZE = lots.size;
 const VILLAGE = [
   { name: 'repo-a', houses: 8, sheds: 1 },
   { name: 'repo-b', houses: 5 },
@@ -20,7 +22,7 @@ const VILLAGE = [
 ];
 
 function place(layout, specs, opts) {
-  return placeAll(layout, makeModel(specs, opts), { seed: SEED, size: SIZE });
+  return placeAll(layout, makeModel(specs, opts), { lots, seed: SEED, worldRev });
 }
 
 test.before(() => requireIslandStopped());
@@ -55,7 +57,7 @@ test('the order the buildings arrive in does not decide where they stand', () =>
   const model = makeModel(VILLAGE);
   model.buildings.reverse();
   model.districts.reverse();
-  placeAll(shuffled, model, { seed: SEED, size: SIZE });
+  placeAll(shuffled, model, { lots, seed: SEED, worldRev });
 
   assert.deepEqual(plotsOf(shuffled), plotsOf(straight));
 });
@@ -108,7 +110,7 @@ test('land given back is land the next arrival gets', () => {
     tier: 'cottage',
     harbour: false,
   });
-  placeAll(layout, model, { seed: SEED, size: SIZE });
+  placeAll(layout, model, { lots, seed: SEED, worldRev });
 
   const taken = layout.plots['house:repo-a-latecomer'];
   assert.ok(taken, 'the latecomer should have been placed');

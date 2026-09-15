@@ -13,10 +13,13 @@ import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
+import { loadWorld } from './lib/world/load.mjs';
+import { publishWorld, WORLD_VERSION } from './lib/world/publish.mjs';
+import { makeLotField } from './lib/world/lotfield.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
 export function parseArgs(argv) {
-  const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null };
+  const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null, refound: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--all') o.all = true;
@@ -25,6 +28,7 @@ export function parseArgs(argv) {
     else if (a === '--out') o.out = argv[++i];
     else if (a === '--layout-file') o.layoutFile = argv[++i];
     else if (a === '--cache-file') o.cacheFile = argv[++i];
+    else if (a === '--refound') o.refound = true;
   }
   return o;
 }
@@ -36,11 +40,41 @@ export function filesFor(opts) {
     layout: opts.layoutFile || path.join(DATA, `layout${suffix}.json`),
     cache: opts.cacheFile || path.join(DATA, 'cache.json'),
     arrivals: path.join(DATA, 'arrivals.jsonl'),
+    world: path.join(DATA, 'world'),
   };
 }
 
+/**
+ * The island, baked once and read back ever after.
+ *
+ * Baking the 1024 m envelope costs about 1.7 seconds - twice a whole scan - so it happens
+ * exactly once, on the first scan of a seed, and every scan after that reads the chunks
+ * back in about a fifth of that. That is not only a saving: the chunks are the bytes the
+ * client draws, so reading them is what guarantees the village is planned on the same
+ * ground the player walks on. There is no second derivation left to drift.
+ *
+ * A world baked for a different seed is replaced. A world baked by an older generator is
+ * replaced too - `worldV` moves whenever the format does - and `placeAll` sees a new
+ * `worldRev` and re-founds the village onto it.
+ */
+function ensureWorld(dir, seed, { radiusM, quiet = true } = {}) {
+  let loaded = loadWorld(dir);
+  if (!loaded || loaded.manifest.seed !== seed || loaded.manifest.worldV !== WORLD_VERSION || loaded.manifest.radiusM !== radiusM) {
+    if (!quiet) {
+      process.stderr.write(loaded
+        ? '[world] the world on disk is for another seed or another format; baking a new one\n'
+        : '[world] no world yet; baking the island (about two seconds, once)\n');
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    publishWorld(seed, dir, { radiusM });
+    loaded = loadWorld(dir);
+    if (!loaded) throw new Error(`the world was published to ${dir} but cannot be read back`);
+  }
+  return loaded;
+}
+
 export async function scan(opts = {}) {
-  const o = { all: false, quiet: true, persistLayout: true, ...opts };
+  const o = { all: false, quiet: true, persistLayout: true, refound: false, ...opts };
   return withScanLock(() => runScan(o));
 }
 
@@ -49,7 +83,12 @@ async function runScan(o) {
   ensureData();
   const config = loadConfig();
   const files = filesFor(o);
-  const size = config.gridSize || 64;
+  // The island first: the layout is planned in lots of four metres off the baked world,
+  // so the ground has to exist before a single plot is judged. `size` is no longer a
+  // setting - it is however many lots the envelope holds.
+  const { manifest: world, field } = ensureWorld(files.world, config.seed, { radiusM: config.islandRadiusM || 208, quiet: o.quiet });
+  const lots = makeLotField(field);
+  const size = lots.size;
 
   const sources = discover();
   const cache = loadCache(files.cache);
@@ -78,6 +117,17 @@ async function runScan(o) {
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
   const layout = loadLayout(files.layout, config.seed, size);
+  // `--refound`: plan the island again from nothing, keeping nothing but the transcripts.
+  // A layout only re-founds itself when the ground underneath it changed, and that is the
+  // right default - a house does not move because the algorithm got better. But a village
+  // that has grown crooked (districts stranded on the commons, a street that never found a
+  // route) has no way back on its own, so this is the way to say "start over" out loud.
+  // Everything a re-founding costs is derivable again: who lives where comes from the
+  // transcripts, the dates from arrivals.jsonl.
+  if (o.refound) {
+    if (!o.quiet) process.stderr.write('[layout] --refound: planning the island again from nothing\n');
+    layout.worldRev = null;
+  }
   // An empty plot is land again: give it back so the next settler can use it.
   for (const id of banished.keys()) delete layout.plots[id];
 
@@ -108,9 +158,9 @@ async function runScan(o) {
       layout.paths = layout.paths.filter((p) => !String(p.id).startsWith(`road:${id}:`));
     }
   }
-  const { terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size });
+  const { unplaced } = placeAll(layout, model, { lots, seed: config.seed, worldRev: world.worldRev });
 
-  const village = assemble({ config, model, layout, terrain, size, all: o.all });
+  const village = assemble({ config, model, layout, lots, world, size, all: o.all });
   writeJsonAtomic(files.village, village);
   saveCache(files.cache, cache);
   if (o.persistLayout) saveLayout(files.layout, layout);
@@ -130,7 +180,7 @@ async function runScan(o) {
   return result;
 }
 
-function assemble({ config, model, layout, terrain, size, all }) {
+function assemble({ config, model, layout, lots, world, size, all }) {
   const plot = (id) => {
     const p = layout.plots[id];
     return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot } : null;
@@ -325,7 +375,13 @@ function assemble({ config, model, layout, terrain, size, all }) {
       name: config.islandName,
       seed: config.seed,
       foundedAt: config.foundedAt,
-      terrainHash: terrain.hash,
+      // The ground is data now, not a seed the client re-derives, so there is no hash to
+      // agree on - only a revision to tell the client whether to re-fetch. `metresPerLot`
+      // is the other half of that contract: every coordinate in this file is in lots, and
+      // this is what one is worth in metres.
+      worldRev: world.worldRev,
+      metresPerLot: lots.metresPerLot,
+      envelopeM: world.envelopeM,
       landing: layout.landing,
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2,
@@ -349,7 +405,15 @@ function assemble({ config, model, layout, terrain, size, all }) {
     districtsRev: hash32(JSON.stringify(districts.map((d) => [d.id, d.tier, d.hue, d.lobes]))),
     buildings: all2,
     paths: layout.paths,
-    bridges: layout.bridges || [],
+    // Two kinds of crossing, one list for the client. A bridge is what a road builds for
+    // itself when it steps over a stream; a link is what connects two landmasses, decided
+    // once by `linkLandmasses` and laid before any road exists. The client draws a deck for
+    // both, and `kind` travels so a causeway can become a bank of earth later without every
+    // island having to be re-wired.
+    bridges: [
+      ...(layout.bridges || []),
+      ...(layout.links || []).map((l) => ({ id: l.id, axis: l.axis, kind: l.kind, cells: l.cells })),
+    ],
     cleared: layout.cleared,
     // Each polder carries the moment it was drained, the way a milestone carries
     // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { emptyLayout, placeAll, SQUARE_STEPS } from '../lib/layout.mjs';
 import { makeModel } from './helpers/model.mjs';
+import { testLots } from './helpers/world.mjs';
 import { requireIslandStopped } from './helpers/island-stopped.mjs';
 
 // The town is the anchor of everything: the super-lattice is placed relative to town.centre
@@ -10,7 +11,8 @@ import { requireIslandStopped } from './helpers/island-stopped.mjs';
 // and every house with it. It is the single most load-bearing coordinate in the project.
 
 const SEED = 1337;
-const SIZE = 64;
+const { lots, worldRev } = testLots(SEED);
+const SIZE = lots.size;
 const specs = (houses) => [
   { name: 'repo-a', houses: Math.ceil(houses * 0.5) },
   { name: 'repo-b', houses: Math.ceil(houses * 0.3) },
@@ -19,7 +21,7 @@ const specs = (houses) => [
 
 function grow(layout, settlers) {
   return placeAll(layout, makeModel(specs(settlers), { settlers, milestones: ['townhall', 'well'] }),
-    { seed: SEED, size: SIZE });
+    { lots, seed: SEED, worldRev });
 }
 
 test.before(() => requireIslandStopped());

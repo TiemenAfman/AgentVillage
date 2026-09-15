@@ -515,8 +515,13 @@ alleen omdat dezelfde code in Node, de browser en C# bit-identiek moest draaien.
 node scripts/island.mjs                        bovenaanzicht als PNG
 node scripts/island.mjs --sheet 9              contactvel van negen seeds
 node scripts/island.mjs --stats --seeds 4      klassenverdeling en hellingen
-node scripts/island.mjs --publish out/world    chunks + manifest, ~1,2 s
+node scripts/island.mjs --publish out/world    chunks + manifest, ~1,9 s
+node scripts/island.mjs --sheet 9 --raw        hetzelfde vel zonder erosie, om te vergelijken
 ```
+
+`--raw` zet de erosiepas uit (`erosion: 0`) en werkt op `--stats`, op de plaatjes en op
+`--publish`. Zonder die schakelaar kun je niet zien wat de pas doet, en dan stel je hem een week
+lang de verkeerde kant op af.
 
 | module | doet |
 |---|---|
@@ -524,11 +529,13 @@ node scripts/island.mjs --publish out/world    chunks + manifest, ~1,2 s
 | `shape.mjs` | de omtrek: smooth-union van negen schijven door een vervormd domein |
 | `relief.mjs` | hoogte: geridgede ruis, terrasseren naar treden van 7,5 m, strandprofiel |
 | `classify.mjs` | één byte per monster: strand, duin, weide, bos, puin, rots |
+| `erode.mjs` | hydraulische erosie: 55.000 druppels over het gebakken raster |
 | `water.mjs` | rivieren en meren, in het gebakken raster gesneden |
 | `features.mjs` | landmassa's, toppen en aanlandingsplekken benoemen |
-| `bake.mjs` | één pas over de envelop, plus de hellingcap |
+| `bake.mjs` | één pas over de envelop: kust, hoogte, erosie, water, hellingcap, klassen |
 | `chunks.mjs` | het schijfformaat, delta-gecodeerd en gegzipt |
 | `publish.mjs` | chunks + `manifest.json` met `worldRev` |
+| `render.mjs` | het diagnostische bovenaanzicht — tekent **de bake**, niet de continue functies |
 | `png.mjs` (in `lib/`) | PNG-schrijver van zestig regels op `node:zlib`, geen dependency |
 
 ### Wat je moet weten voordat je eraan draait
@@ -553,10 +560,57 @@ node scripts/island.mjs --publish out/world    chunks + manifest, ~1,2 s
 - **Een chunk heet naar de hash van zijn eigen bytes.** Ongewijzigd betekent dezelfde naam, dus
   `immutable` cachen kan en groeien is publiceren in plaats van herschrijven.
 
-Meetlat voor een eiland van 208 m straal: 8,4 ha land, top ~35 m, helling p50 0,34 / p90 0,91,
-en grofweg weide 36% · bos 16% · strand 15% · puin 11% · duin 11% · rots 9%. Loopt een van die
-ver weg, dan is er iets kapot — de eerste afstelling leverde een kwart strand en een derde kale
-rots op, en dat zag je meteen.
+Meetlat voor een eiland van 208 m straal, **met erosie** (`node scripts/island.mjs --stats
+--seeds 4`): 8,4 ha land, top 29–32 m, helling p50 0,28 / p90 0,80, en grofweg weide 43% ·
+bos 14% · strand 15% · duin 10% · puin 8% · rots 7%. Loopt een van die ver weg, dan is er
+iets kapot — de eerste afstelling leverde een kwart strand en een derde kale rots op, en dat zag
+je meteen. Zonder erosie (`--raw`) is dezelfde meetlat top 30–35 m, p50 0,38 / p90 1,00 en
+weide 34% · bos 12% · strand 15% · rots 14% · puin 12% · duin 12%; dat verschil is de
+erosiepas en niet een defect.
+
+### Erosie (`erode.mjs`, pas 3 van de bake)
+
+Een druppelsimulatie: 7200 druppels per hectare (~55.000), elk maximaal 36 m lang, die de
+gradiënt volgen met een beetje traagheid, materiaal oppakken waar ze versnellen en het laten
+vallen waar ze vertragen. Erosie gaat met een kwast van 3 m, depositie bilineair.
+
+- **Hij staat vóór het water en vóór de cap.** `carveWater` daalt af naar zee, dus na erosie vindt
+  een rivier de geulen die de erosie al gesneden heeft in plaats van er dwars overheen te lopen.
+  En de cap moet laatst, anders zijn er twee antwoorden op de vraag hoe steil een wand mag zijn.
+- **Hij vecht niet met de hellingcap, hij helpt hem.** Dit is de valkuil die iedereen verwacht —
+  erosie maakt alles steiler, de cap schaaft het er weer af, en je hebt twee keer gerekend voor
+  niets. Gemeten gebeurt het omgekeerde: de cap doet **70.900 → 29.000** correcties, en het
+  aandeel monsters dat precies op de cap zit gaat van 10% naar 6%. Druppels ondergraven een
+  trapwand en leggen het puin aan de voet, dus de wand komt al binnen de limiet bij de cap aan.
+- **Hij vecht ook niet met het terrasseren.** Het aandeel eiland dat op een trede ligt (hoogte
+  binnen 1 m van een veelvoud van `BENCH`) gaat van 26,5% naar 25,9%, en het aandeel bijna-vlakke
+  grond gaat juist iets omhóóg. De druppels ronden de *rand* van een trede af en vullen zijn top;
+  ze snijden er niet doorheen. Er staat een test op.
+- **`WEATHERING = 0.7` is een menging, geen snelheid.** De pas draait altijd voluit en het
+  resultaat wordt daarna met het ongeërodeerde veld gemengd. Dat is niet uit luiheid: de *rates*
+  omlaag draaien doet vrijwel niets — capaciteit en erosiesnelheid samen halveren verschuift de
+  mediane helling van 0,26 naar 0,27 — omdat het landschap waar een druppelsimulatie naartoe
+  convergeert een eigenschap van de simulatie is en niet van hoe hard je hem draait. Mengen is de
+  enige knop die lineair is in het resultaat.
+- **Erosie maakt het eiland groener.** Bij volle sterkte zakt de mediane helling van 0,38 naar
+  0,25 en halveert kale rots + puin van 25% naar 14%, want een afwateringslandschap is nu eenmaal
+  vlakker dan fractale ruis. Bij 0,7 is het 0,28 en 14%. Wil je de oude verhouding terug, dan is
+  `WEATHERING = 0.4` de knop (0,32 en 19%) — of, waarschijnlijk beter, `SCREE_SLOPE` en
+  `ROCK_SLOPE` in `classify.mjs` opnieuw afstellen, want die drempels zijn op de óngeërodeerde
+  hellingverdeling gekozen.
+- **Alleen het hoofdeiland, en niet tot aan de waterlijn.** De druppels lopen op een masker uit
+  `shape.mainCoast`, 5 m binnen de kustlijn. Dat masker hangt alleen van seed en straal af — niet
+  van de envelop, zoals `coast` (die is de vereniging met de eilandjes, en die liggen op een
+  rooster over de envelop). Anders zou `islandStats` op 640 m een ander eiland afstellen dan
+  `publishWorld` op 1024 m publiceert. De druppelwandeling rekent daarom ook in coördinaten
+  t.o.v. de hoek van dat venster: absolute rasterindices lieten dezelfde wandeling op 10,3 en op
+  42,3 beginnen, en float-optelling is niet translatie-invariant.
+- **Kosten: +230 ms** op een bake van 1,42 s → 1,65 s (envelop 1024, 1,05 M monsters). Publiceren
+  gaat van 1,65 s naar 1,9 s; de chunks worden 445 → 448 kB.
+- **Wat eraf spoelt is weg.** Alleen slib dat de kustband bereikt gaat de zee in; een druppel die
+  gewoon opdroogt legt zijn last neer met de erosiekwast. Zonder dat laatste nam elke druppel
+  zijn hele lading mee en verloor het eiland 10% van zijn volume per bake, allemaal van de top.
+  Nu is het netto verlies < 1%.
 
 ### Water, eilandjes en features
 
@@ -564,21 +618,79 @@ rots op, en dat zag je meteen.
   zeeniveau is water" omdat het eiland maar 5 m hoog was; op 46 m is een beek op 30 m hoogte nog
   steeds een beek. Het wateroppervlak ligt daarom een vaste diepte boven de bedding
   (`RIVER_DEPTH 1.1`, `LAKE_DEPTH 2.2`), en die twee getallen staan in het manifest.
-- **Een rivier volgt een BFS-afstandsveld naar zee, niet de helling.** Steilste afdaling loopt
-  vast in de eerste kuil — de oude generator schreef die les al op — en op getrapt terrein is het
+- ⚠️ **De rivieren zijn kaarsrechte streepjes van ~65 m.** Zichtbaar geworden toen `render.mjs`
+  de bake ging tekenen in plaats van de continue functies — daarvóór kwamen `CLASS.RIVER` en
+  `CLASS.LAKE` nooit in beeld. Gemeten op seed 1337: `river:0` loopt van (17,105) naar (80,107),
+  dus 63 m pal oost, en `river:1` idem naar het westen. Oorzaak zit in `descend`: het BFS-veld is
+  4-verbonden, dus meestal is er maar één buur die écht dichter bij zee ligt, en dan is de
+  "laagste buur"-keuze geen keuze. Daar komt bij dat een bron minimaal 55 BFS-stappen van zee moet
+  liggen terwijl er nauwelijks kandidaten verder weg zijn, dus elke rivier begint net binnen dat
+  minimum. Erosie verandert dit niet (het is even recht met `--raw`) en lost het ook niet op.
+- **Een rivier volgt de afwatering, niet een afstandsveld.** Steilste afdaling alleen loopt vast
+  in de eerste kuil — de oude generator schreef die les al op — en op getrapt terrein is het
   erger, want een vlakke trede hééft geen afdaling. `coast` volgen werkt ook niet: ná de domain
-  warp is dat geen afstandsveld meer en heeft het lokale maxima. Gemeten: rivieren strandden
-  50 m voor de kust. Met een BFS-veld komt elke rivier aan.
+  warp is dat geen afstandsveld meer en heeft het lokale maxima. Daarom stond er eerst een
+  BFS-afstand naar zee onder: monotoon, dus elke rivier kwám aan — maar langs de kórtste weg, en
+  vier-verbonden daalt die afstand langs één of twee van de vier buren, dus er viel niets te
+  kiezen. Resultaat: een balk langs een rasteras, niet langer dan de bron landinwaarts lag
+  (seed 1337: 65 m op een eiland van 400 m). Nu doet `routeFlow()` het hydrologisch — kuilen
+  vullen met een priority flood vanaf zee, elk landmonster acht-verbonden zijn steilste lagere
+  buur geven, en het stroomgebied stroomafwaarts optellen — en wordt de rivier van zijn **monding**
+  gevonden, stroomopwaarts langs de grootste zijtak tot de bron. 120–260 m kronkelende loop, en
+  de bake kost er niets meer door (bucket-queue in plaats van een heap).
+- **Het gevulde oppervlak is het waterpeil.** De carve volgt `filled`, niet `height`: dat daalt
+  per stap per constructie, dus een loop die door een kuil gaat draagt dat peil niet mee en
+  graaft geen geul door de rand erachter. En `lengthM` telt echte meters, geen monsters — de loop
+  is acht-verbonden, dus een diagonale stap is 1,41 m.
+- **Een test die alleen vraagt óf er een rivier is, slaagt ook op een balk.** `world-water.test.mjs`
+  bewaakt daarom lengte (>110 m) én dat de loop ergens meer dan 40° draait; beide vallen om op de
+  oude generator.
 - **Een meer heeft een vlakke bodem.** Een constante diepte over een gebogen kom geeft geen vlak
   oppervlak, en dat is het enige wat elk meer ter wereld gemeen heeft.
 - **Eilandjes worden met `max` verenigd, niet met smooth-min.** Twee landmassa's die samensmelten
   doen precies teniet waar ze voor zijn: een wijk op zijn eigen eiland. Hun plekken komen uit een
-  vast rooster over de hele envelop, berekend op t=0, dus eilandje 4 landt waar eilandje 4 landt
-  of 1 tot 3 nu bestaan of niet.
+  vaste reeks, berekend op t=0, dus eilandje 4 landt waar eilandje 4 landt of 1 tot 3 nu bestaan
+  of niet.
+- **Een eilandje wordt gemeten vanaf de kustlijn, niet vanaf het middelpunt.** Ze lagen op vaste
+  ringen (0,58 en 0,80 van de envelop), maar de kust zelf schommelt tussen ~150 en ~260 m, dus het
+  water ertussen kwam op 74 tot 228 m uit — en een wijk achter 228 m open zee is geen wijk op een
+  eilandje maar een wijk die niemand bereikt (seed 1337: zes van de twaalf projecten). `reachAlong()`
+  in `shape.mjs` marcheert langs de peiling naar de búitenste kruising van `mainCoast` (niet
+  bisectie: een gewarpte kust is niet monotoon langs een straal, dus je zou een eilandje midden in
+  de volgende lob leggen) en zet het eilandje daar `GAP_MIN_M 26` tot `GAP_MAX_M 78` voorbij.
+  Gemeten 27–72 m over drie seeds.
+- **Elke landmassa krijgt zijn kust van zijn eigen veld, niet van de unie.** `shape.coast()` is
+  `max(mainCoast, skerryCoast)` en betekent "is dit land" — goed voor `classify`, `features` en
+  `water`, fout om een strand mee te vormen. Pass 2 van `bake.mjs` bakt daarom naast `coast` ook
+  een `mainC`-raster en shape't het hoofdeiland daarop: lag een eilandje tegen de flank, dan las
+  de unie tientallen meters landinwaarts op een monster dat een stap van de eigen waterlijn af
+  lag, en dat werd massief in plaats van strand (seed 1401 op 640 m: 10,3 m hoog binnen 4 m van
+  de kust).
+- **De envelop verandert het hoofdeiland niet** — `islandStats` bakt op 640 m, `publishWorld` op
+  1024 m, en sinds de eilandjes vanaf de kust liggen is de bake daar byte-identiek: gemeten over
+  seeds 1337, 1401 en promptholm, **nul** afwijkende monsters, rivieren en meren inbegrepen. Dat
+  laatste was de subtielste: `carveWater` routeert op de unie (terecht — een eilandje ís land),
+  dus een verschoven eilandje veranderde `toSea`, daarmee de kandidatenlijst, en daarmee trok
+  `rng.int()` een compleet andere bron. Bewaakt door `tests/world-skerries.test.mjs`, dat niets
+  meer maskeert dan de eilandjes zelf.
 - **`islandStats` meet het hoofdeiland via `mainCoast`.** De eilandjes meetellen liet het
   landoppervlak 1,13× variëren tussen seeds terwijl er in werkelijkheid alleen een andere zandplaat
   in beeld stond. En het meet op een echte bake: rivieren, meren en de hellingcap bestaan pas
   als er een raster is, dus de continue weg zou een eiland rapporteren dat niemand ooit ziet.
+- ⚠️ **Een eilandje lekt in de hoogte van het hoofdeiland.** Pas 2 geeft `relief.height` de
+  `coast` uit het raster mee, en dat is `max(mainCoast, skerryCoast)`. Ligt een eilandje dicht
+  tegen een flank, dan leest een kustmonster van het hoofdeiland tientallen meters landinwaarts
+  en wordt het als massief gebakken in plaats van als strand. Gemeten op seed 1337 met envelop
+  640: **880 van de 78.545** hoofdeilandmonsters, tot 27 m mis. Omdat de eilandjes op een rooster
+  over de envelop liggen, is `islandStats` (640 m) dus al niet helemaal hetzelfde eiland als
+  `publishWorld` (1024 m) — in een band langs één flank. Dit is ouder dan de erosiepas; die
+  gebruikt daarom een eigen masker uit `mainCoast`. Fix zou zijn: pas 2 `mainCoast` laten
+  gebruiken voor `d` en `wBeach`, en `coast` alleen voor wat land í́s.
+- **`render.mjs` tekent de bake, niet de continue functies.** Tot september tekende het
+  bovenaanzicht `relief.height` rechtstreeks, dus je keek naar een eiland zónder rivieren, meren,
+  hellingcap en erosie — vier van de zes passen — en precies dat is de fout waar dit script voor
+  bestaat. Het kost nu wel een bake per cel: een contactvel van negen seeds duurt ~15 s in plaats
+  van ~2 s. Dat is de prijs van naar het juiste plaatje kijken.
 - **Het manifest benoemt wat het eiland ís** — landmassa's met zwaartepunt, grenzen en top, plus
   aanlandingsplekken, rivieren en meren. De client leidde `HillCentre`, `LakeCentre` en `Rivers`
   vroeger uit zijn eigen kopie van de generator af; met het terrein als bytes is er niets meer om
@@ -626,3 +738,88 @@ zouden allemaal in één hoek belanden en het plaatje zou meer over dát zeggen 
 - **De watershader moet dezelfde behandeling krijgen.** Zijn dieptetint is afgesteld op een zee van
   2,5 m diep; die gaat nu tot 34 m, dus alles leest als "diep".
 
+
+## De layout in lots van vier meter (herfundering, sept 2026)
+
+`lib/layout.mjs` leidt geen terrein meer af. Het krijgt een **lot-veld** mee
+(`lib/world/lotfield.mjs`) en telt in lots van 4 m. Elke constante hield zijn getal en
+betekent vier keer zoveel meters: `PITCH 4` is een super-cel van 16 m, een 3×3-plot is
+12 m, het plein groeit van 12 naar 20 naar 28 m. Vandaar *herfundering* en niet
+herschrijving.
+
+- `placeAll(layout, model, { lots, seed, worldRev })`. `size` komt uit `lots.size`.
+- `village.json` draagt geen `terrainHash` meer maar `island.worldRev`,
+  `island.metresPerLot` en `island.envelopeM`. De client mag die 4 **nooit** aannemen —
+  `TerrainField.MetresPerLot` leest hem, en `CellWorld`/`CellCorner`/`Span` zijn de enige
+  omrekeningen. Een client die gokt zet het dorp op de goede plek in de verkeerde schaal,
+  en dat ziet eruit als een gezonken stad.
+- Bebouwbaarheid is **grondverzet**, geen helling: `lots.earthwork(lx,lz,w,d)` is het
+  hoogteverschil onder een blok, `EARTHWORK_MAX = 4 m`. Gemeten: een hellingdrempel liet
+  25 bouwplekken over waar het grondverzetcriterium er 140 vindt. Het droge duin is
+  bebouwbaar, alleen de natte vooroever niet — op dit eiland ís het strand het vlakke land.
+- `Super.build` vraagt naar het **3×3-plot in de super-cel**, niet naar alle zestien lots.
+  Alle zestien eisen kostte 278 van de 532 super-cellen omdat één hoek van de laan op het
+  strand lag.
+- **Polders zijn weg** (210 regels). Ze bestonden alleen omdat `gridSize` niet kon groeien;
+  de wereld wordt nu één keer over de hele envelop gebakken en per chunk gepubliceerd.
+  `POLDER_AT`/`POLDER_EVERY` blijven staan omdat `scan.mjs` de kroniek eruit dateert.
+
+### Bakken één keer, daarna van schijf
+
+`scan.mjs` → `ensureWorld()`: bakken kost 1,7 s, terugzetten 0,2 s. Herbakken gebeurt
+alleen bij een andere seed, een andere `worldV` of een andere `radiusM`. `loadWorld()`
+(`lib/world/load.mjs`) zet de chunks terug tot één veld — dezelfde bytes die de client
+tekent, dus er is geen tweede afleiding die kan afdrijven.
+
+`node scan.mjs --refound` plant het eiland opnieuw vanaf niets en legt `refoundedAt` +
+`previous` vast. Gebruik dat als een dorp scheef gegroeid is; een gewijzigde `worldRev`
+doet hetzelfde automatisch.
+
+### Twee invarianten die stilletjes braken
+
+Beide hadden geen zichtbaar symptoom en kostten elk een halve dag:
+
+1. **`guest` was een eigenschap van de route.** Gezet in `ensureParcel`, die op de tweede
+   scan niet meer draait omdat plots plakken — dus het vlaggetje klapte elke scan om en
+   `layout.json` was nooit twee keer hetzelfde. Nu afgelezen van de afgemaakte layout
+   (heeft dit district huizen op de commons?), aan het einde van `placeAll`.
+2. **Een gast-gehucht kreeg `square`/`paved` een scan te laat.** De comment bij de
+   `farmstead`-tak beschreef deze bug al; de fix was daar destijds alleen toegepast. Op het
+   oude vlakke eiland kreeg elk gehucht land en werd de tak nooit gelopen.
+
+Regel die hieruit volgt: **schrijf een veld dat uit de layout af te lezen is ook uit de
+layout af**, niet op de plek waar het besloten wordt.
+
+### Oversteken: het eiland is een archipel
+
+Skerries worden geplaatst **vanaf de kustlijn**, niet vanaf het middelpunt
+(`lib/world/shape.mjs`, `reachAlong()`). Op vaste ringen kwam het water tussen eilandje en
+kust op 74 tot 228 m uit, omdat de kustlijn zelf tussen 150 en 260 m schommelt — zes van de
+twaalf projecten stonden onbereikbaar. Nu: `GAP_MIN_M 26` tot `GAP_MAX_M 78`, gemeten
+27–72 m over drie seeds.
+
+`linkLandmasses()` in `layout.mjs` verbindt elke landmassa waar iemand woont met die van het
+dorp, kortste oversteek eerst, en legt ze vast in `layout.links` (append-only, plakkend).
+`CAUSEWAY_MAX_M 45` / `BRIDGE_MAX_M 110`. Een dek mag tot een derde van zijn lengte
+scheef liggen — rechte oversteken eisen strandde een district op 116 m water terwijl het
+kanaal ernaast 52 m was. `MAX_SPAN` in `crossingSpan` blijft 5: die is voor beekjes, en
+verhogen zou wegen over elke baai laten springen.
+
+### Mist hoort bij de wereld, niet bij de runner
+
+`EnvironmentFactory.DepthReachM` werd alleen door `WorldPreviewRunner` gezet, dus het spel
+zelf en elke screenshot kregen de mist van een eiland van 64 m over een van 408 m — bijna
+wit. `WorldManager.BuildWorld` zet hem nu uit het manifest (`EnvelopeM * 1.2`). De
+`fogScale`-correctie erin is nog steeds empirisch en kwadratisch; opnieuw tunen tegen de
+screenshot-matrix staat open.
+
+`ShotCatalog.Resolve()` schaalt de standpunten met `RadiusM / 32` rond het dorpsplein, zodat
+de bestandsnamen over een herfundering heen vergelijkbaar blijven. Hoogte schaalt met de
+wortel, anders kijk je loodrecht op een maquette.
+
+### Kaart zonder Godot
+
+`node scripts/village-map.mjs --data <dir>` tekent het dorp op het eiland als PNG: kleur per
+wijk, wegen, oversteken, civics, dorpsplein. `--zoom <m>` voor een uitsnede rond het
+centrum. Dit is waar je beoordeelt of het als dorp leest; `scripts/island.mjs` is voor de
+grond alleen.
