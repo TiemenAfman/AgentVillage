@@ -1233,6 +1233,25 @@ function groundRect(parts) {
   return Number.isFinite(x0) ? { x0, x1, z0, z1 } : null;
 }
 
+// Most of the island builds its front on local +z: the town hall, the market, the clock
+// tower, the castle and the office all put their door there, and the layout's rot is
+// written expecting exactly that. Three do not - the tavern, the chapel and the school
+// grew their doors on -z, and the tavern hung its sign, its barrels and its bench there
+// to match. Once main.js was turning buildings the way the layout actually asked, those
+// three came out backwards.
+//
+// They are turned rather than rebuilt. Moving a door means moving everything that was
+// composed around it, and a facade that was drawn as a whole is worth more than the
+// satisfaction of having every case agree in the source. A half turn costs nothing: the
+// footprint is measured afterwards, and it is symmetric about the centre anyway.
+const BACKWARDS = new Set(['tavern', 'chapel', 'school']);
+
+function turnAround(parts, anchors, animated) {
+  for (const g of parts) g.rotateY(Math.PI);
+  for (const k of Object.keys(anchors)) anchors[k] = [-anchors[k][0], anchors[k][1], -anchors[k][2]];
+  for (const a of Object.values(animated)) if (a && a.at) a.at = [-a.at[0], a.at[1], -a.at[2]];
+}
+
 function porch(parts, anchors, animated) {
   const r = groundRect(parts);
   if (!r) return;
@@ -1275,6 +1294,7 @@ export function buildBuilding(spec, ctx = {}) {
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
     anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
+    if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
   } else if (spec.kind === 'shed') {
     const r = shed(parts, spec, pal);
     anchors = r.anchors; height = r.height; w = 0.55;

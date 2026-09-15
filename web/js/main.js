@@ -1146,6 +1146,13 @@ function currentHour() {
 // draws the water.
 const HARBOUR_WATERLINE = 0.35;
 
+// Whose settler stands on a deck rather than on the ground. `deckY` pins a figure to one
+// height wherever it walks, which is right for a house built out over the water - there
+// is nothing under it to stand on - and wrong for one on dry land, where it left the
+// settlers of The Quay hanging in the air beside their own front doors. A house on land
+// has ground under it like anyone else, so its settler uses the ground.
+const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
+
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
   const group = new THREE.Group();
@@ -1788,7 +1795,7 @@ function placeFigure(rec) {
   if (rec.spec.kind === 'civic') return;
   const p = rec.group.position;
   const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z]);
-  if (f && rec.spec.harbour) f.deckY = p.y + 0.62;
+  if (f && overWater(rec)) f.deckY = p.y + 0.62;
   if (f && rec.spec.active) f.mode = 'hammer';
 }
 
@@ -1801,7 +1808,7 @@ function applyEventInstantly(e) {
 }
 function placeFigureRefresh(rec) {
   const f = state.settlers.figures.get(rec.id);
-  if (f) { f.spec = rec.spec; if (rec.spec.harbour) f.deckY = rec.group.position.y + 0.62; }
+  if (f) { f.spec = rec.spec; if (overWater(rec)) f.deckY = rec.group.position.y + 0.62; }
   else placeFigure(rec);
   if (rec.spec.active) { addScaffold(rec); state.settlers.setMode(rec.id, 'hammer'); }
 }
