@@ -89,9 +89,7 @@ public partial class SpikeInstancerRunner : SceneTree
 		Check(asset is not null, "a Terrain3DMeshAsset can be instantiated from C#");
 		if (asset is null) return;
 
-		var mesh = new SphereMesh { Radius = 1.2f, Height = 2.0f, RadialSegments = 8, Rings = 4 };
-		mesh.Material = new StandardMaterial3D { AlbedoColor = new Color(0.78f, 0.66f, 0.50f), Roughness = 0.95f };
-		var holder = new MeshInstance3D { Name = "Rock", Mesh = mesh };
+		var holder = new MeshInstance3D { Name = "Rock", Mesh = RockMesh.Slab(7) };
 		var scene = new PackedScene();
 		Check(scene.Pack(holder) == Error.Ok, "a runtime mesh can be packed into a PackedScene");
 
