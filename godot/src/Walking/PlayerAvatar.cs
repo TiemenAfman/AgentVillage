@@ -61,7 +61,7 @@ public partial class PlayerAvatar : CharacterBody3D
 	public override void _Ready()
 	{
 		CollisionLayer = 2;
-		CollisionMask = 1;
+		CollisionMask = 1 | 4; // terrain heightmap (1) + buildings (4), never self (2)
 		FloorSnapLength = 0.2f;
 		FloorStopOnSlope = false;
 
@@ -85,7 +85,7 @@ public partial class PlayerAvatar : CharacterBody3D
 		if (_visual is null)
 			return;
 
-		_animTime += d * 8.0f;
+		_animTime += d;
 
 		float horizontal = new Vector2(Velocity.X, Velocity.Z).Length();
 		float speed01 = Mathf.Clamp(horizontal / RunSpeed, 0.0f, 1.0f);

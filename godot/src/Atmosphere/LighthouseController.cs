@@ -199,11 +199,13 @@ public partial class LighthouseController : Node3D
 			EmissionEnergyMultiplier = 1.8f,
 		};
 		// Rotate the cone primitive (axis along Y) so it lies along -Z with the light.
+		// +90° puts the narrow top (r 0.55) at the lantern and the wide bottom (r 1.1)
+		// out at the sweep end, i.e. the beam visibly diverges away from the tower.
 		rotator.AddChild(new MeshInstance3D
 		{
 			Name = "BeamCone",
 			Mesh = cone,
-			Rotation = new Vector3(Mathf.DegToRad(-90.0f), 0.0f, 0.0f),
+			Rotation = new Vector3(Mathf.DegToRad(90.0f), 0.0f, 0.0f),
 			Position = new Vector3(0.0f, 0.0f, -3.5f),
 		});
 

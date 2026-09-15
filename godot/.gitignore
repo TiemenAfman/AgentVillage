@@ -1,2 +1,5 @@
 # Godot's own cache and import results; everything here is regenerated on open.
 .godot/
+
+# Lokale screenshot-captures van de harness; regenereerbaar met scripts/shots.ps1.
+.captures/

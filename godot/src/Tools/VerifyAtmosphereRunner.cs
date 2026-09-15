@@ -83,11 +83,19 @@ public partial class VerifyAtmosphereRunner : SceneTree
 		_lighthouse.ResolveSite();
 		_lighthouse.SetActive(DayNightCycle.IsDuskOrNight(12.0f));
 
-		Check(_cycle.SunElevationDeg > 70.0f, $"sun is high at noon (elevation {_cycle.SunElevationDeg:0.0}°)");
+		// Deliberately NOT "as high as possible". The old curve reached the zenith at noon, which
+		// is the flattest light there is: shadows collapse under their casters and nothing reads
+		// as three-dimensional. Midday should be high enough to feel like midday and low enough
+		// to keep a shadow direction.
+		Check(_cycle.SunElevationDeg is > 45.0f and < 75.0f,
+			$"midday sun is high but out of the zenith (elevation {_cycle.SunElevationDeg:0.0}°)");
 		Check(_cycle.DayFactor >= 0.9f, "daylight factor is near-maximal");
 		Check(!_cycle.IsNight, "cycle reports day, not night");
 		Check(_cycle.SunEnergy >= 1.0f, $"sun energy is full ({_cycle.SunEnergy:0.00})");
-		Check(_cycle.AmbientEnergy >= 0.4f, $"sky ambient is bright ({_cycle.AmbientEnergy:0.00})");
+		Check(_cycle.AmbientEnergy is > 0.25f and < 0.60f,
+			$"daylight ambient fills shadow without flattening it ({_cycle.AmbientEnergy:0.00})");
+		Check(!_cycle.MoonShadowsEnabled, "moon casts no shadows during daylight");
+		Check(!_cycle.MoonVisualVisible, "moon disc is hidden during daylight");
 
 		var windowMat = FindWindowMaterial();
 		Check(windowMat is not null, "found a window material on a sample building");
@@ -122,7 +130,15 @@ public partial class VerifyAtmosphereRunner : SceneTree
 		Check(_cycle.DayFactor <= 0.05f, "daylight factor is near-zero");
 		Check(_cycle.SunEnergy < 0.15f, $"sun energy has collapsed ({_cycle.SunEnergy:0.00})");
 		Check(_cycle.MoonEnergy > 0.2f, $"moonlight takes over ({_cycle.MoonEnergy:0.00})");
-		Check(_cycle.AmbientEnergy < 0.25f, $"sky ambient is dim ({_cycle.AmbientEnergy:0.00})");
+		Check(_cycle.MoonShadowsEnabled, "moon casts shadows across the island at night");
+		Check(_cycle.MoonVisualVisible, "moon disc + halo + shaft are visible at night");
+		// Was "< 0.25", i.e. the suite required the night to be dark. Raising this floor is the
+		// single biggest change to the night image, so the test asserting the opposite had to go.
+		// Night now has to stay *readable*: dim relative to day, but never a black plate.
+		Check(_cycle.AmbientEnergy is > 0.20f and < 0.40f,
+			$"night stays readable without turning into day ({_cycle.AmbientEnergy:0.00})");
+		Check(_cycle.State.SkyHorizon.Luminance > _cycle.State.SkyTop.Luminance,
+			"the night sky keeps a horizon gradient, so silhouettes have something to sit against");
 
 		Check(_glow.GlowActive, "glow manager switched on at night");
 		var windowMat = FindWindowMaterial();

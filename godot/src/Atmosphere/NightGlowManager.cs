@@ -160,8 +160,12 @@ public partial class NightGlowManager : Node3D
 	{
 		if (_lampsBuilt)
 			return;
-		_lampsBuilt = true;
 
+		// The flag used to be set before this check. GroundRoot/Roads exists as soon as
+		// EnsureRoots has run but stays empty until BuildWorld fills it, so on the live-data
+		// path — where VillageClient's poll arrives after the first Sync — this ran against an
+		// empty Roads node, found no positions, and latched _lampsBuilt: the island then never
+		// got a single street lamp. Only the village.json fallback path worked, by accident.
 		var world = ResolveWorld();
 		var roads = world?.GetNodeOrNull<Node3D>("GroundRoot/Roads");
 		if (roads is null)
@@ -176,6 +180,11 @@ public partial class NightGlowManager : Node3D
 			for (int i = 0; i < count; i += 6)
 				positions.Add(mmi.Multimesh.GetInstanceTransform(i).Origin);
 		}
+
+		if (positions.Count == 0)
+			return;
+
+		_lampsBuilt = true;
 
 		int placed = 0;
 		foreach (var pos in positions)

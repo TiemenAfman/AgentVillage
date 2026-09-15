@@ -25,6 +25,7 @@ VillageClient="*res://src/Data/VillageClient.cs"
 window/size/viewport_width=1280
 window/size/viewport_height=800
 window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [dotnet]
 
@@ -32,5 +33,54 @@ project/assembly_name="Promptholm"
 
 [rendering]
 
-anti_aliasing/quality/msaa_3d=2
+; Explicit rather than implied: volumetric fog, SDFGI and clustered omni lights only exist in
+; Forward+, and an accidental mobile override would silently switch half the look off.
+renderer/rendering_method="forward_plus"
+
+; MSAA 8x, and deliberately no TAA. TAA would be wrong here: the water is transparent and
+; transparent surfaces write no motion vectors, so the whole sea would smear on a camera pan,
+; and thin geometry (lantern posts, the lighthouse beam, chimneys) would ghost. It is also not
+; needed — nothing in this pipeline is a per-pixel noise source. Hard, clean silhouette edges
+; are what a painted look wants anyway. FXAA is off for the same reason: it blurs exactly the
+; contrast edge that makes the silhouette.
+anti_aliasing/quality/msaa_3d=3
+anti_aliasing/quality/screen_space_aa=0
+anti_aliasing/quality/use_taa=false
 anti_aliasing/quality/use_debanding=true
+
+; Native resolution. FSR1 is a blur upscaler and FSR2 needs the motion vectors we just said we
+; do not have; there is no performance pressure to trade for.
+scaling_3d/mode=0
+scaling_3d/scale=1.0
+
+; The island is ~64 m with a single sun: 8192 over 4 splits is sub-decimetre shadow detail.
+; Soft filtering plus a real angular size on the sun gives a penumbra that widens with
+; distance, which is what reads as illustration rather than engine.
+lights_and_shadows/directional_shadow/size=8192
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=4
+lights_and_shadows/positional_shadow/atlas_size=8192
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+
+; SDFGI supplies sky-coloured bounce — blue shadows by day, cold moon bounce at night. That
+; separation between lit and shadowed colour is the core of the painterly look, and unlike a
+; bake it follows the day/night cycle.
+global_illumination/gi/use_half_resolution=false
+global_illumination/sdfgi/probe_ray_count=2
+global_illumination/sdfgi/frames_to_converge=3
+global_illumination/sdfgi/frames_to_update_light=2
+
+; SSAO fills in what SDFGI's cell size misses: contact shadow under eaves and around props.
+environment/ssao/quality=2
+environment/ssao/half_size=false
+
+; Bloom is the light bleeding into the air around windows, the moon and the lighthouse; the
+; low-quality path gives blocky bloom kernels that read as digital.
+environment/glow/upscale_mode=1
+environment/glow/use_high_quality=true
+
+; 64 slices over a ~400 m fog distance bands visibly; 128 plus filtering does not.
+environment/volumetric_fog/volume_size=64
+environment/volumetric_fog/volume_depth=128
+environment/volumetric_fog/use_filter=1
+
+textures/default_filters/anisotropic_filtering_level=4

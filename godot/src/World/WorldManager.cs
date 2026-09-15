@@ -5,6 +5,7 @@ using Promptholm.Buildings;
 using Promptholm.Buildings.Data;
 using Promptholm.Buildings.Slots;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 
 namespace Promptholm.World;
 
@@ -25,6 +26,43 @@ public partial class WorldManager : Node3D
 
 	private readonly List<BuildingMarker> _buildingMarkers = new();
 	private readonly HashSet<(int, int)> _buildingCells = new();
+
+	/// <summary>Buildings are drawn at 65% of their plot, centred on the lot, so adjacent
+	/// plots (gap 0 in the data) get a green margin instead of touching walls. Density
+	/// relief without touching data; see AGENTS.md "Schaalsemantiek v1 vs v2".</summary>
+	public const float FootprintScale = 0.65f;
+
+	/// <summary>
+	/// How far past the data grid, in metres, the seabed keeps sinking before it levels off at
+	/// <see cref="SeabedFloorY"/>. The data square is only ~40% land, so without this apron the
+	/// seabed plate stops dead in open water and the water shader draws that straight edge as a
+	/// hard-edged halo — which is exactly what the square "halo" around the island was.
+	/// </summary>
+	public const float SeabedFalloffMetres = 42.0f;
+
+	/// <summary>
+	/// How far, in metres, noise pushes the shelf edge in and out. Without it the falloff is
+	/// measured from the square data grid and the shallow shelf reads as a rounded square.
+	/// </summary>
+	public const float SeabedShelfWarp = 20.0f;
+
+	/// <summary>
+	/// Outer radius of the rendered seabed. Past the falloff the rings grow geometrically, so
+	/// reaching beyond the 2000 m water plane costs very few vertices.
+	/// </summary>
+	public const float SeabedReachMetres = 1300.0f;
+
+	/// <summary>Growth factor per ring outside the data grid; 1.0 would mean uniform 1 m spacing.</summary>
+	public const float SeabedRingGrowth = 1.13f;
+
+	/// <summary>Depth the apron levels off at.</summary>
+	public const float SeabedFloorY = -30.0f;
+
+	/// <summary>Depth below which ground colour starts darkening toward open-ocean floor.</summary>
+	public const float SeabedShelfY = -3.0f;
+
+	/// <summary>Amplitude of the noise that breaks up the apron so it is not a smooth cone.</summary>
+	public const float SeabedRelief = 2.5f;
 
 	/// <summary>Logical handle for click/proximity selection of a placed building.</summary>
 	public sealed record BuildingMarker(string Id, string Name, Vector2 Door, string Kind);
@@ -121,12 +159,14 @@ public partial class WorldManager : Node3D
 
 			float gx = b.Plot.Gx;
 			float gz = b.Plot.Gz;
-			float pw = Math.Max(0.8f, b.Plot.W);
-			float pd = Math.Max(0.8f, b.Plot.D);
+			// Footprint scaled down, but the plot anchors the centre: the building is centred
+			// on the full lot and leaves a margin on all four sides.
+			float pw = Math.Max(0.8f, b.Plot.W * FootprintScale);
+			float pd = Math.Max(0.8f, b.Plot.D * FootprintScale);
 			int rot = (int)b.Plot.Rot;
 
-			float x = gx + pw * 0.5f - (float)_terrain.Half;
-			float z = gz + pd * 0.5f - (float)_terrain.Half;
+			float x = gx + b.Plot.W * 0.5f - (float)_terrain.Half;
+			float z = gz + b.Plot.D * 0.5f - (float)_terrain.Half;
 			float ground = (float)_terrain.WorldHeight(x, z);
 
 			var buildingRoot = new Node3D
@@ -357,7 +397,101 @@ public partial class WorldManager : Node3D
 		};
 	}
 
+	/// <summary>
+	/// Detaches and frees every child of <paramref name="parent"/>. Both callers used to call
+	/// RemoveChild on the WorldManager itself while iterating a root's children, which Godot
+	/// rejects once per child on the second BuildWorld (the first build finds the roots empty,
+	/// so it went unnoticed). CivicDecorator.ClearDecos already did this correctly.
+	/// </summary>
+	private static void ClearChildren(Node parent)
+	{
+		foreach (var child in parent.GetChildren())
+		{
+			parent.RemoveChild(child);
+			child.QueueFree();
+		}
+	}
+
 	// ---- terrain mesh -----------------------------------------------------------
+
+	/// <summary>
+	/// Distance in cells from every grid corner to the nearest land corner, by two-pass chamfer.
+	/// The seabed apron falls off with distance from the coastline rather than with distance
+	/// from the square data grid, so the shallow shelf follows the island's actual shape —
+	/// including its bays — instead of reading as a rounded square.
+	/// </summary>
+	private static float[] CoastDistance(TerrainGenerator terrain)
+	{
+		int n = terrain.N;
+		var dist = new float[n * n];
+		const float Far = 1e9f;
+		const float Ortho = 1.0f;
+		const float Diag = 1.41421356f;
+
+		for (int i = 0; i < dist.Length; i++)
+			dist[i] = terrain.H[i] >= TerrainGenerator.SeaLevel ? 0.0f : Far;
+
+		// forward pass: up-left neighbourhood
+		for (int j = 0; j < n; j++)
+		{
+			for (int i = 0; i < n; i++)
+			{
+				int k = i + j * n;
+				float best = dist[k];
+				if (i > 0) best = MathF.Min(best, dist[k - 1] + Ortho);
+				if (j > 0) best = MathF.Min(best, dist[k - n] + Ortho);
+				if (i > 0 && j > 0) best = MathF.Min(best, dist[k - n - 1] + Diag);
+				if (i < n - 1 && j > 0) best = MathF.Min(best, dist[k - n + 1] + Diag);
+				dist[k] = best;
+			}
+		}
+
+		// backward pass: down-right neighbourhood
+		for (int j = n - 1; j >= 0; j--)
+		{
+			for (int i = n - 1; i >= 0; i--)
+			{
+				int k = i + j * n;
+				float best = dist[k];
+				if (i < n - 1) best = MathF.Min(best, dist[k + 1] + Ortho);
+				if (j < n - 1) best = MathF.Min(best, dist[k + n] + Ortho);
+				if (i < n - 1 && j < n - 1) best = MathF.Min(best, dist[k + n + 1] + Diag);
+				if (i > 0 && j < n - 1) best = MathF.Min(best, dist[k + n - 1] + Diag);
+				dist[k] = best;
+			}
+		}
+
+		return dist;
+	}
+
+	/// <summary>
+	/// World-space coordinates of the ground mesh along one axis: every data-grid corner at 1 m
+	/// spacing, then geometrically widening rings out to <see cref="SeabedReachMetres"/>.
+	/// Symmetric, so the same array serves X and Z.
+	/// </summary>
+	private static float[] GroundAxis(TerrainGenerator terrain)
+	{
+		var inner = new List<float>();
+		for (int i = 0; i < terrain.N; i++)
+			inner.Add((float)(i - terrain.Half));
+
+		var outer = new List<float>();
+		float step = 1.0f;
+		float at = inner[^1];
+		while (at < SeabedReachMetres)
+		{
+			step *= SeabedRingGrowth;
+			at += step;
+			outer.Add(at);
+		}
+
+		var axis = new float[outer.Count + inner.Count + outer.Count];
+		for (int i = 0; i < outer.Count; i++)
+			axis[i] = -outer[outer.Count - 1 - i];
+		inner.CopyTo(axis, outer.Count);
+		outer.CopyTo(axis, outer.Count + inner.Count);
+		return axis;
+	}
 
 	private void BuildGroundMesh(TerrainGenerator terrain)
 	{
@@ -368,45 +502,89 @@ public partial class WorldManager : Node3D
 			_islandMesh = null;
 		}
 
-		int cols = terrain.N;
+		var axis = GroundAxis(terrain);
+		int cols = axis.Length;
 		int count = cols * cols;
+		int n = terrain.N;
+		float half = (float)terrain.Half;
 
 		var verts = new Vector3[count];
 		var normals = new Vector3[count];
 		var colors = new Color[count];
+		var heights = new float[count];
 
+		// Broken-up seabed so the apron reads as ocean floor rather than a smooth cone.
+		var seabedNoise = new PmSimplex(PmRng.Hash32(terrain.IslandSeed.ToString() + ":seabed"));
+		var coast = CoastDistance(terrain);
+
+		// ---- heights -------------------------------------------------------------
+		// On a data-grid corner the height is terrain.H verbatim, so the terrain hash and every
+		// gameplay query stay untouched. Everywhere outside, the surface keeps running and sinks
+		// away to SeabedFloorY. That part is purely presentation.
+		for (int j = 0; j < cols; j++)
+		{
+			float wz = axis[j];
+			float czf = Mathf.Clamp(wz, -half, half);
+			int cj = Math.Clamp((int)MathF.Round(czf + half), 0, n - 1);
+
+			for (int i = 0; i < cols; i++)
+			{
+				float wx = axis[i];
+				float cxf = Mathf.Clamp(wx, -half, half);
+				int ci = Math.Clamp((int)MathF.Round(cxf + half), 0, n - 1);
+				int idx = i + j * cols;
+
+				float edge = (float)terrain.H[ci + cj * n];
+
+				// Land is never touched: terrain.H stays verbatim above sea level, so the hash,
+				// the walk collider and every placement query see exactly what they saw before.
+				if (edge >= (float)TerrainGenerator.SeaLevel)
+				{
+					heights[idx] = edge;
+					continue;
+				}
+
+				// Below sea level the data is a nearly flat plate at about -2.5 m across the
+				// whole 64x64 grid, which is what drew the square halo. Deepen it with distance
+				// from the coastline instead, so the shelf hugs the island and then drops away.
+				float ox = wx - cxf;
+				float oz = wz - czf;
+				float fromLand = coast[ci + cj * n] + MathF.Sqrt(ox * ox + oz * oz);
+
+				// Low-frequency warp: real shelves are broad on one flank and drop off sharply
+				// on another rather than sitting at a constant width all the way round.
+				float warp = (float)seabedNoise.Fbm2(wx * 0.010, wz * 0.010, 2) * SeabedShelfWarp;
+				float fall = Mathf.SmoothStep(0.0f, 1.0f, (fromLand + warp) / SeabedFalloffMetres);
+				float relief = (float)seabedNoise.Fbm2(wx * 0.025, wz * 0.025, 3) * SeabedRelief;
+				heights[idx] = Mathf.Lerp(edge, SeabedFloorY + relief, fall);
+			}
+		}
+
+		// ---- positions, normals, colours ----------------------------------------
 		for (int j = 0; j < cols; j++)
 		{
 			for (int i = 0; i < cols; i++)
 			{
 				int idx = i + j * cols;
-				float x = (float)(i - terrain.Half);
-				float z = (float)(j - terrain.Half);
-				float h = (float)terrain.H[idx];
+				float h = heights[idx];
 
-				verts[idx] = new Vector3(x, h, z);
+				verts[idx] = new Vector3(axis[i], h, axis[j]);
 
-				// Surface normal from the heightfield gradient (central differences on the
-				// 1.0 grid, one-sided at the rim) so hills catch directional light.
-				float hL = (float)terrain.H[Math.Max(0, i - 1) + j * cols];
-				float hR = (float)terrain.H[Math.Min(cols - 1, i + 1) + j * cols];
-				float hU = (float)terrain.H[i + Math.Max(0, j - 1) * cols];
-				float hD = (float)terrain.H[i + Math.Min(cols - 1, j + 1) * cols];
-				float dhdx = (hR - hL) * 0.5f;
-				float dhdz = (hD - hU) * 0.5f;
+				// Surface normal from the heightfield gradient. The rings are not evenly spaced,
+				// so the differences are divided by the real world distance between neighbours.
+				int iL = Math.Max(0, i - 1), iR = Math.Min(cols - 1, i + 1);
+				int jU = Math.Max(0, j - 1), jD = Math.Min(cols - 1, j + 1);
+				float spanX = MathF.Max(0.001f, axis[iR] - axis[iL]);
+				float spanZ = MathF.Max(0.001f, axis[jD] - axis[jU]);
+				float dhdx = (heights[iR + j * cols] - heights[iL + j * cols]) / spanX;
+				float dhdz = (heights[i + jD * cols] - heights[i + jU * cols]) / spanZ;
 				normals[idx] = new Vector3(-dhdx, 1.0f, -dhdz).Normalized();
 
-				Color col;
-				if (h < 0.0f)
-					col = new Color(0.20f, 0.32f, 0.35f);      // lake & river bed
-				else if (h < 0.35f)
-					col = new Color(0.90f, 0.82f, 0.58f);      // golden beach
-				else if (h < 3.4f)
-					col = new Color(0.40f, 0.64f, 0.26f);      // meadow green
-				else
-					col = new Color(0.38f, 0.61f, 0.25f);      // hilltop green
-
-				colors[idx] = col;
+				// Godot reads ArrayMesh vertex colours as linear and does not convert them, while
+				// the palette is authored in sRGB like every other colour in the project. Feeding
+				// sRGB numbers straight in renders 0.40 as if it were 0.40 linear — roughly 0.13
+				// sRGB — which is why the island was a pale washed-out mint instead of grass.
+				colors[idx] = GroundBandColour(h).SrgbToLinear();
 			}
 		}
 
@@ -451,6 +629,28 @@ public partial class WorldManager : Node3D
 		_groundRoot!.AddChild(_islandMesh);
 	}
 
+	/// <summary>
+	/// Colour band for a ground height. Shared with VerifyVisualRunner so the expectation and
+	/// the implementation cannot drift apart.
+	/// </summary>
+	public static Color GroundBandColour(float h)
+	{
+		if (h < SeabedShelfY)
+		{
+			// Open-ocean floor: fades to near-black with depth so the water reads deep instead
+			// of showing a uniform teal plate out to the mesh edge.
+			float t = Mathf.Clamp((SeabedShelfY - h) / (SeabedShelfY - SeabedFloorY), 0.0f, 1.0f);
+			return new Color(0.20f, 0.32f, 0.35f).Lerp(new Color(0.03f, 0.07f, 0.12f), t);
+		}
+		if (h < 0.0f)
+			return new Color(0.20f, 0.32f, 0.35f);      // lake & river bed
+		if (h < 0.35f)
+			return new Color(0.90f, 0.82f, 0.58f);      // golden beach
+		if (h < 3.4f)
+			return new Color(0.40f, 0.64f, 0.26f);      // meadow green
+		return new Color(0.38f, 0.61f, 0.25f);          // hilltop green
+	}
+
 	/// <summary>Vertex-colored grass/sand/rock material for the island surface.</summary>
 	private static StandardMaterial3D GroundMaterial()
 		=> new()
@@ -469,11 +669,7 @@ public partial class WorldManager : Node3D
 	/// </summary>
 	private void BuildRoads(TerrainGenerator terrain, VillageData village)
 	{
-		foreach (var child in _roadRoot!.GetChildren())
-		{
-			RemoveChild(child);
-			child.QueueFree();
-		}
+		ClearChildren(_roadRoot!);
 
 		var tiles = new List<Transform3D>();
 
@@ -515,11 +711,7 @@ public partial class WorldManager : Node3D
 
 	private void BuildBridges(TerrainGenerator terrain, VillageData village)
 	{
-		foreach (var child in _bridgeRoot!.GetChildren())
-		{
-			RemoveChild(child);
-			child.QueueFree();
-		}
+		ClearChildren(_bridgeRoot!);
 
 		int n = 0;
 		foreach (var bridge in village.Bridges)
@@ -602,27 +794,26 @@ public partial class WorldManager : Node3D
 			Position = alongX ? new Vector3(mid, DeckY, constW) : new Vector3(constW, DeckY, mid),
 		});
 
-		// Low wooden railings along both sides, enclosing the ends.
-		var railMesh = new BoxMesh { Size = new Vector3(0.05f, RailingH, 0.05f) };
-		railMesh.Material = RailingMat();
+		// Low wooden railings along both sides, enclosing the ends. AddRailing builds its own
+		// box from the size, so the two BoxMesh objects that used to be created and handed in
+		// here were pure waste — one of them did not even carry the size it was passed with.
 		float railY = DeckY + DeckH * 0.5f + RailingH * 0.5f;
 		float side = DeckW * 0.5f;
-		AddRailing(root, railMesh, alongX ? new Vector3(length, RailingH, 0.04f) : new Vector3(0.04f, RailingH, length),
-			alongX ? new Vector3(0, railY, side) : new Vector3(side, railY, 0));
-		AddRailing(root, railMesh, alongX ? new Vector3(length, RailingH, 0.04f) : new Vector3(0.04f, RailingH, length),
-			alongX ? new Vector3(0, railY, -side) : new Vector3(-side, railY, 0));
 
-		var railBox = new BoxMesh
-		{
-			Size = alongX ? new Vector3(0.04f, RailingH, DeckW) : new Vector3(DeckW, RailingH, 0.04f),
-		};
-		railBox.Material = RailingMat();
-		AddRailing(root, railBox, railBox.Size, alongX ? new Vector3(-length * 0.5f, railY, 0) : new Vector3(0, railY, -length * 0.5f));
-		AddRailing(root, railBox, railBox.Size, alongX ? new Vector3(length * 0.5f, railY, 0) : new Vector3(0, railY, length * 0.5f));
+		var sideSize = alongX ? new Vector3(length, RailingH, 0.04f) : new Vector3(0.04f, RailingH, length);
+		AddRailing(root, sideSize, alongX ? new Vector3(0, railY, side) : new Vector3(side, railY, 0));
+		AddRailing(root, sideSize, alongX ? new Vector3(0, railY, -side) : new Vector3(-side, railY, 0));
+
+		var endSize = alongX ? new Vector3(0.04f, RailingH, DeckW) : new Vector3(DeckW, RailingH, 0.04f);
+		AddRailing(root, endSize, alongX ? new Vector3(-length * 0.5f, railY, 0) : new Vector3(0, railY, -length * 0.5f));
+		AddRailing(root, endSize, alongX ? new Vector3(length * 0.5f, railY, 0) : new Vector3(0, railY, length * 0.5f));
 
 		// Stone footings on the banks under the deck corners; skipped when the bank is
 		// already higher than the deck bottom.
-		var footingMesh = new BoxMesh { Size = new Vector3(0.6f, 0.5f, 0.6f) };
+		// A unit box scaled per instance. Sharing one BoxMesh and reassigning its Size inside
+		// the loop meant every footing already added pointed at the same resource, so they all
+		// ended up with the height of whichever one was computed last.
+		var footingMesh = new BoxMesh { Size = Vector3.One };
 		footingMesh.Material = StoneMat();
 		float deckBottom = DeckY - DeckH * 0.5f;
 		foreach (var edge in new[] { start, end })
@@ -635,12 +826,13 @@ public partial class WorldManager : Node3D
 				float h = deckBottom - bankY;
 				if (h <= 0.02f)
 					continue;
-				footingMesh.Size = new Vector3(0.6f, h, 0.6f);
 				root.AddChild(new MeshInstance3D
 				{
 					Name = "Footing",
 					Mesh = footingMesh,
-					Position = new Vector3(cx, bankY + h * 0.5f, cz),
+					Transform = new Transform3D(
+						Basis.FromScale(new Vector3(0.6f, h, 0.6f)),
+						new Vector3(cx, bankY + h * 0.5f, cz)),
 				});
 			}
 		}
@@ -648,14 +840,11 @@ public partial class WorldManager : Node3D
 		return root;
 	}
 
-	private static void AddRailing(Node3D root, BoxMesh mesh, Vector3 size, Vector3 pos)
+	private static void AddRailing(Node3D root, Vector3 size, Vector3 pos)
 	{
-		var m = new BoxMesh
-		{
-			Size = size,
-		};
-		m.Material = RailingMat();
-		root.AddChild(new MeshInstance3D { Name = "Railing", Mesh = m, Position = pos });
+		var mesh = new BoxMesh { Size = size };
+		mesh.Material = RailingMat();
+		root.AddChild(new MeshInstance3D { Name = "Railing", Mesh = mesh, Position = pos });
 	}
 
 	// ---- shared materials ----------------------------------------------------
@@ -684,7 +873,7 @@ public partial class WorldManager : Node3D
 		};
 
 	private static StandardMaterial3D SolidMat(Color colour, float roughness = 0.82f)
-		=> new() { AlbedoColor = colour, Roughness = roughness };
+		=> Palette.Solid(colour, roughness);
 
 	// ---- MultiMesh helpers ---------------------------------------------------
 

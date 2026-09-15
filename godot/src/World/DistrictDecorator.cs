@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 
 namespace Promptholm.World;
 
@@ -396,5 +397,5 @@ public partial class DistrictDecorator : Node3D
 	}
 
 	private static StandardMaterial3D SolidMat(Color color)
-		=> new() { AlbedoColor = color, Roughness = 0.85f };
+		=> Palette.Solid(color, 0.85f);
 }

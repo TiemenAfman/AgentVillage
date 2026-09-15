@@ -78,9 +78,11 @@ godot/src/
 │   │   │               #   + NearestDossier(pos, radius), IsBuildingCell(gx,gz), PlotCells, BuildMarker, BuildingDisplayName;
 │   │   │               #   BuildWorld-volgorde: ground → water → DistrictDecorator → FarmlandSpawner → PropSpawner(fieldCells)
 │   │   │               #   → roads → bridges → buildings → CivicDecorator.BuildCivics
-│   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: water via ShaderMaterial ↔ res://shaders/water.gdshader
-│   │   │               #   op y=0 (2000×2000, HorizonSize 2000, shadow off, diepte-gradiënt + schuimlijn via DEPTH_TEXTURE),
-│   │   │               #   als child van GroundRoot
+│   ├── WaterPlane.cs         # [GlobalClass] MeshInstance3D: water via ShaderMaterial ↔ res://shaders/stylized_water.gdshader
+│   │   │               #   op y=0 (2000×2000, HorizonSize 2000, shadow off, diepte-gradiënt + schuim via DEPTH_TEXTURE),
+│   │   │               #   als child van GroundRoot. De uniforms worden hier expliciet gezet: de shader-defaults zijn
+│   │   │               #   die van de tutorial (sea_height 1.1 / choppy 2.6 op roughness 0.10) en dat bedekte de hele
+│   │   │               #   open zee met wit — gemeten géén schuim maar zonneglinstering op veel te steile normalen
 │   └── PropSpawner.cs        # [GlobalClass] Node3D: deterministische trees/rocks via MultiMesh op land-cellen, plot-vermijding +
 │       │               #   fieldCells-param (door FarmlandSpawner teruggegeven) óók geblockt, clamp op WorldHeight;
 │       │               #   tree-densiteit +boost nabij hill (HillCentre, r<8 → ×1.0..1.5); bomen ~3.5 m (trunk 1.7 + foliage 1.9/1.2)
@@ -92,7 +94,8 @@ godot/src/
 │   │               #   leest res://village.json via Godot.FileAccess (dummy-island enkel als laatste redmiddel)
 ├── Tools/
 │   ├── VerifyTerrainRunner.cs # SceneTree-runner: headless hash-check
-│   ├── VerifyWorldRunner.cs   # self-contained: 4 sample-gebouwen → mesh 4225 verts, ≥7 pieces/gebouw
+│   ├── VerifyWorldRunner.cs   # self-contained: 4 sample-gebouwen → mesh-contract (alle datahoekpunten, schort reikt
+│   │                               #   ver genoeg, bodem diep genoeg, landhoogtes ongewijzigd), ≥7 pieces/gebouw
 │   ├── VerifyLiveRunner.cs    # E2E tegen lokale server (poort 4747): aantallen zijn data-afhankelijk (snapshot village.json = 163 gebouwen, live kan anders zijn)
 │   ├── VerifyWalkRunner.cs    # echte physics-frames: EnterWalkMode → 80 ticks op de grond (IsOnFloor), teleport in het water → 120 ticks (State=Swimming)
 │   ├── VerifyDossierRunner.cs # building-colliders + NearestDossier + BuildingDossierUI round-trip (31 checks)
@@ -101,10 +104,15 @@ godot/src/
 │   ├── VerifyModelSheetRunner.cs # 6 tiers × 3 styles assemblage + 9 prefab .tscn-scene-laden checks (factories + self-build)
 │   ├── VerifyDistrictRunner.cs   # Phase 2 stap 9: laadt echte res://village.json, bouwt wereld, assert hedges>0,
 │   │                               #   field/orchard>0 (falls toevallig 0 op een lege island — met fallback-village 164/16+21)
-│   └── VerifyVisualRunner.cs     # Fase 2 stap 12: storybook-verificatie (20 checks) — water shader/materiaal, palette-hele
-│                               #   kleuren + half-timber slankheid, plaza-fontein+stalletjes, per-vertex grondkleuren,
-│                               #   wolken (aantal/hoogte/schaduw/drift/wrap); zelfde 161 !is_inside_tree()-ruis als
-│                               #   VerifyDistrictRunner (preëxistent, bij gebouwassembly) + EXIT=0
+│   ├── VerifyVisualRunner.cs     # Fase 2 stap 12: storybook-verificatie — water shader/materiaal, palette-kleuren +
+│   │                               #   half-timber slankheid, plaza-fontein+stalletjes, grondkleuren tegen de gedeelde
+│   │                               #   WorldManager.GroundBandColour, wolken (aantal/hoogte/schaduw/drift/wrap)
+│   ├── VerifyHudRunner.cs        # mount Main, wacht frames, leest de IslandCard-labels: de stats-pills mogen niet op
+│   │                               #   "[ 0 settlers ]" blijven staan boven een gebouwde stad (EventBus-regressie)
+│   ├── VerifyMetricsRunner.cs    # meet i.p.v. assert: distincte materialen/silhouetten, footprints, onderlinge
+│   │                               #   afstanden, reliëf — het enige contract dat strikter wordt als het beter wordt
+│   ├── ScreenshotRunner.cs       # rendert één standpunt op één uur naar PNG — NIET headless, zie de harness-sectie
+│   └── ShotCatalog.cs            # de vaste standpunten (overlook/harbour/street/lighthouse) + de uren van de matrix
 ├── Buildings/
 │   ├── Slots/
 │   │   ├── SlotType.cs              # enum: Foundation/Wall/Roof/Door/Window/Ornament/Sign
@@ -153,9 +161,9 @@ godot/src/
     │                       #   + linkermuis-raycast (mask 1u<<3 = laag 4) → PickBuilding → PublishBuildingSelected
     ├── SettlerMeshBuilder.cs # statisch: BuildSettler() → settler met strohoed + PoseWalk(root,time,speed01)
     ├── PlayerAvatar.cs     # [GlobalClass] CharacterBody3D: capsule r=0.35/h=1.5; Walk/Run/Swim/Jump, crouch (C),
-    │                       #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1
+    │                       #   Swimming-state (buoyancy naar y=WaterSurfaceY); CollisionLayer=2, CollisionMask=1|8
     │                       #   + [Export] WorldManager? World, InteractionRadius=2.5f, E/Joypad-X deur-interactie
-    ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1) + Camera3D; RMB-look, wheel-zoom
+    ├── ThirdPersonCamera.cs # [GlobalClass] Node3D: SpringArm3D (kerstbal r=0.25, CollisionMask=1|8) + Camera3D; RMB-look, wheel-zoom
     └── WalkModeManager.cs  # [GlobalClass] Node3D: Tab-switch tussen fly/walk; HeightMapShape3D-terreincollider,
 #   FindGroundSpawn (dichtstbijzijnde landcel h≥0.35, skipt building-cellen), avatar+camera opbouwen;
                             #   rebuildt collider bij VillageDataLoaded; DisableWalk publiceert prompt-null
@@ -167,6 +175,40 @@ godot/src/
     └── IslandHud.cs         # CanvasLayer(100): componeert bovenstaande, luistert EventBus.VillageDataLoaded;
                             #   WalkManager/FlyCamera vindt hij via GetParent().GetNodeOrNull — geen dependency op Main
 ```
+
+### Visuele verificatie: de screenshot-harness (NIET headless)
+De negen `Verify*Runner`s asserten getallen. Zo konden "20 visuele checks groen" en een
+onbruikbaar beeld naast elkaar bestaan. `src/Tools/ScreenshotRunner.cs` + `ShotCatalog.cs`
+renderen daarom echte PNG's; `scripts/shots.ps1` draait de matrix (4 standpunten × 6 uren)
+naar `docs/shots/<sha>/` met een contactvel `index.html`.
+
+```
+# LET OP: geen --headless
+Godot_v4.7.2-stable_mono_win64_console.exe --path <godot> --fixed-fps 60 --script res://src/Tools/ScreenshotRunner.cs -- `
+  --hour 21.0 --shot harbour --size 1600x1000 --out D:\pad\harbour.png
+```
+Ook `--pos x,y,z --target x,y,z --fov N` om ad-hoc een framing te proberen zonder herbouw.
+
+**`--fixed-fps 60` is niet optioneel.** De water-shader animeert op `TIME`, dus zonder vaste
+framestap vangt elke run een ander golfmoment en verschillen twee shots van identieke code.
+Mét de vlag zijn herhaalde runs bit-voor-bit gelijk (geverifieerd op md5) — en dát is wat een
+voor/na-vergelijking betekenis geeft.
+
+Vijf valkuilen, alle vijf gemeten:
+- **`--headless` levert geen beeld.** Dat selecteert de dummy-renderdriver; de viewport-textuur
+  komt leeg terug. De runner detecteert dat en faalt luid in plaats van een zwarte PNG te
+  schrijven — een zwarte PNG vergiftigt stil een voor/na-vergelijking.
+- **`--resolution` wordt overruled** door de project-aspect (1280×800): gevraagd 1920×1080 kwam
+  er als 1728×1080 uit. Gebruik `--size`, dat zet `DisplayServer.WindowSetSize` zelf.
+- **`LookAt` werkt niet in `_Initialize()`** — de node zit dan nog niet in de tree, dus de global
+  transform is identiteit en de camera blijft langs −Z kijken (positie klopt wél, wat het
+  verraderlijk maakt). Zet `Transform` met `Transform3D.LookingAt` in plaats daarvan.
+- **Geen `2>&1` in `shots.ps1`.** Godot print de bekende `!is_inside_tree()`-ruis naar stderr, en
+  Windows PowerShell verpakt bij redirectie elke stderr-regel als `NativeCommandError` — met
+  `$ErrorActionPreference='Stop'` breekt de hele run af. Oordeel op het bestaan van de PNG.
+
+Capture gebeurt op `RenderingServer.FramePostDraw` (niet in `_Process`, dat draait vóór de draw)
+en pas na 120 frames, zodat SDFGI en volumetrische mist geconvergeerd zijn.
 
 ### Geteste C# CLI-werkwijze (headless)
 - `--script` pakt een **C# SceneTree-subclass direct** (geen GDScript-shim nodig). Na `dotnet build`:
@@ -182,7 +224,9 @@ godot/src/
   - `VerifyDossierRunner.cs` — physics-tick phase machine (_Ready garantie): building-collider meta/shape, NearestDossier bij deur vs. ver weg, PlotCells, dossier UI round-trip (SetVillage → open → labels → Esc-sluit), InteractionPrompt round-trip (toon/null) → 31 checks PASS.
   - `VerifyAtmosphereRunner.cs` — dag/nacht fase-machine (setup tick 1, checks tick 3): 12:00 zonhoog 90°·geen glow, 23:00 nacht + raam/lamp emissie + vuurtoren-beam 45°/s na Advance(1), 19:30 schemer → glow+lighthouse aan → 28 checks PASS.
   - `VerifyDistrictRunner.cs` — laadt echte res://village.json via VillageJson, bouwt wereld, assert DistrictDecorator-hedges>0 en FarmlandSpawner fields+orchards>0 (fallback-village 1337: 164 hedges, 12 gateposts, 5 archways, 16 fields, 21 orchards) → PASS.
-  - `VerifyVisualRunner.cs` — stap 12: laadt echte village.json, assert water-shader + ShaderMaterial, palette-kleur getters (`BuildingCatalog.PlasterColour` etc.), fountain+3 stallletjes + terrain-clamp, per-vertex ground-kleurbanden, cloudveld 5..7 (altitude 22..26, schaduw, drift, wrap) → 20 checks PASS. De 161 `Condition "!is_inside_tree()"`-regels die tijdens gebouwassembly verschijnen zijn preëxistent (DistrictRunner geeft identiek) → enkel op EXIT=0 + `[OK]` letten.
+  - `VerifyVisualRunner.cs` — stap 12: laadt echte village.json, assert water-shader + ShaderMaterial, palette-kleur getters (`BuildingCatalog.PlasterColour` etc.), fountain+3 stallletjes + terrain-clamp, per-vertex ground-kleurbanden, cloudveld 5..7 (altitude 22..26, schaduw, drift, wrap) → 20 checks PASS.
+
+**De `!is_inside_tree()`-ruis was géén preëxistent gegeven.** De stacktrace wijst naar `WorldManager.BuildMarker` (`WorldManager.cs:236`, `root.GlobalTransform`), en de oorzaak is dat een runner `BuildWorld` aanriep vanuit `_Initialize()` — daar leeft de scene tree nog niet, dus élke global-transform-lezing faalt. Het waren er bovendien geen 161 maar ~25.000 stderr-regels per run. Opgelost door in `VerifyDistrict/Live/Visual/World` en `ScreenshotRunner` het werk op **frame 1** te doen (`_Process`, `if (++_ticks != 1) return false;`) in plaats van in `_Initialize`. Alle negen runners geven nu 0 van deze regels. **Regel: bouw nooit een wereld of lees een `GlobalTransform` vanuit `_Initialize()`.** Wat er ná `Quit()` nog aan leak-warnings verschijnt is cosmetisch (de runner freeed zijn nodes niet bij exit).
   - Wrap `Run()` in try/catch met `Quit(1)` erin: zonder `Quit` hangt een `--script`-runner eindeloos.
 
 ### Modulair building-piecesysteem (fase 2 stap 7)
@@ -191,6 +235,83 @@ Prefab `.tscn`-scenes staan in `prefabs/` met `[Tool]` scripts die in de editor 
 Word-vrijwaring palette (fase 2 stap 12): plaster (0.94,0.90,0.82), balk (0.32,0.20,0.11, `TimberBeamWidth=0.05`), steen (0.60,0.58,0.55), dakpan (0.74,0.32,0.18), glas (0.98,0.88,0.52, alpha 0.92, emissie 0.35 warm). Openbare kleur-getters op `BuildingCatalog` (PlasterColour/BeamTimberColour/FieldstoneColour/RoofTileColour/WindowGlassColour) zodat runners de kleuren kunnen asserten.
 Model Sheet showroom: `scenes/model_sheet.tscn` met `ModelSheetShowroom.cs` [Tool] galerij (6 tiers × 3 styles + ornaments + key/fill/rim licht + orbital camera).
 Valkuil: `ToolPrefabBase._Ready()` mag niet door `Engine.IsEditorHint()` worden geblokkeerd als de scenes ook runtime-gebruikt moeten worden (bijv. als PieceScene); `ClearMeshChildren` ruimt eerst op, `AddMeshesFrom` verplaatst meshes en freed de temp-node.
+
+### Schaalsemantiek v1 vs v2 (beoordeling stap 12 vervolg)
+- **v1 (web/GDScript-kit)**: karakter ±0,45–0,6 m (`web/js/avatar.js` capsule r=0,092), gebouwen 0,8–1,9 m → huis ≈ 3× de persoon (realistische verhouding). Gebouw is een kleine prop op een groot perceel; dus veel lucht ertussen.
+- **v2 (C#)**: avatar 1,5 m (capsule r=0,35/h=1,5); gebouw **vult het volle plot**: huizen 3×3 m met vaste wandhoogte 2 m (~3 m hoog) → huis ≈ 2× de persoon. Sheds 1×1, civics 1–3. Alle huis-tierniveaus (tent→manor) delen in village.json exact hetzelfde 3×3-plot.
+- **Dichtheid — de "gap 0 van 163" hierboven was een verkeerde lezing.** Nagemeten op `godot/village.json`: de 45 plots van 3×3 staan onderling **min 3,00 / mediaan 4,00 / max 5,66 cellen** uit elkaar, en géén enkele dichter dan 3. Dat is `lattice.pitch 4` min footprint 3 = precies 1 cel lucht, dus ontwerp en geen fout. De gap 0 komt van de **schuren**: 25 cellen bevatten een `house` (3×3) én een `shed` (1×1) op dezelfde `gx,gz`. Dat is de layout die "een schuur in de tuin" bedoelt (README), maar de client tekent het huis over het hele plot en eet die tuin op.
+- **Conclusie: het grid hoeft niet herbouwd te worden.** Een grid-wijziging 64→128 lost dichtheid noch wegbreedte op (pitch en footprint blijven gelijk) en kost 7 hash-plekken, een verhuizing van elk huis en een meterconstante-audit over de three.js-client. Het probleem is de **metersschaal** (1 cel = 1 m: huis 1,95 m breed naast een avatar van 1,5 m) en vooral de **uniformiteit** — zie hieronder. Issue #49 blijft geldig maar is geen voorwaarde voor visueel werk.
+- **Uniformiteit is de echte boosdoener**: 124 van de 163 gebouwen (76%) hebben in de data een eigen vorm en renderen als hetzelfde doosje. `civicType` heeft **19** waarden maar `CivicDecorator.Handles()` pakt alleen `fountain` en `market` — vuurtoren, klokkentoren, kapel, molen en standbeeld worden generieke huizen. `agentType` heeft 12 waarden; alle 86 schuren zijn hetzelfde blokje. En `style` is alleen `opus`/`unknown`, dus `isThatch` (`WorldManager.cs:304`) is **nooit** waar → alle 163 daken zijn dezelfde terracotta gable.
+
+### Scope sinds sept 2026: v1-compatibiliteit vervalt
+De serverkant wordt volledig herschreven en de three.js-webclient (`web/`, ~16.400 regels) hoeft
+niet meer ondersteund te worden. Twee gevolgen voor beslissingen die eerder in dit bestand
+stonden:
+
+- **De grid-herfundering is weer open.** Het advies om `grid.size` op 64 te laten steunde op de
+  kosten: `terrainHash` op 7 plekken, elk huis verhuist, en een meterconstante-audit over de
+  webclient. Die laatste vervalt en de eerste twee zijn nu gewoon migratiewerk. Issue #49
+  (smallere wegen/rivieren) en de metersschaal horen daarmee bij de serverkant thuis, niet bij
+  een client-side schaalfactor.
+- **`f7ec71ac` is nog een nuttige regressiecheck, geen contract.** Zolang `shared/terrain.mjs`
+  bestaat bewijst hij dat de C#-port bit-exact is. Zodra de generator verandert is het gewoon een
+  nieuwe verwachte waarde, geen blokkade.
+
+### Eén palet: `src/Visual/Palette.cs`
+Zes losse kleursets waren gegroeid over `BuildingCatalog`, `WorldManager`, `PropSpawner`,
+`FarmlandSpawner`, `DistrictDecorator` en `CivicDecorator`, en elk van die bestanden had een
+eigen `SolidMat(Color)`-helper die **per aanroep** een nieuw `StandardMaterial3D` teruggaf. Elke
+marktkraam-slat en elk veldslab droeg dus een privé-materiaal.
+
+`Palette` heeft gecachete fabrieken (`Solid` / `Translucent` / `Emissive`) die op het volledige
+recept cachen, plus de named colours en `Style(modelStyle)` — het per-model palet
+(wall/trim/roof/accent/glow) geport uit `scripts/kit_primitives.gd:7-13`, dat bij de C#-herbouw
+nooit was overgenomen. De vijf helpers delegeren nu; kleuren en ruwheid zijn ongewijzigd, alleen
+de duplicaten zijn weg. **Gemeten: 101 → 65 distincte materialen.** `VerifyMetricsRunner` bewaakt
+het plafond (75), dus een teruggeslopen `new StandardMaterial3D` valt meteen op.
+
+Regel: geen `new StandardMaterial3D` meer buiten `Palette`.
+
+### Meetbasis: `VerifyMetricsRunner`
+Meet in plaats van te asserteren op literalen, en is daarmee het enige runner-contract dat
+stríkter wordt naarmate de wereld beter wordt. Gemeten op seed 1337 (nulmeting, sept 2026):
+
+| | |
+|---|---|
+| materialen | 65 distinct |
+| gebouwen | 157 gerenderd (163 in de data, 6 neemt `CivicDecorator` over) |
+| silhouetten | **4 distinct** — de kern van het visuele probleem |
+| footprint | min 1,28 · mediaan **1,28** · max 2,43 m |
+| onderlinge afstand | min −1,28 · mediaan **−0,85** m |
+| overlappend | **131 van 157** gebouwen raken of snijden een buur |
+
+Die −1,28 is exact de mediane footprint: volledige insluiting. Het zijn schuren die in het
+middelpunt van hun ouderhuis staan (README belooft "een schuur in de tuin") plus het
+plein-meubilair. Dat nuanceert de sectie hierboven: de lattice klopt, maar 83% van de gebouwen
+overlapt alsnog iets.
+
+### Zeebodem-schort: waarom het eiland geen vierkant meer is
+`terrain.H` is een 65×65 grid en de zeebodem daarin is een bijna vlakke plaat op ±−2,5 m over
+het **hele** vierkant, terwijl het echte land maar ~40% daarvan is. De water-shader tint alles
+boven een zeebodem ondiep-teal, dus die datagrens tekende zich af als een kaarsrechte cyaan
+rand om het eiland — de "halo". Van bovenaf was het onmiskenbaar een vierkant.
+
+`WorldManager.BuildGroundMesh` lost dat puur in de **weergave** op:
+- Het mesh loopt niet meer tot de datagrens maar tot `SeabedReachMetres` (1300 m), via ringen
+  die buiten het grid geometrisch groeien (`SeabedRingGrowth`) — fijn bij het eiland, grof ver
+  weg, dus voorbij de 2000 m waterplaat voor weinig vertices.
+- `CoastDistance()` is een twee-pass chamfer-afstandsveld tot het dichtstbijzijnde landhoekpunt.
+  De bodem zakt naar `SeabedFloorY` op basis van die afstand, dus de plaat volgt de kustlijn
+  inclusief baaien, met een laagfrequente warp zodat hij — zoals in het echt — aan de ene flank
+  breed is en aan de andere abrupt diep.
+- **Land wordt niet aangeraakt**: `h >= SeaLevel` neemt `terrain.H` verbatim over. Daarom blijft
+  `VerifyTerrainRunner` op `f7ec71ac` en veranderen collider, props en plaatsing niets.
+
+`VerifyWorldRunner` pinde hiervóór `verts == (size+1)²` = 4225. Die assert bevroor een
+implementatiedetail en blokkeerde dit; hij is vervangen door het werkelijke contract (alle
+datahoekpunten aanwezig, mesh reikt ver genoeg, bodem zakt diep genoeg, landhoogtes ongewijzigd).
+`VerifyVisualRunner` dupliceerde de bandkleuren; die leest nu `WorldManager.GroundBandColour`,
+zodat test en implementatie niet uit elkaar kunnen lopen.
 
 ### Bewezen Mulberry32/uint-determinisme (C# port regels)
 De C# terrein-port is bit-exact met zowel `shared/terrain.mjs` als `scripts/terrain.gd`. Regels die dat garanderen:

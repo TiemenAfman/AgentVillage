@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Godot;
 using Promptholm.Buildings.Data;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 
 namespace Promptholm.World;
 
@@ -180,20 +181,15 @@ public partial class CivicDecorator : Node3D
 		=> new() { Radius = r, RadialSegments = segments, Rings = rings };
 
 	private static StandardMaterial3D Solid(Color colour, float roughness = 0.82f)
-		=> new() { AlbedoColor = colour, Roughness = roughness };
+		=> Palette.Solid(colour, roughness);
 
-	private static StandardMaterial3D SolidFieldstone() => new() { AlbedoColor = BuildingCatalog.FieldstoneColour, Roughness = 0.9f };
-	private static StandardMaterial3D SolidFieldstoneDark() => new() { AlbedoColor = new Color(0.52f, 0.50f, 0.47f), Roughness = 0.9f };
-	private static StandardMaterial3D SolidTimber() => new() { AlbedoColor = BuildingCatalog.BeamTimberColour, Roughness = 0.78f };
-	private static StandardMaterial3D SolidTimberLight() => new() { AlbedoColor = new Color(0.72f, 0.55f, 0.32f), Roughness = 0.78f };
+	private static StandardMaterial3D SolidFieldstone() => Palette.Solid(Palette.Fieldstone, 0.9f);
+	private static StandardMaterial3D SolidFieldstoneDark() => Palette.Solid(Palette.FieldstoneDark, 0.9f);
+	private static StandardMaterial3D SolidTimber() => Palette.Solid(Palette.Beam, 0.78f);
+	private static StandardMaterial3D SolidTimberLight() => Palette.Solid(new Color(0.72f, 0.55f, 0.32f), 0.78f);
 
-	private static StandardMaterial3D SolidCanvasA() => new() { AlbedoColor = CanvasCream, Roughness = 0.95f };
-	private static StandardMaterial3D SolidCanvasB() => new() { AlbedoColor = CanvasNavy, Roughness = 0.95f };
+	private static StandardMaterial3D SolidCanvasA() => Palette.Solid(CanvasCream, 0.95f);
+	private static StandardMaterial3D SolidCanvasB() => Palette.Solid(CanvasNavy, 0.95f);
 
-	private static StandardMaterial3D PondWater() => new()
-	{
-		AlbedoColor = Water,
-		Roughness = 0.15f,
-		Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-	};
+	private static StandardMaterial3D PondWater() => Palette.Translucent(Water, 0.15f);
 }

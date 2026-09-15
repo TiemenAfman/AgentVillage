@@ -21,8 +21,24 @@ public partial class VerifyVisualRunner : SceneTree
 {
 	private int _fails;
 
+	private int _ticks;
+
 	public override void _Initialize()
 	{
+	}
+
+	/// <summary>
+	/// The checks run on the first frame rather than in _Initialize. During _Initialize the
+	/// scene tree is not live yet, so every GlobalTransform read inside BuildWorld — see
+	/// WorldManager.BuildMarker — trips "Condition !is_inside_tree() is true". That is the
+	/// stderr flood AGENTS.md wrote off as pre-existing noise from building assembly; it is
+	/// neither pre-existing nor about assembly, and moving the call here removes all of it.
+	/// </summary>
+	public override bool _Process(double delta)
+	{
+		if (++_ticks != 1)
+			return false;
+
 		try
 		{
 			Run();
@@ -32,6 +48,8 @@ public partial class VerifyVisualRunner : SceneTree
 			GD.PushError($"EXCEPTION during visual verification: {ex}");
 			Quit(1);
 		}
+
+		return false;
 	}
 
 	private void Run()
@@ -77,8 +95,8 @@ public partial class VerifyVisualRunner : SceneTree
 
 	private void CheckShader()
 	{
-		var shader = GD.Load<Shader>("res://shaders/water.gdshader");
-		Check(shader is not null, "water shader exists at res://shaders/water.gdshader");
+		var shader = GD.Load<Shader>("res://shaders/stylized_water.gdshader");
+		Check(shader is not null, "water shader exists at res://shaders/stylized_water.gdshader");
 	}
 
 	private void CheckWaterPlane(WorldManager world)
@@ -89,8 +107,12 @@ public partial class VerifyVisualRunner : SceneTree
 		Check(mat is not null && mat!.Shader is not null, "water plane uses the custom ShaderMaterial");
 		if (mat is not null)
 		{
-			var shader = GD.Load<Shader>("res://shaders/water.gdshader");
-			Check(mat.Shader == shader, "water plane references the storybook water shader");
+			var shader = GD.Load<Shader>("res://shaders/stylized_water.gdshader");
+			Check(mat.Shader == shader, "water plane references the stylized water shader");
+
+			var caustics = mat.GetShaderParameter("caustics_texture");
+			Check(caustics.VariantType != Variant.Type.Nil,
+				"stylized water ships an animated caustics texture");
 		}
 	}
 
@@ -153,26 +175,40 @@ public partial class VerifyVisualRunner : SceneTree
 
 		var arrays = island.Mesh!.SurfaceGetArrays(0);
 		Color[]? colours = arrays[(int)Mesh.ArrayType.Color].As<Color[]>();
-		Check(colours is not null && colours!.Length == terrain.N * terrain.N,
-			"ground mesh carries per-vertex colours");
+		var positions = arrays[(int)Mesh.ArrayType.Vertex].As<Vector3[]>();
+		Check(colours is not null && positions is not null && colours!.Length == positions!.Length,
+			"ground mesh carries one colour per vertex");
 
-		bool sawLake = false, sawBeach = false, sawGrass = false, sawHill = false;
-		int n = terrain.N;
-		if (colours is not null)
+		// Compared in linear space, because that is what the mesh stores: the palette is authored
+		// in sRGB and converted on the way in.
+		// Checked as a property of the mesh, not against a duplicated colour table: every band
+		// the palette defines must actually occur, and every vertex colour must agree with the
+		// shared WorldManager.GroundBandColour. That way the palette can change without
+		// rewriting the test, but the mesh and the palette can never drift apart.
+		bool sawDeep = false, sawLake = false, sawBeach = false, sawGrass = false, sawHill = false;
+		int mismatches = 0;
+
+		if (colours is not null && positions is not null)
 		{
-			for (int idx = 0; idx < n * n; idx++)
+			for (int idx = 0; idx < positions.Length; idx++)
 			{
-				double h = terrain.H[idx];
-				var expected = GroundBandColour(h);
-				if (ColourClose(colours[idx], expected, 0.02f))
+				float h = positions[idx].Y;
+				if (!ColourClose(colours[idx], WorldManager.GroundBandColour(h).SrgbToLinear(), 0.02f))
 				{
-					if (h < 0.0f) sawLake = true;
-					else if (h < 0.35f) sawBeach = true;
-					else if (h < 3.4f) sawGrass = true;
-					else sawHill = true;
+					mismatches++;
+					continue;
 				}
+
+				if (h < WorldManager.SeabedShelfY) sawDeep = true;
+				else if (h < 0.0f) sawLake = true;
+				else if (h < 0.35f) sawBeach = true;
+				else if (h < 3.4f) sawGrass = true;
+				else sawHill = true;
 			}
 		}
+
+		Check(mismatches == 0, $"every vertex colour matches the shared palette ({mismatches} off)");
+		Check(sawDeep, "open-ocean floor darkens away from the coast");
 		Check(sawLake, "lake/river bed painted teal slate");
 		Check(sawBeach, "beaches painted golden sand");
 		Check(sawGrass, "meadows painted rich green");
@@ -181,14 +217,6 @@ public partial class VerifyVisualRunner : SceneTree
 
 	private static bool ColourClose(Color a, Color b, float tol)
 		=> Mathf.Abs(a.R - b.R) < tol && Mathf.Abs(a.G - b.G) < tol && Mathf.Abs(a.B - b.B) < tol;
-
-	private static Color GroundBandColour(double h)
-	{
-		if (h < 0.0f) return new Color(0.20f, 0.32f, 0.35f);
-		if (h < 0.35f) return new Color(0.90f, 0.82f, 0.58f);
-		if (h < 3.4f) return new Color(0.40f, 0.64f, 0.26f);
-		return new Color(0.38f, 0.61f, 0.25f);
-	}
 
 	// ---- clouds ---------------------------------------------------------------
 

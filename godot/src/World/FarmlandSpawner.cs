@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 
 namespace Promptholm.World;
 
@@ -285,7 +286,7 @@ public partial class FarmlandSpawner : Node3D
 	// ---- mesh factories ----------------------------------------------------------
 
 	private static StandardMaterial3D Mat(Color c)
-		=> new() { AlbedoColor = c, Roughness = 0.9f };
+		=> Palette.Solid(c, 0.9f);
 
 	private static BoxMesh FieldSlabMesh()
 	{

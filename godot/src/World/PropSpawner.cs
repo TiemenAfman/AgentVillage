@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 using Promptholm.Data.Models;
+using Promptholm.Visual;
 
 namespace Promptholm.World;
 
@@ -243,5 +244,5 @@ public partial class PropSpawner : Node3D
 	}
 
 	private static StandardMaterial3D SolidMaterial(Color colour)
-		=> new() { AlbedoColor = colour, Roughness = 0.9f };
+		=> Palette.Solid(colour, 0.9f);
 }

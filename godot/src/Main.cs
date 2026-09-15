@@ -74,32 +74,50 @@ public partial class Main : Node3D
 			EventBus.Instance.VillageDataLoaded += OnVillageDataLoaded;
 		}
 
+		PublishInitialVillage();
+	}
+
+	/// <summary>
+	/// Hands the first village data to everyone at once, over the EventBus.
+	///
+	/// Both start-up paths used to call BuildWorld directly, which meant the world was built
+	/// but EventBus.VillageDataLoaded never fired — and IslandHud only updates on that signal.
+	/// So the HUD sat at "0 settlers / 0 apprentices / 0 districts" above a fully built town
+	/// until VillageClient's first successful poll of localhost:4747, and forever if the Node
+	/// server was not running. res://village.json carries the real numbers (97/351/12); they
+	/// simply never reached the card.
+	/// </summary>
+	private void PublishInitialVillage()
+	{
 		var villageClient = GetNodeOrNull("/root/VillageClient") as VillageClient;
-		if (villageClient?.LastData is not null)
+		var village = villageClient?.LastData;
+
+		if (village is not null)
 		{
-			OnVillageDataLoaded(villageClient.LastData);
+			GD.Print($"[Main] Using VillageClient data: island={village.Island.Name}, buildings={village.Buildings.Count}");
 		}
 		else
 		{
-			var fallback = LoadFallbackVillage();
-			if (fallback is not null)
+			village = LoadFallbackVillage();
+			if (village is not null)
 			{
-				GD.Print($"[Main] Using res://village.json fallback: island={fallback.Island.Name}, seed={fallback.Island.Seed}, buildings={fallback.Buildings.Count}");
-				_worldManager.BuildWorld(fallback);
-				_cloudManager?.Rebuild(fallback.Island.Seed);
+				GD.Print($"[Main] Using res://village.json fallback: island={village.Island.Name}, seed={village.Island.Seed}, buildings={village.Buildings.Count}");
 			}
 			else
 			{
 				GD.PushWarning("[Main] No village data and no fallback file; rendering an empty default island so the scene still has a world.");
-				var defaultVillage = new VillageData
+				village = new VillageData
 				{
 					Island = new IslandData { Name = "Promptholm Default", Seed = 1337, TerrainHash = "f7ec71ac" },
-					Grid = new GridData { Size = 64 }
+					Grid = new GridData { Size = 64 },
 				};
-				_worldManager.BuildWorld(defaultVillage);
-				_cloudManager?.Rebuild(1337);
 			}
 		}
+
+		if (EventBus.Instance is not null)
+			EventBus.Instance.PublishVillageData(village);
+		else
+			OnVillageDataLoaded(village);
 	}
 
 	/// <summary>
@@ -143,51 +161,22 @@ public partial class Main : Node3D
 	}
 
 	/// <summary>
-	/// Warm mid-afternoon sun (pitch −42°, yaw 50°) casting shadows, plus a soft blue
-	/// procedural sky with a warm horizon, sky-lit ambient and filmic tonemapping.
+	/// Sun and environment, both from EnvironmentFactory so the scene, the showroom and the
+	/// headless runners cannot drift apart. DayNightCycle is added afterwards on purpose: it
+	/// adopts whatever it finds upstream rather than building a second set.
 	/// </summary>
 	private void EnsureLighting()
 	{
 		if (GetNodeOrNull<DirectionalLight3D>("Sun") is null)
-		{
-			var sun = new DirectionalLight3D
-			{
-				Name = "Sun",
-				LightColor = new Color(1.0f, 0.96f, 0.88f),
-				LightEnergy = 1.2f,
-				ShadowEnabled = true,
-				ShadowBias = 0.03f,
-				Rotation = new Vector3(Mathf.DegToRad(-42.0f), Mathf.DegToRad(50.0f), 0.0f),
-			};
-			AddChild(sun);
-		}
+			AddChild(EnvironmentFactory.CreateSun());
 
 		if (GetNodeOrNull<WorldEnvironment>("WorldEnvironment") is null)
 		{
-			var skyMaterial = new ProceduralSkyMaterial
+			AddChild(new WorldEnvironment
 			{
-				SkyTopColor = new Color(0.32f, 0.60f, 0.95f),
-				SkyHorizonColor = new Color(0.95f, 0.86f, 0.72f),
-				GroundBottomColor = new Color(0.06f, 0.09f, 0.14f),
-				GroundHorizonColor = new Color(0.55f, 0.60f, 0.68f),
-				SunAngleMax = 15.0f,
-			};
-
-			var environment = new Godot.Environment
-			{
-				BackgroundMode = Godot.Environment.BGMode.Sky,
-				Sky = new Sky { SkyMaterial = skyMaterial },
-				AmbientLightSource = Godot.Environment.AmbientSource.Sky,
-				AmbientLightSkyContribution = 0.4f,
-				AmbientLightEnergy = 0.6f,
-				TonemapMode = Godot.Environment.ToneMapper.Filmic,
-				GlowEnabled = true,
-				GlowIntensity = 0.7f,
-				GlowBloom = 0.1f,
-				GlowHdrThreshold = 1.0f,
-			};
-
-			AddChild(new WorldEnvironment { Name = "WorldEnvironment", Environment = environment });
+				Name = "WorldEnvironment",
+				Environment = EnvironmentFactory.CreateIsland(),
+			});
 		}
 	}
 

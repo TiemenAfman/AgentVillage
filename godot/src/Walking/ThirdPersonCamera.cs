@@ -37,7 +37,7 @@ public partial class ThirdPersonCamera : Node3D
 		{
 			Name = "SpringArm",
 			SpringLength = SpringLength,
-			CollisionMask = 1, // collides with the terrain heightmap, never with the avatar (layer 2)
+			CollisionMask = 1 | 4, // terrain heightmap (1) + buildings (4), never the avatar (2)
 			Shape = new SphereShape3D { Radius = 0.25f },
 		};
 		AddChild(_arm);

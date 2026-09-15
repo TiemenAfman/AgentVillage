@@ -128,6 +128,10 @@ public partial class CloudManager : Node3D
 			Name = "Puff",
 			Mesh = mesh,
 			Position = pos,
+			// Kept out of global illumination: a slab of cloud geometry sitting 20 m above the
+			// island would otherwise be voxelised into the SDFGI cascades and shade the town
+			// from above as if it were a ceiling.
+			GIMode = GeometryInstance3D.GIModeEnum.Disabled,
 		});
 	}
 
