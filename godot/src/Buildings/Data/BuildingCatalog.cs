@@ -38,6 +38,17 @@ public static class BuildingCatalog
 
     // ---- Storybook palette (exposed for the headless verifier) ----
 
+    /// <summary>
+    /// The lit window pane, shared with <see cref="BuildingMassing"/>. It has to be the same
+    /// resource in both kits: NightGlowManager collects one material per building window and
+    /// switches emission on at dusk, so a second copy would be a second set of windows that
+    /// never lights up.
+    /// </summary>
+    internal static StandardMaterial3D GlassMaterial => _glass;
+
+    /// <summary>Chimney smoke; the one blended surface a building carries.</summary>
+    internal static StandardMaterial3D SmokeMaterial => _smoke;
+
     public static Color PlasterColour => _plaster.AlbedoColor;
     public static Color BeamTimberColour => _beam.AlbedoColor;
     public static Color FieldstoneColour => _stone.AlbedoColor;

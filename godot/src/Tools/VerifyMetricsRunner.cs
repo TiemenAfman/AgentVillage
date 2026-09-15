@@ -17,6 +17,7 @@ namespace Promptholm.Tools;
 ///   materials    distinct StandardMaterial3D objects in the scene — waste, and it breaks batching
 ///   silhouettes  distinct building shapes; the headline problem is 163 buildings in ~2 shapes
 ///   spacing      nearest wall-to-wall gap between buildings, in metres
+///   surfaces     mesh surfaces per building — one draw call each, so this is the cost of a house
 ///   relief       how much vertical range the island actually has
 ///   instances    scattered meshes — rocks and the four layers of ground cover
 ///   frame        draw calls, primitives and milliseconds, from the street viewpoint
@@ -48,8 +49,24 @@ public partial class VerifyMetricsRunner : SceneTree
 	/// </summary>
 	private const int MaxMaterials = 85;
 
-	/// <summary>Floor on distinct building silhouettes. Higher is better.</summary>
-	private const int MinSilhouettes = 2;
+	/// <summary>
+	/// Floor on distinct building silhouettes. Higher is better, and this is the number the whole
+	/// visual overhaul is aimed at.
+	///
+	/// It was 2, against a measured 5, back when every tier shared one wall height and one gable
+	/// and the only thing that varied was the plot size. Tier-driven proportions and eight roof
+	/// families measure 21; the floor sits at 18 for the same reason MaxMaterials sits above its
+	/// measurement — the shapes are quantised to 10 cm, so a centimetre of tuning anywhere can
+	/// merge two buckets without anything having got worse.
+	/// </summary>
+	private const int MinSilhouettes = 18;
+
+	/// <summary>
+	/// Ceiling on mesh surfaces for the median building. A surface is a draw call, so this is
+	/// what one house costs the renderer; it is the number that silently explodes when a piece
+	/// is built out of forty little boxes instead of one merged mesh.
+	/// </summary>
+	private const int MaxMedianSurfaces = 40;
 
 	/// <summary>Frames to let the renderer settle before the stopwatch starts. Same reasoning as
 	/// <c>ScreenshotRunner</c>: SDFGI and volumetric fog take about twenty frames to converge, and
@@ -334,6 +351,8 @@ public partial class VerifyMetricsRunner : SceneTree
 
 		var boxes = new List<Aabb>();
 		var silhouettes = new HashSet<(int A, int H, int B)>();
+		var meshes = new List<int>();
+		var surfaces = new List<int>();
 
 		foreach (var child in objects.GetChildren())
 		{
@@ -346,6 +365,10 @@ public partial class VerifyMetricsRunner : SceneTree
 			var box = MergedAabb(root);
 			if (box.Size == Vector3.Zero)
 				continue;
+
+			var (meshCount, surfaceCount) = CountDrawables(root);
+			meshes.Add(meshCount);
+			surfaces.Add(surfaceCount);
 
 			// Spacing needs the box in world space: buildings carry a yaw of rot * 90 degrees,
 			// so simply offsetting the local box by root.Position would keep X and Z unswapped
@@ -374,7 +397,46 @@ public partial class VerifyMetricsRunner : SceneTree
 		GD.Print($"silhouettes  : {silhouettes.Count} distinct (floor {MinSilhouettes})");
 		Check(silhouettes.Count >= MinSilhouettes, $"buildings come in more than one shape ({silhouettes.Count})");
 
+		MeasureCost(meshes, surfaces);
 		MeasureSpacing(boxes);
+	}
+
+	/// <summary>
+	/// What one building costs to draw. Mesh instances are nodes; surfaces are draw calls, and
+	/// the two diverge the moment pieces are merged — which is the point of merging them.
+	/// </summary>
+	private void MeasureCost(List<int> meshes, List<int> surfaces)
+	{
+		if (surfaces.Count == 0)
+			return;
+
+		meshes.Sort();
+		surfaces.Sort();
+		int medianSurfaces = surfaces[surfaces.Count / 2];
+		GD.Print($"meshes/bldg  : min {meshes[0]}  median {meshes[meshes.Count / 2]}  max {meshes[^1]}");
+		GD.Print($"surfaces/bldg: min {surfaces[0]}  median {medianSurfaces}  max {surfaces[^1]}"
+			+ $"  (ceiling {MaxMedianSurfaces} on the median)");
+		Check(medianSurfaces <= MaxMedianSurfaces,
+			$"the median building stays cheap to draw ({medianSurfaces} surfaces)");
+	}
+
+	/// <summary>Mesh instances under a building and the surfaces they carry (one draw call each).</summary>
+	private static (int Meshes, int Surfaces) CountDrawables(Node node)
+	{
+		int meshes = 0, surfaces = 0;
+		if (node is MeshInstance3D mi && mi.Mesh is not null)
+		{
+			meshes++;
+			surfaces += mi.Mesh.GetSurfaceCount();
+		}
+
+		foreach (var child in node.GetChildren())
+		{
+			var (m, s) = CountDrawables(child);
+			meshes += m;
+			surfaces += s;
+		}
+		return (meshes, surfaces);
 	}
 
 	/// <summary>Nearest wall-to-wall gap per building, in metres; negative means overlapping.</summary>

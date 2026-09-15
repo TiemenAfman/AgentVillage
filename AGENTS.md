@@ -1001,3 +1001,54 @@ drie materialen, en de instancer kent één `material_override` per asset — ma
 plaatsing komt uit een eigen bos-simplex die het oneens is met de klassebyte. Naar de instancer
 verhuizen zonder de plaatsing uit `TerrainClass.Wood` af te leiden neemt die bug mee. Dat is een
 herschrijving van `PropSpawner`, geen laatste stap.
+
+## Silhouet boven textuur, en een prefab die wint (sinds sept 2026)
+
+De vorm van een gebouw komt uit `BuildingForm.For(b, w, d)` (`src/Buildings/Data/`): één record
+per gebouw met wandhoogte, dakvorm, nokrichting, overstek, schoorstenen, dakkapellen en kleuren,
+allemaal gehasht op `PmRng.Hash32("silhouette:" + b.Id)` — deterministisch, zonder klok of globale
+RNG. De server blijft baas over **positie, footprint en tier**; `BuildSlots` en `BuildCatalog` in
+`WorldManager` lezen die alleen. Alle zes huis-tiers delen in de data hetzelfde 3×3-lot, dus tier
+moet uit **hoogte en dakhelling** komen: tent 0,90 m wand met een bijna-A-frame tot keep 4,40 m met
+kantelen en een hoektoren. Acht dakfamilies (`RoofForm`), drie schuurvormen, en civics per type —
+hal, toren (klokkentoren, molen mét wieken, vuurtoren) en kiosk, want een bankje en een prikbord
+zijn geen huizen. `Palette.Style()` is eindelijk aangesloten, maar op 40%: 216 van de 264
+gebouwen zijn opus, dus de **tier** kiest het materiaal (hout → pleister → steen) en het model
+tint het.
+
+Geometrie wordt per slot gebouwd met `FacetMesh` en tot **één surface** samengevoegd: platte
+per-facet-normalen zoals `RockMesh`, en kleur in de **vertexbuffer** in plaats van in een
+materiaal. Daarom mag het palet groeien zonder het materiaalplafond te raken — honderd daktinten
+kosten één materiaal. Twee vallen: vertexkleuren zijn lineair, dus `FacetMesh.Add` doet de
+`SrgbToLinear()` (de begroeiing doet dat juist níét, zie *Begroeiing* — twee bronnen, twee
+conventies, allebei gemeten); en Godot windt een voorkant **andersom** dan je verwacht — gemeten
+op BoxMesh, PrismMesh en CylinderMesh wijst (b−a)×(c−a) *tegen* de normaal in, dus `FacetMesh.Tri`
+neemt de hoeken tegen de klok in van buiten gezien en draait ze zelf om. Fout om betekent niet
+"raar", maar "onzichtbaar". Gemeten op seed 1337: materialen 73 → **34**, silhouetten 5 → **21**,
+draw calls (mesh-surfaces) per gebouw 159 → **11** mediaan. Die 73 zaten vol duplicaten: de 38
+gouden civic-bordjes maakten elk hun eigen `StandardMaterial3D`. `VerifyMetricsRunner` bewaakt nu
+ook `surfaces/bldg` (plafond 40 op de mediaan) en `MinSilhouettes` staat op 18.
+
+**Prefab-override.** Een `.tscn` ergens onder `res://prefabs` waarvan de bestandsnaam gelijk is
+aan een piece-id, én die zelf geometrie bevat, neemt dat **hele slot** over;
+`BuildingAssembler.AttachPiece` kijkt er als eerste naar (`PrefabOverrides`). "Zelf geometrie"
+wordt bepaald door de scene te instantiëren **zonder hem in de tree te hangen**: dan draait
+`_Ready` niet, dus de negen holle `[Tool]`-prefabs leveren nul `MeshInstance3D`'s op en worden
+genegeerd, terwijl een met de hand gemodelleerde scene zijn meshes meteen heeft. Zo author je er
+een: maak `prefabs/<map>/<piece-id>.tscn` met echte meshes erin, in **slot-ruimte** (voor een dak:
+y = 0 is de bovenkant van de wanden, −Z is de voorkant). De id's staan in `BuildCatalog` en
+`BuildingForm.RoofPieceIdOf` — `roof_townhall_cupola` pakt precies één gebouw, `roof_gable` zou
+élke gable op het eiland pakken. Voorbeeld: `prefabs/roofs/roof_townhall_cupola.tscn`.
+
+Valkuilen: (1) de override **vervangt**, hij vult niet aan — hang je de prefab náást het
+procedurele stuk, dan krijgt een huis twee daken en zie je dat pas aan de schaduwen; (2) de prefab
+weet niets van `w`/`d`, dus hij is op één gebouw gemaat en volgt een footprint-wijziging niet;
+(3) materialen in de `.tscn` tellen mee voor `MaxMaterials`, hou het bij een handvol; (4) gebruik
+**assen-uitgelijnde** primitieven — een geroteerde `CylinderMesh` (een echte hip-kap) heeft een
+conservatieve AABB en `VerifyMetricsRunner` las daardoor een footprint van 11,12 m voor een dak
+van 5,56 m.
+
+Nog open: de vuurtoren is stomp omdat `LighthouseController` zijn lantaarn op y = 2,7 hardcodeert;
+`Palette.Plaster` is een bleke crème waardoor drie van de zes tiers op de middag blauwgrijs
+lezen; en `SelectPiece` matcht op slot-*type* en pakt de eerste, dus alle vier wanden tekenen
+hetzelfde stuk (onschuldig zolang elk kavel vierkant is).

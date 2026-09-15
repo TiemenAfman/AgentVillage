@@ -138,8 +138,15 @@ public partial class VerifyWorldRunner : SceneTree
 
 		Check(totalPieces >= 28, $"total attached pieces across buildings ({totalPieces})");
 
+		// Paving moved into the ground. With Terrain3D attached BuildRoads paints the path cells
+		// into the terrain's control map and leaves GroundRoot/Roads empty; only the no-Terrain3D
+		// fallback still lays cobble tiles there. Asserting on the tiles was left behind by that
+		// change and had this runner failing on an untouched checkout — the same correction the
+		// ground check above already got.
 		var roads = world.GetNodeOrNull<Node3D>("GroundRoot/Roads");
-		Check(roads is not null && roads!.GetChildCount() > 0, "cobblestone MultiMesh exists under GroundRoot/Roads");
+		Check(roads is not null, "GroundRoot/Roads exists for the cobble fallback");
+		Check(world.Bridge is not null || roads!.GetChildCount() > 0,
+			"the paths are drawn, painted into Terrain3D or laid as cobble tiles");
 		var bridgesRoot = world.GetNodeOrNull<Node3D>("ObjectsRoot/Bridges");
 		int bridgeCount = bridgesRoot?.GetChildCount() ?? 0;
 		GD.Print($"bridges      : {bridgeCount}");

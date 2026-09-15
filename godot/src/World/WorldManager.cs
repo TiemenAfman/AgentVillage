@@ -284,9 +284,10 @@ public partial class WorldManager : Node3D
 			var tier = string.IsNullOrWhiteSpace(b.Tier) ? b.Kind : b.Tier;
 			var style = string.IsNullOrWhiteSpace(b.Style) ? tier : b.Style;
 
-			BuildSlots(assembler, b, pw, pd);
-			var catalog = BuildCatalog(b, pw, pd);
-			assembler.Catalog = catalog;
+			// The slots and the catalog have to agree on how tall this building is, so the form is
+			// resolved once by BuildSlots and handed on rather than worked out twice.
+			var form = BuildSlots(assembler, b, pw, pd);
+			assembler.Catalog = BuildCatalog(b, form, pw, pd);
 			assembler.Assemble(style, tier, OrnamentIds(b));
 		}
 
@@ -306,11 +307,15 @@ public partial class WorldManager : Node3D
 		};
 		body.SetMeta("building_id", b.Id);
 		body.SetMeta("building_kind", string.IsNullOrWhiteSpace(b.Kind) ? "house" : b.Kind);
+		// As tall as the building it stands for: the box used to be a fixed 2 m, so a click on a
+		// tower or a keep above head height missed it. BuildingForm is deterministic from the id,
+		// so this is the same silhouette the assembler builds.
+		float h = Mathf.Max(2.0f, BuildingForm.For(b, w, d).RidgeY);
 		body.AddChild(new CollisionShape3D
 		{
 			Name = "Collision",
-			Shape = new BoxShape3D { Size = new Vector3(w, 2.0f, d) },
-			Position = new Vector3(0.0f, 1.0f, 0.0f),
+			Shape = new BoxShape3D { Size = new Vector3(w, h, d) },
+			Position = new Vector3(0.0f, h * 0.5f, 0.0f),
 		});
 		root.AddChild(body);
 	}
@@ -394,25 +399,84 @@ public partial class WorldManager : Node3D
 
 	// ---- modular assembly -------------------------------------------------------
 
-	private static void BuildSlots(BuildingAssembler assembler, BuildingData b, float w, float d)
+	/// <summary>
+	/// Hangs the slots this building needs and returns the form they were laid out for.
+	///
+	/// The positions used to be constants — walls at y=1, roof at y=2, windows at y=1.3 — which
+	/// is why a tent and a keep were the same object with different names. They come off
+	/// <see cref="BuildingForm"/> now, so a canvas A-frame gets low walls and no windows and a
+	/// clock tower gets one shaft instead of four walls. What has not moved is where the building
+	/// stands or how wide it is: that is the server's, and <paramref name="w"/> and
+	/// <paramref name="d"/> arrive already decided.
+	/// </summary>
+	private static BuildingForm BuildSlots(BuildingAssembler assembler, BuildingData b, float w, float d)
 	{
-		float h = 2.0f;
+		var form = BuildingForm.For(b, w, d);
+		float wallH = form.WallHeight;
 		float t = 0.12f;
+		float front = -d * 0.5f + t;
+		float span = Math.Max(w, d);
 
-		assembler.AddChild(MkSlot("Foundation", SlotType.Foundation, new Vector3(0, 0.12f, 0), Math.Max(w, d)));
-		assembler.AddChild(MkSlot("WallFront", SlotType.Wall, new Vector3(0, h * 0.5f, -d * 0.5f), w, 0f));
-		assembler.AddChild(MkSlot("WallBack", SlotType.Wall, new Vector3(0, h * 0.5f, d * 0.5f), w, MathF.PI));
-		assembler.AddChild(MkSlot("WallLeft", SlotType.Wall, new Vector3(-w * 0.5f, h * 0.5f, 0), d, MathF.PI * 0.5f));
-		assembler.AddChild(MkSlot("WallRight", SlotType.Wall, new Vector3(w * 0.5f, h * 0.5f, 0), d, -MathF.PI * 0.5f));
-		assembler.AddChild(MkSlot("Roof", SlotType.Roof, new Vector3(0, h, 0), Math.Max(w, d)));
-		assembler.AddChild(MkSlot("Door", SlotType.Door, new Vector3(0, 0.7f, -d * 0.5f + t), 0.9f));
-		assembler.AddChild(MkSlot("WindowLeft", SlotType.Window, new Vector3(-w * 0.25f, 1.3f, -d * 0.5f + t), 0.7f));
-		assembler.AddChild(MkSlot("WindowRight", SlotType.Window, new Vector3(w * 0.25f, 1.3f, -d * 0.5f + t), 0.7f));
+		assembler.AddChild(MkSlot("Foundation", SlotType.Foundation, new Vector3(0, 0.12f, 0), span));
+
+		if (form.IsTower)
+		{
+			// One shaft where a house has four walls. Its slot sits on the ground rather than at
+			// mid-height, because a tower is built upward from its base and the taper is measured
+			// from there.
+			assembler.AddChild(MkSlot("Shaft", SlotType.Wall, Vector3.Zero, span));
+		}
+		else
+		{
+			assembler.AddChild(MkSlot("WallFront", SlotType.Wall, new Vector3(0, wallH * 0.5f, -d * 0.5f), w, 0f));
+			assembler.AddChild(MkSlot("WallBack", SlotType.Wall, new Vector3(0, wallH * 0.5f, d * 0.5f), w, MathF.PI));
+			assembler.AddChild(MkSlot("WallLeft", SlotType.Wall, new Vector3(-w * 0.5f, wallH * 0.5f, 0), d, MathF.PI * 0.5f));
+			assembler.AddChild(MkSlot("WallRight", SlotType.Wall, new Vector3(w * 0.5f, wallH * 0.5f, 0), d, -MathF.PI * 0.5f));
+		}
+
+		assembler.AddChild(MkSlot("Roof", SlotType.Roof, new Vector3(0, wallH, 0), span));
+		assembler.AddChild(MkSlot("Door", SlotType.Door,
+			new Vector3(0, form.DoorHeight * 0.5f, form.IsTower ? ShaftFace(form, w, d, form.DoorHeight * 0.5f) : front), 0.9f));
+
+		// Walls too low to carry a window get none. A tent with a sash in the gutter was the sort
+		// of thing only a screenshot catches.
+		if (form.HasWindows)
+		{
+			if (form.IsTower)
+			{
+				float lo = wallH * 0.42f, hi = wallH * 0.72f;
+				assembler.AddChild(MkSlot("WindowLeft", SlotType.Window, new Vector3(0, lo, ShaftFace(form, w, d, lo)), 0.7f));
+				assembler.AddChild(MkSlot("WindowRight", SlotType.Window, new Vector3(0, hi, ShaftFace(form, w, d, hi)), 0.7f));
+			}
+			else
+			{
+				float y = Math.Clamp(wallH * 0.62f, 0.75f, wallH - 0.48f);
+				assembler.AddChild(MkSlot("WindowLeft", SlotType.Window, new Vector3(-w * 0.25f, y, front), 0.7f));
+				assembler.AddChild(MkSlot("WindowRight", SlotType.Window, new Vector3(w * 0.25f, y, front), 0.7f));
+			}
+		}
 
 		if (b.Kind == "civic")
-			assembler.AddChild(MkSlot("Sign", SlotType.Sign, new Vector3(0, 1.75f, -d * 0.5f + t), 0.9f));
+		{
+			float y = Math.Clamp(wallH - 0.34f, 0.55f, 2.4f);
+			assembler.AddChild(MkSlot("Sign", SlotType.Sign,
+				new Vector3(0, y, form.IsTower ? ShaftFace(form, w, d, y) : front), 0.9f));
+		}
 
-		assembler.AddChild(MkSlot("Ornament", SlotType.Ornament, new Vector3(0, h + 0.35f, 0), 0.5f));
+		assembler.AddChild(MkSlot("Ornament", SlotType.Ornament, new Vector3(0, form.RidgeY, 0), 0.5f));
+		return form;
+	}
+
+	/// <summary>
+	/// Z of the tower's front face at height <paramref name="y"/>. The shaft is an octagon yawed
+	/// by half a facet so a flat side faces the door instead of a corner, and it tapers, so the
+	/// face creeps inward as it climbs; hanging a door on the untapered radius leaves it floating.
+	/// </summary>
+	private static float ShaftFace(BuildingForm form, float w, float d, float y)
+	{
+		float radius = MathF.Min(w, d) * 0.5f;
+		float t = Math.Clamp(y / MathF.Max(form.WallHeight, 0.01f), 0.0f, 1.0f);
+		return -Mathf.Lerp(radius, radius * form.TaperTop, t) * 0.9239f + 0.06f;
 	}
 
 	private static BuildingSlot3D MkSlot(string name, SlotType type, Vector3 pos, float size, float rotY = 0f)
@@ -427,28 +491,33 @@ public partial class WorldManager : Node3D
 		};
 	}
 
-	private static BuildingPieceResource[] BuildCatalog(BuildingData b, float w, float d)
+	/// <summary>
+	/// One piece per slot type, each already merged into a single mesh by
+	/// <see cref="BuildingMassing"/>.
+	///
+	/// The roof's piece id comes from the form, which is what a hand-made prefab has to be named
+	/// to take the slot: <c>roof_townhall_cupola</c> claims exactly one building, <c>roof_gable</c>
+	/// would claim every gable on the island at once. See <c>PrefabOverrides</c>.
+	/// </summary>
+	private static BuildingPieceResource[] BuildCatalog(BuildingData b, BuildingForm form, float w, float d)
 	{
-		var style = string.IsNullOrWhiteSpace(b.Style) ? b.Tier : b.Style;
-		bool isStone = string.Equals(style, "opus", StringComparison.OrdinalIgnoreCase);
-		bool isThatch = string.Equals(style, "haiku", StringComparison.OrdinalIgnoreCase);
-		const float wallH = 2.0f;
+		// All four wall slots draw the same piece — BuildingAssembler.SelectPiece matches on slot
+		// *type*, and there is one Wall type. Every plot the server publishes is square, so one
+		// span is the right span; sizing on the longer of the two keeps the corners closed rather
+		// than gapped should that ever stop being true.
+		float wallSpan = MathF.Max(w, d);
 
 		var list = new List<BuildingPieceResource>
 		{
-			Piece(SlotType.Foundation, "foundation", BuildingCatalog.MakeFoundationStone(w, d)),
-			Piece(SlotType.Wall, "wall_front_back",
-				isStone ? BuildingCatalog.MakeWallStone(w, wallH, 0.12f)
-				        : BuildingCatalog.MakeWallTimber(w, wallH, 0.12f)),
-			Piece(SlotType.Wall, "wall_sides",
-				isStone ? BuildingCatalog.MakeWallStone(d, wallH, 0.12f)
-				        : BuildingCatalog.MakeWallTimber(d, wallH, 0.12f)),
-			Piece(SlotType.Roof, "roof",
-				isThatch ? BuildingCatalog.MakeRoofThatch(w, d)
-				         : BuildingCatalog.MakeRoofGableTiles(w, d)),
-			Piece(SlotType.Door, "door", BuildingCatalog.MakeDoorWood()),
-			Piece(SlotType.Window, "window", BuildingCatalog.MakeWindowFrame()),
-			Piece(SlotType.Sign, "sign", MkGoldSign()),
+			Piece(SlotType.Foundation, "foundation", BuildingMassing.MakeFoundation(form, w, d)),
+			Piece(SlotType.Wall, form.IsTower ? "tower_shaft" : "wall",
+				form.IsTower
+					? BuildingMassing.MakeTowerShaft(form, w, d)
+					: BuildingMassing.MakeWall(form, wallSpan, form.WallHeight)),
+			Piece(SlotType.Roof, form.RoofPieceId, BuildingMassing.MakeRoof(form, w, d)),
+			Piece(SlotType.Door, "door", BuildingMassing.MakeDoor(form)),
+			Piece(SlotType.Window, "window", BuildingMassing.MakeWindow(form)),
+			Piece(SlotType.Sign, "sign", BuildingMassing.MakeSign(form)),
 		};
 
 		if (b.Ornaments != null)
@@ -458,28 +527,11 @@ public partial class WorldManager : Node3D
 				var s = o?.ToString();
 				if (string.IsNullOrWhiteSpace(s))
 					continue;
-				var node = string.Equals(s, "forge", StringComparison.OrdinalIgnoreCase)
-					? BuildingCatalog.MakeOrnamentForge()
-					: BuildingCatalog.MakeOrnamentWeathervane();
-				list.Add(Piece(SlotType.Ornament, s, node));
+				list.Add(Piece(SlotType.Ornament, s, BuildingMassing.MakeOrnament(form, s)));
 			}
 		}
 
 		return list.ToArray();
-	}
-
-	private static Node3D MkGoldSign()
-	{
-		var sign = new BoxMesh { Size = new Vector3(0.9f, 0.35f, 0.06f) };
-		sign.Material = new StandardMaterial3D
-		{
-			AlbedoColor = new Color(0.85f, 0.72f, 0.35f),
-			Roughness = 0.6f,
-			Metallic = 0.3f,
-		};
-		var root = new Node3D();
-		root.AddChild(new MeshInstance3D { Mesh = sign });
-		return root;
 	}
 
 	private static BuildingPieceResource Piece(SlotType slot, string id, Node3D node)

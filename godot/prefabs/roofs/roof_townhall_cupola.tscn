@@ -1,0 +1,116 @@
+; Hand-made roof for Promptholm Town Hall.
+;
+; This scene carries its own geometry, so PrefabOverrides hands it the whole Roof slot of the one
+; building whose roof piece id is "roof_townhall_cupola" — the town hall — and the procedural hip
+; roof is never built for it. Every other prefab in this tree is hollow (an empty Node3D plus a
+; [Tool] script that builds at runtime) and is therefore ignored.
+;
+; Authored in slot space: y = 0 is the top of the walls, the plan is centred on the origin, and
+; -Z is the front of the building. Sized for the town hall's 5.04 m footprint plus its 0.26 m
+; eaves, i.e. 5.56 m across. Change the wall height or the footprint on the server and this roof
+; does not follow — that is the trade a hand-made prefab makes, and the reason to author one only
+; where the building earns it.
+;
+; Two crossing gables rather than a pyramid, for a reason worth keeping: a cone or a four-sided
+; cap has to be a CylinderMesh with radial_segments = 4, whose vertices sit on the axes, so it
+; needs a 45-degree yaw to put its corners over the building's corners — and a rotated mesh has
+; a conservative AABB, which VerifyMetricsRunner reads as a footprint twice the real one. Boxes
+; and prisms on the axes measure exactly what they are.
+
+[gd_scene load_steps=12 format=3]
+
+[sub_resource type="StandardMaterial3D" id="mat_slate"]
+albedo_color = Color(0.3, 0.33, 0.4, 1)
+roughness = 0.85
+specular_mode = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_stone"]
+albedo_color = Color(0.94, 0.9, 0.82, 1)
+roughness = 0.9
+specular_mode = 1
+
+[sub_resource type="StandardMaterial3D" id="mat_gold"]
+albedo_color = Color(0.85, 0.72, 0.35, 1)
+metallic = 0.35
+roughness = 0.45
+
+[sub_resource type="BoxMesh" id="mesh_eaves"]
+material = SubResource("mat_slate")
+size = Vector3(5.56, 0.18, 5.56)
+
+[sub_resource type="PrismMesh" id="mesh_ridge"]
+material = SubResource("mat_slate")
+size = Vector3(5.56, 1.55, 5.56)
+
+[sub_resource type="CylinderMesh" id="mesh_clock"]
+material = SubResource("mat_gold")
+top_radius = 0.44
+bottom_radius = 0.44
+height = 0.08
+radial_segments = 12
+rings = 0
+
+[sub_resource type="BoxMesh" id="mesh_ring"]
+material = SubResource("mat_stone")
+size = Vector3(1.66, 0.14, 1.66)
+
+[sub_resource type="BoxMesh" id="mesh_drum"]
+material = SubResource("mat_stone")
+size = Vector3(1.24, 0.74, 1.24)
+
+[sub_resource type="PrismMesh" id="mesh_cap"]
+material = SubResource("mat_slate")
+size = Vector3(1.5, 0.82, 1.5)
+
+[sub_resource type="CylinderMesh" id="mesh_spire"]
+material = SubResource("mat_gold")
+top_radius = 0.035
+bottom_radius = 0.07
+height = 0.5
+radial_segments = 6
+rings = 0
+
+[sub_resource type="SphereMesh" id="mesh_finial"]
+material = SubResource("mat_gold")
+radius = 0.15
+height = 0.3
+radial_segments = 8
+rings = 4
+
+[node name="RoofTownhallCupola" type="Node3D"]
+
+[node name="Eaves" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("mesh_eaves")
+
+[node name="RidgeNorthSouth" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.865, 0)
+mesh = SubResource("mesh_ridge")
+
+[node name="RidgeEastWest" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0.865, 0)
+mesh = SubResource("mesh_ridge")
+
+[node name="ClockFace" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.98, -2.81)
+mesh = SubResource("mesh_clock")
+
+[node name="CupolaRing" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.66, 0)
+mesh = SubResource("mesh_ring")
+
+[node name="CupolaDrum" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1, 0)
+mesh = SubResource("mesh_drum")
+
+[node name="CupolaCap" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.88, 0)
+mesh = SubResource("mesh_cap")
+
+[node name="Spire" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.54, 0)
+mesh = SubResource("mesh_spire")
+
+[node name="Finial" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.87, 0)
+mesh = SubResource("mesh_finial")

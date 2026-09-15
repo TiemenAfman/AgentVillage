@@ -1,5 +1,6 @@
 using Godot;
 using Promptholm.Buildings.Data;
+using Promptholm.Buildings.Prefabs;
 using Promptholm.Buildings.Slots;
 
 namespace Promptholm.Buildings;
@@ -96,6 +97,17 @@ public partial class BuildingAssembler : Node3D
 
 	private void AttachPiece(BuildingPieceResource piece, BuildingSlot3D slot)
 	{
+		// A hand-made prefab of this piece's name wins the slot outright. Checked before every
+		// other source on purpose: the override replaces the piece, it never joins it. Adding the
+		// scene *next to* the procedural roof is the failure mode worth naming — a house with two
+		// roofs looks almost right until the shadows disagree.
+		var prefab = PrefabOverrides.TryInstantiate(piece.PieceId);
+		if (prefab is not null)
+		{
+			slot.Attach(prefab);
+			return;
+		}
+
 		// Runtime Node3D template (BuildingCatalog): deep-duplicate so each slot/building gets
 		// its own instance — PackedScene.Pack() would lose the children of off-tree nodes.
 		if (piece.MeshNode is not null)

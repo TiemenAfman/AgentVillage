@@ -45,6 +45,17 @@ public sealed class RockSpawner
 	/// </summary>
 	private const float Sink = 0.18f;
 
+	/// <summary>
+	/// How far each kind is drawn. Terrain3D defaults lod0_range to 32 m and a one-mesh asset
+	/// has one LOD, so that default *was* the draw distance: on an island of 400 m the massifs -
+	/// the skyline - vanished within throwing distance of the camera. Massifs go the farthest,
+	/// with shadows, because a silhouette without a shadow floats; slabs and boulders are ground
+	/// detail and fade where the eye stops separating them from the terrain grain.
+	/// </summary>
+	private static readonly Terrain3DBridge.MeshTuning MassifTuning = new(320.0f, 40.0f, true);
+	private static readonly Terrain3DBridge.MeshTuning SlabTuning = new(140.0f, 24.0f, true);
+	private static readonly Terrain3DBridge.MeshTuning BoulderTuning = new(100.0f, 20.0f, true);
+
 	public int Placed { get; private set; }
 
 	/// <summary>
@@ -65,17 +76,17 @@ public sealed class RockSpawner
 		int firstMassif = -1, firstSlab = -1, firstBoulder = -1;
 		for (int v = 0; v < Variants; v++)
 		{
-			int id = bridge.RegisterMeshAsset($"massif{v}", RockMesh.Massif((uint)(v * 97 + 13)));
+			int id = bridge.RegisterMeshAsset($"massif{v}", RockMesh.Massif((uint)(v * 97 + 13)), tuning: MassifTuning);
 			if (v == 0) firstMassif = id;
 		}
 		for (int v = 0; v < Variants; v++)
 		{
-			int id = bridge.RegisterMeshAsset($"slab{v}", RockMesh.Slab((uint)(v * 89 + 31)));
+			int id = bridge.RegisterMeshAsset($"slab{v}", RockMesh.Slab((uint)(v * 89 + 31)), tuning: SlabTuning);
 			if (v == 0) firstSlab = id;
 		}
 		for (int v = 0; v < Variants; v++)
 		{
-			int id = bridge.RegisterMeshAsset($"boulder{v}", RockMesh.Boulder((uint)(v * 71 + 53)));
+			int id = bridge.RegisterMeshAsset($"boulder{v}", RockMesh.Boulder((uint)(v * 71 + 53)), tuning: BoulderTuning);
 			if (v == 0) firstBoulder = id;
 		}
 
