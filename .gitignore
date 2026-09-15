@@ -22,3 +22,8 @@ config.json
 .env.*
 *.log
 *.log.1
+
+# build-uitvoer: scripts/build.ps1 zet hier de losstaande Windows-build neer (~250 MB)
+dist/
+# schermafdrukken van de Godot-harness, opnieuw te maken met scripts/shots.ps1
+godot/.captures/
