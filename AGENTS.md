@@ -2,7 +2,7 @@
 
 ## Serverkant: het vangnet (sinds sept 2026)
 
-`npm test` draait de suite met `node --test`. Vijfentwintig tests, ~1 s, geen dependencies.
+`npm test` draait de suite met `node --test`. Vijfentachtig tests, ~26 s, geen dependencies.
 Ze bewaken de belofte waar het hele eiland op rust en die tot nu toe alleen proza was in
 `docs/branches.md`:
 
@@ -13,6 +13,8 @@ Ze bewaken de belofte waar het hele eiland op rust en die tot nu toe alleen proz
 | `tests/layout-town.test.mjs` | `town.centre` en het lattice-anker bewegen nooit; het plein groeit alleen op zijn drempels en bevat altijd het vorige |
 | `tests/layout-land.test.mjs` | geen wijk verliest een super-cel; geen cel heeft twee eigenaren; de groengordel houdt |
 | `tests/layout-gates.test.mjs` | de vier invalidatiepoorten: `v`/seed/size, `terrainHash`, `PARCEL_VERSION`, `ROAD_VERSION` |
+| `tests/world-growth.test.mjs` | de groei-drieslag: hetzelfde dorp publiceert hetzelfde stel, meer settlers nooit minder chunks, en een gepubliceerde chunk komt nooit terug |
+| `tests/layout-islets.test.mjs` | één eilandje per repo: toewijzing op aankomstvolgorde, plakkend, en niemand anders bouwt op andermans rots |
 
 Drie dingen die je moet weten voor je erin werkt:
 
@@ -534,7 +536,8 @@ lang de verkeerde kant op af.
 | `features.mjs` | landmassa's, toppen en aanlandingsplekken benoemen |
 | `bake.mjs` | één pas over de envelop: kust, hoogte, erosie, water, hellingcap, klassen |
 | `chunks.mjs` | het schijfformaat, delta-gecodeerd en gegzipt |
-| `publish.mjs` | chunks + `manifest.json` met `worldRev` |
+| `publish.mjs` | bakt één keer, schrijft **alle** chunks + `atlas.json` en `manifest.json` |
+| `growth.mjs` | wat er van de atlas gepubliceerd is, en wanneer er meer bij komt |
 | `render.mjs` | het diagnostische bovenaanzicht — tekent **de bake**, niet de continue functies |
 | `png.mjs` (in `lib/`) | PNG-schrijver van zestig regels op `node:zlib`, geen dependency |
 
@@ -747,7 +750,9 @@ betekent vier keer zoveel meters: `PITCH 4` is een super-cel van 16 m, een 3×3-
 12 m, het plein groeit van 12 naar 20 naar 28 m. Vandaar *herfundering* en niet
 herschrijving.
 
-- `placeAll(layout, model, { lots, seed, worldRev })`. `size` komt uit `lots.size`.
+- `placeAll(layout, model, { lots, seed, worldRev, islets })`. `size` komt uit `lots.size`;
+  `worldRev` is hier de **bakeRev** en `islets` komt uit `isletSpecs(manifest)` — zie
+  "Groeien" hieronder. Zonder `islets` gedraagt hij zich precies als voorheen.
 - `village.json` draagt geen `terrainHash` meer maar `island.worldRev`,
   `island.metresPerLot` en `island.envelopeM`. De client mag die 4 **nooit** aannemen —
   `TerrainField.MetresPerLot` leest hem, en `CellWorld`/`CellCorner`/`Span` zijn de enige
@@ -766,13 +771,17 @@ herschrijving.
 
 ### Bakken één keer, daarna van schijf
 
-`scan.mjs` → `ensureWorld()`: bakken kost 1,7 s, terugzetten 0,2 s. Herbakken gebeurt
-alleen bij een andere seed, een andere `worldV` of een andere `radiusM`. `loadWorld()`
-(`lib/world/load.mjs`) zet de chunks terug tot één veld — dezelfde bytes die de client
-tekent, dus er is geen tweede afleiding die kan afdrijven.
+`scan.mjs` → `ensureWorld()`: bakken kost 2–8 s (machineafhankelijk), terugzetten 0,2 s.
+Herbakken gebeurt alleen bij een andere seed, een andere `worldV` of een andere `radiusM`.
+`loadWorld()` (`lib/world/load.mjs`) zet de chunks terug tot één veld — dezelfde bytes die de
+client tekent, dus er is geen tweede afleiding die kan afdrijven. Wat níét gepubliceerd is komt
+terug als zee op −32 m, en dát is de hefboom waarmee het eiland groeit (zie "Groeien").
+
+`ensureWorld()` moet daarom ná het model draaien: hoeveel er boven water staat is een functie
+van het dorp.
 
 `node scan.mjs --refound` plant het eiland opnieuw vanaf niets en legt `refoundedAt` +
-`previous` vast. Gebruik dat als een dorp scheef gegroeid is; een gewijzigde `worldRev`
+`previous` vast. Gebruik dat als een dorp scheef gegroeid is; een gewijzigde `bakeRev`
 doet hetzelfde automatisch.
 
 ### Twee invarianten die stilletjes braken
@@ -804,6 +813,49 @@ dorp, kortste oversteek eerst, en legt ze vast in `layout.links` (append-only, p
 scheef liggen — rechte oversteken eisen strandde een district op 116 m water terwijl het
 kanaal ernaast 52 m was. `MAX_SPAN` in `crossingSpan` blijft 5: die is voor beekjes, en
 verhogen zou wegen over elke baai laten springen.
+
+### Groeien: het eiland komt boven water naarmate het dorp groeit
+
+De bake dekt de **hele** envelop en gebeurt één keer; `publishWorld` schrijft élke chunk naar
+schijf plus `atlas.json` (alles wat gebakken is) én `manifest.json` (wat gepubliceerd is).
+Groeien = de manifest herschrijven. Er wordt nooit een chunk opnieuw gegenereerd en nooit een
+byte overschreven, dus grond waar een huis op staat kan niet verschuiven. `growWorld()` in
+`lib/world/growth.mjs` doet dat elke scan, in ~1 ms.
+
+- **De ladder** (`isletsWanted({settlers, hamlets})`) is een pure functie van het model, net
+  zoals `poldersWanted` dat was. Twee redenen, hoogste wint: ruimte (`ISLET_AT 30`,
+  `ISLET_EVERY 45` — de vloer die een eiland met één project toch laat groeien) en scheiding
+  (`hamlets - HAMLETS_ASHORE`, met `HAMLETS_ASHORE 4`, want de vier grootste projecten houden
+  72 van de 104 settlers en passen op geen enkele rots). Beide monotoon, dus de ladder ook.
+- **Plakkend.** Het gewenste stel wordt *verenigd* met `manifest.islets`, nooit vervangen: een
+  dorp dat krimpt — een gearchiveerd project, verbannen sessies — ziet de zee nooit over een
+  gehucht terugkomen.
+- **Twee revisies, en dat is het hele punt.** `manifest.worldRev` is de revisie van wat
+  gepubliceerd is (de cache-sleutel van de client, verandert bij groei); `manifest.bakeRev` is
+  de revisie van de gróńd. `scan.mjs` geeft `bakeRev` aan `placeAll` mee. Met `worldRev` zou het
+  dorp bij élk eilandje opnieuw gefundeerd worden — elk huis verhuist, per rots één keer.
+- **Eén eilandje per repo.** Een district dat `MIN_HAMLET` haalt krijgt een rots toegewezen, in
+  **aankomstvolgorde** (niet in zaai-volgorde), vastgelegd in `layout.districts[id].islet` als
+  het skerry-index uit `shape.mjs` — een vaste roosterpositie, dus hij betekent hetzelfde wat er
+  verder ook boven water staat. Alleen een rots waar het district *op past* (één super-cel per
+  huis; `parcelTarget` met tuinslack eisen liet er nog maar één van de twaalf over). Toegewezen
+  rotsen staan in `sup.reserved` en zijn voor iedereen anders onzichtbaar — zonder dat stapt de
+  commons of het grootste gehucht over een kanaal van 26 m heen, want een super-cel is 16 m.
+  Een gehucht dat zijn rots ontgroeit annexeert aan wal (`ensureParcel` laat `within` juist daar
+  vallen); zijn er geen rotsen meer, dan blijft het district gewoon aan wal.
+- **`ISLETS 6` is te weinig voor ~12 repo's.** Verhogen kan niet zomaar: de gulden-hoek-spreiding
+  in `shape.mjs` botst voorbij ~6 — bij 14 liggen eilandje 0 en 8 nog 34 m uit elkaar met stralen
+  van 51 en 63 m, dus ze versmelten. Meer rotsen vraagt een andere plaatsing, niet een hoger
+  getal.
+- **De chunk is het kwantum.** Waar een eilandje in een chunk reikt die het vasteland ook
+  gebruikt, komt de punt ervan vroeg boven water (seed 1337: chunk 2,1). De chunk achterhouden
+  zou een gat in de eigen kust van het vasteland slaan, en dat is erger.
+
+`node scripts/growth-series.mjs --out <dir>` plant hetzelfde dorp op 50/100/300 settlers en
+schrijft een datamap per maat, zodat `village-map.mjs` de groei kan tekenen. Gemeten op seed
+1337: 78 → 89 → 111 chunks, 3 → 4 → 6 eilandjes, 3 → 2 → 4 districten erop. `--no-islets` geeft
+het voor-plaatje. `--all` laat de wereld met rust: dat is een kijkrichting, geen dorp, en groei
+is onomkeerbaar.
 
 ### Mist hoort bij de wereld, niet bij de runner
 

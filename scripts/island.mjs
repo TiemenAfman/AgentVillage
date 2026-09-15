@@ -37,12 +37,18 @@ const publishTo = arg('publish', null);
 
 if (publishTo) {
   const envelopeM = Number(arg('envelope', 1024));
+  // The whole archipelago by default. A founding scan publishes the mainland only and grows
+  // into the rest as the village does (`lib/world/growth.mjs`), but this command exists to
+  // look at an island, and half a world is not what you came to see. `--islets 0` is what
+  // `scan.mjs` would write on day one.
+  const isletsArg = arg('islets', 'all');
   const t0 = Date.now();
   let last = '';
-  const { manifest, bytes } = publishWorld(seed, publishTo, {
+  const { manifest, atlas, bytes } = publishWorld(seed, publishTo, {
     envelopeM,
     radiusM,
     erosion,
+    islets: isletsArg === 'all' ? 'all' : Number(isletsArg),
     onProgress: (frac, what) => {
       if (!process.stdout.isTTY) return;      // a carriage return in a log file is a hundred lines
       const line = `${what} ${Math.round(frac * 100)}%`;
@@ -51,8 +57,9 @@ if (publishTo) {
   });
   if (process.stdout.isTTY) process.stdout.write(''.padEnd(24) + String.fromCharCode(13));
   console.log(`${publishTo}  seed ${seed}, envelop ${envelopeM} m`);
-  console.log(`  worldRev ${manifest.worldRev}  ${manifest.chunks.length} chunks  ` +
-    `${(bytes / 1024).toFixed(0)} kB  in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  console.log(`  worldRev ${manifest.worldRev}  ${manifest.chunks.length} of ${atlas.chunks.length} chunks  ` +
+    `${(bytes / 1024).toFixed(0)} kB baked  in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  console.log(`  bakeRev ${atlas.bakeRev}  islets ${manifest.islets.length} of ${atlas.islets.length} above water`);
   process.exit(0);
 }
 

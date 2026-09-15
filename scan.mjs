@@ -15,6 +15,7 @@ import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS
 import { hash32 } from './shared/rng.mjs';
 import { loadWorld } from './lib/world/load.mjs';
 import { publishWorld, WORLD_VERSION } from './lib/world/publish.mjs';
+import { growWorld, isletSpecs } from './lib/world/growth.mjs';
 import { makeLotField } from './lib/world/lotfield.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
@@ -45,30 +46,44 @@ export function filesFor(opts) {
 }
 
 /**
- * The island, baked once and read back ever after.
+ * The island, baked once, grown as the village does, and read back ever after.
  *
- * Baking the 1024 m envelope costs about 1.7 seconds - twice a whole scan - so it happens
+ * Baking the 1024 m envelope costs seconds - several times a whole scan - so it happens
  * exactly once, on the first scan of a seed, and every scan after that reads the chunks
- * back in about a fifth of that. That is not only a saving: the chunks are the bytes the
+ * back in about a fifth of a second. That is not only a saving: the chunks are the bytes the
  * client draws, so reading them is what guarantees the village is planned on the same
  * ground the player walks on. There is no second derivation left to drift.
  *
+ * `growWorld` is the second half of that bargain. The bake covers the whole envelope, but
+ * only part of it is published at founding; as the village earns more, more of what was
+ * already written is named in the manifest. No chunk is ever generated twice and no byte is
+ * ever rewritten, so land somebody built on cannot move - growing costs a rewritten
+ * manifest, nothing else.
+ *
  * A world baked for a different seed is replaced. A world baked by an older generator is
  * replaced too - `worldV` moves whenever the format does - and `placeAll` sees a new
- * `worldRev` and re-founds the village onto it.
+ * `bakeRev` and re-founds the village onto it.
  */
-function ensureWorld(dir, seed, { radiusM, quiet = true } = {}) {
+function ensureWorld(dir, seed, { radiusM, want = {}, quiet = true } = {}) {
   let loaded = loadWorld(dir);
   if (!loaded || loaded.manifest.seed !== seed || loaded.manifest.worldV !== WORLD_VERSION || loaded.manifest.radiusM !== radiusM) {
     if (!quiet) {
       process.stderr.write(loaded
         ? '[world] the world on disk is for another seed or another format; baking a new one\n'
-        : '[world] no world yet; baking the island (about two seconds, once)\n');
+        : '[world] no world yet; baking the island (a few seconds, once)\n');
     }
     fs.rmSync(dir, { recursive: true, force: true });
     publishWorld(seed, dir, { radiusM });
     loaded = loadWorld(dir);
     if (!loaded) throw new Error(`the world was published to ${dir} but cannot be read back`);
+  }
+  const grown = growWorld(dir, want);
+  if (grown && grown.added) {
+    if (!quiet) {
+      process.stderr.write(`[world] the village has grown into ${grown.islets.length} islet(s);`
+        + ` ${grown.added} more chunks published\n`);
+    }
+    loaded = loadWorld(dir);
   }
   return loaded;
 }
@@ -83,12 +98,6 @@ async function runScan(o) {
   ensureData();
   const config = loadConfig();
   const files = filesFor(o);
-  // The island first: the layout is planned in lots of four metres off the baked world,
-  // so the ground has to exist before a single plot is judged. `size` is no longer a
-  // setting - it is however many lots the envelope holds.
-  const { manifest: world, field } = ensureWorld(files.world, config.seed, { radiusM: config.islandRadiusM || 208, quiet: o.quiet });
-  const lots = makeLotField(field);
-  const size = lots.size;
 
   const sources = discover();
   const cache = loadCache(files.cache);
@@ -115,6 +124,25 @@ async function runScan(o) {
   const banished = readBanished();
   const dispatched = new Set(readAssignments().filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
+
+  // The island next, and it needs the village first: how much of the baked envelope stands
+  // above water is a function of the model (lib/world/growth.mjs), so the census has to be
+  // in before the coastline is. Everything after this is planned in lots of four metres off
+  // the published world, so the ground has to exist before a single plot is judged. `size`
+  // is no longer a setting - it is however many lots the envelope holds.
+  //
+  // `--all` is the exception, and it is a view rather than a village: it counts every session
+  // that ever ran, including the ones from before the island was founded. Letting it grow the
+  // world would mean that looking at the island the other way round permanently changed it,
+  // and growth is sticky - there is no way back.
+  const hamlets = model.districts.filter((d) => d.population >= MIN_HAMLET).length;
+  const { manifest: world, field } = ensureWorld(files.world, config.seed, {
+    radiusM: config.islandRadiusM || 208,
+    want: o.all ? {} : { settlers: model.stats.settlers, hamlets },
+    quiet: o.quiet,
+  });
+  const lots = makeLotField(field);
+  const size = lots.size;
 
   const layout = loadLayout(files.layout, config.seed, size);
   // `--refound`: plan the island again from nothing, keeping nothing but the transcripts.
@@ -158,7 +186,14 @@ async function runScan(o) {
       layout.paths = layout.paths.filter((p) => !String(p.id).startsWith(`road:${id}:`));
     }
   }
-  const { unplaced } = placeAll(layout, model, { lots, seed: config.seed, worldRev: world.worldRev });
+  // `bakeRev` and not `worldRev`. The first is the revision of the ground, the second of what
+  // has been published of it - and only the first may re-found the village. Growing the
+  // island adds land nobody has built on, so no house has to move; handing `worldRev` here
+  // would re-found the whole village once per islet, which is every house moving for the
+  // sake of a rock somewhere off the coast.
+  const { unplaced } = placeAll(layout, model, {
+    lots, seed: config.seed, worldRev: world.bakeRev, islets: isletSpecs(world),
+  });
 
   const village = assemble({ config, model, layout, lots, world, size, all: o.all });
   writeJsonAtomic(files.village, village);
@@ -358,6 +393,10 @@ function assemble({ config, model, layout, lots, world, size, all }) {
       firstSeenAt: iso(d.firstSeenAt), population: d.population,
       outposts: d.outposts || [],
       tier: (l && l.tier) || 'farmstead',
+      // The islet this project holds, by the skerry index the world was baked with, or null
+      // for a district on the mainland. The viewer needs it to say "on its own island"
+      // without working it out from the geometry.
+      islet: l && Number.isInteger(l.islet) ? l.islet : null,
       guest: !!(l && l.guest),
       paved: (l && l.paved) || [],
       lobes,
@@ -382,6 +421,9 @@ function assemble({ config, model, layout, lots, world, size, all }) {
       worldRev: world.worldRev,
       metresPerLot: lots.metresPerLot,
       envelopeM: world.envelopeM,
+      // How much of the archipelago is above water. The envelope holds more; it is published
+      // as the village earns it - see lib/world/growth.mjs.
+      islets: (world.islets || []).length,
       landing: layout.landing,
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2,
