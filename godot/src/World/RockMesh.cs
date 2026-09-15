@@ -126,8 +126,59 @@ public static class RockMesh
 
 		var mesh = new ArrayMesh();
 		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, built);
-		mesh.SurfaceSetMaterial(0, Palette.Solid(Stone, 0.92f));
+		mesh.SurfaceSetMaterial(0, StoneMaterial());
 		return mesh;
+	}
+
+	private static StandardMaterial3D? _stone;
+
+	/// <summary>
+	/// Stone, textured in **world space** rather than by UV.
+	///
+	/// These meshes carry no UVs at all - they are generated here and unwrapping procedural
+	/// geometry is work nobody wants to do twice. Triplanar mapping in world space sidesteps it
+	/// entirely: the texture is sampled from where the surface *is*, so a rock gets its grain
+	/// without an unwrap, two rocks lying against each other line up, and a rock scaled to
+	/// fifteen metres does not smear the way a UV-mapped one would.
+	///
+	/// The detail is a normal map only, generated from noise rather than photographed. That is
+	/// the whole stylised-versus-photoscan decision in one place: the silhouette and the facets
+	/// carry the shape, and this adds the suggestion of grain under raking light without putting
+	/// a photograph of granite on a hand-made block.
+	/// </summary>
+	private static StandardMaterial3D StoneMaterial()
+	{
+		if (_stone is not null) return _stone;
+
+		var noise = new FastNoiseLite
+		{
+			NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+			Frequency = 0.035f,
+			FractalOctaves = 4,
+		};
+		var grain = new NoiseTexture2D
+		{
+			Noise = noise,
+			Width = 512,
+			Height = 512,
+			Seamless = true,
+			AsNormalMap = true,
+			BumpStrength = 3.5f,
+		};
+
+		_stone = Palette.Solid(Stone, 0.92f);
+		_stone.NormalEnabled = true;
+		_stone.NormalTexture = grain;
+		_stone.NormalScale = 0.55f;
+		// Sampled from world position, not from UVs the mesh does not have. Sharpness keeps the
+		// three projections from mushing into each other on a facet that faces a corner.
+		_stone.Uv1Triplanar = true;
+		_stone.Uv1WorldTriplanar = true;
+		_stone.Uv1TriplanarSharpness = 2.0f;
+		// One repeat per two metres: fine enough to read as stone up close, coarse enough that a
+		// fifteen-metre massif is not sandpaper.
+		_stone.Uv1Scale = new Vector3(0.5f, 0.5f, 0.5f);
+		return _stone;
 	}
 
 	/// <summary>
