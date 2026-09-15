@@ -52,6 +52,14 @@ Wijst `--layout-file` naar een pad dat niet bestaat, dan geeft `loadLayout` een 
   Gemeten: geen twee 3×3-huisplots overlappen, en de groengordel (`BELT = 1`) houdt overal. Een
   schuur zit wél binnen het 3×3-lot van zijn meester — dat is de "schuur in de tuin" uit de
   README, en precies daarom mag de client een huis niet over zijn hele plot tekenen.
+- **`town.paved` liep een scan achter op zijn eigen plein.** De eencellige civic-plots
+  (`civic:board`, `civic:issues`, en alles uit `ON_SQUARE`) worden in `layout.plots` gezet
+  zonder ooit op het celraster gestempeld te worden: op de scan die ze sticht was de cel nog
+  vrij en werd hij bestraat, op de volgende had de replay-lus bovenaan `placeAll` er `PLOT`
+  van gemaakt en sloeg het bestratingsblok hem over. Niets bewoog, en tóch werd layout.json
+  één scan na elke stichting herschreven. `town.paved` wordt nu niet meer verzameld terwijl de
+  steen gelegd wordt maar aan het eind afgelezen van de afgemaakte layout (`pavedCells`), met
+  de regel dat wat op één cel staat de stenen eronder houdt — een put, een bord, een lantaarn.
 - **Het eiland is vol.** Op de echte data staan 21 van de 39 huizen op de commons in plaats van
   op de grond van hun eigen wijk, en alle 13 wijken zijn `guest`. Dat is de aanleiding voor de
   serverherschrijving in één cijfer.

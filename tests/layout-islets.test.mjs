@@ -188,23 +188,16 @@ test('nobody else settles on a rock that has an owner', () => {
   }
 });
 
-// Everything but the town's paving. `layout.town.paved` is derived from the cell grid at the
-// moment the frontage is laid, and the one-cell civic plots (`civic:board`, `civic:issues`)
-// are written into `layout.plots` without ever being stamped onto that grid - so on the scan
-// that creates them the frontage paves the cell they stand on, and on the next one the replay
-// at the top of placeAll has marked it PLOT and the frontage skips it. Reproduced with
-// `islets: []` and with no islets argument at all, so it predates the archipelago; it is a
-// separate bug and not one this file is about.
-const settled = (layout) => JSON.stringify({ ...layout, town: { ...layout.town, paved: undefined } });
-
 test('scanning an archipelago twice changes nothing', () => {
   // The invariant the whole layout rests on, now with islets in play: the assignment pass is
-  // the newest thing that could make a scan disagree with the one before it.
+  // the newest thing that could make a scan disagree with the one before it. Byte-identical,
+  // `town.paved` included - which it was not until that field stopped being gathered as the
+  // stone went down and started being read off the finished layout.
   const layout = emptyLayout(SEED, SIZE);
   const snapshots = [];
   for (let i = 0; i < 3; i++) {
     placeAll(layout, makeModel(VILLAGE), { lots, seed: SEED, worldRev, islets: ISLETS });
-    snapshots.push(settled(layout));
+    snapshots.push(JSON.stringify(layout));
   }
   assert.equal(snapshots[1], snapshots[0], 'a second scan of an unchanged archipelago rewrote the layout');
   assert.equal(snapshots[2], snapshots[0]);
