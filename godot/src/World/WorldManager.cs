@@ -254,6 +254,14 @@ public partial class WorldManager : Node3D
 		_buildingMarkers.Clear();
 		_buildingCells.Clear();
 
+		// District hue by id, so a nameplate can carry the colour of the hamlet it stands in.
+		// The server sends a district as an id string on civics and as an object on houses, which
+		// is why the lookup is by id rather than off the building.
+		var hueByDistrict = new Dictionary<string, float>();
+		foreach (var dd in village.Districts)
+			if (!string.IsNullOrWhiteSpace(dd.Id))
+				hueByDistrict[dd.Id!] = dd.Hue;
+
 		foreach (var b in village.Buildings)
 		{
 			if (b.Plot is null)
@@ -309,6 +317,8 @@ public partial class WorldManager : Node3D
 			var form = BuildSlots(assembler, b, pw, pd);
 			assembler.Catalog = BuildCatalog(b, form, pw, pd, fit.Drop);
 			assembler.Assemble(style, tier, OrnamentIds(b));
+
+			AddNameplate(buildingRoot, b, pd, hueByDistrict);
 		}
 
 		_civicDecorator?.BuildCivics(_terrain, village);
@@ -353,6 +363,64 @@ public partial class WorldManager : Node3D
 	/// World-space interaction point: the door on the front wall (relative to the building's
 	/// yaw), so the settler stands in front of the entrance rather than at the plot centre.
 	/// </summary>
+	/// <summary>
+	/// Stakes the session's name in the front yard, a little out from the door on the street side.
+	///
+	/// Only the things a person can talk to get one. A shed is a subagent and has no session of
+	/// its own to name, and a civic building already carries its name on the sign slot in its own
+	/// facade — planting a yard sign in front of the town hall would just read as clutter.
+	///
+	/// The plate is a child of the building root, so it inherits the plot rotation and ends up
+	/// facing the same way the door does without computing a heading twice. Its own ground height
+	/// is sampled separately: the house sits on the lowest corner of its footprint, and the yard
+	/// in front of it is usually not at that height.
+	/// </summary>
+	private void AddNameplate(Node3D buildingRoot, BuildingData b, float d,
+		Dictionary<string, float> hueByDistrict)
+	{
+		if (b.Kind is "shed" or "civic") return;
+
+		string name = BuildingDisplayName(b);
+		if (string.IsNullOrWhiteSpace(name)) return;
+
+		float? hue = null;
+		string? districtId = DistrictIdOf(b);
+		if (districtId is not null && hueByDistrict.TryGetValue(districtId, out float h))
+			hue = h;
+
+		// Far enough out that it clears the porch on the tiers that have one.
+		float standoff = d * 0.5f + 1.15f;
+		var local = new Vector3(0.0f, 0.0f, -standoff);
+		var world = buildingRoot.GlobalTransform * local;
+		float ground = (float)_terrain!.WorldHeight(world.X, world.Z);
+
+		var plate = Nameplate.Build(name, hue);
+		// Position is in the parent's space; the Y has to be the ground under the sign expressed
+		// relative to the building's own floor, or the plate inherits the house's correction.
+		plate.Position = new Vector3(0.0f, ground - buildingRoot.Position.Y, -standoff);
+		buildingRoot.AddChild(plate);
+	}
+
+	/// <summary>
+	/// The district id, whichever shape the server used. scan.mjs writes a plain id string on the
+	/// civics and the whole district object on the houses, and both arrive here as JSON.
+	/// </summary>
+	private static string? DistrictIdOf(BuildingData b)
+	{
+		switch (b.District)
+		{
+			case string s when !string.IsNullOrWhiteSpace(s):
+				return s;
+			case System.Text.Json.JsonElement el when el.ValueKind == System.Text.Json.JsonValueKind.String:
+				return el.GetString();
+			case System.Text.Json.JsonElement el when el.ValueKind == System.Text.Json.JsonValueKind.Object
+				&& el.TryGetProperty("id", out var idEl):
+				return idEl.GetString();
+			default:
+				return null;
+		}
+	}
+
 	private static BuildingMarker BuildMarker(Node3D root, BuildingData b, float w, float d)
 	{
 		var doorLocal = new Vector3(0.0f, 0.0f, -d * 0.5f + 0.12f);
