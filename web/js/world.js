@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, buildBorders, planFields, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
+import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -385,6 +385,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // showed while the paving was a flat sandy colour and the furrows were sandy too;
     // against cobbles it is the first thing you see.
     for (const [gx, gz] of squareCells(v)) out.add(gx + gz * size);
+    // A bridge is a road that happens to be off the ground, and nothing grows on a
+    // deck. Without this the scatter plants a wood straight through the planks - which
+    // is exactly what it was doing, because the wire does not clear a bridge either.
+    for (const b of v.bridges || []) for (const [gx, gz] of b.cells || []) out.add(gx + gz * size);
     // A dike is a wall and a causeway is a road. Neither is ground that grows anything,
     // and both are flat and high enough that the scatter below would otherwise plant
     // trees along the top of the sea wall.
@@ -422,6 +426,34 @@ export function createWorld(scene, terrain, village, opts = {}) {
   for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
     for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
   }
+
+  // A tree is dropped at its cell's middle give or take 0.38, and an oak's canopy is
+  // 0.45 across, so it reaches 0.83 from the middle - a third of a cell past its own
+  // edge. A boundary wall stands on that edge and is up to 0.5 thick, so a tree beside
+  // one goes straight through it. There is no offset that fixes this: half a cell minus
+  // half a wall leaves 0.25, and the canopy alone is 0.44. So the wall gets a verge, and
+  // a cell that touches a boundary is simply not planted.
+  //
+  // This mirrors the test in buildBorders(): the town puts up no hedge and the coast is
+  // its own boundary, so neither of those earns a verge. It goes in `cleared` rather than
+  // `clearedBase` on purpose - a field may run right up to a wall, only a tree may not.
+  const wallVerge = (ownerArr, into) => {
+    const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
+    const walled = (o) => o !== NONE && o !== TOWN;
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const k = at(gx, gz);
+        if (!walled(k)) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = at(gx + dx, gz + dz);
+          if (n === k || !terrain.isLand(gx + dx, gz + dz)) continue;
+          into.add(gx + gz * size);
+          if (walled(n) || n === NONE) into.add((gx + dx) + (gz + dz) * size);
+        }
+      }
+    }
+  };
+  wallVerge(own.owner, cleared);
 
   const rng = makeRng(terrain.seed).fork('flora');
   const forest = makeSimplex2D(hash32(terrain.seed + ':forest'));
@@ -774,6 +806,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (fg) {
       const mat = groundMat();
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      // The fields are drawn here but dressed there: hamlets.js hands back bare geometry
+      // and owns the ploughed-soil sheet, so it is the only place that knows the tiling
+      // and the brightness the sheet has to be corrected for. It handles the wait itself -
+      // a sheet that lands after this material was made still reaches it.
+      dressFieldMaterial(mat);
       fieldMesh = new THREE.Mesh(fg, mat);
       fieldMesh.receiveShadow = true;
       group.add(fieldMesh);
@@ -790,6 +827,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
+    wallVerge(own.owner, cleared);
     computeTint(own.owner, own.inset, hues);
     paintGround(seasonName);
     placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);

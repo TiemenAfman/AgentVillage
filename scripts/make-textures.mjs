@@ -174,6 +174,66 @@ const SHEETS = {
       return detail(0.30 + 0.62 * c.tone * (0.22 + 0.78 * joint) * (0.92 + pit(x, y) * 0.16), 1);
     });
   },
+  // Plaster, for the walls the island renders. The island is drawn in the key Animal
+  // Crossing is drawn in: the silhouette carries the building and nothing on the wall
+  // may compete with it. So this is the quietest sheet of the set - a slow unevenness
+  // that says a hand floated this wall, a fine tooth under it, and a span of 0.82 to
+  // 0.96 rather than the near-black-to-white a stone sheet is allowed.
+  'wall-plaster': () => {
+    const float = fbm(60601, [4, 9]);
+    const tooth = fbm(60602, [40, 88]);
+    return draw((x, y) => detail(0.82 + 0.14 * (float(x, y) * 0.58 + tooth(x, y) * 0.42), 1));
+  },
+  // Pantiles. Not cells(): cells() draws the joint between two neighbours, which is
+  // paving, and a roof is not paved - it is a stack of curved tiles, each lapping over
+  // the course below, and what you see from the ground is the row of crowns and the
+  // shadow line under each lap. So the pattern is drawn straight from the lattice a
+  // roofer works on: twelve to a course, every other course offset by half a tile.
+  //
+  // Twelve tiles across a sheet and a sheet to the world unit puts a tile at about a
+  // third of a metre, which is what a pantile is.
+  'roof-tile': () => {
+    const COLS = 12, ROWS = 16;
+    const tw = N / COLS, th = N / ROWS;
+    const grain = fbm(91101, [20, 56]);
+    // Each tile a shade of its own, or a roof reads as wallpaper.
+    const shade = (c, r) => 0.96 + ((((c * 73856093) ^ (r * 19349663)) >>> 0) % 100) / 100 * 0.08;
+    return draw((x, y) => {
+      const row = Math.floor(y / th);
+      const fx = (x - (row % 2) * tw * 0.5 + N) % N;
+      const col = Math.floor(fx / tw) % COLS;
+      const u = (fx / tw) % 1, v = (y / th) % 1;
+      // The crown: broad and flat over most of the tile, dipping quickly into the
+      // channel at either side. The power is what keeps it a soft roll rather than a
+      // groove cut with a knife.
+      const crown = Math.pow(Math.max(0, Math.cos((u - 0.5) * Math.PI)), 0.35);
+      // And the lap: the course above ends here, so the top of every tile sits in its
+      // shadow and brightens as it comes out from under.
+      const lap = Math.min(1, v / 0.26);
+      return detail((0.79 + 0.17 * (crown * 0.45 + lap * 0.4 + grain(x, y) * 0.15)) * shade(col, row), 1);
+    });
+  },
+  // Sawn boards, for decking and anything else laid plank by plank. Six to a sheet, and
+  // the seam between two of them is a soft shadow rather than a cut line - these are
+  // boards a carpenter fitted, not a grating.
+  //
+  // The grain runs the length of the board, and the way to get that out of a lattice
+  // that has one period for both axes is to walk the y axis faster rather than the x
+  // axis slower. Slower means a fractional step, and a fractional step does not come
+  // back to where it started at the edge of the sheet - the seam would show. Six times
+  // y, wrapped, both stretches the noise along the board and stays seamless.
+  plank: () => {
+    const ROWS = 6, bh = N / ROWS;
+    const streak = fbm(70701, [10, 22]);
+    const fine = fbm(70702, [28, 56]);
+    const shade = (r) => 0.94 + ((((r + 1) * 2654435761) >>> 0) % 100) / 100 * 0.11;
+    return draw((x, y) => {
+      const row = Math.floor(y / bh), v = (y / bh) % 1;
+      const seam = Math.min(1, Math.min(v, 1 - v) / 0.1);
+      const g = streak(x, (y * 6) % N) * 0.62 + fine(x, (y * 3) % N) * 0.38;
+      return detail((0.8 + 0.16 * (seam * 0.5 + g * 0.5)) * shade(row), 1);
+    });
+  },
 };
 
 fs.mkdirSync(OUT, { recursive: true });

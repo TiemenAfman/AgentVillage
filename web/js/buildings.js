@@ -25,34 +25,152 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
+// ---------------------------------------------------------------- sheets
+// world.js keeps the same three lines for the ground and the trees and does not export
+// them, so here they are again: fetch a sheet, wrap it, and if it never arrives say so
+// once and leave the surface exactly as it was drawn before there were any sheets.
+//
+// Three of them serve every building on the island, and which one a face takes is a
+// number carried on the vertex rather than a material of its own. That matters: the
+// obvious way round - one material group per part and an array of materials on the mesh
+// - turns a building from one draw call into one per part, and there are hundreds of
+// buildings. It would also mean handing main.js an array where it passes a single
+// material, and main.js hands that same material to the settlers, the crops, the boats
+// and the bridges, none of which have groups to match it. So: one material, one draw
+// call per building, and a branch in the fragment shader.
+const TEXTURES = 'textures/';
+const texLoader = new THREE.TextureLoader();
+// One white pixel until a sheet arrives, and for good if none ever does: white
+// multiplies out, so a building with no textures is the building the island always drew.
+const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+BLANK.needsUpdate = true;
+const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank' };
+const sheetUsers = [];               // the uniform block of every material handed out
+function loadSheet(name, slot) {
+  texLoader.load(`${TEXTURES}${name}.png`, (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
+    for (const u of sheetUsers) u[SHEET_UNIFORM[slot]].value = tex;
+  }, undefined, () => {
+    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+  });
+}
+loadSheet('wall-plaster', 'wall');
+loadSheet('roof-tile', 'roof');
+loadSheet('stone-stacked', 'stone');
+loadSheet('plank', 'plank');
+
+// What a part is drawn on. Zero - no sheet at all - is the default and stays the default:
+// glass, ironwork, cloth, paper and every small painted thing are better flat.
+// 'plank' and 'plankZ' are the same sheet read two ways. The boards on it run along
+// the sheet's own x, so a deck that runs north-south wants them turned a quarter, and
+// the shader does that by reading the position and the normal back to front rather than
+// by carrying a second copy of the wood.
+const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5 };
+const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
+
 // ---------------------------------------------------------------- material
 export function createBuildingMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0.0 });
-  mat.userData.uniforms = { uNight: { value: 0 } };
+  mat.userData.uniforms = {
+    uNight: { value: 0 },
+    uWall: { value: BLANK }, uRoof: { value: BLANK }, uStone: { value: BLANK }, uPlank: { value: BLANK },
+  };
+  sheetUsers.push(mat.userData.uniforms);
   mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uNight = mat.userData.uniforms.uNight;
+    const u = mat.userData.uniforms;
+    shader.uniforms.uNight = u.uNight;
+    shader.uniforms.uWall = u.uWall;
+    shader.uniforms.uRoof = u.uRoof;
+    shader.uniforms.uStone = u.uStone;
+    shader.uniforms.uPlank = u.uPlank;
+    const glsl = (...lines) => lines.join(String.fromCharCode(10));
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aEmissive;\nvarying float vEmi;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmi = aEmissive;');
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'attribute float aEmissive;',
+        'attribute float aSheet;',
+        'varying float vEmi;',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;'))
+      .replace('#include <begin_vertex>', glsl(
+        '#include <begin_vertex>',
+        'vEmi = aEmissive;',
+        'vSheet = aSheet;',
+        'vSheetPos = position;',
+        'vSheetNrm = normal;'));
+    // There is no uv anywhere on a building - finish() throws it away so that parts built
+    // at wildly different sizes can be merged into one loaf - so the sheet is projected on
+    // instead, from the three axes at once, blended by how far the face turns towards each.
+    // A box face takes one projection whole; a roof pitch, whose normal points between two
+    // axes, cross-fades two, which is what lets a sheet lie flat over a ridge with no seam
+    // along it. Projecting also makes the pattern the same size on a cottage and on a keep,
+    // which is the one thing a per-face uv could never do.
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vEmi;\nuniform float uNight;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);');
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'varying float vEmi;',
+        'uniform float uNight;',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;',
+        'uniform sampler2D uWall;',
+        'uniform sampler2D uRoof;',
+        'uniform sampler2D uStone;',
+        'uniform sampler2D uPlank;',
+        'vec3 islandSheet(sampler2D m, vec3 p, vec3 n, float s) {',
+        '  vec3 w = n * n;',
+        '  w /= max(1e-4, w.x + w.y + w.z);',
+        '  return texture2D(m, p.zy * s).rgb * w.x',
+        '       + texture2D(m, p.xz * s).rgb * w.y',
+        '       + texture2D(m, p.xy * s).rgb * w.z;',
+        '}'))
+      .replace('#include <color_fragment>', glsl(
+        '#include <color_fragment>',
+        'if (vSheet > 0.5) {',
+        '  vec3 sn = normalize(vSheetNrm);',
+        '  vec3 sc = vec3(1.0);',
+        // The stacked stone was drawn for a rubble wall and swings from a fifth of full
+        // brightness to all of it. At that strength it would be the loudest thing on the
+        // island, and the paving is meant to keep the deepest tone here, so a plinth takes
+        // under two thirds of the sheet.
+        '  float sk = 1.0;',
+        '  if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
+        '  else if (vSheet > 3.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.3); }',
+        '  else if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 1.0); sk = 0.62; }',
+        '  else if (vSheet > 1.5) { sc = islandSheet(uRoof, vSheetPos, sn, 1.0); }',
+        '  else { sc = islandSheet(uWall, vSheetPos, sn, 1.7); }',
+        '  diffuseColor.rgb *= mix(vec3(1.0), sc, sk);',
+        '}'))
+      .replace('#include <emissivemap_fragment>', glsl(
+        '#include <emissivemap_fragment>',
+        'totalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);'));
   };
   mat.customProgramCacheKey = () => 'settlers-emissive';
   return mat;
 }
 
 // ---------------------------------------------------------------- primitives
-function finish(g, hex, emissive = 0) {
+function finish(g, hex, emissive = 0, sheet = 0) {
   g.deleteAttribute('uv');
   g.deleteAttribute('normal');
   const flat = g.index ? g.toNonIndexed() : g;
   const n = flat.attributes.position.count;
   const c = new THREE.Color(hex);
-  const col = new Float32Array(n * 3), emi = new Float32Array(n);
-  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; emi[i] = emissive; }
+  const col = new Float32Array(n * 3), emi = new Float32Array(n), she = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    emi[i] = emissive;
+    she[i] = sheet;
+  }
   flat.setAttribute('color', new THREE.BufferAttribute(col, 3));
   flat.setAttribute('aEmissive', new THREE.BufferAttribute(emi, 1));
+  // Only the parts that are drawn on something carry the attribute; merge() fills in the
+  // rest. See the note there - it is not an optimisation, it is what keeps the figures
+  // buildable out of these same primitives.
+  if (sheet) flat.setAttribute('aSheet', new THREE.BufferAttribute(she, 1));
   return flat;
 }
 function place(g, o = {}) {
@@ -107,25 +225,25 @@ const BRIM = 0.004;
 export function box(w, h, d, hex, o = {}) {
   const g = new THREE.BoxGeometry(w, h, d);
   g.translate(0, h / 2, 0);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'box', [w, h, d], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'box', [w, h, d], hex, o);
 }
 export function cylinder(rt, rb, h, seg, hex, o = {}) {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg);
   g.translate(0, h / 2, 0);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'cylinder', [rt, rb, h, seg], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'cylinder', [rt, rb, h, seg], hex, o);
 }
 export function cone(r, h, seg, hex, o = {}) {
   const g = new THREE.ConeGeometry(r, h, seg);
   g.translate(0, h / 2, 0);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'cone', [r, h, seg], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'cone', [r, h, seg], hex, o);
 }
 export function dome(r, hex, o = {}) {
   const g = new THREE.SphereGeometry(r, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'dome', [r], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'dome', [r], hex, o);
 }
 export function sphere(r, hex, o = {}) {
   const g = new THREE.SphereGeometry(r, 7, 5);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'sphere', [r], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'sphere', [r], hex, o);
 }
 // gable roof: a triangular prism, base at y = o.y, ridge running along x
 export function prismRoof(w, d, h, hex, o = {}) {
@@ -145,25 +263,40 @@ export function prismRoof(w, d, h, hex, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
   g.setIndex(f);
-  return note(place(finish(g, hex, 0), o), 'prismRoof', [w, d, h], hex, o);
+  return note(place(finish(g, hex, 0, sheetOf(o, 'roof')), o), 'prismRoof', [w, d, h], hex, o);
 }
 export function pyramidRoof(w, d, h, hex, o = {}) {
   const g = new THREE.ConeGeometry(0.7071, h, 4);
   g.rotateY(Math.PI / 4);
   g.scale(w, 1, d);
   g.translate(0, h / 2, 0);
-  return note(place(finish(g, hex, 0), o), 'pyramidRoof', [w, d, h], hex, o);
+  return note(place(finish(g, hex, 0, sheetOf(o, 'roof')), o), 'pyramidRoof', [w, d, h], hex, o);
 }
 // A flat triangle or quad, given 3 or 4 points. Used for sails, fins and pennants.
 export function quad(pts, hex, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3));
   g.setIndex(pts.length === 3 ? [0, 1, 2, 0, 2, 1] : [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]);
-  return note(place(finish(g, hex, o.emissive || 0), o), 'quad', [pts], hex, o);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'quad', [pts], hex, o);
 }
 
 function merge(parts) {
-  const g = mergeGeometries(parts.filter(Boolean), false);
+  const list = parts.filter(Boolean);
+  // mergeGeometries will only weld shapes that agree on which attributes exist, and
+  // settlers.js and avatar.js build their figures by merging a capsule of their own with
+  // box() and sphere() from this file. Put `aSheet` on every primitive as it is made and
+  // their merge stops dead, on a line in a file this one has no business breaking. So a
+  // part says which sheet it wants only when it wants one, and the zeroes are filled in
+  // here, where the loaf is a building and nothing else is in it.
+  let n = 0;
+  for (const g of list) if (g.attributes.aSheet) n++;
+  if (n && n < list.length) {
+    for (const g of list) {
+      if (g.attributes.aSheet) continue;
+      g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    }
+  }
+  const g = mergeGeometries(list, false);
   g.computeVertexNormals();
   g.computeBoundingBox();
   g.computeBoundingSphere();
@@ -258,7 +391,7 @@ function door(parts, pal, w) {
   KIT.door.build(parts, { ...KIT.door.defaults, hex: pal.accent, z: w / 2 + 0.01 });
 }
 function foundation(parts, w, d) {
-  group('foundation', () => parts.push(box(w + 0.12, 0.34, d + 0.12, C.foundation, { y: -0.3 })));
+  group('foundation', () => parts.push(box(w + 0.12, 0.34, d + 0.12, C.foundation, { y: -0.3, sheet: 'stone' })));
 }
 
 function timberFrame(parts, w, h, d, hex) {
@@ -279,7 +412,7 @@ function houseBody(parts, spec, pal, rng) {
   const style = spec.style || 'unknown';
 
   if (tier === 0) {                                   // tent
-    parts.push(prismRoof(0.8, 0.86, 0.58, C.canvas));
+    parts.push(prismRoof(0.8, 0.86, 0.58, C.canvas, { sheet: null }));
     parts.push(box(0.045, 0.64, 0.045, C.darkWood, { z: -0.41 }));
     parts.push(box(0.3, 0.025, 0.035, pal.trim, { y: 0.24, z: 0.44 }));
     return { anchors, height: 0.62, w: 0.84 };
@@ -294,7 +427,7 @@ function houseBody(parts, spec, pal, rng) {
     { w: 1.18, h: 1.42, roof: 0.44, win: 6 },
   ][tier];
 
-  parts.push(box(dims.w, dims.h, dims.w, pal.wall));
+  parts.push(box(dims.w, dims.h, dims.w, pal.wall, { sheet: 'wall' }));
   foundation(parts, dims.w, dims.w);
   door(parts, pal, dims.w);
   windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
@@ -302,11 +435,11 @@ function houseBody(parts, spec, pal, rng) {
 
   let top = dims.h;
   if (style === 'opus') {
-    parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0 }));
+    parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
     parts.push(pyramidRoof(dims.w + 0.14, dims.w + 0.14, dims.roof + 0.06, pal.roof, { y: top }));
     top += dims.roof + 0.06;
   } else if (style === 'haiku') {
-    parts.push(cone(dims.w * 0.82, dims.roof + 0.16, 8, pal.roof, { y: top - 0.02 }));
+    parts.push(cone(dims.w * 0.82, dims.roof + 0.16, 8, pal.roof, { y: top - 0.02, sheet: 'roof' }));
     top += dims.roof + 0.14;
   } else if (style === 'sonnet') {
     timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
@@ -324,7 +457,7 @@ function houseBody(parts, spec, pal, rng) {
     parts.push(box(0.1, 0.1, 0.03, pal.glow, { y: dims.h + 0.1, z: dims.w * 0.25 + 0.12, emissive: 1 }));
   }
   if (tier >= 4) {                                     // wing
-    parts.push(box(0.44, dims.h * 0.72, 0.5, pal.wall, { x: dims.w * 0.62, z: -0.1 }));
+    parts.push(box(0.44, dims.h * 0.72, 0.5, pal.wall, { x: dims.w * 0.62, z: -0.1, sheet: 'wall' }));
     parts.push(prismRoof(0.52, 0.58, 0.28, pal.roof, { x: dims.w * 0.62, y: dims.h * 0.72, z: -0.1, ry: Math.PI / 2 }));
     for (let i = 0; i < 4; i++) {                      // garden fence
       parts.push(box(0.04, 0.18, 0.04, C.darkWood, { x: -0.42 + i * 0.28, z: 0.62 }));
@@ -332,8 +465,8 @@ function houseBody(parts, spec, pal, rng) {
     parts.push(box(0.92, 0.03, 0.03, C.darkWood, { x: -0.28, y: 0.13, z: 0.62 }));
   }
   if (tier === 5) {                                    // keep: corner tower + battlements
-    parts.push(cylinder(0.2, 0.22, dims.h + 0.4, 8, pal.wall, { x: -dims.w * 0.42, z: -dims.w * 0.42 }));
-    parts.push(cone(0.26, 0.32, 8, pal.roof, { x: -dims.w * 0.42, y: dims.h + 0.4, z: -dims.w * 0.42 }));
+    parts.push(cylinder(0.2, 0.22, dims.h + 0.4, 8, pal.wall, { x: -dims.w * 0.42, z: -dims.w * 0.42, sheet: 'wall' }));
+    parts.push(cone(0.26, 0.32, 8, pal.roof, { x: -dims.w * 0.42, y: dims.h + 0.4, z: -dims.w * 0.42, sheet: 'roof' }));
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       parts.push(box(0.1, 0.1, 0.1, pal.wall, { x: Math.cos(a) * dims.w * 0.42, y: dims.h, z: Math.sin(a) * dims.w * 0.42 }));
@@ -345,7 +478,7 @@ function houseBody(parts, spec, pal, rng) {
   // Fable builds upward: an observatory tower with a copper dome and a telescope.
   if (style === 'fable' && tier >= 2) {
     const tx = -dims.w * 0.36, tz = -dims.w * 0.36, th = dims.h + 0.45 + tier * 0.06;
-    parts.push(cylinder(0.21, 0.23, th, 9, pal.wall, { x: tx, z: tz }));
+    parts.push(cylinder(0.21, 0.23, th, 14, pal.wall, { x: tx, z: tz, sheet: 'wall' }));
     parts.push(dome(0.25, pal.accent, { x: tx, y: th, z: tz }));
     parts.push(cone(0.05, 0.24, 6, C.copper, { x: tx, y: th + 0.2, z: tz }));
     parts.push(box(0.09, 0.12, 0.03, pal.glow, { x: tx, y: th - 0.28, z: tz + 0.22, emissive: 1 }));
@@ -431,7 +564,7 @@ function shed(parts, spec, pal) {
     return { anchors, height: 0.55 };
   }
   if (t === 'plan') {
-    parts.push(box(0.44, 0.3, 0.42, pal.wall));
+    parts.push(box(0.44, 0.3, 0.42, pal.wall, { sheet: 'wall' }));
     parts.push(box(0.1, 0.2, 0.03, pal.accent, { y: 0, z: 0.21 }));
     // a single pitch roof, clearly slanted
     const roof = prismRoof(0.54, 0.5, 0.22, pal.roof, { y: 0.3 });
@@ -447,7 +580,7 @@ function shed(parts, spec, pal) {
     return { anchors, height: 0.54 };
   }
   if (t === 'general') {
-    parts.push(box(0.46, 0.32, 0.46, pal.wall));
+    parts.push(box(0.46, 0.32, 0.46, pal.wall, { sheet: 'wall' }));
     parts.push(prismRoof(0.54, 0.54, 0.2, pal.roof, { y: 0.32 }));
     parts.push(box(0.09, 0.1, 0.09, C.brick, { x: -0.15, y: 0.32, z: -0.15 }));
     parts.push(cylinder(0.07, 0.08, 0.12, 7, C.darkWood, { x: 0.3, z: 0.22 }));
@@ -455,7 +588,7 @@ function shed(parts, spec, pal) {
     return { anchors, height: 0.52 };
   }
   if (t === 'guide') {
-    parts.push(box(0.44, 0.3, 0.4, pal.wall));
+    parts.push(box(0.44, 0.3, 0.4, pal.wall, { sheet: 'wall' }));
     parts.push(box(0.44, 0.05, 0.1, C.wood, { y: 0.3, z: 0.2 }));
     const awn = box(0.5, 0.04, 0.3, C.stripe, { y: 0.32, z: 0.28 });
     awn.rotateX(-0.3);
@@ -505,15 +638,22 @@ function civic(parts, spec, rng) {
   const animated = {};
   switch (spec.civicType) {
     case 'townhall': {
-      parts.push(box(1.5, 0.75, 1.15, C.stone));
-      parts.push(box(1.34, 0.5, 1.02, 0xf0e2c8, { y: 0.75 }));
+      parts.push(box(1.5, 0.75, 1.15, C.stone, { sheet: 'stone' }));
+      parts.push(box(1.34, 0.5, 1.02, 0xf0e2c8, { y: 0.75, sheet: 'wall' }));
       timberFrame(parts, 1.34, 0.5, 1.02, 0x6b4a2f);
       parts.push(prismRoof(1.55, 1.2, 0.5, C.slate, { y: 1.25 }));
-      for (let i = 0; i < 4; i++) parts.push(box(0.14, 0.2, 0.04, C.glass, { x: -0.5 + i * 0.34, y: 0.32, z: 0.58, emissive: 1 }));
+      // The door takes the middle bay and the windows stand either side of it. They used
+      // to be laid out on their own rhythm - four of them at 0.34 apart from x = -0.5 -
+      // and the door was simply put on the centre line afterwards, which landed it across
+      // the two inner ones. From the square it read as five bays with a door hung over the
+      // middle window. A facade is the one thing a civic building has; it gets an axis.
+      for (const x of [-0.58, -0.3, 0.3, 0.58]) parts.push(box(0.14, 0.2, 0.04, C.glass, { x, y: 0.32, z: 0.58, emissive: 1 }));
       parts.push(box(0.3, 0.45, 0.06, 0x5a3a24, { z: 0.58 }));
+      parts.push(box(0.36, 0.05, 0.05, 0x6b4a2f, { y: 0.46, z: 0.585 }));                 // the lintel over it
+      parts.push(box(0.16, 0.18, 0.04, C.glass, { y: 0.92, z: 0.52, emissive: 1 }));      // and a light on the axis above
       for (let i = 0; i < 3; i++) parts.push(box(0.5 - i * 0.06, 0.07, 0.14, C.stone, { y: -0.21 + i * 0.07, z: 0.66 + (2 - i) * 0.07 }));
       // bell tower
-      parts.push(cylinder(0.19, 0.21, 1.5, 6, 0xf0e2c8, { x: -0.52, y: 1.05, z: -0.28 }));
+      parts.push(cylinder(0.19, 0.21, 1.5, 12, 0xf0e2c8, { x: -0.52, y: 1.05, z: -0.28, sheet: 'wall' }));
       parts.push(pyramidRoof(0.5, 0.5, 0.42, C.copper, { x: -0.52, y: 2.55, z: -0.28 }));
       parts.push(sphere(0.07, C.gold, { x: -0.52, y: 3.02, z: -0.28 }));
       parts.push(dome(0.09, 0xcfa14a, { x: -0.52, y: 2.5, z: -0.28, rx: Math.PI }));
@@ -527,30 +667,103 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 3.1 };
     }
     case 'well':
-      parts.push(cylinder(0.3, 0.32, 0.36, 9, C.stone));
-      parts.push(cylinder(0.24, 0.24, 0.06, 9, 0x2a4a5a, { y: 0.3 + BRIM }));
-      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: -0.24, y: 0.36 }));
-      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: 0.24, y: 0.36 }));
-      parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.86, ry: Math.PI / 2 }));
-      parts.push(cylinder(0.05, 0.045, 0.09, 7, C.wood, { y: 0.62 }));
-      return { anchors, animated, height: 1.1 };
+      // Nine segments is a nonagon, and a nonagon standing on the town square next to a
+      // round fountain reads as a mistake rather than as a well. Twenty-two is round at
+      // every distance the island is ever looked at from, and costs a few dozen
+      // triangles on one object that exists once per village.
+      //
+      // The drum is stacked stone, and it wears a coping that oversails it: the shadow
+      // that overhang throws is what makes a low round thing read as a wall you could
+      // sit on rather than as a barrel.
+      parts.push(cylinder(0.3, 0.32, 0.32, 22, C.stone, { sheet: 'stone' }));
+      parts.push(cylinder(0.345, 0.335, 0.07, 22, C.stone, { y: 0.32, sheet: 'stone' }));
+      parts.push(cylinder(0.25, 0.25, 0.06, 22, 0x2a4a5a, { y: 0.33 + BRIM }));
+      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: -0.24, y: 0.39 }));
+      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: 0.24, y: 0.39 }));
+      parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.89, ry: Math.PI / 2, sheet: 'roof' }));
+      parts.push(cylinder(0.05, 0.045, 0.09, 8, C.wood, { y: 0.65 }));
+      return { anchors, animated, height: 1.13 };
     case 'market': {
-      const cols = [[C.red, C.white], [C.blue, C.white], [C.gold, C.white]];
-      for (let s = 0; s < 3; s++) {
-        const x = -0.7 + s * 0.7;
-        for (const [dx, dz] of [[-0.26, -0.22], [0.26, -0.22], [-0.26, 0.22], [0.26, 0.22]]) {
-          parts.push(box(0.035, 0.42, 0.035, C.darkWood, { x: x + dx, z: dz }));
-        }
-        parts.push(prismRoof(0.62, 0.56, 0.14, cols[s][0], { x, y: 0.42 }));
-        parts.push(box(0.56, 0.05, 0.16, C.plank, { x, y: 0.24, z: 0.16 }));
-        parts.push(sphere(0.05, [0xe04a3a, 0xf2c53d, 0x6fb84a][s], { x: x - 0.1, y: 0.32, z: 0.16 }));
-        parts.push(sphere(0.05, [0x6fb84a, 0xe04a3a, 0xf2c53d][s], { x: x + 0.06, y: 0.32, z: 0.14 }));
+      // Three stalls, and the point of them is that they are three different stalls. The
+      // market is what the island puts up at ten settlers and it used to be four sticks, a
+      // roof and two spheres, three times over - which reads as scaffolding rather than as
+      // a morning on the square. Now each one has a trade: a fruiterer, a fishmonger and a
+      // baker, told apart by the colour of the awning and by what is out on the counter.
+      //
+      // The awnings keep their own colour - they are painted canvas and the roof sheet
+      // would make them tiled - and the timber takes the plank sheet, which is what the
+      // deck of the bridge is drawn on.
+      const STALLS = [
+        { cloth: C.red, trade: 0 },
+        { cloth: C.blue, trade: 1 },
+        { cloth: C.gold, trade: 2 },
+      ];
+      const fruit = [0xe04a3a, 0xf2c53d, 0x6fb84a, 0xd96fa8];
+      for (let i = 0; i < 3; i++) {
+        const x = -0.74 + i * 0.74;
+        const st = STALLS[i];
+        group('stall', () => {
+          for (const [dx, dz] of [[-0.3, -0.25], [0.3, -0.25], [-0.3, 0.25], [0.3, 0.25]]) {
+            parts.push(cylinder(0.026, 0.032, 0.48, 6, C.darkWood, { x: x + dx, z: dz, sheet: 'plank' }));
+          }
+          // the counter: a board on a boarded front, with a crate stowed under it
+          parts.push(box(0.66, 0.045, 0.36, C.plank, { x, y: 0.26, z: 0, sheet: 'plank' }));
+          parts.push(box(0.64, 0.26, 0.03, C.wood, { x, y: 0, z: 0.185, sheet: 'plank' }));
+          parts.push(box(0.22, 0.17, 0.17, C.wood, { x: x - 0.17, z: -0.08, sheet: 'plank' }));
+          // the awning, and the scallops hanging off its front edge - little tabs with a
+          // ball on the end of each, which is a valance at this size and at this distance
+          parts.push(prismRoof(0.8, 0.66, 0.17, st.cloth, { x, y: 0.48, sheet: null }));
+          for (let v = 0; v < 5; v++) {
+            const vx = x - 0.28 + v * 0.14;
+            const hue = v % 2 ? C.white : st.cloth;
+            parts.push(box(0.115, 0.075, 0.022, hue, { x: vx, y: 0.405, z: 0.325 }));
+            parts.push(sphere(0.031, hue, { x: vx, y: 0.405, z: 0.325 }));
+          }
+          // and a chalked price board leaning against the counter front
+          parts.push(box(0.2, 0.15, 0.018, 0x2f3a33, { x: x + 0.2, y: 0.02, z: 0.2, rz: -0.08 }));
+          parts.push(box(0.12, 0.016, 0.012, C.white, { x: x + 0.18, y: 0.12, z: 0.211 }));
+          parts.push(box(0.08, 0.016, 0.012, C.white, { x: x + 0.16, y: 0.08, z: 0.211 }));
+
+          if (st.trade === 0) {                       // the fruiterer: three open trays
+            for (let b = 0; b < 3; b++) {
+              const bx = x - 0.2 + b * 0.2;
+              parts.push(cylinder(0.085, 0.07, 0.05, 9, C.wood, { x: bx, y: 0.305, z: -0.02, sheet: 'plank' }));
+              for (let f = 0; f < 4; f++) {
+                const a = (f / 4) * Math.PI * 2;
+                parts.push(sphere(0.036, fruit[(b + f) % 4], { x: bx + Math.cos(a) * 0.035, y: 0.36, z: -0.02 + Math.sin(a) * 0.035 }));
+              }
+              parts.push(sphere(0.038, fruit[b % 4], { x: bx, y: 0.385, z: -0.02 }));
+            }
+          } else if (st.trade === 1) {                // the fishmonger: a slab and a catch
+            parts.push(box(0.52, 0.03, 0.26, 0xbfd4d8, { x, y: 0.305, z: -0.01, sheet: null }));
+            for (let fsh = 0; fsh < 3; fsh++) {
+              const fx = x - 0.16 + fsh * 0.16, ry = 0.3 - fsh * 0.3;
+              parts.push(sphere(0.055, 0x93a8b4, { x: fx, y: 0.35, z: -0.02 }));
+              parts.push(cone(0.045, 0.09, 5, 0x93a8b4, { x: fx - 0.075, y: 0.35, z: -0.02, rz: 1.5708, ry }));
+            }
+            // one more hanging from the front rail, because a fishmonger always has one up
+            parts.push(box(0.014, 0.1, 0.014, C.iron, { x: x + 0.24, y: 0.4, z: 0.2 }));
+            parts.push(sphere(0.05, 0x93a8b4, { x: x + 0.24, y: 0.34, z: 0.2 }));
+            parts.push(cone(0.042, 0.08, 5, 0x93a8b4, { x: x + 0.24, y: 0.27, z: 0.2, rx: Math.PI }));
+          } else {                                    // the baker: loaves and a sack of flour
+            parts.push(cylinder(0.14, 0.12, 0.055, 10, C.wood, { x: x - 0.12, y: 0.305, z: -0.02, sheet: 'plank' }));
+            // Loaves are cylinders on their side with a domed end, because sphere() hands
+            // back a shape already moved into place and scaling one afterwards scales its
+            // distance from the origin along with it.
+            for (let l = 0; l < 3; l++) {
+              const lx = x - 0.17 + l * 0.05, lz = -0.05 + (l % 2) * 0.06;
+              parts.push(cylinder(0.038, 0.038, 0.15, 7, 0xd2a15e, { x: lx, y: 0.37, z: lz, rz: Math.PI / 2, ry: 0.5 + l * 0.2 }));
+            }
+            parts.push(cylinder(0.075, 0.095, 0.17, 8, C.canvas, { x: x + 0.19, y: 0.305, z: -0.02 }));
+            parts.push(sphere(0.06, C.canvas, { x: x + 0.19, y: 0.46, z: -0.02 }));
+          }
+        });
       }
-      return { anchors, animated, height: 0.6 };
+      return { anchors, animated, height: 0.78 };
     }
     case 'clocktower':
-      parts.push(box(0.56, 2.3, 0.56, C.stone));
-      parts.push(box(0.6, 0.1, 0.6, 0x8f8a80, { y: 1.5 }));
+      parts.push(box(0.56, 2.3, 0.56, C.stone, { sheet: 'stone' }));
+      parts.push(box(0.6, 0.1, 0.6, 0x8f8a80, { y: 1.5, sheet: 'stone' }));
       parts.push(cylinder(0.17, 0.17, 0.04, 14, C.white, { y: 1.85, z: 0.29, rx: Math.PI / 2 }));
       parts.push(pyramidRoof(0.68, 0.68, 0.44, C.copper, { y: 2.3 }));
       parts.push(sphere(0.06, C.gold, { y: 2.78 }));
@@ -641,7 +854,7 @@ function civic(parts, spec, rng) {
       // An eight sided basin with a tiered column standing in it. The water sits just
       // below the rim so it catches the light instead of hiding in the shadow.
       parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
-      parts.push(cylinder(0.44, 0.46, 0.28, 8, C.stone, { y: 0.1 }));         // 0.10 - 0.38
+      parts.push(cylinder(0.44, 0.46, 0.28, 16, C.stone, { y: 0.1, sheet: 'stone' }));        // 0.10 - 0.38
       parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 + BRIM })); // the water
       parts.push(cylinder(0.48, 0.48, 0.05, 8, C.stone, { y: 0.36 }));        // the rim
       parts.push(box(0.26, 0.14, 0.26, C.stone, { y: 0.3 }));                 // 0.30 - 0.44
@@ -660,15 +873,20 @@ function civic(parts, spec, rng) {
       // Timber frame, a deep tiled roof, and a sign on a bracket over the door. The
       // windows are the warmest on the island once the sun goes down.
       const f = 0.28;
-      parts.push(box(1.3, f, 0.98, C.stone));
-      parts.push(box(1.22, 0.62, 0.9, 0xe8dcc0, { y: f }));
+      parts.push(box(1.3, f, 0.98, C.stone, { sheet: 'stone' }));
+      parts.push(box(1.22, 0.62, 0.9, 0xe8dcc0, { y: f, sheet: 'wall' }));
       for (const x of [-0.56, -0.19, 0.19, 0.56]) parts.push(box(0.055, 0.62, 0.055, C.darkWood, { x, y: f, z: 0.44 }));
       parts.push(box(1.2, 0.055, 0.055, C.darkWood, { y: f + 0.29, z: 0.44 }));
       parts.push(prismRoof(1.42, 1.06, 0.5, C.brick, { y: f + 0.62 }));
-      parts.push(box(0.34, 0.5, 0.04, C.darkWood, { y: f, z: -0.46 }));
+      // The door runs down to the floor. It used to start at the top of the stone foot,
+      // which put its threshold 0.28 above the ground with nothing under it: a door at
+      // chest height on a wall, with the step it needed missing. Now it cuts through the
+      // foot and lands on the porch, and the porch's lower course is what you step off.
+      parts.push(box(0.34, f + 0.5, 0.04, C.darkWood, { z: -0.46 }));
+      parts.push(box(0.42, 0.055, 0.06, 0x6b4a2f, { y: f + 0.5, z: -0.465 }));            // the lintel
       for (const x of [-0.42, 0.42]) parts.push(box(0.2, 0.26, 0.03, C.glass, { x, y: f + 0.2, z: 0.46, emissive: 1 }));
-      // and two smaller ones either side of the back door
-      for (const x of [-0.39, 0.34]) KIT.window.build(parts, { ...KIT.window.defaults, x, y: f + 0.225, z: -0.44 });
+      // and two smaller ones, level with each other and clear of the door, either side of it
+      for (const x of [-0.42, 0.42]) KIT.window.build(parts, { ...KIT.window.defaults, x, y: f + 0.225, z: -0.44 });
       // the hanging sign
       parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.88, z: -0.6 }));
       parts.push(box(0.02, 0.06, 0.02, C.iron, { x: 0.64, y: 0.88, z: -0.46 }));
@@ -689,9 +907,9 @@ function civic(parts, spec, rng) {
       // door, an apse behind, and a tower carrying the bell.
       const f = 0.1;
       parts.push(box(0.86, 0.16, 1.24, C.foundation, { y: -0.06 }));
-      parts.push(box(0.78, 0.76, 1.16, C.stone, { y: f }));
+      parts.push(box(0.78, 0.76, 1.16, C.stone, { y: f, sheet: 'stone' }));
       parts.push(prismRoof(1.28, 0.9, 0.44, C.slate, { y: 0.86, ry: Math.PI / 2 }));
-      parts.push(cylinder(0.36, 0.36, 0.76, 9, C.stone, { y: f, z: 0.66 }));
+      parts.push(cylinder(0.36, 0.36, 0.76, 14, C.stone, { y: f, z: 0.66, sheet: 'stone' }));
       parts.push(dome(0.37, C.slate, { y: 0.86, z: 0.66 }));
       parts.push(cylinder(0.14, 0.14, 0.05, 12, C.glass, { y: 0.66, z: -0.62, rx: Math.PI / 2, emissive: 1 }));
       parts.push(box(0.28, 0.46, 0.04, C.darkWood, { y: f, z: -0.6 }));
@@ -731,8 +949,8 @@ function civic(parts, spec, rng) {
       // above, and a row of tall windows that light up when the apprentices work late.
       const f = 0.1;
       parts.push(box(1.44, 0.16, 0.96, C.foundation, { y: -0.06 }));
-      parts.push(box(1.36, 0.3, 0.88, C.brick, { y: f }));
-      parts.push(box(1.3, 0.46, 0.84, 0xf0e2c8, { y: f + 0.3 }));
+      parts.push(box(1.36, 0.3, 0.88, C.brick, { y: f, sheet: 'stone' }));
+      parts.push(box(1.3, 0.46, 0.84, 0xf0e2c8, { y: f + 0.3, sheet: 'wall' }));
       const eaves = f + 0.76;
       parts.push(prismRoof(1.46, 0.98, 0.42, C.slate, { y: eaves }));
       for (let i = 0; i < 4; i++) {
@@ -756,7 +974,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: eaves + 0.9 };
     }
     case 'windmill':
-      parts.push(cylinder(0.34, 0.48, 1.5, 9, 0xd9b98c));
+      parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
       parts.push(box(0.22, 0.36, 0.05, C.darkWood, { y: 0, z: 0.44 }));
       parts.push(cylinder(0.4, 0.4, 0.05, 9, C.plank, { y: 1.12 }));
       parts.push(dome(0.38, 0x5a3c28, { y: 1.5 }));
@@ -765,7 +983,7 @@ function civic(parts, spec, rng) {
     case 'lighthouse': {
       const bands = 4;
       for (let i = 0; i < bands; i++) {
-        parts.push(cylinder(0.24 - i * 0.02, 0.3 - i * 0.02, 0.55, 11, i % 2 ? C.white : C.red, { y: i * 0.55 }));
+        parts.push(cylinder(0.24 - i * 0.02, 0.3 - i * 0.02, 0.55, 16, i % 2 ? C.white : C.red, { y: i * 0.55, sheet: 'wall' }));
       }
       const top = bands * 0.55;
       parts.push(cylinder(0.3, 0.3, 0.06, 12, C.iron, { y: top }));
@@ -775,10 +993,10 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: top + 0.7 };
     }
     case 'castle': {
-      parts.push(box(1.3, 1.5, 1.3, C.stone));
+      parts.push(box(1.3, 1.5, 1.3, C.stone, { sheet: 'stone' }));
       for (const [x, z] of [[-0.72, -0.72], [0.72, -0.72], [-0.72, 0.72], [0.72, 0.72]]) {
-        parts.push(cylinder(0.22, 0.25, 2.1, 8, C.stone, { x, z }));
-        parts.push(cone(0.3, 0.4, 8, C.slate, { x, y: 2.1, z }));
+        parts.push(cylinder(0.22, 0.25, 2.1, 12, C.stone, { x, z, sheet: 'stone' }));
+        parts.push(cone(0.3, 0.4, 12, C.slate, { x, y: 2.1, z, sheet: 'roof' }));
       }
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
@@ -811,7 +1029,7 @@ function civic(parts, spec, rng) {
     case 'office': {
       // A clerk's office: brick, a tiled roof, a lamp by the door and a board with the
       // branch chalked on it. Small, because it is a village.
-      parts.push(box(0.62, 0.44, 0.5, C.brick, { y: 0 }));
+      parts.push(box(0.62, 0.44, 0.5, C.brick, { y: 0, sheet: 'wall' }));
       parts.push(box(0.64, 0.06, 0.52, C.stone, { y: 0.44 }));
       parts.push(prismRoof(0.72, 0.6, 0.26, C.slate, { y: 0.5 }));
       parts.push(box(0.09, 0.2, 0.03, C.darkWood, { z: 0.26 }));                       // door
@@ -827,12 +1045,12 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.82 };
     }
     case 'poldermill':
-      parts.push(cylinder(0.3, 0.42, 1.2, 8, 0xd9b98c));
+      parts.push(cylinder(0.3, 0.42, 1.2, 14, 0xd9b98c, { sheet: 'wall' }));
       parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));
       animated.blades = { at: [0, 1.3, 0.38], r: 0.5 };
       return { anchors, animated, height: 1.8 };
     default:
-      parts.push(box(0.5, 0.4, 0.5, C.stone));
+      parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
       return { anchors, animated, height: 0.5 };
   }
   void rng;
@@ -850,7 +1068,7 @@ function tower(parts, spec, pal, rng) {
   const W = 1.06;
 
   parts.push(box(W + 0.16, 0.14, W + 0.16, C.foundation));
-  parts.push(box(W + 0.06, 0.2, W + 0.06, C.stone, { y: 0.14 }));       // the plinth
+  parts.push(box(W + 0.06, 0.2, W + 0.06, C.stone, { y: 0.14, sheet: 'stone' }));       // the plinth
   parts.push(box(0.3, 0.34, 0.04, C.darkWood, { y: 0.34, z: W / 2 + 0.04 }));
 
   // The rooms: four to a floor, one window each, and they light up after dark like
@@ -861,7 +1079,7 @@ function tower(parts, spec, pal, rng) {
   let room = 0;
   for (let f = 0; f < floors; f++) {
     const y = 0.34 + f * FLOOR;
-    parts.push(box(W, FLOOR - 0.04, W, pal.wall, { y }));
+    parts.push(box(W, FLOOR - 0.04, W, pal.wall, { y, sheet: 'wall' }));
     parts.push(box(W + 0.04, 0.045, W + 0.04, pal.trim, { y: y + FLOOR - 0.045 }));
     for (const [dx, dz, ry] of [[0, W / 2, 0], [0, -W / 2, 0], [W / 2, 0, 1], [-W / 2, 0, 1]]) {
       if (room++ >= h.rooms) continue;
@@ -877,7 +1095,7 @@ function tower(parts, spec, pal, rng) {
     parts.push(box(dx ? 0.05 : W, 0.1, dz ? 0.05 : W, pal.trim, { x: dx * W / 2, y: top + 0.07, z: dz * W / 2 }));
   }
   const pw = W - 0.34;
-  parts.push(box(pw, 0.34, pw, pal.wall, { y: top + 0.07 }));
+  parts.push(box(pw, 0.34, pw, pal.wall, { y: top + 0.07, sheet: 'wall' }));
   for (const [dx, dz, ry] of [[0, 1, 0], [1, 0, 1], [-1, 0, 1]]) {
     parts.push(box(ry ? 0.03 : pw - 0.12, 0.19, ry ? pw - 0.12 : 0.03, C.glass, { x: dx * pw / 2, y: top + 0.14, z: dz * pw / 2, emissive: 1 }));
   }
@@ -963,6 +1181,91 @@ function scaleSolids(solids, s) {
   return solids.map((r) => ({ x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s }));
 }
 
+// ---------------------------------------------------------------- the porch
+// main.js sets a building down at the height of the middle of its plot and leaves it
+// there. The plots are chosen for flat ground, but flat is a comparison and not a
+// promise: measured over the island as it stands, the terrain under a building wanders
+// by about 0.11 from end to end in the median case and by 0.29 at the ninetieth
+// percentile, and the worst plot on the island moves 0.8. Half of that is above the
+// middle and half below, so a house has one corner in the air and the opposite one in
+// the grass - and a tent, which is 0.58 tall in total, can lose a third of itself.
+//
+// The other way out was to flatten the ground under each plot, and that was turned
+// down: the island is hilly and should look it. So every building gets something to
+// stand on instead. A step, wide enough to show past the walls all the way round - the
+// showing is the point, it is what tells you the building is standing on something
+// rather than growing out of the lawn - and with a skirt that reaches well below the
+// ground so the downhill side never opens a gap you can see under.
+const PORCH_RISE = 0.18;      // how far the building is lifted, and how tall the step reads
+const PORCH_OVER = 0.12;      // how far it shows past the widest thing standing on it
+const PORCH_TREAD = 0.11;     // and how much wider again the lower of its two courses is
+const PORCH_SKIRT = 0.7;      // how far it reaches down; only ever seen on the downhill side
+const PORCH_R = 0.14;         // corner radius: nothing on this island has a sharp corner
+const PORCH_UPTO = 0.45;      // above this a part is a roof or a chimney, not a footprint
+// Street furniture is not a building and a bench on a plinth is a monument. The boards
+// stand on their own posts, the statue has a plinth already, and the well and the
+// fountain are round - a square step under either would be the corner the well just
+// stopped having.
+const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues', 'statue', 'well', 'fountain']);
+function wantsPorch(spec) {
+  if (spec.harbour) return false;                 // it stands on its own stilts, over water
+  if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
+  return true;
+}
+
+// Everything low enough to be part of the footprint, as one rectangle. One rectangle and
+// not the walkable ones footprintOf() finds: a porch is a floor, and a floor with a
+// notch cut out of it where the barrels stand is not a floor.
+function groundRect(parts) {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) > PORCH_UPTO) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+    }
+  }
+  return Number.isFinite(x0) ? { x0, x1, z0, z1 } : null;
+}
+
+function porch(parts, anchors, animated) {
+  const r = groundRect(parts);
+  if (!r) return;
+  for (const g of parts) lift(g, PORCH_RISE);
+  for (const k of Object.keys(anchors)) anchors[k] = [anchors[k][0], anchors[k][1] + PORCH_RISE, anchors[k][2]];
+  for (const a of Object.values(animated)) if (a && a.at) a.at = [a.at[0], a.at[1] + PORCH_RISE, a.at[2]];
+
+  const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
+  // Two courses, not one: the lower is wider and comes up half way, so whichever side the
+  // door is on there is something to step onto before the floor. One tall kerb all round
+  // would have left every door on the island opening onto a drop.
+  group('porch', () => {
+    slab(parts, x, z, (r.x1 - r.x0) + (PORCH_OVER + PORCH_TREAD) * 2, (r.z1 - r.z0) + (PORCH_OVER + PORCH_TREAD) * 2, PORCH_SKIRT + PORCH_RISE * 0.45);
+    slab(parts, x, z, (r.x1 - r.x0) + PORCH_OVER * 2, (r.z1 - r.z0) + PORCH_OVER * 2, PORCH_SKIRT + PORCH_RISE);
+  });
+}
+
+// A rounded rectangle out of the primitives this file already has: two boxes crossed and
+// a post in each corner. The cross piece and the posts stop a hair short of the top,
+// because two faces on one plane is the single thing the depth buffer cannot be asked to
+// decide - the same hair BRIM exists for, and far below anything the eye can see here.
+function slab(parts, x, z, w, d, h) {
+  const r = Math.min(PORCH_R, Math.min(w, d) / 3);
+  const o = { x, y: -PORCH_SKIRT, z, sheet: 'stone' };
+  parts.push(box(w, h, d - r * 2, C.stone, o));
+  parts.push(box(w - r * 2, h - BRIM, d, C.stone, o));
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push(cylinder(r, r, h - BRIM, 7, C.stone, { ...o, x: x + sx * (w / 2 - r), z: z + sz * (d / 2 - r) }));
+    }
+  }
+}
+
 export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
@@ -1000,15 +1303,23 @@ export function buildBuilding(spec, ctx = {}) {
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   }
 
-  const geometry = merge(parts);
   // Both boards are built large for legibility and stand village sized; a house gets a
   // touch of variety so a street of identical sessions still looks hand-made.
   const boardish = spec.civicType === 'board' || spec.civicType === 'issues';
   const s = boardish ? 0.6
     : spec.kind !== 'civic' ? 0.96 + rng.next() * 0.08
       : 1;
-  // The footprint is measured before the scale, so head height is measured there too.
+  // The footprint is measured before the scale, so head height is measured there too -
+  // and before the porch, twice over. The porch is a step you walk onto rather than a
+  // wall you walk into, and measuring the building where it stood before it was lifted
+  // keeps every settler on the island walking the lines it already walks.
   let solids = footprintOf(parts, WALK_CLEARANCE / s);
+  if (wantsPorch(spec)) {
+    porch(parts, anchors, animated);
+    height += PORCH_RISE;
+  }
+
+  const geometry = merge(parts);
   if (s !== 1) {
     geometry.scale(s, s, s);
     geometry.computeBoundingBox();
@@ -1114,6 +1425,9 @@ export function buildPierGeometry(cells, terrain, from) {
 // so they cross a river rather than wade under it.
 export const BRIDGE_RAIL = 0.3;
 export const DECK_MIN = 0.26;
+// How far the crown of the deck rides over its two ends. A wooden footbridge humps, and
+// a flat plank laid from bank to bank reads as a jetty that happens to have two ends.
+const BRIDGE_ARCH = 0.34;
 
 // Where a deck runs and how high it is along it. `cells` is the crossing the layout
 // recorded, in order; the deck covers those cells and reaches a little way onto the bank
@@ -1139,53 +1453,89 @@ function bridgeStops(cells, terrain, axis) {
   // Height by where a stop actually is between the two banks, not by its index: the two
   // lip stops are closer to their neighbours than the cell centres are to each other.
   const t = (p) => (b[k] === a[k] ? 0 : (p[k] - a[k]) / (b[k] - a[k]));
-  const deckY = (i) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(world[i]));
-  return { world, centres, deckY, k };
+  // And the hump. Measured from end to end of the deck itself rather than bank to bank,
+  // so the arch is exactly flat where the planks meet the road - anywhere else and the
+  // crossing would begin with a step. Raised cosine rather than a parabola or a sine:
+  // all three peak in the middle, but only this one leaves the ends level as well as
+  // at the right height, and level is the difference between walking onto a bridge and
+  // climbing onto one.
+  const s0 = world[0][k], s1 = world[world.length - 1][k];
+  // A short crossing gets a shallower hump. Two cells over a ditch arched by the full
+  // amount is not a bridge, it is a speed bump.
+  const rise = BRIDGE_ARCH * Math.min(1, (n + 1) / 5);
+  const arch = (p) => {
+    if (s1 === s0) return 0;
+    const u = Math.min(1, Math.max(0, (p[k] - s0) / (s1 - s0)));
+    return rise * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
+  };
+  const deckYAt = (p) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(p)) + arch(p);
+  const deckY = (i) => deckYAt(world[i]);
+  return { world, centres, deckY, deckYAt, k };
 }
 
 // Which cell of the crossing carries its deck at what height, for standing figures on it.
+// main.js keeps these in the map the settlers and walk mode read the ground from, so the
+// arch is in here too: they climb it rather than walking through it.
 export function bridgeDeckHeights(cells, terrain, axis) {
   if (!cells || !cells.length) return [];
   const { centres, deckY } = bridgeStops(cells, terrain, axis);
   return cells.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
-// A plank bridge: a deck, a post-and-rail down each side, and a trestle in the water
-// under every cell of the crossing. The rail is posts and a beam rather than a solid
-// parapet - as a wall the right height for a settler to hold it hides the planking from
-// every angle you would actually look at the island from.
+// A plank bridge: a decked arch, a post-and-rail down each side, a kerb board along each
+// edge of the planking, and a trestle in the water under every cell of the crossing. The
+// rail is posts and a beam rather than a solid parapet - a wall the right height for a
+// settler to hold would hide the decking from every angle the island is looked at from.
 export function buildBridgeGeometry(cells, terrain, from, axis) {
   if (!cells || !cells.length) return null;
-  const { world, deckY, k } = bridgeStops(cells, terrain, axis);
-  const at = world.map(([x, z]) => [x - from[0], z - from[1]]);
-  const W = 0.44;                                    // half the deck's width
+  const { world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  // The arch is a curve and the deck is drawn in flat pieces, so each span between two
+  // stops is halved. At one piece per cell a three cell crossing comes out as a roof
+  // with a ridge; at two it reads as a curve from every distance the island is seen at.
+  const stops = [];
+  for (let i = 0; i < world.length - 1; i++) {
+    stops.push(world[i]);
+    stops.push([(world[i][0] + world[i + 1][0]) / 2, (world[i][1] + world[i + 1][1]) / 2]);
+  }
+  stops.push(world[world.length - 1]);
+  const ys = stops.map(deckYAt);
+  const at = stops.map(([x, z]) => [x - from[0], z - from[1]]);
+  const W = 0.44;                                    // half the deck width
   const parts = [];
   const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
+  // The boards are laid across the run, so the grain lies across it too - which is the
+  // sheet turned a quarter when the crossing runs along x.
+  const deckSheet = k === 0 ? 'plankZ' : 'plank';
 
   for (let i = 0; i < at.length - 1; i++) {
     const p = at[i], q = at[i + 1];
-    const yp = deckY(i), yq = deckY(i + 1);
+    const yp = ys[i], yq = ys[i + 1];
     const pl = across(p, -W), pr = across(p, W), ql = across(q, -W), qr = across(q, W);
-    parts.push(quad([[pl[0], yp, pl[1]], [pr[0], yp, pr[1]], [qr[0], yq, qr[1]], [ql[0], yq, ql[1]]], C.plank));
-    // A beam along each side, hanging from the tops of the posts.
+    parts.push(quad([[pl[0], yp, pl[1]], [pr[0], yp, pr[1]], [qr[0], yq, qr[1]], [ql[0], yq, ql[1]]], C.plank, { sheet: deckSheet }));
     for (const s of [-1, 1]) {
       const e0 = across(p, s * W), e1 = across(q, s * W);
+      // A kerb standing on the edge of the planking, and the beam over it.
+      parts.push(quad([
+        [e0[0], yp, e0[1]], [e1[0], yq, e1[1]], [e1[0], yq + 0.075, e1[1]], [e0[0], yp + 0.075, e0[1]],
+      ], C.plank, { sheet: deckSheet }));
       const t0 = yp + BRIDGE_RAIL, t1 = yq + BRIDGE_RAIL;
       parts.push(quad([
         [e0[0], t0 - 0.07, e0[1]], [e1[0], t1 - 0.07, e1[1]], [e1[0], t1, e1[1]], [e0[0], t0, e0[1]],
-      ], C.darkWood));
+      ], C.darkWood, { sheet: deckSheet }));
     }
   }
-  // Posts at every stop, trestles only where there is water under the deck.
-  for (let i = 0; i < at.length; i++) {
-    const y = deckY(i);
+  // Posts at the stops the cells gave, not at the halves the arch was drawn with: a post
+  // every two metres is a railing, a post every metre is a fence.
+  for (let i = 0; i < at.length; i += 2) {
+    const y = ys[i];
     const inWater = i > 0 && i < at.length - 1;
     for (const s of [-1, 1]) {
       const c = across(at[i], s * (W - 0.03));
       parts.push(box(0.075, BRIDGE_RAIL, 0.075, C.darkWood, { x: c[0], y, z: c[1] }));
+      parts.push(sphere(0.052, C.wood, { x: c[0], y: y + BRIDGE_RAIL + 0.02, z: c[1] }));
       if (!inWater) continue;
       const t = across(at[i], s * (W - 0.09));
-      parts.push(cylinder(0.05, 0.05, y + 0.8, 6, C.darkWood, { x: t[0], y: -0.8, z: t[1] }));
+      parts.push(cylinder(0.05, 0.05, y + 0.8, 6, C.darkWood, { x: t[0], y: -0.8, z: t[1], sheet: deckSheet }));
     }
   }
   return merge(parts);

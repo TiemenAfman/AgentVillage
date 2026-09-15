@@ -16,6 +16,7 @@ import { bedGeometry } from './crops.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
+import { attachClock, updateClock } from './clock.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -141,6 +142,7 @@ scene.add(key, new THREE.HemisphereLight(0xbdd7ff, 0x54622f, 1.0), new THREE.Amb
 const labels = document.getElementById('demo-labels');
 const tags = [];      // { el, world }
 const spinners = [];  // things with turning blades
+const clocks = [];    // things with hands, which on this page keep the wall's time
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -165,6 +167,10 @@ function place(spec, x, z, name, note) {
     blades.scale.setScalar(built.animated.blades.r / 0.5);
     scene.add(blades);
     spinners.push(blades);
+  }
+  if (built.animated && built.animated.clock) {
+    const at = built.animated.clock.at;
+    clocks.push(attachClock(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -760,6 +766,10 @@ function frame(now) {
   last = now;
   const spin = Number(spinInput.value);
   for (const s of spinners) s.rotation.z += dt * spin * 6;
+  // No timeline on this page and no island clock to read, so the tower keeps the time of
+  // whoever is looking at it.
+  const wall = new Date();
+  for (const c of clocks) updateClock(c, wall.getHours() + wall.getMinutes() / 60);
 
   if (inside) {
     const w = inside.update(dt);

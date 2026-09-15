@@ -29,6 +29,7 @@ import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
+import { attachClock, updateClock } from './clock.js';
 import { createMarket, answerOf } from './market.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
@@ -1158,7 +1159,7 @@ function makeRecord(spec) {
 
   const rec = {
     id: spec.id, spec, group, mesh, built, visible: true, scaffold: null,
-    flagIdx: -1, blades: null, beacon: null, flame: null, fire: null, smokeT: 0,
+    flagIdx: -1, blades: null, beacon: null, clock: null, flame: null, fire: null, smokeT: 0,
   };
   attachExtras(rec);
   state.byId.set(spec.id, rec);
@@ -1183,6 +1184,9 @@ function attachExtras(rec) {
     group.add(light, target);
     light.target = target;
     rec.beacon = { light, target, a: 0 };
+  }
+  if (built.animated && built.animated.clock) {
+    rec.clock = attachClock(group, built.animated.clock.at, buildingMat);
   }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
@@ -2130,6 +2134,7 @@ function frame(nowMs) {
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
     if (rec.blades) rec.blades.rotation.z += dt * 0.55;
+    if (rec.clock) updateClock(rec.clock, hour);
     if (rec.beacon) {
       rec.beacon.a += dt * 0.85;
       rec.beacon.target.position.set(Math.cos(rec.beacon.a) * 16, -2, Math.sin(rec.beacon.a) * 16);
@@ -2617,3 +2622,5 @@ addEventListener('resize', () => {
 });
 
 boot();
+
+

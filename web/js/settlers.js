@@ -1,47 +1,167 @@
-// The little people. One instanced mesh per style, so three hundred of them cost
-// five draw calls. Movement is all sine waves and lerps: no skeletons, no physics.
+// The little people. A settler is not one mesh: it is a torso, a pair of limbs, a head
+// and a hat, and each of those is an instance in a mesh the whole island shares. That
+// split is what buys the variety. Instancing can give an instance its own colour and its
+// own matrix but never its own geometry, so while a settler was a single merged figure
+// every colour on it was baked into the vertices and a mesh could hold nothing but
+// clones of one look. Cut the figure along its colour seams and the arithmetic turns
+// round: the model that built a settler is a tunic colour now instead of a mesh of its
+// own, an apprentice is a scale in the matrix instead of a mesh of its own, and the
+// island draws nine meshes where it used to draw fifteen.
+//
+// Shape, unlike colour, still costs a mesh per variant, so exactly one part of a settler
+// is allowed to vary in shape: the hat, six of them, the same six the player picks from
+// in avatar.js. Height, build and head size are scale in the matrix and cost nothing.
+//
+// Movement is all sine waves and lerps: no skeletons, no physics.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE, box, cylinder, cone, sphere, dome } from './buildings.js';
+import { HAT_SHAPES, SWATCHES } from './avatar.js';
 import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 
 const tmpObj = new THREE.Object3D();
-const SKIN = 0xf1c9a5;
-const CAPACITY = 420;
+const tmpColor = new THREE.Color();
+const bodyMat = new THREE.Matrix4();
+const headMat = new THREE.Matrix4();
+const SKIN = 0xf1c9a5;      // the island's first and only skin tone, now just a default
+// White multiplies out: a part painted white takes whatever colour its instance is given.
+const WHITE = 0xffffff;
+const CAPACITY = 640;
 const MAX_STROLL = 36;      // settlers out on an errand at the same time
+const HEAD_Y = 0.37;        // where the neck is, on a figure of standard height
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
 const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
-export function figureGeometry(style, { sailor = false } = {}) {
-  const pal = PALETTE[style] || PALETTE.unknown;
-  const parts = [];
-  const body = new THREE.CapsuleGeometry(0.092, 0.19, 3, 7);
-  body.translate(0, 0.2, 0);
-  parts.push(paintGeo(body, pal.wall));
-  parts.push(box(0.042, 0.12, 0.042, pal.trim, { x: -0.055, y: 0 }));
-  parts.push(box(0.042, 0.12, 0.042, pal.trim, { x: 0.055, y: 0 }));
-  parts.push(box(0.032, 0.032, 0.032, pal.trim, { x: -0.1, y: 0.24 }));
-  parts.push(box(0.032, 0.032, 0.032, pal.trim, { x: 0.1, y: 0.24 }));
-  parts.push(sphere(0.076, SKIN, { y: 0.37 }));
-  if (sailor) {
-    parts.push(cylinder(0.082, 0.086, 0.052, 8, 0x2b4c7e, { y: 0.41 }));
-    parts.push(box(0.14, 0.022, 0.065, 0x2b4c7e, { y: 0.418, z: 0.065 }));
-  } else if (style === 'fable') {
-    parts.push(cone(0.1, 0.21, 6, pal.accent, { y: 0.41 }));
-  } else if (style === 'opus') {
-    parts.push(cylinder(0.092, 0.092, 0.042, 8, pal.roof, { y: 0.41 }));
-    parts.push(box(0.13, 0.022, 0.075, pal.roof, { y: 0.418, z: 0.065 }));
-  } else if (style === 'sonnet') {
-    parts.push(dome(0.09, pal.roof, { y: 0.39 }));
-  } else if (style === 'haiku') {
-    parts.push(cylinder(0.135, 0.135, 0.02, 9, pal.roof, { y: 0.42 }));
-    parts.push(cone(0.078, 0.058, 8, pal.roof, { y: 0.43 }));
-  } else {
-    parts.push(cylinder(0.086, 0.086, 0.047, 7, pal.trim, { y: 0.41 }));
+// ---------------------------------------------------------------- the parts
+// Every piece is modelled where it sits on a figure standing at the origin, so the same
+// numbers serve the merged figure that walk.js and the model sheet want and the separate
+// instanced meshes the crowd is drawn from. `dy` is what lifts the head and its hat out
+// of figure space into a space of their own, centred on the neck.
+function torsoGeometry(hex) {
+  const g = new THREE.CapsuleGeometry(0.092, 0.19, 3, 7);
+  g.translate(0, 0.2, 0);
+  return paintGeo(g, hex);
+}
+function limbParts(hex) {
+  return [
+    box(0.042, 0.12, 0.042, hex, { x: -0.055, y: 0 }),
+    box(0.042, 0.12, 0.042, hex, { x: 0.055, y: 0 }),
+    box(0.032, 0.032, 0.032, hex, { x: -0.1, y: 0.24 }),
+    box(0.032, 0.032, 0.032, hex, { x: 0.1, y: 0.24 }),
+  ];
+}
+function headGeometry(hex, dy = 0) {
+  return sphere(0.076, hex, { y: HEAD_Y + dy });
+}
+// The hats avatar.js lets the player choose between, in the same order and at the same
+// heights, because they are the hats the island already wore: the player is meant to read
+// as somebody from this village, and that only holds while both wardrobes are one.
+function hatParts(shape, hex, dy = 0) {
+  const y = (v) => v + dy;
+  switch (shape) {
+    case 'none': return [];
+    case 'sailor': return [
+      cylinder(0.082, 0.086, 0.052, 8, hex, { y: y(0.41) }),
+      box(0.14, 0.022, 0.065, hex, { y: y(0.418), z: 0.065 }),
+    ];
+    case 'cap': return [
+      cylinder(0.092, 0.092, 0.042, 8, hex, { y: y(0.41) }),
+      box(0.13, 0.022, 0.075, hex, { y: y(0.418), z: 0.065 }),
+    ];
+    case 'dome': return [dome(0.09, hex, { y: y(0.39) })];
+    case 'wizard': return [cone(0.1, 0.21, 6, hex, { y: y(0.41) })];
+    case 'wide': return [
+      cylinder(0.135, 0.135, 0.02, 9, hex, { y: y(0.42) }),
+      cone(0.078, 0.058, 8, hex, { y: y(0.43) }),
+    ];
+    case 'band':
+    default: return [cylinder(0.086, 0.086, 0.047, 7, hex, { y: y(0.41) })];
   }
+}
+
+function mergeParts(parts) {
   const g = mergeGeometries(parts, false);
   g.computeVertexNormals();
+  g.computeBoundingSphere();
   return g;
+}
+
+// ---------------------------------------------------------------- the wardrobe
+// Which hat a model's people wore before anyone had a choice, and where its colour came
+// from in that model's palette. It is still the likeliest hat on that model's heads.
+const STYLE_HAT = {
+  fable: ['wizard', 'accent'],
+  opus: ['cap', 'roof'],
+  sonnet: ['dome', 'roof'],
+  haiku: ['wide', 'roof'],
+  unknown: ['band', 'trim'],
+};
+const SAILOR_HAT = 0x2b4c7e;
+// A sailor's cap is a uniform, not a preference: it is how the quay reads as a quay, so
+// it stays off other heads and no landsman draws it.
+const CIVILIAN_HATS = HAT_SHAPES.map((h) => h.id).filter((id) => id !== 'sailor');
+
+// The look every settler of a style used to have, and still the look of the figure that
+// walk.js, interior.js and the model sheet ask for by style alone.
+export function styleLook(style, sailor = false) {
+  const pal = PALETTE[style] || PALETTE.unknown;
+  const [shape, slot] = STYLE_HAT[style] || STYLE_HAT.unknown;
+  return {
+    skin: SKIN, tunic: pal.wall, trim: pal.trim,
+    hat: sailor ? SAILOR_HAT : pal[slot],
+    hatShape: sailor ? 'sailor' : shape,
+    height: 1, build: 1, head: 1,
+  };
+}
+
+// Cloth here is dyed in small batches: the same colour, never quite the same shade. Done
+// on the bytes rather than through HSL so it is the plain arithmetic it looks like, and
+// so a tunic can drift a little warm or a little cold without leaving its own colour.
+function dye(hex, rng) {
+  const mul = rng.range(0.86, 1.12);
+  const warm = rng.range(-0.06, 0.06);
+  const ch = (v, shift) => clamp(Math.round(v * mul * (1 + shift)), 0, 255);
+  return (ch((hex >> 16) & 255, warm) << 16) | (ch((hex >> 8) & 255, 0) << 8) | ch(hex & 255, -warm);
+}
+
+// What one settler looks like. Everyone a model built wears that model's cloth - it is
+// how a settler on the square reads as belonging to the house behind it - but trousers,
+// hat, skin and build are their own, and no two bolts of the same cloth took the dye the
+// same way. Seeded off the session id and nothing else: village.json is thrown away and
+// rebuilt from the transcripts every scan, so a look drawn from Math.random, or from a
+// slot number, or from anything the rebuild is free to reorder, would give the same
+// person a new face every minute.
+export function settlerLook(seed, style, kind = 'adult') {
+  const pal = PALETTE[style] || PALETTE.unknown;
+  const base = styleLook(style, kind === 'sailor');
+  const rng = makeRng(hash32(`${seed}:look`));
+  const young = kind === 'apprentice';
+  return {
+    hatShape: kind === 'sailor' || rng.chance(0.45) ? base.hatShape : rng.pick(CIVILIAN_HATS),
+    hat: kind === 'sailor' ? SAILOR_HAT : (rng.chance(0.35) ? pal.roof : rng.pick(SWATCHES.hat).hex),
+    skin: rng.pick(SWATCHES.skin).hex,
+    tunic: dye(pal.wall, rng),
+    trim: rng.pick(SWATCHES.trim).hex,
+    height: rng.range(0.9, 1.1),
+    build: rng.range(0.9, 1.12),
+    // An apprentice is scaled down as a whole, which would give a child an adult's head
+    // in miniature. Keeping the head nearly full size is what makes small read as young
+    // instead of far away.
+    head: young ? rng.range(1.04, 1.16) : rng.range(0.93, 1.05),
+  };
+}
+
+// One figure, merged, for everything that draws a settler as a plain mesh: walk mode, the
+// interiors and the model sheet. The crowd outside does not go through here - it is drawn
+// from the same parts as separate instanced meshes, see createSettlers.
+export function figureGeometry(style, { sailor = false, look = null } = {}) {
+  const lk = look || styleLook(style, sailor);
+  return mergeParts([
+    torsoGeometry(lk.tunic),
+    ...limbParts(lk.trim),
+    headGeometry(lk.skin),
+    ...hatParts(lk.hatShape, lk.hat),
+  ]);
 }
 
 function paintGeo(g, hex) {
@@ -93,22 +213,37 @@ function findPath(terrain, from, to, blocked) {
 }
 
 export function createSettlers(scene, material, terrain) {
-  const styles = ['fable', 'opus', 'sonnet', 'haiku', 'unknown'];
-  const meshes = {};
-  for (const s of styles) {
-    for (const kind of ['adult', 'apprentice', 'sailor']) {
-      const geo = figureGeometry(s, { sailor: kind === 'sailor' });
-      if (kind === 'apprentice') geo.scale(0.62, 0.62, 0.62);
-      const m = new THREE.InstancedMesh(geo, material, CAPACITY);
-      m.castShadow = true;
-      m.count = 0;
-      m.frustumCulled = false;
-      scene.add(m);
-      const bucket = { mesh: m, slots: 0, figs: [] };
-      m.userData.bucket = bucket;      // so a ray hit can be traced back to a person
-      meshes[`${s}:${kind}`] = bucket;
-    }
+  function makeMesh(geo) {
+    const m = new THREE.InstancedMesh(geo, material, CAPACITY);
+    m.castShadow = true;
+    m.count = 0;
+    m.frustumCulled = false;
+    scene.add(m);
+    return m;
   }
+  const tint = (mesh, i, hex) => {
+    mesh.setColorAt(i, tmpColor.setHex(hex));
+    mesh.instanceColor.needsUpdate = true;
+  };
+
+  // Everyone shares one slot number across the three meshes that everyone has, which is
+  // also what lets a ray hit on a torso or a head name the person it belongs to.
+  const roster = [];
+  let slots = 0;
+  const torso = makeMesh(mergeParts([torsoGeometry(WHITE)]));
+  const limbs = makeMesh(mergeParts(limbParts(WHITE)));
+  const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
+  const body = [torso, limbs, head];
+  torso.userData.bucket = { figs: roster };
+  head.userData.bucket = { figs: roster };
+  // The hats keep their own slots: a settler is in exactly one of these meshes, or in
+  // none of them if it is bare-headed.
+  const hats = new Map();
+  for (const h of HAT_SHAPES) {
+    if (h.id === 'none') continue;
+    hats.set(h.id, { mesh: makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y))), slots: 0 });
+  }
+
   const hammerGeo = mergeGeometries([
     paintGeo(new THREE.BoxGeometry(0.022, 0.16, 0.022), 0x8b5e3c),
     (() => { const g = new THREE.BoxGeometry(0.075, 0.05, 0.05); g.translate(0, 0.09, 0); return paintGeo(g, 0x3a3a3f); })(),
@@ -126,10 +261,23 @@ export function createSettlers(scene, material, terrain) {
     if (figures.has(id)) return figures.get(id);
     const kind = spec.kind === 'shed' ? 'apprentice' : (spec.harbour ? 'sailor' : 'adult');
     const style = PALETTE[spec.style] ? spec.style : 'unknown';
-    const bucket = meshes[`${style}:${kind}`];
-    const slot = bucket.slots++;
+    const slot = slots;
     if (slot >= CAPACITY) return null;
-    bucket.mesh.count = bucket.slots;
+    slots++;
+    for (const m of body) m.count = slots;
+    // The session id, not the building id: a house that is upgraded or refitted keeps its
+    // tenant, and the tenant should keep their face.
+    const look = settlerLook(spec.sessionId || id, style, kind);
+    tint(torso, slot, look.tunic);
+    tint(limbs, slot, look.trim);
+    tint(head, slot, look.skin);
+    const hatBucket = hats.get(look.hatShape) || null;
+    let hatSlot = -1;
+    if (hatBucket && hatBucket.slots < CAPACITY) {
+      hatSlot = hatBucket.slots++;
+      hatBucket.mesh.count = hatBucket.slots;
+      tint(hatBucket.mesh, hatSlot, look.hat);
+    }
     const rng = makeRng(hash32(id + ':walk'));
     // Stand outside the door, not in the middle of the floor. A settler placed on its
     // own plot centre spends its life inside its own walls, and an apprentice, whose
@@ -139,7 +287,17 @@ export function createSettlers(scene, material, terrain) {
     const reach = spec.kind === 'shed' ? 0.46 : 0.85;
     const home = [worldPos[0] + ox * reach, worldPos[2] + oz * reach];
     const f = {
-      id, bucket, slot, spec,
+      id, slot, spec, look,
+      hatBucket, hatSlot,
+      baseScale: kind === 'apprentice' ? 0.62 : 1,
+      // The body stretches and thickens; the head rides on top of it at its own size, or
+      // a tall settler would be a normal one seen through a lens.
+      mBody: new THREE.Matrix4().makeScale(look.build, look.height, look.build),
+      mHead: new THREE.Matrix4().makeTranslation(0, HEAD_Y * look.height, 0)
+        .scale(new THREE.Vector3(look.head, look.head, look.head)),
+      // Long legs cover more ground per step, and no two people walk at the same cadence.
+      stride: 0.88 + (look.height - 1) * 1.1,
+      gait: rng.range(10.2, 11.8),
       home,
       pos: [home[0] + rng.range(-0.12, 0.12), home[1] + rng.range(-0.12, 0.12)],
       target: null, yaw: rng.range(0, 6.28), pause: rng.range(0, 3),
@@ -148,8 +306,9 @@ export function createSettlers(scene, material, terrain) {
       hammerSlot: -1, y: 0,
       strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined,
     };
+    f.speed = 0.34 * f.stride;
     figures.set(id, f);
-    bucket.figs[slot] = f;
+    roster[slot] = f;
     return f;
   }
 
@@ -161,10 +320,14 @@ export function createSettlers(scene, material, terrain) {
   }
   function hide(f) {
     tmpObj.position.set(0, -999, 0);
+    tmpObj.rotation.set(0, 0, 0);
     tmpObj.scale.setScalar(0.0001);
     tmpObj.updateMatrix();
-    f.bucket.mesh.setMatrixAt(f.slot, tmpObj.matrix);
-    f.bucket.mesh.instanceMatrix.needsUpdate = true;
+    for (const m of body) { m.setMatrixAt(f.slot, tmpObj.matrix); m.instanceMatrix.needsUpdate = true; }
+    if (f.hatBucket && f.hatSlot >= 0) {
+      f.hatBucket.mesh.setMatrixAt(f.hatSlot, tmpObj.matrix);
+      f.hatBucket.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   function setVisible(id, v) {
@@ -254,7 +417,7 @@ export function createSettlers(scene, material, terrain) {
     f.pathI = 0;
     f.mode = 'walk';
     f.keepHome = true;
-    f.speed = 0.42 + f.rng.range(0, 0.14);
+    f.speed = (0.42 + f.rng.range(0, 0.14)) * f.stride;
     f.onDone = onDone;
   }
 
@@ -330,7 +493,7 @@ export function createSettlers(scene, material, terrain) {
           f.pos[1] += (dz / d) * step;
           f.yaw = lerpAngle(f.yaw, Math.atan2(dx, dz), 0.2);
         }
-        bob = Math.abs(Math.sin(time * 11 + f.phase)) * 0.035;
+        bob = Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035;
       } else if (f.mode === 'hammer') {
         const dx = f.home[0] - f.pos[0], dz = f.home[1] - f.pos[1];
         const d = Math.hypot(dx, dz);
@@ -343,10 +506,13 @@ export function createSettlers(scene, material, terrain) {
         f.yaw = lerpAngle(f.yaw, Math.atan2(dx, dz), 0.15);
         bob = Math.abs(Math.sin(time * 8 + f.phase)) * 0.02;
         if (hammerCount < 60) {
+          // The hammer is held in a hand, so it hangs off whatever size that settler is:
+          // an apprentice's is a small hammer at an apprentice's height.
+          const s = f.baseScale * f.look.height;
           const swing = -1.15 + 0.75 * (0.5 + 0.5 * Math.sin(time * 8 + f.phase));
-          tmpObj.position.set(f.pos[0] + Math.sin(f.yaw) * 0.16, f.y + 0.26, f.pos[1] + Math.cos(f.yaw) * 0.16);
+          tmpObj.position.set(f.pos[0] + Math.sin(f.yaw) * 0.16 * s, f.y + 0.26 * s, f.pos[1] + Math.cos(f.yaw) * 0.16 * s);
           tmpObj.rotation.set(0, f.yaw, swing);
-          tmpObj.scale.setScalar(f.spec.kind === 'shed' ? 0.62 : 1);
+          tmpObj.scale.setScalar(s);
           tmpObj.updateMatrix();
           hammers.setMatrixAt(hammerCount++, tmpObj.matrix);
         }
@@ -381,21 +547,31 @@ export function createSettlers(scene, material, terrain) {
       }
 
       f.y = f.deckY != null ? f.deckY : groundOrDeck(f.pos[0], f.pos[1]);
-      tmpObj.position.set(f.pos[0], f.y + bob, f.pos[1]);
+      // One transform for the person, then the parts hang off it: torso and limbs take
+      // the build, the head rides at the top of whatever body this is.
+      tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
       tmpObj.rotation.set(0, f.yaw, Math.sin(time * 9 + f.phase) * (bob > 0.001 ? 0.05 : 0.012));
-      tmpObj.scale.setScalar(1);
+      tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
-      f.bucket.mesh.setMatrixAt(f.slot, tmpObj.matrix);
-      f.bucket.mesh.instanceMatrix.needsUpdate = true;
+      bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
+      torso.setMatrixAt(f.slot, bodyMat);
+      limbs.setMatrixAt(f.slot, bodyMat);
+      headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
+      head.setMatrixAt(f.slot, headMat);
+      if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.mesh.setMatrixAt(f.hatSlot, headMat);
     }
+    for (const m of body) m.instanceMatrix.needsUpdate = true;
+    for (const h of hats.values()) if (h.slots) h.mesh.instanceMatrix.needsUpdate = true;
     hammers.count = hammerCount;
     hammers.instanceMatrix.needsUpdate = true;
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
   // number. These two turn that back into the settler standing there, which is what
-  // lets you hover someone halfway down a street and read who it is.
-  const pickables = () => Object.values(meshes).filter((b) => b.mesh.count > 0).map((b) => b.mesh);
+  // lets you hover someone halfway down a street and read who it is. Only the torso and
+  // the head are offered: a ray that grazes a hat brim carries on into the head behind
+  // it, and leaving the other meshes out halves the instances every hover has to test.
+  const pickables = () => body.filter((m) => m !== limbs && m.count > 0);
   const figureAt = (mesh, i) => {
     const b = mesh && mesh.userData && mesh.userData.bucket;
     const f = b && i != null ? b.figs[i] : null;
