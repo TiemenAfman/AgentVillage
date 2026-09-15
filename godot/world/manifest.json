@@ -1,6 +1,6 @@
 {
   "worldV": 2,
-  "worldRev": "51c796e6",
+  "worldRev": "0ca95aba",
   "seed": 1337,
   "envelopeM": 1024,
   "radiusM": 208,
@@ -9,7 +9,7 @@
   "quantum": 0.00390625,
   "seaLevel": 0,
   "clipped": false,
-  "generatedAt": "2026-09-15T10:18:10.856Z",
+  "generatedAt": "2026-09-15T12:19:36.621Z",
   "riverDepth": 1.1,
   "lakeDepth": 2.2,
   "landmasses": [
@@ -29,112 +29,112 @@
       "peak": {
         "at": [
           -26,
-          -23
+          -24
         ],
-        "y": 32.4
+        "y": 29.6
       }
     },
     {
       "index": 1,
       "areaHa": 0.87,
       "centroid": [
-        370.2,
-        190.2
+        231.5,
+        113.8
       ],
       "bounds": [
-        322,
-        129,
-        419,
-        251
+        184,
+        52,
+        280,
+        174
       ],
       "peak": {
         "at": [
-          363,
-          170
+          225,
+          93
         ],
-        "y": 11.3
+        "y": 6.1
       }
     },
     {
       "index": 2,
       "areaHa": 0.63,
       "centroid": [
-        217.3,
-        -176.6
+        185,
+        -150.4
       ],
       "bounds": [
-        169,
-        -221,
-        267,
-        -132
+        137,
+        -195,
+        235,
+        -106
       ],
       "peak": {
         "at": [
-          204,
-          -168
+          172,
+          -142
         ],
-        "y": 7
+        "y": 6.1
       }
     },
     {
       "index": 3,
       "areaHa": 0.55,
       "centroid": [
-        -389.9,
-        -126.5
+        -236.5,
+        -80.9
       ],
       "bounds": [
-        -440,
-        -165,
-        -344,
-        -90
+        -287,
+        -119,
+        -191,
+        -45
       ],
       "peak": {
         "at": [
-          -381,
-          -128
+          -228,
+          -82
         ],
-        "y": 9.4
+        "y": 9.6
       }
     },
     {
       "index": 4,
       "areaHa": 0.53,
       "centroid": [
-        -175.6,
-        -250.7
+        -172.1,
+        -245.9
       ],
       "bounds": [
-        -220,
-        -288,
-        -131,
-        -214
+        -216,
+        -283,
+        -128,
+        -209
       ],
       "peak": {
         "at": [
-          -166,
-          -248
+          -162,
+          -243
         ],
-        "y": 7.2
+        "y": 7.4
       }
     },
     {
       "index": 5,
       "areaHa": 0.43,
       "centroid": [
-        -159.1,
-        391.3
+        -95.8,
+        249.4
       ],
       "bounds": [
-        -193,
-        349,
-        -124,
-        432
+        -129,
+        207,
+        -60,
+        290
       ],
       "peak": {
         "at": [
-          -161,
-          410
+          -99,
+          266
         ],
         "y": 4
       }
@@ -143,21 +143,21 @@
       "index": 6,
       "areaHa": 0.4,
       "centroid": [
-        182.5,
-        249.1
+        139.4,
+        189.4
       ],
       "bounds": [
-        145,
-        214,
-        223,
-        283
+        102,
+        155,
+        180,
+        223
       ],
       "peak": {
         "at": [
-          178,
-          246
+          135,
+          187
         ],
-        "y": 5.6
+        "y": 5.3
       }
     }
   ],
@@ -172,43 +172,43 @@
     {
       "landmass": 1,
       "at": [
-        360,
-        133
+        219,
+        57
       ]
     },
     {
       "landmass": 2,
       "at": [
-        228,
-        -217
+        197,
+        -191
       ]
     },
     {
       "landmass": 3,
       "at": [
-        -382,
-        -161
+        -231,
+        -115
       ]
     },
     {
       "landmass": 4,
       "at": [
-        -190,
-        -284
+        -187,
+        -279
       ]
     },
     {
       "landmass": 5,
       "at": [
-        -169,
-        353
+        -105,
+        211
       ]
     },
     {
       "landmass": 6,
       "at": [
-        170,
-        219
+        129,
+        159
       ]
     }
   ],
@@ -216,80 +216,136 @@
     {
       "id": "river:0",
       "mouth": [
-        80,
-        107
+        82,
+        106
       ],
       "source": [
-        17,
-        105
+        -39,
+        0
       ],
-      "lengthM": 65,
+      "lengthM": 208,
       "spine": [
         [
+          -39,
+          0
+        ],
+        [
+          -35,
+          12
+        ],
+        [
+          -28,
+          23
+        ],
+        [
+          -21,
+          34
+        ],
+        [
+          -10,
+          40
+        ],
+        [
+          2,
+          44
+        ],
+        [
+          14,
+          43
+        ],
+        [
           17,
-          105
+          55
+        ],
+        [
+          21,
+          67
         ],
         [
           29,
-          107
+          76
         ],
         [
-          41,
-          107
+          38,
+          84
         ],
         [
-          53,
-          107
+          49,
+          90
         ],
         [
-          65,
-          107
+          60,
+          97
         ],
         [
-          77,
-          107
+          67,
+          108
         ],
         [
-          80,
-          107
+          79,
+          108
+        ],
+        [
+          82,
+          106
         ]
       ]
     },
     {
       "id": "river:1",
       "mouth": [
-        -111,
-        -122
+        63,
+        -91
       ],
       "source": [
-        -54,
-        -124
+        23,
+        8
       ],
-      "lengthM": 59,
+      "lengthM": 126,
       "spine": [
         [
-          -54,
-          -124
+          23,
+          8
         ],
         [
-          -66,
-          -124
+          28,
+          -4
         ],
         [
-          -78,
-          -124
+          33,
+          -16
         ],
         [
-          -90,
-          -123
+          35,
+          -28
         ],
         [
-          -102,
-          -122
+          37,
+          -40
         ],
         [
-          -111,
-          -122
+          43,
+          -51
+        ],
+        [
+          54,
+          -57
+        ],
+        [
+          54,
+          -69
+        ],
+        [
+          63,
+          -77
+        ],
+        [
+          63,
+          -89
+        ],
+        [
+          63,
+          -91
         ]
       ]
     }
@@ -298,83 +354,83 @@
     {
       "id": "lake:0",
       "centre": [
-        27,
-        -75
+        -7,
+        -88
       ],
-      "radiusM": 21.9,
-      "surfaceY": 1.8
+      "radiusM": 15.2,
+      "surfaceY": 5.1
     }
   ],
   "chunks": [
     {
       "cx": -5,
       "cz": -6,
-      "hash": "eb5e2a97",
-      "bytes": 1357,
-      "minY": -13.77,
-      "maxY": -4.2
+      "hash": "ebbc1684",
+      "bytes": 1327,
+      "minY": -14.48,
+      "maxY": -4.64
     },
     {
       "cx": -4,
       "cz": -6,
-      "hash": "9a4d0c91",
-      "bytes": 1475,
-      "minY": -9.09,
-      "maxY": -1.99
+      "hash": "ad3f4497",
+      "bytes": 1480,
+      "minY": -9.8,
+      "maxY": -2.37
     },
     {
       "cx": -3,
       "cz": -6,
-      "hash": "ad72bd1f",
-      "bytes": 1280,
-      "minY": -8.25,
-      "maxY": -1.98
+      "hash": "82832ac8",
+      "bytes": 1250,
+      "minY": -8.67,
+      "maxY": -2.34
     },
     {
       "cx": -2,
       "cz": -6,
-      "hash": "7aac2677",
-      "bytes": 1437,
-      "minY": -11.78,
-      "maxY": -3.1
+      "hash": "2083de37",
+      "bytes": 1474,
+      "minY": -12,
+      "maxY": -3.3
     },
     {
       "cx": -5,
       "cz": -5,
-      "hash": "7bb99455",
-      "bytes": 1104,
-      "minY": -9.32,
-      "maxY": -2.3
+      "hash": "95c9bd3a",
+      "bytes": 1117,
+      "minY": -9.96,
+      "maxY": -2.58
     },
     {
       "cx": -4,
       "cz": -5,
-      "hash": "3ca3a9fd",
-      "bytes": 2189,
-      "minY": -4.2,
-      "maxY": 5.01
+      "hash": "ebd9118c",
+      "bytes": 1927,
+      "minY": -4.64,
+      "maxY": 3.35
     },
     {
       "cx": -3,
       "cz": -5,
-      "hash": "2128824d",
-      "bytes": 2574,
-      "minY": -3.1,
-      "maxY": 5.93
+      "hash": "4213e343",
+      "bytes": 2347,
+      "minY": -3.3,
+      "maxY": 4.7
     },
     {
       "cx": -2,
       "cz": -5,
-      "hash": "1633bf6c",
-      "bytes": 1220,
+      "hash": "92aa0974",
+      "bytes": 1265,
       "minY": -6.35,
-      "maxY": -0.21
+      "maxY": -0.09
     },
     {
       "cx": -1,
       "cz": -5,
-      "hash": "5fed21c9",
-      "bytes": 4593,
+      "hash": "d41d0761",
+      "bytes": 4494,
       "minY": -12,
       "maxY": -3.18
     },
@@ -389,538 +445,474 @@
     {
       "cx": 1,
       "cz": -5,
-      "hash": "3e0693cc",
-      "bytes": 2910,
-      "minY": -17.22,
-      "maxY": -5.64
+      "hash": "99ae2a22",
+      "bytes": 3979,
+      "minY": -17.44,
+      "maxY": -5.81
     },
     {
       "cx": 2,
       "cz": -5,
-      "hash": "74a9bf07",
-      "bytes": 1782,
+      "hash": "761134f5",
+      "bytes": 3521,
       "minY": -25.85,
-      "maxY": -2.94
+      "maxY": -4.18
     },
     {
       "cx": 3,
       "cz": -5,
-      "hash": "7bfe9bf0",
-      "bytes": 1841,
+      "hash": "f6b85f3c",
+      "bytes": 3452,
       "minY": -31.01,
-      "maxY": -2.2
+      "maxY": -4.17
     },
     {
       "cx": 4,
       "cz": -5,
-      "hash": "33a88479",
-      "bytes": 1528,
+      "hash": "1c93f843",
+      "bytes": 2313,
       "minY": -32,
-      "maxY": -2.56
-    },
-    {
-      "cx": 5,
-      "cz": -5,
-      "hash": "304e5007",
-      "bytes": 1154,
-      "minY": -32,
-      "maxY": -5.54
-    },
-    {
-      "cx": -8,
-      "cz": -4,
-      "hash": "092bbfd0",
-      "bytes": 1347,
-      "minY": -12.24,
-      "maxY": -3.38
-    },
-    {
-      "cx": -7,
-      "cz": -4,
-      "hash": "9f965b1a",
-      "bytes": 1394,
-      "minY": -8.37,
-      "maxY": -1.63
-    },
-    {
-      "cx": -6,
-      "cz": -4,
-      "hash": "6af6ca4c",
-      "bytes": 1442,
-      "minY": -7.96,
-      "maxY": -1.62
+      "maxY": -5.41
     },
     {
       "cx": -5,
       "cz": -4,
-      "hash": "291de233",
-      "bytes": 1236,
-      "minY": -7.58,
-      "maxY": -2.3
+      "hash": "feabee54",
+      "bytes": 1060,
+      "minY": -8.96,
+      "maxY": -2.57
     },
     {
       "cx": -4,
       "cz": -4,
-      "hash": "d507a6a6",
-      "bytes": 2253,
-      "minY": -4.11,
-      "maxY": 4.96
-    },
-    {
-      "cx": -3,
-      "cz": -4,
-      "hash": "561efb2f",
-      "bytes": 3646,
-      "minY": -2.07,
-      "maxY": 7.2
-    },
-    {
-      "cx": -2,
-      "cz": -4,
-      "hash": "776d55f4",
-      "bytes": 2539,
-      "minY": -4.66,
-      "maxY": -0.17
-    },
-    {
-      "cx": -1,
-      "cz": -4,
-      "hash": "5f33a7fe",
-      "bytes": 5230,
-      "minY": -4.75,
+      "hash": "5cd51b7f",
+      "bytes": 2190,
+      "minY": -4.1,
       "maxY": 4
     },
     {
+      "cx": -3,
+      "cz": -4,
+      "hash": "7d6f4243",
+      "bytes": 4088,
+      "minY": -1.63,
+      "maxY": 7.43
+    },
+    {
+      "cx": -2,
+      "cz": -4,
+      "hash": "d42b984d",
+      "bytes": 2433,
+      "minY": -4.43,
+      "maxY": 0
+    },
+    {
+      "cx": -1,
+      "cz": -4,
+      "hash": "f3a7620f",
+      "bytes": 5184,
+      "minY": -4.72,
+      "maxY": 3.69
+    },
+    {
       "cx": 0,
       "cz": -4,
-      "hash": "28dbbe17",
-      "bytes": 4949,
+      "hash": "d457badd",
+      "bytes": 4920,
       "minY": -6.28,
-      "maxY": 3.99
+      "maxY": 3.3
     },
     {
       "cx": 1,
       "cz": -4,
-      "hash": "6e8f6b1c",
-      "bytes": 3372,
-      "minY": -8.47,
-      "maxY": -2.93
+      "hash": "e10d4fb9",
+      "bytes": 2944,
+      "minY": -8.4,
+      "maxY": -1.93
     },
     {
       "cx": 2,
       "cz": -4,
-      "hash": "606617e8",
-      "bytes": 1457,
-      "minY": -5.64,
-      "maxY": 0.86
+      "hash": "90014578",
+      "bytes": 1413,
+      "minY": -5.81,
+      "maxY": 0.09
     },
     {
       "cx": 3,
       "cz": -4,
-      "hash": "b287946a",
-      "bytes": 2642,
-      "minY": -2.94,
-      "maxY": 5.88
+      "hash": "dde1b1c6",
+      "bytes": 1534,
+      "minY": -5.41,
+      "maxY": 0.13
     },
     {
       "cx": 4,
       "cz": -4,
-      "hash": "a824f086",
-      "bytes": 1445,
-      "minY": -5.54,
-      "maxY": 0.75
-    },
-    {
-      "cx": 5,
-      "cz": -4,
-      "hash": "5493414a",
-      "bytes": 3104,
-      "minY": -32,
-      "maxY": -3.57
-    },
-    {
-      "cx": -8,
-      "cz": -3,
-      "hash": "4519903e",
-      "bytes": 1260,
-      "minY": -6.8,
-      "maxY": -0.48
-    },
-    {
-      "cx": -7,
-      "cz": -3,
-      "hash": "77a4e2c0",
-      "bytes": 2726,
-      "minY": -3.38,
-      "maxY": 6.65
+      "hash": "8447e90c",
+      "bytes": 1299,
+      "minY": -10.05,
+      "maxY": -1.97
     },
     {
       "cx": -6,
       "cz": -3,
-      "hash": "09b6fab2",
-      "bytes": 2414,
-      "minY": -3.48,
-      "maxY": 9.42
+      "hash": "f1a77a4d",
+      "bytes": 1387,
+      "minY": -12.63,
+      "maxY": -3.49
     },
     {
       "cx": -5,
       "cz": -3,
-      "hash": "d803e82a",
-      "bytes": 1343,
-      "minY": -9.75,
-      "maxY": -1.44
+      "hash": "846b49a3",
+      "bytes": 1348,
+      "minY": -7.83,
+      "maxY": -0.96
     },
     {
       "cx": -4,
       "cz": -3,
-      "hash": "30561d34",
-      "bytes": 1445,
-      "minY": -8.59,
-      "maxY": -1.41
+      "hash": "c1401865",
+      "bytes": 1611,
+      "minY": -4.56,
+      "maxY": -0.5
     },
     {
       "cx": -3,
       "cz": -3,
-      "hash": "1d8e98b3",
-      "bytes": 2948,
-      "minY": -6.09,
-      "maxY": -1.26
+      "hash": "793294a6",
+      "bytes": 2532,
+      "minY": -3.9,
+      "maxY": -0.98
     },
     {
       "cx": -2,
       "cz": -3,
-      "hash": "a06195d3",
-      "bytes": 5904,
-      "minY": -3.03,
-      "maxY": 14.61
+      "hash": "fedf0b5b",
+      "bytes": 5577,
+      "minY": -2.98,
+      "maxY": 12.96
     },
     {
       "cx": -1,
       "cz": -3,
-      "hash": "7ede8999",
-      "bytes": 6698,
+      "hash": "e6e021b0",
+      "bytes": 6501,
       "minY": -0.41,
-      "maxY": 22.7
+      "maxY": 21.61
     },
     {
       "cx": 0,
       "cz": -3,
-      "hash": "162c6084",
-      "bytes": 5579,
+      "hash": "48453aa5",
+      "bytes": 5442,
       "minY": -3.52,
-      "maxY": 4.79
+      "maxY": 4.78
     },
     {
       "cx": 1,
       "cz": -3,
-      "hash": "a667e9bc",
-      "bytes": 3787,
-      "minY": -4.59,
+      "hash": "aafd6fde",
+      "bytes": 3098,
+      "minY": -3.8,
       "maxY": -0.43
     },
     {
       "cx": 2,
       "cz": -3,
-      "hash": "61907c63",
-      "bytes": 2464,
-      "minY": -3.38,
-      "maxY": 4.46
+      "hash": "b0f2838d",
+      "bytes": 3657,
+      "minY": -1.93,
+      "maxY": 6.09
     },
     {
       "cx": 3,
       "cz": -3,
-      "hash": "ab21dfb3",
-      "bytes": 4434,
-      "minY": -1.6,
-      "maxY": 7.04
+      "hash": "f1cc149e",
+      "bytes": 3376,
+      "minY": -1.97,
+      "maxY": 5.89
     },
     {
       "cx": 4,
       "cz": -3,
-      "hash": "d6eaccda",
-      "bytes": 1629,
-      "minY": -4.81,
-      "maxY": 1.6
-    },
-    {
-      "cx": 5,
-      "cz": -3,
-      "hash": "362872e7",
-      "bytes": 3162,
-      "minY": -28.6,
-      "maxY": -3.52
-    },
-    {
-      "cx": -8,
-      "cz": -2,
-      "hash": "9878bb58",
-      "bytes": 1169,
-      "minY": -6.22,
-      "maxY": -0.45
-    },
-    {
-      "cx": -7,
-      "cz": -2,
-      "hash": "a41c7bce",
-      "bytes": 3429,
-      "minY": -2.75,
-      "maxY": 6.7
+      "hash": "0fd5940d",
+      "bytes": 933,
+      "minY": -6.36,
+      "maxY": -1.21
     },
     {
       "cx": -6,
       "cz": -2,
-      "hash": "96bd44c8",
-      "bytes": 2718,
-      "minY": -3.45,
-      "maxY": 9.42
+      "hash": "eeb62fba",
+      "bytes": 1051,
+      "minY": -8.43,
+      "maxY": -2.1
     },
     {
       "cx": -5,
       "cz": -2,
-      "hash": "69e979a9",
-      "bytes": 2290,
-      "minY": -15.08,
-      "maxY": -1.44
+      "hash": "981d1491",
+      "bytes": 2693,
+      "minY": -3.49,
+      "maxY": 5.08
     },
     {
       "cx": -4,
       "cz": -2,
-      "hash": "6eee1dbb",
-      "bytes": 4823,
-      "minY": -11.63,
-      "maxY": -4.54
+      "hash": "15b4c723",
+      "bytes": 4284,
+      "minY": -1.25,
+      "maxY": 9.56
     },
     {
       "cx": -3,
       "cz": -2,
-      "hash": "b6bc32ad",
-      "bytes": 4756,
-      "minY": -6.29,
-      "maxY": -0.14
+      "hash": "63ed1801",
+      "bytes": 2717,
+      "minY": -3.61,
+      "maxY": 0
     },
     {
       "cx": -2,
       "cz": -2,
-      "hash": "814ec0cf",
-      "bytes": 6036,
+      "hash": "f6b0b80a",
+      "bytes": 6381,
       "minY": -1.62,
+      "maxY": 23.29
+    },
+    {
+      "cx": -1,
+      "cz": -2,
+      "hash": "c655080a",
+      "bytes": 5630,
+      "minY": 2.89,
       "maxY": 23.63
     },
     {
-      "cx": -1,
-      "cz": -2,
-      "hash": "d8e49505",
-      "bytes": 6096,
-      "minY": 3.73,
-      "maxY": 24.13
-    },
-    {
       "cx": 0,
       "cz": -2,
-      "hash": "d89263d1",
-      "bytes": 4845,
-      "minY": -0.43,
-      "maxY": 6.82
+      "hash": "f5abfe20",
+      "bytes": 5862,
+      "minY": -1.2,
+      "maxY": 7.89
     },
     {
       "cx": 1,
       "cz": -2,
-      "hash": "36cace28",
-      "bytes": 5762,
-      "minY": -3.86,
-      "maxY": 9.11
+      "hash": "dc0e6417",
+      "bytes": 5390,
+      "minY": -2.89,
+      "maxY": 8.48
     },
     {
       "cx": 2,
       "cz": -2,
-      "hash": "50534028",
-      "bytes": 4252,
-      "minY": -3.42,
-      "maxY": 8.09
+      "hash": "224f1b19",
+      "bytes": 4324,
+      "minY": -2.79,
+      "maxY": 6.98
     },
     {
       "cx": 3,
       "cz": -2,
-      "hash": "5f3bac54",
-      "bytes": 2317,
-      "minY": -5.41,
-      "maxY": -0.22
+      "hash": "7d35941f",
+      "bytes": 1943,
+      "minY": -5.23,
+      "maxY": 2.3
     },
     {
       "cx": 4,
       "cz": -2,
-      "hash": "831f57cd",
-      "bytes": 1279,
-      "minY": -9.38,
-      "maxY": -1.6
-    },
-    {
-      "cx": 5,
-      "cz": -2,
-      "hash": "640ff06d",
-      "bytes": 3319,
-      "minY": -27.2,
-      "maxY": -4.81
-    },
-    {
-      "cx": -8,
-      "cz": -1,
-      "hash": "ad7f8ccf",
-      "bytes": 1458,
-      "minY": -11.29,
-      "maxY": -2.75
-    },
-    {
-      "cx": -7,
-      "cz": -1,
-      "hash": "283a8813",
-      "bytes": 1274,
-      "minY": -7.71,
-      "maxY": -1.58
+      "hash": "6975785e",
+      "bytes": 1339,
+      "minY": -9.74,
+      "maxY": -1.74
     },
     {
       "cx": -6,
       "cz": -1,
-      "hash": "3c840cce",
-      "bytes": 1335,
-      "minY": -8.09,
-      "maxY": -1.57
+      "hash": "307b4171",
+      "bytes": 1220,
+      "minY": -9.91,
+      "maxY": -2.21
     },
     {
       "cx": -5,
       "cz": -1,
-      "hash": "255caba1",
-      "bytes": 2763,
-      "minY": -16.5,
-      "maxY": -3.45
+      "hash": "57056974",
+      "bytes": 1975,
+      "minY": -4.96,
+      "maxY": 3.01
     },
     {
       "cx": -4,
       "cz": -1,
-      "hash": "26ef81fb",
-      "bytes": 4922,
-      "minY": -13.27,
-      "maxY": -3.44
+      "hash": "7b447ade",
+      "bytes": 2450,
+      "minY": -3.53,
+      "maxY": 4.21
     },
     {
       "cx": -3,
       "cz": -1,
-      "hash": "60d5bed7",
-      "bytes": 4799,
-      "minY": -5.11,
-      "maxY": 1.87
+      "hash": "faca15f6",
+      "bytes": 3962,
+      "minY": -3.53,
+      "maxY": 1.61
     },
     {
       "cx": -2,
       "cz": -1,
-      "hash": "5b6b7f3d",
-      "bytes": 6314,
+      "hash": "7405229c",
+      "bytes": 6294,
       "minY": -0.34,
-      "maxY": 24.7
+      "maxY": 23.52
     },
     {
       "cx": -1,
       "cz": -1,
-      "hash": "740195c6",
-      "bytes": 5836,
-      "minY": 4,
-      "maxY": 32.41
+      "hash": "a0c4f9c5",
+      "bytes": 6396,
+      "minY": 6.08,
+      "maxY": 29.64
     },
     {
       "cx": 0,
       "cz": -1,
-      "hash": "e4c161d6",
-      "bytes": 3850,
-      "minY": -0.36,
-      "maxY": 23.43
+      "hash": "b97d3bee",
+      "bytes": 5873,
+      "minY": 1.91,
+      "maxY": 22.88
     },
     {
       "cx": 1,
       "cz": -1,
-      "hash": "28eacd82",
-      "bytes": 6236,
-      "minY": 2.97,
-      "maxY": 18.67
+      "hash": "31ff0b28",
+      "bytes": 6485,
+      "minY": 3.69,
+      "maxY": 17.69
     },
     {
       "cx": 2,
       "cz": -1,
-      "hash": "d8a62623",
-      "bytes": 5741,
+      "hash": "5cb2c6f3",
+      "bytes": 5663,
       "minY": -2.79,
-      "maxY": 9.29
+      "maxY": 8.52
     },
     {
       "cx": 3,
       "cz": -1,
-      "hash": "b2b0dccb",
-      "bytes": 4800,
+      "hash": "f4ef07fe",
+      "bytes": 4722,
       "minY": -5.94,
       "maxY": -0.93
     },
     {
+      "cx": 4,
+      "cz": -1,
+      "hash": "020b492c",
+      "bytes": 2978,
+      "minY": -13.66,
+      "maxY": -3.9
+    },
+    {
+      "cx": -6,
+      "cz": 0,
+      "hash": "9e08fbc6",
+      "bytes": 1551,
+      "minY": -29.03,
+      "maxY": -4.96
+    },
+    {
+      "cx": -5,
+      "cz": 0,
+      "hash": "c9d18210",
+      "bytes": 1470,
+      "minY": -17.57,
+      "maxY": -3.23
+    },
+    {
       "cx": -4,
       "cz": 0,
-      "hash": "e7234529",
-      "bytes": 4983,
-      "minY": -12.37,
-      "maxY": -3.38
+      "hash": "9eb5283c",
+      "bytes": 2182,
+      "minY": -9.43,
+      "maxY": -2.95
     },
     {
       "cx": -3,
       "cz": 0,
-      "hash": "847e5de5",
-      "bytes": 5131,
+      "hash": "4c03e31b",
+      "bytes": 5123,
       "minY": -5.54,
-      "maxY": 3.66
+      "maxY": 3.36
     },
     {
       "cx": -2,
       "cz": 0,
-      "hash": "abb830d4",
-      "bytes": 6540,
+      "hash": "ea00ae50",
+      "bytes": 6144,
       "minY": -0.2,
-      "maxY": 16.39
+      "maxY": 15.65
     },
     {
       "cx": -1,
       "cz": 0,
-      "hash": "8d101b3d",
-      "bytes": 6437,
-      "minY": 8.48,
-      "maxY": 22.87
+      "hash": "f45bddcd",
+      "bytes": 6485,
+      "minY": 9.01,
+      "maxY": 21.4
     },
     {
       "cx": 0,
       "cz": 0,
-      "hash": "d70c22d8",
-      "bytes": 5346,
-      "minY": 3.02,
-      "maxY": 26.8
+      "hash": "fea71a24",
+      "bytes": 6412,
+      "minY": 5.33,
+      "maxY": 25.21
     },
     {
       "cx": 1,
       "cz": 0,
-      "hash": "3ec9cfcc",
-      "bytes": 6561,
+      "hash": "ca4c6755",
+      "bytes": 6531,
       "minY": 0.93,
-      "maxY": 21.79
+      "maxY": 20.84
     },
     {
       "cx": 2,
       "cz": 0,
-      "hash": "df3d8cae",
-      "bytes": 5878,
-      "minY": -2.84,
-      "maxY": 5.46
+      "hash": "d2021aff",
+      "bytes": 5532,
+      "minY": -1.59,
+      "maxY": 5.07
     },
     {
       "cx": 3,
       "cz": 0,
-      "hash": "e3498082",
-      "bytes": 4769,
-      "minY": -7.33,
-      "maxY": -0.6
+      "hash": "73e0b8f0",
+      "bytes": 2638,
+      "minY": -3.9,
+      "maxY": 0.99
+    },
+    {
+      "cx": 4,
+      "cz": 0,
+      "hash": "1d459aab",
+      "bytes": 1347,
+      "minY": -6.64,
+      "maxY": -0.09
+    },
+    {
+      "cx": 5,
+      "cz": 0,
+      "hash": "3d7a7358",
+      "bytes": 2804,
+      "minY": -21.22,
+      "maxY": -4
     },
     {
       "cx": -4,
@@ -933,522 +925,330 @@
     {
       "cx": -3,
       "cz": 1,
-      "hash": "d8071bb5",
-      "bytes": 4779,
+      "hash": "af611692",
+      "bytes": 4780,
       "minY": -6.01,
-      "maxY": 1.77
+      "maxY": 1.62
     },
     {
       "cx": -2,
       "cz": 1,
-      "hash": "3922ed13",
-      "bytes": 6363,
+      "hash": "5c067835",
+      "bytes": 6305,
       "minY": -0.84,
-      "maxY": 16.84
+      "maxY": 16.39
     },
     {
       "cx": -1,
       "cz": 1,
-      "hash": "ae39245d",
-      "bytes": 6018,
-      "minY": 1.61,
-      "maxY": 20.39
+      "hash": "af317772",
+      "bytes": 6186,
+      "minY": 3.49,
+      "maxY": 19.25
     },
     {
       "cx": 0,
       "cz": 1,
-      "hash": "4ef8ec31",
-      "bytes": 5685,
-      "minY": -0.62,
-      "maxY": 23.92
+      "hash": "2cc317a9",
+      "bytes": 6249,
+      "minY": -0.71,
+      "maxY": 23.78
     },
     {
       "cx": 1,
       "cz": 1,
-      "hash": "2fa2afa9",
-      "bytes": 5924,
-      "minY": -2.11,
-      "maxY": 8.61
+      "hash": "09c2c10d",
+      "bytes": 5761,
+      "minY": -2.01,
+      "maxY": 7.57
     },
     {
       "cx": 2,
       "cz": 1,
-      "hash": "0c23dcd6",
-      "bytes": 4644,
-      "minY": -5.28,
-      "maxY": 1.12
+      "hash": "c0073447",
+      "bytes": 3266,
+      "minY": -2.41,
+      "maxY": 1.61
     },
     {
       "cx": 3,
       "cz": 1,
-      "hash": "b42e258f",
-      "bytes": 4448,
-      "minY": -8.34,
-      "maxY": -2.39
+      "hash": "04a40d71",
+      "bytes": 4169,
+      "minY": -0.2,
+      "maxY": 6.11
     },
     {
       "cx": 4,
       "cz": 1,
-      "hash": "490377f5",
-      "bytes": 1427,
-      "minY": -8.11,
-      "maxY": -1.11
+      "hash": "0c527b42",
+      "bytes": 1728,
+      "minY": -4,
+      "maxY": 1.42
     },
     {
       "cx": 5,
       "cz": 1,
-      "hash": "d2f0d47b",
-      "bytes": 1496,
-      "minY": -5.08,
-      "maxY": -0.01
-    },
-    {
-      "cx": 6,
-      "cz": 1,
-      "hash": "a5d17bfd",
-      "bytes": 1404,
-      "minY": -6.88,
-      "maxY": -0.3
-    },
-    {
-      "cx": 7,
-      "cz": 1,
-      "hash": "70b26565",
-      "bytes": 1383,
-      "minY": -32,
-      "maxY": -3.6
+      "hash": "3fb73af4",
+      "bytes": 2603,
+      "minY": -26.05,
+      "maxY": -2.68
     },
     {
       "cx": -4,
       "cz": 2,
-      "hash": "5fceddeb",
-      "bytes": 5134,
+      "hash": "619608a7",
+      "bytes": 3883,
       "minY": -12.04,
-      "maxY": -5.53
+      "maxY": -4.95
     },
     {
       "cx": -3,
       "cz": 2,
-      "hash": "b97db357",
-      "bytes": 4850,
-      "minY": -9.95,
+      "hash": "1a46443a",
+      "bytes": 2943,
+      "minY": -7.1,
       "maxY": -0.84
     },
     {
       "cx": -2,
       "cz": 2,
-      "hash": "76396c88",
-      "bytes": 5639,
-      "minY": -5.33,
-      "maxY": 3.85
+      "hash": "207dbc64",
+      "bytes": 5132,
+      "minY": -2.83,
+      "maxY": 3.52
     },
     {
       "cx": -1,
       "cz": 2,
-      "hash": "7b368a58",
-      "bytes": 5747,
+      "hash": "b3517749",
+      "bytes": 5713,
       "minY": -1.04,
-      "maxY": 15.13
+      "maxY": 13.42
     },
     {
       "cx": 0,
       "cz": 2,
-      "hash": "a4b0f745",
-      "bytes": 6312,
+      "hash": "310ee8ff",
+      "bytes": 6623,
       "minY": -1.03,
-      "maxY": 23.34
+      "maxY": 22.67
     },
     {
       "cx": 1,
       "cz": 2,
-      "hash": "dfce1c5d",
-      "bytes": 5063,
-      "minY": -3.95,
-      "maxY": 3.4
+      "hash": "c0253b58",
+      "bytes": 4281,
+      "minY": -1.8,
+      "maxY": 4
     },
     {
       "cx": 2,
       "cz": 2,
-      "hash": "bf71c7e2",
-      "bytes": 3073,
-      "minY": -5.3,
-      "maxY": -1.3
+      "hash": "c361ed27",
+      "bytes": 2530,
+      "minY": -1.99,
+      "maxY": 5.3
     },
     {
       "cx": 3,
       "cz": 2,
-      "hash": "930ee8ae",
-      "bytes": 1832,
-      "minY": -7.26,
-      "maxY": -1.43
+      "hash": "f5671846",
+      "bytes": 3382,
+      "minY": -1.61,
+      "maxY": 5.36
     },
     {
       "cx": 4,
       "cz": 2,
-      "hash": "63d04f06",
-      "bytes": 1086,
-      "minY": -5.14,
-      "maxY": -0.11
+      "hash": "da9fa25a",
+      "bytes": 2173,
+      "minY": -3.78,
+      "maxY": 3.79
     },
     {
       "cx": 5,
       "cz": 2,
-      "hash": "42a12125",
-      "bytes": 4624,
-      "minY": -1.11,
-      "maxY": 11.29
+      "hash": "8fc2da04",
+      "bytes": 2434,
+      "minY": -29.22,
+      "maxY": -2.59
     },
     {
-      "cx": 6,
-      "cz": 2,
-      "hash": "9f3dd519",
-      "bytes": 2127,
-      "minY": -3.6,
-      "maxY": 2.79
-    },
-    {
-      "cx": 7,
-      "cz": 2,
-      "hash": "66c93afd",
-      "bytes": 1179,
-      "minY": -32,
-      "maxY": -2.18
+      "cx": -4,
+      "cz": 3,
+      "hash": "845d3d30",
+      "bytes": 2073,
+      "minY": -17.43,
+      "maxY": -4.28
     },
     {
       "cx": -3,
       "cz": 3,
-      "hash": "e5522aeb",
-      "bytes": 4125,
-      "minY": -13.32,
-      "maxY": -5.33
+      "hash": "ebbdfa1c",
+      "bytes": 1259,
+      "minY": -4.95,
+      "maxY": 0.2
     },
     {
       "cx": -2,
       "cz": 3,
-      "hash": "0d7b2e0b",
-      "bytes": 4866,
-      "minY": -9.59,
-      "maxY": -0.82
+      "hash": "b22b8d70",
+      "bytes": 3694,
+      "minY": -1.35,
+      "maxY": 4
     },
     {
       "cx": -1,
       "cz": 3,
-      "hash": "f06b6abc",
-      "bytes": 4683,
-      "minY": -5.8,
+      "hash": "b02866da",
+      "bytes": 3387,
+      "minY": -4.11,
       "maxY": 1.18
     },
     {
       "cx": 0,
       "cz": 3,
-      "hash": "850cfa48",
-      "bytes": 4801,
-      "minY": -6.61,
+      "hash": "5e21b215",
+      "bytes": 4579,
+      "minY": -5.73,
       "maxY": 0.99
     },
     {
       "cx": 1,
       "cz": 3,
-      "hash": "cd526144",
-      "bytes": 2342,
-      "minY": -5.73,
-      "maxY": -0.78
+      "hash": "e8060222",
+      "bytes": 2458,
+      "minY": -4.68,
+      "maxY": 4
     },
     {
       "cx": 2,
       "cz": 3,
-      "hash": "e84b0eed",
-      "bytes": 3075,
-      "minY": -2.51,
-      "maxY": 5.63
+      "hash": "50dd04dd",
+      "bytes": 3112,
+      "minY": -2.69,
+      "maxY": 4
     },
     {
       "cx": 3,
       "cz": 3,
-      "hash": "dbde77f4",
-      "bytes": 2101,
-      "minY": -4.36,
-      "maxY": 2.37
+      "hash": "99da7178",
+      "bytes": 1570,
+      "minY": -5.73,
+      "maxY": -0.7
     },
     {
       "cx": 4,
       "cz": 3,
-      "hash": "e1961b2b",
-      "bytes": 1304,
-      "minY": -4.51,
-      "maxY": -0.43
+      "hash": "120ed656",
+      "bytes": 1435,
+      "minY": -7.91,
+      "maxY": -1.09
     },
     {
       "cx": 5,
       "cz": 3,
-      "hash": "32a7e1ce",
-      "bytes": 4031,
-      "minY": -2.11,
-      "maxY": 8.75
-    },
-    {
-      "cx": 6,
-      "cz": 3,
-      "hash": "5c97ea21",
-      "bytes": 2814,
-      "minY": -2.6,
-      "maxY": 6.4
-    },
-    {
-      "cx": 7,
-      "cz": 3,
-      "hash": "f606fa28",
-      "bytes": 917,
-      "minY": -32,
-      "maxY": -1.79
-    },
-    {
-      "cx": -5,
-      "cz": 4,
-      "hash": "cfc7f964",
-      "bytes": 2304,
-      "minY": -30.25,
-      "maxY": -5.48
+      "hash": "e6ac1f6f",
+      "bytes": 2954,
+      "minY": -31.42,
+      "maxY": -3.78
     },
     {
       "cx": -4,
       "cz": 4,
-      "hash": "63fd7e6b",
-      "bytes": 1515,
-      "minY": -10.23,
-      "maxY": -2.15
+      "hash": "60e887af",
+      "bytes": 2134,
+      "minY": -21.3,
+      "maxY": -4.5
     },
     {
       "cx": -3,
       "cz": 4,
-      "hash": "11227523",
-      "bytes": 1511,
-      "minY": -7.41,
-      "maxY": -1.74
+      "hash": "17f433a8",
+      "bytes": 1276,
+      "minY": -6.11,
+      "maxY": -0.29
     },
     {
       "cx": -2,
       "cz": 4,
-      "hash": "fc41fb67",
-      "bytes": 1879,
-      "minY": -9.6,
-      "maxY": -2.68
+      "hash": "af607614",
+      "bytes": 3258,
+      "minY": -2.6,
+      "maxY": 4
     },
     {
       "cx": -1,
       "cz": 4,
-      "hash": "38497de5",
-      "bytes": 4440,
-      "minY": -10.23,
-      "maxY": -4.16
+      "hash": "f5d010fb",
+      "bytes": 1400,
+      "minY": -5.48,
+      "maxY": 0.36
     },
     {
       "cx": 0,
       "cz": 4,
-      "hash": "cb142c2d",
-      "bytes": 4839,
-      "minY": -9.49,
+      "hash": "d29c926a",
+      "bytes": 3662,
+      "minY": -9.35,
       "maxY": -3.3
     },
     {
       "cx": 1,
       "cz": 4,
-      "hash": "07ef37f0",
-      "bytes": 1217,
-      "minY": -8.07,
-      "maxY": -1.12
+      "hash": "5e44cb2d",
+      "bytes": 1848,
+      "minY": -8.73,
+      "maxY": -2.47
     },
     {
       "cx": 2,
       "cz": 4,
-      "hash": "58af9498",
-      "bytes": 2594,
-      "minY": -3.93,
-      "maxY": 4
-    },
-    {
-      "cx": 3,
-      "cz": 4,
-      "hash": "f39a1140",
-      "bytes": 2618,
-      "minY": -3.89,
-      "maxY": 3.77
-    },
-    {
-      "cx": 4,
-      "cz": 4,
-      "hash": "6261ed2b",
-      "bytes": 1350,
-      "minY": -6.71,
+      "hash": "ce4df2a9",
+      "bytes": 1370,
+      "minY": -7.65,
       "maxY": -2.06
     },
     {
-      "cx": 5,
+      "cx": 3,
       "cz": 4,
-      "hash": "1a53ae89",
-      "bytes": 1446,
-      "minY": -5.87,
-      "maxY": -0.28
+      "hash": "1439eb00",
+      "bytes": 1512,
+      "minY": -11.22,
+      "maxY": -2.69
     },
     {
-      "cx": 6,
-      "cz": 4,
-      "hash": "5498b07b",
-      "bytes": 1445,
-      "minY": -6.11,
-      "maxY": -0.29
-    },
-    {
-      "cx": 7,
-      "cz": 4,
-      "hash": "c723eb46",
-      "bytes": 1439,
-      "minY": -32,
+      "cx": -3,
+      "cz": 5,
+      "hash": "acb26179",
+      "bytes": 2361,
+      "minY": -25.03,
       "maxY": -2.6
     },
     {
-      "cx": -5,
-      "cz": 5,
-      "hash": "d7c523c9",
-      "bytes": 1846,
-      "minY": -32,
-      "maxY": -4.33
-    },
-    {
-      "cx": -4,
-      "cz": 5,
-      "hash": "95449ed0",
-      "bytes": 1313,
-      "minY": -5.48,
-      "maxY": 0.05
-    },
-    {
-      "cx": -3,
-      "cz": 5,
-      "hash": "a036d1ce",
-      "bytes": 3059,
-      "minY": -2.68,
-      "maxY": 4
-    },
-    {
       "cx": -2,
       "cz": 5,
-      "hash": "9f9c052c",
-      "bytes": 1245,
-      "minY": -6.27,
-      "maxY": -0.02
+      "hash": "6a56bb21",
+      "bytes": 2268,
+      "minY": -21.01,
+      "maxY": -1.82
     },
     {
       "cx": -1,
       "cz": 5,
-      "hash": "874a6d3d",
-      "bytes": 3356,
+      "hash": "35bf7dd4",
+      "bytes": 2344,
       "minY": -19.21,
-      "maxY": -4.18
+      "maxY": -2.25
     },
     {
-      "cx": 1,
+      "cx": 0,
       "cz": 5,
-      "hash": "6ec07633",
-      "bytes": 1460,
-      "minY": -13.25,
-      "maxY": -3.93
-    },
-    {
-      "cx": 2,
-      "cz": 5,
-      "hash": "4e2ca410",
-      "bytes": 1262,
-      "minY": -9.39,
-      "maxY": -2.49
-    },
-    {
-      "cx": 3,
-      "cz": 5,
-      "hash": "44d73a99",
-      "bytes": 1422,
-      "minY": -8.96,
-      "maxY": -2.39
-    },
-    {
-      "cx": 4,
-      "cz": 5,
-      "hash": "60310317",
-      "bytes": 1679,
-      "minY": -32,
-      "maxY": -3.89
-    },
-    {
-      "cx": -5,
-      "cz": 6,
-      "hash": "dbb2dcd2",
-      "bytes": 920,
-      "minY": -32,
-      "maxY": -4.37
-    },
-    {
-      "cx": -4,
-      "cz": 6,
-      "hash": "6f5f0ae4",
-      "bytes": 1178,
-      "minY": -5.66,
-      "maxY": -0.03
-    },
-    {
-      "cx": -3,
-      "cz": 6,
-      "hash": "f1607113",
-      "bytes": 3825,
-      "minY": -1.77,
-      "maxY": 4
-    },
-    {
-      "cx": -2,
-      "cz": 6,
-      "hash": "dfbf8dd2",
-      "bytes": 1368,
-      "minY": -4.91,
-      "maxY": 0.45
-    },
-    {
-      "cx": -1,
-      "cz": 6,
-      "hash": "b572484b",
-      "bytes": 3230,
-      "minY": -27.42,
-      "maxY": -4.05
-    },
-    {
-      "cx": -4,
-      "cz": 7,
-      "hash": "4ed8f166",
-      "bytes": 1423,
-      "minY": -9.87,
-      "maxY": -1.77
-    },
-    {
-      "cx": -3,
-      "cz": 7,
-      "hash": "f428d8ee",
-      "bytes": 1480,
-      "minY": -6.04,
-      "maxY": -0.92
-    },
-    {
-      "cx": -2,
-      "cz": 7,
-      "hash": "7c46efc5",
-      "bytes": 1451,
-      "minY": -8.98,
-      "maxY": -1.34
-    },
-    {
-      "cx": -1,
-      "cz": 7,
-      "hash": "f20fb0db",
-      "bytes": 3311,
-      "minY": -32,
-      "maxY": -4.91
+      "hash": "350c7077",
+      "bytes": 3861,
+      "minY": -19.51,
+      "maxY": -5.48
     }
   ]
 }
