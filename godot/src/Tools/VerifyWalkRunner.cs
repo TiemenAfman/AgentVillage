@@ -23,10 +23,13 @@ public partial class VerifyWalkRunner : SceneTree
 	private Phase _phase = Phase.Ground;
 	private WalkModeManager? _manager;
 	private PlayerAvatar? _avatar;
+	private float _groundY;
+	private float _peakY;
 
 	private enum Phase
 	{
 		Ground,
+		Jump,
 		Swim,
 		Done,
 	}
@@ -82,6 +85,9 @@ public partial class VerifyWalkRunner : SceneTree
 			case Phase.Ground:
 				RunGroundChecks();
 				break;
+			case Phase.Jump:
+				RunJumpChecks();
+				break;
 			case Phase.Swim:
 				RunSwimChecks();
 				break;
@@ -104,15 +110,54 @@ public partial class VerifyWalkRunner : SceneTree
 		Check(_avatar is not null && _avatar.GlobalPosition.Y > 0.5f, "avatar floats at ground height (no fall-through)");
 
 		GD.Print($"ground   : avatar Y={_avatar?.GlobalPosition.Y:0.00}, state={_avatar?.State}, collider={(collider is not null)}");
-		_phase = Phase.Swim;
-		if (_avatar is not null)
-		{
-			// Drop the settler far out at sea, below the surface; buoyancy must bring it back.
-			_avatar.GlobalPosition = new Vector3(40.0f, -2.0f, 40.0f);
-			_avatar.Velocity = Vector3.Zero;
-		}
+		_phase = Phase.Jump;
 		_ticks = 0;
 	}
+
+	/// <summary>
+	/// Issue #60: Space on solid ground must lift the settler. The key is injected through
+	/// Input.ParseInputEvent, which fills the same keys_pressed table PlayerAvatar reads back
+	/// with Input.IsKeyPressed - so this exercises the real input path, not a stub.
+	/// </summary>
+	private void RunJumpChecks()
+	{
+		if (_avatar is null)
+			return;
+
+		if (_ticks == 1)
+		{
+			_groundY = _avatar.GlobalPosition.Y;
+			_peakY = _groundY;
+			PressSpace(true);
+			return;
+		}
+
+		_peakY = Mathf.Max(_peakY, _avatar.GlobalPosition.Y);
+		if (_ticks < 40)
+			return;
+
+		bool seen = Input.IsKeyPressed(Key.Space);
+		PressSpace(false);
+
+		float lift = _peakY - _groundY;
+		GD.Print($"jump     : ground Y={_groundY:0.00}, peak Y={_peakY:0.00}, lift={lift:0.00} m, key seen={seen}");
+		Check(seen, "injected Space reaches Input.IsKeyPressed");
+		Check(lift > 0.3f, $"Space lifts the settler off the ground (lift={lift:0.00} m)");
+
+		_phase = Phase.Swim;
+		// Drop the settler far out at sea, below the surface; buoyancy must bring it back.
+		_avatar.GlobalPosition = new Vector3(40.0f, -2.0f, 40.0f);
+		_avatar.Velocity = Vector3.Zero;
+		_ticks = 0;
+	}
+
+	private static void PressSpace(bool down)
+		=> Input.ParseInputEvent(new InputEventKey
+		{
+			Keycode = Key.Space,
+			PhysicalKeycode = Key.Space,
+			Pressed = down,
+		});
 
 	private void RunSwimChecks()
 	{
