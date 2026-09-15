@@ -57,6 +57,7 @@ public partial class PlayerAvatar : CharacterBody3D
 	private float _animTime;
 	private string? _lastPrompt;
 	private bool _lastInteractPushed;
+	private bool _lastTalkPushed;
 	private bool _lastJumpHeld;
 
 	public override void _Ready()
@@ -227,7 +228,14 @@ public partial class PlayerAvatar : CharacterBody3D
 	private void UpdateInteraction()
 	{
 		var marker = World?.NearestDossier(GlobalPosition, InteractionRadius);
-		string? prompt = marker is null ? null : $"[E] Inspect {marker.Name}";
+		// Only a house has somebody in it. A shed is a subagent's lean-to and a civic hall belongs
+		// to the village, so neither offers the talk half of the prompt.
+		bool canTalk = marker is not null && marker.Kind == "house";
+		string? prompt = marker is null
+			? null
+			: canTalk
+				? $"[E] Inspect  ·  [T] Talk to {marker.Name}"
+				: $"[E] Inspect {marker.Name}";
 
 		if (prompt != _lastPrompt && EventBus.Instance is not null)
 		{
@@ -239,6 +247,13 @@ public partial class PlayerAvatar : CharacterBody3D
 		if (interact && !_lastInteractPushed && marker is not null && EventBus.Instance is not null)
 			EventBus.Instance.PublishBuildingSelected(marker.Id);
 		_lastInteractPushed = interact;
+
+		// Press-edge like the jump, and for the same reason: held down, this would open the
+		// conversation again on every frame (#60).
+		bool talk = Input.IsKeyPressed(Key.T) || Input.IsJoyButtonPressed(0, JoyButton.Y);
+		if (talk && !_lastTalkPushed && canTalk && EventBus.Instance is not null)
+			EventBus.Instance.PublishSettlerTalkRequested(marker!.Id);
+		_lastTalkPushed = talk;
 	}
 
 	private bool UpdateCrouch()

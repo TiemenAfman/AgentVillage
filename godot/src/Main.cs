@@ -14,6 +14,8 @@ public partial class Main : Node3D
 {
 	private WorldManager? _worldManager;
 	private CloudManager? _cloudManager;
+	private SettlerChatUI? _chat;
+	private VillageData? _village;
 
 	public override void _Ready()
 	{
@@ -53,6 +55,11 @@ public partial class Main : Node3D
 		var dossier = new BuildingDossierUI { Name = "BuildingDossierUI" };
 		AddChild(dossier);
 
+		// Talking to a settler: reads and carries on that session's own transcript. A layer above
+		// the dossier, because you can open it while the dossier stands.
+		_chat = new SettlerChatUI { Name = "SettlerChatUI" };
+		AddChild(_chat);
+
 		EnsureLighting();
 
 		// Day/night sky: drives the real-clock sun/moon and sky, and switches on window/lamp
@@ -72,6 +79,7 @@ public partial class Main : Node3D
 		if (EventBus.Instance is not null)
 		{
 			EventBus.Instance.VillageDataLoaded += OnVillageDataLoaded;
+			EventBus.Instance.SettlerTalkRequested += OnSettlerTalkRequested;
 		}
 
 		PublishInitialVillage();
@@ -157,6 +165,7 @@ public partial class Main : Node3D
 		if (EventBus.Instance is not null)
 		{
 			EventBus.Instance.VillageDataLoaded -= OnVillageDataLoaded;
+			EventBus.Instance.SettlerTalkRequested -= OnSettlerTalkRequested;
 		}
 	}
 
@@ -183,7 +192,25 @@ public partial class Main : Node3D
 	private void OnVillageDataLoaded(VillageData village)
 	{
 		GD.Print($"[Main] Received VillageData: island={village.Island.Name}, seed={village.Island.Seed}, buildings={village.Buildings.Count}");
+		_village = village;
 		_worldManager?.BuildWorld(village);
 		_cloudManager?.Rebuild(village.Island.Seed);
+	}
+
+	/// <summary>
+	/// Opens the conversation with whoever lives in this building. The lookup is here rather than
+	/// in the chat panel because Main is what holds the village; the panel is handed one settler
+	/// and knows nothing about the island.
+	/// </summary>
+	private void OnSettlerTalkRequested(string buildingId)
+	{
+		if (_chat is null || _village is null) return;
+
+		foreach (var b in _village.Buildings)
+		{
+			if (b.Id != buildingId) continue;
+			_chat.Open(b);
+			return;
+		}
 	}
 }

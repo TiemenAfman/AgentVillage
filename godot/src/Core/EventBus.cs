@@ -28,6 +28,14 @@ public partial class EventBus : Node
 	[Signal]
 	public delegate void BuildingSelectedEventHandler(string buildingId);
 
+	/// <summary>
+	/// Someone wants to talk to the settler who lives here, rather than read their file. Separate
+	/// from <see cref="BuildingSelectedEventHandler"/> because they are different acts: inspecting
+	/// is looking at a dossier, talking carries the session on and costs tokens.
+	/// </summary>
+	[Signal]
+	public delegate void SettlerTalkRequestedEventHandler(string buildingId);
+
 	public override void _EnterTree()
 	{
 		Instance = this;
@@ -50,4 +58,7 @@ public partial class EventBus : Node
 
 	public void PublishBuildingSelected(string buildingId)
 		=> EmitSignal(SignalName.BuildingSelected, buildingId);
+
+	public void PublishSettlerTalkRequested(string buildingId)
+		=> EmitSignal(SignalName.SettlerTalkRequested, buildingId);
 }
