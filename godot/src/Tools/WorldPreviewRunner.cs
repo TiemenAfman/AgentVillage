@@ -34,11 +34,13 @@ public partial class WorldPreviewRunner : SceneTree
 	private float _azimuthDeg = 215.0f;
 	private float _distanceScale = 1.9f;
 	private bool _noWater;
+	private bool _legacyMesh;
 
 	private WorldEnvironment? _worldEnv;
 	private DirectionalLight3D? _sun;
 	private DirectionalLight3D? _moon;
 	private ProceduralSkyMaterial? _sky;
+	private Terrain3DBridge? _bridge;
 
 	public override void _Initialize()
 	{
@@ -117,8 +119,21 @@ public partial class WorldPreviewRunner : SceneTree
 		// ---- the ground ---------------------------------------------------------
 		var terrainRoot = new Node3D { Name = "Terrain" };
 		root.AddChild(terrainRoot);
-		var stats = TerrainMeshBuilder.BuildInto(terrainRoot, field, GroundMaterial(field));
-		GD.Print($"terrain: {stats.Chunks} meshes, {stats.Vertices:N0} verts, {stats.Triangles:N0} tris in {stats.Milliseconds} ms");
+
+		if (!_legacyMesh && Terrain3DBridge.IsAvailable)
+		{
+			var clock = Time.GetTicksMsec();
+			// No shader override yet: stylized_terrain.gdshader is written for a plain mesh with
+			// vertex colours and would not survive being dropped onto a clipmap. Their shader
+			// first, ours adapted onto it after.
+			_bridge = Terrain3DBridge.Build(terrainRoot, field);
+			GD.Print($"terrain: Terrain3D, {_bridge?.RegionCount} regions in {Time.GetTicksMsec() - clock} ms");
+		}
+		else
+		{
+			var stats = TerrainMeshBuilder.BuildInto(terrainRoot, field, GroundMaterial(field));
+			GD.Print($"terrain: {stats.Chunks} meshes, {stats.Vertices:N0} verts, {stats.Triangles:N0} tris in {stats.Milliseconds} ms");
+		}
 
 		if (!_noWater)
 		{
@@ -150,7 +165,7 @@ public partial class WorldPreviewRunner : SceneTree
 		var eye = target + new Vector3(
 			MathF.Cos(az) * MathF.Cos(el), MathF.Sin(el), MathF.Sin(az) * MathF.Cos(el)) * distance;
 
-		root.AddChild(new Camera3D
+		var camera = new Camera3D
 		{
 			Name = "PreviewCamera",
 			Current = true,
@@ -158,7 +173,11 @@ public partial class WorldPreviewRunner : SceneTree
 			Far = 4000.0f,
 			// LookAt is a no-op before the node is in the tree, so build the basis directly.
 			Transform = new Transform3D(Basis.Identity, eye).LookingAt(target, Vector3.Up),
-		});
+		};
+		root.AddChild(camera);
+		// Terrain3D follows a camera - its collision and its clipmap both centre on one - and
+		// says so every frame until it has one.
+		_bridge?.SetCamera(camera);
 
 		GD.Print($"camera at {eye.Round()} looking at {target.Round()}, island radius {radius:F0} m");
 	}
@@ -241,6 +260,11 @@ public partial class WorldPreviewRunner : SceneTree
 				case "--azimuth" when next is not null: _azimuthDeg = ParseFloat(next); i++; break;
 				case "--zoom" when next is not null: _distanceScale = ParseFloat(next); i++; break;
 				case "--no-water": _noWater = true; break;
+				case "--legacy-mesh": _legacyMesh = true; break;
+				case "--no-control": Promptholm.World.Terrain3DBridge.WriteControl = false; break;
+				case "--no-colour": Promptholm.World.Terrain3DBridge.WriteColour = false; break;
+				case "--dump-control": Promptholm.World.Terrain3DBridge.DumpControlWords = true; break;
+				case "--control-probe" when next is not null: Promptholm.World.Terrain3DBridge.ControlProbe = int.Parse(next); i++; break;
 				case "--size" when next is not null:
 					var parts = next.Split('x');
 					if (parts.Length == 2
