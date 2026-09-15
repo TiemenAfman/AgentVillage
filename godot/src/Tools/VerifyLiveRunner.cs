@@ -22,8 +22,24 @@ public partial class VerifyLiveRunner : SceneTree
 
 	private int _fails;
 
+	private int _ticks;
+
 	public override void _Initialize()
 	{
+	}
+
+	/// <summary>
+	/// The checks run on the first frame rather than in _Initialize. During _Initialize the
+	/// scene tree is not live yet, so every GlobalTransform read inside BuildWorld — see
+	/// WorldManager.BuildMarker — trips "Condition !is_inside_tree() is true". That is the
+	/// stderr flood AGENTS.md wrote off as pre-existing noise from building assembly; it is
+	/// neither pre-existing nor about assembly, and moving the call here removes all of it.
+	/// </summary>
+	public override bool _Process(double delta)
+	{
+		if (++_ticks != 1)
+			return false;
+
 		try
 		{
 			Run();
@@ -33,6 +49,8 @@ public partial class VerifyLiveRunner : SceneTree
 			GD.PushError($"EXCEPTION during live build: {ex}");
 			Quit(1);
 		}
+
+		return false;
 	}
 
 	private void Run()

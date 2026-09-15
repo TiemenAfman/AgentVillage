@@ -433,6 +433,21 @@ public sealed class TerrainGenerator
 	public (double X, double Z) CellWorld(int gx, int gz)
 		=> (gx - Half + 0.5, gz - Half + 0.5);
 
+	/// <summary>
+	/// Height difference between the highest and lowest corner of the cell, matching
+	/// the shared/terrain.mjs slope() used by planFields and the browser scatter.
+	/// </summary>
+	public double Slope(int gx, int gz)
+	{
+		if (!InGrid(gx, gz))
+			return double.PositiveInfinity;
+		double a = H[gx + gz * N];
+		double b = H[gx + 1 + gz * N];
+		double c = H[gx + (gz + 1) * N];
+		double d = H[gx + 1 + (gz + 1) * N];
+		return Math.Max(Math.Max(a, b), Math.Max(c, d)) - Math.Min(Math.Min(a, b), Math.Min(c, d));
+	}
+
 	/// <summary>Bilinear height at a world position, like terrain.gd world_height().</summary>
 	public double WorldHeight(double x, double z)
 	{

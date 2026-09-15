@@ -73,12 +73,14 @@ public static class SettlerMeshBuilder
 	/// <summary>
 	/// Basic walking wobble: limbs swing in counter-phase on their pivots, scaled by how
 	/// fast the settler is moving (speed01 in 0..1), so standing still leaves the figure
-	/// restful. Called every frame from the owning avatar while it moves.
+	/// restful. Called every frame from the owning avatar while it moves. The caller passes
+	/// the animation time at 1× wall-clock scale; inside this method, `time * 8.5f` gives
+	/// ~1.35 Hz step cadence (natural walking speed).
 	/// </summary>
 	public static void PoseWalk(Node3D root, float time, float speed01)
 	{
-		float leg = Mathf.Sin(time * 8.5f) * 0.5f * speed01;
-		float arm = Mathf.Sin(time * 8.5f + Mathf.Pi) * 0.35f * speed01;
+		float leg = Mathf.Sin(time * 8.5f) * 0.38f * speed01;
+		float arm = Mathf.Sin(time * 8.5f + Mathf.Pi) * 0.26f * speed01;
 
 		SetSwing(root, "LegPivotL", leg);
 		SetSwing(root, "LegPivotR", -leg);

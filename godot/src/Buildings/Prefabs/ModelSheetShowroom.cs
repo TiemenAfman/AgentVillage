@@ -1,6 +1,7 @@
 using Godot;
 using Promptholm.Buildings.Data;
 using Promptholm.Buildings.Slots;
+using Promptholm.Atmosphere;
 
 namespace Promptholm.Buildings.Prefabs;
 
@@ -177,26 +178,10 @@ public partial class ModelSheetShowroom : Node3D
         };
         AddChild(rim);
 
-        var env = new WorldEnvironment();
-        var environment = new Godot.Environment
+        var env = new WorldEnvironment
         {
-            BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky
-            {
-                SkyMaterial = new ProceduralSkyMaterial
-                {
-                    SkyTopColor = new Color(0.32f, 0.60f, 0.95f),
-                    SkyHorizonColor = new Color(0.95f, 0.86f, 0.72f),
-                    GroundBottomColor = new Color(0.06f, 0.09f, 0.14f),
-                    GroundHorizonColor = new Color(0.55f, 0.60f, 0.68f),
-                },
-            },
-            AmbientLightSource = Godot.Environment.AmbientSource.Sky,
-            AmbientLightSkyContribution = 0.5f,
-            AmbientLightEnergy = 0.6f,
-            TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            Environment = EnvironmentFactory.CreateShowroom(),
         };
-        env.Environment = environment;
         env.Name = "WorldEnvironment";
         AddChild(env);
     }

@@ -19,6 +19,7 @@ public partial class TopNavBar : HBoxContainer
 	private Button _apprenticeBtn = null!;
 	private Button _walkBtn = null!;
 	private Button _overviewBtn = null!;
+	private bool _suppressToggleEvent;
 
 	private static readonly Color TextWhite = new(0.92f, 0.90f, 0.85f);
 	private static readonly Color TextGray = new(0.55f, 0.55f, 0.55f);
@@ -72,7 +73,7 @@ public partial class TopNavBar : HBoxContainer
 
 		// ── Navigation buttons ──
 		_walkBtn = MakeToggleButton("Walk");
-		_walkBtn.Toggled += (on) => WalkToggled?.Invoke();
+		_walkBtn.Toggled += (on) => { if (!_suppressToggleEvent) WalkToggled?.Invoke(); };
 		AddChild(_walkBtn);
 
 		_overviewBtn = MakeNavButton("Overview");
@@ -136,7 +137,9 @@ public partial class TopNavBar : HBoxContainer
 
 	public void UpdateWalkState(bool inWalkMode)
 	{
+		_suppressToggleEvent = true;
 		_walkBtn.ButtonPressed = inWalkMode;
+		_suppressToggleEvent = false;
 		var bg = _walkBtn.GetThemeStylebox("pressed") as StyleBoxFlat;
 		if (bg is not null)
 		{

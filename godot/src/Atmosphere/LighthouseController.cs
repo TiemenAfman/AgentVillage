@@ -68,6 +68,7 @@ public partial class LighthouseController : Node3D
 
 	public override void _Process(double delta)
 	{
+		DropFreedSite();
 		ResolveCycleSource();
 		if (_site is null && ResolveLighthouseSite())
 			BuildLantern();
@@ -93,16 +94,34 @@ public partial class LighthouseController : Node3D
 	public void Advance(float seconds)
 	{
 		_yaw = Mathf.Wrap(_yaw + Mathf.Tau * seconds / RevolutionSeconds, 0.0f, Mathf.Tau);
-		if (_rotator is not null)
-			_rotator.Rotation = new Vector3(Mathf.DegToRad(-12.0f), _yaw, 0.0f);
+		if (GodotObject.IsInstanceValid(_rotator))
+			_rotator!.Rotation = new Vector3(Mathf.DegToRad(-12.0f), _yaw, 0.0f);
 	}
 
 	/// <summary>Turns the lantern room, glow and beam on or off.</summary>
 	public void SetActive(bool on)
 	{
 		_active = on;
-		if (_lantern is not null)
-			_lantern.Visible = on;
+		if (GodotObject.IsInstanceValid(_lantern))
+			_lantern!.Visible = on;
+	}
+
+	/// <summary>
+	/// Drops the cached lantern once the world has been rebuilt underneath it. WorldManager
+	/// frees every Building_* node on a rebuild - which happens on an ordinary start, the moment
+	/// the second VillageData arrives - while this controller lives on outside ObjectsRoot.
+	/// Touching the freed site then throws ObjectDisposedException from _Process, and an export
+	/// build dies on that where the editor only logs it. Clearing the references lets the next
+	/// frame find the new lighthouse and rebuild the lantern on it.
+	/// </summary>
+	private void DropFreedSite()
+	{
+		if (_site is null || GodotObject.IsInstanceValid(_site))
+			return;
+		_site = null;
+		_lantern = null;
+		_rotator = null;
+		_beam = null;
 	}
 
 	private void ResolveCycleSource()
@@ -199,11 +218,13 @@ public partial class LighthouseController : Node3D
 			EmissionEnergyMultiplier = 1.8f,
 		};
 		// Rotate the cone primitive (axis along Y) so it lies along -Z with the light.
+		// +90° puts the narrow top (r 0.55) at the lantern and the wide bottom (r 1.1)
+		// out at the sweep end, i.e. the beam visibly diverges away from the tower.
 		rotator.AddChild(new MeshInstance3D
 		{
 			Name = "BeamCone",
 			Mesh = cone,
-			Rotation = new Vector3(Mathf.DegToRad(-90.0f), 0.0f, 0.0f),
+			Rotation = new Vector3(Mathf.DegToRad(90.0f), 0.0f, 0.0f),
 			Position = new Vector3(0.0f, 0.0f, -3.5f),
 		});
 

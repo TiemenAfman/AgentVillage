@@ -22,3 +22,12 @@ config.json
 .env.*
 *.log
 *.log.1
+
+# Screenshot-matrices van scripts/shots.ps1: ~30 MB per run, lokaal houden.
+docs/shots/
+
+# Gegenereerde codedump voor externe AI (ai_studio_code.ps1); regenereerbaar, hoort niet in git.
+codebase.txt
+
+# Windows-builds van scripts/build.ps1: ~200 MB per release, hoort niet in git.
+dist/
