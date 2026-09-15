@@ -212,6 +212,12 @@ public partial class WorldManager : Node3D
 		_districtDecorator?.DecorateDistricts(_terrain, village);
 		var fieldCells = _farmlandSpawner?.SpawnFields(_terrain, village);
 		_propSpawner?.SpawnProps(_terrain, village, fieldCells);
+
+		// Stone, scattered from the class byte the server publishes rather than from a second
+		// opinion invented here. Needs Terrain3D: the instancer is what buys the levels of detail
+		// and the culling, and a few hundred rock meshes without either is not worth drawing.
+		if (_bridge is not null)
+			new RockSpawner().Spawn(_bridge, _terrain, village);
 		BuildRoads(_terrain, village);
 		BuildBridges(_terrain, village);
 
