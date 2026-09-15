@@ -127,10 +127,10 @@ function dye(hex, rng) {
 // What one settler looks like. Everyone a model built wears that model's cloth - it is
 // how a settler on the square reads as belonging to the house behind it - but trousers,
 // hat, skin and build are their own, and no two bolts of the same cloth took the dye the
-// same way. Seeded off the session id and nothing else: village.json is thrown away and
-// rebuilt from the transcripts every scan, so a look drawn from Math.random, or from a
-// slot number, or from anything the rebuild is free to reorder, would give the same
-// person a new face every minute.
+// same way. Everything here is hashed off one string the caller promises is the same on
+// every scan: village.json is thrown away and rebuilt from the transcripts every minute,
+// so a look drawn from Math.random, or from a slot number, or from anything the rebuild
+// is free to reorder, would give the same person a new face every time.
 export function settlerLook(seed, style, kind = 'adult') {
   const pal = PALETTE[style] || PALETTE.unknown;
   const base = styleLook(style, kind === 'sailor');
@@ -265,9 +265,11 @@ export function createSettlers(scene, material, terrain) {
     if (slot >= CAPACITY) return null;
     slots++;
     for (const m of body) m.count = slots;
-    // The session id, not the building id: a house that is upgraded or refitted keeps its
-    // tenant, and the tenant should keep their face.
-    const look = settlerLook(spec.sessionId || id, style, kind);
+    // Seeded off the building id: it is a session id with a prefix on it, or for an
+    // apprentice the prefix plus the agent id that is the one thing telling four
+    // apprentices of the same master apart. An upgrade or a refit does not touch it, so a
+    // settler who moves up from a hut to a manor is still recognisably the same person.
+    const look = settlerLook(id, style, kind);
     tint(torso, slot, look.tunic);
     tint(limbs, slot, look.trim);
     tint(head, slot, look.skin);
