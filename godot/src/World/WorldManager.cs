@@ -25,6 +25,7 @@ public partial class WorldManager : Node3D
 	private Node3D? _roadRoot;
 	private Node3D? _bridgeRoot;
 	private FoliageSpawner? _foliage;
+	private SettlerCrowd? _crowd;
 
 	private readonly List<BuildingMarker> _buildingMarkers = new();
 	private readonly HashSet<(int, int)> _buildingCells = new();
@@ -129,6 +130,11 @@ public partial class WorldManager : Node3D
 		{
 			_civicDecorator = new CivicDecorator { Name = "CivicDecorator" };
 			_objectsRoot!.AddChild(_civicDecorator);
+		}
+		if (_crowd is null)
+		{
+			_crowd = new SettlerCrowd { Name = "SettlerCrowd" };
+			_objectsRoot!.AddChild(_crowd);
 		}
 
 		if (_roadRoot is null)
@@ -322,6 +328,9 @@ public partial class WorldManager : Node3D
 		}
 
 		_civicDecorator?.BuildCivics(_terrain, village);
+
+		// Last, because they walk on everything above: the crowd samples the finished terrain.
+		_crowd?.Populate(_terrain, village);
 
 		GD.Print("[WorldManager] World build complete.");
 	}
