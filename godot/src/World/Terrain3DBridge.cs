@@ -258,6 +258,11 @@ public sealed class Terrain3DBridge
 		//   macro variation Two colours modulated over tens of metres. Without them a texture
 		//                   that repeats every three metres reads as one flat green from far off,
 		//                   which is the price of making it sharp up close.
+		// Per-face normals on the ground itself, the same trick RockMesh uses on a boulder. The
+		// terrain is a clipmap of triangles either way; shading them flat is what turns a smooth
+		// photoreal hill into a faceted one, and it costs nothing - no geometry changes, no world
+		// changes, no re-founding.
+		Param("flat_terrain_normals", true);
 		Param("enable_projection", true);
 
 		Param("depth_blur", 0.0f);
