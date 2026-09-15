@@ -169,6 +169,8 @@ public partial class ScreenshotRunner : SceneTree
 	{
 		var shot = ShotCatalog.Find(_shotName)
 			?? throw new ArgumentException($"unknown shot '{_shotName}'; known: {ShotCatalog.Names()}");
+		// Framed relative to the island, resolved against the one that is actually loaded.
+		shot = ShotCatalog.Resolve(shot, world.Terrain, LoadVillage());
 
 		var pos = _posOverride ?? shot.Position;
 		var target = _targetOverride ?? shot.Target;

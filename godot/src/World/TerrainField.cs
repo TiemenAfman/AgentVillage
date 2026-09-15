@@ -106,6 +106,20 @@ public sealed class TerrainField
 			loaded++;
 		}
 
+		// A manifest with chunks and not one of them readable is not a partly grown island, it is
+		// a broken build - and it fails in the most misleading way there is: the field is all sea,
+		// so every house lands on water and the village looks like it sank. That happened for real.
+		// `export_presets.cfg` carried `include_filter="*.json"`, which ships village.json and
+		// manifest.json and leaves every `.bin` chunk behind, and the only sign was a warning per
+		// chunk in a console the player does not have.
+		if (manifest.Chunks.Count > 0 && loaded == 0)
+		{
+			GD.PushError(
+				$"the world manifest names {manifest.Chunks.Count} chunks and none of them could be read. "
+				+ "In an exported build this means export_presets.cfg is not shipping *.bin; "
+				+ "in the editor it means res://world/chunk/ is empty or out of date with the manifest.");
+		}
+
 		return new TerrainField
 		{
 			Manifest = manifest,
@@ -197,27 +211,39 @@ public sealed class TerrainField
 
 	// ---- the layout grid, for now -------------------------------------------------
 	//
-	// The village is still expressed in the old 64-cell grid: `plot.gx`, `path.cells`, every
-	// parcel bitmap. That grid is laid over the middle of this terrain, one metre to the cell,
-	// so everything that was placed on it lands on real ground at a real height - just on a
-	// village-sized patch of a much larger island.
+	// The village is expressed in **lots**: `plot.gx`, `path.cells`, every parcel bitmap count
+	// lots, and a lot is four metres. That is the one number this whole layer exists to apply.
 	//
-	// It is a bridge and it is meant to be short. When the layout is re-founded on metres these
-	// members go, and so does every caller that reads a cell coordinate.
+	// It used to be one metre to the cell, which is why a road was a metre wide and two people
+	// could not pass on it. The server now plans in lots of four (lib/world/lotfield.mjs) and
+	// says so in `village.island.metresPerLot`; nothing here should ever assume the figure.
 
-	/// <summary>Side of the layout grid in cells. Set from `village.grid.size`.</summary>
-	public int Size { get; set; } = 64;
+	/// <summary>Side of the layout grid in lots. Set from `village.grid.size`.</summary>
+	public int Size { get; set; } = 256;
 
-	/// <summary>Half the layout grid, in cells - which is also metres, at one metre to the cell.</summary>
+	/// <summary>Metres to the lot. From `village.island.metresPerLot`; four, at the time of writing.</summary>
+	public double MetresPerLot { get; set; } = 4.0;
+
+	/// <summary>Half the layout grid, in lots.</summary>
 	public double Half => Size / 2.0;
+
+	/// <summary>A span of lots in metres: the one place a footprint or a tile gets its size.</summary>
+	public float Span(double lots) => (float)(lots * MetresPerLot);
 
 	/// <summary>The world seed, for the hashes that scatter props and fields.</summary>
 	public uint IslandSeed => (uint)Manifest.Seed;
 
 	public bool InGrid(int gx, int gz) => gx >= 0 && gz >= 0 && gx < Size && gz < Size;
 
-	/// <summary>Centre of a layout cell, in world metres.</summary>
-	public (double X, double Z) CellWorld(int gx, int gz) => (gx - Half + 0.5, gz - Half + 0.5);
+	/// <summary>Centre of a lot, in world metres. Mirrors `cellWorld` in lib/world/lotfield.mjs,
+	/// which is the definition: if these two disagree the village stands somewhere the server
+	/// never put it.</summary>
+	public (double X, double Z) CellWorld(int gx, int gz)
+		=> ((gx - Half + 0.5) * MetresPerLot, (gz - Half + 0.5) * MetresPerLot);
+
+	/// <summary>Corner of a block of lots, in world metres: where a plot's geometry starts.</summary>
+	public (double X, double Z) CellCorner(int gx, int gz)
+		=> ((gx - Half) * MetresPerLot, (gz - Half) * MetresPerLot);
 
 	/// <summary>Ground height at a world position. Kept in double for the callers that were
 	/// written against the old generator.</summary>

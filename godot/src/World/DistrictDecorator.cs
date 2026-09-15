@@ -123,6 +123,9 @@ public partial class DistrictDecorator : Node3D
 
 		int size = terrain.Size;
 		float half = (float)terrain.Half;
+		// Lot coordinates into metres. A hedge runs the length of a lot, so its mesh grows
+		// with the grid; its height and thickness are a hedge and do not.
+		float lot = terrain.Span(1.0);
 		var owner = ParcelRaster.DecodeOwners(village, size);
 
 		var roadCells = new HashSet<long>();
@@ -150,7 +153,7 @@ public partial class DistrictDecorator : Node3D
 		var hedgeTfs = new List<Transform3D>();
 		var postTfs = new List<Transform3D>();
 
-		var hedgeMesh = new BoxMesh { Size = new Vector3(HedgeLen, HedgeH, HedgeDepth) };
+		var hedgeMesh = new BoxMesh { Size = new Vector3(HedgeLen * lot, HedgeH, HedgeDepth) };
 		hedgeMesh.Material = SolidMat(HedgeColor);
 
 		var postMesh = new BoxMesh { Size = new Vector3(0.12f, 0.72f, 0.12f) };
@@ -178,8 +181,8 @@ public partial class DistrictDecorator : Node3D
 						int along0 = isX ? gz : gx;
 						foreach (int along in new[] { along0, along0 + 1 })
 						{
-							float px = isX ? fixedC - half : along - half;
-							float pz = isX ? along - half : fixedC - half;
+							float px = (isX ? fixedC - half : along - half) * lot;
+							float pz = (isX ? along - half : fixedC - half) * lot;
 							float ph = (float)terrain.WorldHeight(px, pz);
 							postTfs.Add(new Transform3D(Basis.Identity,
 								new Vector3(px, ph + 0.36f, pz)));
@@ -191,14 +194,14 @@ public partial class DistrictDecorator : Node3D
 					Basis basis;
 					if (dx != 0)
 					{
-						midX = gx + (dx > 0 ? 1 : 0) - half;
-						midZ = gz - half + 0.5f;
+						midX = (gx + (dx > 0 ? 1 : 0) - half) * lot;
+						midZ = (gz - half + 0.5f) * lot;
 						basis = RotY90();
 					}
 					else
 					{
-						midX = gx - half + 0.5f;
-						midZ = gz + (dz > 0 ? 1 : 0) - half;
+						midX = (gx - half + 0.5f) * lot;
+						midZ = (gz + (dz > 0 ? 1 : 0) - half) * lot;
 						basis = Basis.Identity;
 					}
 					float h = (float)terrain.WorldHeight(midX, midZ);

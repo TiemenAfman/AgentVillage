@@ -14,7 +14,16 @@ public sealed class IslandData
 	[JsonConverter(typeof(FlexibleStringConverter))]
 	public string? FoundedAt { get; set; }
 	/// <summary>The terrain hash the µlayout computed for this seed; Godot must reproduce it.</summary>
+	/// <remarks>Gone from the server: there is one generator now and the ground arrives as
+	/// bytes, so there is nothing to agree on. Kept so an old village.json still parses.</remarks>
 	public string? TerrainHash { get; set; }
+	/// <summary>Revision of the baked world this village was planned on. Replaces TerrainHash:
+	/// not a checksum to reproduce but a key to notice the ground changed under the houses.</summary>
+	public string? WorldRev { get; set; }
+	/// <summary>Metres to one layout lot. Every coordinate in this file counts lots.</summary>
+	public double MetresPerLot { get; set; } = 4.0;
+	/// <summary>Width of the whole world in metres, the island plus the sea it can grow into.</summary>
+	public double EnvelopeM { get; set; }
 	/// <summary>World-space landing spot [x, z], or null while the beach is undecided.</summary>
 	public List<int>? Landing { get; set; }
 	public TownData? Town { get; set; }

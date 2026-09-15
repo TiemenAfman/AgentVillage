@@ -15,7 +15,19 @@ namespace Promptholm.Atmosphere;
 [GlobalClass]
 public partial class CloudManager : Node3D
 {
-	private const float WorldHalf = 60.0f;
+	/// <summary>
+	/// How much bigger the world is than the one these numbers were written for.
+	///
+	/// Everything below - the drift square, the altitudes, the size of a puff - was chosen for
+	/// a 64 m island with eight metres of relief. On a 400 m island with a 30 m peak the same
+	/// clouds are four-metre boxes floating *below* the hilltops, and they read as white crates
+	/// hanging in the sky rather than as weather. WorldManager sets this from the island it
+	/// loaded; one is the old island, so nothing already tuned moves.
+	/// </summary>
+	public static float WorldScale { get; set; } = 1.0f;
+
+	private const float BaseWorldHalf = 60.0f;
+	private static float WorldHalf => BaseWorldHalf * WorldScale;
 	private const float DriftZRatio = 0.22f;
 
 	/// <summary>Side of the drift rectangle; clouds orbit this square around the island.</summary>
@@ -90,14 +102,20 @@ public partial class CloudManager : Node3D
 		_cloudDrift.Clear();
 
 		var rng = new PmRng(Seed).Fork("clouds");
-		int count = MinClouds + rng.IntN(Math.Max(1, MaxClouds - MinClouds + 1));
+		// More sky, more clouds - but not with the square of the scale, or a big island is
+		// overcast. The square root keeps the cover about the same.
+		int spread = (int)MathF.Round(MathF.Sqrt(WorldScale));
+		int count = (MinClouds + rng.IntN(Math.Max(1, MaxClouds - MinClouds + 1))) * Math.Max(1, spread);
 
 		for (int i = 0; i < count; i++)
 		{
 			float x = (float)rng.RangeF(-WorldHalf, WorldHalf);
 			float z = (float)rng.RangeF(-WorldHalf, WorldHalf);
-			float y = AltitudeMin + (float)rng.RangeF(0.0, AltitudeMax - AltitudeMin);
-			float size = 1.6f + (float)rng.RangeF(0.0, 1.6);
+			// Altitude and size both carry the scale: a cloud that is further away has to be
+			// bigger to read the same, and higher than the highest ground or it is scenery
+			// rather than sky.
+			float y = (AltitudeMin + (float)rng.RangeF(0.0, AltitudeMax - AltitudeMin)) * WorldScale;
+			float size = (1.6f + (float)rng.RangeF(0.0, 1.6)) * WorldScale;
 			float yaw = (float)rng.RangeF(0.0, Math.PI);
 
 			var root = new Node3D

@@ -87,7 +87,7 @@ public partial class FarmlandSpawner : Node3D
 		}
 
 		if (slabTfs.Count > 0)
-			AddChild(FillMulti(FieldSlabMesh(), slabTfs));
+			AddChild(FillMulti(FieldSlabMesh(terrain.Span(1.0)), slabTfs));
 		if (furrowTfs.Count > 0)
 			AddChild(FillMulti(FurrowMesh(), furrowTfs));
 		if (orchardTfs.Count > 0)
@@ -193,33 +193,39 @@ public partial class FarmlandSpawner : Node3D
 		List<Transform3D> furrowTfs)
 	{
 		float half = (float)terrain.Half;
+		// This file was written when a layout cell was a metre. It is four now, so everything
+		// measured in cells - positions, field widths, furrow spacing - is a length in lots
+		// and gets multiplied here. What is measured in metres, like the width of a furrow or
+		// the size of a tree, is left alone: a plum tree does not grow when the grid does.
+		float lot = terrain.Span(1.0);
 
 		for (int z = 0; z < d; z++)
 		{
 			for (int x = 0; x < w; x++)
 			{
 				int cx = gx + x, cz = gz + z;
-				float wx = cx - half + 0.5f;
-				float wz = cz - half + 0.5f;
+				float wx = (cx - half + 0.5f) * lot;
+				float wz = (cz - half + 0.5f) * lot;
 				float y = (float)terrain.WorldHeight(wx, wz) + 0.045f;
 				slabTfs.Add(new Transform3D(Basis.Identity,
 					new Vector3(wx, y, wz)));
 			}
 		}
 
-		float ox = gx - half;
-		float oz = gz - half;
+		float ox = (gx - half) * lot;
+		float oz = (gz - half) * lot;
 		bool alongX = w >= d;
-		int steps = (int)Math.Round((alongX ? d : w) / 0.25);
+		// A furrow every metre, whatever a lot is worth: the spacing is a fact about ploughing.
+		int steps = (int)Math.Round((alongX ? d : w) * lot);
 
 		for (int s = 1; s < steps; s++)
 		{
-			float o = s * 0.25f;
+			float o = s;
 			float fy;
 			Vector3 pos;
 			if (alongX)
 			{
-				float midX = ox + w * 0.5f;
+				float midX = ox + w * 0.5f * lot;
 				float fZ = oz + o;
 				fy = (float)terrain.WorldHeight(midX, fZ) + 0.055f;
 				pos = new Vector3(midX, fy, fZ);
@@ -227,7 +233,7 @@ public partial class FarmlandSpawner : Node3D
 			else
 			{
 				float fX = ox + o;
-				float midZ = oz + d * 0.5f;
+				float midZ = oz + d * 0.5f * lot;
 				fy = (float)terrain.WorldHeight(fX, midZ) + 0.055f;
 				pos = new Vector3(fX, fy, midZ);
 			}
@@ -235,7 +241,7 @@ public partial class FarmlandSpawner : Node3D
 			Basis basis;
 			if (alongX)
 			{
-				float fW = w - 0.16f;
+				float fW = w * lot - 0.16f;
 				basis = new Basis(
 					new Vector3(fW, 0, 0),
 					new Vector3(0, 0.02f, 0),
@@ -243,7 +249,7 @@ public partial class FarmlandSpawner : Node3D
 			}
 			else
 			{
-				float fD = d - 0.16f;
+				float fD = d * lot - 0.16f;
 				basis = new Basis(
 					new Vector3(0.10f, 0, 0),
 					new Vector3(0, 0.02f, 0),
@@ -260,14 +266,15 @@ public partial class FarmlandSpawner : Node3D
 		TerrainField terrain, List<Transform3D> orchardTfs)
 	{
 		float half = (float)terrain.Half;
+		float lot = terrain.Span(1.0);
 
 		for (int z = 0; z < 3; z++)
 		{
 			for (int x = 0; x < 3; x++)
 			{
 				int cx = gx + x, cz = gz + z;
-				float wx = cx - half + 0.5f;
-				float wz = cz - half + 0.5f;
+				float wx = (cx - half + 0.5f) * lot;
+				float wz = (cz - half + 0.5f) * lot;
 				float y = (float)terrain.WorldHeight(wx, wz);
 
 				uint h = PmRng.Hash32($"orch:{cx},{cz}");
@@ -288,9 +295,9 @@ public partial class FarmlandSpawner : Node3D
 	private static StandardMaterial3D Mat(Color c)
 		=> Palette.Solid(c, 0.9f);
 
-	private static BoxMesh FieldSlabMesh()
+	private static BoxMesh FieldSlabMesh(float lot)
 	{
-		var box = new BoxMesh { Size = new Vector3(1.0f, 0.06f, 1.0f) };
+		var box = new BoxMesh { Size = new Vector3(lot, 0.06f, lot) };
 		box.Material = Mat(FieldBase);
 		return box;
 	}

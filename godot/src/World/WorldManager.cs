@@ -152,7 +152,24 @@ public partial class WorldManager : Node3D
 		// The island comes from the server now. `res://world/` is the copy baked into the build;
 		// when the client fetches a world over HTTP this is where that arrives instead.
 		_terrain = TerrainField.LoadFromResources();
-		_terrain.Size = size;                 // the layout grid the village is still expressed in
+		_terrain.Size = size;                 // the layout grid, in lots
+		// Never assume four. The server says what a lot is worth and this is the only place
+		// that reads it; a client that guessed would put the whole village at the wrong scale
+		// on the right island, which is exactly what a sunken town looks like.
+		if (village.Island.MetresPerLot > 0) _terrain.MetresPerLot = village.Island.MetresPerLot;
+
+		// How far the eye has to carry, so the fog is tuned for this world and not for the
+		// 64 m one the palette was authored on. Only WorldPreviewRunner used to set this, which
+		// meant the preview looked right and the game itself - and every screenshot of it - put
+		// a 400 m island behind the haze of a 60 m one, washed out to nearly white.
+		//
+		// Twice the envelope, not the 1.2x the preview used: the far shot stands 430 m out and
+		// at 1.2x the island still read through a veil. This whole correction is empirical and
+		// says so in EnvironmentFactory; it wants re-tuning against the screenshot matrix rather
+		// than another multiplier.
+		Atmosphere.EnvironmentFactory.DepthReachM = (float)(_terrain.Manifest.EnvelopeM * 2.0);
+		// And the sky with it. 32 m is the half-grid the atmosphere was authored against.
+		Atmosphere.CloudManager.WorldScale = MathF.Max(1.0f, _terrain.Manifest.RadiusM / 32.0f);
 		if (_terrain.IslandSeed != seed)
 		{
 			GD.PushWarning(
@@ -212,12 +229,13 @@ public partial class WorldManager : Node3D
 			float gz = b.Plot.Gz;
 			// Footprint scaled down, but the plot anchors the centre: the building is centred
 			// on the full lot and leaves a margin on all four sides.
-			float pw = Math.Max(0.8f, b.Plot.W * FootprintScale);
-			float pd = Math.Max(0.8f, b.Plot.D * FootprintScale);
+			float pw = Math.Max(0.8f, _terrain.Span(b.Plot.W) * FootprintScale);
+			float pd = Math.Max(0.8f, _terrain.Span(b.Plot.D) * FootprintScale);
 			int rot = (int)b.Plot.Rot;
 
-			float x = gx + b.Plot.W * 0.5f - (float)_terrain.Half;
-			float z = gz + b.Plot.D * 0.5f - (float)_terrain.Half;
+			var (cornerX, cornerZ) = _terrain.CellCorner((int)gx, (int)gz);
+			float x = (float)cornerX + _terrain.Span(b.Plot.W * 0.5);
+			float z = (float)cornerZ + _terrain.Span(b.Plot.D * 0.5);
 			float ground = (float)_terrain.WorldHeight(x, z);
 
 			var buildingRoot = new Node3D
@@ -534,40 +552,102 @@ public partial class WorldManager : Node3D
 	{
 		ClearChildren(_roadRoot!);
 
-		var tiles = new List<Transform3D>();
-
-		void AddCell(int gx, int gz, float lift)
-		{
-			var (wx, wz) = terrain.CellWorld(gx, gz);
-			float y = (float)terrain.WorldHeight(wx, wz) + lift;
-			tiles.Add(new Transform3D(Basis.Identity, new Vector3((float)wx, y, (float)wz)));
-		}
+		// Every lot that is paved, road and plaza alike. A set, because a civic path and the
+		// square it arrives at share cells and a quad drawn twice z-fights with itself.
+		var paved = new HashSet<long>();
+		void Add(int gx, int gz) => paved.Add(((long)gx << 32) | (uint)gz);
 
 		foreach (var path in village.Paths)
-		{
 			foreach (var cell in path.Cells)
-			{
-				if (cell.Count >= 2)
-					AddCell(cell[0], cell[1], 0.03f);
-			}
-		}
+				if (cell.Count >= 2) Add(cell[0], cell[1]);
 
 		if (village.Island.Town?.Paved is not null)
-		{
 			foreach (var cell in village.Island.Town.Paved)
-			{
-				if (cell.Count >= 2)
-					AddCell(cell[0], cell[1], 0.03f);
-			}
+				if (cell.Count >= 2) Add(cell[0], cell[1]);
+
+		if (paved.Count == 0)
+		{
+			GD.Print("[WorldManager] no paved ground");
+			return;
 		}
 
-		var slab = new BoxMesh { Size = new Vector3(1.0f, 0.06f, 1.0f) };
-		slab.Material = CobbleMat();
-		var mmi = NewMulti(slab);
-		_roadRoot.AddChild(mmi);
-		FillMulti(mmi, tiles);
+		// One surface, not one box per lot.
+		//
+		// A road used to be a MultiMesh of slabs sitting three centimetres over the height at
+		// each lot's *centre*. On the old island, which was flat to within a metre, that read as
+		// a road. On ground with real relief every slab is level while the ground under it is
+		// not, so each one digs into the hill at one edge and hangs in the air at the other, and
+		// a street reads as a row of floating tiles - which is exactly what it looked like.
+		//
+		// Instead the surface is built from the terrain itself: a quad per lot whose four
+		// corners sit on the ground, so neighbouring lots meet exactly and the ribbon follows
+		// every dip and crown the way a laid road does. The lift is small and constant, enough
+		// to beat z-fighting and to read as a kerb from a standing eye.
+		const float Lift = 0.05f;
+		float lot = terrain.Span(1.0);
 
-		GD.Print($"[WorldManager] {tiles.Count} cobblestone tiles");
+		var vertices = new List<Vector3>(paved.Count * 6);
+		var normals = new List<Vector3>(paved.Count * 6);
+		var uvs = new List<Vector2>(paved.Count * 6);
+
+		// Corner heights are cached across lots: a lot shares two corners with each of its four
+		// neighbours, so without this the terrain is sampled four times for every point.
+		var cornerY = new Dictionary<long, float>();
+		float CornerY(int gx, int gz)
+		{
+			long key = ((long)gx << 32) | (uint)gz;
+			if (cornerY.TryGetValue(key, out float cached)) return cached;
+			var (wx, wz) = terrain.CellCorner(gx, gz);
+			float y = (float)terrain.WorldHeight(wx, wz) + Lift;
+			cornerY[key] = y;
+			return y;
+		}
+
+		foreach (long key in paved)
+		{
+			int gx = (int)(key >> 32), gz = (int)(uint)key;
+			var (x0, z0) = terrain.CellCorner(gx, gz);
+			float x1 = (float)x0 + lot, z1 = (float)z0 + lot;
+
+			var a = new Vector3((float)x0, CornerY(gx, gz), (float)z0);
+			var b = new Vector3(x1, CornerY(gx + 1, gz), (float)z0);
+			var c = new Vector3((float)x0, CornerY(gx, gz + 1), z1);
+			var d = new Vector3(x1, CornerY(gx + 1, gz + 1), z1);
+
+			// Two triangles, wound so the face points up. Getting this backwards is how the
+			// terrain mesh once rendered as slivers: a back-facing quad is not a dark quad, it
+			// is no quad at all.
+			AddTriangle(vertices, normals, uvs, a, b, c);
+			AddTriangle(vertices, normals, uvs, b, d, c);
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+
+		var mesh = new ArrayMesh();
+		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		mesh.SurfaceSetMaterial(0, CobbleMat());
+
+		_roadRoot!.AddChild(new MeshInstance3D { Name = "Paving", Mesh = mesh });
+		GD.Print($"[WorldManager] paving: {paved.Count} lots, {vertices.Count / 3} triangles");
+	}
+
+	/// <summary>One triangle with a flat normal and world-space UVs, so the grain of the paving
+	/// runs with the ground rather than with whichever lot it happens to fall in.</summary>
+	private static void AddTriangle(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs,
+		Vector3 a, Vector3 b, Vector3 c)
+	{
+		var n = (b - a).Cross(c - a).Normalized();
+		if (n.Y < 0.0f) n = -n;
+		foreach (var v in new[] { a, b, c })
+		{
+			vertices.Add(v);
+			normals.Add(n);
+			uvs.Add(new Vector2(v.X * 0.5f, v.Z * 0.5f));
+		}
 	}
 
 	// ---- bridges -------------------------------------------------------------
@@ -591,13 +671,18 @@ public partial class WorldManager : Node3D
 	}
 
 	/// <summary>
-	/// Wooden deck over a straight run of river cells, floated at DeckY well above the
-	/// waterline. Railings run along both long edges; short footings prop the deck ends
-	/// on the banks. The span under the deck stays empty, so swimmers pass clean through.
+	/// A footbridge from bank to bank: a segmented deck that follows the two shores it joins,
+	/// arched over the middle so it clears the water, on piers down to the bed.
+	///
+	/// It used to be one box at a fixed <c>DeckY</c> of 0.7 m. That was right when a bridge
+	/// crossed a stream on an island whose whole relief was eight metres; on a crossing of
+	/// eighty metres of open sea between two shores at different heights it is a plank lying
+	/// in the water. The deck now starts and ends exactly on its abutments - so you can walk
+	/// onto it - and the crown of the arch is what buys the clearance.
 	/// </summary>
 	private Node3D? TryBuildBridge(TerrainField terrain, BridgeData bridge)
 	{
-		if (bridge.Cells.Count < 2)
+		if (bridge.Cells.Count < 1)
 			return null;
 
 		int gxMin = int.MaxValue, gxMax = int.MinValue;
@@ -620,84 +705,121 @@ public partial class WorldManager : Node3D
 			_ => gxMax - gxMin >= gzMax - gzMin,
 		};
 
-		float half = (float)terrain.Half;
-		float start, end, constW;
-		if (alongX)
-		{
-			start = gxMin + 0.5f - half;
-			end = gxMax + 0.5f - half;
-			constW = (gzMin + gzMax) * 0.5f + 0.5f - half;
-		}
-		else
-		{
-			start = gzMin + 0.5f - half;
-			end = gzMax + 0.5f - half;
-			constW = (gxMin + gxMax) * 0.5f + 0.5f - half;
-		}
+		// The abutments are one lot beyond the water at each end - that is the ground the deck
+		// has to meet, and the reason the deck is longer than the water is wide.
+		float lot = terrain.Span(1.0);
+		int midX = (gxMin + gxMax) / 2, midZ = (gzMin + gzMax) / 2;
+		var (nearX, nearZ) = terrain.CellWorld(alongX ? gxMin - 1 : midX, alongX ? midZ : gzMin - 1);
+		var (farX, farZ) = terrain.CellWorld(alongX ? gxMax + 1 : midX, alongX ? midZ : gzMax + 1);
 
-		float length = Math.Max(1.0f, Math.Abs(end - start) + 1.0f);
-		float mid = (start + end) * 0.5f;
+		var a = new Vector3((float)nearX, (float)terrain.WorldHeight(nearX, nearZ), (float)nearZ);
+		var b = new Vector3((float)farX, (float)terrain.WorldHeight(farX, farZ), (float)farZ);
+		float span = alongX ? MathF.Abs(b.X - a.X) : MathF.Abs(b.Z - a.Z);
+		if (span < 0.5f)
+			return null;
 
-		const float DeckY = 0.7f;
 		const float DeckH = 0.14f;
-		const float DeckW = 2.4f;
-		const float RailingH = 0.4f;
+		const float DeckW = 2.6f;
+		const float RailingH = 0.95f;      // a rail you could hold, not a kerb
+		const float Clearance = 2.6f;      // free height over the water at the crown
+		const float MinArch = 0.35f;       // even a bridge over dry land has a little camber
 
-		var deckBox = new BoxMesh
+		// The crown rises until it clears the water. Over a high-banked channel that is almost
+		// nothing, and the arch is then there for the look rather than for the boats.
+		float midBank = (a.Y + b.Y) * 0.5f;
+		float arch = MathF.Max(MinArch, Clearance - midBank);
+
+		Vector3 Deck(float t)
 		{
-			Size = alongX ? new Vector3(length, DeckH, DeckW) : new Vector3(DeckW, DeckH, length),
-		};
-		deckBox.Material = PlankMat();
+			float y = Mathf.Lerp(a.Y, b.Y, t) + arch * MathF.Sin(MathF.PI * t);
+			return new Vector3(Mathf.Lerp(a.X, b.X, t), y, Mathf.Lerp(a.Z, b.Z, t));
+		}
 
 		var root = new Node3D();
-		root.AddChild(new MeshInstance3D
-		{
-			Name = "Deck",
-			Mesh = deckBox,
-			Position = alongX ? new Vector3(mid, DeckY, constW) : new Vector3(constW, DeckY, mid),
-		});
-
-		// Low wooden railings along both sides, enclosing the ends. AddRailing builds its own
-		// box from the size, so the two BoxMesh objects that used to be created and handed in
-		// here were pure waste — one of them did not even carry the size it was passed with.
-		float railY = DeckY + DeckH * 0.5f + RailingH * 0.5f;
+		int segments = Math.Max(2, (int)MathF.Ceiling(span / lot));
+		float segLen = span / segments;
 		float side = DeckW * 0.5f;
+		float railY = DeckH * 0.5f + RailingH;
 
-		var sideSize = alongX ? new Vector3(length, RailingH, 0.04f) : new Vector3(0.04f, RailingH, length);
-		AddRailing(root, sideSize, alongX ? new Vector3(0, railY, side) : new Vector3(side, railY, 0));
-		AddRailing(root, sideSize, alongX ? new Vector3(0, railY, -side) : new Vector3(-side, railY, 0));
+		// Built once and shared: every plank is the same length, and the posts and piers are
+		// unit boxes scaled per instance. Reassigning Size on a shared BoxMesh is the bug this
+		// file already carries a note about - every instance points at the same resource.
+		var plank = new BoxMesh { Size = alongX ? new Vector3(segLen, DeckH, DeckW) : new Vector3(DeckW, DeckH, segLen) };
+		plank.Material = PlankMat();
+		var railSide = new BoxMesh { Size = alongX ? new Vector3(segLen, 0.09f, 0.07f) : new Vector3(0.07f, 0.09f, segLen) };
+		railSide.Material = RailingMat();
+		var unitBox = new BoxMesh { Size = Vector3.One };
+		unitBox.Material = RailingMat();
+		var pierMesh = new BoxMesh { Size = Vector3.One };
+		pierMesh.Material = StoneMat();
 
-		var endSize = alongX ? new Vector3(0.04f, RailingH, DeckW) : new Vector3(DeckW, RailingH, 0.04f);
-		AddRailing(root, endSize, alongX ? new Vector3(-length * 0.5f, railY, 0) : new Vector3(0, railY, -length * 0.5f));
-		AddRailing(root, endSize, alongX ? new Vector3(length * 0.5f, railY, 0) : new Vector3(0, railY, length * 0.5f));
+		var lateral = alongX ? Vector3.Forward : Vector3.Right;
 
-		// Stone footings on the banks under the deck corners; skipped when the bank is
-		// already higher than the deck bottom.
-		// A unit box scaled per instance. Sharing one BoxMesh and reassigning its Size inside
-		// the loop meant every footing already added pointed at the same resource, so they all
-		// ended up with the height of whichever one was computed last.
-		var footingMesh = new BoxMesh { Size = Vector3.One };
-		footingMesh.Material = StoneMat();
-		float deckBottom = DeckY - DeckH * 0.5f;
-		foreach (var edge in new[] { start, end })
+		for (int i = 0; i < segments; i++)
 		{
-			foreach (var off in new[] { -side, side })
+			var p0 = Deck(i / (float)segments);
+			var p1 = Deck((i + 1) / (float)segments);
+			var mid = (p0 + p1) * 0.5f;
+
+			// Pitch, so a plank lies along the slope instead of stepping down it. About Z for a
+			// deck running along X, about X for one running along Z - and the sign flips with
+			// the direction of travel, because the two axes turn opposite ways for the same rise.
+			float rise = p1.Y - p0.Y;
+			float run = alongX ? p1.X - p0.X : p1.Z - p0.Z;
+			float dir = run < 0.0f ? -1.0f : 1.0f;
+			float pitch = MathF.Atan2(rise, MathF.Abs(run));
+			var basis = alongX
+				? new Basis(Vector3.Back, -pitch * dir)
+				: new Basis(Vector3.Right, pitch * dir);
+
+			root.AddChild(new MeshInstance3D { Name = "Deck", Mesh = plank, Transform = new Transform3D(basis, mid) });
+
+			foreach (int s in new[] { -1, 1 })
 			{
-				float cx = alongX ? edge : constW + off;
-				float cz = alongX ? constW + off : edge;
-				float bankY = (float)terrain.WorldHeight((double)cx, (double)cz);
-				float h = deckBottom - bankY;
-				if (h <= 0.02f)
-					continue;
+				var offset = new Vector3(0.0f, railY, 0.0f) + lateral * (side * s);
 				root.AddChild(new MeshInstance3D
 				{
-					Name = "Footing",
-					Mesh = footingMesh,
+					Name = "Rail",
+					Mesh = railSide,
+					Transform = new Transform3D(basis, mid + basis * offset),
+				});
+
+				// Uprights every other segment, which is what makes it read as a railing rather
+				// than as a handrail floating on nothing.
+				if (i % 2 != 0)
+					continue;
+				var foot = mid + basis * (lateral * (side * s));
+				root.AddChild(new MeshInstance3D
+				{
+					Name = "Post",
+					Mesh = unitBox,
 					Transform = new Transform3D(
-						Basis.FromScale(new Vector3(0.6f, h, 0.6f)),
-						new Vector3(cx, bankY + h * 0.5f, cz)),
+						Basis.FromScale(new Vector3(0.09f, railY, 0.09f)),
+						foot + new Vector3(0.0f, railY * 0.5f, 0.0f)),
 				});
 			}
+		}
+
+		// Piers, every few segments, from the underside of the deck down to the bed. Skipped
+		// where the bed has already come up to meet it: that is the bank, and there the
+		// abutment is the pier.
+		int pierEvery = Math.Max(2, (int)MathF.Round(9.0f / segLen));
+		for (int i = pierEvery; i < segments; i += pierEvery)
+		{
+			var p = Deck(i / (float)segments);
+			float bed = (float)terrain.WorldHeight(p.X, p.Z);
+			float top = p.Y - DeckH * 0.5f;
+			float h = top - bed;
+			if (h <= 0.4f)
+				continue;
+			root.AddChild(new MeshInstance3D
+			{
+				Name = "Pier",
+				Mesh = pierMesh,
+				Transform = new Transform3D(
+					Basis.FromScale(new Vector3(0.45f, h, 0.45f)),
+					new Vector3(p.X, bed + h * 0.5f, p.Z)),
+			});
 		}
 
 		return root;
