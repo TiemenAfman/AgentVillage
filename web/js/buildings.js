@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
+import { SEA_LEVEL } from 'shared/terrain.mjs';
 
 export const PALETTE = {
   fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb87333, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
@@ -1526,7 +1527,15 @@ export function buildPierGeometry(cells, terrain, from) {
 // both its banks are at sea level. The settlers and the walk mode read the deck height
 // so they cross a river rather than wade under it.
 export const BRIDGE_RAIL = 0.3;
-export const DECK_MIN = 0.26;
+// There is one sheet of water on the island, at SEA_LEVEL, and its shader lifts the
+// surface by up to WAVE (see the sea in web/js/world.js) - so a deck floored at the level
+// it crosses is a deck the crests wash through, which is what the planks looked like.
+// FREEBOARD is the daylight left under them at the ends of the run, where the arch below
+// adds nothing. Together they come to about what a hand-placed bridge already keeps
+// (`bridgeDeck` in web/js/props.js), which is the one crossing nobody complained about.
+const WAVE = 0.09;
+const FREEBOARD = 0.25;
+export const DECK_MIN = SEA_LEVEL + WAVE + FREEBOARD;
 // How far the crown of the deck rides over its two ends. A wooden footbridge humps, and
 // a flat plank laid from bank to bank reads as a jetty that happens to have two ends.
 const BRIDGE_ARCH = 0.34;
@@ -1538,9 +1547,43 @@ const BRIDGE_ARCH = 0.34;
 // which is what makes a deck meet the ground at both ends instead of standing proud of
 // the lower one.
 const DECK_LIP = 0.6;             // how far onto the bank each end reaches
-function bridgeStops(cells, terrain, axis) {
+const DECK_REACH = 8;             // and how far past the recorded run it may look for one
+
+// The crossing as the ground under it actually is, rather than as it was written down.
+// The layout measures its water on the server's own field - four metres to the lot, cut
+// from the baked world - while the ground here is generated per cell from the seed, so the
+// two do not agree on where the bank is. Measured on the live island: a crossing of four
+// cells covers one cell of a channel four cells wide and ends over open water, which is a
+// deck the river runs straight through. A deck is the one thing that cannot be a little
+// out, because what is under it is a river, so the run is carried outward from both ends
+// until it is on land - the question ghost.js already asks of a bridge somebody aims by
+// hand: it needs a bank to land on.
+function spanToBanks(cells, terrain, k) {
   const n = cells.length;
+  const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) || 1 : 1;
+  const out = cells.map((c) => [...c]);
+  const step = (end, sign) => { const c = [...end]; c[k] += sign; return c; };
+  // `terrain.size` rather than inGrid(): the model sheet crosses a valley of its own with
+  // a terrain of four functions, and this has to hold there too.
+  const wet = (c) => c[0] >= 0 && c[1] >= 0 && c[0] < terrain.size && c[1] < terrain.size
+    && !terrain.isLand(c[0], c[1]);
+  for (let i = 0; i < DECK_REACH; i++) {
+    const next = step(out[0], -dir);
+    if (!wet(next)) break;
+    out.unshift(next);
+  }
+  for (let i = 0; i < DECK_REACH; i++) {
+    const next = step(out[out.length - 1], dir);
+    if (!wet(next)) break;
+    out.push(next);
+  }
+  return out;
+}
+
+function bridgeStops(cells, terrain, axis) {
   const k = axis === 'x' ? 0 : 1;                    // the coordinate the run moves along
+  cells = spanToBanks(cells, terrain, k);
+  const n = cells.length;
   const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) : 1;
   const abut = (end, sign) => { const c = [...end]; c[k] += sign * dir; return c; };
   const at = (c) => terrain.cellWorld(c[0], c[1]);
@@ -1572,7 +1615,9 @@ function bridgeStops(cells, terrain, axis) {
   };
   const deckYAt = (p) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(p)) + arch(p);
   const deckY = (i) => deckYAt(world[i]);
-  return { world, centres, deckY, deckYAt, k };
+  // `cells` goes back out because it is no longer the list that came in: whoever stands on
+  // this deck has to be told about the part of it that was not written down.
+  return { cells, world, centres, deckY, deckYAt, k };
 }
 
 // Which cell of the crossing carries its deck at what height, for standing figures on it.
@@ -1580,8 +1625,8 @@ function bridgeStops(cells, terrain, axis) {
 // arch is in here too: they climb it rather than walking through it.
 export function bridgeDeckHeights(cells, terrain, axis) {
   if (!cells || !cells.length) return [];
-  const { centres, deckY } = bridgeStops(cells, terrain, axis);
-  return cells.map((c, i) => [c[0], c[1], deckY(i + 1)]);
+  const { cells: run, deckY } = bridgeStops(cells, terrain, axis);
+  return run.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
 // A plank bridge: a decked arch, a post-and-rail down each side, a kerb board along each
