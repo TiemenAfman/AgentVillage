@@ -31,7 +31,11 @@ SKIP = {'settler'}
 # prefixes that mark an asset. Kept here because the bake cannot proceed without knowing
 # either; scripts/model-rules.mjs is where both live for everyone else, and it checks the
 # result again once this has run.
-SHEETS = ['plain', 'wall', 'roof', 'stone', 'plank', 'plankZ']
+# `bark` and `foliage` are the last two: sheets of the island's own that no building is
+# drawn on. A tree wears them as a material each, off one geometry with a group apiece,
+# which is what an InstancedMesh with a material array needs - see grouped() in
+# web/js/models.js. A building has one material and cannot use them.
+SHEETS = ['plain', 'wall', 'roof', 'stone', 'plank', 'plankZ', 'bark', 'foliage']
 CLASSES = ('house_', 'roof_', 'addon_', 'prop_', 'civic_', 'flora_')
 # web/js/tavern-mesh.js was written by the hand-rolled exporter this script generalises,
 # and re-baking it here has to leave the file byte for byte the way it was: that identity

@@ -15,6 +15,21 @@
 // painted thing read better flat.
 export const SHEETS = { plain: 0, wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5 };
 
+// And two sheets no building is drawn on. A building has one material and carries the
+// sheet as a number on the vertex; the forest cannot, because bark and needles have to
+// be two materials with a texture each for an InstancedMesh to draw a trunk and a canopy
+// off one geometry. So a flora material names one of these instead of a building sheet,
+// and grouped() in web/js/models.js turns them into the geometry groups the material
+// array lines up with. They are deliberately not in SHEETS: there is no vertex id for
+// them, and a building part that asked for one would get `plain` and no explanation.
+export const CANOPY = ['bark', 'foliage'];
+
+// Every sheet a baked material may name, which is the union and not either half: the
+// bake (scripts/export-models.py) and this file have to agree to the letter, or a .blend
+// bakes clean and then fails its own check.
+export const isSheet = (name) => name in SHEETS || CANOPY.includes(name);
+export const sheetNames = () => [...Object.keys(SHEETS), ...CANOPY];
+
 // Empties named `anchor.<name>` become the anchors main.js hangs smoke, flags and signs
 // on. A name nothing reads is a typo rather than a feature.
 export const ANCHORS = ['smoke', 'flag', 'door', 'sign'];
@@ -28,6 +43,10 @@ export const CLASSES = ['house_', 'roof_', 'addon_', 'prop_', 'civic_', 'flora_'
 // once, so the rock gets forty triangles and the tavern gets everything left over.
 export const BUDGETS = [
   ['flora_rock', 40],
+  // A bush is a tree's cost with none of a tree's presence: it is undergrowth, seen for
+  // a moment at the edge of a wood, and there are thousands of it. Forty is what a rock
+  // gets for the same reason.
+  ['flora_bush', 40],
   ['flora_', 60],
   ['prop_', 120],
   ['addon_', 150],
@@ -86,7 +105,7 @@ export function checkSet(set, data) {
 
   for (const [name, part] of Object.entries(data.parts)) {
     const where = `${set}/${name}`;
-    if (!(part.sheet in SHEETS)) bad.push(`${where}: sheet "${part.sheet}" is not one of ${Object.keys(SHEETS).join(', ')}`);
+    if (!isSheet(part.sheet)) bad.push(`${where}: sheet "${part.sheet}" is not one of ${sheetNames().join(', ')}`);
     if (!Array.isArray(part.positions) || part.positions.length % 9) bad.push(`${where}: ${part.positions?.length} position numbers is not whole triangles`);
     if (part.colors.length !== part.positions.length) bad.push(`${where}: ${part.colors.length} colour numbers for ${part.positions.length} positions`);
     if (!Array.isArray(part.at) || part.at.length !== 3) bad.push(`${where}: no origin`);
