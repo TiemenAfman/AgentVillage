@@ -36,6 +36,23 @@ sRGB decode, so the island draws them paler than they are; a `baseColorTexture` 
 the way the format says. The shapes and the scale are identical - it is the contrast that
 differs.
 
+## The whole catalogue at once
+
+**All** writes every model in the list to one `promptholm-models.zip`: 67 models and the
+four sheets, about 4.5 MB. Unzip it into the Godot project and the folder imports as it
+stands.
+
+These are `.gltf` rather than `.glb`, and that is the whole point of the button. A `.glb`
+carries its sheets inside it, so a zip of 67 of them would be forty-odd megabytes of the
+same four pictures, and Godot would import 268 textures instead of four. In the zip the
+pictures and the vertex data sit beside the models as files of their own - `c-tavern.gltf`,
+`c-tavern.bin`, `wall-plaster.png` - all in one folder, and every model points at the same
+four sheets. The stone one is called `stone-stacked-washed.png`, because it is the sheet
+with the island's wash already on it.
+
+**All** exports the catalogue as `buildings.js` has it, not as the bench has it. Anything
+you have nudged and not saved is in the single-model export only.
+
 ## If you would rather Godot did the projecting
 
 The baked uv is one projection per triangle. Godot's own `StandardMaterial3D` can do the

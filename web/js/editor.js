@@ -14,6 +14,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { zip } from './zip.js';
 import {
   createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT,
   box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad,
@@ -1196,8 +1197,23 @@ function boxUV(g, sheet) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-// The model as a handful of meshes, ready to be written out. Made fresh and put down
-// again afterwards: none of it belongs to the scene the page is drawing.
+// The pieces a model is made of, as the exporter wants them: a geometry, and the colour it
+// was painted. Off the bench that is what you have been nudging, unsaved changes and all.
+const benchPieces = () => active().map((it) => ({ g: it.mesh.geometry, hex: it.rec.hex }));
+
+// And out of the file, for the models that are not on the bench. Built here rather than
+// mounted, so exporting the catalogue leaves the bench exactly as it was found.
+function filePieces(spec) {
+  const built = buildBuilding(spec, { keepParts: true });
+  const pieces = [];
+  for (const g of built.parts || []) {
+    if (g.userData.part) pieces.push({ g: normals(g), hex: g.userData.part.hex });
+  }
+  return { pieces, scale: built.scale || 1 };
+}
+
+// The model as a handful of meshes, ready to be written out. Made fresh and put down again
+// afterwards: none of it belongs to the scene the page is drawing.
 //
 // The island keeps its whole palette on the vertices and draws every building with one
 // material, which is what makes hundreds of them affordable. A file has the opposite
@@ -1207,19 +1223,21 @@ function boxUV(g, sheet) {
 // model actually uses, which is between four and twenty on everything in the catalogue.
 // That is more draw calls than the island would ever accept and perfectly ordinary for a
 // single model on someone else's stage.
-async function exportable() {
+//
+// `made` is the sheets already drawn. Handed in from outside when a whole catalogue is
+// going out at once, so that every model names the same four pictures and the zip can keep
+// one copy of each.
+async function exportable(pieces, scale, name, made = new Map()) {
   const groups = new Map();
-  for (const it of active()) {
-    const g = it.mesh.geometry;
-    const key = `${firstOf(g, 'aSheet')}|${firstOf(g, 'aEmissive')}|${it.rec.hex}`;
+  for (const { g, hex } of pieces) {
+    const key = `${firstOf(g, 'aSheet')}|${firstOf(g, 'aEmissive')}|${hex}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(g);
   }
 
   const out = new THREE.Group();
-  out.name = spec.id;
+  out.name = name;
   const spare = [];
-  const made = new Map();
   for (const [key, list] of groups) {
     const [sheet, glow, hex] = key.split('|').map(Number);
     // The colour attribute goes with them: it now says the same thing as the material, and
@@ -1238,7 +1256,7 @@ async function exportable() {
     if (!geometry) continue;
     // The scale goes on before the uv, because the shader on the island projects onto the
     // position a model is finally drawn at, not onto the one the code was written in.
-    if (modelScale !== 1) geometry.scale(modelScale, modelScale, modelScale);
+    if (scale !== 1) geometry.scale(scale, scale, scale);
     const kind = SHEETS[sheet] || SHEETS[0];
     const paint = hex.toString(16).padStart(6, '0');
     const material = new THREE.MeshStandardMaterial({
@@ -1260,40 +1278,109 @@ async function exportable() {
     out.add(mesh);
     spare.push(geometry, material);
   }
-  return { out, spare: spare.concat([...made.values()]) };
+  return { out, spare };
 }
 
+const writeGLTF = (group, options) => new Promise((res, rej) => {
+  new GLTFExporter().parse(group, res, rej, options);
+});
+
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+// A file name a zip, a filesystem and Godot's importer will all leave alone. The ids read
+// `h:hut:opus` and `c:townhall`, which two of those three would rather they did not.
+const stemOf = (id) => id.replace(/[^a-z0-9]+/gi, '-');
+const unpackData = (uri) => Uint8Array.from(atob(uri.slice(uri.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+
+// ---------------------------------------------------------------- one model
 el('ed-glb').onclick = async () => {
   const btn = el('ed-glb');
   btn.disabled = true;
   say('Writing the .glb...');
-  let ready;
+  let ready = null;
   try {
-    ready = await exportable();
+    ready = await exportable(benchPieces(), modelScale, spec.id);
+    if (!ready.out.children.length) { say('Nothing on the bench to export.', 'bad'); return; }
+    const glb = await writeGLTF(ready.out, { binary: true });
+    const name = `${stemOf(spec.id)}.glb`;
+    download(new Blob([glb], { type: 'model/gltf-binary' }), name);
+    const n = ready.out.children.length;
+    say(`${name}: ${n} surface${n === 1 ? '' : 's'}, sheets included, ${Math.round(glb.byteLength / 1024)} kB.`, 'good');
   } catch (e) {
     say(String((e && e.message) || e), 'bad');
+  } finally {
+    if (ready) for (const x of ready.spare) x.dispose();
     btn.disabled = false;
-    return;
   }
-  const { out, spare } = ready;
-  const surfaces = out.children.length;
-  const done = () => { for (const s of spare) s.dispose(); btn.disabled = false; };
-  if (!surfaces) { say('Nothing on the bench to export.', 'bad'); done(); return; }
-  new GLTFExporter().parse(out, (glb) => {
-    const name = `${spec.id.replace(/[^a-z0-9]+/gi, '-')}.glb`;
-    const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    const kb = Math.round(glb.byteLength / 1024);
-    say(`${name}: ${surfaces} surface${surfaces === 1 ? '' : 's'}, sheets included, ${kb} kB.`, 'good');
-    done();
-  }, (err) => {
-    say(String((err && err.message) || err), 'bad');
-    done();
-  }, { binary: true });
+};
+
+// ---------------------------------------------------------------- the lot
+// Sixty-seven models, and the same four sheets in every one of them. Written as `.gltf`
+// rather than `.glb` for exactly that reason: the pictures and the vertex data come out of
+// their data URIs and sit beside the models as files of their own, so the zip holds one
+// copy of each sheet and Godot imports four textures rather than two hundred and sixty
+// eight. Everything in one folder, because a relative path that goes nowhere is the one
+// way this can arrive broken.
+el('ed-glb-all').onclick = async () => {
+  const btn = el('ed-glb-all');
+  const one = el('ed-glb');
+  btn.disabled = true;
+  one.disabled = true;
+  const files = [];
+  const sheets = new Map();          // what the sheets are called in the zip
+  const made = new Map();            // and the textures themselves, drawn once
+  const failed = [];
+  try {
+    for (let i = 0; i < CATALOGUE.length; i++) {
+      const entry = CATALOGUE[i];
+      say(`${i + 1} of ${CATALOGUE.length}: ${entry.label}...`);
+      await new Promise((r) => setTimeout(r));   // let the line be read before the work
+      let ready = null;
+      try {
+        const { pieces, scale } = filePieces(entry.spec);
+        ready = await exportable(pieces, scale, entry.spec.id, made);
+        if (!ready.out.children.length) { failed.push(entry.label); continue; }
+        const json = await writeGLTF(ready.out, {});
+        const stem = stemOf(entry.spec.id);
+        // An image has no name of its own in the file; the texture that points at it does.
+        const named = new Map();
+        for (const tex of json.textures || []) named.set(tex.source, tex.name);
+        (json.images || []).forEach((img, at) => {
+          const file = `${named.get(at) || `sheet-${at}`}.png`;
+          if (!sheets.has(file)) sheets.set(file, unpackData(img.uri));
+          img.uri = file;
+        });
+        for (const buf of json.buffers || []) {
+          files.push({ name: `${stem}.bin`, bytes: unpackData(buf.uri) });
+          buf.uri = `${stem}.bin`;
+        }
+        files.push({ name: `${stem}.gltf`, bytes: new TextEncoder().encode(JSON.stringify(json)) });
+      } catch (e) {
+        failed.push(`${entry.label} (${(e && e.message) || e})`);
+      } finally {
+        if (ready) for (const x of ready.spare) x.dispose();
+      }
+    }
+    for (const [name, bytes] of sheets) files.push({ name, bytes });
+    if (!files.length) { say('Nothing came out of the catalogue.', 'bad'); return; }
+    const blob = zip(files);
+    download(blob, 'promptholm-models.zip');
+    const models = files.filter((f) => f.name.endsWith('.gltf')).length;
+    const missed = failed.length ? ` ${failed.length} would not build: ${failed.slice(0, 3).join(', ')}.` : '';
+    say(`promptholm-models.zip: ${models} models, ${sheets.size} sheets, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.${missed}`, failed.length ? '' : 'good');
+  } catch (e) {
+    say(String((e && e.message) || e), 'bad');
+  } finally {
+    btn.disabled = false;
+    one.disabled = false;
+  }
 };
 
 el('ed-copy').onclick = async () => {
