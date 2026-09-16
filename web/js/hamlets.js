@@ -67,6 +67,70 @@ export function decodeOwnership(village, size) {
   return { owner, inset, lat };
 }
 
+// ---- how far from anybody ---------------------------------------------------
+// One breadth-first sweep over the whole grid, and two things read it. The fields ask
+// "is this ground near enough to a door or a road that somebody would walk out and
+// plough it?", and the forest asks the same question the other way round - "is this far
+// enough from anybody that nobody has cleared it?". Both used to answer it with noise,
+// which is why the island came out as one even quilt of fields and one even spatter of
+// trees from the town square to the far coast.
+//
+// Four-connected, because everything it feeds is: the roads are routed four-connected,
+// the parcels are rectangles on the same grid, and a diagonal metric would only round
+// the corners of the band for twice the bookkeeping. It floods over water as happily as
+// over land - a bay is exactly as far from a door as walking round it is not, and
+// leaving the sea out would cost an isLand test on all 65k cells for no visible gain.
+//
+// `dist` counts cells from settled ground: a parcel, a road, a paved square. `near` is
+// which hamlet is closest, and it is seeded from claimed parcels alone rather than from
+// the same set. A road that runs out of the village belongs to nobody, and seeding the
+// sweep with it would hand "nobody" down the whole corridor - so a field beside the lane
+// out of town would have no hamlet to take its colour or its fence from.
+export function settledDistance(terrain, owner, roadCells, { cap = 63 } = {}) {
+  const size = terrain.size, n = size * size;
+  const dist = new Uint8Array(n).fill(cap);
+  const near = new Int16Array(n).fill(NONE);
+  const queue = new Int32Array(n);
+
+  const sweep = (seed, step) => {
+    let head = 0, tail = 0;
+    for (let k = 0; k < n; k++) if (seed(k)) queue[tail++] = k;
+    while (head < tail) {
+      const k = queue[head++];
+      const gx = k % size, gz = (k - gx) / size;
+      for (const [dx, dz] of N4) {
+        const nx = gx + dx, nz = gz + dz;
+        if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
+        const nk = nx + nz * size;
+        if (step(k, nk)) queue[tail++] = nk;
+      }
+    }
+  };
+
+  sweep((k) => {
+    if (owner[k] === NONE && !roadCells.has(k)) return false;
+    dist[k] = 0;
+    return true;
+  }, (k, nk) => {
+    const d = dist[k] + 1;
+    if (d >= cap || dist[nk] <= d) return false;
+    dist[nk] = d;
+    return true;
+  });
+
+  sweep((k) => {
+    if (owner[k] === NONE) return false;
+    near[k] = owner[k];
+    return true;
+  }, (k, nk) => {
+    if (near[nk] !== NONE) return false;
+    near[nk] = near[k];
+    return true;
+  });
+
+  return { dist, near };
+}
+
 // ---- the edge of a hamlet ---------------------------------------------------
 // Merged strips rather than instanced blocks: buildable ground is allowed to slope by up
 // to 0.6, so a rigid box on a border cell floats or sinks visibly. `buildPaths` already
@@ -114,6 +178,20 @@ function variantAt(weight) {
   }
 }
 
+// A field is fenced; it is not walled. The heaviest thing a hamlet of manors puts round
+// its own land is half a metre of dry stone, and a ring of that round every parcel of
+// turnips would read as a fortress farm rather than as a farm. So a lot always takes post
+// and rail, and what the hamlet's standing buys it is a stouter rail rather than a
+// different material - the whole 0-5 range of weights mapped onto the one rung instead of
+// climbing through all three. The hue nudge is the one the hamlet edge already gets, and
+// it is what makes a parcel legible as somebody's: two neighbours' fields can meet across
+// a lane and still be told apart from the air.
+function lotVariant(weight) {
+  const rail = BOUNDARY[0];
+  const f = Math.max(0, Math.min(1, (Number(weight) || 0) / HEAVIEST.to));
+  return { kind: 'rail', h: mix(rail.h, f), t: mix(rail.t, f), jitter: rail.jitter, base: rail.base, top: rail.top };
+}
+
 // Weighed by the ground a house actually stands on rather than by the district it belongs
 // to on paper: a settler the island had no room for lodges on the commons, and it is the
 // town's own wall that has to answer for that one.
@@ -134,10 +212,11 @@ function weighHouses(village, owner, size) {
   return out;
 }
 
-export function buildBorders(village, terrain, owner, roadCells) {
+export function buildBorders(village, terrain, owner, roadCells, fields = null) {
   const size = terrain.size;
   const isRoad = (gx, gz) => roadCells.has(gx + gz * size);
   const ownerAt = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : owner[gx + gz * size]);
+  const hueOf = (k) => (k === TOWN ? null : (village.districts[k] || {}).hue);
 
   // What every owner on this island puts up, measured once: a run asks for its own.
   const weight = weighHouses(village, owner, size);
@@ -147,9 +226,24 @@ export function buildBorders(village, terrain, owner, roadCells) {
     return variants.get(k);
   };
 
-  // One run per (owner, orientation, fixed coordinate), each an unbroken length of edge.
+  // One run per (tag, orientation, fixed coordinate), each an unbroken length of edge. The
+  // tag is whatever the edge belongs to - a hamlet, a field parcel, a house yard - and it
+  // carries its own fence and tint, so the two passes below fill one map and one loop
+  // turns the whole lot into one merged geometry.
   const runs = new Map();
   const posts = [];
+  const edgeAt = (gx, gz, dx, dz) => ({
+    axis: dx !== 0 ? 'x' : 'z',
+    fixed: dx !== 0 ? gx + (dx > 0 ? 1 : 0) : gz + (dz > 0 ? 1 : 0),
+    along: dx !== 0 ? gz : gx,
+  });
+  const edge = (tag, v, hue, gx, gz, dx, dz) => {
+    const e = edgeAt(gx, gz, dx, dz);
+    const key = `${tag}|${e.axis}|${e.fixed}`;
+    if (!runs.has(key)) runs.set(key, { v, hue, axis: e.axis, fixed: e.fixed, at: [] });
+    runs.get(key).at.push(e.along);
+  };
+
   for (let gz = 0; gz < size; gz++) {
     for (let gx = 0; gx < size; gx++) {
       const k = ownerAt(gx, gz);
@@ -169,26 +263,71 @@ export function buildBorders(village, terrain, owner, roadCells) {
         // The coast is its own boundary, and a hedge over water looks like a mistake.
         if (!terrain.isLand(nx, nz)) continue;
         // Where a road crosses, the hedge opens and leaves two gateposts behind.
-        if (isRoad(gx, gz) && isRoad(nx, nz)) { posts.push([gx, gz, dx, dz, k]); continue; }
-        const axis = dx !== 0 ? 'x' : 'z';
-        const fixed = dx !== 0 ? gx + (dx > 0 ? 1 : 0) : gz + (dz > 0 ? 1 : 0);
-        const along = dx !== 0 ? gz : gx;
-        const key = `${k}|${axis}|${fixed}`;
-        if (!runs.has(key)) runs.set(key, { k, axis, fixed, at: [] });
-        runs.get(key).at.push(along);
+        if (isRoad(gx, gz) && isRoad(nx, nz)) { posts.push([gx, gz, dx, dz, variantFor(k)]); continue; }
+        edge(`h${k}`, variantFor(k), hueOf(k), gx, gz, dx, dz);
+      }
+    }
+  }
+
+  // ---- what the land is for ------------------------------------------------
+  // A hamlet's edge says whose land you are standing on. A lot's edge says what the land
+  // is for, and that is the thing the reference picture has and the island did not: a
+  // field reads as worked ground because somebody fenced it and left a gate in the fence.
+  // Same chaining, same merge, same draw call - only a second map of who owns which cell.
+  if (fields) {
+    const lot = new Int16Array(size * size).fill(-1);
+    const marks = [];
+    const lotAt = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? -1 : lot[gx + gz * size]);
+    const stamp = (cells, k, gate) => {
+      const id = marks.length;
+      marks.push({ v: lotVariant(weight.get(k) || 0), hue: hueOf(k), gate });
+      for (const [gx, gz] of cells) lot[gx + gz * size] = id;
+    };
+    // Orchards are fenced like ploughland: a stand of fruit trees nobody keeps the deer
+    // out of is a wood. Kitchen gardens are not - they sit inside a hamlet that is walled
+    // already, and a paling round a bed of onions is a line nobody would build.
+    for (const p of [...(fields.patches || []), ...(fields.orchards || [])]) stamp(p.cells, p.owner, null);
+    // A yard is the three by three a house stands on, fenced all round bar a gateway in
+    // front of its own door. The whole door side open is not a gate, it is a missing
+    // fence; one cell wide with a post either side is the gate the front path runs
+    // through, and it is where the path already comes out.
+    for (const b of village.buildings || []) {
+      if (!b.plot || b.plot.w !== 3 || b.plot.d !== 3 || !b.door) continue;
+      const cells = [];
+      for (let z = 0; z < 3; z++) for (let x = 0; x < 3; x++) cells.push([b.plot.gx + x, b.plot.gz + z]);
+      const [dgx, dgz] = b.door;
+      const out = dgx === b.plot.gx ? [-1, 0] : dgx === b.plot.gx + 2 ? [1, 0] : dgz === b.plot.gz ? [0, -1] : [0, 1];
+      stamp(cells, ownerAt(b.plot.gx + 1, b.plot.gz + 1), { k: dgx + dgz * size, dx: out[0], dz: out[1] });
+    }
+
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const id = lotAt(gx, gz);
+        if (id < 0) continue;
+        const m = marks[id];
+        for (const [dx, dz] of N4) {
+          const nx = gx + dx, nz = gz + dz;
+          if (lotAt(nx, nz) === id) continue;
+          if (!terrain.isLand(nx, nz)) continue;
+          // The hamlet's own boundary already runs along this edge, drawn heavier and
+          // gated where the road crosses. A second fence a hand's width inside it is two
+          // fences with a dead strip between them.
+          if (ownerAt(nx, nz) !== ownerAt(gx, gz)) continue;
+          const gated = isRoad(nx, nz) || (m.gate && m.gate.k === gx + gz * size && m.gate.dx === dx && m.gate.dz === dz);
+          if (gated) { posts.push([gx, gz, dx, dz, m.v]); continue; }
+          edge(`l${id}`, m.v, m.hue, gx, gz, dx, dz);
+        }
       }
     }
   }
 
   const parts = [];
-  const hueOf = (k) => (k === TOWN ? null : (village.districts[k] || {}).hue);
   for (const run of runs.values()) {
-    const v = variantFor(run.k);
     run.at.sort((a, b) => a - b);
     let start = null, prev = null;
     const flush = () => {
       if (start === null) return;
-      const g = strip(terrain, run.axis, run.fixed, start, prev + 1, v, hueOf(run.k));
+      const g = strip(terrain, run.axis, run.fixed, start, prev + 1, run.v, run.hue);
       if (g) parts.push(g);
     };
     for (const a of run.at) {
@@ -198,13 +337,10 @@ export function buildBorders(village, terrain, owner, roadCells) {
     }
     flush();
   }
-  for (const [gx, gz, dx, dz, k] of posts) {
-    const v = variantFor(k);
-    const axis = dx !== 0 ? 'x' : 'z';
-    const fixed = dx !== 0 ? gx + (dx > 0 ? 1 : 0) : gz + (dz > 0 ? 1 : 0);
-    const along = dx !== 0 ? gz : gx;
-    for (const end of [along, along + 1]) {
-      const g = post(terrain, axis, fixed, end, v);
+  for (const [gx, gz, dx, dz, v] of posts) {
+    const e = edgeAt(gx, gz, dx, dz);
+    for (const end of [e.along, e.along + 1]) {
+      const g = post(terrain, e.axis, e.fixed, end, v);
       if (g) parts.push(g);
     }
   }
@@ -461,14 +597,60 @@ function post(terrain, axis, fixed, at, v) {
 const FIELD = { base: 0x6b563f, furrow: 0x7d6a4e };
 const STUBBLE = { base: 0x8f7f5c, furrow: 0xa08b62 };
 
-export function planFields(village, terrain, owner, cleared, { coverage = 0.35 } = {}) {
+// A field is worked from somewhere, and that is the whole of what was wrong with the
+// version of this that rolled a die on all 65k cells: it put 17.8k of them under the
+// plough - 57% of the island - in strips of two by three that reached the far coast, with
+// no owner, no edge, and nobody within a day's walk to turn them over. From the air it
+// read as a quilt laid over the island rather than as the land a village lives off.
+//
+// What replaces it is a survey. Ground within FIELD_REACH of a door or a road is
+// workable and nothing beyond it is; a parcel is anchored on the same lattice the houses
+// stand on, so its edges run with the lanes instead of cutting across them; a whole
+// furlong of ground shares one ploughing direction, so a neighbourhood of parcels reads
+// as one survey rather than as a heap of rectangles; and every parcel keeps a cell of
+// turning ground to itself, which is what makes two neighbours read as two fields and
+// not as one larger one with a seam down the middle.
+// The land within reach that is actually workable - in reach, off the lanes, off the
+// plots, off the beach, off the steep - measures 2.4k cells on the live island, and at
+// this share the survey tills about half of it: 1.2k cells in some 70 fenced parcels
+// against the 17.8k loose cells it replaces. Half is the figure the reference picture
+// reads at; the other half is the grass, the headland and the odd corner that tells you
+// the fields are fields.
+export const FIELD_REACH = 8;       // cells from settled ground that anybody still ploughs
+export const FIELD_COVERAGE = 0.75; // share of anchors in reach that a parcel is laid on
+const HEADLAND = 1;                // cells of turning ground kept clear around a parcel
+const FURLONG = 16;                // cells of countryside that share one ploughing direction
+
+export function planFields(village, terrain, owner, cleared, { coverage = FIELD_COVERAGE, settled = null } = {}) {
+  // The hook for the day the server surveys the fields itself: `village.fields` arrives
+  // in the shape this function returns, so the client draws what it is told rather than
+  // guessing, and nothing else in the module has to know which of the two it got.
+  if (village.fields) return village.fields;
+
   const size = terrain.size;
+  const lat = village.island && village.island.lattice;
+  const pitch = (lat && lat.pitch) || 4;
+  const ax = lat ? lat.anchor[0] : 0, az = lat ? lat.anchor[1] : 0;
+  // Parcels start on the lattice the plots and the lanes are laid out on, so a field's
+  // edge runs with the road rather than across it - but on the half step, not the full
+  // one. A parcel plus its headland has to repeat on a whole number of anchor steps or
+  // the next anchor along falls inside the last parcel's headland and is refused: at the
+  // full pitch of four that puts fields on an eight-cell grid, which tills a third of the
+  // land within reach and leaves a two-cell weed strip between every pair. The half step
+  // keeps every edge parallel to the lanes and at a fixed phase against them, and lets a
+  // five-cell field sit six cells from the next - one cell of headland, as intended.
+  const step = Math.max(2, pitch >> 1);
+  const onLattice = (gx, gz) => ((gx - ax) % step + step) % step === 0 && ((gz - az) % step + step) % step === 0;
   const claimed = new Uint8Array(size * size);
   const patches = [], orchards = [], gardens = [];
+  const nearAt = (k) => (settled ? settled.near[k] : NONE);
   const candidate = (gx, gz) => {
     if (gx < 1 || gz < 1 || gx >= size - 1 || gz >= size - 1) return false;
     const k = gx + gz * size;
     if (claimed[k] || cleared.has(k)) return false;
+    // Out of reach of every door and every road: that is where a field stopped being a
+    // field and became a pattern on the map.
+    if (settled && settled.dist[k] > FIELD_REACH) return false;
     if (!terrain.isLand(gx, gz) || terrain.isBeach(gx, gz)) return false;
     return terrain.slope(gx, gz) < 0.35;
   };
@@ -476,28 +658,65 @@ export function planFields(village, terrain, owner, cleared, { coverage = 0.35 }
     for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) if (!candidate(gx + x, gz + z)) return false;
     return true;
   };
-  const take = (gx, gz, w, d) => {
+  // The parcel, and the ring of headland around it. The ring is claimed but never tilled
+  // and never returned, so the next parcel along cannot start inside it - which is the
+  // only thing keeping a gap of grass between two fields. A kitchen garden asks for
+  // `ring` 0: inside a hamlet the ground is scarce and a bed of onions needs no headland.
+  const take = (gx, gz, w, d, ring) => {
     const cells = [];
-    for (let z = 0; z < d; z++) for (let x = 0; x < w; x++) { claimed[(gx + x) + (gz + z) * size] = 1; cells.push([gx + x, gz + z]); }
+    for (let z = -ring; z < d + ring; z++) {
+      for (let x = -ring; x < w + ring; x++) {
+        const cx = gx + x, cz = gz + z;
+        if (cx < 0 || cz < 0 || cx >= size || cz >= size) continue;
+        claimed[cx + cz * size] = 1;
+        if (x >= 0 && z >= 0 && x < w && z < d) cells.push([cx, cz]);
+      }
+    }
     return cells;
   };
 
   for (let gz = 1; gz < size - 1; gz++) {
     for (let gx = 1; gx < size - 1; gx++) {
       if (!candidate(gx, gz)) continue;
+      const k = gx + gz * size;
+      // The anchor hash stays per cell rather than per parcel-in-sequence. Candidacy
+      // changes as parcels grow and houses are built, and with a sequential generator
+      // every field on the island would shuffle on a change anywhere - which would look
+      // like a bug in the live update rather than in the noise.
       const h = hash32(`${terrain.seed}:field:${gx},${gz}`);
-      if ((h % 1000) / 1000 > coverage) continue;
-      const mine = owner[gx + gz * size];
-      const roll = (h >> 10) % 100;
-      if (mine === NONE) {
-        // Countryside: ploughed strips and orchards, big enough to read from above.
-        const w = 2 + ((h >> 17) % 2), d = 3 + ((h >> 19) % 2);
-        if (roll < 62 && fits(gx, gz, w, d)) patches.push({ cells: take(gx, gz, w, d), w, d, gx, gz });
-        else if (fits(gx, gz, 3, 3)) orchards.push({ cells: take(gx, gz, 3, 3), gx, gz, w: 3, d: 3 });
+      // Unsigned shifts throughout. `hash32` fills all 32 bits, so a signed `>>` turns
+      // the top half of its range negative and `4 + (h >> 17) % 3` then draws a parcel
+      // two cells wide - which is how a survey of four-by-three parcels was quietly
+      // coming out at seven cells a piece.
+      const roll = (h >>> 10) % 100;
+      if (owner[k] === NONE) {
+        if (!onLattice(gx, gz)) continue;
+        if ((h % 1000) / 1000 > coverage) continue;
+        // Long side along x or along z, and the whole furlong agrees. Two adjacent
+        // parcels ploughed across each other read as a mistake; a dozen ploughed the same
+        // way read as one estate, which is what the reference picture has.
+        const alongX = (hash32(`${terrain.seed}:furlong:${Math.floor(gx / FURLONG)},${Math.floor(gz / FURLONG)}`) & 1) === 0;
+        const long = 4 + ((h >>> 17) % 3), short = 3 + ((h >>> 19) % 3);
+        // Biggest first. Ground in reach is not open country: the lanes run through it,
+        // every plot and every hedge keeps a verge, and what is left is pockets. A single
+        // size would leave most of those pockets empty and the fields would only ever
+        // appear where the land happened to be clear for six cells - so the survey offers
+        // the parcel it wanted, then smaller ones, and stops at three by two. Below that a
+        // lot is not a field with a fence round it; it is a vegetable bed, and those are
+        // gardens.
+        let w = 0, d = 0;
+        for (const [a, b] of [[long, short], [long - 1, short], [4, 3], [3, 3], [3, 2]]) {
+          const tw = alongX ? a : b, td = alongX ? b : a;
+          if (fits(gx, gz, tw, td)) { w = tw; d = td; break; }
+        }
+        if (!w) continue;
+        // Countryside: ploughed parcels and orchards, each with a hamlet to answer for it.
+        const lot = { cells: take(gx, gz, w, d, HEADLAND), w, d, gx, gz, owner: nearAt(k) };
+        (roll < 76 ? patches : orchards).push(lot);
       } else {
         // Inside a hamlet, on land nobody has built on: a kitchen garden.
-        if (roll < 70 && fits(gx, gz, 1, 2)) gardens.push({ cells: take(gx, gz, 1, 2), gx, gz, w: 1, d: 2 });
-        else if (fits(gx, gz, 1, 1)) gardens.push({ cells: take(gx, gz, 1, 1), gx, gz, w: 1, d: 1 });
+        if (roll < 70 && fits(gx, gz, 1, 2)) gardens.push({ cells: take(gx, gz, 1, 2, 0), gx, gz, w: 1, d: 2, owner: owner[k] });
+        else if (fits(gx, gz, 1, 1)) gardens.push({ cells: take(gx, gz, 1, 1, 0), gx, gz, w: 1, d: 1, owner: owner[k] });
       }
     }
   }
@@ -554,8 +773,10 @@ export function dressFieldMaterial(material) {
 //
 // A cell is one world unit and four metres, and the sheet carries sixteen plough rows. At
 // four units to the sheet those rows fall a metre apart, which is a real ridge-and-furrow
-// pitch and also the quarter-cell pitch the furrow decals below have always used; and no
-// patch is bigger than four cells, so no field ever shows the sheet twice.
+// pitch and also the quarter-cell pitch the furrow decals below have always used. Parcels
+// are six cells long now rather than four, so the sheet does repeat once across the
+// longest of them - which is what a tiled, seamless sheet is for, and it is invisible
+// because the UVs are taken in world space rather than per quad.
 const FIELD_TEX_UNITS = 4;
 
 export function buildFieldDecals(plan, terrain, season) {

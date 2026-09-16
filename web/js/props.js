@@ -8,8 +8,8 @@
 // in shared/shapes.mjs, and that is all. Anything the catalogue has no builder for
 // stands as a cairn, so a name nobody has drawn yet still puts something on the ground.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { box, cylinder, cone, sphere, dome, prismRoof } from './buildings.js';
+import { box, cylinder, cone, sphere, dome, prismRoof, meshAsset, mergeParts as merge } from './buildings.js';
+import * as models from './models.js';
 
 const WOOD = 0x6b4a2f;
 const PLANK = 0xa9855a;
@@ -18,13 +18,6 @@ const STONE = 0x8f8a80;
 const LEAF = 0x5c9a3f;
 const NEEDLE = 0x3f7d47;
 const IRON = 0x4a4640;
-
-function merge(parts) {
-  const g = mergeGeometries(parts.filter(Boolean), false);
-  g.computeVertexNormals();
-  g.computeBoundingBox();
-  return g;
-}
 
 // ---------------------------------------------------------------- the shapes
 // Each builder returns a geometry whose base sits at y = 0 and which faces +z, so the
@@ -62,6 +55,19 @@ function rock() {
     sphere(0.2, 0x7a756d, { x: 0.26, y: 0.11, z: 0.1 }),
     sphere(0.15, 0x99938a, { x: -0.18, y: 0.13, z: -0.14 }),
   ]);
+}
+
+// The first shape here that is not drawn here at all: the barrel is modelled in
+// assets/props/agentvillage-props.blend and baked into web/js/props-mesh.js, and what
+// arrives is ordinary parts - the same sheets, the same one material, the same single
+// draw call as a rock. It is the tavern's own barrel to the millimetre, so one put down
+// by hand beside the tavern door reads as one of the pair already standing there.
+//
+// The fallback is the caller's, which is what buildings.js mesh() asks of everyone: a
+// checkout where the set has never been baked still gets something on the ground.
+function barrel(p) {
+  if (!models.hasAsset('prop_barrel')) return cairn(p);
+  return merge(meshAsset('prop_barrel'));
 }
 
 function cairn(p) {
@@ -245,6 +251,9 @@ const SHAPES = {
   bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75 },
   fence: { build: fence, r: 0, run: 0.22, wall: (p) => Math.max(1, p.length || 4) },
   bench: { build: bench, r: 0.45 },
+  // 0.13 is the barrel itself: 0.23 across at the widest hoop, half of that and a hair.
+  // It is knee high and you cannot walk through it, so it blocks like anything else.
+  barrel: { build: barrel, r: 0.13 },
   lamp: { build: lamp, r: 0.2 },
   signpost: { build: signpost, r: 0.2 },
   well: { build: well, r: 0.7 },

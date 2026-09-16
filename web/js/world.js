@@ -1,8 +1,8 @@
 // The island itself: ground, sea, forest, sky and the passage of the day.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
+import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -27,9 +27,13 @@ const DAY = [
   { h: 5, top: 0x182a55, hor: 0x3a4a7a, key: 0xa0b0ff, int: 0.3, sky: 0x2c4270, ground: 0x14202a, amb: 0.15, night: 1, fire: 0.6, stars: 0.8 },
   { h: 6.5, top: 0x5a6fb0, hor: 0xffc9a0, key: 0xffb070, int: 1.5, sky: 0x7f8fc0, ground: 0x5a4a3a, amb: 0.26, night: 0.55, fire: 0, stars: 0 },
   { h: 8, top: 0x6fb2e8, hor: 0xe8f3ff, key: 0xfff0d0, int: 2.6, sky: 0xbfe0ff, ground: 0x7a8a5a, amb: 0.36, night: 0, fire: 0, stars: 0 },
-  { h: 12, top: 0x5ea6e6, hor: 0xdcefff, key: 0xfff8ea, int: 3.0, sky: 0xbfe0ff, ground: 0x8a9a6a, amb: 0.4, night: 0, fire: 0, stars: 0 },
-  { h: 17, top: 0x6fa8e0, hor: 0xffe0b8, key: 0xffd9a0, int: 2.4, sky: 0xb0c8e8, ground: 0x7a7a5a, amb: 0.35, night: 0.15, fire: 0, stars: 0 },
-  { h: 18.5, top: 0x3d4f8a, hor: 0xff9a5c, key: 0xff8040, int: 1.5, sky: 0x705a80, ground: 0x4a3a3a, amb: 0.26, night: 0.7, fire: 0.3, stars: 0.1 },
+  { h: 12, top: 0x5ea6e6, hor: 0xdcefff, key: 0xfff8ea, int: 3.0, sky: 0xbfe0ff, ground: 0x8f8a60, amb: 0.4, night: 0, fire: 0, stars: 0 },
+  // Late afternoon is the hour the island is meant to be looked at, so it carries the
+  // warmth: a goldener key, a little more of it, and a horizon that has already turned.
+  // `ground` is the light the meadow throws back up - warm here, which is what keeps a
+  // north wall from going flat grey now that the sun sits so low that it never reaches one.
+  { h: 17, top: 0x6fa8e0, hor: 0xffd7a2, key: 0xffc98a, int: 2.6, sky: 0xb0c8e8, ground: 0x8a7850, amb: 0.38, night: 0.15, fire: 0, stars: 0 },
+  { h: 18.5, top: 0x3d4f8a, hor: 0xff8f46, key: 0xff8f52, int: 1.7, sky: 0x705a80, ground: 0x53402f, amb: 0.28, night: 0.7, fire: 0.3, stars: 0.1 },
   { h: 20, top: 0x141f45, hor: 0x3a3560, key: 0x8fa6ff, int: 0.32, sky: 0x2a3a6a, ground: 0x141c28, amb: 0.15, night: 1, fire: 1, stars: 0.8 },
   { h: 24, top: 0x0b1430, hor: 0x1c2a55, key: 0x8fa6ff, int: 0.28, sky: 0x243a6b, ground: 0x101820, amb: 0.13, night: 1, fire: 1, stars: 1 },
 ];
@@ -59,10 +63,26 @@ export function sunDirection(hour) {
   const h = ((hour % 24) + 24) % 24;
   const day = h >= 6 && h <= 18;
   const p = day ? (h - 6) / 12 : (((h + 6) % 24) / 12);
-  const el = Math.sin(Math.PI * p) * (day ? 1.15 : 0.9);
+  // How high the sun climbs at noon. It used to reach 1.15 rad - 66 degrees, a sun over
+  // the tropics - and at that angle a roof casts a shadow shorter than its own eaves at
+  // midday and the island reads as a flat map at every hour. 0.85 rad tops out at 49
+  // degrees and puts the sun at about 13 degrees at five in the afternoon, which is where
+  // the long raking light of the reference picture comes from. The clamp below stays: it
+  // is what keeps the shadow frustum's own maths out of trouble when the sun is on the
+  // horizon, not a lighting choice.
+  const el = Math.sin(Math.PI * p) * (day ? 0.85 : 0.9);
   const az = Math.PI * p + 3.5;
   return new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.max(0.06, Math.sin(el)), Math.cos(el) * Math.cos(az)).normalize();
 }
+
+// The shadow frustum as [tightest, widest] half-width, and the share of the camera's
+// distance it tries to cover. It used to be a fixed 42 - 84 units across, chosen when a
+// whole island fitted inside it - and from the distance this one is framed at, two thirds
+// of the picture came out shadowless. Widening it for good instead would spend the same
+// shadow map on nine times the ground and blur every eave you zoom in on, so it breathes:
+// tight when you are down among the houses, wide enough for the coast when you pull back.
+const SHADOW_SPAN = [42, 130];
+const SHADOW_OF_DIST = 0.48;
 
 function bandColour(h, season) {
   const s = SEASON[season];
@@ -354,22 +374,29 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
   group.add(sunDisc, moonDisc);
 
-  // Scaled to the island rather than fixed: 85/235 was chosen for a 64 grid, and at the
-  // distance this one has to be viewed from, the far coast sat in full fog.
-  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.2, terrain.half * 3.9);
+  // The haze exists here because every material has to compile knowing there is fog, but
+  // the two distances are set from main.js and nowhere else. They used to be set in both
+  // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
+  // sync there - and the fixed pair always won. Colour still follows the sky, below.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
 
   // ---- lights --------------------------------------------------------------
-  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8a9a6a, 0.85);
+  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
   const ambient = new THREE.AmbientLight(0xffffff, 0.4);
   const key = new THREE.DirectionalLight(0xfff8ea, 3.0);
   key.castShadow = true;
   key.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
-  key.shadow.camera.left = -42; key.shadow.camera.right = 42;
-  key.shadow.camera.top = 42; key.shadow.camera.bottom = -42;
-  key.shadow.camera.near = 10; key.shadow.camera.far = 220;
+  // Half-width of the shadow frustum. `followShadow` moves it with the zoom, so this is
+  // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
+  key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
+  key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
+  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
-  key.shadow.radius = 3;
+  // One step softer, now that the sun is low enough for a shadow to run the length of a
+  // lane: a hard edge that far from its caster reads as a painted stripe. PCFSoft only,
+  // so `modest` (PCFShadowMap, which ignores the radius) is untouched.
+  key.shadow.radius = 4;
   scene.add(hemi, ambient, key, key.target);
 
   // ---- vegetation ----------------------------------------------------------
@@ -404,7 +431,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much of the countryside is under the plough. The chronicle hands down a share so
   // the fields arrive with the village that works them; a live village has none and gets
   // the full spread.
-  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: 0.35 * v.farmShare });
+  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare });
+
+  // Which cells the settlers walk on. The hedges have always needed this to know where to
+  // leave a gate; the fields and the forest now need it too, because how far a cell is
+  // from a road is most of what decides whether anybody ploughs it or nobody has ever
+  // cleared it. Built once here rather than three times over.
+  const roadSet = (v) => {
+    const out = new Set();
+    for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
+    for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
 
   let clearedBase = baseCleared(village);
   const cleared = new Set(clearedBase);
@@ -422,7 +460,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
   wallVerge(own.owner, cleared);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, fieldOpts(village));
+  let roads = roadSet(village);
+  let settled = settledDistance(terrain, own.owner, roads);
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled });
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
@@ -486,6 +526,56 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const grassGeo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
   for (const g of [rockGeo, grassGeo]) g.computeVertexNormals();
 
+  // ---- where the forest stands ---------------------------------------------
+  // It used to be noise alone, which put the same even spatter of trees on the town
+  // square's doorstep as on the far headland - nowhere was a clearing and nowhere was a
+  // wood. The same distance field the fields are surveyed against shapes it now: inside
+  // six cells of a door or a lane the canopy is pulled open, from eight out to twenty-four
+  // it thins into heath with copses standing in it, and past that it closes into the dark
+  // pine edge the island is meant to be ringed by. `cleared` is still the hard line, so a
+  // polder stays bare grass however far from anybody it lies.
+  const NEAR_CLEARING = 0.15;   // canopy a doorstep takes away
+  const FAR_CANOPY = 0.35;      // canopy the wilderness adds back
+  // Past CLOSED the third stem on a cell is bought and never seen: the canopy over it is
+  // already shut. Past DEEP one stem to a cell is a wood from any distance the camera can
+  // get to. Neither is a saving for its own sake - the trees are instanced and cost one
+  // draw call between them - but the shadow pass walks every instance on the island, and
+  // that is the bill `?stats` cannot show you, because three resets renderer.info after
+  // the shadow pass and before the colour one.
+  const CLOSED = 20, DEEP = 36;
+  const TREE_CAP = opts.modest ? 9000 : 25000;
+
+  // How many stems this cell wants. Noise and distance only - not one random number in
+  // it - which is what makes the counting pass below affordable.
+  const stems = (gx, gz, wx, wz) => {
+    const d = settled.dist[gx + gz * size];
+    const dens = fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 })
+      - NEAR_CLEARING * (1 - smoothstep(0, 6, d))
+      + FAR_CANOPY * smoothstep(8, 24, d);
+    if (dens < 0.12) return 0;
+    let n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
+    if (d > CLOSED) n = Math.min(n, 2);
+    if (d > DEEP) n = 1;
+    return n;
+  };
+  const plantable = (gx, gz, h) =>
+    !cleared.has(gx + gz * size) && h >= 0.45 && !terrain.isBeach(gx, gz)
+    && terrain.slope(gx, gz) <= 1.3 && h <= 5.0;
+
+  // Count first, plant second. Stopping dead once the budget is full would plant in the
+  // order `landCells` happens to come in and leave one whole side of the island bald; a
+  // ratio takes the same number of stems off evenly, and which cell loses one is decided
+  // by that cell's own hash rather than by where the loop had got to. One extra noise
+  // lookup per cell is the whole price.
+  let wanted = 0;
+  for (const [gx, gz] of terrain.landCells) {
+    const h = terrain.heightAt(gx, gz);
+    if (!plantable(gx, gz, h)) continue;
+    const [wx, wz] = terrain.cellWorld(gx, gz);
+    wanted += stems(gx, gz, wx, wz);
+  }
+  const thin = wanted > TREE_CAP ? TREE_CAP / wanted : 1;
+
   const trees = [];
   const treeCells = new Map();
   const pines = [], oaks = [], rocks = [], tufts = [];
@@ -502,10 +592,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
       if (rng.chance(0.3)) rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.6, 1.6)]);
       continue;
     }
-    const dens = fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 });
+    let n = stems(gx, gz, wx, wz);
     if (rng.chance(0.5)) tufts.push([wx + rng.range(-0.45, 0.45), wz + rng.range(-0.45, 0.45), rng.range(0.7, 1.3)]);
-    if (dens < 0.12) continue;
-    const n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
+    if (thin < 1) {
+      // Stochastic rounding on a spatial hash: the expected count is exactly `n * thin`,
+      // and it is the same on every reload and the same for every viewer.
+      const want = n * thin;
+      n = Math.floor(want);
+      if ((hash32(`thin:${gx},${gz}`) % 1000) / 1000 < want - n) n += 1;
+    }
+    if (!n) continue;
     const highland = h > 3.0;
     for (let t = 0; t < n; t++) {
       const x = wx + rng.range(-0.38, 0.38), z = wz + rng.range(-0.38, 0.38);
@@ -799,12 +895,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
 
     // A hedge opens where a road crosses it, and the road set is the one the settlers
-    // already walk on, so no extra data is needed to know where the gates are.
-    const roads = new Set();
-    for (const p of v.paths || []) for (const c of p.cells) roads.add(c[0] + c[1] * size);
-    for (const c of squareCells(v)) roads.add(c[0] + c[1] * size);
-
-    const bg = buildBorders(v, terrain, own.owner, roads);
+    // already walk on, so no extra data is needed to know where the gates are. The field
+    // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
+    // same merged geometry, for no extra draw call.
+    const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
       // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
       // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -837,7 +931,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
     wallVerge(own.owner, clearedBase);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase, fieldOpts(v));
+    roads = roadSet(v);
+    settled = settledDistance(terrain, own.owner, roads);
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled });
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
@@ -931,13 +1027,34 @@ export function createWorld(scene, terrain, village, opts = {}) {
   let time = 0;
   let currentSeason = season;
   const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
-  // The shadow frustum follows what you are looking at. It is 84 units across and the
-  // island is about 120, so anchored at the origin the far half of the coast cast no
-  // shadow at all. Widening it instead would take the shadow map from 24 pixels per unit
-  // down to 15 and soften every roof edge, so it moves. Eased, not snapped, or shadows
-  // pop in and out along the frustum edge while you pan.
+  // The shadow frustum follows what you are looking at, and now also how far away you are
+  // standing: anchored and fixed it covered 84 units of a 234-unit island, so from the
+  // boot camera most of the coast cast nothing at all. Following the target alone was not
+  // enough, because the whole point of pulling back is to see all of it at once. So the
+  // half-width comes from the camera distance - and only the half-width, so zoomed in you
+  // keep today's 24 shadow-map pixels per unit and today's crisp eaves.
+  //
+  // The light rides out with it. It sat a flat 90 units up the sun ray, which is fine for
+  // a 42-unit frustum but puts everything on the sunward half of a 130-unit one *behind*
+  // the lamp, where the shadow camera cannot see it - the coast would have gone dark-free
+  // again for a subtler reason. Near and far follow for the same reason, and because a
+  // depth range no wider than it needs to be is what keeps `shadow.bias` honest: tight
+  // when you are close, which is exactly when a millimetre of peter-panning shows.
   const shadowFocus = new THREE.Vector3();
-  const followShadow = (x, z) => shadowFocus.set(x, 0, z);
+  let shadowSpan = SHADOW_SPAN[0];
+  let lightRange = shadowSpan + 60;
+  const followShadow = (x, z, dist) => {
+    shadowFocus.set(x, 0, z);
+    if (!(dist > 0)) return;
+    const f = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
+    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+    shadowSpan = f;
+    lightRange = f + 60;
+    const cam = key.shadow.camera;
+    cam.left = -f; cam.right = f; cam.top = f; cam.bottom = -f;
+    cam.near = 10; cam.far = 2 * f + 90;
+    cam.updateProjectionMatrix();
+  };
 
   function update(dt, hour, month) {
     time += dt;
@@ -947,7 +1064,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     state.night = d.night;
 
     key.target.position.lerp(shadowFocus, Math.min(1, dt * 4));
-    key.position.copy(key.target.position).addScaledVector(dir, 90);
+    key.position.copy(key.target.position).addScaledVector(dir, lightRange);
     key.color.copy(d.key);
     key.intensity = d.int;
     hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
@@ -959,7 +1076,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     skyMat.uniforms.uSunDir.value.copy(dir);
     skyMat.uniforms.uSunColor.value.copy(d.key);
     skyMat.uniforms.uStars.value = d.stars;
-    scene.fog.color.copy(d.hor).lerp(d.top, 0.25);
+    // The haze is the horizon seen through more of itself, with a quarter of the sky's own
+    // blue mixed back in. Less of that blue than before and a breath of the sun's colour
+    // on top, so the far coast goes gold in the afternoon instead of grey-blue - the
+    // distance in the reference picture is warm, not cold. Distances: see main.js.
+    scene.fog.color.copy(d.hor).lerp(d.top, 0.15).lerp(d.key, 0.12);
 
     waterMat.uniforms.uTime.value = time;
     waterMat.uniforms.uSunDir.value.copy(dir);

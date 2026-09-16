@@ -6,14 +6,26 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
-import { TAVERN } from './tavern-mesh.js';
+import * as models from './models.js';
 
+// Four styles, and every one of them roofed in the same family of fired clay. The roofs
+// used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
+// one to a district - and a hillside of them read as a colour chart rather than as a
+// village. A real village roofs itself out of whatever the local kiln fires, so the
+// difference between one house and the next is which batch it came from. Identity moved
+// down into `wall`, `trim` and `accent`, where it is still perfectly legible from the
+// ground and does not decide what the island looks like from the air.
+//
+// The four tints are one clay each: fable's is the tavern's own terracotta, opus fires
+// darkest, sonnet brightest, haiku palest. They are also what the Blender roofs are
+// painted with, so a gable off `roof_gable_a` and a `prismRoof` fallback are the same
+// colour on the same street.
 export const PALETTE = {
-  fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb87333, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
-  opus: { wall: 0xa8a59e, trim: 0x6f6b64, roof: 0x4c5566, accent: 0x5a3a24, glow: 0xffcf7a, name: 'Opus' },
-  sonnet: { wall: 0xf0e2c8, trim: 0x6b4a2f, roof: 0x5c8a4a, accent: 0x8a4b2a, glow: 0xffd88a, name: 'Sonnet' },
-  haiku: { wall: 0xd9b98c, trim: 0x7d5a3a, roof: 0xc9a75c, accent: 0x5a3c28, glow: 0xffe0a0, name: 'Haiku' },
-  unknown: { wall: 0x9a9a9a, trim: 0x6f6f6f, roof: 0x6f6f6f, accent: 0x555555, glow: 0xffffff, name: 'Unknown' },
+  fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb8552f, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
+  opus: { wall: 0xa8a59e, trim: 0x6f6b64, roof: 0x8f4a3a, accent: 0x5a3a24, glow: 0xffcf7a, name: 'Opus' },
+  sonnet: { wall: 0xf0e2c8, trim: 0x6b4a2f, roof: 0xc4623a, accent: 0x8a4b2a, glow: 0xffd88a, name: 'Sonnet' },
+  haiku: { wall: 0xd9b98c, trim: 0x7d5a3a, roof: 0xd08a4a, accent: 0x5a3c28, glow: 0xffe0a0, name: 'Haiku' },
+  unknown: { wall: 0x9a9a9a, trim: 0x6f6f6f, roof: 0x8a6a5a, accent: 0x555555, glow: 0xffffff, name: 'Unknown' },
 };
 
 export const C = {
@@ -21,6 +33,11 @@ export const C = {
   stripe: 0xc86b4a, anvil: 0x3a3a3f, copper: 0xb87333, stone: 0xa8a59e,
   slate: 0x4c5566, plank: 0xb07a4a, blueprint: 0x4d7ec9, paper: 0xf5efe0,
   thatch: 0xc9a75c, brick: 0x9c5a44, glass: 0xffd27f, white: 0xf5efe0,
+  // Verdigris, for the one roof on the island that is allowed not to be clay. Now that
+  // every house is terracotta the town hall needs to be the exception rather than one
+  // more slate box, and weathered copper over a civic hall is what the dome in the
+  // reference illustration is - the cool note the whole warm hillside is read against.
+  patina: 0x5f8f7a,
   green: 0x6fb84a, red: 0xd94f3d, blue: 0x3d7ed9, gold: 0xd9a33d, iron: 0x3a3a3f,
 };
 
@@ -217,17 +234,104 @@ function lift(g, dy) {
 
 // A Blender-baked part has the same attributes and placement contract as box().
 // Material prefixes become existing sheet IDs; vertex colours stay in linear space.
+//
+// Which .blend it came out of is web/js/models.js's business, not the call site's: every
+// baked set is in one register under one flat set of names. An unknown name throws rather
+// than drawing nothing, because a part that has quietly gone missing from a building is
+// far harder to notice than a page that says so. A caller that means "use the model if it
+// has been made yet" asks models.has() first - see barrel() in props.js.
+// `sx`/`sy`/`sz` scale it before it is turned and moved, which is what lets one gable
+// modelled on a unit square roof every width of house on the island - the scale is the
+// overhang and `sy` alone is the pitch. `repaint` is the other half of that: normally
+// `hex` multiplies the colours Blender baked in, so white leaves a barrel exactly the
+// barrel that was modelled, but a roof's colour belongs to the island rather than to the
+// .blend - there is one gable and there are four styles - and multiplying two terracottas
+// gives neither of them. So the slots the island owns say so, and the timber under them
+// keeps the oak it was modelled in.
 export function mesh(name, hex = 0xffffff, o = {}) {
-  const part = TAVERN.parts[name];
+  const part = models.part(name);
   if (!part) throw new Error(`Unknown Blender building part: ${name}`);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
   const options = { sheet: part.sheet, emissive: part.emissive, ...o };
   finish(g, hex, options.emissive, sheetOf(options));
-  const colors = g.attributes.color.array;
-  for (let i = 0; i < colors.length; i++) colors[i] *= part.colors[i];
+  if (!options.repaint) {
+    const colors = g.attributes.color.array;
+    for (let i = 0; i < colors.length; i++) colors[i] *= part.colors[i];
+  }
+  if (options.sx !== undefined || options.sy !== undefined || options.sz !== undefined) {
+    g.scale(options.sx ?? 1, options.sy ?? 1, options.sz ?? 1);
+  }
   return note(place(g, options), 'mesh', [name], hex, options);
 }
+
+// Every part of one Blender asset, each where Blender had it, as parts to push. An asset
+// is a whole building for a set that holds one - the tavern - or one roof out of a set
+// that holds several. `o` shifts, turns and scales the lot, for a caller composing an
+// asset into something bigger: meshAsset('roof_gable_a') sat on top of a house body.
+//
+// `hex` may be one colour for all of it, or a function of a part's name and sheet that
+// answers with the colour the island wants there - or with null to keep the colour
+// Blender gave it. A roof needs both in one asset: the island owns the tiles and the
+// .blend owns the barge boards.
+export function meshAsset(name, hex = 0xffffff, o = {}) {
+  const sx = o.sx ?? 1, sy = o.sy ?? 1, sz = o.sz ?? 1;
+  const c = Math.cos(o.ry || 0), s = Math.sin(o.ry || 0);
+  // Only a caller that asks per part is repainting. A plain colour multiplies, the way it
+  // always has: `meshAsset(name)` is white times what Blender baked, which is Blender's
+  // own colours, and that is what the model sheet has to show.
+  const per = typeof hex === 'function' ? hex : null;
+  return models.assetParts(name).map((partName) => {
+    const part = models.part(partName);
+    // Where Blender had this part, scaled and turned with the asset rather than on its
+    // own: an asset turned a quarter has to take its chimney round with it.
+    const x = part.at[0] * sx, z = part.at[2] * sz;
+    const paint = per ? per(partName, part.sheet) : hex;
+    return mesh(partName, paint ?? 0xffffff, {
+      ...o,
+      repaint: o.repaint || (per !== null && paint != null),
+      x: (o.x || 0) + x * c + z * s,
+      y: (o.y || 0) + part.at[1] * sy,
+      z: (o.z || 0) - x * s + z * c,
+    });
+  });
+}
+
+// Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
+// and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
+// its pot is the kind of thing nobody sees until the island is running at dusk.
+export function meshAnchors(name, o = {}) {
+  const sx = o.sx ?? 1, sy = o.sy ?? 1, sz = o.sz ?? 1;
+  const c = Math.cos(o.ry || 0), s = Math.sin(o.ry || 0);
+  const out = {};
+  for (const [kind, at] of Object.entries(models.anchorsOf(name))) {
+    const x = at[0] * sx, z = at[2] * sz;
+    out[kind] = [(o.x || 0) + x * c + z * s, (o.y || 0) + at[1] * sy, (o.z || 0) - x * s + z * c];
+  }
+  return out;
+}
+
+// A colour a shade lighter or darker, for the two places one surface has to read against
+// another of the same material: the course of caps over its own ridge, and one house's
+// batch of tiles against its neighbour's.
+export function shade(hex, f) {
+  return new THREE.Color(hex).multiplyScalar(f).getHex();
+}
+
+// How the island paints a Blender composable it has stood on a house. Three of the slots
+// belong to the style rather than to the .blend - the plaster, the tiles, and a pane that
+// has to light up with every other window at dusk - and everything else keeps what
+// Blender gave it, because oak is oak and brick is brick whoever lives there.
+//
+// The rolls and courses - the caps along a ridge, the proud bottom row at the eaves - are
+// tiles too, and they are lifted a shade so the lines they draw survive being repainted.
+// Without that they come out the same number as the pitch they sit on and a roof goes
+// back to being one flat triangle, which is the thing the .blend was modelled to stop.
+const styleTint = (roofHex, pal) => (name, sheet) => (
+  sheet === 'wall' ? pal.wall
+    : sheet === 'roof' ? (/roll|course/.test(name) ? shade(roofHex, 1.16) : roofHex)
+      : /pane/.test(name) ? pal.glow
+        : null);
 
 // a box whose base sits at y = o.y
 // Water and soil are modelled flush with the rim that holds them, which puts two faces
@@ -318,6 +422,13 @@ function merge(parts) {
   g.computeBoundingSphere();
   return g;
 }
+
+// props.js builds its shapes out of these same primitives and needs the same filling in,
+// so it merges with this rather than with a copy of it that had drifted: a prop made of a
+// Blender part, which carries a sheet, and a cylinder, which does not, came out of the
+// copy with the sheet thrown away. See the note inside merge() for why the zeroes are
+// filled in here and not in finish().
+export { merge as mergeParts };
 
 // ---------------------------------------------------------------- the kit
 // Places one piece inside a sub-assembly: its offset turns with the assembly, and so
@@ -421,8 +532,116 @@ function timberFrame(parts, w, h, d, hex) {
   });
 }
 
+// ---------------------------------------------------------------- roofs
+// How far a roof oversails the wall it stands on, all round. A Blender roof is modelled
+// on a unit square, so this is also the number that scales it: `dims.w + ROOF_OVERHANG`
+// is what `prismRoof(dims.w + 0.14, ...)` was passing by hand on every line before.
+const ROOF_OVERHANG = 0.14;
+
+// The top of a heap of parts. A Blender roof knows its own height and the caller has just
+// scaled it by an amount the rng chose, so reading the answer back off the geometry is
+// both cheaper than a table of model heights in this file and impossible to leave stale
+// when the .blend changes.
+function riseOf(parts) {
+  let y = -Infinity;
+  for (const g of parts) {
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) if (p.getY(i) > y) y = p.getY(i);
+  }
+  return Number.isFinite(y) ? y : 0;
+}
+
+// How tall an asset is at its own scale, straight off the baked arrays. Needed before
+// anything is built: a chimney is stretched to clear the roof it comes out of, and that
+// sum wants the stack's own height on one side of it. Measured once per name.
+const assetRise = (() => {
+  const cache = new Map();
+  return (name) => {
+    if (!cache.has(name)) {
+      let y = 0;
+      for (const p of models.assetParts(name)) {
+        const part = models.part(p);
+        for (let i = 1; i < part.positions.length; i += 3) {
+          const v = part.positions[i] + part.at[1];
+          if (v > y) y = v;
+        }
+      }
+      cache.set(name, y);
+    }
+    return cache.get(name);
+  };
+})();
+
+// The rng houseBody has been handed since the day it was written and had never once used.
+// Every house on the island wore the same roof at the same pitch as every other house of
+// its tier, and a hillside of them read as an estate rather than as the village in the
+// reference illustration, whose charm is that no two roofs next door are quite the same.
+//
+// The roof is planned before a single part of it is built, and that order is the point of
+// the card: a chimney may not come up through a dormer, and where a dormer can sit depends
+// on which way the ridge runs. So every die is thrown here, the shapes are known before
+// anything is placed, and the things that hang off the roof are put against the answer
+// rather than each guessing for itself.
+function planRoof(rng, style, tier, modest) {
+  // Each style keeps the roof it was known for as its starting point - opus builds square
+  // and hipped, haiku round - and the rng varies it from there, so a district still reads
+  // as a district while no street in it repeats.
+  const family = style === 'haiku' ? 'roof_cone'
+    : style === 'opus' || (tier >= 2 && rng.chance(0.25)) ? 'roof_hip'
+      : 'roof_gable';
+  const variants = models.variants(family);
+  return {
+    family,
+    asset: variants.length ? rng.pick(variants) : null,
+    // A pitch a fifth either way is a generation of builders rather than a mistake, and
+    // it multiplies the model's own height rather than replacing it, so the steep gable
+    // and the shallow one stay a steep one and a shallow one.
+    pitch: rng.range(0.9, 1.2),
+    // Two of the three add-ons are luxuries. A modest GPU gets the roof and the chimney
+    // it smokes from and nothing else, because these are drawn three hundred times.
+    dormer: !modest && tier >= 2 && rng.chance(0.5),
+    dormerSide: rng.chance(0.5) ? 1 : -1,
+    turret: !modest && rng.chance(0.3),
+  };
+}
+
+// How high the roof is over a point on the plan: what a dormer is set into, and what a
+// chimney has to clear. A pitch falls away from its ridge at a constant rate and a cone
+// falls away from its own middle; a hip falls away in both directions, and answering it
+// as a pitch overstates it, which errs on the side of a chimney that is tall enough.
+function surfaceOf(plan, span, rise) {
+  const fall = (d) => Math.max(0, rise * (1 - 2 * d / span));
+  return plan.family === 'roof_cone'
+    ? (x, z) => fall(Math.hypot(x, z))
+    : (x, z) => fall(Math.abs(z));
+}
+
+// The roof itself, and the fallback that is also the history: every shape in the second
+// branch is the shape these houses wore before Blender, so a checkout with no
+// village-mesh.js in it boots and looks like the island of a week ago rather than not at
+// all. The two branches share the palette, which is what keeps a baked gable and a
+// prismRoof the same colour when they end up on the same street.
+function roofOn(parts, plan, dims, pal, roofHex, top) {
+  const span = dims.w + ROOF_OVERHANG;
+  let built;
+  if (plan.asset) {
+    // One uniform scale, with the pitch on top of it: the footprint has to be the wall's
+    // and the proportions have to be the model's, or a wide house gets a flat roof.
+    built = meshAsset(plan.asset, styleTint(roofHex, pal),
+      { y: top, sx: span, sy: span * plan.pitch, sz: span });
+  } else if (plan.family === 'roof_cone') {
+    built = [cone(dims.w * 0.82, (dims.roof + 0.16) * plan.pitch, 8, roofHex, { y: top - 0.02, sheet: 'roof' })];
+  } else if (plan.family === 'roof_hip') {
+    built = [pyramidRoof(span, span, (dims.roof + 0.06) * plan.pitch, roofHex, { y: top })];
+  } else {
+    built = [prismRoof(span, span, dims.roof * plan.pitch, roofHex, { y: top })];
+  }
+  for (const g of built) parts.push(g);
+  return riseOf(built) - top;
+}
+
 // ---------------------------------------------------------------- houses
-function houseBody(parts, spec, pal, rng) {
+function houseBody(parts, spec, pal, rng, ctx = {}) {
   const tier = TIER_INDEX[spec.tier] ?? 1;
   const anchors = {};
   const style = spec.style || 'unknown';
@@ -449,32 +668,73 @@ function houseBody(parts, spec, pal, rng) {
   windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
   if (tier >= 3) windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.12, count: 2 });
 
+  // Every roof is now chosen rather than tabulated. What is left of a style here is the
+  // detailing under it: opus keeps its stone string course, sonnet its timber frame, and
+  // the district still reads from the ground.
+  const plan = planRoof(rng, style, tier, ctx.modest);
+  // One batch of tiles per house, within a twelfth of the style's clay. A street of them
+  // is a street of kiln loads rather than one paint tin, and it is free.
+  const roofHex = shade(pal.roof, rng.range(0.94, 1.06));
+  if (style === 'opus') parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
+  if (style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
+
   let top = dims.h;
-  if (style === 'opus') {
-    parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
-    parts.push(pyramidRoof(dims.w + 0.14, dims.w + 0.14, dims.roof + 0.06, pal.roof, { y: top }));
-    top += dims.roof + 0.06;
-  } else if (style === 'haiku') {
-    parts.push(cone(dims.w * 0.82, dims.roof + 0.16, 8, pal.roof, { y: top - 0.02, sheet: 'roof' }));
-    top += dims.roof + 0.14;
-  } else if (style === 'sonnet') {
-    timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
-    parts.push(prismRoof(dims.w + 0.14, dims.w + 0.14, dims.roof, pal.roof, { y: top }));
-    top += dims.roof;
+  const span = dims.w + ROOF_OVERHANG;
+  const rise = roofOn(parts, plan, dims, pal, roofHex, top);
+  const surface = surfaceOf(plan, span, rise);
+  top += rise;
+
+  // A chimney on every house from its first hut upward, and the point of it is the anchor:
+  // main.js has known for a while how often a settler's chimney should puff and how far
+  // away to stop bothering, and until now there was nowhere on a house to puff from.
+  //
+  // It stands behind the ridge and a little off the centre line - which is where a dormer
+  // never is, and that is the rule this card exists to keep - and swaps to the other side
+  // when the style has already built a tower into that corner. It is drawn from the eaves
+  // plane up, the way a flue actually runs, and stretched so its pot clears the tiles
+  // around it whatever pitch the rng just chose: a stack tall enough for a shallow roof
+  // disappears into a steep one.
+  const towered = style === 'fable' && tier >= 2;
+  const cx = dims.w * (towered || tier === 5 ? 0.26 : -0.26);
+  const cz = -dims.w * (plan.family === 'roof_cone' ? 0.26 : 0.12);
+  if (models.hasAsset('addon_chimney_a')) {
+    const o = { x: cx, y: dims.h, z: cz };
+    o.sx = o.sz = Math.min(1.05, Math.max(0.8, dims.w / 1.08));
+    o.sy = Math.max(o.sx, (surface(cx, cz) + 0.20) / assetRise('addon_chimney_a'));
+    for (const g of meshAsset('addon_chimney_a', styleTint(roofHex, pal), o)) parts.push(g);
+    Object.assign(anchors, meshAnchors('addon_chimney_a', o));
+    top = Math.max(top, dims.h + assetRise('addon_chimney_a') * o.sy);
   } else {
-    parts.push(prismRoof(dims.w + 0.12, dims.w + 0.12, dims.roof, pal.roof, { y: top }));
-    top += dims.roof;
+    parts.push(box(0.12, 0.3, 0.12, C.brick, { x: cx, y: dims.h, z: cz }));
+    anchors.smoke = [cx, dims.h + 0.3, cz];
   }
 
-  if (tier >= 2) parts.push(box(0.12, 0.3, 0.12, C.brick, { x: dims.w * 0.3, y: dims.h, z: -dims.w * 0.3 }));
-  if (tier === 3) {                                    // dormer
-    parts.push(box(0.24, 0.2, 0.22, pal.wall, { y: dims.h + 0.04, z: dims.w * 0.25 }));
-    parts.push(prismRoof(0.28, 0.26, 0.14, pal.roof, { y: dims.h + 0.24, z: dims.w * 0.25 }));
-    parts.push(box(0.1, 0.1, 0.03, pal.glow, { y: dims.h + 0.1, z: dims.w * 0.25 + 0.12, emissive: 1 }));
+  // A dormer breaks the front pitch, which is the difference between a roof and a lid. It
+  // is sized to the roof it sits in rather than given a height, because the same window
+  // on a shallow roof would stand clean over the ridge.
+  if (plan.dormer && models.hasAsset('addon_dormer_a')) {
+    const s = Math.min(1, Math.max(0.6, rise * 1.5));
+    const o = {
+      x: dims.w * 0.22 * plan.dormerSide, y: top - rise + rise * 0.05, z: span * 0.20,
+      sx: s, sy: s, sz: s,
+    };
+    for (const g of meshAsset('addon_dormer_a', styleTint(roofHex, pal), o)) parts.push(g);
+  }
+  // And a turret on the back corner the tower styles do not use, which is what the
+  // reference's houses have instead of a second storey. Its flag only flies if nothing
+  // else on the house has already claimed the one anchor main.js reads.
+  if (plan.turret && models.hasAsset('addon_turret_a')) {
+    const o = { x: dims.w * 0.42, z: -dims.w * 0.42 };
+    o.sx = o.sz = 1;
+    o.sy = Math.min(1.35, Math.max(0.75, (dims.h + 0.34) / assetRise('addon_turret_a')));
+    for (const g of meshAsset('addon_turret_a', styleTint(roofHex, pal), o)) parts.push(g);
+    const turretTop = assetRise('addon_turret_a') * o.sy;
+    if (!anchors.flag) Object.assign(anchors, meshAnchors('addon_turret_a', o));
+    top = Math.max(top, turretTop);
   }
   if (tier >= 4) {                                     // wing
     parts.push(box(0.44, dims.h * 0.72, 0.5, pal.wall, { x: dims.w * 0.62, z: -0.1, sheet: 'wall' }));
-    parts.push(prismRoof(0.52, 0.58, 0.28, pal.roof, { x: dims.w * 0.62, y: dims.h * 0.72, z: -0.1, ry: Math.PI / 2 }));
+    parts.push(prismRoof(0.52, 0.58, 0.28, roofHex, { x: dims.w * 0.62, y: dims.h * 0.72, z: -0.1, ry: Math.PI / 2 }));
     for (let i = 0; i < 4; i++) {                      // garden fence
       parts.push(box(0.04, 0.18, 0.04, C.darkWood, { x: -0.42 + i * 0.28, z: 0.62 }));
     }
@@ -482,7 +742,7 @@ function houseBody(parts, spec, pal, rng) {
   }
   if (tier === 5) {                                    // keep: corner tower + battlements
     parts.push(cylinder(0.2, 0.22, dims.h + 0.4, 8, pal.wall, { x: -dims.w * 0.42, z: -dims.w * 0.42, sheet: 'wall' }));
-    parts.push(cone(0.26, 0.32, 8, pal.roof, { x: -dims.w * 0.42, y: dims.h + 0.4, z: -dims.w * 0.42, sheet: 'roof' }));
+    parts.push(cone(0.26, 0.32, 8, roofHex, { x: -dims.w * 0.42, y: dims.h + 0.4, z: -dims.w * 0.42, sheet: 'roof' }));
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       parts.push(box(0.1, 0.1, 0.1, pal.wall, { x: Math.cos(a) * dims.w * 0.42, y: dims.h, z: Math.sin(a) * dims.w * 0.42 }));
@@ -657,7 +917,11 @@ function civic(parts, spec, rng) {
       parts.push(box(1.5, 0.75, 1.15, C.stone, { sheet: 'stone' }));
       parts.push(box(1.34, 0.5, 1.02, 0xf0e2c8, { y: 0.75, sheet: 'wall' }));
       timberFrame(parts, 1.34, 0.5, 1.02, 0x6b4a2f);
-      parts.push(prismRoof(1.55, 1.2, 0.5, C.slate, { y: 1.25 }));
+      // Verdigris, not slate. With every house on the island now roofed in clay the hall
+      // has to be the exception or it is one more grey box, and weathered copper over the
+      // civic roof is the cool note the whole warm hillside is read against - which is
+      // exactly what the dome does in the reference illustration.
+      parts.push(prismRoof(1.55, 1.2, 0.5, C.patina, { y: 1.25 }));
       // The door takes the middle bay and the windows stand either side of it. They used
       // to be laid out on their own rhythm - four of them at 0.34 apart from x = -0.5 -
       // and the door was simply put on the centre line afterwards, which landed it across
@@ -699,6 +963,29 @@ function civic(parts, spec, rng) {
       parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.89, ry: Math.PI / 2, sheet: 'roof' }));
       parts.push(cylinder(0.05, 0.045, 0.09, 8, C.wood, { y: 0.65 }));
       return { anchors, animated, height: 1.13 };
+    case 'watertower': {
+      // The one thing in the reference illustration the island had no way of drawing: a
+      // plank tank up on battered, braced legs, with a ladder up the front and a board
+      // hanging under the deck. It arrives as a whole Blender asset rather than as a
+      // composition, because what makes it read is forty rods of timber framing and forty
+      // rods written out here would be unreadable and unmaintainable both.
+      //
+      // The branch below is a fallback and not a design - four posts, a drum and a lid -
+      // so that a checkout with no baked set still boots and still puts one on its plot.
+      if (models.hasAsset('civic_watertower')) {
+        for (const g of meshAsset('civic_watertower')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_watertower'));
+        return { anchors, animated, height: assetRise('civic_watertower') };
+      }
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
+        parts.push(cylinder(0.04, 0.05, 1.56, 6, C.darkWood, { x, z, sheet: 'plank' }));
+      }
+      parts.push(box(0.86, 0.05, 0.86, C.plank, { y: 1.56, sheet: 'plank' }));
+      parts.push(cylinder(0.38, 0.38, 0.86, 12, C.wood, { y: 1.61, sheet: 'plank' }));
+      parts.push(cone(0.44, 0.32, 12, C.darkWood, { y: 2.47, sheet: 'roof' }));
+      anchors.sign = [0.28, 1.37, 0.68];
+      return { anchors, animated, height: 2.9 };
+    }
     case 'market': {
       // Three stalls, and the point of them is that they are three different stalls. The
       // market is what the island puts up at ten settlers and it used to be four sticks, a
@@ -913,11 +1200,9 @@ function civic(parts, spec, rng) {
     case 'tavern': {
       // Authored in assets/tavern/agentvillage-tavern.blend, facing the street (+z).
       // The existing porch, footprint, shader and editor consume ordinary parts.
-      for (const [name, part] of Object.entries(TAVERN.parts)) {
-        parts.push(mesh(name, 0xffffff, { x: part.at[0], y: part.at[1], z: part.at[2] }));
-      }
-      for (const [name, at] of Object.entries(TAVERN.anchors)) anchors[name] = [...at];
-      return { anchors, animated, height: TAVERN.height };
+      parts.push(...meshAsset('tavern'));
+      for (const [name, at] of Object.entries(models.anchorsOf('tavern'))) anchors[name] = [...at];
+      return { anchors, animated, height: models.heightOf('tavern') };
     }
     case 'chapel': {
       // A small stone chapel: a nave running front to back, a round window over the
@@ -1234,7 +1519,10 @@ const PORCH_UPTO = 0.45;      // above this a part is a roof or a chimney, not a
 // stand on their own posts, the statue has a plinth already, and the well and the
 // fountain are round - a square step under either would be the corner the well just
 // stopped having.
-const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues', 'statue', 'well', 'fountain']);
+const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues', 'statue', 'well', 'fountain',
+  // The water tower came with four stone pads of its own and stands on open grass between
+  // them. A step round the outside of that would be a plinth under a thing on stilts.
+  'watertower']);
 function wantsPorch(spec) {
   if (spec.harbour) return false;                 // it stands on its own stilts, over water
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
@@ -1369,7 +1657,7 @@ export function buildBuilding(spec, ctx = {}) {
     }
     parts.push(box(1.0, 0.08, 1.0, C.plank, { y: deck - 0.08 }));
     const inner = [];
-    const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng);
+    const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
     for (const g of inner) parts.push(lift(g, deck));
     parts.push(cylinder(0.05, 0.05, 0.36, 6, C.darkWood, { x: 0.44, y: deck, z: 0.44 }));
     parts.push(box(0.1, 0.12, 0.1, 0xffb347, { x: 0.44, y: deck + 0.36, z: 0.44, emissive: 1 }));
@@ -1381,7 +1669,7 @@ export function buildBuilding(spec, ctx = {}) {
     anchors = r.anchors; height = r.height; w = r.w;
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   } else {
-    const r = houseBody(parts, spec, pal, rng);
+    const r = houseBody(parts, spec, pal, rng, ctx);
     anchors = r.anchors; height = r.height; w = r.w;
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   }

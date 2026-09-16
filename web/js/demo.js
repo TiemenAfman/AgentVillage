@@ -8,7 +8,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
   buildBridgeGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
+  meshAsset, mergeParts,
 } from './buildings.js';
+import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
@@ -29,6 +31,7 @@ const CIVIC = [
   ['tables', 'Tables', '25'],
   ['school', 'School', '25 apprentices'],
   ['windmill', 'Windmill', '30'],
+  ['watertower', 'Water tower', '35'],
   ['chapel', 'Chapel', '40'],
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
@@ -532,21 +535,85 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   row++;
 }
 
+// ---- roof variation --------------------------------------------------------------
+// One row per tier, and in each row every style six times over with a different seed.
+//
+// Everything about a roof is now a throw of the rng that houseBody has always been handed
+// and never used: which of the Blender models, how steep, whether it carries a dormer or
+// a turret or both, and which batch of tiles came out of the kiln. One seed per style -
+// which is what the rows at the top of this sheet are - cannot show any of that. Thirty
+// houses side by side can, and looking down the row is the only way to tell variety from
+// noise, which is the judgement this block exists to let somebody make.
+{
+  const SEEDS = 6;
+  const SPACING = 2.7;                 // tighter than the field's pitch: thirty per row
+  const cols = STYLES.length * SEEDS;
+  const at = (i) => (i - (cols - 1) / 2) * SPACING;
+  for (const tier of TIERS.slice(1)) {  // a tent has no roof to vary
+    const z = row * ROW;
+    heading(tier === TIERS[1] ? 'Roof variation' : '', z);
+    STYLES.forEach((style, s) => {
+      for (let i = 0; i < SEEDS; i++) {
+        const built = buildBuilding({ id: `v:${tier}:${style}:${i}`, kind: 'house', tier, style, ornaments: [] }, {});
+        const m = new THREE.Mesh(built.geometry, material);
+        m.position.set(at(s * SEEDS + i), 0, z);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        scene.add(m);
+      }
+      // One label per style per row rather than one per house: thirty tags in a row is a
+      // wall of text over the thing it is labelling, and the row is about the shapes.
+      tag(at(s * SEEDS + (SEEDS - 1) / 2), z + 1.3,
+        `${(PALETTE[style] || PALETTE.unknown).name} · ${TIER_LABEL[tier]}`, `${SEEDS} seeds`);
+    });
+    row++;
+  }
+  row++;
+}
+
+// ---- what came out of Blender ----------------------------------------------------
+// Every asset in the register, laid out as it was baked: no porch under it, no
+// foundation, no style tint - the shape as the .blend has it, which is the only place
+// the exporter's work can be looked at without opening Blender. A hero set shows as one
+// asset (the tavern is a whole building), a set of loose things shows one per asset.
+//
+// The hitbox is taken from the bounding box, which is the rule the island stands a model
+// on too, so a prop that would be impossible to walk past is impossible here as well.
+{
+  const z = row * ROW;
+  heading('Blender', z);
+  const names = models.assetNames();
+  names.forEach((name, i) => {
+    const x = (i - (names.length - 1) / 2) * PITCH * 1.4;
+    const geometry = mergeParts(meshAsset(name));
+    placeMesh(geometry, x, z, name, `${models.assetSet(name)}.blend · ${models.assetTris(name)} tris`);
+    const b = geometry.boundingBox;
+    drawHitbox({ solids: [{
+      x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
+      hx: (b.max.x - b.min.x) / 2, hz: (b.max.z - b.min.z) / 2,
+    }] }, x, z);
+  });
+  row += 2;
+}
+
 // ---- a real building, for scale -------------------------------------------------
 // Everything above is drawn by code and sized by eye. This one is a surveyed shape:
 // the new BOIKON office at Leeksterveld, exported straight out of Onshape as glTF.
 // It stands here only to answer "how big is a real building next to our houses" --
 // nothing on the island places it, and nothing reads this row.
 //
-// The island has no stated metre. A settler is about one world unit tall, so a person
-// of 1.8 m fixes the rest: METRE below is that conversion. Change it and the building
-// grows or shrinks against the huts, which is the comparison this row exists for.
-const METRE = 1 / 1.8;
+// The island does have a stated metre, and it is not a settler's height: one world unit
+// is one ground cell is four metres (assets/README.md, and shared/terrain.mjs works in
+// those cells). Read off a settler instead, this row drew the office 2.2 times too big -
+// a 30-metre building came out 17 units long, which is most of a district. METRE below
+// is the conversion; change it and the office grows or shrinks against the huts, which
+// is the comparison this row exists for.
+const METRE = 0.25;
 const REAL = [
   ['/models/boikon.glb', 'BOIKON', 'Leeksterveld · 30 × 10 × 12,5 m'],
 ];
 {
-  // a row and a half of clearance: at 12,5 m this thing is deeper than one ROW
+  // a row of clearance: 30 m of frontage is seven units wide even at the right scale
   const z = (row + 1) * ROW;
   heading('Surveyed', z);
   REAL.forEach(([url, name, note], i) => {
@@ -589,6 +656,23 @@ grid.position.set(0, FIELD_Y + 0.01, fieldDepth / 2);
 
 controls.target.set(0, 0.6, fieldDepth / 2);
 camera.position.set(0, 26, fieldDepth / 2 + 40);
+
+// /demo?at=prop_barrel puts the camera in front of the row that thing is in.
+//
+// The sheet is a reviewing tool and reviewing means "show me that one". From 26 units up
+// over a field ninety deep that is a long way to pan, and panning lands somewhere
+// slightly different every time - which is no use at all when the point is to hold two
+// screenshots against each other, or to put one in a report. The whole row, not the one
+// shape: a shape is judged next to its neighbours.
+const wanted = new URLSearchParams(location.search).get('at');
+if (wanted) {
+  const found = tags.find((t) => t.el.textContent.toLowerCase().startsWith(wanted.toLowerCase()));
+  if (!found) console.warn('model sheet: nothing on the field is called', wanted);
+  else {
+    controls.target.set(0, 0.6, found.world.z);
+    camera.position.set(0, 5.5, found.world.z + 13);
+  }
+}
 controls.update();
 
 // ---- controls ------------------------------------------------------------------
