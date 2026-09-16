@@ -126,11 +126,25 @@ export function createBuildingMaterial() {
         '  return texture2D(m, p.zy * s).rgb * w.x',
         '       + texture2D(m, p.xz * s).rgb * w.y',
         '       + texture2D(m, p.xy * s).rgb * w.z;',
+        '}',
+        // A merged part carries the normals merge() worked out for it. One that has not
+        // been merged carries none at all - finish() drops them, and the attribute then
+        // arrives as zero - which normalises to NaN and paints the face black. Nothing on
+        // the island draws a part unmerged, but the workbench does, and there is no reason
+        // for a second page like it to have to know this. The face's own plane is in the
+        // derivatives of the position, and squaring the normal for the blend makes its
+        // sign moot, so the fallback draws exactly what the attribute would have. Worked
+        // out before the branch that needs it: a derivative is only defined where the
+        // whole triangle takes the same turn.
+        'vec3 islandNormal() {',
+        '  vec3 d = cross(dFdx(vSheetPos), dFdy(vSheetPos));',
+        '  vec3 n = dot(vSheetNrm, vSheetNrm) > 1e-8 ? vSheetNrm : d;',
+        '  return dot(n, n) > 1e-16 ? normalize(n) : vec3(0.0, 1.0, 0.0);',
         '}'))
       .replace('#include <color_fragment>', glsl(
         '#include <color_fragment>',
+        'vec3 sn = islandNormal();',
         'if (vSheet > 0.5) {',
-        '  vec3 sn = normalize(vSheetNrm);',
         '  vec3 sc = vec3(1.0);',
         // The stacked stone was drawn for a rubble wall and swings from a fifth of full
         // brightness to all of it. At that strength it would be the loudest thing on the
