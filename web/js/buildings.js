@@ -640,17 +640,128 @@ function roofOn(parts, plan, dims, pal, roofHex, top) {
   return riseOf(built) - top;
 }
 
+// ---------------------------------------------------------------- the yard
+// What a house puts out around itself. The reference illustration's charm is as much the
+// stuff lying about between the houses as the houses themselves: a handcart by the gable
+// end, a crate against the wall, cordwood stacked under the eaves, a line of washing out
+// the back. It is also the cheapest thing on the island - a yard piece is merged into the
+// same geometry as the house it belongs to, so a street of them is still one draw call
+// each - and all five of them are already modelled at true size in assets/props.
+//
+// What the yard is not free of. The door cell on +Z is where the path arrives and where a
+// settler stands. The eight cells round the house are also where lib/layout.mjs seats an
+// apprentice's shed. And the house reaches over the inner edge of all eight, by far more
+// at a manor with a wing than at a hut. So nothing here is placed by a number measured
+// once: a piece is offered a spot, its rectangle is worked out where it would stand, and
+// it is put down only if walk mode would still see a way past it.
+//
+// That last test is the point of this block and not decoration. mergeRects() glues two
+// rectangles together when the gap between them is too narrow to walk through, so a cart
+// set close against its own house makes one blob with it - and a blob that reaches round
+// the corner of the house covers the doorstep, which is the one cell the yard may not
+// have. Keeping every piece a rectangle of its own makes that impossible rather than
+// unlikely.
+//
+// Where a piece may stand, in the house's own frame, the door being +Z. Never [0, 1].
+const YARD_SPOTS = [
+  [-1, -1], [1, -1],                     // the back corners
+  [-1, 0], [1, 0],                       // the flanks
+  [0, -1],                               // straight out the back
+  [-1, 1], [1, 1],                       // beside the door, on the lane
+];
+
+// The five, with how far each reaches across x and along z as it is modelled. Written
+// down rather than measured off the geometry, because these are the numbers
+// tests/models.test.mjs holds the models to - a figure that reads itself checks nothing.
+const YARD_KIT = [
+  { asset: 'prop_cart', hx: 0.16, hz: 0.43 },
+  { asset: 'prop_crate', hx: 0.15, hz: 0.15 },
+  { asset: 'prop_woodpile', hx: 0.23, hz: 0.15 },
+  { asset: 'prop_barrel', hx: 0.12, hz: 0.12 },
+  { asset: 'prop_washline', hx: 0.12, hz: 0.43 },
+];
+
+// A piece lies along the wall it stands beside - which is how a cart is actually parked,
+// and what keeps its long side out of the lane. The wall runs along x behind the house and
+// along z beside it, so a piece whose own long side is the other way round gets a quarter
+// turn: the woodpile is stacked across x and the cart and the line run along z.
+function yardLie(piece, [sx, sz]) {
+  const wallAlongX = sx === 0;
+  const turn = wallAlongX !== (piece.hx >= piece.hz);
+  return { ry: turn ? Math.PI / 2 : 0, hx: turn ? piece.hz : piece.hx, hz: turn ? piece.hx : piece.hz };
+}
+
+// Two rectangles walk mode would glue into one. mergeRects()'s own condition, read the
+// other way round: separated by more than the gap on either axis and they stay two things
+// with a way between them.
+function wouldMerge(a, b) {
+  return !(a.x - a.hx - WALK_GAP > b.x + b.hx || b.x - b.hx - WALK_GAP > a.x + a.hx)
+    && !(a.z - a.hz - WALK_GAP > b.z + b.hz || b.z - b.hz - WALK_GAP > a.z + a.hz);
+}
+
+// Up to two pieces, from the same rng the roof was chosen with. Two rather than three
+// because a yard with three things in it stops reading as a yard and starts reading as a
+// depot, and one fewer for every apprentice: a shed is standing in one of these cells too
+// and nothing on this side knows which, so a yard filling up with sheds stops filling up
+// with carts. A modest GPU gets one at most.
+//
+// The parts come back rather than going into the loaf, because the porch has not been
+// built yet and porch() lifts everything it finds by the height of its own step. A cart
+// standing on the grass beside the house is not standing on the step.
+function yardOn(spec, rng, solids, modest) {
+  let want = Math.min(rng.int(3), modest ? 1 : 2) - (spec.sheds || []).length;
+  const kit = YARD_KIT.filter((k) => models.hasAsset(k.asset));
+  if (want <= 0 || !kit.length) return [];
+  const taken = [...solids];
+  const spots = [...YARD_SPOTS];
+  const out = [];
+  // Counted rather than read off `out`, which holds a part per box and cone of the model
+  // and would call one cart two pieces over.
+  while (taken.length - solids.length < want && spots.length) {
+    const spot = spots.splice(rng.int(spots.length), 1)[0];
+    const piece = rng.pick(kit);
+    const lie = yardLie(piece, spot);
+    // As far out as the yard goes, cell-centred on the axis it does not stand off. Pushed
+    // out rather than sat on the cell centre because the room is between the house and the
+    // plot edge, and it is the house that varies.
+    const at = {
+      x: spot[0] ? spot[0] * (YARD_REACH - lie.hx) : 0,
+      z: spot[1] ? spot[1] * (YARD_REACH - lie.hz) : 0,
+      hx: lie.hx, hz: lie.hz,
+    };
+    if (taken.some((r) => wouldMerge(at, r))) continue;
+    taken.push(at);
+    for (const g of meshAsset(piece.asset, 0xffffff, { x: at.x, z: at.z, ry: lie.ry })) out.push(g);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- houses
+// A tent is the one dwelling with neither plaster nor tiles on it, so the slot the island
+// owns is the band down its doorway: from the lane that is what tells you whose tent it
+// is, the way the walls and the roof do on a house.
+const tentTint = (pal) => (name) => (/band/.test(name) ? pal.trim : null);
+
 function houseBody(parts, spec, pal, rng, ctx = {}) {
   const tier = TIER_INDEX[spec.tier] ?? 1;
   const anchors = {};
   const style = spec.style || 'unknown';
+  // A house on stilts over the shoreline has no yard: there is nothing under it to leave
+  // a cart on. Everything else gets one, a tent included - a tent with a woodpile and a
+  // barrel beside it is exactly the corner of the reference this card is aiming at.
+  const yard = (built) => (spec.harbour ? [] : yardOn(spec, rng, footprintOf(built, WALK_CLEARANCE), ctx.modest));
 
   if (tier === 0) {                                   // tent
+    if (models.hasAsset('prop_tent')) {
+      for (const g of meshAsset('prop_tent', tentTint(pal))) parts.push(g);
+      return { anchors, height: assetRise('prop_tent'), w: 0.8, yard: yard(parts) };
+    }
+    // The tent the island drew before Blender, and what a checkout with no props-mesh.js
+    // in it still gets.
     parts.push(prismRoof(0.8, 0.86, 0.58, C.canvas, { sheet: null }));
     parts.push(box(0.045, 0.64, 0.045, C.darkWood, { z: -0.41 }));
     parts.push(box(0.3, 0.025, 0.035, pal.trim, { y: 0.24, z: 0.44 }));
-    return { anchors, height: 0.62, w: 0.84 };
+    return { anchors, height: 0.62, w: 0.84, yard: yard(parts) };
   }
 
   const dims = [
@@ -662,11 +773,19 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
     { w: 1.18, h: 1.42, roof: 0.44, win: 6 },
   ][tier];
 
+  const bodyAsset = 'house_' + spec.tier + '_a';
+  const hasBody = models.hasAsset(bodyAsset);
+  if (hasBody) {
+    parts.push(...meshAsset(bodyAsset, styleTint(pal.roof, pal)));
+    foundation(parts, dims.w, dims.w);
+  } else {
   parts.push(box(dims.w, dims.h, dims.w, pal.wall, { sheet: 'wall' }));
   foundation(parts, dims.w, dims.w);
   door(parts, pal, dims.w);
   windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
   if (tier >= 3) windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.12, count: 2 });
+
+  }
 
   // Every roof is now chosen rather than tabulated. What is left of a style here is the
   // detailing under it: opus keeps its stone string course, sonnet its timber frame, and
@@ -676,7 +795,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   // is a street of kiln loads rather than one paint tin, and it is free.
   const roofHex = shade(pal.roof, rng.range(0.94, 1.06));
   if (style === 'opus') parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
-  if (style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
+  if (!hasBody && style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
 
   let top = dims.h;
   const span = dims.w + ROOF_OVERHANG;
@@ -761,7 +880,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
     parts.push(cylinder(0.028, 0.04, 0.3, 6, C.copper, { rz: -0.6, x: tx + 0.2, y: th + 0.12, z: tz + 0.06 }));
     top = Math.max(top, th + 0.42);
   }
-  return { anchors, height: top, w: dims.w };
+  return { anchors, height: top, w: dims.w, yard: yard(parts) };
 }
 
 function ornament(parts, name, pal, dims, anchors) {
@@ -914,37 +1033,10 @@ function civic(parts, spec, rng) {
   const animated = {};
   switch (spec.civicType) {
     case 'townhall': {
-      parts.push(box(1.5, 0.75, 1.15, C.stone, { sheet: 'stone' }));
-      parts.push(box(1.34, 0.5, 1.02, 0xf0e2c8, { y: 0.75, sheet: 'wall' }));
-      timberFrame(parts, 1.34, 0.5, 1.02, 0x6b4a2f);
-      // Verdigris, not slate. With every house on the island now roofed in clay the hall
-      // has to be the exception or it is one more grey box, and weathered copper over the
-      // civic roof is the cool note the whole warm hillside is read against - which is
-      // exactly what the dome does in the reference illustration.
-      parts.push(prismRoof(1.55, 1.2, 0.5, C.patina, { y: 1.25 }));
-      // The door takes the middle bay and the windows stand either side of it. They used
-      // to be laid out on their own rhythm - four of them at 0.34 apart from x = -0.5 -
-      // and the door was simply put on the centre line afterwards, which landed it across
-      // the two inner ones. From the square it read as five bays with a door hung over the
-      // middle window. A facade is the one thing a civic building has; it gets an axis.
-      for (const x of [-0.58, -0.3, 0.3, 0.58]) parts.push(box(0.14, 0.2, 0.04, C.glass, { x, y: 0.32, z: 0.58, emissive: 1 }));
-      parts.push(box(0.3, 0.45, 0.06, 0x5a3a24, { z: 0.58 }));
-      parts.push(box(0.36, 0.05, 0.05, 0x6b4a2f, { y: 0.46, z: 0.585 }));                 // the lintel over it
-      parts.push(box(0.16, 0.18, 0.04, C.glass, { y: 0.92, z: 0.52, emissive: 1 }));      // and a light on the axis above
-      for (let i = 0; i < 3; i++) parts.push(box(0.5 - i * 0.06, 0.07, 0.14, C.stone, { y: -0.21 + i * 0.07, z: 0.66 + (2 - i) * 0.07 }));
-      // bell tower
-      parts.push(cylinder(0.19, 0.21, 1.5, 12, 0xf0e2c8, { x: -0.52, y: 1.05, z: -0.28, sheet: 'wall' }));
-      parts.push(pyramidRoof(0.5, 0.5, 0.42, C.copper, { x: -0.52, y: 2.55, z: -0.28 }));
-      parts.push(sphere(0.07, C.gold, { x: -0.52, y: 3.02, z: -0.28 }));
-      parts.push(dome(0.09, 0xcfa14a, { x: -0.52, y: 2.5, z: -0.28, rx: Math.PI }));
-      anchors.flag = [0.55, 1.9, 0];
-      parts.push(box(0.025, 0.62, 0.025, C.darkWood, { x: 0.55, y: 1.28 }));
-      // the founding stone
-      parts.push(box(0.34, 0.1, 0.3, C.stone, { x: 0.75, y: -0.24, z: 0.72 }));
-      const st = box(0.22, 0.42, 0.13, 0x4a4a52, { x: 0.75, y: -0.14, z: 0.72, rz: 0.05 });
-      parts.push(st);
-      parts.push(box(0.15, 0.16, 0.02, 0xe6e6e0, { x: 0.75, y: 0.05, z: 0.79 }));
-      return { anchors, animated, height: 3.1 };
+      // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
+      parts.push(...meshAsset('townhall'));
+      Object.assign(anchors, meshAnchors('townhall'));
+      return { anchors, animated, height: models.heightOf('townhall') };
     }
     case 'well':
       // Nine segments is a nonagon, and a nonagon standing on the town square next to a
@@ -1247,33 +1339,9 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.52 };
     }
     case 'school': {
-      // A long low schoolhouse with a bell over the ridge: brick to the sill, plaster
-      // above, and a row of tall windows that light up when the apprentices work late.
-      const f = 0.1;
-      parts.push(box(1.44, 0.16, 0.96, C.foundation, { y: -0.06 }));
-      parts.push(box(1.36, 0.3, 0.88, C.brick, { y: f, sheet: 'stone' }));
-      parts.push(box(1.3, 0.46, 0.84, 0xf0e2c8, { y: f + 0.3, sheet: 'wall' }));
-      const eaves = f + 0.76;
-      parts.push(prismRoof(1.46, 0.98, 0.42, C.slate, { y: eaves }));
-      for (let i = 0; i < 4; i++) {
-        const x = -0.48 + i * 0.32;
-        parts.push(box(0.16, 0.4, 0.03, C.glass, { x, y: f + 0.32, z: 0.43, emissive: 1 }));
-        parts.push(box(0.19, 0.035, 0.04, C.white, { x, y: f + 0.28, z: 0.435 }));
-      }
-      // the porch over the door
-      parts.push(box(0.42, 0.56, 0.04, C.darkWood, { y: f, z: -0.44 }));
-      parts.push(box(0.5, 0.05, 0.3, C.plank, { y: f + 0.6, z: -0.58 }));
-      for (const x of [-0.21, 0.21]) parts.push(box(0.04, 0.6, 0.04, C.darkWood, { x, y: f, z: -0.68 }));
-      // the bell cote, standing on the ridge
-      for (const dx of [-0.53, -0.37]) parts.push(box(0.035, 0.24, 0.035, C.white, { x: dx, y: eaves + 0.42 }));
-      parts.push(box(0.24, 0.04, 0.14, C.white, { x: -0.45, y: eaves + 0.66 }));
-      parts.push(pyramidRoof(0.3, 0.2, 0.16, C.copper, { x: -0.45, y: eaves + 0.7 }));
-      parts.push(dome(0.062, C.gold, { x: -0.45, y: eaves + 0.64, rx: Math.PI }));
-      // a slate leaning by the door, and the yard flag
-      parts.push(box(0.26, 0.2, 0.025, 0x3a4038, { x: 0.62, y: f, z: -0.34, rz: -0.12 }));
-      anchors.flag = [-0.66, f + 0.8, -0.3];
-      parts.push(box(0.025, 0.7, 0.025, C.darkWood, { x: -0.66, y: f, z: -0.3 }));
-      return { anchors, animated, height: eaves + 0.9 };
+      parts.push(...meshAsset('school'));
+      Object.assign(anchors, meshAnchors('school'));
+      return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
       parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
@@ -1563,6 +1631,13 @@ function reachOf(parts) {
 // leaves grass on both sides of it, and leaves it somewhere to be pushed to - see
 // yardNudge in main.js.
 const SHED_SPAN = 0.58;
+// And how far out a thing standing in the yard may reach - a cart, a crate, a woodpile.
+// The plot edge is 1.50 out and the lane is the cell beyond it, so this leaves a hand's
+// width of grass inside the boundary, and enough of it that the four per cent a house may
+// be scaled up by (see `s` in buildBuilding) cannot push a cart into the road. It is the
+// third number on the same 3x3: a house reaches 1.15, a shed gets SHED_SPAN of a corner
+// cell, and the yard has what is left. Nothing is placed by it alone - see yardOn().
+const YARD_REACH = 1.40;
 
 // Everything low enough to be part of the footprint, as one rectangle. One rectangle and
 // not the walkable ones footprintOf() finds: a porch is a floor, and a floor with a
@@ -1586,7 +1661,7 @@ function groundRect(parts) {
 
 // Most of the island builds its front on local +z: the town hall, the market, the clock
 // tower, the castle and the office all put their door there, and the layout's rot is
-// written expecting exactly that. Two do not - the chapel and the school
+// written expecting exactly that. The old chapel does not
 // grew their doors on -z. The Blender tavern now faces +z; the remaining pair turn
 // to match. Once main.js was turning buildings the way the layout actually asked, those
 // three came out backwards.
@@ -1595,7 +1670,7 @@ function groundRect(parts) {
 // composed around it, and a facade that was drawn as a whole is worth more than the
 // satisfaction of having every case agree in the source. A half turn costs nothing: the
 // footprint is measured afterwards, and it is symmetric about the centre anyway.
-const BACKWARDS = new Set(['chapel', 'school']);
+const BACKWARDS = new Set(['chapel']);
 
 function turnAround(parts, anchors, animated) {
   for (const g of parts) g.rotateY(Math.PI);
@@ -1640,7 +1715,7 @@ export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
   const parts = [];
-  let anchors = {}, animated = {}, height = 1, w = 0.9;
+  let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [];
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
@@ -1670,7 +1745,7 @@ export function buildBuilding(spec, ctx = {}) {
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   } else {
     const r = houseBody(parts, spec, pal, rng, ctx);
-    anchors = r.anchors; height = r.height; w = r.w;
+    anchors = r.anchors; height = r.height; w = r.w; yard = r.yard || [];
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   }
 
@@ -1693,17 +1768,29 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  let solids = footprintOf(parts, WALK_CLEARANCE / s);
+  const wallRects = footprintOf(parts, WALK_CLEARANCE / s);
   if (wantsPorch(spec)) {
     porch(parts, anchors, animated, porchOverhang(spec));
     height += PORCH_RISE;
   }
+  // And the yard last of all, which is the whole reason houseBody() handed it back rather
+  // than putting it in itself: porch() lifts everything already in the loaf onto its step
+  // and grows the step to cover it, and a cart is neither on the step nor part of it.
+  //
+  // Its rectangles are kept as a list of their own as well as being walked into. Two
+  // things read the footprint and they want different answers: walk mode wants everything
+  // it can bump into, and the scaffold wants the walls - a builder's frame goes round the
+  // house, not round the woodpile ten feet away.
+  for (const g of yard) parts.push(g);
+  const yardRects = yard.length ? footprintOf(yard, WALK_CLEARANCE / s) : [];
 
   const geometry = merge(parts);
+  let walls = wallRects, solids = wallRects.concat(yardRects);
   if (s !== 1) {
     geometry.scale(s, s, s);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
+    walls = scaleSolids(walls, s);
     solids = scaleSolids(solids, s);
   }
   if (boardish) {
@@ -1716,7 +1803,7 @@ export function buildBuilding(spec, ctx = {}) {
   // parts collected than held onto.
   return {
     geometry, anchors, animated, height, width: w,
-    bbox: geometry.boundingBox.clone(), solids,
+    bbox: geometry.boundingBox.clone(), solids, walls,
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }
@@ -1997,3 +2084,6 @@ export function createFlagMesh(count) {
   mesh.count = 0;
   return mesh;
 }
+
+
+

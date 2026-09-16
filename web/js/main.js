@@ -1810,7 +1810,11 @@ function addScaffold(rec) {
   const m = new THREE.Mesh(scaffoldGeo, buildingMat);
   const b = rec.built.bbox;
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-  for (const r of rec.built.solids) {
+  // `walls` rather than `solids`: since a house puts a cart and a woodpile out in its own
+  // yard, the rectangles walk mode blocks on reach most of the way to the plot edge, and
+  // a frame round all of them would be back to standing in the neighbours - which is the
+  // complaint this function already carries a paragraph about.
+  for (const r of rec.built.walls || rec.built.solids) {
     x0 = Math.min(x0, r.x - r.hx); x1 = Math.max(x1, r.x + r.hx);
     z0 = Math.min(z0, r.z - r.hz); z1 = Math.max(z1, r.z + r.hz);
   }
@@ -2372,8 +2376,8 @@ function frame(nowMs) {
       rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
       if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
     }
-    const tavernFire = rec.spec.civicType === 'tavern';
-    if (rec.smokeAnchor && (rec.spec.active || tavernFire)
+    const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
+    if (rec.smokeAnchor && (rec.spec.active || civicFire)
       && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
       rec.smokeT += dt;
       if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {

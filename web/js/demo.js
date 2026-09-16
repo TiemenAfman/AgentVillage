@@ -15,7 +15,9 @@ import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 import { bedGeometry } from './crops.js';
+import { propGeometry, propFootprint, propReach } from './props.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
+import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
@@ -157,6 +159,15 @@ function tag(x, z, name, note, cls = 'tag') {
   tags.push({ el, world: new THREE.Vector3(x, cls === 'group' ? 1.2 : 0, z) });
 }
 
+function placeMesh(geometry, x, z, name, note) {
+  const m = new THREE.Mesh(geometry, material);
+  m.position.set(x, 0, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  scene.add(m);
+  tag(x, z + 1.0, name, note);
+}
+
 function place(spec, x, z, name, note) {
   const built = buildBuilding(spec, {});
   const mesh = new THREE.Mesh(built.geometry, material);
@@ -264,18 +275,35 @@ line(['sailor', 'plaque'], (what, x, z) => {
   }
 }, 'Odds');
 
+// ---- the props put down by hand ------------------------------------------------
+// Everything in shared/shapes.mjs, drawn by the same props.js the island draws it with,
+// and with the hitbox walk mode really blocks on rather than a box round the whole shape.
+//
+// That distinction is why this row exists next to the Blender row further down, which
+// shows the same models measured by their bounding box. Five of these are now baked
+// models, and two of them - the cart and the washing line - are long: they block as a
+// line of small squares instead of as one square nobody could walk round. Turn the
+// hitboxes on and the row is where you find out whether that is actually true, which is
+// the only check that catches a cart put in a yard you can no longer cross.
+//
+// The bridge is left out: it is drawn to clear whatever it was put over and its deck sits
+// below the grass, so on a flat field it is a shape half buried. It has a row of its own
+// further down, over water, which is where it can be judged.
+for (let i = 0; i < KINDS.length; i += 7) {
+  const slice = KINDS.slice(i, i + 7).filter((k) => k !== 'bridge');
+  line(slice, (kind, x, z) => {
+    const spec = { kind, x: 0, z: 0 };
+    const solids = propFootprint(spec);
+    placeMesh(propGeometry(spec), x, z, kind,
+      `${models.hasAsset(`prop_${kind}`) ? 'Blender' : 'drawn in props.js'} · reach ${propReach(spec).toFixed(2)}`);
+    drawHitbox({ solids }, x, z);
+  }, i === 0 ? 'Props' : '');
+}
+row++;
+
 // ---- the market garden ---------------------------------------------------------
 // Every vegetable at the stage you would buy it for, and then one crop through all
 // four of its looks, which is the row that says whether growing reads as growing.
-function placeMesh(geometry, x, z, name, note) {
-  const m = new THREE.Mesh(geometry, material);
-  m.position.set(x, 0, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  scene.add(m);
-  tag(x, z + 1.0, name, note);
-}
-
 line(CROP_KINDS, (kind, x, z) => {
   const c = CROPS[kind];
   placeMesh(bedGeometry(kind, 'ripe'), x, z, c.name, `${c.seed} coins · ${c.grow} min`);

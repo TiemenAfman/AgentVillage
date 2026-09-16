@@ -85,8 +85,25 @@ The **material name's prefix, up to the first colon, is the sheet tag**:
 | `plankZ` | boards along z | the same boards turned a quarter, for a run along z |
 
 Anything after the colon is for you: `wall:cream`, `plank:oak`, `plain:iron`. Any other
-prefix and the bake stops with the list of the six it knows — quietly falling back to
-`plain` would mean a plastered wall that is subtly flat and nobody noticing for a month.
+prefix and the bake stops with the list it knows — quietly falling back to `plain` would
+mean a plastered wall that is subtly flat and nobody noticing for a month.
+
+Two more sheets exist that no building may name: **`bark` and `foliage`**. They are the
+forest's, and they are the exception to one material because the forest is the exception
+to one draw call. A tree is not merged into the island's geometry — it is an
+`InstancedMesh` of its own, twenty thousand copies for one call — so it can afford a
+material array, and it needs one: needles want a different sheet from the trunk they
+grow on, and a building carrying the sheet as a number on the vertex cannot express
+that. So `flora_pine_a trunk` is `bark:pine`, its skirts are `foliage:pine`, and
+`grouped('flora_pine_a', ['bark', 'foliage'])` in `web/js/models.js` gives back one
+geometry with a group per slot, in the order asked for, for `world.js` to hand its two
+materials to positionally. Ask for the slots in the wrong order and the tree grows a
+wooden canopy; the order is asserted in `tests/models.test.mjs`.
+
+`grouped()` also decides where the sheet lands, because no UVs come out of Blender for
+anything: it projects each triangle flat down whichever axis the triangle faces most, the
+same triplanar idea the building sheets use. A cylindrical wrap was tried first and
+cannot work — the n-gon closing the underside of a bough spans every angle at once.
 
 Set the colour on both `material.diffuse_color` and the Principled BSDF's base colour,
 **linearised** (`build-tavern.py` has the four-line conversion). Linear is what the
@@ -137,6 +154,7 @@ and `scripts/model-rules.mjs` refuses anything over it:
 | prefix | triangles | why |
 |---|---|---|
 | `flora_rock` | 40 | thousands, instanced |
+| `flora_bush` | 40 | undergrowth: a tree's cost with none of a tree's presence |
 | `flora_` | 60 | ten thousand trees |
 | `prop_` | 120 | dozens, put down by hand |
 | `addon_` | 150 | a dormer or a turret, one or two per house |
@@ -152,7 +170,18 @@ something you decide to make, not something a set becomes by growing.
 
 None of this costs draw calls. A baked part carries the same attributes as a `box()` and
 is merged into the same single geometry, so ten barrels are still zero extra draw calls -
-which is the number to report, and `?stats` on the island is where to read it.
+which is the number to report, and `?stats` on the island is where to read it. The forest
+is the one exception and it is an exception in the island's favour: a plant is an
+`InstancedMesh` and costs one call per slot no matter how many of it there are, which is
+why four thousand bushes are one call and a richer pine is none.
+
+One thing `?stats` will not tell you, and it matters most here: **the shadow pass is not
+in it.** three resets `renderer.info` after drawing the shadow map and before the colour
+pass, so the overlay reports the colour pass alone - and an `InstancedMesh` is frustum
+culled as one object, so if any part of the forest is in the shadow camera, every stem on
+the island is submitted to it. A shadow-casting instance is paid for twice. Work the
+second half out by hand and report it: instances times triangles, over the meshes with
+`castShadow`.
 
 ## The yard a house has to fit in
 
