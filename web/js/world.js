@@ -736,6 +736,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const WEAR_SAND = 0xbda981;       // the sand a lane sheds into the grass beside it
   const WEAR_FEATHER = 0.36;        // how far either of them takes to become meadow again
   const YARD_R = 0.36;              // corner radius of a yard; nothing here is square
+  const YARD_SEG = 4;               // and how many steps that corner is drawn in
   const YARD_INSET = 0.5;           // grass left round the edge of a three-cell plot
   // Street furniture is not a building. A bench, a lamp or a flower bed stands *on* the
   // grass of the square and nobody has worn a yard round it, and the well and the
@@ -747,10 +748,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
     'statue', 'well', 'fountain', 'watertower']);
   let wearMesh = null;
   let wearVillage = village;
-  // The outlines the last pass of `buildPaths` laid, so the verge is cut from exactly the
-  // shapes the paving got rather than from a second guess at them. `CORNER_R` and
-  // `CORNER_SEG` down in the footpaths section are borrowed for the same reason.
+  // What the last pass of `buildPaths` laid, so the verge is cut from exactly the shapes
+  // the paving got rather than from a second guess at them: the tiles at the junctions
+  // and the swept ribbons in between. `CORNER_R` and `CORNER_SEG` down in the footpaths
+  // section are borrowed for the same reason.
   const paved = [];
+  const pavedLanes = [];
   let pavedSet = new Set();
   const onRoad = (x, z) => pavedSet.has(Math.floor(x + half) + Math.floor(z + half) * size);
 
@@ -815,18 +818,42 @@ export function createWorld(scene, terrain, village, opts = {}) {
       const cx = (ax + bx) / 2, cz = (az + bz) / 2;
       const hw = Math.max(0.45, b.plot.w / 2 - YARD_INSET);
       const hd = Math.max(0.45, b.plot.d / 2 - YARD_INSET);
-      const inner = roundedOutline(cx - hw, cz - hd, cx + hw, cz + hd, YARD_R, CORNER_SEG);
+      const inner = roundedOutline(cx - hw, cz - hd, cx + hw, cz + hd, YARD_R, YARD_SEG);
       const f = WEAR_FEATHER;
-      const outer = roundedOutline(cx - hw - f, cz - hd - f, cx + hw + f, cz + hd + f, YARD_R + f, CORNER_SEG);
+      const outer = roundedOutline(cx - hw - f, cz - hd - f, cx + hw + f, cz + hd + f, YARD_R + f, YARD_SEG);
       fan(inner, cx, cz, WEAR_EARTH);
       skirt(inner, outer, WEAR_EARTH);
     }
 
-    // The verge. Only the skirt, and only where the paving ends: the middle of a cell is
-    // under the paving, and a joint with the next cell is under that one. Which stretch is
-    // which is settled by looking: a step outward from the middle of a stretch either
-    // lands on paving, and then it is a joint, or it lands on grass, and then it is the
-    // edge of the lane and wants sand along it.
+    // The verge along a lane follows the ribbon rather than the cells under it. A lane
+    // bends now, and a band of sand cut to the cells beside a bend would stick out past
+    // the paving in little square tabs at every corner - which is the very staircase the
+    // ribbon was drawn to get rid of.
+    for (const lane of pavedLanes) {
+      const f = WEAR_FEATHER * 0.6;      // a lane sheds less than a doorstep wears
+      for (const side of [1, -1]) {
+        const base = v;
+        for (let i = 0; i < lane.curve.length; i++) {
+          const p = lane.curve[i], n = lane.nrm[i];
+          const ox = p[0] + n[0] * (lane.hw + f) * side, oz = p[1] + n[1] * (lane.hw + f) * side;
+          tmpColor.setHex(WEAR_SAND);
+          vertex(p[0] + n[0] * lane.hw * side, p[1] + n[1] * lane.hw * side, tmpColor);
+          vertex(ox, oz, groundColourAt(ox, oz, tmpGround));
+        }
+        for (let i = 0; i + 1 < lane.curve.length; i++) {
+          const a = base + i * 2, c = base + (i + 1) * 2;
+          if (side > 0) idx.push(a, a + 1, c, a + 1, c + 1, c);
+          else idx.push(a + 1, a, c, a + 1, c, c + 1);
+        }
+        v += lane.curve.length * 2;
+      }
+    }
+
+    // And round the tiles at the junctions. Only the skirt, and only where the paving
+    // ends: the middle of a cell is under the paving, and a joint with the next cell is
+    // under that one. Which stretch is which is settled by looking - a step outward from
+    // the middle of a stretch either lands on paving, and then it is a joint, or it lands
+    // on grass, and then it is the edge of the lane and wants sand along it.
     for (const t of paved) {
       const f = WEAR_FEATHER * 0.6;      // a lane sheds less than a doorstep wears
       const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2;
@@ -854,8 +881,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   // ---- footpaths -----------------------------------------------------------
-  let pathMesh = null;
-  let pathTexture = null;
+  let laneMeshes = [];
+  let pathTexture = null, sandTexture = null;
   // Only the town square and a village green are laid in stone. A hamlet's green stays
   // grass - a plaza three cells across, thirty times over, reads as a rash of empty
   // patios - so the wire only names the ones that are actually paved.
@@ -871,105 +898,142 @@ export function createWorld(scene, terrain, village, opts = {}) {
     return out;
   }
 
-  // The stone itself. The sheet is seamless, so it is tiled in world space rather than
-  // per quad: a path running across three cells reads as one continuous piece of paving
-  // instead of the same stone stamped three times. A cell is one world unit and four
-  // metres, so a sheet to the unit puts a cobble at about half a metre across.
-  const PATH_TEX_UNITS = 1;
-  // How much of an outside corner is taken off. A path is about half a cell wide, so a
-  // fifth of a unit is a generous but still walkable easing - enough that a turn reads as
-  // worn rather than cut, and not so much that a single-cell stub becomes a disc.
-  const CORNER_R = 0.2;
-  const CORNER_SEG = 4;
-  // Multiplied over the texture, so these are tints rather than colours: the square is
-  // laid in clean stone and a footpath in the same stone gone duller underfoot. With no
-  // texture to multiply they stand on their own, and are the sand and flagstone the
-  // island had before there was a sheet to lay.
-  const TINTED = { path: 0xd9d2c6, square: 0xffffff };
-  const PLAIN = { path: 0xcbb691, square: 0xd6cbb2 };
+  // The two surfaces the island is walked on, and which sheet each takes. Both sheets are
+  // seamless and both are tiled in world space rather than per quad: a lane running across
+  // three cells reads as one continuous surface instead of the same stamp laid three
+  // times. A cell is one world unit and four metres, so a sheet to the unit puts a cobble
+  // at about half a metre - and the sand is tiled at half that frequency, because grit has
+  // no size of its own and the coarser tile is what keeps its repeat out of sight.
+  const TEX_UNITS = { stone: 1, plaza: 1, sand: 2 };
+  // Half the width of a lane, and how much of an outside corner is taken off a tile. The
+  // ribbon is swept at exactly the half-width a tile is drawn to, so a tile and the lane
+  // leaving it meet edge to edge with nothing to line up by hand. Both went up a notch
+  // with the sand: a sandy track two and a half metres across reads as a track, where the
+  // same width in cobbles read as a kerbed street.
+  const H = 0.30;
+  const CORNER_R = 0.3;
+  const CORNER_SEG = 6;
+  const LIFT = 0.045;
+  // How far a lane's middle may end up from a cell middle it was built from. This is a
+  // bound rather than a taste: settlers walk cell middles (`settlers.js`, a four-connected
+  // BFS) and `gateOf` in main.js looks a road cell up by its middle, so paving that has
+  // wandered off them would put the whole village walking beside its own paths. At 0.18
+  // the sharpest corner on the island still has a tenth of a unit of paving outside the
+  // middle. `smoothLane` keeps to it by construction; tests/paths.test.mjs holds it there.
+  const LANE_DEV = 0.18;
+  // Multiplied over the sheet, so these are tints rather than colours: the square is laid
+  // in clean stone, a road in the same stone gone duller underfoot, and a footpath between
+  // two front doors in sand. With no sheet to multiply they stand on their own, and are
+  // the sand and flagstone the island had before there was a sheet to lay.
+  const TINTED = { stone: 0xd9d2c6, plaza: 0xffffff };
+  const PLAIN = { stone: 0xcbb691, plaza: 0xd6cbb2 };
+  const SAND = 0xcbb68f;            // one colour either way: its sheet has none of its own
+  // `path-sand.png` is brightness only and averages about four fifths, and multiplying
+  // that over a colour that is already sand makes mud of it. The lift puts the average
+  // back where the flat colour was, so the sheet spends its range on grit rather than on
+  // gloom - the same correction the fields make for their tilth.
+  const SAND_SHEET_AVG = 0.82;
 
   function buildPaths(paths, squares = squareCells(village)) {
-    if (pathMesh) {
-      group.remove(pathMesh);
-      pathMesh.geometry.dispose();
-      pathMesh.material.dispose();
-      pathMesh = null;
-    }
-    const positions = [], colors = [], uvs = [], indices = [];
-    let v = 0;
-    // A track half a cell wide, widened towards whichever neighbours continue the path,
-    // so a run of cells joins up into one continuous footpath. Squares are laid the same
-    // way in a paler stone, which is what makes a road meet a plaza instead of stopping
-    // a cell short of it.
-    const paint = pathTexture ? TINTED : PLAIN;
-    const seen = new Set();
-    const tiles = [];
-    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, paint.path]); }
-    for (const c of squares || []) {
-      const k = c[0] + c[1] * terrain.size;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      tiles.push([c, paint.square]);
-    }
-    const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
-    const H = 0.26;
-    // Each cell is a ring of points laid anticlockwise seen from above, fanned from its
-    // own middle. A square tile is four points and two triangles, exactly as before; a
-    // corner where the path stops turning is replaced by a quarter arc, which is the only
-    // reason the ring exists at all. `roundedOutline` in hamlets.js lays that ring out,
-    // and the verge under this paving asks it for the same one a little wider.
+    for (const m of laneMeshes) { group.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    laneMeshes = [];
+    const graph = roadGraph(paths, squares, terrain.size);
+    const tintOf = (kind) => (kind === 'sand' ? SAND : (pathTexture ? TINTED : PLAIN)[kind]);
+    // One buffer per sheet. The cobbles carry their own colour and the sand does not, so
+    // the two cannot share a material; everything else the island walks on shares one of
+    // these, which is two draw calls for the whole road network.
+    const buf = { stone: bucket(), sand: bucket() };
+    const into = (kind) => (kind === 'sand' ? buf.sand : buf.stone);
+    const vertex = (b, x, z, units) => {
+      b.pos.push(x, terrain.worldHeight(x, z) + LIFT, z);
+      b.uv.push(x / units, z / units);
+      b.col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+    };
+
+    // The junctions, the dead ends and every cell of a plaza: a tile on its own middle,
+    // widened towards whichever neighbours carry on, exactly as the whole road used to be
+    // drawn. A crossing has to be paving at the cell middle, and a plaza is not a path.
     paved.length = 0;
-    pavedSet = seen;
-    for (const [[gx, gz], hex] of tiles) {
-      const [x, z] = terrain.cellWorld(gx, gz);
-      const west = hasCell(gx - 1, gz), east = hasCell(gx + 1, gz);
-      const north = hasCell(gx, gz - 1), south = hasCell(gx, gz + 1);
-      const x0 = x - (west ? 0.5 : H), x1 = x + (east ? 0.5 : H);
-      const z0 = z - (north ? 0.5 : H), z1 = z + (south ? 0.5 : H);
-      const corners = [!west && !north, !west && !south, !east && !south, !east && !north];
+    pavedSet = new Set(graph.kind.keys());
+    for (const t of graph.tiles) {
+      const [x, z] = terrain.cellWorld(t.gx, t.gz);
+      const x0 = x - (t.west ? 0.5 : H), x1 = x + (t.east ? 0.5 : H);
+      const z0 = z - (t.north ? 0.5 : H), z1 = z + (t.south ? 0.5 : H);
+      const corners = [!t.west && !t.north, !t.west && !t.south, !t.east && !t.south, !t.east && !t.north];
       const ring = roundedOutline(x0, z0, x1, z1, CORNER_R, CORNER_SEG, corners);
       paved.push({ x0, z0, x1, z1, corners });
+      const b = into(t.kind), units = TEX_UNITS[t.kind];
+      tmpColor.setHex(tintOf(t.kind));
+      const centre = b.v;
+      vertex(b, (x0 + x1) / 2, (z0 + z1) / 2, units);
+      for (const [qx, qz] of ring) vertex(b, qx, qz, units);
+      for (let k = 0; k < ring.length; k++) b.idx.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
+      b.v += ring.length + 1;
+    }
 
-      tmpColor.setHex(hex);
-      const vertex = (qx, qz) => {
-        positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
-        uvs.push(qx / PATH_TEX_UNITS, qz / PATH_TEX_UNITS);
-        colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      };
-      const centre = v;
-      vertex((x0 + x1) / 2, (z0 + z1) / 2);
-      for (const [qx, qz] of ring) vertex(qx, qz);
-      for (let k = 0; k < ring.length; k++) {
-        indices.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
+    // And everything between them: one swept ribbon per chain of cells. It starts and ends
+    // on the edge of the tile it leaves, so the two abut with neither a gap nor an overlap
+    // to z-fight over, and it passes through every cell middle in between.
+    const centreOf = (c) => terrain.cellWorld(c[0], c[1]);
+    const between = (a, b) => {
+      const [ax, az] = centreOf(a), [bx, bz] = centreOf(b);
+      return [(ax + bx) / 2, (az + bz) / 2];
+    };
+    pavedLanes.length = 0;
+    for (const chain of graph.chains) {
+      const line = [between(chain.from, chain.run[0])];
+      for (const c of chain.run) line.push(centreOf(c));
+      if (chain.to) line.push(between(chain.run[chain.run.length - 1], chain.to));
+      const curve = smoothLane(line, LANE_DEV);
+      const nrm = laneNormals(curve);
+      pavedLanes.push({ curve, nrm, hw: H });
+      const b = into(chain.kind), units = TEX_UNITS[chain.kind];
+      tmpColor.setHex(tintOf(chain.kind));
+      const base = b.v;
+      for (let i = 0; i < curve.length; i++) {
+        const p = curve[i], n = nrm[i];
+        vertex(b, p[0] + n[0] * H, p[1] + n[1] * H, units);
+        vertex(b, p[0] - n[0] * H, p[1] - n[1] * H, units);
       }
-      v += ring.length + 1;
+      for (let i = 0; i + 1 < curve.length; i++) {
+        const a = base + i * 2, c = base + (i + 1) * 2;
+        b.idx.push(a + 1, a, c, a + 1, c, c + 1);
+      }
+      b.v += curve.length * 2;
     }
-    if (positions.length) {
+
+    for (const [kind, b] of Object.entries(buf)) {
+      if (!b.pos.length) continue;
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-      g.setIndex(indices);
+      g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+      g.setIndex(b.idx);
       g.computeVertexNormals();
-      pathMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-        map: pathTexture, vertexColors: true, flatShading: true, roughness: 1,
+      const map = kind === 'sand' ? sandTexture : pathTexture;
+      const mat = new THREE.MeshStandardMaterial({
+        map, vertexColors: true, flatShading: true, roughness: 1,
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-      }));
-      pathMesh.receiveShadow = true;
-      group.add(pathMesh);
+      });
+      if (kind === 'sand' && sandTexture) mat.color.setScalar(1 / SAND_SHEET_AVG);
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.receiveShadow = true;
+      laneMeshes.push(mesh);
+      group.add(mesh);
     }
-    // The verge is cut from the outlines this pass just laid, so it is turned over
-    // whenever the paving is - a route the router has changed leaves no strip of sand
-    // lying in the grass where the old one ran.
+    // The verge is cut from the shapes this pass just laid, so it is turned over whenever
+    // the paving is - a route the router has changed leaves no strip of sand lying in the
+    // grass where the old one ran.
     buildGroundWear();
   }
   buildPaths(village.paths);
 
-  // The sheet arrives after the island is already standing, so the paving is laid twice:
-  // once in plain colour, and again the moment the texture lands. If it never lands the
-  // island keeps the colours it had, which is why the tints and the plain colours are two
-  // separate sets rather than one set the texture is expected to rescue.
+  // The sheets arrive after the island is already standing, so the paving is laid again
+  // the moment each one lands. If one never lands the island keeps the colours it had,
+  // which is why the tints and the plain colours are two separate sets rather than one set
+  // the texture is expected to rescue.
   sheet('path-cobble', (tex) => { pathTexture = tex; buildPaths(village.paths); });
+  sheet('path-sand', (tex) => { sandTexture = tex; buildPaths(village.paths); });
 
   // ---- riverbanks ----------------------------------------------------------
   // The water itself needs nothing drawn: it is under the same plane as the sea, and the
@@ -1346,6 +1410,188 @@ export function createWorld(scene, terrain, village, opts = {}) {
     buildPaths, squareCells, setOwnership, followShadow, ownership: () => own, state,
     season: () => currentSeason, reshape,
   };
+}
+
+// ---- the road, as a graph --------------------------------------------------
+// Which cells of paving are a junction and which are a stretch of lane between two of
+// them. Pure, and exported, because the one hard requirement on the drawing is measurable
+// and tests/paths.test.mjs measures it: a settler walks from cell middle to cell middle
+// and `gateOf` in main.js looks a road cell up by its middle, so wherever the paving ends
+// up drawn it has to still be under those middles.
+//
+// A junction, a dead end and every cell of a plaza keep a tile of their own. The plaza is
+// the interesting one: the corner cell of a five-by-five square has exactly two
+// neighbours, so by degree alone it would be taken for a stretch of lane and the square
+// would come out with a bite out of each corner.
+const ROAD_N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+export function roadGraph(paths, squares, size) {
+  const kind = new Map();
+  const at = (gx, gz) => gx + gz * size;
+  const inside = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const put = (gx, gz, k) => { if (inside(gx, gz) && !kind.has(at(gx, gz))) kind.set(at(gx, gz), k); };
+  for (const p of paths || []) {
+    // A lane between two front doors is a sandy track that feet have made; a road and the
+    // way up to a civic building are laid. The id is the only place that says which.
+    const k = String(p.id || '').startsWith('path:house:') ? 'sand' : 'stone';
+    for (const c of p.cells) put(c[0], c[1], k);
+  }
+  // A cell that is both a square and a path keeps the path's surface and gains the
+  // square's habit of standing still, which is how the two have always met.
+  const plaza = new Set();
+  for (const c of squares || []) {
+    if (!inside(c[0], c[1])) continue;
+    plaza.add(at(c[0], c[1]));
+    put(c[0], c[1], 'plaza');
+  }
+  const has = (gx, gz) => inside(gx, gz) && kind.has(at(gx, gz));
+  const nbs = (gx, gz) => {
+    const out = [];
+    for (const [dx, dz] of ROAD_N4) if (has(gx + dx, gz + dz)) out.push([gx + dx, gz + dz]);
+    return out;
+  };
+  const cells = [];
+  for (const k of kind.keys()) cells.push([k % size, (k - (k % size)) / size]);
+
+  const nodes = new Set();
+  for (const [gx, gz] of cells) if (plaza.has(at(gx, gz)) || nbs(gx, gz).length !== 2) nodes.add(at(gx, gz));
+  const isNode = (gx, gz) => nodes.has(at(gx, gz));
+
+  const chains = [];
+  const taken = new Set();
+  const walk = (from, first) => {
+    const run = [];
+    let prev = from, cur = first;
+    while (cur && !isNode(cur[0], cur[1]) && !taken.has(at(cur[0], cur[1]))) {
+      run.push(cur);
+      taken.add(at(cur[0], cur[1]));
+      const next = nbs(cur[0], cur[1]).find((q) => q[0] !== prev[0] || q[1] !== prev[1]);
+      prev = cur;
+      cur = next;
+    }
+    if (!run.length) return;
+    // A stub off a road may reuse a cell or two of it, so a lane is whatever most of it
+    // is; a tie goes to stone, because a road gone sandy for one cell reads as a fault.
+    let sand = 0;
+    for (const [gx, gz] of run) if (kind.get(at(gx, gz)) === 'sand') sand++;
+    chains.push({ from, run, to: cur || null, kind: sand * 2 > run.length ? 'sand' : 'stone' });
+  };
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // A ring of degree-two cells has no junction to be cut at, so it is cut anywhere: the
+  // cell we happen to reach first becomes a tile and the rest of the loop a lane that
+  // starts and ends on it.
+  for (const [gx, gz] of cells) {
+    if (isNode(gx, gz) || taken.has(at(gx, gz))) continue;
+    nodes.add(at(gx, gz));
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // Last, so that a cell promoted above still gets its tile.
+  const tiles = [];
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    tiles.push({
+      gx, gz, kind: kind.get(at(gx, gz)),
+      west: has(gx - 1, gz), east: has(gx + 1, gz), north: has(gx, gz - 1), south: has(gx, gz + 1),
+    });
+  }
+  return { cells, kind, tiles, chains };
+}
+
+// A chain of cell middles, turned into a curve. The straights stay straight and every
+// corner is replaced by a circular fillet tangent to both legs.
+//
+// A fillet rather than a spline, and that is the whole of the argument. Chaikin or
+// Catmull-Rom would be shorter, but neither can promise how far it wanders from the points
+// it was built from, and here that promise is the requirement: two passes of Chaikin cut a
+// single right angle by 0.177, which fits inside 0.18, and a staircase of right angles by
+// twice as much, which does not - and a staircase is exactly what a meandering router
+// produces. A fillet's depth is arithmetic: for an interior angle a and radius r it is
+// r (1/sin(a/2) - 1), so the radius can be solved for the depth that is allowed. The
+// bound then holds at every corner on the island by construction rather than by
+// measurement, and the radius is capped at half of the shorter leg so two fillets on
+// neighbouring corners never eat into each other.
+export function smoothLane(pts, maxDev, arcStep = 0.5) {
+  if (pts.length < 3) return pts.slice();
+  const leg = (p, v) => {
+    const x = p[0] - v[0], z = p[1] - v[1];
+    const len = Math.hypot(x, z) || 1;
+    return { x: x / len, z: z / len, len };
+  };
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const v = pts[i];
+    const a = leg(pts[i - 1], v), b = leg(pts[i + 1], v);
+    const angle = Math.acos(clamp(a.x * b.x + a.z * b.z, -1, 1));
+    if (angle > Math.PI - 0.02) { out.push(v); continue; }       // straight: nothing to cut
+    const h = angle / 2;
+    const r = Math.min(maxDev / (1 / Math.sin(h) - 1), Math.min(a.len, b.len) * 0.5 * Math.tan(h));
+    const t = r / Math.tan(h);
+    const bl = Math.hypot(a.x + b.x, a.z + b.z) || 1;
+    const cx = v[0] + ((a.x + b.x) / bl) * (r / Math.sin(h));
+    const cz = v[1] + ((a.z + b.z) / bl) * (r / Math.sin(h));
+    const a0 = Math.atan2(v[1] + a.z * t - cz, v[0] + a.x * t - cx);
+    let d = Math.atan2(v[1] + b.z * t - cz, v[0] + b.x * t - cx) - a0;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const seg = Math.max(1, Math.ceil(Math.abs(d) / arcStep));
+    for (let k = 0; k <= seg; k++) {
+      const ang = a0 + (d * k) / seg;
+      out.push([cx + Math.cos(ang) * r, cz + Math.sin(ang) * r]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// How far the furthest of `pts` ends up from the polyline `curve`. The measurement the
+// bound above is stated in, and the reason `smoothLane` is a separate function at all.
+export function offCurve(pts, curve) {
+  let worst = 0;
+  for (const p of pts) {
+    let best = Infinity;
+    for (let i = 0; i + 1 < curve.length; i++) {
+      const [ax, az] = curve[i], [bx, bz] = curve[i + 1];
+      const dx = bx - ax, dz = bz - az;
+      const l2 = dx * dx + dz * dz;
+      const t = l2 ? clamp(((p[0] - ax) * dx + (p[1] - az) * dz) / l2, 0, 1) : 0;
+      best = Math.min(best, Math.hypot(p[0] - (ax + dx * t), p[1] - (az + dz * t)));
+    }
+    if (best > worst) worst = best;
+  }
+  return worst;
+}
+
+// The offset direction at every point of a swept lane: the average of the two segment
+// normals either side of it, lengthened so the ribbon keeps its width through a bend
+// instead of pinching. Capped, because a hairpin would send a mitre off to infinity.
+function laneNormals(curve) {
+  const dirs = [];
+  for (let i = 0; i + 1 < curve.length; i++) {
+    const x = curve[i + 1][0] - curve[i][0], z = curve[i + 1][1] - curve[i][1];
+    const l = Math.hypot(x, z) || 1;
+    dirs.push([x / l, z / l]);
+  }
+  if (!dirs.length) return curve.map(() => [0, 1]);
+  const out = [];
+  for (let i = 0; i < curve.length; i++) {
+    const d0 = dirs[Math.max(0, i - 1)], d1 = dirs[Math.min(dirs.length - 1, i)];
+    const n0 = [-d0[1], d0[0]], n1 = [-d1[1], d1[0]];
+    let mx = n0[0] + n1[0], mz = n0[1] + n1[1];
+    const l = Math.hypot(mx, mz);
+    if (l < 1e-6) { out.push(n0); continue; }
+    mx /= l; mz /= l;
+    const k = 1 / Math.max(0.5, mx * n0[0] + mz * n0[1]);
+    out.push([mx * k, mz * k]);
+  }
+  return out;
+}
+
+// One growing vertex buffer, so a pass can fill several of them and hand each to a mesh.
+function bucket() {
+  return { pos: [], col: [], uv: [], idx: [], v: 0 };
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------
