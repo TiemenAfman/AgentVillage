@@ -40,12 +40,9 @@ for (const [from, to] of [['layout.json', files.layout], ['cache.json', files.ca
   try { fs.copyFileSync(path.join(DATA, from), to); } catch { /* a checkout with no island yet */ }
 }
 
-async function scanOnce() {
+async function scanOnce(layoutFile = files.layout, out = files.village) {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const r = await scan({
-      quiet: true, persistLayout: true,
-      layoutFile: files.layout, out: files.village, cacheFile: files.cache,
-    });
+    const r = await scan({ quiet: true, persistLayout: true, layoutFile, out, cacheFile: files.cache });
     if (!r || !r.skipped) return r;
     await new Promise((done) => setTimeout(done, 400));
   }
@@ -57,6 +54,15 @@ const layout1 = readJson(files.layout);
 const village = readJson(files.village);
 const second = await scanOnce();
 const layout2 = readJson(files.layout);
+
+// And the same village founded from nothing, which is the only way to see the router at
+// all. A road is laid once and is then as sticky as a house, so on an island that already
+// has its roads the weights in `routePath` are not consulted and could be anything - the
+// measurement below would read the same after a change that broke them. This is the
+// island as it would be laid out today: same seed, same size, same settlers, no history.
+const fresh = path.join(work, 'fresh.json');
+await scanOnce(fresh, path.join(work, 'fresh-village.json'));
+const F = readJson(fresh);
 
 const config = loadConfig();
 const terrain = makeTerrain(config.seed, { size: layout2.size, polders: layout2.polders || [] });
@@ -83,27 +89,61 @@ const bbox = (cells) => {
   return { w: x1 - x0 + 1, h: z1 - z0 + 1 };
 };
 
-// How often a road changes direction, per cell of road. A path records only the cells it
-// paved itself - the stretch it shares with a road that was already there belongs to that
-// road - so consecutive entries are not always neighbours, and a gap is where the walk
-// carried on over somebody else's stone. It starts a new run rather than counting as a
-// bend.
-function bends(paths) {
-  let cells = 0, turns = 0, longest = 0;
+// A path in one piece. A path records only the cells it paved itself - the stretch it
+// shares with a road that was already there belongs to that road - so consecutive entries
+// are not always neighbours. A gap is where the walk carried on over somebody else's
+// stone, and it breaks the path into pieces rather than counting as a bend.
+function pieces(cells) {
+  const out = [];
+  let cur = [cells[0]];
+  for (let i = 1; i < cells.length; i++) {
+    const a = cells[i - 1], b = cells[i];
+    if (Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]) === 1) cur.push(b);
+    else { if (cur.length > 1) out.push(cur); cur = [b]; }
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
+// How much a road bends, and - the part that took a second go to get right - how much
+// room it had to bend in.
+//
+// Turns per cell of road is the obvious measure and it is not a measure of the router: a
+// road that has to go twenty-five cells north and two cells east can hold four turns at
+// the very most, whatever the weights are, because every further turn costs it a cell it
+// does not need. So the number says as much about where the hamlets happened to land as
+// about how the road was walked. Measured: the same village three settlers apart scored
+// 0.111 and 0.165 turns per cell, and the second island's roads were the *straighter* of
+// the two for their shape.
+//
+// `room` is therefore the most turns the piece could have had - two per cell of its
+// shorter leg - and one turn is taken off both sides, because even a straight L has a
+// corner in it. What is left is the turning the router chose rather than the turning its
+// errand forced on it, and that is a property of the weights.
+function roadShape(paths) {
+  let cells = 0, turns = 0, room = 0, forced = 0, longest = 0;
   for (const p of paths) {
     cells += p.cells.length;
-    let run = 1, prev = null;
-    for (let i = 1; i < p.cells.length; i++) {
-      const a = p.cells[i - 1], b = p.cells[i];
-      const dx = b[0] - a[0], dz = b[1] - a[1];
-      if (Math.abs(dx) + Math.abs(dz) !== 1) { prev = null; run = 1; continue; }
-      const d = `${dx},${dz}`;
-      if (prev !== null && d !== prev) { turns++; longest = Math.max(longest, run); run = 1; } else run++;
-      prev = d;
+    for (const piece of pieces(p.cells)) {
+      let run = 1, prev = null;
+      for (let i = 1; i < piece.length; i++) {
+        const d = `${piece[i][0] - piece[i - 1][0]},${piece[i][1] - piece[i - 1][1]}`;
+        if (prev !== null && d !== prev) { turns++; longest = Math.max(longest, run); run = 1; } else run++;
+        prev = d;
+      }
+      longest = Math.max(longest, run);
+      const dx = Math.abs(piece[piece.length - 1][0] - piece[0][0]);
+      const dz = Math.abs(piece[piece.length - 1][1] - piece[0][1]);
+      room += Math.min(piece.length - 1, 2 * Math.min(dx, dz));
+      forced += dx > 0 && dz > 0 ? 1 : 0;      // the corner of the L, which is not a choice
     }
-    longest = Math.max(longest, run);
   }
-  return { cells, turns, per: cells ? turns / cells : 0, longest };
+  const spare = Math.max(0, room - forced);
+  return {
+    cells, turns, room: spare, longest,
+    perCell: cells ? turns / cells : 0,
+    chosen: spare ? Math.max(0, turns - forced) / spare : 0,
+  };
 }
 
 // Enough of a village to measure. On a machine with no transcripts on it the island is
@@ -210,11 +250,42 @@ test('how much of the island the village reaches', (t) => {
     + ` - ${(fill * 100).toFixed(0)}% of the island's box, ${houses.length} houses`);
 });
 
-test('the roads bend', () => {
+// Of the turning a hamlet road had room for, how much of it was taken. Measured by
+// scanning this same village onto eighteen islands - fourteen seeds, four of them at a
+// second grid size as well - and reading the roads off each, once with the weights as
+// they stand and once with a dear turn and no wander field:
+//
+//   as it is now                    0.167 .. 0.482   (mean 0.28, sd 0.09, n = 19*)
+//   turns dear, no wander field     0.011 .. 0.118   (mean 0.06, sd 0.03, n = 18)
+//                                                    (* the eighteen, plus the live island)
+//
+// The two do not overlap anywhere, so the threshold goes between them, a fifth clear of
+// each. Turns per cell of road will not do the job: 0.107 .. 0.167 against 0.059 .. 0.098
+// is a hair's breadth, and it is the measure the first version of this test used - which
+// is why it went red on a village three settlers older than the one it was written on,
+// reading 0.111 where the same code had read 0.165 a day before. Nor will the longest
+// straight run: 14 to 54 cells with the field and 23 to 60 without it is the same spread
+// twice over. For the record, the island before it had any front paths at all read 0.063
+// turns per cell, and that is what all of this is measured against.
+const BENDS = 0.14;
+
+test('the roads bend where they have room to', (t) => {
+  const roads = roadShape(F.paths.filter((p) => String(p.id).startsWith('road:')));
+  const standing = roadShape(L.paths.filter((p) => String(p.id).startsWith('road:')));
+  t.diagnostic(`laid fresh: ${roads.turns} turns in ${roads.cells} cells of hamlet road`
+    + ` - ${roads.perCell.toFixed(3)} per cell, ${roads.chosen.toFixed(3)} of the ${roads.room}`
+    + ` turns they had room for, longest straight run ${roads.longest}`);
+  t.diagnostic(`as they stand: ${standing.perCell.toFixed(3)} per cell,`
+    + ` ${standing.chosen.toFixed(3)} of the ${standing.room} they had room for`);
   if (!SETTLED) return;
-  const all = bends(L.paths);
-  assert.ok(all.per > 0.12, `${all.per.toFixed(3)} bends per cell of road: the roads are straight`);
-  assert.ok(all.longest < 30, `a straight run of ${all.longest} cells`);
+  // A village whose roads all run straight up a compass point has nothing to measure:
+  // there is no room to turn in, so nought out of nought is not a straight road.
+  if (roads.room < 20) return;
+  assert.ok(
+    roads.chosen > BENDS,
+    `the roads took ${roads.chosen.toFixed(3)} of the ${roads.room} turns they had room for:`
+    + ` that is the straight-line router, not this one`,
+  );
 });
 
 test('the ground under the village is the ground the forest keeps off', () => {
