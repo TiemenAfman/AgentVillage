@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import * as models from './models.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
@@ -507,24 +508,77 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const rng = makeRng(terrain.seed).fork('flora');
   const forest = makeSimplex2D(hash32(terrain.seed + ':forest'));
 
-  // The trunk runs 0 to 0.5 and the first cone now starts at 0.42, so its skirt closes
-  // over the wood instead of hanging above it. The tree loses a little height by it,
-  // which the trunk takes back: a conifer is mostly stem at the bottom anyway.
+  // ---- what a tree is made of ----------------------------------------------
+  // One material, twice, with a sheet each. Clones rather than new materials so that a
+  // tree on a checkout with no textures at all is pixel for pixel the tree the island
+  // always drew.
+  const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const barkMat = treeMat.clone();
+  const foliageMat = treeMat.clone();
+  sheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
+  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliageMat.map = tex; foliageMat.needsUpdate = true; });
+  // Which material draws which group. A plant is asked for by its slots and gets its
+  // materials back in the same order, so the two can never be listed apart: handing an
+  // InstancedMesh [bark, foliage] for a geometry grouped foliage-first is a tree with a
+  // wooden canopy, and nothing in three will say so.
+  const SLOT_MAT = { bark: barkMat, foliage: foliageMat, plain: treeMat };
+  const CANOPY = ['bark', 'foliage'];
+
+  // A plant's geometry and the materials for its groups - from Blender if the set has
+  // been baked, and from the shapes world.js grew by hand if it has not.
   //
-  // Both are merged with groups, so trunk and canopy are separate draws off one geometry
-  // and can take bark and needles rather than one sheet stretched over the whole tree.
-  const pineGeo = merge([
-    cyl(0.06, 0.09, 0.62, 5, 0x6b4a2f, 0.31),
-    cone(0.42, 0.8, 6, 0x3f7d47, 0.42),
-    cone(0.3, 0.7, 6, 0x478950, 0.85),
-  ], true);
-  const oakGeo = merge([
-    cyl(0.07, 0.09, 0.5, 5, 0x6b4a2f, 0.25),
-    ico(0.45, 0x5c9a3f, 0.72, 0.85),
-  ], true);
-  const rockGeo = dodeca(0.22, 0x7f7a72, 0.1);
+  // The fallback is the point of the shape of this function. `flora-mesh.js` is
+  // committed, so the branch below is not a loading state; it is what the island draws
+  // on a checkout where the bake has been renamed or has yet to happen, and it is the
+  // only reason a missing .blend cannot take the forest with it. Both branches have to
+  // answer with their own material list, because the hand-built pine is three merged
+  // shapes and three groups where the baked one is two.
+  //
+  // `_lo` is the modest GPU's copy of the same plant - two skirts instead of four, one
+  // lobe instead of two - asked for by name rather than through variants(), which would
+  // offer it as a third kind of pine for the rng to pick.
+  function plant(name, slots, fallback) {
+    const want = opts.modest && models.hasAsset(`${name}_lo`) ? `${name}_lo` : name;
+    if (models.hasAsset(want)) {
+      const geo = models.grouped(want, slots);
+      if (geo) return { geo, mats: slots.map((s) => SLOT_MAT[s]) };
+    }
+    const grown = fallback();
+    return { geo: grown.geo, mats: grown.mats };
+  }
+
+  // The trunk runs 0 to 0.5 and the first cone starts at 0.42, so its skirt closes over
+  // the wood instead of hanging above it. The tree loses a little height by it, which
+  // the trunk takes back: a conifer is mostly stem at the bottom anyway.
+  const pine = plant('flora_pine_a', CANOPY, () => ({
+    geo: merge([
+      cyl(0.06, 0.09, 0.62, 5, 0x6b4a2f, 0.31),
+      cone(0.42, 0.8, 6, 0x3f7d47, 0.42),
+      cone(0.3, 0.7, 6, 0x478950, 0.85),
+    ], true),
+    mats: [barkMat, foliageMat, foliageMat],
+  }));
+  const oak = plant('flora_oak_a', CANOPY, () => ({
+    geo: merge([
+      cyl(0.07, 0.09, 0.5, 5, 0x6b4a2f, 0.25),
+      ico(0.45, 0x5c9a3f, 0.72, 0.85),
+    ], true),
+    mats: [barkMat, foliageMat],
+  }));
+  const rock = plant('flora_rock_a', ['plain'], () => {
+    const geo = dodeca(0.22, 0x7f7a72, 0.1);
+    geo.computeVertexNormals();
+    return { geo, mats: [treeMat] };
+  });
+  // The coast's own shape, and the one plant with no fallback: a flat shelf is new, and
+  // the island drew nothing there before, so without the bake there is simply nothing to
+  // put on the shore rather than a wrong thing.
+  const slab = models.hasAsset('flora_rock_b')
+    ? { geo: models.grouped('flora_rock_b', ['plain']), mats: [treeMat] } : null;
+  const bush = models.hasAsset('flora_bush_a')
+    ? { geo: models.grouped('flora_bush_a', ['foliage']), mats: [foliageMat] } : null;
   const grassGeo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
-  for (const g of [rockGeo, grassGeo]) g.computeVertexNormals();
+  grassGeo.computeVertexNormals();
 
   // ---- where the forest stands ---------------------------------------------
   // It used to be noise alone, which put the same even spatter of trees on the town
@@ -547,11 +601,19 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // How many stems this cell wants. Noise and distance only - not one random number in
   // it - which is what makes the counting pass below affordable.
-  const stems = (gx, gz, wx, wz) => {
+  // How much canopy this cell wants, before anything is counted. Split out of stems()
+  // because the undergrowth is surveyed against the same number: a bush belongs in the
+  // band just under the threshold a tree needs, which is only a meaningful place to
+  // stand if both read it off one function.
+  const density = (gx, gz, wx, wz) => {
     const d = settled.dist[gx + gz * size];
-    const dens = fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 })
+    return fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 })
       - NEAR_CLEARING * (1 - smoothstep(0, 6, d))
       + FAR_CANOPY * smoothstep(8, 24, d);
+  };
+  const stems = (gx, gz, wx, wz) => {
+    const d = settled.dist[gx + gz * size];
+    const dens = density(gx, gz, wx, wz);
     if (dens < 0.12) return 0;
     let n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
     if (d > CLOSED) n = Math.min(n, 2);
@@ -578,7 +640,29 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   const trees = [];
   const treeCells = new Map();
-  const pines = [], oaks = [], rocks = [], tufts = [];
+  const pines = [], oaks = [], rocks = [], tufts = [], bushes = [];
+  // How much undergrowth there may be. Four thousand bushes is forty triangles apiece
+  // either side of the shadow pass, which is the same order as a thousand extra trees -
+  // so it gets a ceiling of its own rather than riding on the forest's.
+  const BUSH_CAP = opts.modest ? 1500 : 4000;
+  // The band of canopy noise that is too thin for a wood and too green for bare heath:
+  // the shoulder under the 0.12 a tree needs. Read off the same noise the trees are, so
+  // a bush stands where the wood peters out rather than in a ring of its own.
+  //
+  // The lower edge is well under nothing on purpose. The plan asked for 0.06 to 0.12 and
+  // that band was drawn for an island of 31,296 land cells; on the 7,556 this one has it
+  // came to 133 bushes, which is not undergrowth but a rounding error. Reaching down to
+  // -0.06 takes in the heath either side of the forest edge and gives 365 - about one
+  // bush to six trees - for nine thousand triangles. Widening the band rather than
+  // raising the chance is deliberate: the same number of bushes spread over more ground
+  // reads as heath, and concentrated in a narrow ring reads as a hedge round the wood.
+  const BUSH_LO = -0.06, BUSH_HI = 0.12;
+  // Its own stream, so that adding undergrowth does not move a single tree. Every draw
+  // taken from `rng` inside the loop below shifts every draw after it, and one extra
+  // chance() per cell would have reshuffled the whole forest between pine and oak and
+  // shuffled the trunks sideways - which would have made the before and after pictures
+  // of this card unreadable for a change that is meant to be about shape.
+  const bushRng = makeRng(terrain.seed).fork('bush');
   for (const [gx, gz] of terrain.landCells) {
     const k = gx + gz * size;
     const h = terrain.heightAt(gx, gz);
@@ -589,11 +673,28 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
     if (cleared.has(k)) continue;
     if (terrain.slope(gx, gz) > 1.3 || h > 5.0) {
-      if (rng.chance(0.3)) rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.6, 1.6)]);
+      if (rng.chance(0.3)) {
+        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.6, 1.6)]);
+        // In the lee of a boulder, which is where one grows: sheltered from the wind and
+        // never ploughed. Anything past this point is already known not to be `cleared`,
+        // so no bush can land on a field, a lane or a plot.
+        if (bush && bushes.length < BUSH_CAP && bushRng.chance(0.3)) {
+          bushes.push([wx + bushRng.range(-0.34, 0.34), wz + bushRng.range(-0.34, 0.34), bushRng.range(0.7, 1.25)]);
+        }
+      }
       continue;
     }
     let n = stems(gx, gz, wx, wz);
     if (rng.chance(0.5)) tufts.push([wx + rng.range(-0.45, 0.45), wz + rng.range(-0.45, 0.45), rng.range(0.7, 1.3)]);
+    // Undergrowth where the canopy noise is not quite a wood. A cell that grows a tree
+    // does not also grow a bush: a stem is already the thing you look at there, and the
+    // bush would be under it and invisible from anywhere but inside the branches.
+    if (bush && !n && bushes.length < BUSH_CAP) {
+      const dens = density(gx, gz, wx, wz);
+      if (dens >= BUSH_LO && dens < BUSH_HI && bushRng.chance(0.5)) {
+        bushes.push([wx + bushRng.range(-0.4, 0.4), wz + bushRng.range(-0.4, 0.4), bushRng.range(0.65, 1.3)]);
+      }
+    }
     if (thin < 1) {
       // Stochastic rounding on a spatial hash: the expected count is exactly `n * thin`,
       // and it is the same on every reload and the same for every viewer.
@@ -605,7 +706,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const highland = h > 3.0;
     for (let t = 0; t < n; t++) {
       const x = wx + rng.range(-0.38, 0.38), z = wz + rng.range(-0.38, 0.38);
-      const item = { x, z, s: rng.range(0.6, 0.98), rot: rng.range(0, 6.283), cell: k, kind: highland || rng.chance(0.45) ? 'pine' : 'oak' };
+      // A wider spread of sizes than the old 0.6-0.98, which put every tree within a
+      // third of every other and gave the canopy a mown look from the air. One draw
+      // either way, so the forest stands where it stood - only the heights change.
+      const item = { x, z, s: rng.range(0.55, 1.15), rot: rng.range(0, 6.283), cell: k, kind: highland || rng.chance(0.45) ? 'pine' : 'oak' };
       (item.kind === 'pine' ? pines : oaks).push(item);
       trees.push(item);
       if (!treeCells.has(k)) treeCells.set(k, []);
@@ -613,25 +717,32 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
   }
 
-  const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
-  // Same material, twice, with a sheet each. Clones rather than new materials so that a
-  // tree with no textures at all is pixel for pixel the tree the island always drew.
-  const barkMat = treeMat.clone();
-  const foliageMat = treeMat.clone();
-  sheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
-  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliageMat.map = tex; foliageMat.needsUpdate = true; });
-  const pineMats = [barkMat, foliageMat, foliageMat];
-  const oakMats = [barkMat, foliageMat];
   const orchard = orchardTrees(fieldPlan, terrain);
   const ORCHARD_CAP = 1500;
-  const pineMesh = new THREE.InstancedMesh(pineGeo, pineMats, Math.max(1, pines.length));
-  const oakMesh = new THREE.InstancedMesh(oakGeo, oakMats, Math.max(1, oaks.length));
-  const rockMesh = new THREE.InstancedMesh(rockGeo, treeMat, Math.max(1, rocks.length));
+  const pineMesh = new THREE.InstancedMesh(pine.geo, pine.mats, Math.max(1, pines.length));
+  const oakMesh = new THREE.InstancedMesh(oak.geo, oak.mats, Math.max(1, oaks.length));
+  const rockMesh = new THREE.InstancedMesh(rock.geo, rock.mats, Math.max(1, rocks.length));
   const grassMesh = new THREE.InstancedMesh(grassGeo, treeMat, Math.max(1, tufts.length));
-  const orchardMesh = new THREE.InstancedMesh(oakGeo, oakMats, ORCHARD_CAP);
+  const orchardMesh = new THREE.InstancedMesh(oak.geo, oak.mats, ORCHARD_CAP);
   for (const m of [pineMesh, oakMesh, rockMesh, orchardMesh]) { m.castShadow = true; m.receiveShadow = true; }
+  // A tuft of grass is two hand spans high and its shadow would be a smudge under
+  // itself, which is not worth walking twelve thousand instances through the depth pass
+  // for. A bush is knee high and casts the contact shadow that stops it looking pasted
+  // onto the grass, so that one does.
   grassMesh.castShadow = false;
   group.add(pineMesh, oakMesh, rockMesh, grassMesh, orchardMesh);
+
+  // The sixth and seventh: undergrowth, and the shelf along the waterline. Both only
+  // exist when the flora set has been baked - see `plant()` - and both are left out of
+  // the scene entirely when it has not, rather than added empty.
+  const bushMesh = bush ? new THREE.InstancedMesh(bush.geo, bush.mats, Math.max(1, bushes.length)) : null;
+  const slabMesh = slab ? new THREE.InstancedMesh(slab.geo, slab.mats, Math.max(1, terrain.coastCells.length)) : null;
+  for (const m of [bushMesh, slabMesh]) {
+    if (!m) continue;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+  }
 
   // Planted rather than scattered: a grid, one size, barely any rotation.
   function placeOrchard(list, seasonName) {
@@ -692,6 +803,57 @@ export function createWorld(scene, terrain, village, opts = {}) {
     grassMesh.setColorAt(i, tmpColor.setScalar(0.8 + ((hash32('h' + i) % 100) / 100) * 0.4));
   });
   grassMesh.instanceMatrix.needsUpdate = true;
+
+  // The undergrowth. Turned and sized off its own hash rather than off `rng`, the way
+  // the orchard is: everything below this point in the function runs after the last tree
+  // has been decided, but a hash keeps it that way even if something is inserted above.
+  function placeBushes(seasonName) {
+    if (!bushMesh) return;
+    const mul = SEASON[seasonName].canopyMul;
+    bushMesh.count = Math.max(1, bushes.length);
+    bushes.forEach((b, i) => {
+      tmpObj.position.set(b[0], terrain.worldHeight(b[0], b[1]) - 0.04, b[1]);
+      tmpObj.rotation.set(0, ((hash32(`bu${i}`) % 64) / 64) * 6.283, 0);
+      // Wider than tall by a little, and never the same twice: a bush is a spreading
+      // thing and a row of identical hemispheres is the one way to make it look planted.
+      const s = b[2];
+      tmpObj.scale.set(s * (0.94 + (hash32(`bw${i}`) % 22) / 100), s * (0.8 + (hash32(`bh${i}`) % 30) / 100), s);
+      tmpObj.updateMatrix();
+      bushMesh.setMatrixAt(i, tmpObj.matrix);
+      bushMesh.setColorAt(i, tmpColor.setScalar((0.82 + ((hash32(`bc${i}`) % 100) / 100) * 0.32) * mul));
+    });
+    bushMesh.instanceMatrix.needsUpdate = true;
+    if (bushMesh.instanceColor) bushMesh.instanceColor.needsUpdate = true;
+  }
+  placeBushes(season);
+
+  // The shelf along the waterline. Not on every cell of the coast: a plate on all of
+  // them is a kerb round the island, and what the shore wants is a broken line with sand
+  // showing through the gaps. Which cells get one is the cell's own hash, so the same
+  // headland is rocky for every viewer and stays rocky across a reload.
+  const COAST_FILL = 0.62;
+  if (slabMesh) {
+    let i = 0;
+    for (const [gx, gz] of terrain.coastCells) {
+      if ((hash32(`coast:${gx},${gz}`) % 100) / 100 >= COAST_FILL) continue;
+      const [wx, wz] = terrain.cellWorld(gx, gz);
+      const jx = ((hash32(`cx:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
+      const jz = ((hash32(`cz:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
+      // Sunk further than a boulder is. A shelf is bedrock the sea has worn down to the
+      // waterline, not a stone dropped on the sand, so it wants its edge in the ground.
+      tmpObj.position.set(wx + jx, terrain.worldHeight(wx + jx, wz + jz) - 0.09, wz + jz);
+      tmpObj.rotation.set(0, ((hash32(`cr:${gx},${gz}`) % 64) / 64) * 6.283, 0);
+      const s = 0.7 + (hash32(`cs:${gx},${gz}`) % 90) / 100;
+      tmpObj.scale.set(s, s * (0.7 + (hash32(`ct:${gx},${gz}`) % 60) / 100), s);
+      tmpObj.updateMatrix();
+      slabMesh.setMatrixAt(i, tmpObj.matrix);
+      slabMesh.setColorAt(i, tmpColor.setScalar(0.8 + ((hash32(`cc:${gx},${gz}`) % 100) / 100) * 0.34));
+      i++;
+    }
+    slabMesh.count = Math.max(1, i);
+    slabMesh.instanceMatrix.needsUpdate = true;
+    if (slabMesh.instanceColor) slabMesh.instanceColor.needsUpdate = true;
+  }
 
   // ---- footpaths -----------------------------------------------------------
   let pathMesh = null;
@@ -1121,6 +1283,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       paintGround(s);
       placeTrees(pines, pineMesh, s);
       placeTrees(oaks, oakMesh, s);
+      placeBushes(s);
       placeOrchard(orchardTrees(fieldPlan, terrain), s);
       buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
     }
