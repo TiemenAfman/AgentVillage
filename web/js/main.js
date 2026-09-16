@@ -1810,7 +1810,11 @@ function addScaffold(rec) {
   const m = new THREE.Mesh(scaffoldGeo, buildingMat);
   const b = rec.built.bbox;
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-  for (const r of rec.built.solids) {
+  // `walls` rather than `solids`: since a house puts a cart and a woodpile out in its own
+  // yard, the rectangles walk mode blocks on reach most of the way to the plot edge, and
+  // a frame round all of them would be back to standing in the neighbours - which is the
+  // complaint this function already carries a paragraph about.
+  for (const r of rec.built.walls || rec.built.solids) {
     x0 = Math.min(x0, r.x - r.hx); x1 = Math.max(x1, r.x + r.hx);
     z0 = Math.min(z0, r.z - r.hz); z1 = Math.max(z1, r.z + r.hz);
   }

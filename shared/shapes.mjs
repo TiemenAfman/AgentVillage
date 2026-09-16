@@ -18,6 +18,15 @@ export const SHAPES = {
   fence: { what: 'A run of paling fence', takes: ['rot', 'length'] },
   bench: { what: 'A bench to sit on', takes: ['rot'] },
   barrel: { what: 'An oak barrel, the tavern\'s own', takes: ['scale'] },
+  // The yard, modelled in Blender: the things lying about between the houses. Every one of
+  // them turns, because a cart parked square to a wall and a cart parked across a lane are
+  // different pictures, and none of them stretches - a baked mesh has one length, unlike
+  // the fence and the bridge, which are drawn to fit.
+  cart: { what: 'A handcart with spoked wheels and a draw pole', takes: ['rot', 'scale'] },
+  crate: { what: 'A slatted packing case', takes: ['rot', 'scale'] },
+  woodpile: { what: 'A stack of split firewood', takes: ['rot', 'scale'] },
+  tent: { what: 'A ridge tent, open at the front. What a session lives in before it builds', takes: ['rot', 'scale'] },
+  washline: { what: 'Two posts, two lines and the washing on them', takes: ['rot', 'scale'] },
   lamp: { what: 'A lamp post, lit after dark', takes: ['scale'] },
   signpost: { what: 'A signpost with a blank board', takes: ['rot'] },
   well: { what: 'A stone well with a roof', takes: ['scale'] },
