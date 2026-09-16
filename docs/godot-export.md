@@ -1,46 +1,59 @@
 # A model from the workbench, in Godot
 
 `/editor` has an **Export .glb** button. It writes the model that is on the bench at that
-moment - your nudges included - to a single `.glb` next to your downloads, at the size the
-island draws it, not at the size the code is written in.
+moment - your nudges included - to a single `.glb`, at the size the island draws it rather
+than the size the code is written in. Drop that file in a Godot project and it is done:
+the colours, the sheets and the lit windows are all in it, and there is no material to set
+up on the far side.
 
-## What comes across, and what does not
+## How it is put together
 
-glTF holds meshes. It does not hold the material this island draws with, and it cannot:
-`onBeforeCompile` is not something the format can express, and the sheets are projected
-from the three axes rather than laid on a uv, so there is no texture coordinate to hand
-over either. What arrives in Godot is therefore:
+The island keeps its whole palette on the vertices and draws every building with a single
+material. That is what makes hundreds of them affordable, and it is exactly the wrong shape
+for a file: `COLOR_0` is only applied by an importer that has been told to look for it, and
+a model that arrives white is no use to anybody. So on the way out the colour moves off the
+vertices and into the material - one per colour the model actually uses, which is between
+four and twenty on everything in the catalogue. More draw calls than the island would ever
+accept, and perfectly ordinary for one model on someone else's stage.
 
-- the geometry, flat-shaded, with the normals worked out;
-- the colours, as `COLOR_0` - one per vertex, exactly the palette this island uses;
-- one surface per sheet, named after it.
+Each surface is named for what it is and what it is painted: `island-wall-f0e2c8`,
+`island-stone-a8a59e`, `island-paint-ffd27f-glow`. The `-glow` ones are lit windows and
+lanterns, and carry their emission colour already.
 
-What does not arrive is the sheet itself, the glow strength per vertex, and the anchors.
+The sheets travel with the file, and only the ones the model uses. `finish()` throws the uv
+away - that is what lets parts built at wildly different sizes merge into one loaf - so
+there was none to hand over, and one is baked at export instead: every triangle takes the
+axis it faces most and reads the two other position axes as its uv, at the same scale
+`islandSheet()` uses. On anything that stands straight, which is very nearly every face on
+the island, that is the picture the shader draws. A roof pitch faces between two axes, so
+where the shader cross-fades two projections and comes out soft, the baked uv takes one and
+comes out crisp and stretched by about a third along the slope. Of the two it is usually
+the roof that looks better in the file.
 
-## Putting the sheets back on
+One real difference to know about: the sheets read a little stronger in the `.glb` than on
+the island. `islandSheet()` samples them with `texture2D` in its own GLSL, which does no
+sRGB decode, so the island draws them paler than they are; a `baseColorTexture` is decoded
+the way the format says. The shapes and the scale are identical - it is the contrast that
+differs.
 
-Each surface comes out named for what it is drawn on. Give it a `StandardMaterial3D` with
-**Vertex Color > Use As Albedo** ticked, then:
+## If you would rather Godot did the projecting
 
-| surface          | texture              | Triplanar | UV1 Scale |
-| ---------------- | -------------------- | --------- | --------- |
-| `island-paint`   | none                 | off       | -         |
-| `island-wall`    | `wall-plaster.png`   | on        | 1.7       |
-| `island-roof`    | `roof-tile.png`      | on        | 1.0       |
-| `island-stone`   | `stone-stacked.png`  | on        | 0.62 mix* |
-| `island-plank`   | `plank.png`          | on        | 1.3       |
-| `island-plankZ`  | `plank.png`          | on        | 1.3, turned a quarter |
+The baked uv is one projection per triangle. Godot's own `StandardMaterial3D` can do the
+full triplanar blend, the same one the shader does, and it ignores the uv when it does. To
+take that route, replace the material on a surface and set:
+
+| surface        | texture              | UV1 Scale |
+| -------------- | -------------------- | --------- |
+| `island-wall`  | `wall-plaster.png`   | 1.7       |
+| `island-roof`  | `roof-tile.png`      | 1.0       |
+| `island-stone` | `stone-stacked.png`  | 1.0       |
+| `island-plank` | `plank.png`          | 1.3       |
 
 Triplanar is **Local**, not World: the projection follows the model, which is what keeps
 the pattern the same size on a cottage and on a keep. The sheets themselves are in
-`web/textures/`.
-
-\* The stacked stone was drawn for a rubble wall and swings from a fifth of full brightness
-to all of it. `buildings.js` takes a little under two thirds of it so the paving keeps the
-deepest tone on the island; in Godot that is an albedo tint rather than a scale.
-
-Anything named `…-glow` is a lit window or a lantern. It arrives with its emission colour
-already set to what the panes are painted; turn **Emission** on and it lights up.
+`web/textures/`. Note that the stone in the file has a white wash brushed over it - the
+shader takes a little under two thirds of that sheet so the paving keeps the deepest tone
+on the island - so a raw `stone-stacked.png` will come out darker than the export.
 
 ## What this is not
 

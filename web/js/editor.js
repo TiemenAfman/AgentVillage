@@ -1107,37 +1107,111 @@ el('ed-mode-diff').onclick = () => setMode('diff');
 el('ed-mode-all').onclick = () => setMode('all');
 // ---------------------------------------------------------------- out to Godot
 // glTF carries meshes, normals and vertex colours, and nothing whatsoever of the material
-// this page draws with: `onBeforeCompile` is not something the format can hold, and the
-// sheets are projected from the three axes rather than laid on a uv - `finish()` throws
-// the uv away - so there is no texture coordinate to hand over either.
+// this page draws with: `onBeforeCompile` is not something the format can hold. The sheets
+// are the interesting half of that. They are projected from the three axes rather than
+// laid on a uv - `finish()` throws the uv away, which is what lets parts built at wildly
+// different sizes merge into one loaf - so there is no texture coordinate to hand over.
 //
-// Baking a projection in here would put a stretch on every roof pitch, which is the one
-// thing the shader goes out of its way to avoid. So the pieces are sorted by the sheet
-// they are drawn on and handed over as one mesh each, named for it. Godot projects
-// triplanar from a checkbox on its own StandardMaterial3D, so the sheet goes back on
-// there, worked out the same way it is worked out here. `docs/godot-export.md` has the
-// settings that match.
-const SHEET_NAME = ['paint', 'wall', 'roof', 'stone', 'plank', 'plankZ'];
+// Rather than leave the file half-dressed, the projection is frozen on the way out: the
+// pieces are sorted by the sheet they are drawn on, one mesh each, and each mesh is given
+// the uv and the sheet that belong to it. The result opens anywhere, with no material to
+// set up on the far side. `docs/godot-export.md` has the rest, including the triplanar
+// route for anyone who would rather have Godot do the projecting.
+//
+// What a sheet is: the name its surface takes, the file it is drawn from, and the scale
+// `islandSheet()` reads it at. `turned` is the plank sheet read back to front, which is
+// how a deck running north-south gets its boards the right way round.
+const SHEETS = [
+  { name: 'paint' },
+  { name: 'wall', file: 'wall-plaster', scale: 1.7 },
+  { name: 'roof', file: 'roof-tile', scale: 1.0 },
+  // The stacked stone was drawn for a rubble wall and swings from a fifth of full
+  // brightness to all of it. The shader takes a little under two thirds so the paving
+  // keeps the deepest tone on the island. glTF has no way to say "mix towards white", so
+  // the wash is brushed onto the copy that goes in the file instead.
+  { name: 'stone', file: 'stone-stacked', scale: 1.0, wash: 0.38 },
+  { name: 'plank', file: 'plank', scale: 1.3 },
+  { name: 'plankZ', file: 'plank', scale: 1.3, turned: true },
+];
 
 // A part is drawn on one sheet and either glows or does not; `finish()` writes the same
 // value on every vertex it makes, so the first one speaks for the whole part.
 const firstOf = (g, name) => (g.attributes[name] ? g.attributes[name].array[0] : 0);
 
-function meanColour(g) {
-  const a = g.attributes.color;
-  const c = new THREE.Color(0, 0, 0);
-  if (!a || !a.count) return c.setRGB(1, 1, 1);
-  for (let i = 0; i < a.count; i++) { c.r += a.getX(i); c.g += a.getY(i); c.b += a.getZ(i); }
-  return c.multiplyScalar(1 / a.count);
+// The sheet as it will travel: drawn into a canvas so the wash can go on, and made once
+// per export however many surfaces ask for it - `plank` and `plankZ` are the same picture
+// and belong in the file once.
+async function sheetTexture(sheet, made) {
+  const key = `${sheet.file}|${sheet.wash || 0}`;
+  if (made.has(key)) return made.get(key);
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error(`no texture at web/textures/${sheet.file}.png`));
+    i.src = `textures/${sheet.file}.png`;
+  });
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  if (sheet.wash) {
+    ctx.globalAlpha = sheet.wash;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.name = sheet.file + (sheet.wash ? '-washed' : '');
+  made.set(key, tex);
+  return tex;
 }
 
-// The model as a handful of meshes, one per sheet, ready to be written out. Made fresh and
-// put down again afterwards: none of it belongs to the scene the page is drawing.
-function exportable() {
+// The projection the shader does, frozen into a uv. `islandSheet()` reads three
+// projections and cross-fades them by how far the face turns towards each; a uv can hold
+// only one, so every triangle takes the axis it faces most. On anything that stands
+// straight - which is very nearly every face on the island - that is the picture the
+// shader draws, to the pixel. A roof pitch faces between two axes and comes out stretched
+// by about a third along the slope. That is the price of the format, and a good deal
+// quieter than a seam along every ridge would be.
+function boxUV(g, sheet) {
+  const pos = g.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      p[k].fromBufferAttribute(pos, i + k);
+      if (sheet.turned) p[k].set(p[k].z, p[k].y, p[k].x);
+    }
+    n.crossVectors(ab.subVectors(p[1], p[0]), ac.subVectors(p[2], p[0]));
+    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+    const axis = ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2;
+    for (let k = 0; k < 3; k++) {
+      uv[(i + k) * 2] = (axis === 0 ? p[k].z : p[k].x) * sheet.scale;
+      uv[(i + k) * 2 + 1] = (axis === 1 ? p[k].z : p[k].y) * sheet.scale;
+    }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
+// The model as a handful of meshes, ready to be written out. Made fresh and put down
+// again afterwards: none of it belongs to the scene the page is drawing.
+//
+// The island keeps its whole palette on the vertices and draws every building with one
+// material, which is what makes hundreds of them affordable. A file has the opposite
+// problem. `COLOR_0` is only applied by an importer that has been told to look for it -
+// Godot wants a flag ticked per material - and a model that arrives white is no use to
+// anybody. So the colour moves off the vertices and into the material, one per colour the
+// model actually uses, which is between four and twenty on everything in the catalogue.
+// That is more draw calls than the island would ever accept and perfectly ordinary for a
+// single model on someone else's stage.
+async function exportable() {
   const groups = new Map();
   for (const it of active()) {
     const g = it.mesh.geometry;
-    const key = `${firstOf(g, 'aSheet')}|${firstOf(g, 'aEmissive') > 0 ? 1 : 0}`;
+    const key = `${firstOf(g, 'aSheet')}|${firstOf(g, 'aEmissive')}|${it.rec.hex}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(g);
   }
@@ -1145,45 +1219,66 @@ function exportable() {
   const out = new THREE.Group();
   out.name = spec.id;
   const spare = [];
+  const made = new Map();
   for (const [key, list] of groups) {
-    const [sheet, glow] = key.split('|').map(Number);
-    // `aSheet` and `aEmissive` go no further. A glTF importer keeps the attributes the
-    // format names and drops the rest, so carrying them would put bytes in the file and a
-    // warning in the console and nothing at all on the screen.
+    const [sheet, glow, hex] = key.split('|').map(Number);
+    // The colour attribute goes with them: it now says the same thing as the material, and
+    // an importer that reads both would multiply the colour by itself. `aSheet` and
+    // `aEmissive` go too - a glTF importer keeps the attributes the format names and drops
+    // the rest, so they would be bytes in the file and a warning in the console.
     const bare = list.map((g) => {
       const c = g.clone();
       c.deleteAttribute('aSheet');
       c.deleteAttribute('aEmissive');
+      c.deleteAttribute('color');
       return c;
     });
     const geometry = mergeGeometries(bare, false);
     for (const c of bare) c.dispose();
     if (!geometry) continue;
+    // The scale goes on before the uv, because the shader on the island projects onto the
+    // position a model is finally drawn at, not onto the one the code was written in.
     if (modelScale !== 1) geometry.scale(modelScale, modelScale, modelScale);
+    const kind = SHEETS[sheet] || SHEETS[0];
+    const paint = hex.toString(16).padStart(6, '0');
     const material = new THREE.MeshStandardMaterial({
-      vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0,
-      name: `island-${SHEET_NAME[sheet] || sheet}${glow ? '-glow' : ''}`,
+      color: hex, flatShading: true, roughness: 0.85, metalness: 0,
+      name: `island-${kind.name || sheet}-${paint}${glow ? '-glow' : ''}`,
     });
-    // A glow is per-vertex here and one colour per material in glTF, so the surface takes
-    // the average of its own panes - which on a model whose windows are all lit the same
-    // is that colour exactly.
-    if (glow) material.emissive = meanColour(geometry);
+    if (kind.file) {
+      boxUV(geometry, kind);
+      material.map = await sheetTexture(kind, made);
+    }
+    // A lit window is its own colour, at the strength the part asked for. The island winds
+    // that up and down with the hour; a file has one hour, and this is the daylit one.
+    if (glow) {
+      material.emissive = new THREE.Color(hex);
+      material.emissiveIntensity = glow;
+    }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = material.name;
     out.add(mesh);
     spare.push(geometry, material);
   }
-  return { out, spare };
+  return { out, spare: spare.concat([...made.values()]) };
 }
 
-el('ed-glb').onclick = () => {
+el('ed-glb').onclick = async () => {
   const btn = el('ed-glb');
-  const { out, spare } = exportable();
-  const surfaces = out.children.length;
-  if (!surfaces) { say('Nothing on the bench to export.', 'bad'); return; }
   btn.disabled = true;
   say('Writing the .glb...');
+  let ready;
+  try {
+    ready = await exportable();
+  } catch (e) {
+    say(String((e && e.message) || e), 'bad');
+    btn.disabled = false;
+    return;
+  }
+  const { out, spare } = ready;
+  const surfaces = out.children.length;
   const done = () => { for (const s of spare) s.dispose(); btn.disabled = false; };
+  if (!surfaces) { say('Nothing on the bench to export.', 'bad'); done(); return; }
   new GLTFExporter().parse(out, (glb) => {
     const name = `${spec.id.replace(/[^a-z0-9]+/gi, '-')}.glb`;
     const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
@@ -1192,7 +1287,8 @@ el('ed-glb').onclick = () => {
     a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    say(`${name}: ${surfaces} surface${surfaces === 1 ? '' : 's'}, one per sheet. docs/godot-export.md says what to do with them.`, 'good');
+    const kb = Math.round(glb.byteLength / 1024);
+    say(`${name}: ${surfaces} surface${surfaces === 1 ? '' : 's'}, sheets included, ${kb} kB.`, 'good');
     done();
   }, (err) => {
     say(String((err && err.message) || err), 'bad');
