@@ -1025,37 +1025,10 @@ function civic(parts, spec, rng) {
   const animated = {};
   switch (spec.civicType) {
     case 'townhall': {
-      parts.push(box(1.5, 0.75, 1.15, C.stone, { sheet: 'stone' }));
-      parts.push(box(1.34, 0.5, 1.02, 0xf0e2c8, { y: 0.75, sheet: 'wall' }));
-      timberFrame(parts, 1.34, 0.5, 1.02, 0x6b4a2f);
-      // Verdigris, not slate. With every house on the island now roofed in clay the hall
-      // has to be the exception or it is one more grey box, and weathered copper over the
-      // civic roof is the cool note the whole warm hillside is read against - which is
-      // exactly what the dome does in the reference illustration.
-      parts.push(prismRoof(1.55, 1.2, 0.5, C.patina, { y: 1.25 }));
-      // The door takes the middle bay and the windows stand either side of it. They used
-      // to be laid out on their own rhythm - four of them at 0.34 apart from x = -0.5 -
-      // and the door was simply put on the centre line afterwards, which landed it across
-      // the two inner ones. From the square it read as five bays with a door hung over the
-      // middle window. A facade is the one thing a civic building has; it gets an axis.
-      for (const x of [-0.58, -0.3, 0.3, 0.58]) parts.push(box(0.14, 0.2, 0.04, C.glass, { x, y: 0.32, z: 0.58, emissive: 1 }));
-      parts.push(box(0.3, 0.45, 0.06, 0x5a3a24, { z: 0.58 }));
-      parts.push(box(0.36, 0.05, 0.05, 0x6b4a2f, { y: 0.46, z: 0.585 }));                 // the lintel over it
-      parts.push(box(0.16, 0.18, 0.04, C.glass, { y: 0.92, z: 0.52, emissive: 1 }));      // and a light on the axis above
-      for (let i = 0; i < 3; i++) parts.push(box(0.5 - i * 0.06, 0.07, 0.14, C.stone, { y: -0.21 + i * 0.07, z: 0.66 + (2 - i) * 0.07 }));
-      // bell tower
-      parts.push(cylinder(0.19, 0.21, 1.5, 12, 0xf0e2c8, { x: -0.52, y: 1.05, z: -0.28, sheet: 'wall' }));
-      parts.push(pyramidRoof(0.5, 0.5, 0.42, C.copper, { x: -0.52, y: 2.55, z: -0.28 }));
-      parts.push(sphere(0.07, C.gold, { x: -0.52, y: 3.02, z: -0.28 }));
-      parts.push(dome(0.09, 0xcfa14a, { x: -0.52, y: 2.5, z: -0.28, rx: Math.PI }));
-      anchors.flag = [0.55, 1.9, 0];
-      parts.push(box(0.025, 0.62, 0.025, C.darkWood, { x: 0.55, y: 1.28 }));
-      // the founding stone
-      parts.push(box(0.34, 0.1, 0.3, C.stone, { x: 0.75, y: -0.24, z: 0.72 }));
-      const st = box(0.22, 0.42, 0.13, 0x4a4a52, { x: 0.75, y: -0.14, z: 0.72, rz: 0.05 });
-      parts.push(st);
-      parts.push(box(0.15, 0.16, 0.02, 0xe6e6e0, { x: 0.75, y: 0.05, z: 0.79 }));
-      return { anchors, animated, height: 3.1 };
+      // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
+      parts.push(...meshAsset('townhall'));
+      Object.assign(anchors, meshAnchors('townhall'));
+      return { anchors, animated, height: models.heightOf('townhall') };
     }
     case 'well':
       // Nine segments is a nonagon, and a nonagon standing on the town square next to a

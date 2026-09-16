@@ -2376,8 +2376,8 @@ function frame(nowMs) {
       rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
       if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
     }
-    const tavernFire = rec.spec.civicType === 'tavern';
-    if (rec.smokeAnchor && (rec.spec.active || tavernFire)
+    const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
+    if (rec.smokeAnchor && (rec.spec.active || civicFire)
       && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
       rec.smokeT += dt;
       if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {

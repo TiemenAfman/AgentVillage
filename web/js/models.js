@@ -17,11 +17,12 @@
 // the model sheet, the shape catalogue - reads it through this file.
 import * as THREE from 'three';
 import { TAVERN } from './tavern-mesh.js';
+import { TOWNHALL } from './townhall-mesh.js';
 import { PROPS } from './props-mesh.js';
 import { VILLAGE } from './village-mesh.js';
 import { FLORA } from './flora-mesh.js';
 
-const SETS = { tavern: TAVERN, props: PROPS, village: VILLAGE, flora: FLORA };
+const SETS = { tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
