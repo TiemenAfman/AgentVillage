@@ -318,24 +318,30 @@ function talkTo(id) {
 }
 
 // --------------------------------------------------------------- walking
-// What walk mode cannot step through: the solid rectangles of everything standing,
-// turned with the plot and moved onto it. A plot rotation is a quarter turn, so the
-// rectangles stay axis aligned and only trade their sides.
+// What walk mode cannot step through, for one thing standing in the world: its own solid
+// rectangles, turned with the plot and moved onto it. A plot rotation is a quarter turn,
+// so the rectangles stay axis aligned and only trade their sides.
+function blockersOf(rec) {
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+  return rec.built.solids.map((r) => ({
+    x: rec.group.position.x + r.x * c + r.z * s,
+    z: rec.group.position.z - r.x * s + r.z * c,
+    hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
+    hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
+    id: rec.id,
+  }));
+}
+
 function walkableBlockers() {
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
-    const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-    for (const r of rec.built.solids) {
-      out.push({
-        x: rec.group.position.x + r.x * c + r.z * s,
-        z: rec.group.position.z - r.x * s + r.z * c,
-        hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
-        hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
-        id: rec.id,
-      });
-    }
+    out.push(...blockersOf(rec));
   }
+  // The flower bed in the middle of the square has a stone kerb, so you walk round it the
+  // way you will walk round the fountain that replaces it. It is not a building and is not
+  // in `state.byId`, so the loop above never sees it.
+  if (squareBed && squareBed.group.visible) out.push(...blockersOf(squareBed));
   // A tree somebody asked for is as solid as a house. A bridge is not: it is walked over.
   if (state.props) out.push(...state.props.blockers());
   return out;
@@ -1441,6 +1447,37 @@ function gateOf(village, d, li, lobe) {
   return { at: road.cells[0], next: road.cells[1] };
 }
 
+// ---- the middle of the square ----------------------------------------------
+// The fountain stands dead centre of the plaza and is earned at forty-five settlers.
+// Until then that cell is the one piece of bare stone in the middle of everything, which
+// reads as a gap rather than as room, so the town keeps a flower bed there and gives the
+// place up the day the water arrives.
+//
+// This is drawn rather than planned: the cell belongs to the fountain in the layout, and
+// the bed is only what is standing on it while the fountain is still being earned. Giving
+// it a plot of its own would mean a plot that has to be taken away again, and nothing in
+// `lib/layout.mjs` is ever taken away. It is not a building either - no dossier, no
+// settler, no name - so it stays out of `state.byId` and carries just enough of a record
+// (`group`, `built`, `id`) for `blockersOf` to read.
+let squareBed = null;
+
+function syncSquareBed(village) {
+  const town = village.island && village.island.town;
+  if (!town || !town.centre || !state.terrain) return;
+  if (!squareBed) {
+    const built = buildBuilding({ id: 'civic:flowerbed', kind: 'civic', civicType: 'flowerbed', style: 'unknown' });
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(built.geometry, buildingMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    scene.add(group);
+    squareBed = { id: 'civic:flowerbed', group, built };
+  }
+  const [x, z] = state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  squareBed.group.position.set(x, groundAt(x, z), z);
+}
+
 function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
@@ -1623,6 +1660,14 @@ function applyVisibility() {
     if (state.settlers) state.settlers.setVisible(rec.id, ok && rec.spec.kind !== 'civic');
     if (rec.flagIdx >= 0) updateFlagInstance(rec, ok);
   }
+  // The bed holds the middle of the square for exactly as long as the fountain is not
+  // standing on it. Decided here, after the loop, rather than when the bed is built: that
+  // way scrubbing the chronicle back past the fountain puts the bed back the same moment
+  // it takes the fountain away, and a filter that hides the civic buildings hides both.
+  if (squareBed) {
+    const fountain = state.byId.get('civic:fountain');
+    squareBed.group.visible = !(fountain && fountain.group.visible);
+  }
 }
 
 // --------------------------------------------------------------- flags
@@ -1790,6 +1835,7 @@ function applyVillage(next, { animate }) {
     state.world.setOwnership(next);
     syncHamlets(next);
   }
+  syncSquareBed(next);
 
   const events = [];
   for (const [id, spec] of nextSpecs) {

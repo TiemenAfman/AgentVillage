@@ -31,6 +31,7 @@ const CIVIC = [
   ['windmill', 'Windmill', '30'],
   ['chapel', 'Chapel', '40'],
   ['fountain', 'Fountain', '45'],
+  ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
   ['statue', 'Statue', '70'],
   ['castle', 'Castle', '100'],

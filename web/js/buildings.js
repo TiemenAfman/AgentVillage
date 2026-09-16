@@ -869,6 +869,31 @@ function civic(parts, spec, rng) {
       }
       return { anchors, animated, height: 1.25 };
     }
+    case 'flowerbed': {
+      // What keeps the middle of the square until the fountain is earned. It is laid on
+      // the fountain's own footprint - the same eight sided kerb on the same foundation -
+      // so the day the water arrives it reads as the basin having been built in the bed
+      // that was holding the place for it, rather than as one prop swapped for another.
+      //
+      // The middle of a plaza is the one cell you cannot leave empty. Bare, it reads as a
+      // gap somebody forgot; planted, the same emptiness reads as room.
+      const blooms = [0xd94f3d, 0xe8a13a, 0xd96fa8, 0xf2e04a, 0x9a6fd9];
+      parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
+      parts.push(cylinder(0.47, 0.48, 0.13, 8, C.stone, { y: 0.1, sheet: 'stone' }));   // the kerb
+      parts.push(cylinder(0.42, 0.42, 0.04, 8, 0x53402e, { y: 0.19 + BRIM }));          // the earth
+      // Three rings rather than a scatter: a bed somebody planted, not a patch of weeds.
+      // The tallest stand in the middle, which is also where the column will go.
+      for (const [r, n, tall] of [[0, 1, 0.2], [0.17, 5, 0.15], [0.33, 9, 0.1]]) {
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + r * 3;
+          const x = Math.cos(a) * r, z = Math.sin(a) * r;
+          const h = tall + rng.range(0, 0.04);
+          parts.push(cylinder(0.012, 0.015, h, 4, C.green, { x, y: 0.21, z }));
+          parts.push(sphere(0.038, blooms[rng.int(blooms.length)], { x, y: 0.21 + h + 0.02, z }));
+        }
+      }
+      return { anchors, animated, height: 0.48 };
+    }
     case 'tavern': {
       // Timber frame, a deep tiled roof, and a sign on a bracket over the door. The
       // windows are the warmest on the island once the sun goes down.
