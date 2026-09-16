@@ -257,6 +257,9 @@ const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 14
 const controls = new OrbitControls(camera, renderer.domElement);
 Object.assign(controls, {
   enableDamping: true, dampingFactor: 0.075, screenSpacePanning: false,
+  // maxDistance is the floor of a limit, not the limit: buildScene raises it to twice the
+  // island's half-width once the terrain exists, because a 256 grid has to be framed from
+  // further out than 200 units and the clamp was cropping the coast at boot.
   minDistance: 5, maxDistance: 200, minPolarAngle: 0.12, maxPolarAngle: 1.34,
   rotateSpeed: 0.62, panSpeed: 0.85, zoomSpeed: 0.9, zoomToCursor: true,
 });
@@ -993,25 +996,31 @@ async function refreshNeighbours() {
   } catch { /* no beacon, no neighbours, no matter */ }
 }
 
+// Where the haze begins and where it closes, and the only place that decides either.
+// world.js makes the Fog object and tints it with the sky; these two distances were being
+// set there as well, and this one - a flat 235 chosen for a grid of 64 - overwrote it on
+// every neighbour sync, so a big island ended up with its far coast in full fog.
+//
+// Both ends come off the island's own half-width: the haze starts a little past your own
+// beach and swallows the sea at three and a bit island widths. The exception is a
+// neighbour. They lie out on a fixed ring whatever size you are, and on a small island
+// that ring is well past your own fog - the sea around them was white long before you got
+// there, and an island with no water behind it reads as one that fell off the edge of the
+// world. There is sea out there; world.js lays a disc of it to 500. So while somebody is
+// out there, hold the fog off until past the ring, and never closer in than the island
+// itself asked for.
+function applyFogRange() {
+  if (!scene.fog) return;
+  const half = state.terrain ? state.terrain.half : 64;
+  const out = !!state.horizon && state.horizon.count() > 0;
+  scene.fog.near = half * 1.1;
+  scene.fog.far = out ? Math.max(half * 3.4, RING.far + 110) : half * 3.4;
+}
+
 function applyNeighbours(list) {
   if (!state.horizon || state.guest) return;
   const arrived = state.horizon.apply(list);
-  // The haze normally swallows everything past 235 units, which is exactly where the
-  // neighbours lie. Push it back only while there is somebody out there to see.
-  //
-  // Both ends of it. Where the haze *starts* is scaled to your own island, and on a small
-  // one that is barely past your own beach - 38 units on a grid of 64 - while a neighbour
-  // lies at a fixed 150 whatever size you are. The sea around them was white long before
-  // you got there, and an island with no water behind it reads as one that fell off the
-  // edge of the world. There is sea out there: world.js lays a disc of it to 500. You just
-  // could not see it. So hold the haze off until the ring itself, and never closer in than
-  // the island already asked for - a big island wants its own distance kept.
-  if (scene.fog) {
-    const out = state.horizon.count() > 0;
-    const own = state.terrain ? state.terrain.half * 1.2 : scene.fog.near;
-    scene.fog.near = out ? Math.max(own, RING.near * 0.8) : own;
-    scene.fog.far = out ? 300 : 235;
-  }
+  applyFogRange();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
     state.ui.toast(
@@ -1400,6 +1409,12 @@ function buildScene(village) {
     shadowSize: modest ? 1024 : 2048,
     modest,
   });
+  // The fog object arrives with the world; the distances are ours, and they are set here
+  // rather than on the first neighbour sync so that no frame is ever drawn without them.
+  applyFogRange();
+  // Room to stand back far enough for whatever island this is - both numbers are floors,
+  // so a small island keeps exactly the framing it was tuned with.
+  controls.maxDistance = Math.max(200, terrain.half * 2);
   state.settlers = createSettlers(scene, buildingMat, terrain);
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
@@ -1618,9 +1633,12 @@ function frameIsland() {
   // fit the wider of the two spans, then pull in a little so the island fills the frame
   const r = 0.5 * Math.max(maxX - minX, maxZ - minZ) + 2;
   const fov = camera.fov * Math.PI / 180;
-  // The ceiling of 88 was sized for a 64 grid. On this island the computed fit is about
-  // 122, so the coast was being cropped at boot.
-  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, 175);
+  // The ceiling was sized for a 64 grid - first 88, then 175 - and each time the island
+  // grew it went on cropping the coast at boot, because the fit a 256 grid asks for is
+  // about 235. Derived from the island instead of guessed again: 1.7 half-widths is the
+  // distance a 45-degree lens needs to hold a round island with a little sea around it,
+  // and 175 stays as the floor so a small island is framed exactly as it was.
+  const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, Math.max(175, t.half * 1.7));
   const az = 0.6, el = 0.72;
   controls.target.set(cx, 1, cz);
   camera.position.set(
@@ -2299,6 +2317,10 @@ function frame(nowMs) {
     const az = s.az + 0.55 * (1 - e), el = s.el + 0.14 * (1 - e), dist = s.dist * (1 + 0.32 * (1 - e));
     camera.position.set(s.cx + Math.cos(el) * Math.sin(az) * dist, 1 + Math.sin(el) * dist, s.cz + Math.cos(el) * Math.cos(az) * dist);
     camera.lookAt(s.cx, 1, s.cz);
+    // The flight in is the one stretch where the camera moves without the controls, so it
+    // has to hand the shadow frustum its own distance or the island lands in a shadowless
+    // picture and only fills in once you touch the mouse.
+    if (state.world) state.world.followShadow(s.cx, s.cz, dist);
     if (k >= 1) { state.intro = null; controls.enabled = true; controls.target.set(s.cx, 1, s.cz); controls.update(); }
   }
   if (state.tween) {
@@ -2368,7 +2390,15 @@ function frame(nowMs) {
     const b = state.bounds;
     controls.target.x = clamp(controls.target.x, b.minX - 3, b.maxX + 3);
     controls.target.z = clamp(controls.target.z, b.minZ - 3, b.maxZ + 3);
-    if (state.world) state.world.followShadow(controls.target.x, controls.target.z);
+    // Where the shadows have to reach, and how far: pulled back over the whole island the
+    // frustum has to cover the whole island, and down among the houses it must not.
+    if (state.world) state.world.followShadow(controls.target.x, controls.target.z, camera.position.distanceTo(controls.target));
+  } else if (state.mode === 'walk' && state.world) {
+    // On foot the shadows belong around your feet, at the tightest the frustum goes -
+    // this is the one view where a shadow is a metre from the eye. It used to be left
+    // wherever the orbit camera had put it, which on a walk to the coast meant walking
+    // out of the shadow map.
+    state.world.followShadow(camera.position.x, camera.position.z, 1);
   }
 
   // After the camera is settled, so the ray it casts is the one you are looking down.

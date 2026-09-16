@@ -27,9 +27,13 @@ const DAY = [
   { h: 5, top: 0x182a55, hor: 0x3a4a7a, key: 0xa0b0ff, int: 0.3, sky: 0x2c4270, ground: 0x14202a, amb: 0.15, night: 1, fire: 0.6, stars: 0.8 },
   { h: 6.5, top: 0x5a6fb0, hor: 0xffc9a0, key: 0xffb070, int: 1.5, sky: 0x7f8fc0, ground: 0x5a4a3a, amb: 0.26, night: 0.55, fire: 0, stars: 0 },
   { h: 8, top: 0x6fb2e8, hor: 0xe8f3ff, key: 0xfff0d0, int: 2.6, sky: 0xbfe0ff, ground: 0x7a8a5a, amb: 0.36, night: 0, fire: 0, stars: 0 },
-  { h: 12, top: 0x5ea6e6, hor: 0xdcefff, key: 0xfff8ea, int: 3.0, sky: 0xbfe0ff, ground: 0x8a9a6a, amb: 0.4, night: 0, fire: 0, stars: 0 },
-  { h: 17, top: 0x6fa8e0, hor: 0xffe0b8, key: 0xffd9a0, int: 2.4, sky: 0xb0c8e8, ground: 0x7a7a5a, amb: 0.35, night: 0.15, fire: 0, stars: 0 },
-  { h: 18.5, top: 0x3d4f8a, hor: 0xff9a5c, key: 0xff8040, int: 1.5, sky: 0x705a80, ground: 0x4a3a3a, amb: 0.26, night: 0.7, fire: 0.3, stars: 0.1 },
+  { h: 12, top: 0x5ea6e6, hor: 0xdcefff, key: 0xfff8ea, int: 3.0, sky: 0xbfe0ff, ground: 0x8f8a60, amb: 0.4, night: 0, fire: 0, stars: 0 },
+  // Late afternoon is the hour the island is meant to be looked at, so it carries the
+  // warmth: a goldener key, a little more of it, and a horizon that has already turned.
+  // `ground` is the light the meadow throws back up - warm here, which is what keeps a
+  // north wall from going flat grey now that the sun sits so low that it never reaches one.
+  { h: 17, top: 0x6fa8e0, hor: 0xffd7a2, key: 0xffc98a, int: 2.6, sky: 0xb0c8e8, ground: 0x8a7850, amb: 0.38, night: 0.15, fire: 0, stars: 0 },
+  { h: 18.5, top: 0x3d4f8a, hor: 0xff8f46, key: 0xff8f52, int: 1.7, sky: 0x705a80, ground: 0x53402f, amb: 0.28, night: 0.7, fire: 0.3, stars: 0.1 },
   { h: 20, top: 0x141f45, hor: 0x3a3560, key: 0x8fa6ff, int: 0.32, sky: 0x2a3a6a, ground: 0x141c28, amb: 0.15, night: 1, fire: 1, stars: 0.8 },
   { h: 24, top: 0x0b1430, hor: 0x1c2a55, key: 0x8fa6ff, int: 0.28, sky: 0x243a6b, ground: 0x101820, amb: 0.13, night: 1, fire: 1, stars: 1 },
 ];
@@ -59,10 +63,26 @@ export function sunDirection(hour) {
   const h = ((hour % 24) + 24) % 24;
   const day = h >= 6 && h <= 18;
   const p = day ? (h - 6) / 12 : (((h + 6) % 24) / 12);
-  const el = Math.sin(Math.PI * p) * (day ? 1.15 : 0.9);
+  // How high the sun climbs at noon. It used to reach 1.15 rad - 66 degrees, a sun over
+  // the tropics - and at that angle a roof casts a shadow shorter than its own eaves at
+  // midday and the island reads as a flat map at every hour. 0.85 rad tops out at 49
+  // degrees and puts the sun at about 13 degrees at five in the afternoon, which is where
+  // the long raking light of the reference picture comes from. The clamp below stays: it
+  // is what keeps the shadow frustum's own maths out of trouble when the sun is on the
+  // horizon, not a lighting choice.
+  const el = Math.sin(Math.PI * p) * (day ? 0.85 : 0.9);
   const az = Math.PI * p + 3.5;
   return new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.max(0.06, Math.sin(el)), Math.cos(el) * Math.cos(az)).normalize();
 }
+
+// The shadow frustum as [tightest, widest] half-width, and the share of the camera's
+// distance it tries to cover. It used to be a fixed 42 - 84 units across, chosen when a
+// whole island fitted inside it - and from the distance this one is framed at, two thirds
+// of the picture came out shadowless. Widening it for good instead would spend the same
+// shadow map on nine times the ground and blur every eave you zoom in on, so it breathes:
+// tight when you are down among the houses, wide enough for the coast when you pull back.
+const SHADOW_SPAN = [42, 130];
+const SHADOW_OF_DIST = 0.48;
 
 function bandColour(h, season) {
   const s = SEASON[season];
@@ -354,22 +374,29 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
   group.add(sunDisc, moonDisc);
 
-  // Scaled to the island rather than fixed: 85/235 was chosen for a 64 grid, and at the
-  // distance this one has to be viewed from, the far coast sat in full fog.
-  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.2, terrain.half * 3.9);
+  // The haze exists here because every material has to compile knowing there is fog, but
+  // the two distances are set from main.js and nowhere else. They used to be set in both
+  // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
+  // sync there - and the fixed pair always won. Colour still follows the sky, below.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
 
   // ---- lights --------------------------------------------------------------
-  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8a9a6a, 0.85);
+  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
   const ambient = new THREE.AmbientLight(0xffffff, 0.4);
   const key = new THREE.DirectionalLight(0xfff8ea, 3.0);
   key.castShadow = true;
   key.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
-  key.shadow.camera.left = -42; key.shadow.camera.right = 42;
-  key.shadow.camera.top = 42; key.shadow.camera.bottom = -42;
-  key.shadow.camera.near = 10; key.shadow.camera.far = 220;
+  // Half-width of the shadow frustum. `followShadow` moves it with the zoom, so this is
+  // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
+  key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
+  key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
+  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
-  key.shadow.radius = 3;
+  // One step softer, now that the sun is low enough for a shadow to run the length of a
+  // lane: a hard edge that far from its caster reads as a painted stripe. PCFSoft only,
+  // so `modest` (PCFShadowMap, which ignores the radius) is untouched.
+  key.shadow.radius = 4;
   scene.add(hemi, ambient, key, key.target);
 
   // ---- vegetation ----------------------------------------------------------
@@ -931,13 +958,34 @@ export function createWorld(scene, terrain, village, opts = {}) {
   let time = 0;
   let currentSeason = season;
   const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
-  // The shadow frustum follows what you are looking at. It is 84 units across and the
-  // island is about 120, so anchored at the origin the far half of the coast cast no
-  // shadow at all. Widening it instead would take the shadow map from 24 pixels per unit
-  // down to 15 and soften every roof edge, so it moves. Eased, not snapped, or shadows
-  // pop in and out along the frustum edge while you pan.
+  // The shadow frustum follows what you are looking at, and now also how far away you are
+  // standing: anchored and fixed it covered 84 units of a 234-unit island, so from the
+  // boot camera most of the coast cast nothing at all. Following the target alone was not
+  // enough, because the whole point of pulling back is to see all of it at once. So the
+  // half-width comes from the camera distance - and only the half-width, so zoomed in you
+  // keep today's 24 shadow-map pixels per unit and today's crisp eaves.
+  //
+  // The light rides out with it. It sat a flat 90 units up the sun ray, which is fine for
+  // a 42-unit frustum but puts everything on the sunward half of a 130-unit one *behind*
+  // the lamp, where the shadow camera cannot see it - the coast would have gone dark-free
+  // again for a subtler reason. Near and far follow for the same reason, and because a
+  // depth range no wider than it needs to be is what keeps `shadow.bias` honest: tight
+  // when you are close, which is exactly when a millimetre of peter-panning shows.
   const shadowFocus = new THREE.Vector3();
-  const followShadow = (x, z) => shadowFocus.set(x, 0, z);
+  let shadowSpan = SHADOW_SPAN[0];
+  let lightRange = shadowSpan + 60;
+  const followShadow = (x, z, dist) => {
+    shadowFocus.set(x, 0, z);
+    if (!(dist > 0)) return;
+    const f = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
+    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+    shadowSpan = f;
+    lightRange = f + 60;
+    const cam = key.shadow.camera;
+    cam.left = -f; cam.right = f; cam.top = f; cam.bottom = -f;
+    cam.near = 10; cam.far = 2 * f + 90;
+    cam.updateProjectionMatrix();
+  };
 
   function update(dt, hour, month) {
     time += dt;
@@ -947,7 +995,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     state.night = d.night;
 
     key.target.position.lerp(shadowFocus, Math.min(1, dt * 4));
-    key.position.copy(key.target.position).addScaledVector(dir, 90);
+    key.position.copy(key.target.position).addScaledVector(dir, lightRange);
     key.color.copy(d.key);
     key.intensity = d.int;
     hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
@@ -959,7 +1007,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     skyMat.uniforms.uSunDir.value.copy(dir);
     skyMat.uniforms.uSunColor.value.copy(d.key);
     skyMat.uniforms.uStars.value = d.stars;
-    scene.fog.color.copy(d.hor).lerp(d.top, 0.25);
+    // The haze is the horizon seen through more of itself, with a quarter of the sky's own
+    // blue mixed back in. Less of that blue than before and a breath of the sun's colour
+    // on top, so the far coast goes gold in the afternoon instead of grey-blue - the
+    // distance in the reference picture is warm, not cold. Distances: see main.js.
+    scene.fog.color.copy(d.hor).lerp(d.top, 0.15).lerp(d.key, 0.12);
 
     waterMat.uniforms.uTime.value = time;
     waterMat.uniforms.uSunDir.value.copy(dir);
