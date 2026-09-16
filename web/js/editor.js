@@ -206,9 +206,19 @@ const active = () => items.filter((it) => it.state !== 'removed');
 const fromFile = (it) => it.base !== null;
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
+// A part arrives without normals: `finish()` in buildings.js drops them and `merge()`
+// works them out again once the parts are one loaf. Nothing is merged here, so every
+// geometry gets them back on the way in. Flat shading would manage without - it takes the
+// normal from the derivatives - but the sheet projection reads the attribute itself, and a
+// zero normal normalises to nothing and leaves every wall, roof and plank black.
+function normals(g) {
+  if (!g.getAttribute('normal')) g.computeVertexNormals();
+  return g;
+}
+
 // Gives a piece its mesh and its place in the list.
 function mount(it, geometry) {
-  it.mesh = new THREE.Mesh(geometry, material);
+  it.mesh = new THREE.Mesh(normals(geometry), material);
   it.mesh.castShadow = true;
   it.mesh.receiveShadow = true;
   it.mesh.userData.item = it;
@@ -340,7 +350,7 @@ function sameShape(a, b) {
 }
 
 function rebuild(rec) {
-  return PRIMS[rec.fn].fn(...clone(rec.args), rec.hex, clone(rec.o));
+  return normals(PRIMS[rec.fn].fn(...clone(rec.args), rec.hex, clone(rec.o)));
 }
 
 // The geometry a piece ought to be showing: the one it arrived with for as long as it is
