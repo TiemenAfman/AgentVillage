@@ -849,22 +849,44 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   // ---- clouds --------------------------------------------------------------
+  // Nine clouds, each a handful of squashed icosahedra. They used to be some 34 separate
+  // meshes, and every one cost a draw call in the colour pass and another in the shadow
+  // pass. One InstancedMesh over a unit icosahedron draws the whole layer in two: each
+  // puff is an instance whose matrix carries its radius, its squash and its place in the
+  // cloud. The random draws happen in the same order as before, so the clouds look the
+  // same and the fireflies further down still land where they did.
   const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1 });
-  const clouds = new THREE.Group();
+  const cloudGeo = new THREE.IcosahedronGeometry(1, 0);
+  const cloudPuffs = []; // one per instance: which cloud it belongs to, its offset and its size
+  const cloudDrift = []; // one per cloud: where it is and how fast it drifts
   for (let i = 0; i < 9; i++) {
-    const c = new THREE.Group();
     const parts = 3 + rng.int(3);
     for (let k = 0; k < parts; k++) {
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(rng.range(1.6, 3.2), 0), cloudMat);
-      m.position.set(rng.range(-3, 3), rng.range(-0.4, 0.4), rng.range(-2, 2));
-      m.scale.set(1, rng.range(0.4, 0.6), 1);
-      m.castShadow = true;
-      c.add(m);
+      const r = rng.range(1.6, 3.2);
+      const ox = rng.range(-3, 3), oy = rng.range(-0.4, 0.4), oz = rng.range(-2, 2);
+      const squash = rng.range(0.4, 0.6);
+      cloudPuffs.push({ cloud: i, ox, oy, oz, sx: r, sy: r * squash, sz: r });
     }
-    c.position.set(rng.range(-70, 70), rng.range(24, 33), rng.range(-70, 70));
-    c.userData.speed = rng.range(0.35, 0.75);
-    clouds.add(c);
+    cloudDrift.push({ x: rng.range(-70, 70), y: rng.range(24, 33), z: rng.range(-70, 70), speed: rng.range(0.35, 0.75) });
   }
+  const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length);
+  clouds.castShadow = true;
+  // The instances drift and wrap around the island, so a bounding sphere taken at boot
+  // would go stale and cull clouds that are plainly in view. The layer is always in
+  // sight anyway, like the sky and the fireflies.
+  clouds.frustumCulled = false;
+  function placeClouds() {
+    for (let i = 0; i < cloudPuffs.length; i++) {
+      const p = cloudPuffs[i], c = cloudDrift[p.cloud];
+      tmpObj.position.set(c.x + p.ox, c.y + p.oy, c.z + p.oz);
+      tmpObj.rotation.set(0, 0, 0);
+      tmpObj.scale.set(p.sx, p.sy, p.sz);
+      tmpObj.updateMatrix();
+      clouds.setMatrixAt(i, tmpObj.matrix);
+    }
+    clouds.instanceMatrix.needsUpdate = true;
+  }
+  placeClouds();
   group.add(clouds);
 
   // ---- fireflies -----------------------------------------------------------
@@ -951,10 +973,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
     (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430);
 
-    for (const c of clouds.children) {
-      c.position.x += c.userData.speed * dt;
-      if (c.position.x > 90) c.position.x = -90;
+    for (const c of cloudDrift) {
+      c.x += c.speed * dt;
+      if (c.x > 90) c.x = -90;
     }
+    placeClouds();
 
     fireflies.visible = d.fire > 0.02;
     if (fireflies.visible) {
