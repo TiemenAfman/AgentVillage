@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
-import { TAVERN } from './tavern-mesh.js';
+import * as models from './models.js';
 
 export const PALETTE = {
   fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb87333, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
@@ -217,8 +217,14 @@ function lift(g, dy) {
 
 // A Blender-baked part has the same attributes and placement contract as box().
 // Material prefixes become existing sheet IDs; vertex colours stay in linear space.
+//
+// Which .blend it came out of is web/js/models.js's business, not the call site's: every
+// baked set is in one register under one flat set of names. An unknown name throws rather
+// than drawing nothing, because a part that has quietly gone missing from a building is
+// far harder to notice than a page that says so. A caller that means "use the model if it
+// has been made yet" asks models.has() first - see barrel() in props.js.
 export function mesh(name, hex = 0xffffff, o = {}) {
-  const part = TAVERN.parts[name];
+  const part = models.part(name);
   if (!part) throw new Error(`Unknown Blender building part: ${name}`);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
@@ -227,6 +233,17 @@ export function mesh(name, hex = 0xffffff, o = {}) {
   const colors = g.attributes.color.array;
   for (let i = 0; i < colors.length; i++) colors[i] *= part.colors[i];
   return note(place(g, options), 'mesh', [name], hex, options);
+}
+
+// Every part of one Blender asset, each where Blender had it, as parts to push. An asset
+// is a whole building for a set that holds one - the tavern - or one prop out of a set
+// that holds several. `o` shifts the lot, for a caller composing an asset into something
+// bigger: mesh('roof_gable_a') sat on top of a house body.
+export function meshAsset(name, hex = 0xffffff, o = {}) {
+  return models.assetParts(name).map((partName) => {
+    const at = models.part(partName).at;
+    return mesh(partName, hex, { ...o, x: (o.x || 0) + at[0], y: (o.y || 0) + at[1], z: (o.z || 0) + at[2] });
+  });
 }
 
 // a box whose base sits at y = o.y
@@ -318,6 +335,13 @@ function merge(parts) {
   g.computeBoundingSphere();
   return g;
 }
+
+// props.js builds its shapes out of these same primitives and needs the same filling in,
+// so it merges with this rather than with a copy of it that had drifted: a prop made of a
+// Blender part, which carries a sheet, and a cylinder, which does not, came out of the
+// copy with the sheet thrown away. See the note inside merge() for why the zeroes are
+// filled in here and not in finish().
+export { merge as mergeParts };
 
 // ---------------------------------------------------------------- the kit
 // Places one piece inside a sub-assembly: its offset turns with the assembly, and so
@@ -913,11 +937,9 @@ function civic(parts, spec, rng) {
     case 'tavern': {
       // Authored in assets/tavern/agentvillage-tavern.blend, facing the street (+z).
       // The existing porch, footprint, shader and editor consume ordinary parts.
-      for (const [name, part] of Object.entries(TAVERN.parts)) {
-        parts.push(mesh(name, 0xffffff, { x: part.at[0], y: part.at[1], z: part.at[2] }));
-      }
-      for (const [name, at] of Object.entries(TAVERN.anchors)) anchors[name] = [...at];
-      return { anchors, animated, height: TAVERN.height };
+      parts.push(...meshAsset('tavern'));
+      for (const [name, at] of Object.entries(models.anchorsOf('tavern'))) anchors[name] = [...at];
+      return { anchors, animated, height: models.heightOf('tavern') };
     }
     case 'chapel': {
       // A small stone chapel: a nave running front to back, a round window over the

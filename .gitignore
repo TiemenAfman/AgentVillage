@@ -3,6 +3,11 @@ web/vendor/
 data/*
 !data/.gitkeep
 
+# Blender's own backup copy, and the preview renders: both are made from a .blend that
+# is committed, so anyone can make them again and nobody has to download them.
+assets/**/renders/
+*.blend1
+
 # per-machine settings; config.example.json is the template
 config.json
 
