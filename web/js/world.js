@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -404,7 +404,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much of the countryside is under the plough. The chronicle hands down a share so
   // the fields arrive with the village that works them; a live village has none and gets
   // the full spread.
-  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: 0.35 * v.farmShare });
+  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare });
+
+  // Which cells the settlers walk on. The hedges have always needed this to know where to
+  // leave a gate; the fields and the forest now need it too, because how far a cell is
+  // from a road is most of what decides whether anybody ploughs it or nobody has ever
+  // cleared it. Built once here rather than three times over.
+  const roadSet = (v) => {
+    const out = new Set();
+    for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
+    for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
 
   let clearedBase = baseCleared(village);
   const cleared = new Set(clearedBase);
@@ -422,7 +433,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
   wallVerge(own.owner, cleared);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, fieldOpts(village));
+  let roads = roadSet(village);
+  let settled = settledDistance(terrain, own.owner, roads);
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled });
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
@@ -799,12 +812,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
 
     // A hedge opens where a road crosses it, and the road set is the one the settlers
-    // already walk on, so no extra data is needed to know where the gates are.
-    const roads = new Set();
-    for (const p of v.paths || []) for (const c of p.cells) roads.add(c[0] + c[1] * size);
-    for (const c of squareCells(v)) roads.add(c[0] + c[1] * size);
-
-    const bg = buildBorders(v, terrain, own.owner, roads);
+    // already walk on, so no extra data is needed to know where the gates are. The field
+    // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
+    // same merged geometry, for no extra draw call.
+    const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
       // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
       // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -837,7 +848,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
     wallVerge(own.owner, clearedBase);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase, fieldOpts(v));
+    roads = roadSet(v);
+    settled = settledDistance(terrain, own.owner, roads);
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled });
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
