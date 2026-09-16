@@ -49,7 +49,7 @@ export const CROPS = {
   pumpkin: {
     name: 'Pumpkin',
     plural: 'pumpkins',
-    what: 'One fruit to a bed, an afternoon of waiting, and the best price on the stall.',
+    what: 'Two fruits to a bed, an afternoon of waiting, and the best price on the stall.',
     seed: 35, grow: 90, crop: 2, sell: 90,
     leaf: 0x4a7c37, flesh: 0xe07b23, ripeGlow: 0,
   },
