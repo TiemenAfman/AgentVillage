@@ -29,8 +29,27 @@ const WHITE = 0xffffff;
 const CAPACITY = 640;
 const MAX_STROLL = 36;      // settlers out on an errand at the same time
 const HEAD_Y = 0.37;        // where the neck is, on a figure of standard height
+const HEAD_R = 0.076;       // and how big the head on it is
+// Where a pair of eyes sits on a head, as a fraction of its radius above the middle of
+// it. A head here is a sphere with nothing drawn on it, so this is the one number that
+// says which part of that sphere is the face: aim at the middle and you are looking at a
+// mouth, aim at the top and you are looking at the crown.
+const EYE_UP = 0.3;
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
 const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+// How far above its own feet a figure's eyes are. A function rather than a constant
+// because nobody on this island is standard height: the torso takes `height`, the head
+// rides on top of whatever that came to at its own `head` size, and an apprentice has
+// `baseScale` over the lot. Anything that wants to look a settler in the eye - the
+// conversation camera in facetoface.js - asks here rather than adding a guess to a plot
+// centre, which is how you end up addressing somebody's hat or their boots. Called with
+// nothing it gives the standard figure, which is the one walk.js and the interiors wear.
+export function eyeHeight({ look = null, baseScale = 1 } = {}) {
+  const height = look && look.height ? look.height : 1;
+  const head = look && look.head ? look.head : 1;
+  return (HEAD_Y * height + HEAD_R * head * EYE_UP) * baseScale;
+}
 
 // ---------------------------------------------------------------- the parts
 // Every piece is modelled where it sits on a figure standing at the origin, so the same
@@ -51,7 +70,7 @@ function limbParts(hex) {
   ];
 }
 function headGeometry(hex, dy = 0) {
-  return sphere(0.076, hex, { y: HEAD_Y + dy });
+  return sphere(HEAD_R, hex, { y: HEAD_Y + dy });
 }
 // The hats avatar.js lets the player choose between, in the same order and at the same
 // heights, because they are the hats the island already wore: the player is meant to read
@@ -307,6 +326,8 @@ export function createSettlers(scene, material, terrain) {
       radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
       hammerSlot: -1, y: 0,
       strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined,
+      // Whoever is talking to them, as [x, z], or null. See `attend`.
+      attend: null,
     };
     f.speed = 0.34 * f.stride;
     figures.set(id, f);
@@ -341,6 +362,23 @@ export function createSettlers(scene, material, terrain) {
   function setMode(id, mode) {
     const f = figures.get(id);
     if (f && f.mode !== 'walk' && f.mode !== 'sail') f.mode = mode;
+  }
+
+  // Being spoken to. The figure stops where it stands and turns towards `at` ([x, z] in
+  // world units) until it is let go of again - somebody who wanders off mid-sentence
+  // leaves you addressing an empty street. Nothing they were doing is thrown away, only
+  // suspended: the errand, its path and the hammer are all still on them, so afterwards
+  // they carry on from the spot the conversation caught them at. Returns the figure,
+  // because the caller's next question is always where they are standing.
+  function attend(id, at) {
+    const f = figures.get(id);
+    if (!f || !f.visible) return null;
+    f.attend = at ? [at[0], at[1]] : [f.pos[0], f.pos[1]];
+    return f;
+  }
+  function unattend(id) {
+    const f = figures.get(id);
+    if (f) f.attend = null;
   }
 
   // ---- errands ---------------------------------------------------------------
@@ -478,7 +516,12 @@ export function createSettlers(scene, material, terrain) {
       if (!f.visible) continue;
       let bob = 0;
 
-      if (f.mode === 'walk' && f.path) {
+      if (f.attend) {
+        // Held by a conversation: no step, no errand, no hammer - only the head coming
+        // round to whoever is talking. The same lerp the walking uses, so they turn at
+        // the speed they take corners at instead of snapping to face you.
+        f.yaw = lerpAngle(f.yaw, Math.atan2(f.attend[0] - f.pos[0], f.attend[1] - f.pos[1]), 0.12);
+      } else if (f.mode === 'walk' && f.path) {
         const t = f.path[Math.min(f.pathI + 1, f.path.length - 1)];
         const dx = t[0] - f.pos[0], dz = t[1] - f.pos[1];
         const d = Math.hypot(dx, dz);
@@ -581,7 +624,7 @@ export function createSettlers(scene, material, terrain) {
   };
 
   return {
-    add, remove, setMode, setVisible, setRoads, setDecks, walkIn, update, figures,
+    add, remove, setMode, setVisible, attend, unattend, setRoads, setDecks, walkIn, update, figures,
     pickables, figureAt,
     findPath: (a, b) => findPath(terrain, a, b, null),
   };

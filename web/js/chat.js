@@ -272,5 +272,14 @@ export function createChat(root, { onClose, onBusyChange, onSendAway }) {
     onClose && onClose();
   }
 
-  return { open, close, isOpen: () => !el.hidden, isBusy: () => busy, dispose: () => { removeEventListener('keydown', onKey); el.remove(); } };
+  // How much of the island this panel is standing on: the pixels along the right edge it
+  // covers, margins included. The camera frames the settler you are talking to in what is
+  // left over (see facetoface.js), and the panel is the only thing that knows how wide it
+  // ended up - its width is a min() of the window, so on a laptop it is 430 and on a
+  // narrow window it is very nearly everything.
+  function panelWidth() {
+    return el.hidden ? 0 : el.getBoundingClientRect().width + 28;
+  }
+
+  return { open, close, panelWidth, isOpen: () => !el.hidden, isBusy: () => busy, dispose: () => { removeEventListener('keydown', onKey); el.remove(); } };
 }

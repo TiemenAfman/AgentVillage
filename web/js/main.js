@@ -22,6 +22,7 @@ import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
+import { createFaceToFace } from './facetoface.js';
 import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
@@ -299,11 +300,62 @@ function openOffice(id) {
   state.office.open({ id: d.id, name: d.name });
 }
 
+// The camera that holds a settler in front of you while you talk to them. It needs
+// nothing but the camera and the width of whatever is covering the island, so it is made
+// here rather than waiting for a village to land on.
+const faceToFace = createFaceToFace({
+  camera,
+  reserved: () => (state.chat ? state.chat.panelWidth() : 0),
+});
+
+// Where to stand to talk to somebody: out in front of them, on the side away from their
+// own front door, which is the side the street is on. Their figure is what is approached,
+// not their house - a settler on an errand is talked to where they are standing.
+function standingSpotFor(fig, rec) {
+  let dx = fig.pos[0] - rec.group.position.x, dz = fig.pos[1] - rec.group.position.z;
+  let len = Math.hypot(dx, dz);
+  // Somebody standing on their own plot centre gives no direction at all; arrive from
+  // wherever you were looking at them from instead.
+  if (len < 0.05) {
+    dx = camera.position.x - fig.pos[0];
+    dz = camera.position.z - fig.pos[1];
+    len = Math.hypot(dx, dz) || 1;
+  }
+  const step = 1.3 / len;
+  return [fig.pos[0] + dx * step, fig.pos[1] + dz * step];
+}
+
+// Look them in the eye for as long as the conversation lasts: they are held where they
+// stand and turned towards you, and the camera drops into your own eyes. Nothing happens
+// without a figure to look at and feet to look from - a conversation is still a
+// conversation with the camera left where it was.
+function faceUp(id, fig) {
+  if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
+  const w = state.walk.state;
+  state.settlers.attend(id, [w.pos.x, w.pos.z]);
+  faceToFace.begin({
+    subject: fig,
+    viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
+    onLetGo: () => state.settlers.unattend(id),
+  });
+}
+
 // Addressing a settler opens their session and lets you carry it on.
 function talkTo(id) {
   if (keeperOnly('carry on a settler’s session')) return;
   const rec = state.byId.get(id);
   if (!rec || rec.spec.kind === 'civic' || !rec.spec.sessionId) return;
+  // Who you are actually addressing: the figure scurrying about that doorstep, not the
+  // doorstep. Only settlers.js knows where they got to, and it is keyed by building id.
+  const fig = state.settlers ? state.settlers.figures.get(id) : null;
+  // From the sky there is nobody standing in front of you yet. The dossier's "Talk to
+  // them" is a wish to speak to somebody, so it walks you over to them first and leaves
+  // you standing there afterwards: the same conversation, in the same place, from the
+  // same eyes as pressing E would have given you.
+  if (fig && fig.visible && !state.inside && state.mode !== 'walk') {
+    enterWalk({ at: standingSpotFor(fig, rec), facing: [fig.pos[0], fig.pos[1]] });
+    state.walk.update(0);   // one settled frame, so there is a stance to come back to
+  }
   if (state.walk) state.walk.setPaused(true);
   state.ui.closeDossier();
   state.chat.open({
@@ -315,6 +367,9 @@ function talkTo(id) {
     cwd: rec.spec.cwd,
     districtName: (state.districts.get(rec.spec.district) || {}).name || null,
   });
+  // After the panel is up, not before: it is the panel's own width that decides how far
+  // off the middle of the screen the face has to sit to stay out from under it.
+  faceUp(id, fig);
 }
 
 // --------------------------------------------------------------- walking
@@ -743,13 +798,19 @@ function leaveInterior() {
   reportWhere({ final: true });
 }
 
-function enterWalk() {
+// `spot` is where to be put down and what to face when you get there, for the times
+// something has a place in mind - walking over to somebody you asked to talk to. Without
+// one you arrive on the town square, which is where the island starts everybody.
+function enterWalk(spot = null) {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
   let at = [0, 0], facing = null;
-  if (board) {
+  if (spot && spot.at) {
+    at = spot.at;
+    facing = spot.facing || null;
+  } else if (board) {
     at = [board.group.position.x, board.group.position.z + 2.2];
     facing = [board.group.position.x, board.group.position.z];
   } else if (town && state.terrain) {
@@ -884,6 +945,10 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
+  // A conversation cannot outlive the feet it was had on: the camera is on its way to the
+  // sky, so it is dropped rather than walked back down, and the settler is let go of.
+  faceToFace.cancel();
+  if (state.chat.isOpen()) state.chat.close();
   // Straight from a bar stool to the sky: leave the room on the way out, or the island
   // would still believe you were indoors when you next came down.
   if (state.inside) {
@@ -2214,6 +2279,9 @@ function frame(nowMs) {
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
   }
+  // A conversation borrows the camera, and this is where it writes it: after the feet,
+  // because while it is running walk mode is paused and this is the only hand on it.
+  faceToFace.update(dt);
 
   for (let i = tickers.length - 1; i >= 0; i--) {
     if (tickers[i](dt)) tickers.splice(i, 1);
@@ -2565,7 +2633,10 @@ async function boot() {
   state.chat = createChat(document.body, {
     onSendAway: (id) => askToSendAway(id),
     onClose: () => {
-      if (state.walk) state.walk.setPaused(false);
+      // Your feet get their keys back only once the camera is home again: unpausing now
+      // would let walk mode write the camera mid-flight, and its stance would win.
+      const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+      if (!faceToFace.end(walkOn)) walkOn();
       // whatever was said is in the transcript now, so let the island catch up
       fetch('/api/rescan', { method: 'POST' }).catch(() => {});
     },

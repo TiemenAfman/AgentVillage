@@ -10,6 +10,12 @@ import { box, cylinder, cone, sphere, dome } from './buildings.js';
 
 const KEY = 'promptholm.avatar';
 
+// The one you steer stands a little taller than everyone else, which is the oldest way of
+// saying "this one is you". Exported because a camera that means to sit in your own eyes
+// has to know it: the figure's proportions live in settlers.js, and this is the factor
+// between one of them and you.
+export const PLAYER_SCALE = 1.12;
+
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
 // it is the one you start in.
@@ -151,6 +157,6 @@ export function avatarPlayerGeometry(spec) {
   ];
   const g = mergeGeometries(parts, false);
   g.computeVertexNormals();
-  g.scale(1.12, 1.12, 1.12);
+  g.scale(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
   return g;
 }
