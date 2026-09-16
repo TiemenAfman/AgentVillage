@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import { POLDER_H } from 'shared/terrain.mjs';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, roundedOutline, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
@@ -85,11 +86,21 @@ export function sunDirection(hour) {
 const SHADOW_SPAN = [42, 130];
 const SHADOW_OF_DIST = 0.48;
 
+// Where the sand gives up and the meadow takes over. The bands below still change on a
+// line at 0.35 - the height `terrain.mjs` calls the top of a beach, and the height the
+// Node layout decides where a house may stand by - but the *drawing* crossfades across
+// this range instead, which on this island's gradients is two to six cells of dune grass
+// rather than a contour line running round the island like a coastline on a map.
+// `terrain.mjs` is untouched on purpose: what moved is the painting, not the rule, so
+// `isBeach` answers exactly what it did and Node and the browser still agree.
+const SHORE = [0.25, 0.6];
+const SHORE_SAND = 0xefddb2;
+
 function bandColour(h, season) {
   const s = SEASON[season];
   if (h < -0.6) return 0x3f6a7c;
   if (h < 0) return 0x8f9f7a;
-  if (h < 0.35) return 0xefddb2;
+  if (h < 0.35) return SHORE_SAND;
   if (h < 1.6) return s.meadow;
   if (h < 3.4) return s.upland;
   if (h < 5.2) return 0x8f8a80;
@@ -181,14 +192,44 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
   const meadowNoise = makeSimplex2D(hash32(`meadow:${village.seed || 0}`));
+
+  // Reclaimed land, which is not a beach however low it lies. A polder floor is stamped
+  // at exactly POLDER_H - 0.375, chosen over in terrain.mjs so that it clears the beach
+  // line by four hundredths rather than falling under it - and the soft shore above would
+  // read seven tenths of it as sand: a village that had just drained a bay would be handed
+  // a sandpit. The sea wall put that ground there, and the heightfield is the record of
+  // it: a cell all four of whose corners sit exactly on the reclamation height is polder
+  // floor, and polder floor is the lowest meadow on the island rather than its highest
+  // beach. Derived from the terrain rather than from `village.polders` so that it follows
+  // `reshape`, which is handed a new heightfield and no village at all.
+  const reclaimed = new Uint8Array(N * N);
+  function findReclaimed() {
+    reclaimed.fill(0);
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const k = gx + gz * N;
+        if (terrain.H[k] !== POLDER_H || terrain.H[k + 1] !== POLDER_H
+          || terrain.H[k + N] !== POLDER_H || terrain.H[k + N + 1] !== POLDER_H) continue;
+        reclaimed[k] = 1; reclaimed[k + 1] = 1; reclaimed[k + N] = 1; reclaimed[k + N + 1] = 1;
+      }
+    }
+  }
+
   function paintGround(seasonName) {
+    findReclaimed();
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const k = i + j * N;
         const h = terrain.H[k];
         tmpColor.setHex(bandColour(h, seasonName));
+        // The shore, crossfaded rather than stepped. See SHORE above.
+        if (h > SHORE[0] && h < SHORE[1] && !reclaimed[k]) {
+          tmpColor.setHex(SHORE_SAND).lerp(tmpTint.setHex(SEASON[seasonName].meadow), smoothstep(SHORE[0], SHORE[1], h));
+        }
         // Broad, stable patches of colour soften the grid without textures or geometry.
-        if (h >= 0.35 && h < 3.4) {
+        // They start where the sand starts to go, not on the old line at 0.35, or the
+        // last trace of that line would be the edge of the mottling.
+        if (h >= SHORE[0] && h < 3.4) {
           tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.065);
         }
         const a = tintAmt[k];
@@ -307,8 +348,20 @@ export function createWorld(scene, terrain, village, opts = {}) {
       void main() {
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
-        float foam = smoothstep(-0.32, -0.02, vDepth) * (0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 28.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5)));
-        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.65);
+        // The surf. It used to fade in over three tenths of a unit of depth, which on
+        // this island's shelf is barely two cells across: a white hairline drawn round
+        // the coast rather than water breaking on a beach. Two terms now. A broad band
+        // of foaming shallow water, squared so that widening its reach does not simply
+        // wash the whole bay pale - the far half of the band stays water that happens to
+        // be light. And the line where the sea actually runs up the sand, which is the
+        // part the eye reads as surf and which the broad band on its own smeared away.
+        // The swell is slower across the band as well: sixteen cycles over three times
+        // the depth range, so it reads as two or three rows of breakers instead of a
+        // fine corduroy.
+        float shore = smoothstep(-0.65, 0.02, vDepth);
+        float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
+        float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
+        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
         vec3 n = normalize(vWave);
         vec3 v = normalize(cameraPosition - vWorld);
         float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
