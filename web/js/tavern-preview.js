@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildBuilding, createBuildingMaterial } from './buildings.js';
 import { avatarPlayerGeometry, DEFAULT_AVATAR } from './avatar.js';
 const params = new URLSearchParams(location.search), modest = params.has('modest');
-const civicType = document.body.dataset.building === 'townhall' ? 'townhall' : 'tavern';
-const isHall = civicType === 'townhall';
+const civicType = ['school', 'townhall'].includes(document.body.dataset.building) ? document.body.dataset.building : 'tavern';
+const isHall = civicType === 'townhall' || civicType === 'school';
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('canvas'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.shadowMap.enabled = true;
@@ -44,5 +44,7 @@ function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=i
 addEventListener('resize',resize);resize();
 renderer.setAnimationLoop(()=>{
   renderer.render(scene,camera);
-  document.querySelector('output').textContent=`${modest?'modest':'standard'} · ${renderer.info.render.calls} calls · ${isHall?'stadhuis':'taverne'} ${built.geometry.attributes.position.count/3} tris · 1 materiaal`;
+  document.querySelector('output').textContent=`${modest?'modest':'standard'} · ${renderer.info.render.calls} calls · ${civicType} ${built.geometry.attributes.position.count/3} tris · 1 materiaal`;
 });
+
+
