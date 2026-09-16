@@ -619,6 +619,23 @@ grid.position.set(0, FIELD_Y + 0.01, fieldDepth / 2);
 
 controls.target.set(0, 0.6, fieldDepth / 2);
 camera.position.set(0, 26, fieldDepth / 2 + 40);
+
+// /demo?at=prop_barrel puts the camera in front of the row that thing is in.
+//
+// The sheet is a reviewing tool and reviewing means "show me that one". From 26 units up
+// over a field ninety deep that is a long way to pan, and panning lands somewhere
+// slightly different every time - which is no use at all when the point is to hold two
+// screenshots against each other, or to put one in a report. The whole row, not the one
+// shape: a shape is judged next to its neighbours.
+const wanted = new URLSearchParams(location.search).get('at');
+if (wanted) {
+  const found = tags.find((t) => t.el.textContent.toLowerCase().startsWith(wanted.toLowerCase()));
+  if (!found) console.warn('model sheet: nothing on the field is called', wanted);
+  else {
+    controls.target.set(0, 0.6, found.world.z);
+    camera.position.set(0, 5.5, found.world.z + 13);
+  }
+}
 controls.update();
 
 // ---- controls ------------------------------------------------------------------
