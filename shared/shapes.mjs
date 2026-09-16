@@ -17,6 +17,7 @@ export const SHAPES = {
   bridge: { what: 'A plank bridge with railings, spanning whatever is under it', takes: ['rot', 'length'] },
   fence: { what: 'A run of paling fence', takes: ['rot', 'length'] },
   bench: { what: 'A bench to sit on', takes: ['rot'] },
+  barrel: { what: 'An oak barrel, the tavern\'s own', takes: ['scale'] },
   lamp: { what: 'A lamp post, lit after dark', takes: ['scale'] },
   signpost: { what: 'A signpost with a blank board', takes: ['rot'] },
   well: { what: 'A stone well with a roof', takes: ['scale'] },

@@ -602,7 +602,22 @@ function oLit(o) {
   return bits.length ? `, { ${bits.join(', ')} }` : '';
 }
 
+// A Blender part is the one piece that may have no colour of its own. `hex` multiplies
+// the vertex colours the exporter baked in, and white leaves them exactly as Blender
+// painted them - which is what buildings.js passes for every part of an asset. Written
+// out like any other part that would come back as `mesh('Plaster walls', pal.glow)`,
+// because hexNames() looks a number up in the palette and the unknown style's glow
+// happens to be 0xffffff. Paste that into a house and the whole asset takes the style's
+// glow colour. So a neutral mesh says nothing about colour, and with no placement to
+// write either it needs nothing but its name.
+const NEUTRAL = 0xffffff;
+
 function partLine(rec, name = hexName(rec.hex)) {
+  if (rec.fn === 'mesh' && rec.hex === NEUTRAL) {
+    const where = oLit(rec.o);
+    const args = rec.args.map(argLit).join(', ');
+    return `parts.push(mesh(${args}${where ? `, 0xffffff${where}` : ''}));`;
+  }
   return `parts.push(${rec.fn}(${rec.args.map(argLit).join(', ')}, ${name}${oLit(rec.o)}));`;
 }
 
