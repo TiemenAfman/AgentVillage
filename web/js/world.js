@@ -1123,7 +1123,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
       borderMesh.receiveShadow = true;
       group.add(borderMesh);
     }
-    const fg = buildFieldDecals(fieldPlan, terrain, seasonName);
+    // The hues go in with it: every parcel knows which hamlet works it, and a field that
+    // carries a breath of its owner's colour tells two estates apart where their
+    // headlands meet - the same trick the meadow under them already plays.
+    const fg = buildFieldDecals(fieldPlan, terrain, seasonName, hues);
     if (fg) {
       const mat = groundMat();
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;

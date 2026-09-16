@@ -816,8 +816,40 @@ export function dressFieldMaterial(material) {
 // because the UVs are taken in world space rather than per quad.
 const FIELD_TEX_UNITS = 4;
 
-export function buildFieldDecals(plan, terrain, season) {
-  const pal = season === 'autumn' || season === 'winter' ? STUBBLE : FIELD;
+// The strip a plough turns on. Every parcel already keeps a cell of ground to itself for
+// it - that is what HEADLAND above claims and never tills - but the drawing stopped dead
+// at the tilled cells, so a field was a brown rectangle with corners like a cut tile. A
+// headland is the one part of a field that is never ploughed and always driven over: it
+// is dry, it is paler than the furrows, and it is what gives a field an edge instead of a
+// boundary. Drawn as one rounded outline under the tilled cells, which are then inset
+// into it - so the soil is the field and the band round it is the turning ground.
+const HEADLAND_COL = { earth: 0x9c8a63, dry: 0xa89873 };
+const HEADLAND_IN = 0.1;      // how far the tilled cells sit inside the parcel's own edge
+// And how far the band reaches out past it. Every parcel already claims a whole cell of
+// turning ground on every side and never tills it, so this is the parcel's own land and
+// nothing else can be standing on it. Taken from the inside alone the band came out a
+// tenth of a unit wide, which at the distance the island is framed from is a line rather
+// than a headland.
+const HEADLAND_OUT = 0.3;
+const HEADLAND_R = 0.5;       // and how round its corners are
+const HEADLAND_SEG = 4;
+// Whose field it is, mixed into the soil the way the meadow already carries its district
+// tint. Two farms whose headlands meet then read as two holdings rather than as one
+// larger field with a seam down the middle. Faint, and for the same reason the ground's
+// own tint is faint: past about a seventh the hue reads as a category and not as soil.
+const OWNER_TINT = 0.12;
+const tmpMix = new THREE.Color();
+const ownedBy = (hex, owner, hues) => {
+  tmpMix.setHex(hex);
+  const hue = owner != null && owner >= 0 && hues ? hues[owner] : null;
+  if (hue != null) tmpMix.lerp(new THREE.Color().setHSL(hue / 360, 0.3, 0.5), OWNER_TINT);
+  return tmpMix.getHex();
+};
+
+export function buildFieldDecals(plan, terrain, season, hues = null) {
+  const bare = season === 'autumn' || season === 'winter';
+  const pal = bare ? STUBBLE : FIELD;
+  const head = bare ? HEADLAND_COL.dry : HEADLAND_COL.earth;
   const pos = [], col = [], uv = [], idx = [];
   let vi = 0;
   // UVs in world coordinates rather than per quad, as `buildPaths` does with its paving:
@@ -835,12 +867,52 @@ export function buildFieldDecals(plan, terrain, season) {
     idx.push(vi, vi + 2, vi + 1, vi + 1, vi + 2, vi + 3);
     vi += 4;
   };
+  // A rounded outline, fanned from its own middle: the same ring the paving and the yards
+  // are drawn on, so nothing on this island has a sharp corner.
+  const patch = (x0, z0, x1, z1, r, hex, lift, alongX) => {
+    tmpColor.setHex(hex);
+    const ring = roundedOutline(x0, z0, x1, z1, r, HEADLAND_SEG);
+    const centre = vi;
+    const vertex = (qx, qz) => {
+      pos.push(qx, terrain.worldHeight(qx, qz) + lift, qz);
+      col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      uv.push((alongX ? qx : qz) / FIELD_TEX_UNITS, (alongX ? qz : qx) / FIELD_TEX_UNITS);
+    };
+    vertex((x0 + x1) / 2, (z0 + z1) / 2);
+    for (const [qx, qz] of ring) vertex(qx, qz);
+    for (let k = 0; k < ring.length; k++) idx.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
+    vi += ring.length + 1;
+  };
 
-  for (const p of [...plan.patches, ...plan.gardens]) {
+  // A kitchen garden is a bed of onions, not a field: it asks for no headland (`ring` 0
+  // in planFields) and there is no room for one inside a hamlet. It gets the rounded
+  // outline all the same, in one piece rather than cell by cell - a one-cell brown square
+  // with corners on it, standing next to parcels that have none, is the only thing on the
+  // ground that would still look stamped on.
+  for (const p of plan.gardens) {
+    const [ax, az] = terrain.cellWorld(p.gx, p.gz);
+    const [bx, bz] = terrain.cellWorld(p.gx + p.w - 1, p.gz + p.d - 1);
+    patch(ax - 0.5, az - 0.5, bx + 0.5, bz + 0.5, 0.2, ownedBy(pal.base, p.owner, hues), 0.045, p.w >= p.d);
+  }
+
+  for (const p of plan.patches) {
     const alongX = p.w >= p.d;
+    // The turning ground first, under everything, as one piece the width of the parcel.
+    const [ax, az] = terrain.cellWorld(p.gx, p.gz);
+    const [bx, bz] = terrain.cellWorld(p.gx + p.w - 1, p.gz + p.d - 1);
+    const o = HEADLAND_OUT;
+    patch(ax - 0.5 - o, az - 0.5 - o, bx + 0.5 + o, bz + 0.5 + o, HEADLAND_R, ownedBy(head, p.owner, hues), 0.04, alongX);
+    const base = ownedBy(pal.base, p.owner, hues);
+    const furrow = ownedBy(pal.furrow, p.owner, hues);
     for (const [gx, gz] of p.cells) {
       const [x, z] = terrain.cellWorld(gx, gz);
-      quad(x - 0.5, z - 0.5, x + 0.5, z + 0.5, pal.base, 0.045, alongX);
+      // Only the cells on the parcel's own edge give ground to the headland. Inset all
+      // round and the furrows inside the field would come apart into stamps again.
+      const x0 = x - 0.5 + (gx === p.gx ? HEADLAND_IN : 0);
+      const x1 = x + 0.5 - (gx === p.gx + p.w - 1 ? HEADLAND_IN : 0);
+      const z0 = z - 0.5 + (gz === p.gz ? HEADLAND_IN : 0);
+      const z1 = z + 0.5 - (gz === p.gz + p.d - 1 ? HEADLAND_IN : 0);
+      quad(x0, z0, x1, z1, base, 0.045, alongX);
     }
     // Furrows along the long axis, half a cell apart - it was a quarter before the sheet.
     // The sheet ploughs the field itself, at sixteen rows to its four units, which is
@@ -849,13 +921,16 @@ export function buildFieldDecals(plan, terrain, season) {
     // cell they stop being the furrows and become the gaps between beds - wide bands over
     // a fine tilth, which is one field rather than two patterns arguing. With no sheet to
     // multiply they are still the only thing that marks a field as ploughed at all.
-    const [ox, oz] = terrain.cellWorld(p.gx, p.gz);
-    const x0 = ox - 0.5, z0 = oz - 0.5;
+    //
+    // They keep off the headland as well, so the ends of the beds are turning ground and
+    // not a set of lines running into the grass.
+    const x0 = ax - 0.5, z0 = az - 0.5;
+    const end = HEADLAND_IN + 0.08;
     const steps = Math.round((alongX ? p.d : p.w) / 0.5);
     for (let s = 1; s < steps; s++) {
       const o = s * 0.5;
-      if (alongX) quad(x0 + 0.08, z0 + o - 0.05, x0 + p.w - 0.08, z0 + o + 0.05, pal.furrow, 0.055, alongX);
-      else quad(x0 + o - 0.05, z0 + 0.08, x0 + o + 0.05, z0 + p.d - 0.08, pal.furrow, 0.055, alongX);
+      if (alongX) quad(x0 + end, z0 + o - 0.05, x0 + p.w - end, z0 + o + 0.05, furrow, 0.055, alongX);
+      else quad(x0 + o - 0.05, z0 + end, x0 + o + 0.05, z0 + p.d - end, furrow, 0.055, alongX);
     }
   }
   if (!pos.length) return null;
