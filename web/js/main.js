@@ -2378,6 +2378,9 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
   if (statsReadout) {
+    // Colour pass only: three.js resets renderer.info after the shadow pass, so the
+    // shadow map's own calls and triangles are not in these numbers. Comparing two runs
+    // is what they are for, and for that they are honest.
     const info = renderer.info.render;
     statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${info.calls} calls · ${info.triangles.toLocaleString()} tris · ${state.particles?.count() ?? 0} particles`;
   }
