@@ -2,10 +2,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, roundedOutline, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
+const tmpGround = new THREE.Color();
 const tmpObj = new THREE.Object3D();
 
 const SEASON = {
@@ -202,6 +203,25 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
     }
     geo.attributes.color.needsUpdate = true;
+  }
+
+  // The colour the ground has already been painted at a world point, read straight out of
+  // the attribute above. A decal drawn on the ground can then end in the colour of the
+  // ground it ends on, which is a feather that costs no alpha, no second pass and no
+  // sorting: the outer edge of a patch of trodden earth simply *is* the meadow, so there
+  // is no edge to see. Bilinear rather than nearest because the season, the height band
+  // and the district tint all live in these numbers and a patch is only half a cell wider
+  // than the thing it sits under - a whole vertex of error would show as a step.
+  function groundColourAt(x, z, out) {
+    const fx = clamp(x + half, 0, size - 1e-6), fz = clamp(z + half, 0, size - 1e-6);
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, w = fz - j;
+    const k00 = (i + j * N) * 3, k10 = k00 + 3, k01 = k00 + N * 3, k11 = k01 + 3;
+    out.setRGB(
+      lerp(lerp(col[k00], col[k10], u), lerp(col[k01], col[k11], u), w),
+      lerp(lerp(col[k00 + 1], col[k10 + 1], u), lerp(col[k01 + 1], col[k11 + 1], u), w),
+      lerp(lerp(col[k00 + 2], col[k10 + 2], u), lerp(col[k01 + 2], col[k11 + 2], u), w),
+    );
+    return out;
   }
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
@@ -693,6 +713,146 @@ export function createWorld(scene, terrain, village, opts = {}) {
   });
   grassMesh.instanceMatrix.needsUpdate = true;
 
+  // ---- trodden earth -------------------------------------------------------
+  // A house used to end where its stone plinth ended, on grass that was as green a
+  // millimetre from the doorstep as it was out on the headland. Nobody's front garden
+  // looks like that: the ground in front of a door is walked bare, and the grass along a
+  // lane gives up a hand's breadth either side of it. Two decals, one merged layer.
+  //
+  // The trick that makes them read is the outer ring. It is laid at the colour the ground
+  // already is at that exact spot - the season, the height band and the district tint all
+  // come out of `groundColourAt` - so the patch has no edge at all: it fades from bare
+  // earth into whatever the meadow happens to be there, with no alpha, no second pass and
+  // nothing to sort. It doubles as the contact shadow the island never had, because the
+  // earth is darker than the grass and the darkest of it is right against the wall.
+  //
+  // Lifts on the ground are a stack, and this is the bottom of it: earth 0.03, river
+  // shingle 0.035, paving and tilth 0.045, furrows 0.055. The polygon offset is a notch
+  // gentler than the layers above for the same reason - it pulls this one towards the
+  // camera less, so the order the lifts ask for is the order the depth buffer gets even
+  // from across the island, where a hundredth of a unit is thinner than a depth step.
+  const WEAR_LIFT = 0.03;
+  const WEAR_EARTH = 0x99855f;      // trodden, dry, a little warmer than ploughed soil
+  const WEAR_SAND = 0xbda981;       // the sand a lane sheds into the grass beside it
+  const WEAR_FEATHER = 0.36;        // how far either of them takes to become meadow again
+  const YARD_R = 0.36;              // corner radius of a yard; nothing here is square
+  const YARD_INSET = 0.5;           // grass left round the edge of a three-cell plot
+  // Street furniture is not a building. A bench, a lamp or a flower bed stands *on* the
+  // grass of the square and nobody has worn a yard round it, and the well and the
+  // fountain are round - a rectangle of earth under either would be the corner they just
+  // stopped having. Same list as `NO_PORCH` in buildings.js and for the same reason,
+  // written out here because the two answer different questions and neither should start
+  // deciding the other's.
+  const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
+    'statue', 'well', 'fountain', 'watertower']);
+  let wearMesh = null;
+  let wearVillage = village;
+  // The outlines the last pass of `buildPaths` laid, so the verge is cut from exactly the
+  // shapes the paving got rather than from a second guess at them. `CORNER_R` and
+  // `CORNER_SEG` down in the footpaths section are borrowed for the same reason.
+  const paved = [];
+  let pavedSet = new Set();
+  const onRoad = (x, z) => pavedSet.has(Math.floor(x + half) + Math.floor(z + half) * size);
+
+  function buildGroundWear() {
+    if (wearMesh) {
+      group.remove(wearMesh);
+      wearMesh.geometry.dispose();
+      wearMesh.material.dispose();
+      wearMesh = null;
+    }
+    const pos = [], col = [], idx = [];
+    let v = 0;
+    const vertex = (x, z, c) => {
+      pos.push(x, terrain.worldHeight(x, z) + WEAR_LIFT, z);
+      col.push(c.r, c.g, c.b);
+    };
+    // A ring fanned from its own middle, in one colour: the bare ground itself.
+    const fan = (ring, cx, cz, hex) => {
+      tmpColor.setHex(hex);
+      const centre = v;
+      vertex(cx, cz, tmpColor);
+      for (const [x, z] of ring) vertex(x, z, tmpColor);
+      for (let k = 0; k < ring.length; k++) idx.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
+      v += ring.length + 1;
+    };
+    // And the skirt round it: the same ring again, pushed out by the feather, in the
+    // colour of the ground out there. Both rings are asked of `roundedOutline` with the
+    // same corners and the same segment count, so they come back the same length and the
+    // strip between them zips up without a seam.
+    //
+    // `skip` leaves a stretch of it out. The verge needs that: a cell of paving hands over
+    // its whole outline, joints included, and a strip laid along a joint runs off under
+    // the next cell's paving - where it is not reliably hidden, because a path tile is one
+    // flat fan across a unit of ground that may be curved and the hundredth of a unit
+    // between the two lifts is thinner than that curve. So the joints are simply not
+    // drawn, which is cheaper as well.
+    const skirt = (inner, outer, hex, skip = null) => {
+      const base = v;
+      for (let k = 0; k < inner.length; k++) {
+        tmpColor.setHex(hex);
+        vertex(inner[k][0], inner[k][1], tmpColor);
+        vertex(outer[k][0], outer[k][1], groundColourAt(outer[k][0], outer[k][1], tmpGround));
+      }
+      for (let k = 0; k < inner.length; k++) {
+        const n = (k + 1) % inner.length;
+        if (skip && skip(inner[k], inner[n])) continue;
+        const a = base + k * 2, b = base + n * 2;
+        idx.push(a, a + 1, b, b, a + 1, b + 1);
+      }
+      v += inner.length * 2;
+    };
+
+    // The yards. A three-cell plot keeps half a cell of grass round the outside, which is
+    // where the hedge and the neighbour's lane are; what is left is a rectangle of earth
+    // a little larger than the house standing on it, so the walls come out of bare ground
+    // and the porch no longer sits on a lawn.
+    for (const b of wearVillage.buildings || []) {
+      if (!b.plot || b.harbour) continue;
+      if (b.kind === 'civic' && NO_WEAR.has(b.civicType)) continue;
+      const [ax, az] = terrain.cellWorld(b.plot.gx, b.plot.gz);
+      const [bx, bz] = terrain.cellWorld(b.plot.gx + b.plot.w - 1, b.plot.gz + b.plot.d - 1);
+      const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+      const hw = Math.max(0.45, b.plot.w / 2 - YARD_INSET);
+      const hd = Math.max(0.45, b.plot.d / 2 - YARD_INSET);
+      const inner = roundedOutline(cx - hw, cz - hd, cx + hw, cz + hd, YARD_R, CORNER_SEG);
+      const f = WEAR_FEATHER;
+      const outer = roundedOutline(cx - hw - f, cz - hd - f, cx + hw + f, cz + hd + f, YARD_R + f, CORNER_SEG);
+      fan(inner, cx, cz, WEAR_EARTH);
+      skirt(inner, outer, WEAR_EARTH);
+    }
+
+    // The verge. Only the skirt, and only where the paving ends: the middle of a cell is
+    // under the paving, and a joint with the next cell is under that one. Which stretch is
+    // which is settled by looking: a step outward from the middle of a stretch either
+    // lands on paving, and then it is a joint, or it lands on grass, and then it is the
+    // edge of the lane and wants sand along it.
+    for (const t of paved) {
+      const f = WEAR_FEATHER * 0.6;      // a lane sheds less than a doorstep wears
+      const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2;
+      const inner = roundedOutline(t.x0, t.z0, t.x1, t.z1, CORNER_R, CORNER_SEG, t.corners);
+      const outer = roundedOutline(t.x0 - f, t.z0 - f, t.x1 + f, t.z1 + f, CORNER_R + f, CORNER_SEG, t.corners);
+      skirt(inner, outer, WEAR_SAND, (a, b) => {
+        const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+        const dx = mx - cx, dz = mz - cz, d = Math.hypot(dx, dz) || 1;
+        return onRoad(mx + (dx / d) * 0.2, mz + (dz / d) * 0.2);
+      });
+    }
+
+    if (!pos.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    wearMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      vertexColors: true, flatShading: true, roughness: 1,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    }));
+    wearMesh.receiveShadow = true;
+    group.add(wearMesh);
+  }
+
   // ---- footpaths -----------------------------------------------------------
   let pathMesh = null;
   let pathTexture = null;
@@ -756,34 +916,19 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // Each cell is a ring of points laid anticlockwise seen from above, fanned from its
     // own middle. A square tile is four points and two triangles, exactly as before; a
     // corner where the path stops turning is replaced by a quarter arc, which is the only
-    // reason the ring exists at all.
-    const arc = (out, px, pz, qx, qz, cx, cz) => {
-      let a0 = Math.atan2(pz - cz, px - cx);
-      let a1 = Math.atan2(qz - cz, qx - cx);
-      let d = a1 - a0;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      const r = Math.hypot(px - cx, pz - cz);
-      for (let k = 0; k <= CORNER_SEG; k++) {
-        const t = a0 + (d * k) / CORNER_SEG;
-        out.push([cx + Math.cos(t) * r, cz + Math.sin(t) * r]);
-      }
-    };
+    // reason the ring exists at all. `roundedOutline` in hamlets.js lays that ring out,
+    // and the verge under this paving asks it for the same one a little wider.
+    paved.length = 0;
+    pavedSet = seen;
     for (const [[gx, gz], hex] of tiles) {
       const [x, z] = terrain.cellWorld(gx, gz);
       const west = hasCell(gx - 1, gz), east = hasCell(gx + 1, gz);
       const north = hasCell(gx, gz - 1), south = hasCell(gx, gz + 1);
       const x0 = x - (west ? 0.5 : H), x1 = x + (east ? 0.5 : H);
       const z0 = z - (north ? 0.5 : H), z1 = z + (south ? 0.5 : H);
-      // Only an outside corner is eased: one where the paving stops in both directions.
-      // Where the path runs on, the edge has to stay straight or the two cells would not
-      // meet, and a road would come out beaded rather than continuous.
-      const r = Math.min(CORNER_R, (x1 - x0) / 2, (z1 - z0) / 2);
-      const ring = [];
-      if (!west && !north) arc(ring, x0 + r, z0, x0, z0 + r, x0 + r, z0 + r); else ring.push([x0, z0]);
-      if (!west && !south) arc(ring, x0, z1 - r, x0 + r, z1, x0 + r, z1 - r); else ring.push([x0, z1]);
-      if (!east && !south) arc(ring, x1 - r, z1, x1, z1 - r, x1 - r, z1 - r); else ring.push([x1, z1]);
-      if (!east && !north) arc(ring, x1, z0 + r, x1 - r, z0, x1 - r, z0 + r); else ring.push([x1, z0]);
+      const corners = [!west && !north, !west && !south, !east && !south, !east && !north];
+      const ring = roundedOutline(x0, z0, x1, z1, CORNER_R, CORNER_SEG, corners);
+      paved.push({ x0, z0, x1, z1, corners });
 
       tmpColor.setHex(hex);
       const vertex = (qx, qz) => {
@@ -799,19 +944,24 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
       v += ring.length + 1;
     }
-    if (!positions.length) return;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    g.setIndex(indices);
-    g.computeVertexNormals();
-    pathMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      map: pathTexture, vertexColors: true, flatShading: true, roughness: 1,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    }));
-    pathMesh.receiveShadow = true;
-    group.add(pathMesh);
+    if (positions.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      g.setIndex(indices);
+      g.computeVertexNormals();
+      pathMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+        map: pathTexture, vertexColors: true, flatShading: true, roughness: 1,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      }));
+      pathMesh.receiveShadow = true;
+      group.add(pathMesh);
+    }
+    // The verge is cut from the outlines this pass just laid, so it is turned over
+    // whenever the paving is - a route the router has changed leaves no strip of sand
+    // lying in the grass where the old one ran.
+    buildGroundWear();
   }
   buildPaths(village.paths);
 
@@ -942,6 +1092,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     paintGround(seasonName);
     placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);
     buildHamletDressing(v, seasonName);
+    // A new house has a new yard, and every yard's feather is the colour of the ground
+    // `paintGround` has just rewritten - so this goes after both, not before either.
+    wearVillage = v;
+    buildGroundWear();
   }
 
   // ---- clouds --------------------------------------------------------------
@@ -1123,6 +1277,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       placeTrees(oaks, oakMesh, s);
       placeOrchard(orchardTrees(fieldPlan, terrain), s);
       buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
+      buildGroundWear();                    // and the feather round a yard follows the meadow
     }
     // felling animation
     for (let i = falling.length - 1; i >= 0; i--) {
@@ -1176,6 +1331,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
     paintGround(currentSeason);
+    // The decals stand on the heightfield, so a coast that has moved takes them with it.
+    buildGroundWear();
     const wa = waterGeo.attributes.aDepth;
     for (let i = 0; i < wp.count; i++) {
       const x = wp.getX(i), z = wp.getZ(i);

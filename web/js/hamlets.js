@@ -12,6 +12,43 @@ export const NONE = -1, TOWN = -2;
 const tmpColor = new THREE.Color();
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+// ---- a rounded outline on the ground ----------------------------------------
+// Everything the island draws flat on the ground is a rectangle with some of its corners
+// taken off: a cell of paving, a yard of trodden earth, the headland round a field.
+// Nothing on this island has a sharp corner, so they all want the same ring of points and
+// there is one place that knows how to lay it out.
+//
+// It lives in this module rather than in world.js because world.js already leans on this
+// one for the dressing of the ground and the import the other way round would be a cycle.
+//
+// The ring comes back in the order world.js has always fanned a tile in - north-west,
+// south-west, south-east, north-east - which is anticlockwise seen from above and so
+// faces up. `corners` says which of those four is eased, in that same order, because a
+// path may only round a corner where the paving stops in both directions: an edge that a
+// neighbour carries on has to stay straight or the two cells would not meet, and the road
+// would come out beaded rather than continuous.
+const CORNERS_ALL = [true, true, true, true];
+function arcTo(out, px, pz, qx, qz, cx, cz, seg) {
+  const a0 = Math.atan2(pz - cz, px - cx);
+  let d = Math.atan2(qz - cz, qx - cx) - a0;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const r = Math.hypot(px - cx, pz - cz);
+  for (let k = 0; k <= seg; k++) {
+    const t = a0 + (d * k) / seg;
+    out.push([cx + Math.cos(t) * r, cz + Math.sin(t) * r]);
+  }
+}
+export function roundedOutline(x0, z0, x1, z1, radius, seg = 4, corners = CORNERS_ALL) {
+  const r = Math.max(0, Math.min(radius, (x1 - x0) / 2, (z1 - z0) / 2));
+  const out = [];
+  if (r > 0 && corners[0]) arcTo(out, x0 + r, z0, x0, z0 + r, x0 + r, z0 + r, seg); else out.push([x0, z0]);
+  if (r > 0 && corners[1]) arcTo(out, x0, z1 - r, x0 + r, z1, x0 + r, z1 - r, seg); else out.push([x0, z1]);
+  if (r > 0 && corners[2]) arcTo(out, x1 - r, z1, x1, z1 - r, x1 - r, z1 - r, seg); else out.push([x1, z1]);
+  if (r > 0 && corners[3]) arcTo(out, x1, z0 + r, x1 - r, z0, x1 - r, z0 + r, seg); else out.push([x1, z0]);
+  return out;
+}
+
 // ---- who owns what ----------------------------------------------------------
 // A super-cell owns the pitch x pitch ground cells at its min corner. `inset` counts how
 // deep inside its own land a cell sits, up to three, which gives both the border set
