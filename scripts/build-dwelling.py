@@ -61,6 +61,15 @@ if D.get('braces'):
         o=box('diagonal brace',(x,h*.70,w*.23),(.027,h*.36,.027),'plank:dark');o.rotation_euler.x=.65
 if D.get('canopy'):
     o=box('door canopy',(0,dh+.14,dz+.09),(.33,.035,.20),'plank:oak');o.rotation_euler.x=.16
+if D.get('windowbox'):
+    x=w/2+.10;z=-w*.14;y=rows[0]-.19
+    box('windowbox',(x,y,z),(.16,.10,.29),'plank:oak')
+    box('windowbox soil',(x,y+.054,z),(.12,.012,.25),'plain:soil')
+    for dz in [-.075,.075]:
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1,radius=.065,location=xyz((x,y+.10,z+dz)))
+        o=bpy.context.object;o.name=name+' herbs';o['building_part']=True;o.data.materials.append(bpy.data.materials['plain:leaf'])
+        for c in list(o.users_collection):c.objects.unlink(o)
+        collection.objects.link(o)
 scene=bpy.context.scene;scene['building_height']=h
 cam=scene.camera;cam.location=(2.6,-4,2.4);cam.rotation_euler=(Vector((0,0,h*.5))-cam.location).to_track_quat('-Z','Y').to_euler();cam.data.ortho_scale=2.15
 scene.render.filepath=str(OUT/(kind+'-preview.png'))
@@ -68,3 +77,4 @@ bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/('agentvillage-'+kind+'.blend')))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':kind})
 bpy.ops.render.render(write_still=True)
+
