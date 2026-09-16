@@ -57,18 +57,24 @@ function rock() {
   ]);
 }
 
-// The first shape here that is not drawn here at all: the barrel is modelled in
+// The shapes that are not drawn here at all. The barrel, the cart, the crate, the
+// woodpile, the tent and the washing line are modelled in
 // assets/props/agentvillage-props.blend and baked into web/js/props-mesh.js, and what
 // arrives is ordinary parts - the same sheets, the same one material, the same single
-// draw call as a rock. It is the tavern's own barrel to the millimetre, so one put down
-// by hand beside the tavern door reads as one of the pair already standing there.
+// draw call as a rock. The barrel is the tavern's own barrel to the millimetre, so one
+// put down by hand beside the tavern door reads as one of the pair already standing
+// there; the rest are the yard of the reference illustration.
 //
 // The fallback is the caller's, which is what buildings.js mesh() asks of everyone: a
-// checkout where the set has never been baked still gets something on the ground.
-function barrel(p) {
-  if (!models.hasAsset('prop_barrel')) return cairn(p);
-  return merge(meshAsset('prop_barrel'));
-}
+// checkout where the set has never been baked still gets something on the ground. It is
+// one line here because the answer is the same for all six - stand a labelled cairn where
+// the model would have been, so a missing bake is plainly a missing bake.
+//
+// Note that this merges with buildings.js mergeParts() rather than a copy of it. A prop
+// made of a Blender part, which carries a sheet, and a cylinder, which does not, came out
+// of the copy with the sheet thrown away and the barrel untextured; see the note inside
+// merge() over there.
+const baked = (asset) => (p) => (models.hasAsset(asset) ? merge(meshAsset(asset)) : cairn(p));
 
 function cairn(p) {
   // What an unnamed shape becomes: a stack of stones with a stake beside it, so it is
@@ -248,19 +254,37 @@ const SHAPES = {
   bush: { build: bush, r: 0.3 },
   rock: { build: rock, r: 0.36 },
   cairn: { build: cairn, r: 0.3 },
-  bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75 },
-  fence: { build: fence, r: 0, run: 0.22, wall: (p) => Math.max(1, p.length || 4) },
+  // `stretch` is the three shapes that are drawn to the length they were asked for. It
+  // used to be read off `run`, which happened to be set on exactly those three - and then
+  // the cart and the washing line arrived, which need a `run` to block along and have one
+  // length each, being baked meshes.
+  bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75, stretch: true },
+  fence: { build: fence, r: 0, run: 0.22, stretch: true, wall: (p) => Math.max(1, p.length || 4) },
   bench: { build: bench, r: 0.45 },
   // 0.13 is the barrel itself: 0.23 across at the widest hoop, half of that and a hair.
   // It is knee high and you cannot walk through it, so it blocks like anything else.
-  barrel: { build: barrel, r: 0.13 },
+  barrel: { build: baked('prop_barrel'), r: 0.13 },
+  // The rest of the yard, measured off the models in scripts/build-props.py. Three of
+  // them are round enough to block as a square of their own reach; the cart and the
+  // washing line are long, and a square big enough to hold either would be a bollard
+  // nobody could walk round - the cart's would be 0.85 across in a lane a unit wide. So
+  // they block the way the fence does, as a line of small squares along the length they
+  // actually take up, which leaves grass on both sides of them. That is not a detail:
+  // anything below WALK_CLEARANCE stops a settler, and a cart you cannot get past in your
+  // own yard is a bug you only find by walking into it.
+  cart: { build: baked('prop_cart'), r: 0, run: 0.18, wall: () => 0.5 },
+  crate: { build: baked('prop_crate'), r: 0.15 },
+  woodpile: { build: baked('prop_woodpile'), r: 0.23 },
+  // A tent is a dwelling rather than a thing standing in a yard, so it blocks like one.
+  tent: { build: baked('prop_tent'), r: 0.45 },
+  washline: { build: baked('prop_washline'), r: 0, run: 0.13, wall: () => 0.84 },
   lamp: { build: lamp, r: 0.2 },
   signpost: { build: signpost, r: 0.2 },
   well: { build: well, r: 0.7 },
   statue: { build: statue, r: 0.55 },
   campfire: { build: campfire, r: 0.45 },
   flag: { build: flag, r: 0.22 },
-  panel: { build: panel, r: 0, run: 0.14, wall: (p) => panelFace(p).w },
+  panel: { build: panel, r: 0, run: 0.14, stretch: true, wall: (p) => panelFace(p).w },
 };
 
 // A bridge is the one shape that does not simply stand on the ground: it has to clear
@@ -307,7 +331,14 @@ export function propFootprint(p) {
     const len = shape.wall(p) * scale;
     const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
     const h = shape.run * scale;
-    for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.5) {
+    // Spread evenly over the length rather than strided from one end in halves of a unit.
+    // A run of fence is a whole number of units long and comes out the same either way -
+    // and it did, which is why it was written that way - but a cart is 0.50 and a washing
+    // line 0.84, and striding from the end left the far end of each of them unblocked: the
+    // last square landed short and the next one would have been past the end.
+    const steps = Math.max(1, Math.round(len / 0.5));
+    for (let i = 0; i <= steps; i++) {
+      const t = -len / 2 + (len * i) / steps;
       out.push({ x: p.x + s * t, z: p.z + c * t, hx: h, hz: h });
     }
     return out;
@@ -341,7 +372,7 @@ export function createProps({ scene, terrain, material }) {
     const shape = SHAPES[p.kind] || SHAPES.cairn;
     // Only the shapes that read a number off the prop need their own geometry; the
     // rest are the same every time and are worth keeping.
-    const key = shape.run ? `${p.kind}:${p.length || 0}:${p.label ? 1 : 0}` : `${p.kind}:${p.label ? 1 : 0}`;
+    const key = shape.stretch ? `${p.kind}:${p.length || 0}:${p.label ? 1 : 0}` : `${p.kind}:${p.label ? 1 : 0}`;
     if (!cache.has(key)) cache.set(key, propGeometry(p));
     return cache.get(key);
   }

@@ -640,17 +640,128 @@ function roofOn(parts, plan, dims, pal, roofHex, top) {
   return riseOf(built) - top;
 }
 
+// ---------------------------------------------------------------- the yard
+// What a house puts out around itself. The reference illustration's charm is as much the
+// stuff lying about between the houses as the houses themselves: a handcart by the gable
+// end, a crate against the wall, cordwood stacked under the eaves, a line of washing out
+// the back. It is also the cheapest thing on the island - a yard piece is merged into the
+// same geometry as the house it belongs to, so a street of them is still one draw call
+// each - and all five of them are already modelled at true size in assets/props.
+//
+// What the yard is not free of. The door cell on +Z is where the path arrives and where a
+// settler stands. The eight cells round the house are also where lib/layout.mjs seats an
+// apprentice's shed. And the house reaches over the inner edge of all eight, by far more
+// at a manor with a wing than at a hut. So nothing here is placed by a number measured
+// once: a piece is offered a spot, its rectangle is worked out where it would stand, and
+// it is put down only if walk mode would still see a way past it.
+//
+// That last test is the point of this block and not decoration. mergeRects() glues two
+// rectangles together when the gap between them is too narrow to walk through, so a cart
+// set close against its own house makes one blob with it - and a blob that reaches round
+// the corner of the house covers the doorstep, which is the one cell the yard may not
+// have. Keeping every piece a rectangle of its own makes that impossible rather than
+// unlikely.
+//
+// Where a piece may stand, in the house's own frame, the door being +Z. Never [0, 1].
+const YARD_SPOTS = [
+  [-1, -1], [1, -1],                     // the back corners
+  [-1, 0], [1, 0],                       // the flanks
+  [0, -1],                               // straight out the back
+  [-1, 1], [1, 1],                       // beside the door, on the lane
+];
+
+// The five, with how far each reaches across x and along z as it is modelled. Written
+// down rather than measured off the geometry, because these are the numbers
+// tests/models.test.mjs holds the models to - a figure that reads itself checks nothing.
+const YARD_KIT = [
+  { asset: 'prop_cart', hx: 0.16, hz: 0.43 },
+  { asset: 'prop_crate', hx: 0.15, hz: 0.15 },
+  { asset: 'prop_woodpile', hx: 0.23, hz: 0.15 },
+  { asset: 'prop_barrel', hx: 0.12, hz: 0.12 },
+  { asset: 'prop_washline', hx: 0.12, hz: 0.43 },
+];
+
+// A piece lies along the wall it stands beside - which is how a cart is actually parked,
+// and what keeps its long side out of the lane. The wall runs along x behind the house and
+// along z beside it, so a piece whose own long side is the other way round gets a quarter
+// turn: the woodpile is stacked across x and the cart and the line run along z.
+function yardLie(piece, [sx, sz]) {
+  const wallAlongX = sx === 0;
+  const turn = wallAlongX !== (piece.hx >= piece.hz);
+  return { ry: turn ? Math.PI / 2 : 0, hx: turn ? piece.hz : piece.hx, hz: turn ? piece.hx : piece.hz };
+}
+
+// Two rectangles walk mode would glue into one. mergeRects()'s own condition, read the
+// other way round: separated by more than the gap on either axis and they stay two things
+// with a way between them.
+function wouldMerge(a, b) {
+  return !(a.x - a.hx - WALK_GAP > b.x + b.hx || b.x - b.hx - WALK_GAP > a.x + a.hx)
+    && !(a.z - a.hz - WALK_GAP > b.z + b.hz || b.z - b.hz - WALK_GAP > a.z + a.hz);
+}
+
+// Up to two pieces, from the same rng the roof was chosen with. Two rather than three
+// because a yard with three things in it stops reading as a yard and starts reading as a
+// depot, and one fewer for every apprentice: a shed is standing in one of these cells too
+// and nothing on this side knows which, so a yard filling up with sheds stops filling up
+// with carts. A modest GPU gets one at most.
+//
+// The parts come back rather than going into the loaf, because the porch has not been
+// built yet and porch() lifts everything it finds by the height of its own step. A cart
+// standing on the grass beside the house is not standing on the step.
+function yardOn(spec, rng, solids, modest) {
+  let want = Math.min(rng.int(3), modest ? 1 : 2) - (spec.sheds || []).length;
+  const kit = YARD_KIT.filter((k) => models.hasAsset(k.asset));
+  if (want <= 0 || !kit.length) return [];
+  const taken = [...solids];
+  const spots = [...YARD_SPOTS];
+  const out = [];
+  // Counted rather than read off `out`, which holds a part per box and cone of the model
+  // and would call one cart two pieces over.
+  while (taken.length - solids.length < want && spots.length) {
+    const spot = spots.splice(rng.int(spots.length), 1)[0];
+    const piece = rng.pick(kit);
+    const lie = yardLie(piece, spot);
+    // As far out as the yard goes, cell-centred on the axis it does not stand off. Pushed
+    // out rather than sat on the cell centre because the room is between the house and the
+    // plot edge, and it is the house that varies.
+    const at = {
+      x: spot[0] ? spot[0] * (YARD_REACH - lie.hx) : 0,
+      z: spot[1] ? spot[1] * (YARD_REACH - lie.hz) : 0,
+      hx: lie.hx, hz: lie.hz,
+    };
+    if (taken.some((r) => wouldMerge(at, r))) continue;
+    taken.push(at);
+    for (const g of meshAsset(piece.asset, 0xffffff, { x: at.x, z: at.z, ry: lie.ry })) out.push(g);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- houses
+// A tent is the one dwelling with neither plaster nor tiles on it, so the slot the island
+// owns is the band down its doorway: from the lane that is what tells you whose tent it
+// is, the way the walls and the roof do on a house.
+const tentTint = (pal) => (name) => (/band/.test(name) ? pal.trim : null);
+
 function houseBody(parts, spec, pal, rng, ctx = {}) {
   const tier = TIER_INDEX[spec.tier] ?? 1;
   const anchors = {};
   const style = spec.style || 'unknown';
+  // A house on stilts over the shoreline has no yard: there is nothing under it to leave
+  // a cart on. Everything else gets one, a tent included - a tent with a woodpile and a
+  // barrel beside it is exactly the corner of the reference this card is aiming at.
+  const yard = (built) => (spec.harbour ? [] : yardOn(spec, rng, footprintOf(built, WALK_CLEARANCE), ctx.modest));
 
   if (tier === 0) {                                   // tent
+    if (models.hasAsset('prop_tent')) {
+      for (const g of meshAsset('prop_tent', tentTint(pal))) parts.push(g);
+      return { anchors, height: assetRise('prop_tent'), w: 0.8, yard: yard(parts) };
+    }
+    // The tent the island drew before Blender, and what a checkout with no props-mesh.js
+    // in it still gets.
     parts.push(prismRoof(0.8, 0.86, 0.58, C.canvas, { sheet: null }));
     parts.push(box(0.045, 0.64, 0.045, C.darkWood, { z: -0.41 }));
     parts.push(box(0.3, 0.025, 0.035, pal.trim, { y: 0.24, z: 0.44 }));
-    return { anchors, height: 0.62, w: 0.84 };
+    return { anchors, height: 0.62, w: 0.84, yard: yard(parts) };
   }
 
   const dims = [
@@ -761,7 +872,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
     parts.push(cylinder(0.028, 0.04, 0.3, 6, C.copper, { rz: -0.6, x: tx + 0.2, y: th + 0.12, z: tz + 0.06 }));
     top = Math.max(top, th + 0.42);
   }
-  return { anchors, height: top, w: dims.w };
+  return { anchors, height: top, w: dims.w, yard: yard(parts) };
 }
 
 function ornament(parts, name, pal, dims, anchors) {
@@ -1563,6 +1674,13 @@ function reachOf(parts) {
 // leaves grass on both sides of it, and leaves it somewhere to be pushed to - see
 // yardNudge in main.js.
 const SHED_SPAN = 0.58;
+// And how far out a thing standing in the yard may reach - a cart, a crate, a woodpile.
+// The plot edge is 1.50 out and the lane is the cell beyond it, so this leaves a hand's
+// width of grass inside the boundary, and enough of it that the four per cent a house may
+// be scaled up by (see `s` in buildBuilding) cannot push a cart into the road. It is the
+// third number on the same 3x3: a house reaches 1.15, a shed gets SHED_SPAN of a corner
+// cell, and the yard has what is left. Nothing is placed by it alone - see yardOn().
+const YARD_REACH = 1.40;
 
 // Everything low enough to be part of the footprint, as one rectangle. One rectangle and
 // not the walkable ones footprintOf() finds: a porch is a floor, and a floor with a
@@ -1640,7 +1758,7 @@ export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
   const parts = [];
-  let anchors = {}, animated = {}, height = 1, w = 0.9;
+  let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [];
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
@@ -1670,7 +1788,7 @@ export function buildBuilding(spec, ctx = {}) {
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   } else {
     const r = houseBody(parts, spec, pal, rng, ctx);
-    anchors = r.anchors; height = r.height; w = r.w;
+    anchors = r.anchors; height = r.height; w = r.w; yard = r.yard || [];
     for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
   }
 
@@ -1693,17 +1811,29 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  let solids = footprintOf(parts, WALK_CLEARANCE / s);
+  const wallRects = footprintOf(parts, WALK_CLEARANCE / s);
   if (wantsPorch(spec)) {
     porch(parts, anchors, animated, porchOverhang(spec));
     height += PORCH_RISE;
   }
+  // And the yard last of all, which is the whole reason houseBody() handed it back rather
+  // than putting it in itself: porch() lifts everything already in the loaf onto its step
+  // and grows the step to cover it, and a cart is neither on the step nor part of it.
+  //
+  // Its rectangles are kept as a list of their own as well as being walked into. Two
+  // things read the footprint and they want different answers: walk mode wants everything
+  // it can bump into, and the scaffold wants the walls - a builder's frame goes round the
+  // house, not round the woodpile ten feet away.
+  for (const g of yard) parts.push(g);
+  const yardRects = yard.length ? footprintOf(yard, WALK_CLEARANCE / s) : [];
 
   const geometry = merge(parts);
+  let walls = wallRects, solids = wallRects.concat(yardRects);
   if (s !== 1) {
     geometry.scale(s, s, s);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
+    walls = scaleSolids(walls, s);
     solids = scaleSolids(solids, s);
   }
   if (boardish) {
@@ -1716,7 +1846,7 @@ export function buildBuilding(spec, ctx = {}) {
   // parts collected than held onto.
   return {
     geometry, anchors, animated, height, width: w,
-    bbox: geometry.boundingBox.clone(), solids,
+    bbox: geometry.boundingBox.clone(), solids, walls,
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }
