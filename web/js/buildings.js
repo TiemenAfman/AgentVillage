@@ -773,11 +773,19 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
     { w: 1.18, h: 1.42, roof: 0.44, win: 6 },
   ][tier];
 
+  const bodyAsset = 'house_' + spec.tier + '_a';
+  const hasBody = models.hasAsset(bodyAsset);
+  if (hasBody) {
+    parts.push(...meshAsset(bodyAsset, styleTint(pal.roof, pal)));
+    foundation(parts, dims.w, dims.w);
+  } else {
   parts.push(box(dims.w, dims.h, dims.w, pal.wall, { sheet: 'wall' }));
   foundation(parts, dims.w, dims.w);
   door(parts, pal, dims.w);
   windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
   if (tier >= 3) windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.12, count: 2 });
+
+  }
 
   // Every roof is now chosen rather than tabulated. What is left of a style here is the
   // detailing under it: opus keeps its stone string course, sonnet its timber frame, and
@@ -787,7 +795,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   // is a street of kiln loads rather than one paint tin, and it is free.
   const roofHex = shade(pal.roof, rng.range(0.94, 1.06));
   if (style === 'opus') parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
-  if (style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
+  if (!hasBody && style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
 
   let top = dims.h;
   const span = dims.w + ROOF_OVERHANG;
@@ -1331,33 +1339,9 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.52 };
     }
     case 'school': {
-      // A long low schoolhouse with a bell over the ridge: brick to the sill, plaster
-      // above, and a row of tall windows that light up when the apprentices work late.
-      const f = 0.1;
-      parts.push(box(1.44, 0.16, 0.96, C.foundation, { y: -0.06 }));
-      parts.push(box(1.36, 0.3, 0.88, C.brick, { y: f, sheet: 'stone' }));
-      parts.push(box(1.3, 0.46, 0.84, 0xf0e2c8, { y: f + 0.3, sheet: 'wall' }));
-      const eaves = f + 0.76;
-      parts.push(prismRoof(1.46, 0.98, 0.42, C.slate, { y: eaves }));
-      for (let i = 0; i < 4; i++) {
-        const x = -0.48 + i * 0.32;
-        parts.push(box(0.16, 0.4, 0.03, C.glass, { x, y: f + 0.32, z: 0.43, emissive: 1 }));
-        parts.push(box(0.19, 0.035, 0.04, C.white, { x, y: f + 0.28, z: 0.435 }));
-      }
-      // the porch over the door
-      parts.push(box(0.42, 0.56, 0.04, C.darkWood, { y: f, z: -0.44 }));
-      parts.push(box(0.5, 0.05, 0.3, C.plank, { y: f + 0.6, z: -0.58 }));
-      for (const x of [-0.21, 0.21]) parts.push(box(0.04, 0.6, 0.04, C.darkWood, { x, y: f, z: -0.68 }));
-      // the bell cote, standing on the ridge
-      for (const dx of [-0.53, -0.37]) parts.push(box(0.035, 0.24, 0.035, C.white, { x: dx, y: eaves + 0.42 }));
-      parts.push(box(0.24, 0.04, 0.14, C.white, { x: -0.45, y: eaves + 0.66 }));
-      parts.push(pyramidRoof(0.3, 0.2, 0.16, C.copper, { x: -0.45, y: eaves + 0.7 }));
-      parts.push(dome(0.062, C.gold, { x: -0.45, y: eaves + 0.64, rx: Math.PI }));
-      // a slate leaning by the door, and the yard flag
-      parts.push(box(0.26, 0.2, 0.025, 0x3a4038, { x: 0.62, y: f, z: -0.34, rz: -0.12 }));
-      anchors.flag = [-0.66, f + 0.8, -0.3];
-      parts.push(box(0.025, 0.7, 0.025, C.darkWood, { x: -0.66, y: f, z: -0.3 }));
-      return { anchors, animated, height: eaves + 0.9 };
+      parts.push(...meshAsset('school'));
+      Object.assign(anchors, meshAnchors('school'));
+      return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
       parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
@@ -1677,7 +1661,7 @@ function groundRect(parts) {
 
 // Most of the island builds its front on local +z: the town hall, the market, the clock
 // tower, the castle and the office all put their door there, and the layout's rot is
-// written expecting exactly that. Two do not - the chapel and the school
+// written expecting exactly that. The old chapel does not
 // grew their doors on -z. The Blender tavern now faces +z; the remaining pair turn
 // to match. Once main.js was turning buildings the way the layout actually asked, those
 // three came out backwards.
@@ -1686,7 +1670,7 @@ function groundRect(parts) {
 // composed around it, and a facade that was drawn as a whole is worth more than the
 // satisfaction of having every case agree in the source. A half turn costs nothing: the
 // footprint is measured afterwards, and it is symmetric about the centre anyway.
-const BACKWARDS = new Set(['chapel', 'school']);
+const BACKWARDS = new Set(['chapel']);
 
 function turnAround(parts, anchors, animated) {
   for (const g of parts) g.rotateY(Math.PI);
@@ -2100,3 +2084,6 @@ export function createFlagMesh(count) {
   mesh.count = 0;
   return mesh;
 }
+
+
+

@@ -3,8 +3,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildBuilding, createBuildingMaterial } from './buildings.js';
 import { avatarPlayerGeometry, DEFAULT_AVATAR } from './avatar.js';
 const params = new URLSearchParams(location.search), modest = params.has('modest');
-const civicType = document.body.dataset.building === 'townhall' ? 'townhall' : 'tavern';
-const isHall = civicType === 'townhall';
+const civicType = ['school', 'townhall'].includes(document.body.dataset.building) ? document.body.dataset.building : 'tavern';
+const dwelling = document.body.dataset.building === 'dwelling';
+const tier = ['hut','cottage','house','manor','keep'].includes(params.get('tier')) ? params.get('tier') : 'hut';
+const style = ['sonnet','opus','haiku','fable','unknown'].includes(params.get('style')) ? params.get('style') : 'sonnet';
+const isHall = civicType === 'townhall' || civicType === 'school';
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('canvas'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.shadowMap.enabled = true;
@@ -18,7 +21,7 @@ controls.target.set(0, isHall ? 1.3 : .80, 0); controls.update();
 controls.minDistance = 2.3; controls.maxDistance = 8;
 controls.maxPolarAngle = Math.PI * .49;
 const mat = createBuildingMaterial();
-const built = buildBuilding({ id: `c:${civicType}`, kind: 'civic', civicType, style: 'unknown' });
+const built = buildBuilding(dwelling ? {id:'dwelling-preview', kind:'house', tier, style, sheds:[]} : { id: `c:${civicType}`, kind: 'civic', civicType, style: 'unknown' });
 const inn = new THREE.Mesh(built.geometry, mat); inn.castShadow = true; inn.receiveShadow = true; scene.add(inn);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshStandardMaterial({ color: 0x667b52, roughness: 1 }));
 floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
@@ -44,5 +47,8 @@ function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=i
 addEventListener('resize',resize);resize();
 renderer.setAnimationLoop(()=>{
   renderer.render(scene,camera);
-  document.querySelector('output').textContent=`${modest?'modest':'standard'} · ${renderer.info.render.calls} calls · ${isHall?'stadhuis':'taverne'} ${built.geometry.attributes.position.count/3} tris · 1 materiaal`;
+  document.querySelector('output').textContent=`${modest?'modest':'standard'} · ${renderer.info.render.calls} calls · ${dwelling?tier:civicType} ${built.geometry.attributes.position.count/3} tris · 1 materiaal`;
 });
+
+
+

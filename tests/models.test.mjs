@@ -11,6 +11,10 @@ import { register } from 'node:module';
 import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf } from '../scripts/model-rules.mjs';
 import { KINDS, knownShape } from '../shared/shapes.mjs';
 import { TAVERN } from '../web/js/tavern-mesh.js';
+import { COTTAGE } from '../web/js/cottage-mesh.js';
+import { HOUSE } from '../web/js/house-mesh.js';
+import { HUT } from '../web/js/hut-mesh.js';
+import { SCHOOL } from '../web/js/school-mesh.js';
 import { TOWNHALL } from '../web/js/townhall-mesh.js';
 import { PROPS } from '../web/js/props-mesh.js';
 import { VILLAGE } from '../web/js/village-mesh.js';
@@ -18,7 +22,7 @@ import { FLORA } from '../web/js/flora-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
+const BAKED = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -50,7 +54,7 @@ const one = (partOver, assetOver) => set(
 );
 const complains = (bad, re) => assert.ok(bad.some((m) => re.test(m)), `expected ${re} in:\n  ${bad.join('\n  ')}`);
 
-test('what is committed is within the rules, including both civic hero assets', () => {
+test('what is committed is within the rules, including civic hero assets', () => {
   assert.deepEqual(checkAll(BAKED), []);
   const tris = Object.values(TAVERN.parts).reduce((n, p) => n + p.positions.length / 9, 0);
   // A hero asset is something decided, not something a set becomes by growing: if the
@@ -214,12 +218,13 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['flora', 'props', 'tavern', 'townhall', 'village']);
+  assert.deepEqual(models.setNames().sort(), ['cottage', 'flora', 'house', 'hut', 'props', 'school', 'tavern', 'townhall', 'village']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_watertower',
     'flora_bush_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
-    ...PROP_ASSETS, 'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'tavern', 'townhall',
+    'house_cottage_a', 'house_house_a', 'house_hut_a',
+    ...PROP_ASSETS, 'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
   assert.equal(models.assetSet('tavern'), 'tavern');
@@ -426,3 +431,7 @@ test('the roof add-ons carry the anchors main.js hangs things on', () => {
   const smoke = models.anchorsOf('addon_chimney_a').smoke;
   assert.ok(smoke[1] > 0.7, `smoke rises from ${smoke[1]}, which is inside the brickwork`);
 });
+
+
+
+
