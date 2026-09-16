@@ -14,7 +14,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import {
   createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT,
-  box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad,
+  box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad, mesh,
 } from './buildings.js';
 
 // ---------------------------------------------------------------- the shapes
@@ -23,6 +23,7 @@ import {
 // called, `make` is what a fresh one starts out as, `ints` count sides rather than
 // measure them.
 const PRIMS = {
+  mesh: { fn: mesh, args: ['Blender part'], make: ['Plaster walls'], freeform: true },
   box: { fn: box, args: ['w', 'h', 'd'], make: [0.3, 0.25, 0.3] },
   cylinder: { fn: cylinder, args: ['r top', 'r base', 'h', 'sides'], make: [0.1, 0.12, 0.4, 8], ints: [3] },
   cone: { fn: cone, args: ['r', 'h', 'sides'], make: [0.18, 0.3, 6], ints: [2] },
@@ -589,7 +590,7 @@ function hexNames(h) {
 }
 const hexName = (h) => hexNames(h)[0];
 
-const argLit = (v) => (Array.isArray(v) ? `[${v.map(argLit).join(', ')}]` : num(v));
+const argLit = (v) => (Array.isArray(v) ? `[${v.map(argLit).join(', ')}]` : typeof v === 'string' ? JSON.stringify(v) : num(v));
 
 function oLit(o) {
   const bits = [];

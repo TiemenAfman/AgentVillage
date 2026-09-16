@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
+import { TAVERN } from './tavern-mesh.js';
 
 export const PALETTE = {
   fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb87333, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
@@ -212,6 +213,20 @@ function lift(g, dy) {
   const p = g.userData.part;
   if (p) p.o = { ...p.o, y: (p.o.y || 0) + dy };
   return g;
+}
+
+// A Blender-baked part has the same attributes and placement contract as box().
+// Material prefixes become existing sheet IDs; vertex colours stay in linear space.
+export function mesh(name, hex = 0xffffff, o = {}) {
+  const part = TAVERN.parts[name];
+  if (!part) throw new Error(`Unknown Blender building part: ${name}`);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
+  const options = { sheet: part.sheet, emissive: part.emissive, ...o };
+  finish(g, hex, options.emissive, sheetOf(options));
+  const colors = g.attributes.color.array;
+  for (let i = 0; i < colors.length; i++) colors[i] *= part.colors[i];
+  return note(place(g, options), 'mesh', [name], hex, options);
 }
 
 // a box whose base sits at y = o.y
@@ -896,37 +911,13 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.48 };
     }
     case 'tavern': {
-      // Timber frame, a deep tiled roof, and a sign on a bracket over the door. The
-      // windows are the warmest on the island once the sun goes down.
-      const f = 0.28;
-      parts.push(box(1.3, f, 0.98, C.stone, { sheet: 'stone' }));
-      parts.push(box(1.22, 0.62, 0.9, 0xe8dcc0, { y: f, sheet: 'wall' }));
-      for (const x of [-0.56, -0.19, 0.19, 0.56]) parts.push(box(0.055, 0.62, 0.055, C.darkWood, { x, y: f, z: 0.44 }));
-      parts.push(box(1.2, 0.055, 0.055, C.darkWood, { y: f + 0.29, z: 0.44 }));
-      parts.push(prismRoof(1.42, 1.06, 0.5, C.brick, { y: f + 0.62 }));
-      // The door runs down to the floor. It used to start at the top of the stone foot,
-      // which put its threshold 0.28 above the ground with nothing under it: a door at
-      // chest height on a wall, with the step it needed missing. Now it cuts through the
-      // foot and lands on the porch, and the porch's lower course is what you step off.
-      parts.push(box(0.34, f + 0.5, 0.04, C.darkWood, { z: -0.46 }));
-      parts.push(box(0.42, 0.055, 0.06, 0x6b4a2f, { y: f + 0.5, z: -0.465 }));            // the lintel
-      for (const x of [-0.42, 0.42]) parts.push(box(0.2, 0.26, 0.03, C.glass, { x, y: f + 0.2, z: 0.46, emissive: 1 }));
-      // and two smaller ones, level with each other and clear of the door, either side of it
-      for (const x of [-0.42, 0.42]) KIT.window.build(parts, { ...KIT.window.defaults, x, y: f + 0.225, z: -0.44 });
-      // the hanging sign
-      parts.push(box(0.04, 0.04, 0.36, C.iron, { x: 0.64, y: 0.88, z: -0.6 }));
-      parts.push(box(0.02, 0.06, 0.02, C.iron, { x: 0.64, y: 0.88, z: -0.46 }));
-      parts.push(box(0.03, 0.22, 0.28, 0x6b4a2f, { x: 0.64, y: 0.67, z: -0.61 }));
-      parts.push(sphere(0.05, C.gold, { x: 0.642355, y: 0.77, z: -0.6 }));
-      // barrels and a bench outside the door
-      for (const bz of [-0.34, -0.06]) {
-        parts.push(cylinder(0.11, 0.12, 0.24, 8, C.wood, { x: -0.68, z: bz }));
-        parts.push(cylinder(0.115, 0.115, 0.03, 8, C.iron, { x: -0.68, y: 0.14, z: bz }));
+      // Authored in assets/tavern/agentvillage-tavern.blend, facing the street (+z).
+      // The existing porch, footprint, shader and editor consume ordinary parts.
+      for (const [name, part] of Object.entries(TAVERN.parts)) {
+        parts.push(mesh(name, 0xffffff, { x: part.at[0], y: part.at[1], z: part.at[2] }));
       }
-      for (const x of [0.02, 0.34]) parts.push(box(0.05, 0.17, 0.12, C.darkWood, { x, z: -0.64 }));
-      parts.push(box(0.44, 0.04, 0.16, C.plank, { x: 0.18, y: 0.17, z: -0.64 }));
-      parts.push(cylinder(0.06, 0.06, 0.46, 6, C.stone, { x: -0.5, y: f + 0.62, z: 0.2 }));
-      return { anchors, animated, height: 1.5 };
+      for (const [name, at] of Object.entries(TAVERN.anchors)) anchors[name] = [...at];
+      return { anchors, animated, height: TAVERN.height };
     }
     case 'chapel': {
       // A small stone chapel: a nave running front to back, a round window over the
@@ -1256,7 +1247,8 @@ function wantsPorch(spec) {
 // touching stone in every direction. A shed keeps the skirt - that is the half of the
 // porch which stops the downhill side opening a gap you can see under - and gives up the
 // tread it has no room for, because it does not stand on a plot of its own.
-const porchOverhang = (spec) => (spec.kind === 'shed' ? [0, 0] : [PORCH_OVER, PORCH_TREAD]);
+const porchOverhang = (spec) => (spec.kind === 'shed' ? [0, 0]
+  : spec.civicType === 'tavern' ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line
 // that matters for walking into something, and a shed is knee high: all of it is down in
@@ -1306,8 +1298,8 @@ function groundRect(parts) {
 
 // Most of the island builds its front on local +z: the town hall, the market, the clock
 // tower, the castle and the office all put their door there, and the layout's rot is
-// written expecting exactly that. Three do not - the tavern, the chapel and the school
-// grew their doors on -z, and the tavern hung its sign, its barrels and its bench there
+// written expecting exactly that. Two do not - the chapel and the school
+// grew their doors on -z. The Blender tavern now faces +z; the remaining pair turn
 // to match. Once main.js was turning buildings the way the layout actually asked, those
 // three came out backwards.
 //
@@ -1315,7 +1307,7 @@ function groundRect(parts) {
 // composed around it, and a facade that was drawn as a whole is worth more than the
 // satisfaction of having every case agree in the source. A half turn costs nothing: the
 // footprint is measured afterwards, and it is symmetric about the centre anyway.
-const BACKWARDS = new Set(['tavern', 'chapel', 'school']);
+const BACKWARDS = new Set(['chapel', 'school']);
 
 function turnAround(parts, anchors, animated) {
   for (const g of parts) g.rotateY(Math.PI);

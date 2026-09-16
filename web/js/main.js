@@ -43,6 +43,11 @@ import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
+const statsReadout = params.has('stats') ? document.createElement('output') : null;
+if (statsReadout) {
+  statsReadout.style.cssText = 'position:fixed;left:12px;bottom:8px;z-index:10000;padding:5px 9px;background:#14221ee8;color:#f4e8cd;font:12px monospace;pointer-events:none';
+  document.body.appendChild(statsReadout);
+}
 
 // The boot watchdog in index.html waits on this: it is the one thing that tells it the
 // module graph came up at all. Set before anything below can throw, so that a later crash
@@ -237,7 +242,7 @@ async function openBoardWithoutIsland() {
   board.open();
 }
 
-const modest = MODEST_GPU.test(graphicsGpu);
+const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu);
 report(`island drawing on: ${graphicsGpu}`);
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
@@ -1185,7 +1190,7 @@ function createParticles() {
     geo.attributes.aAlpha.needsUpdate = true;
     geo.attributes.color.needsUpdate = true;
   }
-  return { puff, smoke, update, mat };
+  return { puff, smoke, update, mat, count: () => live.length };
 }
 
 // --------------------------------------------------------------- helpers
@@ -2343,9 +2348,11 @@ function frame(nowMs) {
       rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
       if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
     }
-    if (rec.smokeAnchor && rec.spec.active) {
+    const tavernFire = rec.spec.civicType === 'tavern';
+    if (rec.smokeAnchor && (rec.spec.active || tavernFire)
+      && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
       rec.smokeT += dt;
-      if (rec.smokeT > 0.34) {
+      if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {
         rec.smokeT = 0;
         const v = new THREE.Vector3(...rec.smokeAnchor).applyMatrix4(rec.group.matrixWorld);
         state.particles.smoke([v.x, v.y, v.z]);
@@ -2370,6 +2377,10 @@ function frame(nowMs) {
   if (state.mode !== 'walk' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
   renderer.render(state.inside ? state.inside.scene : scene, camera);
+  if (statsReadout) {
+    const info = renderer.info.render;
+    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${info.calls} calls · ${info.triangles.toLocaleString()} tris · ${state.particles?.count() ?? 0} particles`;
+  }
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
   if (state.panels) state.panels.render();
