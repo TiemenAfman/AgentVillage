@@ -773,11 +773,19 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
     { w: 1.18, h: 1.42, roof: 0.44, win: 6 },
   ][tier];
 
+  const bodyAsset = 'house_' + spec.tier + '_a';
+  const hasBody = models.hasAsset(bodyAsset);
+  if (hasBody) {
+    parts.push(...meshAsset(bodyAsset, styleTint(pal.roof, pal)));
+    foundation(parts, dims.w, dims.w);
+  } else {
   parts.push(box(dims.w, dims.h, dims.w, pal.wall, { sheet: 'wall' }));
   foundation(parts, dims.w, dims.w);
   door(parts, pal, dims.w);
   windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
   if (tier >= 3) windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.12, count: 2 });
+
+  }
 
   // Every roof is now chosen rather than tabulated. What is left of a style here is the
   // detailing under it: opus keeps its stone string course, sonnet its timber frame, and
@@ -787,7 +795,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   // is a street of kiln loads rather than one paint tin, and it is free.
   const roofHex = shade(pal.roof, rng.range(0.94, 1.06));
   if (style === 'opus') parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
-  if (style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
+  if (!hasBody && style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
 
   let top = dims.h;
   const span = dims.w + ROOF_OVERHANG;
@@ -2076,5 +2084,6 @@ export function createFlagMesh(count) {
   mesh.count = 0;
   return mesh;
 }
+
 
 
