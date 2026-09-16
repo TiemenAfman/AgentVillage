@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
@@ -123,15 +124,49 @@ function shutdown(why) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-function sendFile(res, file, { noStore = false, cache = null } = {}) {
+// What is worth compressing: the text the island is made of. Everything not in here -
+// the sheets, the icons, the fonts, a .glb - is already compressed, and packing it again
+// spends milliseconds to add bytes.
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.webmanifest', '.ndjson']);
+// Below about a packet there is nothing to win: the gzip header and trailer are 18 bytes
+// and the response was going to fit in one write either way.
+const GZIP_FROM = 1400;
+
+function sendFile(req, res, file, { noStore = false, cache = null } = {}) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
     const headers = { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' };
     // three.js is pinned by package.json and never changes under the same name, so let
     // the browser keep it instead of re-downloading 1.2 MB on every open.
     headers['Cache-Control'] = cache || (noStore ? 'no-store' : 'public, max-age=31536000, immutable');
-    res.writeHead(200, headers);
-    res.end(buf);
+
+    const send = (body, encoding) => {
+      if (encoding) {
+        headers['Content-Encoding'] = encoding;
+        // Everything of ours is no-store and would not be cached anyway, but the vendor
+        // bundle is immutable for a year: without this a proxy could hand the packed copy
+        // to a client that never asked for one.
+        headers['Vary'] = 'Accept-Encoding';
+      }
+      // The length of the body that actually goes out. There is no streaming here - the
+      // file is already one buffer - so this can be exact rather than left to chunking.
+      headers['Content-Length'] = body.length;
+      res.writeHead(200, headers);
+      res.end(body);
+    };
+
+    // web/js/tavern-mesh.js is 386 kB of triangles and goes out as 12. Ours is served
+    // no-store, so that is the whole 386 kB on every reload, and the only thing between
+    // the page and the island is this function. Compressed per request and not cached:
+    // the file is in a buffer already, gzip of 386 kB is a few milliseconds, and a cache
+    // here would be a second copy of the disk to keep honest. If gzip fails for any
+    // reason the plain bytes still go out - nothing about compression is worth a 500.
+    const wants = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    if (wants && COMPRESSIBLE.has(path.extname(file).toLowerCase()) && buf.length >= GZIP_FROM) {
+      zlib.gzip(buf, (gzErr, packed) => send(gzErr ? buf : packed, gzErr ? null : 'gzip'));
+      return;
+    }
+    send(buf, null);
   });
 }
 
@@ -558,7 +593,7 @@ async function handle(req, res) {
 
   if (p === '/village.json') {
     if (who.role === 'islander' || config.multiplayer.guestView === 'full') {
-      sendFile(res, VILLAGE_FILE, { noStore: true });
+      sendFile(req, res, VILLAGE_FILE, { noStore: true });
       return;
     }
     const body = guestIsland();
@@ -886,12 +921,12 @@ async function handle(req, res) {
 
   if (p.startsWith('/shared/')) {
     const f = safeJoin(SHARED, p.slice('/shared/'.length));
-    if (f) return sendFile(res, f, { noStore: true });   // our own code: never cached
+    if (f) return sendFile(req, res, f, { noStore: true });   // our own code: never cached
   }
 
   // The service worker wants revalidation rather than no-store: browsers refuse to
   // register a worker they were told never to keep at all.
-  if (p === '/sw.js') return sendFile(res, path.join(WEB, 'sw.js'), { cache: 'no-cache' });
+  if (p === '/sw.js') return sendFile(req, res, path.join(WEB, 'sw.js'), { cache: 'no-cache' });
 
   const rel = p === '/' ? 'index.html'
     : p === '/demo' ? 'demo.html'          // the model sheet: every object on one field
@@ -899,7 +934,7 @@ async function handle(req, res) {
         : p.replace(/^\//, '');
   const f = safeJoin(WEB, rel);
   if (!f) { res.writeHead(400); res.end('Bad path'); return; }
-  sendFile(res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
+  sendFile(req, res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
 }
 
 function broadcast(payload, event = 'update', { localOnly = false } = {}) {
