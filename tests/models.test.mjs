@@ -11,6 +11,11 @@ import { register } from 'node:module';
 import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET } from '../scripts/model-rules.mjs';
 import { TAVERN } from '../web/js/tavern-mesh.js';
 import { PROPS } from '../web/js/props-mesh.js';
+import { VILLAGE } from '../web/js/village-mesh.js';
+
+// Every set there is, so that adding one to web/js/models.js and forgetting it here
+// cannot leave a whole .blend unchecked.
+const BAKED = { tavern: TAVERN, props: PROPS, village: VILLAGE };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -38,7 +43,7 @@ const one = (partOver, assetOver) => set(
 const complains = (bad, re) => assert.ok(bad.some((m) => re.test(m)), `expected ${re} in:\n  ${bad.join('\n  ')}`);
 
 test('what is committed is within the rules, and the tavern is the one hero', () => {
-  assert.deepEqual(checkAll({ tavern: TAVERN, props: PROPS }), []);
+  assert.deepEqual(checkAll(BAKED), []);
   const tris = Object.values(TAVERN.parts).reduce((n, p) => n + p.positions.length / 9, 0);
   // A hero asset is something decided, not something a set becomes by growing: if the
   // tavern ever passes this, that is a conversation and not a number to raise.
@@ -135,8 +140,11 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['props', 'tavern']);
-  assert.deepEqual(models.assetNames().sort(), ['prop_barrel', 'tavern']);
+  assert.deepEqual(models.setNames().sort(), ['props', 'tavern', 'village']);
+  assert.deepEqual(models.assetNames().sort(), [
+    'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_watertower',
+    'prop_barrel', 'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'tavern',
+  ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
   assert.equal(models.assetSet('tavern'), 'tavern');
   // A part is asked for by its own name; which .blend it came out of is not the caller's
@@ -146,7 +154,58 @@ test('the register spans every set and answers by part name alone', () => {
   assert.equal(models.part('no such part'), null);
   assert.equal(models.heightOf('tavern'), TAVERN.height);
   assert.equal(models.assetTris('prop_barrel'), 112);
+  // Asking for a shape by prefix is how a caller picks one with the rng without naming
+  // the variants, so a third gable is in the island's rotation the moment it is baked.
+  // Sorted, because a house that reroofs itself when an object is renamed in Blender is
+  // not deterministic and every plot on the island is drawn from its own seed.
+  assert.deepEqual(models.variants('roof_gable'), ['roof_gable_a', 'roof_gable_b']);
+  assert.deepEqual(models.variants('roof_hip'), ['roof_hip_a']);
+  assert.deepEqual(models.variants('flora_'), []);
   // Nothing in the register is unknown to the rules, which is what keeps `npm run models`
   // and this file from disagreeing about what a legal model is.
-  assert.deepEqual(checkAll(Object.fromEntries(models.setNames().map((s) => [s, s === 'tavern' ? TAVERN : PROPS]))), []);
+  assert.deepEqual(checkAll(Object.fromEntries(models.setNames().map((s) => [s, BAKED[s]]))), []);
+});
+
+// The composables, which are the one class of asset the rules cannot check on their own:
+// the budget knows a roof_ may have 300 triangles, and nothing in scripts/model-rules.mjs
+// knows that buildings.js is going to multiply it by the width of a wall.
+test('a roof is modelled on the unit square it will be scaled by', () => {
+  for (const name of [...models.variants('roof_'), 'addon_dormer_a', 'addon_turret_a', 'addon_chimney_a']) {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const p of models.assetParts(name)) {
+      const part = models.part(p);
+      for (let i = 0; i < part.positions.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          const v = part.positions[i + k] + part.at[k];
+          lo[k] = Math.min(lo[k], v);
+          hi[k] = Math.max(hi[k], v);
+        }
+      }
+    }
+    const reach = Math.max(hi[0], -lo[0], hi[2], -lo[2]);
+    if (name.startsWith('roof_')) {
+      // Exactly the unit square, or the overhang the caller thinks it is scaling by is
+      // not the overhang it gets: buildings.js multiplies by dims.w + 0.14 and nothing
+      // measures the answer.
+      assert.ok(reach <= 0.5 + 1e-6, `${name} reaches ${reach} past the unit square`);
+      assert.ok(reach > 0.45, `${name} reaches only ${reach}, so it would leave the wall showing`);
+    } else {
+      // And an add-on is a thing on a roof, so it has to be small enough to walk past
+      // when it is a turret standing on the ground beside the house.
+      assert.ok(reach < 0.55 / 2, `${name} reaches ${reach}, over half of WALK_CLEARANCE`);
+    }
+    // Every one of them stands on its own bottom, which is what lets mesh() place it by
+    // the plane it meets - the eaves for a roof, the tiles for a chimney.
+    assert.ok(Math.abs(lo[1]) < 0.002, `${name} sits ${lo[1]} off its own base`);
+  }
+});
+
+test('the roof add-ons carry the anchors main.js hangs things on', () => {
+  assert.deepEqual(Object.keys(models.anchorsOf('addon_chimney_a')), ['smoke']);
+  assert.deepEqual(Object.keys(models.anchorsOf('addon_turret_a')), ['flag']);
+  assert.deepEqual(Object.keys(models.anchorsOf('civic_watertower')), ['sign']);
+  // The smoke leaves the pot rather than the middle of the stack, which is the whole
+  // reason the chimney is an asset and not a box.
+  const smoke = models.anchorsOf('addon_chimney_a').smoke;
+  assert.ok(smoke[1] > 0.7, `smoke rises from ${smoke[1]}, which is inside the brickwork`);
 });

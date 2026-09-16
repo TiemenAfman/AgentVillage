@@ -17,8 +17,9 @@
 // the model sheet, the shape catalogue - reads it through this file.
 import { TAVERN } from './tavern-mesh.js';
 import { PROPS } from './props-mesh.js';
+import { VILLAGE } from './village-mesh.js';
 
-const SETS = { tavern: TAVERN, props: PROPS };
+const SETS = { tavern: TAVERN, props: PROPS, village: VILLAGE };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
@@ -60,6 +61,14 @@ export const heightOf = (name) => (SETS[(assets.get(name) || {}).set] || {}).hei
 // same sum scripts/model-rules.mjs holds an asset to, so the sheet can say what a shape
 // costs beside the shape itself.
 export const assetNames = () => [...assets.keys()];
+// Every variant of one shape, in a fixed order: `variants('roof_gable')` answers
+// `['roof_gable_a', 'roof_gable_b']`, which is what a caller hands to rng.pick(). Asking
+// by prefix rather than by name is what lets a third gable be modelled tomorrow and be in
+// the island's rotation the moment it is baked, with no line changed here or at the call
+// site. Sorted, because the pick has to be the same pick on every machine: the register's
+// insertion order follows whatever order Blender happened to have the collections in, and
+// a house that reroofs itself when someone renames an object is not deterministic.
+export const variants = (prefix) => [...assets.keys()].filter((n) => n.startsWith(prefix)).sort();
 export const assetSet = (name) => (assets.get(name) || {}).set || null;
 export const assetTris = (name) => assetParts(name).reduce((n, p) => n + part(p).positions.length / 9, 0);
 export const setNames = () => Object.keys(SETS);

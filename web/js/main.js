@@ -1279,8 +1279,10 @@ const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
 function makeRecord(spec) {
   const group = new THREE.Group();
   // Built before it is set down, because where a shed goes on its cell depends on how
-  // wide the shed came out - see yardNudge.
-  const built = buildBuilding(spec);
+  // wide the shed came out - see yardNudge. `modest` goes in with it: a dormer and a
+  // turret are luxuries drawn three hundred times over, and buildings.js leaves them off
+  // when the card cannot afford them.
+  const built = buildBuilding(spec, { modest });
   const nudge = yardNudge(spec, built);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i]);
   let y = groundAt(x, z);
