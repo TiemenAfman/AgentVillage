@@ -1,21 +1,12 @@
-// The little people. A settler is not one mesh: it is a torso, a pair of limbs, a head
-// and a hat, and each of those is an instance in a mesh the whole island shares. That
-// split is what buys the variety. Instancing can give an instance its own colour and its
-// own matrix but never its own geometry, so while a settler was a single merged figure
-// every colour on it was baked into the vertices and a mesh could hold nothing but
-// clones of one look. Cut the figure along its colour seams and the arithmetic turns
-// round: the model that built a settler is a tunic colour now instead of a mesh of its
-// own, an apprentice is a scale in the matrix instead of a mesh of its own, and the
-// island draws nine meshes where it used to draw fifteen.
-//
-// Shape, unlike colour, still costs a mesh per variant, so exactly one part of a settler
-// is allowed to vary in shape: the hat, six of them, the same six the player picks from
-// in avatar.js. Height, build and head size are scale in the matrix and cost nothing.
-//
-// Movement is all sine waves and lerps: no skeletons, no physics.
+// Residents share the player's faceted Blender style, but wear waistcoats, short
+// aprons and compact work hats. Five instanced body meshes keep skin, dyed clothing
+// and facial details separate; six hat buckets preserve each resident's wardrobe.
+// The whole crowd costs eleven meshes, regardless of population. Working hammers
+// retain their own existing bucket. Movement is still sine waves and lerps.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PALETTE, box, cylinder, cone, sphere, dome } from './buildings.js';
+import { PALETTE } from './buildings.js';
+import { residentPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET } from './villager.js';
 import { HAT_SHAPES, SWATCHES } from './avatar.js';
 import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 
@@ -28,13 +19,7 @@ const SKIN = 0xf1c9a5;      // the island's first and only skin tone, now just a
 const WHITE = 0xffffff;
 const CAPACITY = 640;
 const MAX_STROLL = 36;      // settlers out on an errand at the same time
-const HEAD_Y = 0.37;        // where the neck is, on a figure of standard height
-const HEAD_R = 0.076;       // and how big the head on it is
-// Where a pair of eyes sits on a head, as a fraction of its radius above the middle of
-// it. A head here is a sphere with nothing drawn on it, so this is the one number that
-// says which part of that sphere is the face: aim at the middle and you are looking at a
-// mouth, aim at the top and you are looking at the crown.
-const EYE_UP = 0.3;
+const HEAD_Y = RESIDENT_HEAD_Y;
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
 const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
@@ -48,58 +33,21 @@ const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 export function eyeHeight({ look = null, baseScale = 1 } = {}) {
   const height = look && look.height ? look.height : 1;
   const head = look && look.head ? look.head : 1;
-  return (HEAD_Y * height + HEAD_R * head * EYE_UP) * baseScale;
+  return (HEAD_Y * height + RESIDENT_EYE_OFFSET * head) * baseScale;
 }
 
-// ---------------------------------------------------------------- the parts
-// Every piece is modelled where it sits on a figure standing at the origin, so the same
-// numbers serve the merged figure that walk.js and the model sheet want and the separate
-// instanced meshes the crowd is drawn from. `dy` is what lifts the head and its hat out
-// of figure space into a space of their own, centred on the neck.
-function torsoGeometry(hex) {
-  const g = new THREE.CapsuleGeometry(0.092, 0.19, 3, 7);
-  g.translate(0, 0.2, 0);
-  return paintGeo(g, hex);
-}
-function limbParts(hex) {
-  return [
-    box(0.042, 0.12, 0.042, hex, { x: -0.055, y: 0 }),
-    box(0.042, 0.12, 0.042, hex, { x: 0.055, y: 0 }),
-    box(0.032, 0.032, 0.032, hex, { x: -0.1, y: 0.24 }),
-    box(0.032, 0.032, 0.032, hex, { x: 0.1, y: 0.24 }),
-  ];
-}
-function headGeometry(hex, dy = 0) {
-  return sphere(HEAD_R, hex, { y: HEAD_Y + dy });
-}
-// The hats avatar.js lets the player choose between, in the same order and at the same
-// heights, because they are the hats the island already wore: the player is meant to read
-// as somebody from this village, and that only holds while both wardrobes are one.
+// The merged portrait and the instanced crowd use exactly the same Blender parts.
+function torsoGeometry(hex) { return residentPart('torso', hex); }
+function limbParts(hex) { return [residentPart('limbs', hex)]; }
+function handGeometry(hex) { return residentPart('hands', hex); }
+function headGeometry(hex, dy = 0) { return residentPart('head', hex, dy); }
+function detailGeometry(dy = 0) { return residentPart('detail', null, dy); }
 function hatParts(shape, hex, dy = 0) {
-  const y = (v) => v + dy;
-  switch (shape) {
-    case 'none': return [];
-    case 'sailor': return [
-      cylinder(0.082, 0.086, 0.052, 8, hex, { y: y(0.41) }),
-      box(0.14, 0.022, 0.065, hex, { y: y(0.418), z: 0.065 }),
-    ];
-    case 'cap': return [
-      cylinder(0.092, 0.092, 0.042, 8, hex, { y: y(0.41) }),
-      box(0.13, 0.022, 0.075, hex, { y: y(0.418), z: 0.065 }),
-    ];
-    case 'dome': return [dome(0.09, hex, { y: y(0.39) })];
-    case 'wizard': return [cone(0.1, 0.21, 6, hex, { y: y(0.41) })];
-    case 'wide': return [
-      cylinder(0.135, 0.135, 0.02, 9, hex, { y: y(0.42) }),
-      cone(0.078, 0.058, 8, hex, { y: y(0.43) }),
-    ];
-    case 'band':
-    default: return [cylinder(0.086, 0.086, 0.047, 7, hex, { y: y(0.41) })];
-  }
+  return shape === 'none' ? [] : [residentPart(shape, hex, dy)];
 }
-
 function mergeParts(parts) {
   const g = mergeGeometries(parts, false);
+  parts.forEach((part) => part.dispose());
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
@@ -175,12 +123,18 @@ export function settlerLook(seed, style, kind = 'adult') {
 // from the same parts as separate instanced meshes, see createSettlers.
 export function figureGeometry(style, { sailor = false, look = null } = {}) {
   const lk = look || styleLook(style, sailor);
-  return mergeParts([
+  const build = lk.build ?? 1, height = lk.height ?? 1, head = lk.head ?? 1;
+  const bodyParts = [
     torsoGeometry(lk.tunic),
     ...limbParts(lk.trim),
-    headGeometry(lk.skin),
-    ...hatParts(lk.hatShape, lk.hat),
-  ]);
+    handGeometry(lk.skin),
+  ].map((g) => g.scale(build, height, build));
+  const headParts = [
+    headGeometry(lk.skin, -HEAD_Y),
+    detailGeometry(-HEAD_Y),
+    ...hatParts(lk.hatShape, lk.hat, -HEAD_Y),
+  ].map((g) => g.scale(head, head, head).translate(0, HEAD_Y * height, 0));
+  return mergeParts([...bodyParts, ...headParts]);
 }
 
 function paintGeo(g, hex) {
@@ -245,14 +199,16 @@ export function createSettlers(scene, material, terrain) {
     mesh.instanceColor.needsUpdate = true;
   };
 
-  // Everyone shares one slot number across the three meshes that everyone has, which is
+  // Everyone shares one slot number across the five meshes that everyone has, which is
   // also what lets a ray hit on a torso or a head name the person it belongs to.
   const roster = [];
   let slots = 0;
   const torso = makeMesh(mergeParts([torsoGeometry(WHITE)]));
   const limbs = makeMesh(mergeParts(limbParts(WHITE)));
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const body = [torso, limbs, head];
+  const hands = makeMesh(mergeParts([handGeometry(WHITE)]));
+  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  const body = [torso, limbs, hands, head, details];
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
   // The hats keep their own slots: a settler is in exactly one of these meshes, or in
@@ -292,6 +248,7 @@ export function createSettlers(scene, material, terrain) {
     tint(torso, slot, look.tunic);
     tint(limbs, slot, look.trim);
     tint(head, slot, look.skin);
+    tint(hands, slot, look.skin);
     const hatBucket = hats.get(look.hatShape) || null;
     let hatSlot = -1;
     if (hatBucket && hatBucket.slots < CAPACITY) {
@@ -601,8 +558,10 @@ export function createSettlers(scene, material, terrain) {
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
       torso.setMatrixAt(f.slot, bodyMat);
       limbs.setMatrixAt(f.slot, bodyMat);
+      hands.setMatrixAt(f.slot, bodyMat);
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
+      details.setMatrixAt(f.slot, headMat);
       if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.mesh.setMatrixAt(f.hatSlot, headMat);
     }
     for (const m of body) m.instanceMatrix.needsUpdate = true;
@@ -616,7 +575,7 @@ export function createSettlers(scene, material, terrain) {
   // lets you hover someone halfway down a street and read who it is. Only the torso and
   // the head are offered: a ray that grazes a hat brim carries on into the head behind
   // it, and leaving the other meshes out halves the instances every hover has to test.
-  const pickables = () => body.filter((m) => m !== limbs && m.count > 0);
+  const pickables = () => [torso, head].filter((m) => m.count > 0);
   const figureAt = (mesh, i) => {
     const b = mesh && mesh.userData && mesh.userData.bucket;
     const f = b && i != null ? b.figs[i] : null;

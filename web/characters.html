@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>De bewoners van AgentVillage</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#192b29;color:#f4e8cd;font:16px system-ui,sans-serif}
+header{position:absolute;top:24px;left:5%;right:5%;z-index:1}h1{font:32px Georgia,serif;margin:6px 0 12px}p{max-width:680px;color:#bfcfc5;line-height:1.5;margin:0}a{color:#e1bb6a}canvas{display:block;width:100vw;height:100vh}
+.label{position:absolute;transform:translate(-50%,0);text-align:center;pointer-events:none;white-space:nowrap;font-size:14px}.label small{display:block;color:#aebfb4;font-size:11px;margin-top:5px}footer{position:absolute;bottom:22px;left:5%;font-size:13px;color:#bfcfc5}
+@media(max-width:650px){h1{font-size:25px}p{font-size:13px}.label{font-size:12px}}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/","shared/":"../shared/"}}</script>
+</head>
+<body>
+<header><a href="/">← Terug naar het eiland</a><h1>Een dorp vol eigen karakters</h1><p>Werkjassen, schorten en zachte werkkappen voor de bewoners. De reiziger herken je aan zijn brede hoed, rugzak en bedrol.</p></header>
+<canvas aria-label="Vergelijking van de hoofdpersoon en vijf dorpsbewoners"></canvas>
+<footer>Sleep om te draaien · scroll om in te zoomen</footer>
+<script type="module" src="./js/characters.js"></script>
+</body>
+</html>

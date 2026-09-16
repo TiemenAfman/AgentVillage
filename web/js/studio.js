@@ -60,7 +60,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
           <div class="av-controls">
             <h4>Skin</h4><div class="av-swatches" data-row="skin">${swatchRow('skin')}</div>
             <h4>Tunic</h4><div class="av-swatches" data-row="tunic">${swatchRow('tunic')}</div>
-            <h4>Sleeves &amp; hands</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
+            <h4>Leather &amp; trim</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
             <h4>Hat</h4><div class="av-hats">${hatRow()}</div>
             <h4>Hat colour</h4><div class="av-swatches" data-row="hat">${swatchRow('hat')}</div>
           </div>
@@ -127,8 +127,8 @@ function makePreview(canvas) {
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(32, 1, 0.1, 20);
-  cam.position.set(0, 0.5, 1.95);
-  cam.lookAt(0, 0.3, 0);
+  cam.position.set(0, 0.46, 1.45);
+  cam.lookAt(0, 0.27, 0);
   scene.add(new THREE.HemisphereLight(0xfff3e0, 0x2a2f3a, 1.15));
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
   key.position.set(1.4, 2.4, 1.9);

@@ -9,13 +9,9 @@
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
 import { eyeHeight } from './settlers.js';
-import { PLAYER_SCALE } from './avatar.js';
+import { PLAYER_EYE } from './avatar.js';
 
-// Your own eyes, and the eyes of a settler of standard height. Both come out of the one
-// figure every person on this island is built from, so neither is a number typed in here:
-// a settler stands 0.45 tall and looks out from about 0.39 of that, and you are the same
-// figure scaled up. Everything below is measured in those units.
-const PLAYER_EYE = eyeHeight({ baseScale: PLAYER_SCALE });
+// Player eyes come from the Blender figure; NPC eyes retain their own proportions.
 const STANDARD_EYE = eyeHeight();
 
 // How far away you stand from somebody you are talking to, for a settler of standard

@@ -6,15 +6,13 @@
 // whose avatar this is.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { box, cylinder, cone, sphere, dome } from './buildings.js';
+import { SETTLER_PARTS, SETTLER_COLORS, SETTLER_EYE_Y } from './settler-mesh.js';
 
 const KEY = 'promptholm.avatar';
 
-// The one you steer stands a little taller than everyone else, which is the oldest way of
-// saying "this one is you". Exported because a camera that means to sit in your own eyes
-// has to know it: the figure's proportions live in settlers.js, and this is the factor
-// between one of them and you.
+// Blender-authored figure, kept within the existing walking clearance.
 export const PLAYER_SCALE = 1.12;
+export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
@@ -90,73 +88,39 @@ export function saveAvatar(spec) {
   return s;
 }
 
-// Vertex-colour a geometry the way buildings.js's primitives are, so it merges with them.
-function paint(g, hex) {
-  g.deleteAttribute('uv');
-  g.deleteAttribute('normal');
-  const flat = g.index ? g.toNonIndexed() : g;
-  const n = flat.attributes.position.count;
-  const c = new THREE.Color(hex);
-  const col = new Float32Array(n * 3), emi = new Float32Array(n);
-  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-  flat.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  flat.setAttribute('aEmissive', new THREE.BufferAttribute(emi, 1));
-  return flat;
-}
-
-function hatParts(shape, hex) {
-  switch (shape) {
-    case 'none': return [];
-    case 'sailor': return [
-      cylinder(0.082, 0.086, 0.052, 8, hex, { y: 0.41 }),
-      box(0.14, 0.022, 0.065, hex, { y: 0.418, z: 0.065 }),
-    ];
-    case 'cap': return [
-      cylinder(0.092, 0.092, 0.042, 8, hex, { y: 0.41 }),
-      box(0.13, 0.022, 0.075, hex, { y: 0.418, z: 0.065 }),
-    ];
-    case 'dome': return [dome(0.09, hex, { y: 0.39 })];
-    case 'wizard': return [cone(0.1, 0.21, 6, hex, { y: 0.41 })];
-    case 'wide': return [
-      cylinder(0.135, 0.135, 0.02, 9, hex, { y: 0.42 }),
-      cone(0.078, 0.058, 8, hex, { y: 0.43 }),
-    ];
-    case 'band':
-    default: return [cylinder(0.086, 0.086, 0.047, 7, hex, { y: 0.41 })];
-  }
-}
-
-// The same figure the settlers are built from, but every colour and the hat come from a
-// spec instead of a style. Base at y = 0, facing +z, ready to be dropped and turned.
-export function avatarFigureGeometry(spec) {
+// Blender meshes carry wardrobe slots instead of fixed materials. Recolouring merges
+// them into the same single vertex-coloured mesh used by the studio and walk mode.
+function buildFigure(spec, gear) {
   const s = normalizeAvatar(spec);
-  const parts = [];
-  const body = new THREE.CapsuleGeometry(0.092, 0.19, 3, 7);
-  body.translate(0, 0.2, 0);
-  parts.push(paint(body, s.tunic));
-  parts.push(box(0.042, 0.12, 0.042, s.trim, { x: -0.055, y: 0 }));   // arms
-  parts.push(box(0.042, 0.12, 0.042, s.trim, { x: 0.055, y: 0 }));
-  parts.push(box(0.032, 0.032, 0.032, s.trim, { x: -0.1, y: 0.24 }));  // hands
-  parts.push(box(0.032, 0.032, 0.032, s.trim, { x: 0.1, y: 0.24 }));
-  parts.push(sphere(0.076, s.skin, { y: 0.37 }));                      // head
-  parts.push(...hatParts(s.hatShape, s.hat));
-  const g = mergeGeometries(parts, false);
-  g.computeVertexNormals();
-  return g;
+  const parts = SETTLER_PARTS.filter((p) => p.variant === 'body'
+    || (gear && p.variant === 'gear') || p.variant === s.hatShape).map((part) => {
+    const g = new THREE.BufferGeometry();
+    const position = new Float32Array(part.positions);
+    const count = position.length / 3;
+    const color = new THREE.Color(s[part.slot] ?? SETTLER_COLORS[part.slot]);
+    const colors = new Float32Array(position.length);
+    for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(count), 1));
+    g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(count), 1));
+    return g;
+  });
+  const geometry = mergeGeometries(parts, false);
+  parts.forEach((part) => part.dispose());
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
-// The avatar the walk mode wears: the composed figure plus the satchel that has always
-// marked the one you steer, so even bare-headed in a crowd you are still somebody.
+// Feet at zero; forward is +Z. The unscaled figure is also available without gear.
+export function avatarFigureGeometry(spec) {
+  return buildFigure(spec, false);
+}
+
 export function avatarPlayerGeometry(spec) {
-  const base = avatarFigureGeometry(spec);
-  base.deleteAttribute('normal');   // recomputed after the satchel joins it
-  const parts = [
-    base,
-    box(0.16, 0.13, 0.07, 0x8a5a34, { x: 0.11, y: 0.14, z: -0.03, ry: 0.3 }),   // satchel
-    cylinder(0.008, 0.008, 0.24, 4, 0x5a3c28, { x: 0.04, y: 0.1, z: -0.02, rz: 0.5 }),   // its strap
-  ];
-  const g = mergeGeometries(parts, false);
-  g.computeVertexNormals();
-  g.scale(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
-  return g;
+  const geometry = buildFigure(spec, true);
+  geometry.scale(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
 }
