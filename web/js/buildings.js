@@ -1223,6 +1223,40 @@ function wantsPorch(spec) {
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
   return true;
 }
+// How far the step shows past what stands on it. The two numbers above were measured
+// against a house 1.26 across, where 0.23 all round reads as a step. An apprentice's shed
+// is 0.76 across and the same 0.23 made a terrace of it: the shed came out on a 1.00
+// plinth, one whole grid cell edge to edge, so a yard with three apprentices had stone
+// touching stone in every direction. A shed keeps the skirt - that is the half of the
+// porch which stops the downhill side opening a gap you can see under - and gives up the
+// tread it has no room for, because it does not stand on a plot of its own.
+const porchOverhang = (spec) => (spec.kind === 'shed' ? [0, 0] : [PORCH_OVER, PORCH_TREAD]);
+
+// The widest a shape reaches from its own centre, at any height. Head height is the line
+// that matters for walking into something, and a shed is knee high: all of it is down in
+// the yard, so all of it has to fit in the yard.
+function reachOf(parts) {
+  let r = 0;
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const d = Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
+      if (d > r) r = d;
+    }
+  }
+  return r;
+}
+// What a shed may take of its yard cell, across. A shed has no plot: lib/layout.mjs gives
+// it one cell of its master's 3x3, and the room actually left on that cell is the cell
+// less what the master's house already reaches over it. Measured on this island: a house
+// tier reaches 0.86 from the middle of its plot and the plot edge is 1.50 out, so the
+// border an apprentice stands in is 0.64 wide. The sheds were being drawn 1.00 to 1.15
+// across, which is why 37 of 39 of them in the yards with more than one apprentice had
+// their master's doorstep drawn through them. Fitting the shed to the border instead
+// leaves grass on both sides of it, and leaves it somewhere to be pushed to - see
+// yardNudge in main.js.
+const SHED_SPAN = 0.58;
 
 // Everything low enough to be part of the footprint, as one rectangle. One rectangle and
 // not the walkable ones footprintOf() finds: a porch is a floor, and a floor with a
@@ -1263,7 +1297,7 @@ function turnAround(parts, anchors, animated) {
   for (const a of Object.values(animated)) if (a && a.at) a.at = [-a.at[0], a.at[1], -a.at[2]];
 }
 
-function porch(parts, anchors, animated) {
+function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD]) {
   const r = groundRect(parts);
   if (!r) return;
   for (const g of parts) lift(g, PORCH_RISE);
@@ -1275,8 +1309,8 @@ function porch(parts, anchors, animated) {
   // door is on there is something to step onto before the floor. One tall kerb all round
   // would have left every door on the island opening onto a drop.
   group('porch', () => {
-    slab(parts, x, z, (r.x1 - r.x0) + (PORCH_OVER + PORCH_TREAD) * 2, (r.z1 - r.z0) + (PORCH_OVER + PORCH_TREAD) * 2, PORCH_SKIRT + PORCH_RISE * 0.45);
-    slab(parts, x, z, (r.x1 - r.x0) + PORCH_OVER * 2, (r.z1 - r.z0) + PORCH_OVER * 2, PORCH_SKIRT + PORCH_RISE);
+    slab(parts, x, z, (r.x1 - r.x0) + (over + tread) * 2, (r.z1 - r.z0) + (over + tread) * 2, PORCH_SKIRT + PORCH_RISE * 0.45);
+    slab(parts, x, z, (r.x1 - r.x0) + over * 2, (r.z1 - r.z0) + over * 2, PORCH_SKIRT + PORCH_RISE);
   });
 }
 
@@ -1337,16 +1371,25 @@ export function buildBuilding(spec, ctx = {}) {
   // Both boards are built large for legibility and stand village sized; a house gets a
   // touch of variety so a street of identical sessions still looks hand-made.
   const boardish = spec.civicType === 'board' || spec.civicType === 'issues';
-  const s = boardish ? 0.6
+  let s = boardish ? 0.6
     : spec.kind !== 'civic' ? 0.96 + rng.next() * 0.08
       : 1;
+  // A shed is fitted to the border of its master's yard rather than to its own idea of
+  // how big a shed is - see SHED_SPAN. Only the two types that stand their tools outside
+  // the walls are over it: the workshop's barrel and anvil and the lookout's spyglass
+  // reach a third further than the hut they belong to, and it was always those that came
+  // out through the master's doorstep first.
+  if (spec.kind === 'shed') {
+    const reach = reachOf(parts);
+    if (reach > 0) s = Math.min(s, SHED_SPAN / 2 / reach);
+  }
   // The footprint is measured before the scale, so head height is measured there too -
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
   let solids = footprintOf(parts, WALK_CLEARANCE / s);
   if (wantsPorch(spec)) {
-    porch(parts, anchors, animated);
+    porch(parts, anchors, animated, porchOverhang(spec));
     height += PORCH_RISE;
   }
 

@@ -1129,6 +1129,43 @@ function cellCentre(plot) {
   const cx = plot.gx + plot.w / 2, cz = plot.gz + plot.d / 2;
   return [cx - t.half, cz - t.half];
 }
+
+// --------------------------------------------------------------- the yard
+// An apprentice's shed is the one building on the island without land of its own: the
+// layout hands it a single cell of its master's 3x3 plot, and the master's house is
+// standing in the middle of that same plot reaching most of the way across the cell. In
+// the middle of its cell a shed is therefore 1.00 from the middle of the house, which is
+// less than the two of them are wide - measured, 37 of 39 sheds in the yards with more
+// than one apprentice had their master's doorstep drawn through them, by 0.25 in the
+// median case. So a shed does not stand in the middle of its cell. It stands as far out
+// on it as it can without putting a foot over the plot boundary, which puts every bit of
+// the slack between the shed and the house, where the eye is, instead of splitting it
+// between there and a plot edge nobody looks at.
+const masterPlots = { village: null, map: new Map() };
+function masterPlotOf(id) {
+  if (masterPlots.village !== state.village) {
+    masterPlots.village = state.village;
+    masterPlots.map = new Map();
+    for (const b of state.village.buildings) if (b.plot && b.plot.w === 3) masterPlots.map.set(b.id, b.plot);
+  }
+  return masterPlots.map.get(id) || null;
+}
+function yardNudge(spec, built) {
+  if (spec.kind !== 'shed' || !spec.master || !spec.plot) return [0, 0];
+  const mp = masterPlotOf(spec.master);
+  if (!mp) return [0, 0];
+  // Ring 1 of the master's plot is the yard. A shed that could not be seated there was
+  // given a free cell further out, where there is no house beside it to make room for.
+  const dx = Math.sign(spec.plot.gx - (mp.gx + 1)), dz = Math.sign(spec.plot.gz - (mp.gz + 1));
+  if (Math.abs(spec.plot.gx - (mp.gx + 1)) > 1 || Math.abs(spec.plot.gz - (mp.gz + 1)) > 1) return [0, 0];
+  // How far the shed reaches from its own centre, in world axes: the group is turned by a
+  // quarter of a circle, so the two sides may have traded places.
+  const b = built.bbox;
+  const rx = Math.max(-b.min.x, b.max.x), rz = Math.max(-b.min.z, b.max.z);
+  const swap = (spec.plot.rot || 0) % 2 === 1;
+  const room = (r) => Math.max(0, 0.5 - r);
+  return [dx * room(swap ? rz : rx), dz * room(swap ? rx : rz)];
+}
 function groundAt(x, z) { return state.terrain.worldHeight(x, z); }
 
 function timeNow() {
@@ -1156,7 +1193,11 @@ const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
   const group = new THREE.Group();
-  const [x, z] = cellCentre(spec.plot);
+  // Built before it is set down, because where a shed goes on its cell depends on how
+  // wide the shed came out - see yardNudge.
+  const built = buildBuilding(spec);
+  const nudge = yardNudge(spec, built);
+  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i]);
   let y = groundAt(x, z);
   // A harbour house stands on stilts, and this pins its deck just above the waterline.
   // That is right for one built out over the water at the end of a pier, and ruinous for
@@ -1177,7 +1218,6 @@ function makeRecord(spec) {
   // grass while the square was behind it. Mirroring the turn agrees with all four.
   group.rotation.y = Math.PI - (spec.plot.rot || 0) * Math.PI / 2;
 
-  const built = buildBuilding(spec);
   const mesh = new THREE.Mesh(built.geometry, buildingMat);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -1624,13 +1664,29 @@ function updateFlagInstance(rec, visible) {
 }
 
 // --------------------------------------------------------------- scaffold
+// A builder's frame stands around the walls and on the step, not around the step: the
+// bounding box it used to be sized from already had the doorstep in it, so the frame came
+// out a full 0.26 wider again than the widest stone on the plot - 1.97 across on a 3-wide
+// plot - and the poles of a house still in the steigers went straight through the sheds in
+// its own yard, which is what the complaint was about. Sizing it to the walkable
+// rectangles instead puts it where a scaffold goes, inside the porch it stands on.
 function addScaffold(rec) {
   if (rec.scaffold) return;
   const m = new THREE.Mesh(scaffoldGeo, buildingMat);
   const b = rec.built.bbox;
-  const w = Math.max(0.7, b.max.x - b.min.x) + 0.26;
-  const d = Math.max(0.7, b.max.z - b.min.z) + 0.26;
-  m.scale.set(w, Math.max(0.6, rec.built.height + 0.2), d);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const r of rec.built.solids) {
+    x0 = Math.min(x0, r.x - r.hx); x1 = Math.max(x1, r.x + r.hx);
+    z0 = Math.min(z0, r.z - r.hz); z1 = Math.max(z1, r.z + r.hz);
+  }
+  const walls = Number.isFinite(x0) ? { x: x1 - x0, z: z1 - z0 } : { x: b.max.x - b.min.x, z: b.max.z - b.min.z };
+  // Room for the builders to stand, as a share of what is being built rather than a flat
+  // 0.26 all round. That number is a fifth of a house and most of an apprentice's shed,
+  // and it put a frame half again as wide as the hut inside it: three sheds in one yard
+  // went back to touching through their own scaffolding while the huts had grass between
+  // them. A house 1.24 across still gets its full 0.26.
+  const room = (v) => { const w = Math.max(0.3, v); return w + Math.min(0.26, w * 0.21); };
+  m.scale.set(room(walls.x), Math.max(0.6, rec.built.height + 0.2), room(walls.z));
   m.castShadow = true;
   rec.group.add(m);
   rec.scaffold = m;
