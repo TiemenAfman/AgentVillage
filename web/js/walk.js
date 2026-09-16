@@ -6,17 +6,25 @@ import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
-import { avatarPlayerGeometry, loadAvatar } from './avatar.js';
+import { avatarPlayerGeometry, loadAvatar, PLAYER_EYE } from './avatar.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
 const CAM_UP = 1.6;
-const EYE = 0.9;
-// A settler is about 1.1 units tall, so a jump of a third of that clears a doorstep and
-// a low hedge without turning the island into a platform game. Gravity is tuned to that
-// height rather than to reality: it puts the player back on the ground in about 0.6 s.
+// Eye level, asked of the figure instead of written down here. This is the height the
+// third-person camera looks at, so a wrong number tilts the whole frame: it used to be a
+// flat 0.9, which the comments defended as head height for a settler "about 1.1 units
+// tall". The settler you steer stands 0.54 - a plain settler is 0.48 and the player 1.12
+// of that - so 0.9 aimed two thirds of a body above the crown, and since lookAt puts its
+// target at the centre of the screen, the figure sank into the bottom third of the frame
+// and sat behind the walking HUD.
+const EYE = PLAYER_EYE;
+// The settler you steer stands 0.54 units tall, and this jump peaks at about 0.38 - two
+// thirds of its own height, which clears a doorstep and a low hedge without turning the
+// island into a platform game. Gravity is tuned to that arc rather than to reality: it
+// puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
 const GRAVITY = 12.5;
 // Wading, not open-water swimming: the shore has to stay within reach, so you can stand
@@ -35,10 +43,16 @@ const SWIM_SINK = 0.07;
 const CROUCH_SCALE = 0.62;
 const CROUCH_SPEED = 1.7;
 const LIE_AFTER_MS = 2000;
+// Where the camera looks once the settler is flat out: the reclining figure only stands
+// about 0.18 clear of the towel, so a fifth of standing eye level is halfway up it.
+const LIE_AIM = 0.22;
 // Walking away is how you get off a seat, but you almost always sit down while still holding
 // the key that walked you up to it: without a moment's grace the same press that sat you down
 // stood you straight back up, and it looked as though the stools could not be sat on at all.
 const SIT_HOLD_MS = 400;
+// A seated settler is this much of a standing one. Named because the camera needs it too:
+// the body folds down by this factor, so the eye the camera aims at folds with it.
+const SIT_SCALE = 0.74;
 // How much room a settler needs over their feet. The same figure the buildings measure
 // themselves against, so a gap you can walk under is a gap you can walk under.
 const HEAD = WALK_CLEARANCE;
@@ -107,10 +121,12 @@ function loungeGeometry() {
 // Hold it off a wall any later and it ends up on top of the very thing it is aiming at,
 // where `lookAt` has no direction left to choose and the whole view flips over.
 //
-// `camAim` is how high up the figure the camera looks. Out here that is 0.9, well over the
-// head of a settler half that tall, which is what gives the island its slight look down from
-// above; under a ceiling it has to come down to the chest or the camera is aiming at the
-// rafters and has to be put there to do it.
+// `camAim` is how high up the figure the camera looks, and `lookAt` puts that point in the
+// middle of the screen - so out here it is the settler's own eye level, which is what keeps
+// the whole figure in the middle of the frame and clear of the HUD along the bottom. The
+// look down from above comes from `camUp` holding the camera well over its head, not from
+// aiming past it. Under a ceiling the aim comes down to the chest, because a room wants the
+// camera low and a low camera aiming at eye level is looking at the rafters.
 export function createWalkMode({
   scene, camera, terrain, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null,
@@ -583,7 +599,7 @@ export function createWalkMode({
       // one merged mesh with no legs to fold, so the body itself does the folding.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(0, state.yaw, 0);
-      avatar.scale.set(1, 0.74, 1);
+      avatar.scale.set(1, SIT_SCALE, 1);
     } else if (state.swimming) {
       // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
       // limbs to animate - the whole body leans into it instead, which at this scale is
@@ -609,7 +625,15 @@ export function createWalkMode({
     const cy = state.pos.y + camUp - eyeDrop + Math.sin(state.camPitch) * dist;
     camera.position.set(cx, Math.max(cy, groundAt(cx, cz, cy) + 0.55), cz);
     if (clampCam) clampCam(camera.position);
-    camera.lookAt(state.pos.x, state.pos.y + (state.lying ? camAim * 0.22 : state.crouching ? camAim * 0.7 : camAim), state.pos.z);
+    // The aim follows the eye down as the body folds: crouching and sitting shorten the
+    // figure by exactly these factors, so reusing them keeps the camera on the face rather
+    // than on the air the settler has just vacated. Lying down there is no standing body
+    // left to scale - the figure is flat on the towel, and a fifth of eye level is the
+    // middle of what is left above the ground.
+    const aim = state.lying ? camAim * LIE_AIM
+      : state.crouching ? camAim * CROUCH_SCALE
+        : state.sitting ? camAim * SIT_SCALE : camAim;
+    camera.lookAt(state.pos.x, state.pos.y + aim, state.pos.z);
 
     // what is within reach?
     let near = null, bestD = Infinity;

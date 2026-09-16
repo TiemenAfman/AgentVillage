@@ -174,8 +174,26 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 }
 
 /* --- walking ---------------------------------------------------------- */
-.walk-hud { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none; }
-.walk-prompt { padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease; }
+/* The strip along the bottom of the screen, centred by spanning the full width rather than
+   by a transform: a transformed element becomes the containing block for anything fixed
+   inside it, and the prompt below needs its offsets measured against the window. */
+.walk-hud { position: fixed; left: 0; right: 0; bottom: 92px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none; }
+/* Over the settler's head, not under his feet. The camera aims at his eyes, so he sits in
+   the middle of the frame however it is turned - the centre of the screen is the one band
+   that is reliably his, and this is the card that has to stay out of it. He stands about a
+   seventh of the screen tall with his crown a shade above the middle, so an underside at 56%
+   of the window height leaves a clear gap over the hat whatever the window is doing.
+
+   It used to ride at the top of the bottom strip, and that is how the island's own settler
+   ended up hidden behind his interface: every line the strip grew - the purse, the key
+   legend, a confirmation - pushed this card up into him. Centred without a transform on
+   purpose, because `risein` animates one and would otherwise throw the card in from the
+   left on its way up. */
+.walk-prompt {
+  position: fixed; left: 0; right: 0; bottom: 56%; margin-inline: auto;
+  width: fit-content; max-width: min(460px, calc(100vw - 28px)); text-align: center;
+  padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease;
+}
 .walk-prompt b { color: var(--accent); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
