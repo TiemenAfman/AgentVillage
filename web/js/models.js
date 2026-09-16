@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { TAVERN } from './tavern-mesh.js';
 import { COTTAGE } from './cottage-mesh.js';
+import { HOUSE } from './house-mesh.js';
 import { HUT } from './hut-mesh.js';
 import { SCHOOL } from './school-mesh.js';
 import { TOWNHALL } from './townhall-mesh.js';
@@ -25,7 +26,7 @@ import { PROPS } from './props-mesh.js';
 import { VILLAGE } from './village-mesh.js';
 import { FLORA } from './flora-mesh.js';
 
-const SETS = { cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
+const SETS = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
@@ -170,6 +171,7 @@ export const variants = (prefix) => [...assets.keys()].filter((n) => n.startsWit
 export const assetSet = (name) => (assets.get(name) || {}).set || null;
 export const assetTris = (name) => assetParts(name).reduce((n, p) => n + part(p).positions.length / 9, 0);
 export const setNames = () => Object.keys(SETS);
+
 
 
 
