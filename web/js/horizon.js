@@ -9,11 +9,21 @@ import * as THREE from 'three';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { hash32 } from 'shared/rng.mjs';
 
-const NEAR = 150;
-const FAR = 190;
-// The haze has to know where they lie, or it starts before they do - see applyNeighbours
-// in main.js. One ring, named once.
-export const RING = { near: NEAR, far: FAR };
+// How far out a neighbour lies, measured from the water between the two islands rather
+// than written down flat. It used to be a fixed 150 to 190 units, which was fine when
+// every island was sixty-four cells across and wrong the moment they were not: a
+// two-hundred-and-fifty-six cell neighbour has a radius of a hundred and twenty-eight, so
+// at 150 its coast came ashore inside ours and the two islands shared a beach. So each
+// one gets its own distance - our radius, plus theirs, plus a stretch of open sea - and
+// they cannot overlap us however big they are.
+const GAP = 60;              // open water between the two coasts, at the nearest neighbour
+const SPREAD = 40;           // and how much further out than that the rest are scattered
+const OWN_HALF = 64;         // our own radius, until the page tells us otherwise
+// The haze has to know where they lie, or it starts before they do - see applyFogRange in
+// main.js. Live rather than constant, because the ring is no longer one distance: `near`
+// is the nearest neighbour's coast and `far` the far side of the outermost one, and both
+// are known only once they have been placed. main.js reads it straight after `apply`.
+export const RING = { near: OWN_HALF + GAP, far: OWN_HALF + GAP + SPREAD };
 // Every other cell. Out here the silhouette is all that survives the haze, and half the
 // triangles draw it just as well.
 const STEP = 2;
@@ -69,7 +79,10 @@ function islandGeometry(seed, size) {
   return g;
 }
 
-export function createHorizon({ scene, pickables }) {
+// `half` is this island's own radius - `terrain.half`. It is optional because the ring
+// only needs it to keep a neighbour off our coast, and an island that has not said how
+// big it is gets the default above; pass it and the ring is exact.
+export function createHorizon({ scene, pickables, half = OWN_HALF }) {
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0, fog: true,
   });
@@ -82,7 +95,8 @@ export function createHorizon({ scene, pickables }) {
   function place(info) {
     const h = hash32(info.id);
     const angle = (h / 4294967296) * Math.PI * 2;
-    const dist = NEAR + ((h >>> 16) % (FAR - NEAR));
+    const theirs = (info.gridSize || 64) / 2;
+    const dist = half + theirs + GAP + ((h >>> 16) % SPREAD);
     const x = Math.sin(angle) * dist;
     const z = Math.cos(angle) * dist;
 
@@ -103,7 +117,20 @@ export function createHorizon({ scene, pickables }) {
 
     scene.add(group);
     pickables.push(mesh);
-    islands.set(info.id, { group, mesh, lamp, info, x, z, top });
+    islands.set(info.id, { group, mesh, lamp, info, x, z, top, dist, radius: theirs });
+  }
+
+  // Where the neighbours actually lie, now that they are placed: the nearest coast and
+  // the far side of the outermost island. The haze is held off until past this, so it has
+  // to be the truth about this island's neighbours rather than a number from the file.
+  function measureRing() {
+    let near = Infinity, far = -Infinity;
+    for (const it of islands.values()) {
+      near = Math.min(near, it.dist - it.radius);
+      far = Math.max(far, it.dist + it.radius);
+    }
+    RING.near = Number.isFinite(near) ? near : half + GAP;
+    RING.far = Number.isFinite(far) ? far : half + GAP + SPREAD;
   }
 
   function remove(id) {
@@ -131,6 +158,7 @@ export function createHorizon({ scene, pickables }) {
       }
     }
     for (const id of [...islands.keys()]) if (!wanted.has(id)) remove(id);
+    measureRing();
     return arrived;
   }
 
