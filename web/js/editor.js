@@ -12,6 +12,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT,
   box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad,
@@ -191,6 +193,10 @@ let mode = 'diff';
 const undoStack = [];
 let saving = false;
 let lastMark = { tag: null, at: 0 };
+// What the island would have multiplied this model by. The bench draws in the space the
+// code is written in, which is the space the numbers in buildings.js are in and therefore
+// the only space worth nudging something in; the scale is put back on the way out.
+let modelScale = 1;
 
 const el = (id) => document.getElementById(id);
 // One line under the code panel, for the things that are worth saying once.
@@ -302,6 +308,7 @@ function load(entry) {
   hoverBox.visible = false;
 
   const built = buildBuilding(spec, { keepParts: true });
+  modelScale = built.scale || 1;
   for (const g of built.parts || []) {
     const rec = g.userData.part;
     if (!rec) continue;   // a piece some builder made by hand; there is nothing to say about it
@@ -1098,6 +1105,101 @@ function setMode(next) {
 }
 el('ed-mode-diff').onclick = () => setMode('diff');
 el('ed-mode-all').onclick = () => setMode('all');
+// ---------------------------------------------------------------- out to Godot
+// glTF carries meshes, normals and vertex colours, and nothing whatsoever of the material
+// this page draws with: `onBeforeCompile` is not something the format can hold, and the
+// sheets are projected from the three axes rather than laid on a uv - `finish()` throws
+// the uv away - so there is no texture coordinate to hand over either.
+//
+// Baking a projection in here would put a stretch on every roof pitch, which is the one
+// thing the shader goes out of its way to avoid. So the pieces are sorted by the sheet
+// they are drawn on and handed over as one mesh each, named for it. Godot projects
+// triplanar from a checkbox on its own StandardMaterial3D, so the sheet goes back on
+// there, worked out the same way it is worked out here. `docs/godot-export.md` has the
+// settings that match.
+const SHEET_NAME = ['paint', 'wall', 'roof', 'stone', 'plank', 'plankZ'];
+
+// A part is drawn on one sheet and either glows or does not; `finish()` writes the same
+// value on every vertex it makes, so the first one speaks for the whole part.
+const firstOf = (g, name) => (g.attributes[name] ? g.attributes[name].array[0] : 0);
+
+function meanColour(g) {
+  const a = g.attributes.color;
+  const c = new THREE.Color(0, 0, 0);
+  if (!a || !a.count) return c.setRGB(1, 1, 1);
+  for (let i = 0; i < a.count; i++) { c.r += a.getX(i); c.g += a.getY(i); c.b += a.getZ(i); }
+  return c.multiplyScalar(1 / a.count);
+}
+
+// The model as a handful of meshes, one per sheet, ready to be written out. Made fresh and
+// put down again afterwards: none of it belongs to the scene the page is drawing.
+function exportable() {
+  const groups = new Map();
+  for (const it of active()) {
+    const g = it.mesh.geometry;
+    const key = `${firstOf(g, 'aSheet')}|${firstOf(g, 'aEmissive') > 0 ? 1 : 0}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(g);
+  }
+
+  const out = new THREE.Group();
+  out.name = spec.id;
+  const spare = [];
+  for (const [key, list] of groups) {
+    const [sheet, glow] = key.split('|').map(Number);
+    // `aSheet` and `aEmissive` go no further. A glTF importer keeps the attributes the
+    // format names and drops the rest, so carrying them would put bytes in the file and a
+    // warning in the console and nothing at all on the screen.
+    const bare = list.map((g) => {
+      const c = g.clone();
+      c.deleteAttribute('aSheet');
+      c.deleteAttribute('aEmissive');
+      return c;
+    });
+    const geometry = mergeGeometries(bare, false);
+    for (const c of bare) c.dispose();
+    if (!geometry) continue;
+    if (modelScale !== 1) geometry.scale(modelScale, modelScale, modelScale);
+    const material = new THREE.MeshStandardMaterial({
+      vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0,
+      name: `island-${SHEET_NAME[sheet] || sheet}${glow ? '-glow' : ''}`,
+    });
+    // A glow is per-vertex here and one colour per material in glTF, so the surface takes
+    // the average of its own panes - which on a model whose windows are all lit the same
+    // is that colour exactly.
+    if (glow) material.emissive = meanColour(geometry);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = material.name;
+    out.add(mesh);
+    spare.push(geometry, material);
+  }
+  return { out, spare };
+}
+
+el('ed-glb').onclick = () => {
+  const btn = el('ed-glb');
+  const { out, spare } = exportable();
+  const surfaces = out.children.length;
+  if (!surfaces) { say('Nothing on the bench to export.', 'bad'); return; }
+  btn.disabled = true;
+  say('Writing the .glb...');
+  const done = () => { for (const s of spare) s.dispose(); btn.disabled = false; };
+  new GLTFExporter().parse(out, (glb) => {
+    const name = `${spec.id.replace(/[^a-z0-9]+/gi, '-')}.glb`;
+    const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    say(`${name}: ${surfaces} surface${surfaces === 1 ? '' : 's'}, one per sheet. docs/godot-export.md says what to do with them.`, 'good');
+    done();
+  }, (err) => {
+    say(String((err && err.message) || err), 'bad');
+    done();
+  }, { binary: true });
+};
+
 el('ed-copy').onclick = async () => {
   const text = codeLines.filter((l) => l.copy != null).map((l) => l.copy).join('\n');
   try {

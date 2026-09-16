@@ -15,6 +15,7 @@ const files = [
   ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page only
   ['examples/jsm/controls/TransformControls.js', 'addons/controls/TransformControls.js'],   // editor only
   ['examples/jsm/renderers/CSS3DRenderer.js', 'addons/renderers/CSS3DRenderer.js'],         // the HTML panels
+  ['examples/jsm/exporters/GLTFExporter.js', 'addons/exporters/GLTFExporter.js'],           // editor only
 
   ['LICENSE', 'LICENSE'],
 ];
