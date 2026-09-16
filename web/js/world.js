@@ -1,8 +1,8 @@
 // The island itself: ground, sea, forest, sky and the passage of the day.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeRng, fbm2, makeSimplex2D, hash32, clamp, lerp } from 'shared/rng.mjs';
-import { decodeOwnership, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, NONE, TOWN } from './hamlets.js';
+import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -431,7 +431,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much of the countryside is under the plough. The chronicle hands down a share so
   // the fields arrive with the village that works them; a live village has none and gets
   // the full spread.
-  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: 0.35 * v.farmShare });
+  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare });
+
+  // Which cells the settlers walk on. The hedges have always needed this to know where to
+  // leave a gate; the fields and the forest now need it too, because how far a cell is
+  // from a road is most of what decides whether anybody ploughs it or nobody has ever
+  // cleared it. Built once here rather than three times over.
+  const roadSet = (v) => {
+    const out = new Set();
+    for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
+    for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
 
   let clearedBase = baseCleared(village);
   const cleared = new Set(clearedBase);
@@ -449,7 +460,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
   wallVerge(own.owner, cleared);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, fieldOpts(village));
+  let roads = roadSet(village);
+  let settled = settledDistance(terrain, own.owner, roads);
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled });
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
@@ -513,6 +526,56 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const grassGeo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
   for (const g of [rockGeo, grassGeo]) g.computeVertexNormals();
 
+  // ---- where the forest stands ---------------------------------------------
+  // It used to be noise alone, which put the same even spatter of trees on the town
+  // square's doorstep as on the far headland - nowhere was a clearing and nowhere was a
+  // wood. The same distance field the fields are surveyed against shapes it now: inside
+  // six cells of a door or a lane the canopy is pulled open, from eight out to twenty-four
+  // it thins into heath with copses standing in it, and past that it closes into the dark
+  // pine edge the island is meant to be ringed by. `cleared` is still the hard line, so a
+  // polder stays bare grass however far from anybody it lies.
+  const NEAR_CLEARING = 0.15;   // canopy a doorstep takes away
+  const FAR_CANOPY = 0.35;      // canopy the wilderness adds back
+  // Past CLOSED the third stem on a cell is bought and never seen: the canopy over it is
+  // already shut. Past DEEP one stem to a cell is a wood from any distance the camera can
+  // get to. Neither is a saving for its own sake - the trees are instanced and cost one
+  // draw call between them - but the shadow pass walks every instance on the island, and
+  // that is the bill `?stats` cannot show you, because three resets renderer.info after
+  // the shadow pass and before the colour one.
+  const CLOSED = 20, DEEP = 36;
+  const TREE_CAP = opts.modest ? 9000 : 25000;
+
+  // How many stems this cell wants. Noise and distance only - not one random number in
+  // it - which is what makes the counting pass below affordable.
+  const stems = (gx, gz, wx, wz) => {
+    const d = settled.dist[gx + gz * size];
+    const dens = fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 })
+      - NEAR_CLEARING * (1 - smoothstep(0, 6, d))
+      + FAR_CANOPY * smoothstep(8, 24, d);
+    if (dens < 0.12) return 0;
+    let n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
+    if (d > CLOSED) n = Math.min(n, 2);
+    if (d > DEEP) n = 1;
+    return n;
+  };
+  const plantable = (gx, gz, h) =>
+    !cleared.has(gx + gz * size) && h >= 0.45 && !terrain.isBeach(gx, gz)
+    && terrain.slope(gx, gz) <= 1.3 && h <= 5.0;
+
+  // Count first, plant second. Stopping dead once the budget is full would plant in the
+  // order `landCells` happens to come in and leave one whole side of the island bald; a
+  // ratio takes the same number of stems off evenly, and which cell loses one is decided
+  // by that cell's own hash rather than by where the loop had got to. One extra noise
+  // lookup per cell is the whole price.
+  let wanted = 0;
+  for (const [gx, gz] of terrain.landCells) {
+    const h = terrain.heightAt(gx, gz);
+    if (!plantable(gx, gz, h)) continue;
+    const [wx, wz] = terrain.cellWorld(gx, gz);
+    wanted += stems(gx, gz, wx, wz);
+  }
+  const thin = wanted > TREE_CAP ? TREE_CAP / wanted : 1;
+
   const trees = [];
   const treeCells = new Map();
   const pines = [], oaks = [], rocks = [], tufts = [];
@@ -529,10 +592,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
       if (rng.chance(0.3)) rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.6, 1.6)]);
       continue;
     }
-    const dens = fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 });
+    let n = stems(gx, gz, wx, wz);
     if (rng.chance(0.5)) tufts.push([wx + rng.range(-0.45, 0.45), wz + rng.range(-0.45, 0.45), rng.range(0.7, 1.3)]);
-    if (dens < 0.12) continue;
-    const n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
+    if (thin < 1) {
+      // Stochastic rounding on a spatial hash: the expected count is exactly `n * thin`,
+      // and it is the same on every reload and the same for every viewer.
+      const want = n * thin;
+      n = Math.floor(want);
+      if ((hash32(`thin:${gx},${gz}`) % 1000) / 1000 < want - n) n += 1;
+    }
+    if (!n) continue;
     const highland = h > 3.0;
     for (let t = 0; t < n; t++) {
       const x = wx + rng.range(-0.38, 0.38), z = wz + rng.range(-0.38, 0.38);
@@ -826,12 +895,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
 
     // A hedge opens where a road crosses it, and the road set is the one the settlers
-    // already walk on, so no extra data is needed to know where the gates are.
-    const roads = new Set();
-    for (const p of v.paths || []) for (const c of p.cells) roads.add(c[0] + c[1] * size);
-    for (const c of squareCells(v)) roads.add(c[0] + c[1] * size);
-
-    const bg = buildBorders(v, terrain, own.owner, roads);
+    // already walk on, so no extra data is needed to know where the gates are. The field
+    // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
+    // same merged geometry, for no extra draw call.
+    const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
       // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
       // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -864,7 +931,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
     wallVerge(own.owner, clearedBase);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase, fieldOpts(v));
+    roads = roadSet(v);
+    settled = settledDistance(terrain, own.owner, roads);
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled });
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
