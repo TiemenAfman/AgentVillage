@@ -8,7 +8,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
   buildBridgeGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
+  meshAsset, mergeParts,
 } from './buildings.js';
+import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
@@ -532,21 +534,49 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   row++;
 }
 
+// ---- what came out of Blender ----------------------------------------------------
+// Every asset in the register, laid out as it was baked: no porch under it, no
+// foundation, no style tint - the shape as the .blend has it, which is the only place
+// the exporter's work can be looked at without opening Blender. A hero set shows as one
+// asset (the tavern is a whole building), a set of loose things shows one per asset.
+//
+// The hitbox is taken from the bounding box, which is the rule the island stands a model
+// on too, so a prop that would be impossible to walk past is impossible here as well.
+{
+  const z = row * ROW;
+  heading('Blender', z);
+  const names = models.assetNames();
+  names.forEach((name, i) => {
+    const x = (i - (names.length - 1) / 2) * PITCH * 1.4;
+    const geometry = mergeParts(meshAsset(name));
+    placeMesh(geometry, x, z, name, `${models.assetSet(name)}.blend · ${models.assetTris(name)} tris`);
+    const b = geometry.boundingBox;
+    drawHitbox({ solids: [{
+      x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
+      hx: (b.max.x - b.min.x) / 2, hz: (b.max.z - b.min.z) / 2,
+    }] }, x, z);
+  });
+  row += 2;
+}
+
 // ---- a real building, for scale -------------------------------------------------
 // Everything above is drawn by code and sized by eye. This one is a surveyed shape:
 // the new BOIKON office at Leeksterveld, exported straight out of Onshape as glTF.
 // It stands here only to answer "how big is a real building next to our houses" --
 // nothing on the island places it, and nothing reads this row.
 //
-// The island has no stated metre. A settler is about one world unit tall, so a person
-// of 1.8 m fixes the rest: METRE below is that conversion. Change it and the building
-// grows or shrinks against the huts, which is the comparison this row exists for.
-const METRE = 1 / 1.8;
+// The island does have a stated metre, and it is not a settler's height: one world unit
+// is one ground cell is four metres (assets/README.md, and shared/terrain.mjs works in
+// those cells). Read off a settler instead, this row drew the office 2.2 times too big -
+// a 30-metre building came out 17 units long, which is most of a district. METRE below
+// is the conversion; change it and the office grows or shrinks against the huts, which
+// is the comparison this row exists for.
+const METRE = 0.25;
 const REAL = [
   ['/models/boikon.glb', 'BOIKON', 'Leeksterveld · 30 × 10 × 12,5 m'],
 ];
 {
-  // a row and a half of clearance: at 12,5 m this thing is deeper than one ROW
+  // a row of clearance: 30 m of frontage is seven units wide even at the right scale
   const z = (row + 1) * ROW;
   heading('Surveyed', z);
   REAL.forEach(([url, name, note], i) => {
