@@ -60,7 +60,7 @@ if D.get('braces'):
     for x in [-w/2-.006,w/2+.006]:
         o=box('diagonal brace',(x,h*.70,w*.23),(.027,h*.36,.027),'plank:dark');o.rotation_euler.x=.65
 if D.get('canopy'):
-    o=box('door canopy',(0,dh+.14,dz+.09),(.33,.035,.20),'plank:oak');o.rotation_euler.x=.16
+    o=box('door canopy',(0,dh+.20,dz+.09),(.33,.035,.20),'plank:oak');o.rotation_euler.x=.16
 if D.get('windowbox'):
     x=w/2+.10;z=-w*.14;y=rows[0]-.19
     box('windowbox',(x,y,z),(.16,.10,.29),'plank:oak')
@@ -77,4 +77,5 @@ bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/('agentvillage-'+kind+'.blend')))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':kind})
 bpy.ops.render.render(write_still=True)
+
 
