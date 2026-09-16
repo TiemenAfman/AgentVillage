@@ -31,6 +31,7 @@ const CIVIC = [
   ['tables', 'Tables', '25'],
   ['school', 'School', '25 apprentices'],
   ['windmill', 'Windmill', '30'],
+  ['watertower', 'Water tower', '35'],
   ['chapel', 'Chapel', '40'],
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
@@ -531,6 +532,42 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
     scene.add(m);
     tag(ox, z + 2.0, v === 'upland' ? 'upland' : String(strength), v === 'upland' ? 'at 0.11' : (strength === 0.11 ? 'shipped' : ''));
   });
+  row++;
+}
+
+// ---- roof variation --------------------------------------------------------------
+// One row per tier, and in each row every style six times over with a different seed.
+//
+// Everything about a roof is now a throw of the rng that houseBody has always been handed
+// and never used: which of the Blender models, how steep, whether it carries a dormer or
+// a turret or both, and which batch of tiles came out of the kiln. One seed per style -
+// which is what the rows at the top of this sheet are - cannot show any of that. Thirty
+// houses side by side can, and looking down the row is the only way to tell variety from
+// noise, which is the judgement this block exists to let somebody make.
+{
+  const SEEDS = 6;
+  const SPACING = 2.7;                 // tighter than the field's pitch: thirty per row
+  const cols = STYLES.length * SEEDS;
+  const at = (i) => (i - (cols - 1) / 2) * SPACING;
+  for (const tier of TIERS.slice(1)) {  // a tent has no roof to vary
+    const z = row * ROW;
+    heading(tier === TIERS[1] ? 'Roof variation' : '', z);
+    STYLES.forEach((style, s) => {
+      for (let i = 0; i < SEEDS; i++) {
+        const built = buildBuilding({ id: `v:${tier}:${style}:${i}`, kind: 'house', tier, style, ornaments: [] }, {});
+        const m = new THREE.Mesh(built.geometry, material);
+        m.position.set(at(s * SEEDS + i), 0, z);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        scene.add(m);
+      }
+      // One label per style per row rather than one per house: thirty tags in a row is a
+      // wall of text over the thing it is labelling, and the row is about the shapes.
+      tag(at(s * SEEDS + (SEEDS - 1) / 2), z + 1.3,
+        `${(PALETTE[style] || PALETTE.unknown).name} · ${TIER_LABEL[tier]}`, `${SEEDS} seeds`);
+    });
+    row++;
+  }
   row++;
 }
 

@@ -190,9 +190,13 @@ for z in [-.475, .475]:
     # The bottom course sits proud of the ones above it, which is what puts a shadow line
     # along the eaves and stops the pitch reading as a flat triangle.
     rod('roof_gable_a starter course', (-.5, .064, z * .94), (.5, .064, z * .94), .032, 'roof:light', gable_a, sides=4)
+# The barge board stops a hair short of the eaves corner rather than on it. A rod is a
+# prism and its end cap is square to its own axis, so one begun exactly at 0.5 puts a
+# corner 0.021 outside the unit square - and tests/models.test.mjs is right to refuse it:
+# buildings.js scales this by the width of a wall and believes the answer is the overhang.
 for x in [-.47, .47]:
     for s in [-1, 1]:
-        rod('roof_gable_a verge', (x, .03, s * .5), (x, .53, 0), .03, 'plankZ:dark', gable_a, sides=4)
+        rod('roof_gable_a verge', (x, .03, s * .478), (x, .53, 0), .03, 'plankZ:dark', gable_a, sides=4)
 
 # ---------------------------------------------------------------- roof_gable_b
 # The shallow one, with deep eaves and the purlins left showing through the gable. Same
@@ -207,7 +211,7 @@ for z in [-.465, .465]:
     rod('roof_gable_b starter course', (-.5, .088, z * .93), (.5, .088, z * .93), .036, 'roof:light', gable_b, sides=4)
 for x in [-.46, .46]:
     for s in [-1, 1]:
-        rod('roof_gable_b verge', (x, .04, s * .5), (x, .35, 0), .034, 'plankZ:dark', gable_b, sides=4)
+        rod('roof_gable_b verge', (x, .04, s * .478), (x, .35, 0), .034, 'plankZ:dark', gable_b, sides=4)
     for y, d in [(.10, .40), (.20, .22)]:
         box('roof_gable_b purlin end', (x, y, 0), (.075, .05, d), 'plank:dark', gable_b)
 
