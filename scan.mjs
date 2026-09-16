@@ -11,7 +11,9 @@ import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
-import { loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET } from './lib/layout.mjs';
+import {
+  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+} from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
 
@@ -328,7 +330,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
       terrainHash: terrain.hash,
       landing: layout.landing,
       town: {
-        ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: 2,
+        ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: TOWN_CORE_R,
         // When the square reached each of its widths. The chronicle needs this to lay the
         // plaza as it was rather than as it is, and the thresholds belong here with the
         // rule that applies them.
