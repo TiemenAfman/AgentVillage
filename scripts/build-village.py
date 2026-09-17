@@ -1,4 +1,4 @@
-"""Author the village's roofs, roof add-ons and the water tower in Blender. Run with:
+"""Author the village's roofs, roof add-ons and civic landmarks in Blender. Run with:
 
     blender --background --python scripts/build-village.py
 
@@ -60,6 +60,10 @@ COLORS = {
     'plank:oak': 0x845335, 'plank:dark': 0x503728, 'plankZ:dark': 0x503728,
     'stone:brick': 0x9c5a44, 'stone:foundation': 0x968778,
     'plain:glass': 0xffcb75, 'plain:iron': 0x343638, 'plain:copper': 0xb87333,
+    'plain:canvas-green': 0x4f7b50, 'plain:canvas-cream': 0xefe0bd,
+    'plain:chalk': 0x27322b, 'plain:chalk-mark': 0xe8e2c9,
+    'plain:seed-gold': 0xd6a83d, 'plain:seed-rust': 0xa95332,
+    'plain:seed-green': 0x799447, 'plain:sack': 0xb99a68,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -293,6 +297,90 @@ box('addon_chimney_a crown', (0, .545, 0), (.194, .05, .194), 'stone:foundation'
 upright('addon_chimney_a pot', (0, .57, 0), .045, .13, 'stone:brick', chimney, sides=6)
 box('addon_chimney_a flue', (0, .704, 0), (.062, .008, .062), 'plain:iron', chimney)
 empty('smoke', (0, .72, 0), chimney)
+
+# ---------------------------------------------------------------- civic_seed_stall
+# A proper little shop rather than three miniature trestles. The broad silhouette and
+# striped canvas make it legible from the square; the drawers, open seed bins, sacks and
+# hanging sign explain what it sells when the player walks close enough to trade.
+stall = asset('civic_seed_stall')
+
+# Stone shoes keep the four oak posts out of wet ground. The rear posts rise to the
+# canopy; the front pair also frame the counter so the stall still reads from behind.
+for x in [-.72, .72]:
+    for z in [-.31, .31]:
+        box('civic_seed_stall footing', (x, .025, z), (.13, .05, .13), 'stone:foundation', stall)
+        upright('civic_seed_stall post', (x, .05, z), .038, 1.18, 'plank:dark', stall, sides=4)
+
+# A deep counter and a boarded shopfront, with an open lower shelf visible at the sides.
+box('civic_seed_stall counter', (0, .55, .18), (1.52, .08, .42), 'plank:oak', stall)
+box('civic_seed_stall front', (0, .29, .345), (1.46, .48, .055), 'plankZ:dark', stall)
+box('civic_seed_stall lower shelf', (0, .16, -.04), (1.28, .055, .48), 'plank:oak', stall)
+for x in [-.61, .61]:
+    rod('civic_seed_stall side brace', (x, .08, -.27), (x, .50, .27), .025,
+        'plank:dark', stall, sides=4)
+
+# Six seed drawers face the customer. Tiny iron pulls break up the large timber panel.
+for row in range(2):
+    for col in range(3):
+        x = -.43 + col * .43
+        y = .19 + row * .20
+        box('civic_seed_stall drawer', (x, y, .379), (.36, .15, .022), 'plank:oak', stall)
+        box('civic_seed_stall drawer pull', (x, y, .397), (.085, .025, .014), 'plain:iron', stall)
+
+# Five alternating strips form one pitched canvas roof. Modelling the stripes as separate
+# roof panels keeps the island's flat, textureless colour language and gives the eaves a
+# crisp rhythm from every viewing angle.
+for i in range(5):
+    x = -.68 + i * .34
+    cloth = 'plain:canvas-green' if i % 2 == 0 else 'plain:canvas-cream'
+    roof('civic_seed_stall awning', (x, 1.20, 0), .34, .82, .17, cloth, stall)
+for x in [-.82, .82]:
+    box('civic_seed_stall canopy rail', (x, 1.205, 0), (.045, .06, .88), 'plankZ:dark', stall)
+
+# A scalloped front valance carries the stripe pattern down over the roof edge.
+for i in range(10):
+    x = -.765 + i * .17
+    cloth = 'plain:canvas-green' if (i // 2) % 2 == 0 else 'plain:canvas-cream'
+    box('civic_seed_stall valance', (x, 1.145, .42), (.155, .12, .025), cloth, stall)
+    upright('civic_seed_stall valance drop', (x, 1.06, .42), .042, .085, cloth, stall, top=0, sides=6)
+
+# The hanging board is deliberately oversized: it is the readable emblem of the shop,
+# with three simple seed marks rather than illegible miniature lettering.
+for x in [-.23, .23]:
+    rod('civic_seed_stall sign chain', (x, 1.19, .43), (x, 1.04, .47), .009,
+        'plain:iron', stall, sides=4)
+box('civic_seed_stall sign', (0, .93, .48), (.62, .25, .035), 'plain:chalk', stall)
+for x, mat in [(-.18, 'plain:seed-gold'), (0, 'plain:seed-green'), (.18, 'plain:seed-rust')]:
+    upright('civic_seed_stall sign seed', (x, .895, .503), .045, .085, mat, stall,
+            top=.018, sides=6)
+
+# Open counter bins: three crops, each with a small heap of angular seeds. The bins are
+# low enough not to hide their contents from the slightly elevated game camera.
+seed_mats = ['plain:seed-gold', 'plain:seed-green', 'plain:seed-rust']
+for b, mat in enumerate(seed_mats):
+    x = -.44 + b * .44
+    box('civic_seed_stall seed bin base', (x, .615, .13), (.34, .045, .27), 'plank:oak', stall)
+    for dx in [-.15, .15]:
+        box('civic_seed_stall seed bin side', (x + dx, .68, .13), (.025, .13, .28), 'plank:dark', stall)
+    for dz in [.01, .25]:
+        box('civic_seed_stall seed bin end', (x, .68, dz), (.32, .13, .025), 'plank:dark', stall)
+    for n in range(5):
+        sx = x + (n % 3 - 1) * .075
+        sz = .10 + (n // 3) * .075 + (n % 2) * .02
+        upright('civic_seed_stall seed', (sx, .66, sz), .027, .045 + .01 * (n % 2),
+                mat, stall, top=.012, sides=5)
+
+# Stock under the counter: tapered sacks with tied necks and a pair of small crates.
+for x, z, h in [(-.46, -.08, .30), (.45, -.06, .26), (.18, -.14, .22)]:
+    upright('civic_seed_stall sack', (x, .17, z), .105, h, 'plain:sack', stall,
+            top=.075, sides=8)
+    upright('civic_seed_stall sack neck', (x, .17 + h, z), .045, .06,
+            'plain:sack', stall, top=.025, sides=6)
+    box('civic_seed_stall sack tie', (x, .20 + h, z), (.10, .018, .045), 'plain:iron', stall)
+for x in [-.63, .63]:
+    box('civic_seed_stall crate', (x, .14, -.25), (.26, .23, .25), 'plank:oak', stall)
+    for y in [.065, .145, .225]:
+        box('civic_seed_stall crate slat', (x, y, -.382), (.29, .035, .025), 'plank:dark', stall)
 
 # ---------------------------------------------------------------- civic_watertower
 # The one whole building in the set, and the one the reference has that the island has no

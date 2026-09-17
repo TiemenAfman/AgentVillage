@@ -1082,6 +1082,15 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 2.9 };
     }
     case 'market': {
+      // The seed merchant is authored as one Blender asset now: a timber shop with a
+      // striped canopy, labelled drawers, open bins and sacks of stock. Keep the old
+      // three-stall composition below as a fallback so an unbaked development checkout
+      // can still open its market instead of leaving an empty square.
+      if (models.hasAsset('civic_seed_stall')) {
+        for (const g of meshAsset('civic_seed_stall')) parts.push(g);
+        Object.assign(anchors, meshAnchors('civic_seed_stall'));
+        return { anchors, animated, height: assetRise('civic_seed_stall') };
+      }
       // Three stalls, and the point of them is that they are three different stalls. The
       // market is what the island puts up at ten settlers and it used to be four sticks, a
       // roof and two spheres, three times over - which reads as scaffolding rather than as
