@@ -290,6 +290,7 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
       smtpHost: a ? a.smtp.host : '',
       smtpPort: a ? a.smtp.port : 587,
       smtpSecure: a ? a.smtp.secure : false,
+      insecure: a ? !!a.insecure : false,
     };
   }
 
@@ -316,6 +317,11 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
           <label>Port<input type="number" name="smtpPort" value="${d.smtpPort}" min="1" max="65535"></label>
           <label class="mb-check"><input type="checkbox" name="smtpSecure" ${d.smtpSecure ? 'checked' : ''}> SSL (465). Off means STARTTLS on 587.</label>
         </fieldset>
+        <label class="mb-check"><input type="checkbox" name="insecure" ${d.insecure ? 'checked' : ''}>
+          Take the certificate on trust</label>
+        <small class="muted">Only for a server of your own whose certificate has expired or was never signed by
+          anyone. It stays encrypted either way — what this gives up is the proof that the server on the other
+          end is the one you meant, so it is not a box to tick for somebody else's mail.</small>
         <div class="mb-row-keys">
           <button type="button" class="btn" data-test>Test it</button>
           <button type="submit" class="btn primary">Keep it</button>
@@ -332,6 +338,7 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
       label: d.label.trim(), address: d.address.trim(), name: d.name.trim(), user: d.user.trim(),
       imap: { host: d.imapHost.trim(), port: Number(d.imapPort) || 0, secure: !!d.imapSecure },
       smtp: { host: d.smtpHost.trim(), port: Number(d.smtpPort) || 0, secure: !!d.smtpSecure },
+      insecure: !!d.insecure,
     };
     if (d.id) account.id = d.id;
     if (d.pass) account.pass = d.pass;

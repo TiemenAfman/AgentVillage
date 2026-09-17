@@ -122,7 +122,10 @@ It holds up to eight accounts, one tab each, and the tab carries its own unread 
 | **Outgoing (SMTP)** | usually the same server. SSL on 465, or STARTTLS on 587 |
 
 **Test it** logs in and says what it found before anything is kept, which is the quick
-way to tell a wrong port from a wrong password. An account is read-only until you write
+way to tell a wrong port from a wrong password. **Take the certificate on trust** is for
+an in-house server whose certificate has expired or was never signed by anyone: the line
+stays encrypted, but the proof that the server is the one you meant is given up, so it is
+not a box to tick for somebody else's mail. An account is read-only until you write
 something: open a message, press **Reply**, and it goes out over SMTP with a copy filed
 in your Sent folder if the server has one.
 
