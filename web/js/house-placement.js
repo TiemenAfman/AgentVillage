@@ -1,5 +1,9 @@
 import { hash32, makeRng } from 'shared/rng.mjs';
 
+// Large civic lots can loosen their frontage just like residential lots.
+// One-cell monuments and signs retain their surveyed position and clearances.
+export const SQUARE_BUILDINGS = new Set(['townhall', 'market', 'tavern', 'school', 'chapel', 'clocktower', 'watertower']);
+
 // The survey keeps land and lanes stable. Within that land, houses follow a
 // looser building line. Fit the complete model (porch and yard props included)
 // rather than assuming every tier has the same footprint.
@@ -7,7 +11,8 @@ export function housePlacement(spec, bbox, neighbours = []) {
   const base = Math.PI - (spec.plot?.rot || 0) * Math.PI / 2;
   const unchanged = { x: 0, z: 0, yaw: base };
   const p = spec.plot;
-  if (!p || p.w !== 3 || p.d !== 3 || spec.kind !== 'house' || spec.harbour) return unchanged;
+  const civic = spec.kind === 'civic' && SQUARE_BUILDINGS.has(spec.civicType);
+  if (!p || p.w !== 3 || p.d !== 3 || (spec.kind !== 'house' && !civic) || spec.harbour) return unchanged;
   const rng = makeRng(hash32(`${spec.id}:placement`));
   const target = { x: (rng.next()-.5)*.86, z: (rng.next()-.5)*.86,
     yaw: base + (rng.next() < .5 ? -1 : 1) * (.15 + rng.next()*.28) };

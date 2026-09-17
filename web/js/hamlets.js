@@ -331,7 +331,9 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
     for (const b of village.buildings || []) {
       // Residential gardens open onto shared greens. Fencing every 3x3 house
       // separately made even varied houses read as a row of square boxes.
-      if (b.kind === 'house') continue;
+      // Civic buildings share the open square as well: a ring of lot posts
+      // around each one otherwise keeps the square looking like a grid.
+      if (b.kind === 'house' || b.kind === 'civic') continue;
       if (!b.plot || b.plot.w !== 3 || b.plot.d !== 3 || !b.door) continue;
       const cells = [];
       for (let z = 0; z < 3; z++) for (let x = 0; x < 3; x++) cells.push([b.plot.gx + x, b.plot.gz + z]);

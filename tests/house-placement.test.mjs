@@ -28,8 +28,8 @@ test('a neighbouring apprentice reserves space before the house is turned',()=>{
  const b=bounds(box,housePlacement(spec,box,[shed]));
  assert.ok(b.x1<=1.21-.34||b.z1<=-.34||b.z0>=.34);
 });
-test('civic, harbour and one-cell buildings retain their surveyed position',()=>{
- for(const s of [{...spec,kind:'civic'},{...spec,harbour:true},{...spec,kind:'shed'},
+test('monuments, harbour and one-cell buildings retain their surveyed position',()=>{
+ for(const s of [{...spec,kind:'civic',civicType:'fountain'},{...spec,harbour:true},{...spec,kind:'shed'},
   {...spec,plot:{...spec.plot,w:1,d:1}}])
   assert.deepEqual(housePlacement(s,box),{x:0,z:0,yaw:Math.PI});
 });
@@ -50,4 +50,25 @@ test('real dwelling models and their yard props remain inside the reserved plot'
   built.geometry.dispose();
  }
  assert.ok(changed>=30,`only ${changed}/48 dwellings have room for varied placement`);
+});
+
+test('square buildings vary safely with their real geometry in all four orientations',async()=>{
+ globalThis.document={createElementNS:()=>({addEventListener(){},removeEventListener(){},set src(_){}})};
+ const {buildBuilding}=await import('../web/js/buildings.js');
+ delete globalThis.document;
+ const {SQUARE_BUILDINGS}=await import('../web/js/house-placement.js');
+ for(const civicType of SQUARE_BUILDINGS){
+  let varied=0;
+  for(let rot=0;rot<4;rot++){
+   const s={...spec,id:`civic:${civicType}`,kind:'civic',civicType,plot:{...spec.plot,rot}};
+   const built=buildBuilding(s),p=housePlacement(s,built.bbox),b=bounds(built.bbox,p);
+   assert.deepEqual(p,housePlacement(s,built.bbox));
+   if(p.x||p.z||Math.abs(p.yaw-(Math.PI-rot*Math.PI/2))>.001){
+    varied++;
+    assert.ok(b.x0>=-1.47&&b.x1<=1.47&&b.z0>=-1.47&&b.z1<=1.47,`${civicType} crosses its lot`);
+   }
+   built.geometry.dispose();
+  }
+  assert.ok(varied>0,`${civicType} never varies`);
+ }
 });

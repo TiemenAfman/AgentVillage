@@ -950,7 +950,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   let wearVillage = village, wearGraph = null;
   let frontages = new Map(), frontageKey = '';
   function setHouseFrontages(records) {
-    const entries = [...records].filter(r=>r.spec.kind==='house').map(r=>
+    const entries = [...records].filter(r=>r.spec.kind==='house' || (r.spec.kind==='civic' && r.spec.plot?.w===3)).map(r=>
       [r.id, {x:r.group.position.x,z:r.group.position.z,yaw:r.group.rotation.y}]);
     const key=JSON.stringify(entries);
     if(key===frontageKey)return;
