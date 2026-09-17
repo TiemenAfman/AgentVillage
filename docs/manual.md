@@ -146,6 +146,24 @@ every forty-five seconds, and forty-five seconds against a wrong password is how
 account gets locked out — so the first refusal stops the polling for that account until
 you save it again or press **Try again** yourself.
 
+One thing to check before blaming the settings: the box reads over IMAP, and a Microsoft
+Exchange does not necessarily speak it. IMAP4 is a service on that server and it is off
+unless somebody turned it on, so 993 can be silent — not refused, just silent — while
+webmail and Outlook and the phone in your pocket all work perfectly. A phone set up
+against an Exchange is using ActiveSync over 443, which looks like the same account and
+is not the same protocol at all. If 993 never answers, that is the thing to ask about,
+and the fix is on the server rather than in this form:
+
+```powershell
+# in de Exchange Management Shell, op de server zelf
+Set-Service MSExchangeIMAP4 -StartupType Automatic; Start-Service MSExchangeIMAP4
+Set-Service MSExchangeIMAP4BE -StartupType Automatic; Start-Service MSExchangeIMAP4BE
+Get-ImapSettings -Server <servernaam> | Format-List LoginType, SSLBindings, X509CertificateName
+```
+
+`LoginType` wants to be `SecureLogin`, and 993 has to be open on the way in. Sending is a
+separate service and needs none of this: SMTP is usually already there.
+
 The postbox is not a milestone and is not earned: it has stood there since the hall was
 built, because what is in it was never the island's to give. It is also the one thing on
 the island a visitor cannot open at all. `/api/mail` is not on the public list in
