@@ -2419,7 +2419,12 @@ function frame(nowMs) {
     buildingMat.userData.uniforms.uNight.value = state.inside ? INDOOR_GLOW : state.world.state.night;
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
-  if (state.settlers) state.settlers.update(dt, state.world ? state.world.state.night : 0);
+  if (state.settlers) {
+    // Friday, 16:45-17:00: the whole village downs tools and heads for the square.
+    const d = new Date(timeNow());
+    state.settlers.setGather(d.getDay() === 5 && hour >= 16.75 && hour < 17);
+    state.settlers.update(dt, state.world ? state.world.state.night : 0);
+  }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
