@@ -948,6 +948,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
     'statue', 'well', 'fountain', 'watertower']);
   let wearVillage = village, wearGraph = null;
+  let frontages = new Map(), frontageKey = '';
+  function setHouseFrontages(records) {
+    const entries = [...records].filter(r=>r.spec.kind==='house').map(r=>
+      [r.id, {x:r.group.position.x,z:r.group.position.z,yaw:r.group.rotation.y}]);
+    const key=JSON.stringify(entries);
+    if(key===frontageKey)return;
+    frontageKey=key;frontages=new Map(entries);buildGroundWear();
+  }
   function buildGroundWear() {
     if (!wearGraph) return;
     const centre = (c) => terrain.cellWorld(c[0], c[1]);
@@ -972,9 +980,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
     for (const b of wearVillage.buildings || []) {
       if (!b.plot || b.harbour || (b.kind === 'civic' && NO_WEAR.has(b.civicType))) continue;
       const p = b.plot;
-      const [x,z] = centre([p.gx+(p.w-1)/2,p.gz+(p.d-1)/2]);
+      const at = frontages.get(b.id);
+      const [x,z] = at ? [at.x,at.z] : centre([p.gx+(p.w-1)/2,p.gz+(p.d-1)/2]);
       yards.push({x,z,rx:Math.max(.38,p.w/2-.35),rz:Math.max(.38,p.d/2-.35)});
-      if (b.door) strokes.push({ points: [[x,z],centre(b.door)], radius:.34, feather:.42 });
+      if (b.door) {
+        const points=[[x,z]];
+        if(at)points.push([x+Math.sin(at.yaw)*.9,z+Math.cos(at.yaw)*.9]);
+        points.push(centre(b.door));
+        strokes.push({ points: smoothLane(points,.18), radius:.34, feather:.42 });
+      }
     }
     const field = groundWearField(size, wearVillage.seed || 0, strokes, yards, wearResolution);
     const plazaYards = wearGraph.tiles.filter(t=>t.kind==='plaza').map(t=>{
@@ -1380,7 +1394,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
-    buildPaths, squareCells, setOwnership, followShadow, ownership: () => own, state,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, ownership: () => own, state,
     season: () => currentSeason, reshape,
   };
 }
