@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "license": "MIT",
   "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
   "engines": {
     "node": ">=22"
