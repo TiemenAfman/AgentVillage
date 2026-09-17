@@ -1661,10 +1661,6 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
   // round it would be a plinth under a letter box.
   'mailbox',
-  // The church brings its own stone footing, and at its proper size it reaches to within
-  // two centimetres of its lot on both sides: a step round the outside would be a second
-  // plinth under the first and would stand in the paving of the cells next door.
-  'chapel',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower']);
@@ -1680,7 +1676,14 @@ function wantsPorch(spec) {
 // touching stone in every direction. A shed keeps the skirt - that is the half of the
 // porch which stops the downhill side opening a gap you can see under - and gives up the
 // tread it has no room for, because it does not stand on a plot of its own.
-const porchOverhang = (spec) => (spec.kind === 'shed' ? [0, 0]
+// The church is the third case, and it is the shed's for a different reason. It is long -
+// nave, tower and a great buttress in front of them - and it needs the skirt badly: the
+// buttress has no footing of its own, so the step is the only thing between its foot and
+// whatever the ground does at the front of the lot. But 0.23 of tread all round is 0.46
+// off the length it may be, and on a three cell lot that is the difference between a
+// church and a chapel of ease. So it takes the step at exactly its own footprint: the
+// skirt that holds the ground, and not a hand's width more.
+const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' ? [0, 0]
   : spec.civicType === 'tavern' ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line

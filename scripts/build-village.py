@@ -401,17 +401,22 @@ cr('cross arms', (-.055, 2.13, .53), (.055, 2.13, .53), .010, 'plain:copper')
 # wide whoever built it - and the town hall's leaf is 0.690 against this one's 0.460, so
 # the church wants a clean 1.5.
 #
-# It does not get one, for two reasons pulling the same way. At 1.5 the nave, its tower and
-# the great buttress measure 3.30 end to end and a civic lot is three cells, so the church
-# would stand in paving it does not own. And a square building is not set down square:
-# web/js/house-placement.js turns and shifts each one a little so the middle of the village
-# is not a stamped grid, and it only does that while the building still clears +-1.47 when
-# turned - which for something this long is the tighter of the two limits by some way.
+# It does not get one. The church is long - nave, tower, and the great buttress in front of
+# them - and a civic lot is three cells. At 1.5 it measures 3.30 end to end and would stand
+# in paving it does not own; and house-placement.js only turns a building a little off the
+# grid while it still clears +-1.47 turned, which for something this long bites first.
 #
-# 1.30 is the largest that leaves it that room. The door comes out at 0.598 against 0.690,
-# and the tower at 2.85 stands just under the town hall's 2.91 - near enough that the two
-# read as one village, and written down here so that the next person to reach for 1.5
-# knows what it costs.
+# 1.30 is the largest that leaves it that room: the door lands at 0.598 against 0.690 and
+# the tower at 2.85 stands just under the town hall's 2.91.
+#
+# One thing had to give way for even that, and it is worth knowing because taking it away
+# again breaks the church in a way that is invisible from here. The island stands a civic
+# building on a stone step, and that step is not decoration: the buttress has no footing of
+# its own, so the step is all there is between its foot and whatever the ground does at the
+# front of the lot. Take it away and the buttress hangs in the air. Keep it at its usual
+# 0.23 of tread all round and that is 0.46 off the length the church may be. So the church
+# keeps the step at exactly its own footprint - see porchOverhang in web/js/buildings.js,
+# where a shed has the same bargain for its own reasons.
 CHAPEL_SCALE = 1.30
 for obj in chapel.objects:
     obj.location *= CHAPEL_SCALE
