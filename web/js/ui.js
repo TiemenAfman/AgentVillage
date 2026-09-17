@@ -313,7 +313,7 @@ export function createUI(handlers) {
       + '<li><b>Scaffolding</b> <small>— that session is running right now</small></li>'
       + '<li><b>Campfire</b> <small>— a settler just arrived, no transcript yet</small></li>'
       + '<li><b>Quay houses on stilts</b> <small>— Cowork tasks, they arrive by boat</small></li>'
-      + '<li><b>A hedged green with a sign</b> <small>— one hamlet per git repository, from its third session</small></li>'
+      + '<li><b>A fenced green with a sign</b> <small>— one hamlet per git repository, from its third session</small></li>'
       + '<li><b>A lone farmhouse in the fields</b> <small>— a project with one or two sessions</small></li>'
       + '<li><b>Ploughed fields and orchards</b> <small>— countryside nobody has claimed</small></li>'
       + '<li><b>A kitchen garden</b> <small>— land inside a hamlet nobody has built on</small></li>'

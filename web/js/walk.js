@@ -22,7 +22,7 @@ const CAM_UP = 1.6;
 // and sat behind the walking HUD.
 const EYE = PLAYER_EYE;
 // The settler you steer stands 0.54 units tall, and this jump peaks at about 0.38 - two
-// thirds of its own height, which clears a doorstep and a low hedge without turning the
+// thirds of its own height, which clears a doorstep and a low fence without turning the
 // island into a platform game. Gravity is tuned to that arc rather than to reality: it
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;

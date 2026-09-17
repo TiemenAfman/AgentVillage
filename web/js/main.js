@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { clamp, hash32 } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { housePlacement } from './house-placement.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
@@ -382,8 +383,8 @@ function talkTo(id) {
 
 // --------------------------------------------------------------- walking
 // What walk mode cannot step through, for one thing standing in the world: its own solid
-// rectangles, turned with the plot and moved onto it. A plot rotation is a quarter turn,
-// so the rectangles stay axis aligned and only trade their sides.
+// rectangles, turned with the house and moved onto it. Enclosing bounds also
+// cover the small free angles of residential buildings.
 function blockersOf(rec) {
   const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
   return rec.built.solids.map((r) => ({
@@ -1284,7 +1285,8 @@ function makeRecord(spec) {
   // when the card cannot afford them.
   const built = buildBuilding(spec, { modest });
   const nudge = yardNudge(spec, built);
-  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i]);
+  const pose = housePlacement(spec, built.bbox, state.village.buildings);
+  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
   let y = groundAt(x, z);
   // A harbour house stands on stilts, and this pins its deck just above the waterline.
   // That is right for one built out over the water at the end of a pier, and ruinous for
@@ -1303,7 +1305,7 @@ function makeRecord(spec) {
   // the opposite of what the layout asked for. So every building on a north-south plot
   // has stood with its back to the street, which is why the tavern's door opened onto
   // grass while the square was behind it. Mirroring the turn agrees with all four.
-  group.rotation.y = Math.PI - (spec.plot.rot || 0) * Math.PI / 2;
+  group.rotation.y = pose.yaw;
 
   const mesh = new THREE.Mesh(built.geometry, buildingMat);
   mesh.castShadow = true;
@@ -1396,6 +1398,7 @@ function rebuild(rec, spec) {
   state.byId.delete(rec.id);
   const fresh = makeRecord(spec);
   fresh.group.visible = wasVisible;
+  state.world.setHouseFrontages(state.byId.values());
   return fresh;
 }
 
@@ -1705,7 +1708,7 @@ function visibleAt(spec, t) {
 // polder is stamped into it rather than drawn on top - but the coast changes only once
 // per polder, so it is keyed separately and touched almost never. Re-laying the land is
 // the heavy one: `setOwnership` re-decodes ownership over the whole grid, re-plans the
-// fields, re-tints the ground and rebuilds the hedges. That cannot run per pointer move,
+// fields, re-tints the ground and rebuilds the boundaries. That cannot run per pointer move,
 // so the projection's key says what would actually be drawn and the work is throttled -
 // with a trailing pass, so the last position the slider stops at is always the one drawn.
 const LANDSCAPE_MS = 120;
@@ -1923,7 +1926,7 @@ function applyVillage(next, { animate }) {
     }
   }
 
-  // Outside the `animate` guard on purpose: the hedges and the tint have to be right on
+  // Outside the `animate` guard on purpose: the boundaries and the tint have to be right on
   // a silent reload too, and only the falling trees are an animation.
   if (state.world && (!prev || next.districtsRev !== prev.districtsRev)) {
     state.world.setOwnership(next);
@@ -1944,7 +1947,8 @@ function applyVillage(next, { animate }) {
     const before = rec.spec;
     rec.spec = spec;
     const tierChanged = before.tier !== spec.tier || before.style !== spec.style
-      || before.kind !== spec.kind || (before.ornaments || []).join() !== (spec.ornaments || []).join();
+      || before.kind !== spec.kind || (before.ornaments || []).join() !== (spec.ornaments || []).join()
+      || JSON.stringify(before.sheds || []) !== JSON.stringify(spec.sheds || []);
     if (tierChanged) {
       const upgraded = TIER_INDEX[spec.tier] > TIER_INDEX[before.tier];
       events.push({ type: upgraded ? 'upgrade' : 'refit', id, spec, silent: !animate });
@@ -1972,6 +1976,7 @@ function applyVillage(next, { animate }) {
   }
 
   assignFlags();
+  state.world.setHouseFrontages(state.byId.values());
   // The key is computed from the village, so a new one from the server invalidates it;
   // without this a changed island would keep the landscape drawn for the old one.
   shownKey = null;
@@ -1990,7 +1995,7 @@ function applyVillage(next, { animate }) {
 function placeFigure(rec) {
   if (rec.spec.kind === 'civic') return;
   const p = rec.group.position;
-  const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z]);
+  const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z], { yaw: rec.group.rotation.y });
   if (f && overWater(rec)) f.deckY = p.y + 0.62;
   if (f && rec.spec.active) f.mode = 'hammer';
 }
@@ -2004,7 +2009,12 @@ function applyEventInstantly(e) {
 }
 function placeFigureRefresh(rec) {
   const f = state.settlers.figures.get(rec.id);
-  if (f) { f.spec = rec.spec; if (overWater(rec)) f.deckY = rec.group.position.y + 0.62; }
+  if (f) {
+    f.spec = rec.spec;
+    const reach = rec.spec.kind === 'shed' ? .46 : .85, yaw = rec.group.rotation.y;
+    f.home = [rec.group.position.x + Math.sin(yaw)*reach, rec.group.position.z + Math.cos(yaw)*reach];
+    if (overWater(rec)) f.deckY = rec.group.position.y + 0.62;
+  }
   else placeFigure(rec);
   if (rec.spec.active) { addScaffold(rec); state.settlers.setMode(rec.id, 'hammer'); }
 }

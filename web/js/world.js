@@ -2,11 +2,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
+import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
+
 const tmpObj = new THREE.Object3D();
 
 const SEASON = {
@@ -85,11 +88,21 @@ export function sunDirection(hour) {
 const SHADOW_SPAN = [42, 130];
 const SHADOW_OF_DIST = 0.48;
 
+// Where the sand gives up and the meadow takes over. The bands below still change on a
+// line at 0.35 - the height `terrain.mjs` calls the top of a beach, and the height the
+// Node layout decides where a house may stand by - but the *drawing* crossfades across
+// this range instead, which on this island's gradients is two to six cells of dune grass
+// rather than a contour line running round the island like a coastline on a map.
+// `terrain.mjs` is untouched on purpose: what moved is the painting, not the rule, so
+// `isBeach` answers exactly what it did and Node and the browser still agree.
+const SHORE = [0.25, 0.6];
+const SHORE_SAND = 0xefddb2;
+
 function bandColour(h, season) {
   const s = SEASON[season];
   if (h < -0.6) return 0x3f6a7c;
   if (h < 0) return 0x8f9f7a;
-  if (h < 0.35) return 0xefddb2;
+  if (h < 0.35) return SHORE_SAND;
   if (h < 1.6) return s.meadow;
   if (h < 3.4) return s.upland;
   if (h < 5.2) return 0x8f8a80;
@@ -181,14 +194,44 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
   const meadowNoise = makeSimplex2D(hash32(`meadow:${village.seed || 0}`));
+
+  // Reclaimed land, which is not a beach however low it lies. A polder floor is stamped
+  // at exactly POLDER_H - 0.375, chosen over in terrain.mjs so that it clears the beach
+  // line by four hundredths rather than falling under it - and the soft shore above would
+  // read seven tenths of it as sand: a village that had just drained a bay would be handed
+  // a sandpit. The sea wall put that ground there, and the heightfield is the record of
+  // it: a cell all four of whose corners sit exactly on the reclamation height is polder
+  // floor, and polder floor is the lowest meadow on the island rather than its highest
+  // beach. Derived from the terrain rather than from `village.polders` so that it follows
+  // `reshape`, which is handed a new heightfield and no village at all.
+  const reclaimed = new Uint8Array(N * N);
+  function findReclaimed() {
+    reclaimed.fill(0);
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const k = gx + gz * N;
+        if (terrain.H[k] !== POLDER_H || terrain.H[k + 1] !== POLDER_H
+          || terrain.H[k + N] !== POLDER_H || terrain.H[k + N + 1] !== POLDER_H) continue;
+        reclaimed[k] = 1; reclaimed[k + 1] = 1; reclaimed[k + N] = 1; reclaimed[k + N + 1] = 1;
+      }
+    }
+  }
+
   function paintGround(seasonName) {
+    findReclaimed();
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const k = i + j * N;
         const h = terrain.H[k];
         tmpColor.setHex(bandColour(h, seasonName));
+        // The shore, crossfaded rather than stepped. See SHORE above.
+        if (h > SHORE[0] && h < SHORE[1] && !reclaimed[k]) {
+          tmpColor.setHex(SHORE_SAND).lerp(tmpTint.setHex(SEASON[seasonName].meadow), smoothstep(SHORE[0], SHORE[1], h));
+        }
         // Broad, stable patches of colour soften the grid without textures or geometry.
-        if (h >= 0.35 && h < 3.4) {
+        // They start where the sand starts to go, not on the old line at 0.35, or the
+        // last trace of that line would be the edge of the mottling.
+        if (h >= SHORE[0] && h < 3.4) {
           tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.065);
         }
         const a = tintAmt[k];
@@ -204,12 +247,29 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
     geo.attributes.color.needsUpdate = true;
   }
+
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
 
   const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
     vertexColors: true, flatShading: false, roughness: 0.96, metalness: 0,
   }));
+  const wearResolution = Math.min(2048, size * 8);
+  const wearTexture = new THREE.DataTexture(new Uint8Array(wearResolution * wearResolution), wearResolution, wearResolution, THREE.RedFormat);
+  wearTexture.magFilter = wearTexture.minFilter = THREE.LinearFilter;
+  wearTexture.needsUpdate = true;
+  const plazaTexture = wearTexture.clone();
+  plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
+  plazaTexture.needsUpdate = true;
+  const bank = riverBankField(size, village.seed || 0, terrain.riverBankCells, wearResolution);
+  const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
+  bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
+  bankTexture.needsUpdate = true;
+  const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  blankRiverSheet.needsUpdate = true;
+  const riverSheet = { value: blankRiverSheet };
+  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture, { texture: bankTexture, sheet: riverSheet });
+  sheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
   ground.name = 'ground';
   group.add(ground);
@@ -288,8 +348,20 @@ export function createWorld(scene, terrain, village, opts = {}) {
       void main() {
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
-        float foam = smoothstep(-0.32, -0.02, vDepth) * (0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 28.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5)));
-        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.65);
+        // The surf. It used to fade in over three tenths of a unit of depth, which on
+        // this island's shelf is barely two cells across: a white hairline drawn round
+        // the coast rather than water breaking on a beach. Two terms now. A broad band
+        // of foaming shallow water, squared so that widening its reach does not simply
+        // wash the whole bay pale - the far half of the band stays water that happens to
+        // be light. And the line where the sea actually runs up the sand, which is the
+        // part the eye reads as surf and which the broad band on its own smeared away.
+        // The swell is slower across the band as well: sixteen cycles over three times
+        // the depth range, so it reads as two or three rows of breakers instead of a
+        // fine corduroy.
+        float shore = smoothstep(-0.65, 0.02, vDepth);
+        float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
+        float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
+        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
         vec3 n = normalize(vWave);
         vec3 v = normalize(cameraPosition - vWorld);
         float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
@@ -432,16 +504,38 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much of the countryside is under the plough. The chronicle hands down a share so
   // the fields arrive with the village that works them; a live village has none and gets
   // the full spread.
-  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare });
+  //
+  // The square goes in with it. A parcel that runs up against the paving hems the village
+  // in where it is meant to open out: the one piece of ground everybody crosses ends in a
+  // fence and a furrow instead of in grass, and from the air the heart of the island reads
+  // as a farmyard. So the survey is told where the paving lies and leaves it a verge.
+  const fieldOpts = (v) => ({
+    square: townSquare(v),
+    ...(v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare }),
+  });
 
-  // Which cells the settlers walk on. The hedges have always needed this to know where to
-  // leave a gate; the fields and the forest now need it too, because how far a cell is
-  // from a road is most of what decides whether anybody ploughs it or nobody has ever
-  // cleared it. Built once here rather than three times over.
+  // Which cells the settlers walk on. The boundaries have always needed this to know
+  // where to leave a gate; the fields and the forest now need it too, because how far a
+  // cell is from a road is most of what decides whether anybody ploughs it or nobody has
+  // ever cleared it. Built once here rather than three times over.
   const roadSet = (v) => {
     const out = new Set();
     for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
     for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
+
+  // The paved heart of the village and nothing else. `squareCells` also hands back every
+  // district's paving, and that is a different kind of place - a hamlet's own yard, which
+  // has its fields right up against it because that is what a hamlet is.
+  const townSquare = (v) => {
+    const out = new Set();
+    const town = v.island && v.island.town;
+    if (town?.paved) for (const [gx, gz] of town.paved) out.add(gx + gz * size);
+    else if (town?.square) {
+      const n = town.size || 3;
+      for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.add((town.square[0] + x) + (town.square[1] + z) * size);
+    }
     return out;
   };
 
@@ -486,8 +580,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // and nothing is tilled on a cell that touches a boundary, which also gives every wall
   // the strip of grass along it that a wall in a field has anyway.
   //
-  // This mirrors the test in buildBorders(): the town puts up no hedge and the coast is
-  // its own boundary, so neither of those earns a verge.
+  // This mirrors the test in buildBorders(): the town puts up nothing of its own and the
+  // coast is a boundary already, so neither of those earns a verge.
   function wallVerge(ownerArr, into) {
     const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
     const walled = (o) => o !== NONE && o !== TOWN;
@@ -855,141 +949,88 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (slabMesh.instanceColor) slabMesh.instanceColor.needsUpdate = true;
   }
 
-  // ---- footpaths -----------------------------------------------------------
-  let pathMesh = null;
-  let pathTexture = null;
-  // Only the town square and a village green are laid in stone. A hamlet's green stays
-  // grass - a plaza three cells across, thirty times over, reads as a rash of empty
-  // patios - so the wire only names the ones that are actually paved.
-  function squareCells(v) {
-    const out = [];
-    const town = v.island && v.island.town;
-    if (town && town.paved) out.push(...town.paved);
-    else if (town && town.square) {
-      const n = town.size || 3;
-      for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.push([town.square[0] + x, town.square[1] + z]);
+  // ---- paths and worn yards, painted into the terrain -----------------------
+  // A single coverage texture joins every sandy surface. It uses the terrain's
+  // own normals, lighting and shadows: no raised strips and no colour-matched
+  // skirts that turn into visible borders when the grass texture arrives.
+  const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
+    'statue', 'well', 'fountain', 'watertower']);
+  let wearVillage = village, wearGraph = null;
+  let frontages = new Map(), frontageKey = '';
+  function setHouseFrontages(records) {
+    const entries = [...records].filter(r=>r.spec.kind==='house' || (r.spec.kind==='civic' && r.spec.plot?.w===3)).map(r=>
+      [r.id, {x:r.group.position.x,z:r.group.position.z,yaw:r.group.rotation.y}]);
+    const key=JSON.stringify(entries);
+    if(key===frontageKey)return;
+    frontageKey=key;frontages=new Map(entries);buildGroundWear();
+  }
+  function buildGroundWear() {
+    if (!wearGraph) return;
+    const centre = (c) => terrain.cellWorld(c[0], c[1]);
+    const strokes = [], yards = [];
+    for (const chain of wearGraph.chains) {
+      const line = [centre(chain.from), ...chain.run.map(centre)];
+      if (chain.to) line.push(centre(chain.to));
+      strokes.push({ points: smoothLane(line, .18) });
     }
-    for (const d of v.districts || []) for (const c of d.paved || []) out.push(c);
-    return out;
+    for (const tile of wearGraph.tiles) {
+      if (tile.kind === 'plaza') continue;
+      const at = centre([tile.gx, tile.gz]);
+      strokes.push({ points: [at] });
+      // Adjacent junctions have no chain between them. These short connectors
+      // also carry sand right up to the edge of the square.
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        if (tile.gx+dx >= 0 && tile.gx+dx < size && tile.gz+dz >= 0 && tile.gz+dz < size
+          && wearGraph.kind.has(tile.gx+dx+(tile.gz+dz)*size))
+          strokes.push({ points: [at, centre([tile.gx+dx,tile.gz+dz])] });
+      }
+    }
+    for (const b of wearVillage.buildings || []) {
+      if (!b.plot || b.harbour || (b.kind === 'civic' && NO_WEAR.has(b.civicType))) continue;
+      const p = b.plot;
+      const at = frontages.get(b.id);
+      const [x,z] = at ? [at.x,at.z] : centre([p.gx+(p.w-1)/2,p.gz+(p.d-1)/2]);
+      yards.push({x,z,rx:Math.max(.38,p.w/2-.35),rz:Math.max(.38,p.d/2-.35)});
+      if (b.door) {
+        const points=[[x,z]];
+        if(at)points.push([x+Math.sin(at.yaw)*.9,z+Math.cos(at.yaw)*.9]);
+        points.push(centre(b.door));
+        strokes.push({ points: smoothLane(points,.18), radius:.34, feather:.42 });
+      }
+    }
+    const field = groundWearField(size, wearVillage.seed || 0, strokes, yards, wearResolution);
+    const plazaYards = wearGraph.tiles.filter(t=>t.kind==='plaza').map(t=>{
+      const [x,z]=centre([t.gx,t.gz]);return {x,z,rx:.84,rz:.84};
+    });
+    const plaza = groundWearField(size, wearVillage.seed || 0, [], plazaYards, wearResolution);
+    for(let i=0;i<field.data.length;i++)field.data[i]=Math.max(field.data[i],plaza.data[i]);
+    plazaTexture.image.data=plaza.data;plazaTexture.needsUpdate=true;
+    wearTexture.image.data = field.data;
+    wearTexture.needsUpdate = true;
   }
 
-  // The stone itself. The sheet is seamless, so it is tiled in world space rather than
-  // per quad: a path running across three cells reads as one continuous piece of paving
-  // instead of the same stone stamped three times. A cell is one world unit and four
-  // metres, so a sheet to the unit puts a cobble at about half a metre across.
-  const PATH_TEX_UNITS = 1;
-  // How much of an outside corner is taken off. A path is about half a cell wide, so a
-  // fifth of a unit is a generous but still walkable easing - enough that a turn reads as
-  // worn rather than cut, and not so much that a single-cell stub becomes a disc.
-  const CORNER_R = 0.2;
-  const CORNER_SEG = 4;
-  // Multiplied over the texture, so these are tints rather than colours: the square is
-  // laid in clean stone and a footpath in the same stone gone duller underfoot. With no
-  // texture to multiply they stand on their own, and are the sand and flagstone the
-  // island had before there was a sheet to lay.
-  const TINTED = { path: 0xd9d2c6, square: 0xffffff };
-  const PLAIN = { path: 0xcbb691, square: 0xd6cbb2 };
 
-  function buildPaths(paths, squares = squareCells(village)) {
-    if (pathMesh) {
-      group.remove(pathMesh);
-      pathMesh.geometry.dispose();
-      pathMesh.material.dispose();
-      pathMesh = null;
+  function squareCells(v) {
+    const out = [], town = v.island && v.island.town;
+    if (town?.paved) out.push(...town.paved);
+    else if (town?.square) {
+      const n=town.size || 3;
+      for(let z=0;z<n;z++)for(let x=0;x<n;x++)out.push([town.square[0]+x,town.square[1]+z]);
     }
-    const positions = [], colors = [], uvs = [], indices = [];
-    let v = 0;
-    // A track half a cell wide, widened towards whichever neighbours continue the path,
-    // so a run of cells joins up into one continuous footpath. Squares are laid the same
-    // way in a paler stone, which is what makes a road meet a plaza instead of stopping
-    // a cell short of it.
-    const paint = pathTexture ? TINTED : PLAIN;
-    const seen = new Set();
-    const tiles = [];
-    for (const p of paths || []) for (const c of p.cells) { seen.add(c[0] + c[1] * terrain.size); tiles.push([c, paint.path]); }
-    for (const c of squares || []) {
-      const k = c[0] + c[1] * terrain.size;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      tiles.push([c, paint.square]);
-    }
-    const hasCell = (gx, gz) => seen.has(gx + gz * terrain.size);
-    const H = 0.26;
-    // Each cell is a ring of points laid anticlockwise seen from above, fanned from its
-    // own middle. A square tile is four points and two triangles, exactly as before; a
-    // corner where the path stops turning is replaced by a quarter arc, which is the only
-    // reason the ring exists at all.
-    const arc = (out, px, pz, qx, qz, cx, cz) => {
-      let a0 = Math.atan2(pz - cz, px - cx);
-      let a1 = Math.atan2(qz - cz, qx - cx);
-      let d = a1 - a0;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      const r = Math.hypot(px - cx, pz - cz);
-      for (let k = 0; k <= CORNER_SEG; k++) {
-        const t = a0 + (d * k) / CORNER_SEG;
-        out.push([cx + Math.cos(t) * r, cz + Math.sin(t) * r]);
-      }
-    };
-    for (const [[gx, gz], hex] of tiles) {
-      const [x, z] = terrain.cellWorld(gx, gz);
-      const west = hasCell(gx - 1, gz), east = hasCell(gx + 1, gz);
-      const north = hasCell(gx, gz - 1), south = hasCell(gx, gz + 1);
-      const x0 = x - (west ? 0.5 : H), x1 = x + (east ? 0.5 : H);
-      const z0 = z - (north ? 0.5 : H), z1 = z + (south ? 0.5 : H);
-      // Only an outside corner is eased: one where the paving stops in both directions.
-      // Where the path runs on, the edge has to stay straight or the two cells would not
-      // meet, and a road would come out beaded rather than continuous.
-      const r = Math.min(CORNER_R, (x1 - x0) / 2, (z1 - z0) / 2);
-      const ring = [];
-      if (!west && !north) arc(ring, x0 + r, z0, x0, z0 + r, x0 + r, z0 + r); else ring.push([x0, z0]);
-      if (!west && !south) arc(ring, x0, z1 - r, x0 + r, z1, x0 + r, z1 - r); else ring.push([x0, z1]);
-      if (!east && !south) arc(ring, x1 - r, z1, x1, z1 - r, x1 - r, z1 - r); else ring.push([x1, z1]);
-      if (!east && !north) arc(ring, x1, z0 + r, x1 - r, z0, x1 - r, z0 + r); else ring.push([x1, z0]);
-
-      tmpColor.setHex(hex);
-      const vertex = (qx, qz) => {
-        positions.push(qx, terrain.worldHeight(qx, qz) + 0.045, qz);
-        uvs.push(qx / PATH_TEX_UNITS, qz / PATH_TEX_UNITS);
-        colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      };
-      const centre = v;
-      vertex((x0 + x1) / 2, (z0 + z1) / 2);
-      for (const [qx, qz] of ring) vertex(qx, qz);
-      for (let k = 0; k < ring.length; k++) {
-        indices.push(centre, centre + 1 + k, centre + 1 + ((k + 1) % ring.length));
-      }
-      v += ring.length + 1;
-    }
-    if (!positions.length) return;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    g.setIndex(indices);
-    g.computeVertexNormals();
-    pathMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      map: pathTexture, vertexColors: true, flatShading: true, roughness: 1,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    }));
-    pathMesh.receiveShadow = true;
-    group.add(pathMesh);
+    for(const d of v.districts || [])for(const c of d.paved || [])out.push(c);
+    return out;
+  }
+  function buildPaths(paths, squares = squareCells(wearVillage)) {
+    wearGraph=roadGraph(paths,squares,size);
+    buildGroundWear();
   }
   buildPaths(village.paths);
 
-  // The sheet arrives after the island is already standing, so the paving is laid twice:
-  // once in plain colour, and again the moment the texture lands. If it never lands the
-  // island keeps the colours it had, which is why the tints and the plain colours are two
-  // separate sets rather than one set the texture is expected to rescue.
-  sheet('path-cobble', (tex) => { pathTexture = tex; buildPaths(village.paths); });
-
   // ---- riverbanks ----------------------------------------------------------
-  // The water itself needs nothing drawn: it is under the same plane as the sea, and the
-  // height bands already put sand along a channel that has cut down to below sea level.
-  // What is missing is any sign that it is fresh water rather than a wet ditch, so the
-  // banks get a shingle decal at the waterline and a stand of reeds along it. Rivers are
-  // part of the terrain and never change, so this is built once.
-  function buildRiverBanks() {
+  // Shingle is painted into the terrain above, along with the paths and yards. Only the
+  // reeds need geometry of their own here. Keeping them separate stops a texture meant
+  // for stones from being stretched over every blade.
+  function buildRiverReeds() {
     if (!terrain.riverBankCells || !terrain.riverBankCells.length) return null;
     const pos = [], col = [], idx = [];
     let v = 0;
@@ -999,19 +1040,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
       idx.push(v, v + 1, v + 2, v, v + 2, v + 1);      // both faces: a blade has no back
       v += 3;
     };
-    const shingleQuad = (x0, z0, x1, z1, hex) => {
-      tmpColor.setHex(hex);
-      for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
-        pos.push(qx, terrain.worldHeight(qx, qz) + 0.035, qz);
-        col.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      }
-      idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-      v += 4;
-    };
     for (const [gx, gz] of terrain.riverBankCells) {
       const [x, z] = terrain.cellWorld(gx, gz);
       const h = hash32(`bank:${gx},${gz}`);
-      shingleQuad(x - 0.5, z - 0.5, x + 0.5, z + 0.5, (h & 1) ? 0x9a8a6a : 0x8d7d60);
       // Reeds only where the bank is close to the waterline; the top of a ravine is dry.
       if (terrain.worldHeight(x, z) > 0.9) continue;
       const clumps = 1 + (h % 3);
@@ -1038,7 +1069,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     return g;
   }
   {
-    const bg = buildRiverBanks();
+    const bg = buildRiverReeds();
     if (bg) {
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
@@ -1048,7 +1079,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
   }
 
-  // ---- hedges and fields ---------------------------------------------------
+  // ---- boundaries and fields -----------------------------------------------
   let borderMesh = null, fieldMesh = null;
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
 
@@ -1056,14 +1087,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (borderMesh) { group.remove(borderMesh); borderMesh.geometry.dispose(); borderMesh.material.dispose(); borderMesh = null; }
     if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
 
-    // A hedge opens where a road crosses it, and the road set is the one the settlers
+    // A boundary opens where a road crosses it, and the road set is the one the settlers
     // already walk on, so no extra data is needed to know where the gates are. The field
     // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
     // same merged geometry, for no extra draw call.
     const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
-      // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
-      // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
+      // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
+      // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
       // material reads that, projecting from three axes so nothing needs a UV. It dresses
       // itself when the sheets land, and draws the flat colours until they do.
       borderMesh = new THREE.Mesh(bg, createBoundaryMaterial());
@@ -1071,7 +1102,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
       borderMesh.receiveShadow = true;
       group.add(borderMesh);
     }
-    const fg = buildFieldDecals(fieldPlan, terrain, seasonName);
+    // The hues go in with it: every parcel knows which hamlet works it, and a field that
+    // carries a breath of its owner's colour tells two estates apart where their
+    // headlands meet - the same trick the meadow under them already plays.
+    const fg = buildFieldDecals(fieldPlan, terrain, seasonName, hues);
     if (fg) {
       const mat = groundMat();
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
@@ -1087,7 +1121,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   buildHamletDressing(village, season);
 
-  // The land register changed: a parcel grew, a hamlet was founded, a hedge moved out.
+  // The land register changed: a parcel grew, a hamlet was founded, a boundary moved out.
   function setOwnership(v, seasonName = currentSeason) {
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
@@ -1104,6 +1138,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     paintGround(seasonName);
     placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);
     buildHamletDressing(v, seasonName);
+    // A new house has a new yard, and every yard's feather is the colour of the ground
+    // `paintGround` has just rewritten - so this goes after both, not before either.
+    wearVillage = v;
+    buildGroundWear();
   }
 
   // ---- clouds --------------------------------------------------------------
@@ -1286,6 +1324,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       placeBushes(s);
       placeOrchard(orchardTrees(fieldPlan, terrain), s);
       buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
+      buildGroundWear();                    // and the feather round a yard follows the meadow
     }
     // felling animation
     for (let i = falling.length - 1; i >= 0; i--) {
@@ -1339,6 +1378,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
     paintGround(currentSeason);
+    // The decals stand on the heightfield, so a coast that has moved takes them with it.
+    buildGroundWear();
     const wa = waterGeo.attributes.aDepth;
     for (let i = 0; i < wp.count; i++) {
       const x = wp.getX(i), z = wp.getZ(i);
@@ -1349,9 +1390,155 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
-    buildPaths, squareCells, setOwnership, followShadow, ownership: () => own, state,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, ownership: () => own, state,
     season: () => currentSeason, reshape,
   };
+}
+
+// ---- the road, as a graph --------------------------------------------------
+// Which cells of paving are a junction and which are a stretch of lane between two of
+// them. Pure, and exported, because the one hard requirement on the drawing is measurable
+// and tests/paths.test.mjs measures it: a settler walks from cell middle to cell middle
+// and `gateOf` in main.js looks a road cell up by its middle, so wherever the paving ends
+// up drawn it has to still be under those middles.
+//
+// A junction, a dead end and every cell of a plaza keep a tile of their own. The plaza is
+// the interesting one: the corner cell of a five-by-five square has exactly two
+// neighbours, so by degree alone it would be taken for a stretch of lane and the square
+// would come out with a bite out of each corner.
+const ROAD_N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+export function roadGraph(paths, squares, size) {
+  const kind = new Map();
+  const at = (gx, gz) => gx + gz * size;
+  const inside = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const put = (gx, gz, k) => { if (inside(gx, gz) && !kind.has(at(gx, gz))) kind.set(at(gx, gz), k); };
+  for (const p of paths || []) {
+    // Every route is trodden earth; only explicitly paved plaza cells are stone.
+    const k = 'sand';
+    for (const c of p.cells) put(c[0], c[1], k);
+  }
+  // The plaza wins where a path enters it, so sand never cuts stripes through its paving.
+  const plaza = new Set();
+  for (const c of squares || []) {
+    if (!inside(c[0], c[1])) continue;
+    plaza.add(at(c[0], c[1]));
+    kind.set(at(c[0], c[1]), 'plaza');
+  }
+  const has = (gx, gz) => inside(gx, gz) && kind.has(at(gx, gz));
+  const nbs = (gx, gz) => {
+    const out = [];
+    for (const [dx, dz] of ROAD_N4) if (has(gx + dx, gz + dz)) out.push([gx + dx, gz + dz]);
+    return out;
+  };
+  const cells = [];
+  for (const k of kind.keys()) cells.push([k % size, (k - (k % size)) / size]);
+
+  const nodes = new Set();
+  for (const [gx, gz] of cells) if (plaza.has(at(gx, gz)) || nbs(gx, gz).length !== 2) nodes.add(at(gx, gz));
+  const isNode = (gx, gz) => nodes.has(at(gx, gz));
+
+  const chains = [];
+  const taken = new Set();
+  const walk = (from, first) => {
+    const run = [];
+    let prev = from, cur = first;
+    while (cur && !isNode(cur[0], cur[1]) && !taken.has(at(cur[0], cur[1]))) {
+      run.push(cur);
+      taken.add(at(cur[0], cur[1]));
+      const next = nbs(cur[0], cur[1]).find((q) => q[0] !== prev[0] || q[1] !== prev[1]);
+      prev = cur;
+      cur = next;
+    }
+    if (!run.length) return;
+    chains.push({ from, run, to: cur || null, kind: 'sand' });
+  };
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // A ring of degree-two cells has no junction to be cut at, so it is cut anywhere: the
+  // cell we happen to reach first becomes a tile and the rest of the loop a lane that
+  // starts and ends on it.
+  for (const [gx, gz] of cells) {
+    if (isNode(gx, gz) || taken.has(at(gx, gz))) continue;
+    nodes.add(at(gx, gz));
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // Last, so that a cell promoted above still gets its tile.
+  const tiles = [];
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    tiles.push({
+      gx, gz, kind: kind.get(at(gx, gz)),
+      west: has(gx - 1, gz), east: has(gx + 1, gz), north: has(gx, gz - 1), south: has(gx, gz + 1),
+    });
+  }
+  return { cells, kind, tiles, chains };
+}
+
+// A chain of cell middles, turned into a curve. The straights stay straight and every
+// corner is replaced by a circular fillet tangent to both legs.
+//
+// A fillet rather than a spline, and that is the whole of the argument. Chaikin or
+// Catmull-Rom would be shorter, but neither can promise how far it wanders from the points
+// it was built from, and here that promise is the requirement: two passes of Chaikin cut a
+// single right angle by 0.177, which fits inside 0.18, and a staircase of right angles by
+// twice as much, which does not - and a staircase is exactly what a meandering router
+// produces. A fillet's depth is arithmetic: for an interior angle a and radius r it is
+// r (1/sin(a/2) - 1), so the radius can be solved for the depth that is allowed. The
+// bound then holds at every corner on the island by construction rather than by
+// measurement, and the radius is capped at half of the shorter leg so two fillets on
+// neighbouring corners never eat into each other.
+export function smoothLane(pts, maxDev, arcStep = 0.5) {
+  if (pts.length < 3) return pts.slice();
+  const leg = (p, v) => {
+    const x = p[0] - v[0], z = p[1] - v[1];
+    const len = Math.hypot(x, z) || 1;
+    return { x: x / len, z: z / len, len };
+  };
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const v = pts[i];
+    const a = leg(pts[i - 1], v), b = leg(pts[i + 1], v);
+    const angle = Math.acos(clamp(a.x * b.x + a.z * b.z, -1, 1));
+    if (angle > Math.PI - 0.02) { out.push(v); continue; }       // straight: nothing to cut
+    const h = angle / 2;
+    const r = Math.min(maxDev / (1 / Math.sin(h) - 1), Math.min(a.len, b.len) * 0.5 * Math.tan(h));
+    const t = r / Math.tan(h);
+    const bl = Math.hypot(a.x + b.x, a.z + b.z) || 1;
+    const cx = v[0] + ((a.x + b.x) / bl) * (r / Math.sin(h));
+    const cz = v[1] + ((a.z + b.z) / bl) * (r / Math.sin(h));
+    const a0 = Math.atan2(v[1] + a.z * t - cz, v[0] + a.x * t - cx);
+    let d = Math.atan2(v[1] + b.z * t - cz, v[0] + b.x * t - cx) - a0;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const seg = Math.max(1, Math.ceil(Math.abs(d) / arcStep));
+    for (let k = 0; k <= seg; k++) {
+      const ang = a0 + (d * k) / seg;
+      out.push([cx + Math.cos(ang) * r, cz + Math.sin(ang) * r]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// How far the furthest of `pts` ends up from the polyline `curve`. The measurement the
+// bound above is stated in, and the reason `smoothLane` is a separate function at all.
+export function offCurve(pts, curve) {
+  let worst = 0;
+  for (const p of pts) {
+    let best = Infinity;
+    for (let i = 0; i + 1 < curve.length; i++) {
+      const [ax, az] = curve[i], [bx, bz] = curve[i + 1];
+      const dx = bx - ax, dz = bz - az;
+      const l2 = dx * dx + dz * dz;
+      const t = l2 ? clamp(((p[0] - ax) * dx + (p[1] - az) * dz) / l2, 0, 1) : 0;
+      best = Math.min(best, Math.hypot(p[0] - (ax + dx * t), p[1] - (az + dz * t)));
+    }
+    if (best > worst) worst = best;
+  }
+  return worst;
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------

@@ -119,6 +119,42 @@ const SHEETS = {
       return [52 * t, 58 * t, 50 * t];
     });
   },
+  // Sand, for the footpaths between the front doors. Detail only, unlike the cobbles
+  // above: the colour of a sandy path is in the mesh, and a sheet with sand's own yellow
+  // in it would multiply over that and come out as mustard - see the note at the top.
+  // So what is drawn here is grit, the slow unevenness of a track that has been walked
+  // rather than laid, and the odd pebble trodden into it, in brightness alone.
+  //
+  // Quiet, 0.74 to 0.95. This is the surface you look straight down at from two metres
+  // in walk mode and it runs the length of the island in the overview; a loud sheet on it
+  // would read as gravel from above and as static from below.
+  'path-sand': () => {
+    const grit = fbm(40401, [64, 128, 256]);
+    const drift = fbm(40402, [6, 13]);
+    const pebbles = sites(11, 11, 0.9, 40403);
+    const reach = (N / 11) * 0.34;
+    return draw((x, y) => {
+      let stone = 0;
+      for (const s of pebbles) {
+        const d = Math.hypot(wrapD(x, s.x), wrapD(y, s.y)) / reach;
+        if (d < 1) stone = Math.max(stone, (1 - d * d) * (s.tone - 0.8));
+      }
+      return detail(0.74 + 0.16 * (grit(x, y) * 0.55 + drift(x, y) * 0.45) + 0.12 * stone, 1);
+    });
+  },
+  // Rounded river shingle with quiet, irregular joints. Like the field and path sheets
+  // this carries detail rather than colour; the bank palette remains in world.js so it
+  // still belongs to the island's light, season and distance haze.
+  'river-shingle': () => {
+    const pebble = cells(sites(14, 14, 0.95, 51511, 1.15), 1.15);
+    const grain = fbm(51512, [36, 84, 168]);
+    return draw((x, y) => {
+      const c = pebble(x, y);
+      const round = Math.min(1, c.edge / 5.5);
+      const tone = (0.63 + 0.25 * c.tone * (0.38 + 0.62 * round)) * (0.92 + grain(x, y) * 0.16);
+      return detail(tone, 1);
+    });
+  },
   // Bark: a vertical grain with deep fissures. The lattice is stretched up the trunk so
   // the noise runs with the wood rather than across it.
   bark: () => {

@@ -43,7 +43,7 @@ road leaves across a bridge, or whose parcel the route re-enters further along -
 there is no single crossing where the land stops being theirs.
 
 The fallback is not wrong: the head of the road is a reasonable place for a sign. It is
-only that a gate is worth hunting for where a road actually crosses a hedge, and for
+only that a gate is worth hunting for where a road actually crosses a boundary, and for
 those six it never does. Anyone wanting them properly gated would have to decide what a
 gate means when the boundary is a river or is crossed twice.
 

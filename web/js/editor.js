@@ -105,14 +105,21 @@ const num = (v) => String(r6(v));
 // missing sx means one, so writing `sx: 1` would say the opposite of saying nothing. And
 // `repaint` is a switch rather than a measurement - see mesh() in buildings.js - so it is
 // written out as the word and not as a number that happens to be true.
+//
+// Which is why a key that is not there has to fall back on what the builders take it to
+// mean and not on zero: a piece with no scale read as `sx: 0`, and every line this page
+// handed out for a box carried three of them. On a box they are ignored and were merely
+// noise that no line in the file could ever be matched against; on a Blender part
+// `mesh()` obeys them, so the pasted line drew the piece at no size at all.
 const PLACE_KEYS = ['x', 'y', 'z', 'rx', 'ry', 'rz', 'emissive', 'sx', 'sy', 'sz', 'repaint'];
 const PLACE_REST = { sx: 1, sy: 1, sz: 1 };
 function canonO(o) {
   const out = {};
   for (const k of PLACE_KEYS) {
     if (k === 'repaint') { if (o[k]) out[k] = true; continue; }
-    const v = r6(o[k] ?? 0);
-    if (v === (PLACE_REST[k] ?? 0)) continue;
+    const rest = PLACE_REST[k] ?? 0;
+    const v = r6(o[k] ?? rest);
+    if (v === rest) continue;
     out[k] = v;
   }
   return out;
@@ -217,9 +224,25 @@ const active = () => items.filter((it) => it.state !== 'removed');
 const fromFile = (it) => it.base !== null;
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
+// A primitive comes out of `buildings.js` without normals - `finish()` throws them away
+// so that parts built at different sizes can be welded together, and `merge()` works them
+// out again once the loaf is whole. This page never merges, so nothing ever worked them
+// out, and a part with no normals reads (0, 0, 0) in the shader. Flat shading hid half of
+// that: the lighting takes its normal from the screen-space derivatives instead and looked
+// right. The sheet projection does not - it blends three planar samples by how far the
+// face turns towards each axis, and with no direction to turn there is nothing to blend,
+// so every plastered wall, tiled roof, stone plinth and plank came out black while the
+// glass and the ironwork, which are drawn on nothing, stayed as they were. So a piece gets
+// its normals here, exactly as the merge would have given them: per face, which is what
+// the island itself draws.
+function dress(geometry) {
+  if (!geometry.attributes.normal) geometry.computeVertexNormals();
+  return geometry;
+}
+
 // Gives a piece its mesh and its place in the list.
 function mount(it, geometry) {
-  it.mesh = new THREE.Mesh(geometry, material);
+  it.mesh = new THREE.Mesh(dress(geometry), material);
   it.mesh.castShadow = true;
   it.mesh.receiveShadow = true;
   it.mesh.userData.item = it;
@@ -351,7 +374,7 @@ function sameShape(a, b) {
 }
 
 function rebuild(rec) {
-  return PRIMS[rec.fn].fn(...clone(rec.args), rec.hex, clone(rec.o));
+  return dress(PRIMS[rec.fn].fn(...clone(rec.args), rec.hex, clone(rec.o)));
 }
 
 // The geometry a piece ought to be showing: the one it arrived with for as long as it is

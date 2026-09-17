@@ -261,7 +261,7 @@ export function createSettlers(scene, material, terrain) {
     // own plot centre spends its life inside its own walls, and an apprentice, whose
     // shed is barely wider than it is, walks straight through them.
     const rot = (spec.plot ? spec.plot.rot : 0) | 0;
-    const [ox, oz] = DOOR_DIR[rot] || DOOR_DIR[0];
+    const [ox, oz] = opts.yaw == null ? (DOOR_DIR[rot] || DOOR_DIR[0]) : [Math.sin(opts.yaw), Math.cos(opts.yaw)];
     const reach = spec.kind === 'shed' ? 0.46 : 0.85;
     const home = [worldPos[0] + ox * reach, worldPos[2] + oz * reach];
     const f = {
