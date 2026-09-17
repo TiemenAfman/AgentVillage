@@ -32,6 +32,7 @@ import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { attachClock, updateClock } from './clock.js';
+import { attachFountain, updateFountain } from './fountain.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
@@ -1373,7 +1374,8 @@ function makeRecord(spec) {
 
   const rec = {
     id: spec.id, spec, group, mesh, built, visible: true, scaffold: null,
-    flagIdx: -1, blades: null, beacon: null, clock: null, flame: null, fire: null, smokeT: 0,
+    flagIdx: -1, blades: null, beacon: null, clock: null, fountain: null,
+    flame: null, fire: null, smokeT: 0,
   };
   attachExtras(rec);
   state.byId.set(spec.id, rec);
@@ -1401,6 +1403,9 @@ function attachExtras(rec) {
   }
   if (built.animated && built.animated.clock) {
     rec.clock = attachClock(group, built.animated.clock.at, buildingMat);
+  }
+  if (built.animated && built.animated.fountain) {
+    rec.fountain = attachFountain(group, built.animated.fountain.at, buildingMat);
   }
   if (built.animated && built.animated.mailflag) {
     rec.mailFlag = attachMailFlag(group, built.animated.mailflag.at, buildingMat);
@@ -1447,6 +1452,10 @@ function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fi
 
 function disposeRecord(rec) {
   rec.mesh.geometry.dispose();
+  if (rec.fountain) {
+    rec.fountain.surface.geometry.dispose();
+    rec.fountain.jets.geometry.dispose();
+  }
   if (rec.nameplate) rec.nameplate.dispose();
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
@@ -2442,6 +2451,7 @@ function frame(nowMs) {
     if (!rec.group.visible) continue;
     if (rec.blades) rec.blades.rotation.z += dt * 0.55;
     if (rec.clock) updateClock(rec.clock, hour);
+    if (rec.fountain) updateFountain(rec.fountain, dt);
     if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
     if (rec.beacon) {
       rec.beacon.a += dt * 0.85;
