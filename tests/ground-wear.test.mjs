@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groundWearField } from '../web/js/ground-wear.js';
+import { groundWearField, riverBankField } from '../web/js/ground-wear.js';
 const sample=(f,x,z,size=16)=>f.data[Math.floor((x+size/2)*f.resolution/size)+Math.floor((z+size/2)*f.resolution/size)*f.resolution];
 const lane={points:[[-4,0],[4,0]]};
 test('sand has a solid walking centre, a graded verge and untouched meadow',()=>{
@@ -44,4 +44,17 @@ test('adjoining plaza cells make continuous paving with a graded outer edge',()=
  assert.ok(sample(f,1.9,0)>0 && sample(f,1.9,0)<200);
  assert.equal(sample(f,2.6,0),0);
  assert.ok(groundWearField(16,1337,[],[],256).data.every(v=>v===0),'removing a square clears its mask');
+});
+
+test('riverbank cells join into one irregular, softly feathered shore',()=>{
+ const cells=[[7,8],[8,8],[9,8],[9,7]];
+ const a=riverBankField(16,42,cells,256);
+ const b=riverBankField(16,42,cells,256);
+ assert.deepEqual(a,b,'the shore is stable for the island seed');
+ for(let x=-.9;x<=1.4;x+=.1)assert.ok(sample(a,x,.5)>245,'adjoining bank cells have no seams');
+ const edge=Array.from({length:24},(_,i)=>sample(a,-1.45+i*.12,1.02));
+ assert.ok(edge.some(n=>n>20&&n<230),'the bank fades into the meadow');
+ assert.ok(Math.max(...edge)-Math.min(...edge)>80,'the outside edge is not a square strip');
+ assert.equal(sample(a,-3,3),0);
+ assert.ok(riverBankField(16,42,[],128).data.every(n=>n===0));
 });

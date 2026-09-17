@@ -142,6 +142,19 @@ const SHEETS = {
       return detail(0.74 + 0.16 * (grit(x, y) * 0.55 + drift(x, y) * 0.45) + 0.12 * stone, 1);
     });
   },
+  // Rounded river shingle with quiet, irregular joints. Like the field and path sheets
+  // this carries detail rather than colour; the bank palette remains in world.js so it
+  // still belongs to the island's light, season and distance haze.
+  'river-shingle': () => {
+    const pebble = cells(sites(14, 14, 0.95, 51511, 1.15), 1.15);
+    const grain = fbm(51512, [36, 84, 168]);
+    return draw((x, y) => {
+      const c = pebble(x, y);
+      const round = Math.min(1, c.edge / 5.5);
+      const tone = (0.63 + 0.25 * c.tone * (0.38 + 0.62 * round)) * (0.92 + grain(x, y) * 0.16);
+      return detail(tone, 1);
+    });
+  },
   // Bark: a vertical grain with deep fissures. The lattice is stretched up the trunk so
   // the noise runs with the wood rather than across it.
   bark: () => {

@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
 import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
-import { groundWearField, dressGroundWear } from './ground-wear.js';
+import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
@@ -261,7 +261,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const plazaTexture = wearTexture.clone();
   plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
   plazaTexture.needsUpdate = true;
-  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture);
+  const bank = riverBankField(size, village.seed || 0, terrain.riverBankCells, wearResolution);
+  const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
+  bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
+  bankTexture.needsUpdate = true;
+  const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  blankRiverSheet.needsUpdate = true;
+  const riverSheet = { value: blankRiverSheet };
+  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture, { texture: bankTexture, sheet: riverSheet });
+  sheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
   ground.name = 'ground';
   group.add(ground);
@@ -1019,12 +1027,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   buildPaths(village.paths);
 
   // ---- riverbanks ----------------------------------------------------------
-  // The water itself needs nothing drawn: it is under the same plane as the sea, and the
-  // height bands already put sand along a channel that has cut down to below sea level.
-  // What is missing is any sign that it is fresh water rather than a wet ditch, so the
-  // banks get a shingle decal at the waterline and a stand of reeds along it. Rivers are
-  // part of the terrain and never change, so this is built once.
-  function buildRiverBanks() {
+  // Shingle is painted into the terrain above, along with the paths and yards. Only the
+  // reeds need geometry of their own here. Keeping them separate stops a texture meant
+  // for stones from being stretched over every blade.
+  function buildRiverReeds() {
     if (!terrain.riverBankCells || !terrain.riverBankCells.length) return null;
     const pos = [], col = [], idx = [];
     let v = 0;
@@ -1034,19 +1040,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
       idx.push(v, v + 1, v + 2, v, v + 2, v + 1);      // both faces: a blade has no back
       v += 3;
     };
-    const shingleQuad = (x0, z0, x1, z1, hex) => {
-      tmpColor.setHex(hex);
-      for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
-        pos.push(qx, terrain.worldHeight(qx, qz) + 0.035, qz);
-        col.push(tmpColor.r, tmpColor.g, tmpColor.b);
-      }
-      idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
-      v += 4;
-    };
     for (const [gx, gz] of terrain.riverBankCells) {
       const [x, z] = terrain.cellWorld(gx, gz);
       const h = hash32(`bank:${gx},${gz}`);
-      shingleQuad(x - 0.5, z - 0.5, x + 0.5, z + 0.5, (h & 1) ? 0x9a8a6a : 0x8d7d60);
       // Reeds only where the bank is close to the waterline; the top of a ravine is dry.
       if (terrain.worldHeight(x, z) > 0.9) continue;
       const clumps = 1 + (h % 3);
@@ -1073,7 +1069,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     return g;
   }
   {
-    const bg = buildRiverBanks();
+    const bg = buildRiverReeds();
     if (bg) {
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
