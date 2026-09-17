@@ -395,6 +395,39 @@ cb('threshold', (.48, .075, .29), (.19, .035, .34), 'stone:foundation')
 cr('cross upright', (0, 2.02, .53), (0, 2.19, .53), .012, 'plain:copper')
 cr('cross arms', (-.055, 2.13, .53), (.055, 2.13, .53), .010, 'plain:copper')
 
+# ---- and then the whole thing, to the town hall's scale ---------------------------
+# A church was authored at its own size and stood next to the town hall looking like a
+# chapel of ease. The door is the honest ruler between two buildings - a door is a person
+# wide whoever built it - and the town hall's leaf is 0.690 against this one's 0.460, so
+# the church wants a clean 1.5.
+#
+# It does not get one, for two reasons pulling the same way. At 1.5 the nave, its tower and
+# the great buttress measure 3.30 end to end and a civic lot is three cells, so the church
+# would stand in paving it does not own. And a square building is not set down square:
+# web/js/house-placement.js turns and shifts each one a little so the middle of the village
+# is not a stamped grid, and it only does that while the building still clears +-1.47 when
+# turned - which for something this long is the tighter of the two limits by some way.
+#
+# 1.30 is the largest that leaves it that room. The door comes out at 0.598 against 0.690,
+# and the tower at 2.85 stands just under the town hall's 2.91 - near enough that the two
+# read as one village, and written down here so that the next person to reach for 1.5
+# knows what it costs.
+CHAPEL_SCALE = 1.30
+for obj in chapel.objects:
+    obj.location *= CHAPEL_SCALE
+    obj.scale *= CHAPEL_SCALE
+bpy.context.view_layer.update()
+
+# And centred on the lot it is given. Everything above was authored with the tower and the
+# buttress reaching forward from the nave, so the middle of the church is a third of a cell
+# in front of its own origin - which the scale multiplies. Measured off the corners rather
+# than written down, so a hand laid on any part of the church above cannot leave this
+# number behind pointing at where the church used to end.
+corners = [obj.matrix_world @ Vector(c) for obj in chapel.objects for c in obj.bound_box]
+middle = (min(v.y for v in corners) + max(v.y for v in corners)) / 2
+for obj in chapel.objects:
+    obj.location.y -= middle
+
 # ---------------------------------------------------------------- civic_fountain
 # The centrepiece of the square: a broad stone basin, a carved pedestal and two tiers of
 # water. Its old procedural version had the right outline, but the repeated collars,

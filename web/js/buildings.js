@@ -1661,6 +1661,10 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
   // round it would be a plinth under a letter box.
   'mailbox',
+  // The church brings its own stone footing, and at its proper size it reaches to within
+  // two centimetres of its lot on both sides: a step round the outside would be a second
+  // plinth under the first and would stand in the paving of the cells next door.
+  'chapel',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower']);
