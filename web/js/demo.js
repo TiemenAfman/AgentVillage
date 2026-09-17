@@ -706,8 +706,9 @@ if (wanted) {
   const found = tags.find((t) => t.el.textContent.toLowerCase().startsWith(wanted.toLowerCase()));
   if (!found) console.warn('model sheet: nothing on the field is called', wanted);
   else {
-    controls.target.set(0, 0.6, found.world.z);
-    camera.position.set(0, 5.5, found.world.z + 13);
+    const focusZ = found.world.z - 1.1;
+    controls.target.set(found.world.x, 0.6, focusZ);
+    camera.position.set(found.world.x + 1.8, 2.1, focusZ + 2.8);
   }
 }
 controls.update();

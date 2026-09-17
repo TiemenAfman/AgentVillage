@@ -305,17 +305,35 @@ empty('smoke', (0, .72, 0), chimney)
 # petal bowl, copper finial and arcing jets give it the silhouette of a civic monument.
 fountain = asset('civic_fountain')
 
+def fountain_profile(name, profile, sides=24):
+    """Closed radial section: outer wall, coping and inner wall, with an open centre."""
+    verts = [xyz((r * math.cos(i * math.tau / sides), y,
+                  r * math.sin(i * math.tau / sides)))
+             for r, y in profile for i in range(sides)]
+    faces = []
+    for j in range(len(profile)):
+        for i in range(sides):
+            a = j * sides + i
+            b = j * sides + (i + 1) % sides
+            c = ((j + 1) % len(profile)) * sides + (i + 1) % sides
+            d = ((j + 1) % len(profile)) * sides + i
+            faces.append((a, d, c, b))
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    o = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(o)
+    return adopt(o, name, 'stone:aged', fountain)
+
 # A sixteen-sided step under a rounder basin keeps the footprint compatible with the
 # flower bed that occupies this exact spot before the village earns its fountain.
 upright('civic_fountain foundation', (0, 0, 0), .55, .08,
         'stone:foundation', fountain, top=.52, sides=16)
-upright('civic_fountain basin wall', (0, .08, 0), .49, .22,
-        'stone:aged', fountain, top=.47, sides=24)
+fountain_profile('civic_fountain basin wall',
+                 [(.49, .08), (.515, .30), (.515, .35), (.435, .35), (.405, .12)])
 upright('civic_fountain basin foot', (0, .08, 0), .515, .055,
         'stone:foundation', fountain, top=.50, sides=24)
-upright('civic_fountain basin rim', (0, .285, 0), .535, .065,
-        'stone:foundation', fountain, top=.525, sides=24)
-upright('civic_fountain basin water', (0, .305, 0), .445, .025,
+upright('civic_fountain basin water', (0, .305, 0), .435, .025,
         'plain:water', fountain, sides=24)
 
 # Eight shallow ribs make the basin feel assembled and carved without spending geometry
@@ -340,36 +358,45 @@ for y, r in [(.51, .15), (.67, .12), (.82, .14)]:
 
 # A flared upper bowl with a thin sheet of water. Eight small lobes below its edge give
 # the otherwise low-poly circle a flower-like profile from the town square.
-upright('civic_fountain upper bowl', (0, .82, 0), .13, .11,
-        'stone:aged', fountain, top=.29, sides=16)
-upright('civic_fountain upper rim', (0, .91, 0), .31, .045,
-        'stone:foundation', fountain, top=.295, sides=16)
-upright('civic_fountain upper water', (0, .932, 0), .27, .018,
+fountain_profile('civic_fountain upper bowl',
+                 [(.10, .82), (.235, .91), (.235, .97), (.195, .97), (.09, .85)], 16)
+upright('civic_fountain upper water', (0, .932, 0), .195, .018,
         'plain:water', fountain, sides=16)
-for i in range(8):
-    a = (i / 8) * math.pi * 2
-    x, z = math.cos(a) * .235, math.sin(a) * .235
-    upright('civic_fountain bowl lobe', (x, .865, z), .055, .06,
-            'stone:aged', fountain, top=.025, sides=6)
-
-# Four two-segment streams arc from the upper bowl into the lower basin. They remain
-# geometry, not particles, so the landmark is deterministic and costs no extra draw call.
+# Four continuous streams arc from the upper bowl into the lower basin.
 for i in range(4):
     a = (i / 4) * math.pi * 2
     d = Vector((math.cos(a), 0, math.sin(a)))
-    p0 = (d.x * .18, .90, d.z * .18)
-    p1 = (d.x * .32, .73, d.z * .32)
-    p2 = (d.x * .41, .34, d.z * .41)
-    rod('civic_fountain water jet', p0, p1, .013, 'plain:water', fountain, sides=5)
-    rod('civic_fountain water jet', p1, p2, .011, 'plain:water', fountain, sides=5)
+    # A continuous tapered tube following a gravity-shaped arc, with shared rings.
+    verts, faces = [], []
+    for j in range(9):
+        t = j / 8
+        radius = .19 + .215 * t
+        y = .965 + .10 * t - .735 * t * t
+        centre = Vector((d.x * radius, y, d.z * radius))
+        tangent = Vector((d.x * .215, .10 - 1.47 * t, d.z * .215)).normalized()
+        side = Vector((-d.z, 0, d.x))
+        normal = tangent.cross(side).normalized()
+        for k in range(5):
+            angle = k * math.tau / 5
+            v = centre + (.009 - .003 * t) * (side * math.cos(angle) + normal * math.sin(angle))
+            verts.append(xyz(v))
+    for j in range(8):
+        for k in range(5):
+            faces.append((j*5+k, j*5+(k+1)%5, (j+1)*5+(k+1)%5, (j+1)*5+k))
+    mesh = bpy.data.meshes.new('stream')
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    o = bpy.data.objects.new('civic_fountain water jet', mesh)
+    bpy.context.scene.collection.objects.link(o)
+    adopt(o, 'civic_fountain water jet', 'plain:water', fountain)
 
 # A smaller crown repeats the lower pedestal and ends in a warm copper seed-shaped
 # finial, tying the monument back to the agricultural village around it.
-upright('civic_fountain crown stem', (0, .95, 0), .065, .20,
+upright('civic_fountain crown stem', (0, .95, 0), .045, .07,
         'stone:aged', fountain, top=.045, sides=10)
-upright('civic_fountain crown collar', (0, 1.12, 0), .095, .045,
-        'stone:foundation', fountain, top=.08, sides=10)
-upright('civic_fountain finial', (0, 1.16, 0), .075, .17,
+upright('civic_fountain crown collar', (0, 1.01, 0), .055, .025,
+        'stone:foundation', fountain, top=.045, sides=10)
+upright('civic_fountain finial', (0, 1.035, 0), .045, .06,
         'plain:copper', fountain, top=0, sides=10)
 
 # ---------------------------------------------------------------- civic_seed_stall
