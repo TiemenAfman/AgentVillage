@@ -453,12 +453,14 @@ over to the next. Height is allowed one dip, and takes it in the one place where
 true to life - a well-grown hedge stands taller than the lowest dry stone. Sheds and civic
 lots do not count - neither is anybody's house.
 
-Three of those four are Blender models rather than drawn shapes - `assets/fence`,
+All four are Blender models rather than drawn shapes - `assets/rail`, `assets/fence`,
 `assets/hedge` and `assets/wall`, a bay to the ground cell, warped onto the ground it
 stands on. A drawn outline can only ever say one thing, and it says it for the whole
 length of the island: extrude the best hedge silhouette there is over four hundred metres
 and what you have is topiary. A bay can be picked from two, so what you have instead is a
-boundary somebody built a bit at a time.
+boundary somebody built a bit at a time. It is also the only way to draw a fence you can
+see a field through: the post and rail was one continuous board before, because a swept
+outline has no way to leave a gap in itself.
 
 **`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
 owned, and a change to how it is divided means re-planning every house and shed at once -
