@@ -1,4 +1,4 @@
-// What makes a hamlet look like a place: who owns which ground, a hedge along the edge
+// What makes a hamlet look like a place: who owns which ground, a fence along the edge
 // of it, and the fields and orchards in between. None of this is transmitted - the wire
 // carries one bitstring per parcel row and everything here is derived from it, so the
 // picture can never disagree with the plots and the roads it is drawn around.
@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash32 } from 'shared/rng.mjs';
 import { TIER_INDEX } from './buildings.js';
+import * as models from './models.js';
 
 export const NONE = -1, TOWN = -2;
 
@@ -171,7 +172,7 @@ export function settledDistance(terrain, owner, roadCells, { cap = 63 } = {}) {
 // ---- the edge of a hamlet ---------------------------------------------------
 // Merged strips rather than instanced blocks: buildable ground is allowed to slope by up
 // to 0.6, so a rigid box on a border cell floats or sinks visibly. `buildPaths` already
-// solves this for footpaths by sampling the ground per corner; a hedge does the same one
+// solves this for footpaths by sampling the ground per corner; a boundary does the same one
 // level up, chaining collinear edges into runs and following the ground along each.
 //
 // The outline is closed. Every session of one project stands on that project's own land -
@@ -179,14 +180,15 @@ export function settledDistance(terrain, owner, roadCells, { cap = 63 } = {}) {
 // opens only where a road crosses, leaving two gateposts behind, so a hamlet is enclosed
 // but never sealed. A river needs no code here: where one runs along a parcel edge the
 // outward cell is not land, so the `isLand` test below drops that segment and the water
-// does the job - the same test that already stops a hedge running out into the sea.
+// does the job - the same test that already stops a run of boundary running out into the sea.
 
 // What a hamlet puts up is its own standing rather than a die roll, and it is read off
 // the houses inside it: tent 0 through keep 5, averaged. Sheds belong to apprentices and
 // civic lots to the town, so neither has a say in the wall.
 //
 //   tents and huts    post and rail, thin enough to step over
-//   cottages          a hedge, grown thick enough to stop a sheep
+//   huts and cottages a paling fence, closed enough to stop a sheep
+//   cottages and up   a hedge, which is the first boundary that took years rather than a day
 //   houses and above  dry stone, and the grander the houses the wider it gets
 //
 // Thickness ramps within a material as well as between them, and never doubles back at a
@@ -194,10 +196,30 @@ export function settledDistance(terrain, owner, roadCells, { cap = 63 } = {}) {
 // village of manors is visibly heavier than one of plain houses. Height follows at half
 // that rate: enough to keep a wall taller than it is wide, which is the difference
 // between a rampart and a very long bench.
+//
+// Height is the one that is allowed to dip, and it dips in exactly one place: a
+// well-grown hedge stands taller than the lowest dry stone. That is what a hedge does -
+// it is the tall thin boundary and a wall is the low thick one - and it is why thickness
+// and not height is the number the ladder is read by.
+//
+// Three of the four are Blender models now, laid a bay to the ground cell by modelled()
+// below, and only the post and rail is still a swept profile. Two things follow from that
+// and are worth knowing before reading the table.
+//
+// A modelled rung carries no `base` or `top`. Its colour is on the material in the .blend,
+// and a second opinion here would be the thing assets/README.md warns about - two things
+// deciding one colour make mud. All a rung adds is the nudge towards the hamlet's own hue
+// that every boundary gets.
+//
+// And the jitter is per bay rather than per half unit, so it means something different: a
+// whole bay stands a little tall or a little short, and what a big number buys is a step
+// at every joint. Sawn timber gets the rail's 0.02, growth gets more, and the wall gets
+// less than the hedge because a course of stone is laid level and a hedge is not.
 const BOUNDARY = [
-  { kind: 'rail', to: 1.2, h: [0.30, 0.34], t: [0.07, 0.14], jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
-  { kind: 'hedge', to: 2.8, h: [0.36, 0.46], t: [0.16, 0.30], jitter: 0.06, base: 0x4a6b39, top: 0x5d8347 },
-  { kind: 'wall', to: 5.0, h: [0.42, 0.56], t: [0.32, 0.50], jitter: 0.11, base: 0x8a857c, top: 0x9a958c },
+  { kind: 'rail', to: 1.0, h: [0.30, 0.34], t: [0.07, 0.14], jitter: 0.02, base: 0x6b4a2f, top: 0x7d5a3a },
+  { kind: 'fence', to: 2.2, h: [0.36, 0.46], t: [0.16, 0.28], jitter: 0.02 },
+  { kind: 'hedge', to: 3.4, h: [0.46, 0.54], t: [0.29, 0.39], jitter: 0.05 },
+  { kind: 'wall', to: 5.0, h: [0.50, 0.58], t: [0.40, 0.50], jitter: 0.03 },
 ];
 const HEAVIEST = BOUNDARY[BOUNDARY.length - 1];
 const mix = ([a, b], f) => a + (b - a) * f;
@@ -284,7 +306,7 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
   for (let gz = 0; gz < size; gz++) {
     for (let gx = 0; gx < size; gx++) {
       const k = ownerAt(gx, gz);
-      // The town puts up no hedge. A hamlet's edge says whose land you are standing on,
+      // The town puts up no boundary. A hamlet's edge says whose land you are standing on,
       // which is worth drawing; the commons is simply the middle of the island, and a
       // fence around it reads as a boundary between nothing and nothing - clearest on an
       // early island, where it was one long line across empty grass.
@@ -292,14 +314,14 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
       for (const [dx, dz] of N4) {
         const nx = gx + dx, nz = gz + dz;
         if (ownerAt(nx, nz) === k) continue;
-        // Two owners meeting would draw the hedge twice; the lower index draws it.
+        // Two owners meeting would draw the boundary twice; the lower index draws it.
         const no = ownerAt(nx, nz);
         // The lower index draws a shared edge - but the town draws nothing now, so a
         // hamlet meeting the commons has to put up its own side or the run breaks there.
         if (no !== NONE && no !== TOWN && no < k) continue;
-        // The coast is its own boundary, and a hedge over water looks like a mistake.
+        // The coast is its own boundary, and a boundary over water looks like a mistake.
         if (!terrain.isLand(nx, nz)) continue;
-        // Where a road crosses, the hedge opens and leaves two gateposts behind.
+        // Where a road crosses, the boundary opens and leaves two gateposts behind.
         if (isRoad(gx, gz) && isRoad(nx, nz)) { posts.push([gx, gz, dx, dz, variantFor(k)]); continue; }
         edge(`h${k}`, variantFor(k), hueOf(k), gx, gz, dx, dz);
       }
@@ -369,7 +391,8 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
     let start = null, prev = null;
     const flush = () => {
       if (start === null) return;
-      const g = strip(terrain, run.axis, run.fixed, start, prev + 1, run.v, run.hue);
+      const lay = MODELLED[run.v.kind] ? modelled : strip;
+      const g = lay(terrain, run.axis, run.fixed, start, prev + 1, run.v, run.hue);
       if (g) parts.push(g);
     };
     for (const a of run.at) {
@@ -382,7 +405,7 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
   for (const [gx, gz, dx, dz, v] of posts) {
     const e = edgeAt(gx, gz, dx, dz);
     for (const end of [e.along, e.along + 1]) {
-      const g = post(terrain, e.axis, e.fixed, end, v);
+      const g = gatepost(terrain, e.axis, e.fixed, end, v);
       if (g) parts.push(g);
     }
   }
@@ -408,24 +431,38 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
 }
 
 // ---- the sheets a boundary is built out of ----------------------------------
-// Three surfaces on one mesh, done the way buildings.js does it rather than the obvious
+// Two surfaces on one mesh, done the way buildings.js does it rather than the obvious
 // way: a sheet index carried per vertex and one branch in the fragment shader. Every
-// hedge, fence and wall on the island goes into a single mergeGeometries - that is what
-// keeps the whole lot to one draw call - and material groups would cut that back up into
-// three, one per kind, for no gain at all.
+// fence and wall on the island goes into a single mergeGeometries - that is what keeps
+// the whole lot to one draw call - and material groups would cut that back up into one
+// per kind, for no gain at all.
 //
-// There is no uv anywhere on a boundary either. A run is a swept profile and a gatepost
-// is a cylinder, and the two merge into one loaf, so the sheet is projected from the
-// three axes at once and blended by how far the face turns towards each. That turns out
-// to be exactly what a fence wants, for nothing: the flank of a run has a normal across
-// the run, so the projection it takes is the one whose boards lie along it. A fence
-// going east-west gets its grain going east-west without being told which way it faces.
+// There is no uv anywhere on a boundary either. A run is a swept profile, a bay of fence
+// is a baked model and a gatepost is a cylinder, and the three merge into one loaf, so
+// the sheet is projected from the three axes at once and blended by how far the face
+// turns towards each. That turns out to be exactly what a fence wants, for nothing: the
+// flank of a run has a normal across the run, so the projection it takes is the one whose
+// boards lie along it. A fence going east-west gets its grain going east-west without
+// being told which way it faces.
 //
-// The wall takes the stacked stone the plinths already use and the rail takes the sawn
-// boards off the decking - both were drawn for this kind of job. Only the hedge needed a
-// sheet of its own, because nothing on the island was leaves at hedge scale.
+// The wall takes the stacked stone the plinths already use and everything wooden takes
+// the sawn boards off the decking - both were drawn for this kind of job. Only the hedge
+// needed a sheet of its own, because nothing on the island was leaves at hedge scale.
 const TEXTURES = 'textures/';
-const SHEET_INDEX = { hedge: 1, rail: 2, wall: 3 };
+// What the vertex carries and the shader branches on. Zero is no sheet at all, which the
+// shader reads as "leave this flat" - an iron or painted part of a baked model.
+const SHEET = { leaf: 1, plank: 2, stone: 3 };
+// Which of them a swept rung is built out of. Only the post and rail is swept now; the
+// other three are models, and a model's parts say what they are made of themselves.
+const SHEET_INDEX = { rail: SHEET.plank };
+// And that is where they say it: the material name in the .blend, whose prefix is one of
+// the island's sheets (assets/README.md). The map is here rather than in each build
+// script because the sheet a boundary is drawn on is the boundary's business - a fence
+// with an iron hinge on it should be able to say `plain:` and get the flat treatment
+// without anything here changing.
+const BAKED_SHEET = {
+  plank: SHEET.plank, plankZ: SHEET.plank, stone: SHEET.stone, foliage: SHEET.leaf, bark: SHEET.plank,
+};
 // One white pixel until a sheet lands, and for good if none ever does: white multiplies
 // out, so a boundary with no sheets is the boundary the island drew before there were any.
 const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
@@ -470,7 +507,7 @@ export function createBoundaryMaterial() {
     // Every sheet is multiplied over a vertex colour that is already the right colour, and
     // a sheet averages well under one, so each is lifted back to an average of about one
     // first and then mixed in by `k`. What is left is a swing either side of the colour
-    // the boundary always had - grain rather than gloom, and no risk of a hedge turning
+    // the boundary always had - grain rather than gloom, and no risk of a run turning
     // into a dark stripe across the island. The stacked stone is the loudest sheet in the
     // set by a distance and takes the smallest `k` of the three for it: the paving is
     // meant to keep the deepest tone on the island and nothing here may go near it.
@@ -511,20 +548,22 @@ export function createBoundaryMaterial() {
   return mat;
 }
 
-// The cross-section each kind of boundary is swept along, from the ground up: half-width
+// The cross-section the one swept rung is drawn along, from the ground up: half-width
 // as a fraction of the run's own thickness, then height as a fraction of its own height.
 // A boundary is read as a silhouette - from above, and from far enough away that no
-// detail on it survives - so the shape of that outline is the whole of the job. A hedge
-// that swells and draws in at the top reads as something grown; a wall that leans in as
-// it rises reads as something stacked by hand; a rail stays a plank with its edges taken
-// off. All three were the same shoebox before, and a shoebox reads as scenery.
+// detail on it survives - so the shape of that outline is the whole of the job. A wall
+// that leans in as it rises reads as something stacked by hand; a rail stays a plank with
+// its edges taken off. Both were the same shoebox before, and a shoebox reads as scenery.
+//
+// There were four. The hedge's outline swelled and drew in at the top, and the wall's
+// leaned in as it rose, and both were right about the shape and wrong about the length:
+// one outline is one outline however far you extrude it. Both are modelled now, along
+// with the fence that took the hedge's old rung - see modelled() below.
 const PROFILE = {
   rail: [[0.62, 0], [1, 0.24], [1, 0.82], [0.66, 1]],
-  hedge: [[0.52, 0], [0.96, 0.26], [1, 0.58], [0.84, 0.84], [0.44, 1]],
-  wall: [[1, 0], [0.94, 0.30], [0.82, 0.64], [0.66, 0.88], [0.40, 1]],
 };
 
-// A length of hedge from `a` to `b` along `axis` at world coordinate `fixed - half`,
+// A swept run from `a` to `b` along `axis` at world coordinate `fixed - half`,
 // following the ground: the profile above, swept along the run and closed off at both
 // ends, so it reads as a solid thing from any angle without needing a double-sided
 // material.
@@ -566,7 +605,7 @@ function strip(terrain, axis, fixed, a, b, v, hue) {
         pos.push(jx + sx * w, foot + rise * hf, jz + sz * w);
         // Weighted towards the base, because the light already finds the crown: a plain
         // lerp up a rounded profile lands the pale colour on the flanks as well, and the
-        // hedge comes out the colour of new growth all the way down.
+        // pale colour would reach all the way down and the run would read as one flat board.
         side.copy(base).lerp(top, Math.pow(hf, 1.6));
         col.push(side.r, side.g, side.b);
       }
@@ -586,7 +625,7 @@ function strip(terrain, axis, fixed, a, b, v, hue) {
   }
   // Both ends closed. A run stops wherever a gate opens or the land runs out, and an open
   // end is not a small thing on a face-culled material: you see straight into the run and
-  // out through its far side, which is the one place a hedge stops looking like a hedge.
+  // out through its far side, which is the one place a run stops looking like a solid thing.
   const cap = (bas, forward) => {
     const ring = [];
     for (let i = 0; i < L; i++) ring.push(bas + i);
@@ -604,26 +643,163 @@ function strip(terrain, axis, fixed, a, b, v, hue) {
   return g;
 }
 
+// ---- a run of modelled boundary ---------------------------------------------
+// Three of the four rungs are not swept at all. They are the bays baked out of
+// assets/fence, assets/hedge and assets/wall - a paling bay, a length of clipped growth,
+// eight stones in three courses - laid one to the ground cell, and the reason they are
+// models rather than profiles is that a profile can only say one thing. It says it very
+// well: a shape that swells and draws in reads as grown, a shape that leans in as it
+// rises reads as stacked. What it cannot say is that this cell is not the last one. One
+// outline extruded four hundred metres is the same four hundred metres of outline, and
+// from the air a hamlet's edge came out looking pressed rather than built.
+//
+// What a bay cannot do is bend, and the ground it stands on slopes by up to 0.6 across a
+// cell. So a model is warped rather than placed: every vertex takes the ground height at
+// its own point along the run, which leaves a post upright - its corners share one point
+// on the line - and lets a rail, a course or a hedge top lie along the slope, which is
+// what all three do. It is the same trick strip() plays with its profile, off the same
+// 0.5 sampling, and it is why a bay is exactly one cell long. A bay of any other length
+// would leave a stub at the end of every run on the island, and the joints would stop
+// landing on the cell corners the gateways are measured from.
+//
+// Each rung says which bays it is made of, what stands at every joint between two bays,
+// and what closes the run where a gateway opens. Only the fence has a joint piece: a
+// paling fence is bays hung between posts and the post is a thing you see, where a hedge
+// has no joints at all and a wall's are the ones between its own stones. `nominal` is the
+// size the set was modelled at - the numbers at the top of each scripts/build-*.py - and
+// the run is that model scaled to its own rung of the ramp.
+const MODELLED = {
+  fence: { bays: 'prop_fence_', joint: 'prop_fencepost', gate: 'prop_fencepost', nominal: { h: 0.41, t: 0.22 } },
+  hedge: { bays: 'prop_hedge_', joint: null, gate: null, nominal: { h: 0.50, t: 0.34 } },
+  wall: { bays: 'prop_wall_', joint: null, gate: 'prop_wallpier', nominal: { h: 0.54, t: 0.45 } },
+};
+// The bays are asked for by prefix rather than by name, which is the point of the `_a`,
+// `_b` naming in assets/README.md: a third rhythm modelled tomorrow is in the island's
+// rotation the moment it is baked, with no line changed here.
+const baysOf = (kind) => models.variants(MODELLED[kind].bays);
+
+// One run, from cell `a` to cell `b`: a bay in every gap between whole coordinates, and
+// whatever the rung puts at a joint at every one of them. `a === b` draws no bays at all,
+// which is the single piece a gateway leaves behind.
+//
+// Everything lands in one geometry rather than one per piece, because a run of twenty
+// cells is forty-one pieces and mergeGeometries is handed the whole boundary at once.
+function modelled(terrain, axis, fixed, a, b, v, hue, only = null) {
+  const spec = MODELLED[v.kind];
+  const bays = only ? [] : baysOf(v.kind);
+  if (!only && !bays.length) return null;
+  const half = terrain.half;
+  const f = fixed - half;
+  const sy = (v.h + 0.05) / spec.nominal.h, sx = v.t / spec.nominal.t;
+
+  // The ground under the line the run follows, sampled at the same half unit strip() uses
+  // and read between samples. Per vertex would be nine hundred worldHeight calls to the
+  // bay; per half unit is two, and the difference is invisible because the terrain itself
+  // has no detail finer than the cell.
+  const STEP = 0.5;
+  const sampled = new Map();
+  const sample = (t) => {
+    let g = sampled.get(t);
+    if (g === undefined) {
+      g = terrain.worldHeight(axis === 'x' ? f : t - half, axis === 'x' ? t - half : f);
+      sampled.set(t, g);
+    }
+    return g;
+  };
+  const groundAt = (along) => {
+    const k = along / STEP, i = Math.floor(k), frac = k - i;
+    return sample(i * STEP) * (1 - frac) + sample((i + 1) * STEP) * frac;
+  };
+
+  const pos = [], col = [], sheet = [];
+  const tint = hue == null ? null : tmpColor.setHSL(hue / 360, 0.4, 0.42).clone();
+  const c = new THREE.Color();
+
+  // One piece, with its middle at `along` on the run. Every model in every set runs along
+  // its own +z and stands across its own x, so a run along the island's z axis takes it as
+  // it is while one along x turns it a quarter - a turn and not a mirror, because the
+  // island's material is single sided and a mirrored bay is a bay you look straight
+  // through.
+  const stamp = (asset, along) => {
+    // A hand's width of slack on the height, per piece rather than per sample: a bay is
+    // rigid and the wobble has to be too, or the boards within one bay would fan.
+    const wob = ((hash32(`${v.kind}:${axis}:${fixed}:${along}`) % 100) / 100 - 0.5) * 2 * v.jitter;
+    const rise = sy + wob / spec.nominal.h;
+    for (const name of models.assetParts(asset)) {
+      const part = models.part(name);
+      const id = BAKED_SHEET[part.sheet] || 0;
+      for (let i = 0; i < part.positions.length; i += 3) {
+        const mx = (part.positions[i] + part.at[0]) * sx;
+        const my = (part.positions[i + 1] + part.at[1]) * rise;
+        const at = along + part.positions[i + 2] + part.at[2];
+        const y = groundAt(at) - 0.05 + my;
+        if (axis === 'x') pos.push(f + mx, y, at - half);
+        else pos.push(at - half, y, f - mx);
+        c.setRGB(part.colors[i], part.colors[i + 1], part.colors[i + 2]);
+        if (tint) c.lerp(tint, 0.18);
+        col.push(c.r, c.g, c.b);
+        sheet.push(id);
+      }
+    }
+  };
+
+  for (let i = a; i < b; i++) {
+    stamp(bays[hash32(`bay:${v.kind}:${axis}:${fixed}:${i}`) % bays.length], i + 0.5);
+  }
+  const ends = only || spec.joint;
+  if (ends && models.hasAsset(ends)) for (let i = a; i <= b; i++) stamp(ends, i);
+  if (!pos.length) return null;
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aSheet', new THREE.Float32BufferAttribute(sheet, 1));
+  // Indexed, and only because mergeGeometries refuses a mixture: the swept runs and the
+  // hewn gateposts both carry an index, and a merge is all of them or none.
+  g.setIndex([...Array(pos.length / 3).keys()]);
+  return g;
+}
+
+// What stands either side of a gateway. A modelled rung that has a piece for it stands
+// its own - the fence's post, the wall's pier - so that the gateway plainly is the
+// boundary stopping rather than two different things at the end of it. A hedge has no
+// such piece and takes the hewn post below, which is what it always had: a gatepost in a
+// hedge is a piece of sawn wood, because a hedge cannot hold a gate up by itself.
+function gatepost(terrain, axis, fixed, at, v) {
+  const spec = MODELLED[v.kind];
+  if (spec && spec.gate && models.hasAsset(spec.gate)) {
+    return modelled(terrain, axis, fixed, at, at, v, null, spec.gate);
+  }
+  return post(terrain, axis, fixed, at, v);
+}
+
+
 function post(terrain, axis, fixed, at, v) {
   const half = terrain.half;
   const x = axis === 'x' ? fixed - half : at - half;
   const z = axis === 'x' ? at - half : fixed - half;
   // A gatepost is as stout as the thing it holds up, or the gateway into a walled village
   // would be two twigs either side of the road. Six sides and a foot wider than its head,
-  // rather than a box: it stands at the open end of a run that now swells and draws in,
-  // and a square stake against that reads as scaffolding somebody forgot to take away.
+  // rather than a box: it stands at the open end of a run that swells and draws in, and a
+  // square stake against that reads as scaffolding somebody forgot to take away.
+  //
+  // Two rungs reach here now, and both of them for the same reason: neither can hold a
+  // gate up by itself. A post and rail is hung on posts like these already, and a hedge
+  // is a plant. The fence and the wall have a modelled piece each and take that instead
+  // - see gatepost() above.
   const w = Math.max(0.17, v.t * 1.05);
   const hp = v.h + 0.22;
   const g = new THREE.CylinderGeometry(w * 0.40, w * 0.52, hp, 6);
   g.translate(x, terrain.worldHeight(x, z) + hp / 2 - 0.05, z);
-  const c = tmpColor.setHex(v.kind === 'wall' ? 0x8a857c : 0x6b4a2f);
+  const c = tmpColor.setHex(0x6b4a2f);
   const col = new Float32Array(g.attributes.position.count * 3);
   for (let i = 0; i < g.attributes.position.count; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  // A gatepost stands in the run's own material, so it takes the run's own sheet: a post
-  // in a dry stone wall is a standing stone and one in a hedge is a piece of sawn wood.
+  // Sawn wood, whatever it is standing at the end of: this post is cut for the job
+  // rather than grown or quarried, which is exactly why the two rungs that can quarry or
+  // grow their own no longer come here.
   g.setAttribute('aSheet', new THREE.Float32BufferAttribute(
-    new Float32Array(g.attributes.position.count).fill(SHEET_INDEX[v.kind === 'wall' ? 'wall' : 'rail']), 1));
+    new Float32Array(g.attributes.position.count).fill(SHEET.plank), 1));
   // A merge needs every piece to carry the same attributes, and the strips are position,
   // colour and sheet only; normals are computed once over the merged whole.
   g.deleteAttribute('normal');
@@ -792,7 +968,7 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
         const alongX = (hash32(`${terrain.seed}:furlong:${Math.floor(gx / FURLONG)},${Math.floor(gz / FURLONG)}`) & 1) === 0;
         const long = 4 + ((h >>> 17) % 3), short = 3 + ((h >>> 19) % 3);
         // Biggest first. Ground in reach is not open country: the lanes run through it,
-        // every plot and every hedge keeps a verge, and what is left is pockets. A single
+        // every plot and every boundary keeps a verge, and what is left is pockets. A single
         // size would leave most of those pockets empty and the fields would only ever
         // appear where the land happened to be clear for six cells - so the survey offers
         // the parcel it wanted, then smaller ones, and stops at three by two. Below that a

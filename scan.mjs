@@ -284,7 +284,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
   // row, which is a couple of hundred bytes for the largest hamlet against the forty
   // kilobytes a list of cells would cost. The viewer turns a super-cell back into its
   // sixteen ground cells with `island.lattice`, and derives everything else from that:
-  // the hedge runs along an owned cell with a missing neighbour, the gardens are owned
+  // the boundary runs along an owned cell with a missing neighbour, the gardens are owned
   // cells with no house on them, and the countryside is the land nobody owns.
   const rleParcel = (cells) => {
     if (!cells || !cells.length) return null;

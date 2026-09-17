@@ -89,8 +89,16 @@ prefix and the bake stops with the list it knows — quietly falling back to `pl
 mean a plastered wall that is subtly flat and nobody noticing for a month.
 
 Two more sheets exist that no building may name: **`bark` and `foliage`**. They are the
-forest's, and they are the exception to one material because the forest is the exception
-to one draw call. A tree is not merged into the island's geometry — it is an
+forest's and the hedge's, and they are the exception to one material because the forest is
+the exception to one draw call.
+
+The hedge is the other exception and it is a different one. `assets/hedge` is not drawn
+with the building material at all - it is a rung of the hamlet boundary, which
+`web/js/hamlets.js` draws with a material of its own - so `foliage:` there means only "put
+this on the leaf sheet", and which sheet that is is decided by `BAKED_SHEET` over in
+hamlets.js rather than by the bake. It is the same latitude the forest has, for the same
+reason: a building carries its sheet as a number on the vertex and cannot express leaves,
+and neither of these is a building. A tree is not merged into the island's geometry — it is an
 `InstancedMesh` of its own, twenty thousand copies for one call — so it can afford a
 material array, and it needs one: needles want a different sheet from the trunk they
 grow on, and a building carrying the sheet as a number on the vertex cannot express

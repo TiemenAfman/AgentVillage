@@ -314,7 +314,7 @@ line(STAGES, (stage, x, z) => {
 }, 'Turnip, growing');
 
 // ---- hamlet pieces -------------------------------------------------------------
-// A hedge and a field decal both follow the ground, and on a flat plane you cannot tell
+// A boundary and a field decal both follow the ground, and on a flat plane you cannot tell
 // whether they do it correctly - you would ship something that looks perfect here and
 // floats on the island. So these rows get a gently rolling patch of their own, and they
 // are built by calling the real code against a small stand-in terrain.
@@ -378,13 +378,15 @@ line([
     { name: 'with a gate', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], roads: [[2, -1], [2, 0]] },
   ];
   // One row per rung of the ladder. Nothing here names a variant: each row puts a
-  // different house on the same five cells and lets the rule pick what goes round them.
-  const LADDER = [['hut', 'post and rail'], ['cottage', 'hedge'], ['keep', 'dry stone']];
+  // different house on the same five cells and lets the rule pick what goes round them,
+  // so the four tiers below are chosen to land one in each band of BOUNDARY and the row
+  // labels are a claim the code has to make good on rather than a caption.
+  const LADDER = [['tent', 'post and rail'], ['cottage', 'palings'], ['house', 'hedge'], ['keep', 'dry stone']];
   LADDER.forEach(([tier, what], vi) => {
     CASES.forEach((c, ci) => {
       const cells = 26, mid = cells / 2;
       const ox = (ci - 1) * PITCH * 2.1;
-      const oz = z + (vi - 1) * 1.8;
+      const oz = z + (vi - (LADDER.length - 1) / 2) * 1.8;
       const t = demoTerrain(ox, oz, cells);
       const owner = new Int16Array(cells * cells).fill(NONE);
       for (const [cx, cz] of c.cells) owner[(mid + cx) + (mid + cz) * cells] = 0;
@@ -402,10 +404,10 @@ line([
         scene.add(m);
       }
       if (ci === 0) tag(ox - PITCH * 1.5, oz, what, `a hamlet of ${tier}s`);
-      if (vi === 2) tag(ox, oz + 1.5, c.name, '');
+      if (vi === LADDER.length - 1) tag(ox, oz + 1.5, c.name, '');
     });
   });
-  tag(HEADING_X + PITCH * 1.1, z, 'rail / hedge / wall', 'by the houses inside');
+  tag(HEADING_X + PITCH * 1.1, z, 'rail / palings / hedge / wall', 'by the houses inside');
   row += 2;
 }
 
@@ -752,7 +754,7 @@ addEventListener('resize', () => {
 // interior can only be judged from inside it. So the field gets the island's own walk mode,
 // standing on a flat stand-in terrain, and the tavern gets a door.
 //
-// The rolling patches further down the sheet - the hedges, the fields, the bridges over
+// The rolling patches further down the sheet - the boundaries, the fields, the bridges over
 // their little valleys - build their own ground and this terrain knows nothing about it, so
 // down there you walk over the water rather than through it. That is the model sheet being
 // a model sheet; what this is for is the near rows, and what is inside them.

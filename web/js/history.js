@@ -3,7 +3,7 @@
 // Buildings have always known how to rewind: each carries its own `startedAt` and the
 // viewer hides the ones that had not been built. Land knew nothing. Scrub back to the
 // founding day and the houses went, but the roads still ran between the empty plots, the
-// plaza was still paved to its full width, and every hamlet still had its hedges, its
+// plaza was still paved to its full width, and every hamlet still had its boundaries, its
 // fields, its green and its name sign - a finished countryside laid out for a village
 // that did not exist yet, with roads leading to nothing.
 //
@@ -147,7 +147,7 @@ export function projectVillage(village, t) {
     Math.abs(gx - centre[0]) <= half && Math.abs(gz - centre[1]) <= half);
 
   // The town commons is owned land too, and forgetting it was visible: 59 super-cells of
-  // it were stamped from the founding day on, which is what drew hedges around the
+  // it were stamped from the founding day on, which is what drew boundaries around the
   // centre and planted fields inside them before anybody lived there. Its core - the
   // plaza and the civic lots, `coreR` across - was there from the start; everything
   // beyond that was grown a cell at a time as guests arrived, so that part is trimmed
