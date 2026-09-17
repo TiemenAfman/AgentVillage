@@ -1348,6 +1348,16 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: f + th + 1.2 };
     }
     case 'tables': {
+      // Two trestle tables with a round of beer and a plate of bitterballen on them,
+      // modelled in scripts/build-village.py. The branch below is the pair of tables the
+      // island drew before there was a bake of them, kept for the same reason the water
+      // tower keeps its four posts and a drum: a checkout that has never run Blender
+      // still boots and still puts something on the square.
+      if (models.hasAsset('civic_tables')) {
+        for (const g of meshAsset('civic_tables')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_tables'));
+        return { anchors, animated, height: assetRise('civic_tables') };
+      }
       // Two trestle tables and their benches, on the corner of the square.
       for (const [tx, tz] of [[-0.16, -0.14], [0.2, 0.2]]) {
         for (const dx of [-0.16, 0.16]) {

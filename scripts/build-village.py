@@ -60,6 +60,13 @@ COLORS = {
     'plank:oak': 0x845335, 'plank:dark': 0x503728, 'plankZ:dark': 0x503728,
     'stone:brick': 0x9c5a44, 'stone:foundation': 0x968778,
     'plain:glass': 0xffcb75, 'plain:iron': 0x343638, 'plain:copper': 0xb87333,
+    # What is on the tables. Beer is the amber of a pilsner held to the light rather than
+    # the brown of the bottle; foam and the plate share a hex because they are the same
+    # off-white and one material is one less thing to keep in step. Crumb is the outside
+    # of a bitterbal, which is browner than any wood on the island so that a plate of them
+    # never reads as a pile of offcuts.
+    'plain:beer': 0xe0a32a, 'plain:foam': 0xf3ece0,
+    'plain:crumb': 0x8a5227, 'plain:mustard': 0xd8b12e,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -368,6 +375,110 @@ for x in [.15, .41]:
     rod('civic_watertower sign chain', (x, 1.50, .66), (x, 1.575, .66), .009, 'plain:iron', tower, sides=4)
 box('civic_watertower sign board', (.28, 1.37, .66), (.34, .26, .035), 'plank:oak', tower)
 empty('sign', (.28, 1.37, .685), tower)
+
+# ---------------------------------------------------------------- civic_tables
+# What the village puts on its square once there is a crowd to sit at it: two trestle
+# tables with a bench down each side, and a round of beer and a plate of bitterballen
+# standing on them. It replaces a hand-drawn pair of tables in buildings.js that read as
+# furniture nobody had ever sat at - the whole point of the Friday borrel is that the
+# square is somewhere to stand about, and an empty table says the opposite.
+#
+# Two tables rather than one long one, crossed rather than parallel, because the square is
+# one cell across and a single run would read as a bench along a wall. Everything stays
+# inside +-0.45 of the origin: `tables` is on the list of civics that take one cell in
+# lib/layout.mjs, and a cell is one unit.
+tables = asset('civic_tables')
+
+TOP_Y, BENCH_Y = .2, .108
+
+
+PLANK = .032          # how thick a table top and a bench seat are
+
+
+def trestle(tag, at, turn):
+    """One table with its two benches, laid along x and then turned about the origin.
+
+    box() here places a shape around its *middle*, which is the one thing worth being
+    explicit about: a leg given y = 0 is a leg sunk half its length into the lawn, and
+    `npm run models` measures exactly that and refuses it. So nothing below writes a
+    centre. `stand` is a thing on the ground of a given height, `slab` is a board whose
+    underside rests at a given height, and the arithmetic happens once.
+    """
+    c, s = math.cos(turn), math.sin(turn)
+
+    def at_(x, z):
+        return (at[0] + x * c - z * s, 0, at[2] + x * s + z * c)
+
+    def put(kind, x, y, z, size, mat):
+        p = at_(x, z)
+        o = box(f'civic_tables {tag} {kind}', (p[0], y, p[2]), size, mat, tables)
+        # rotation_euler is in Blender's axes, and the island's up is Blender's Z - so a
+        # turn written as the middle number tips the table over sideways instead of
+        # swinging it round, which is exactly what it did. And it is negative, because
+        # xyz() sends the island's +z to Blender's -Y: a turn that carries +x towards +z
+        # up here carries +X towards -Y down there.
+        o.rotation_euler = (0, 0, -turn)
+        return o
+
+    def stand(kind, x, z, w, h, d, mat):
+        put(kind, x, h / 2, z, (w, h, d), mat)
+
+    def slab(kind, x, z, w, d, under, mat):
+        put(kind, x, under + PLANK / 2, z, (w, PLANK, d), mat)
+
+    # The top, and four legs under its corners. A proper trestle would be prettier and
+    # costs three times the triangles for something seen from six paces up.
+    slab('top', 0, 0, .44, .21, TOP_Y, 'plank:oak')
+    for dx in [-.17, .17]:
+        for dz in [-.07, .07]:
+            stand('leg', dx, dz, .032, TOP_Y, .032, 'plank:dark')
+    # A bench each side, far enough out to sit at and near enough to lean on.
+    for dz in [-.19, .19]:
+        slab('bench', 0, dz, .42, .095, BENCH_Y, 'plank:oak')
+        for dx in [-.15, .15]:
+            stand('bench leg', dx, dz, .026, BENCH_Y, .026, 'plank:dark')
+    return at_
+
+
+# The two tables, and where each one's top surface is, so what stands on them is placed
+# against the table rather than against a number written out twice.
+left = trestle('left', (-.17, 0, -.13), .12)
+right = trestle('right', (.19, 0, .2), 1.45)
+
+# ---- what is on them -------------------------------------------------------------
+# A glass is two stacked six-sided rods: the beer and its head. Six is enough at this
+# size - a glass is 45 millimetres across - and the head is what makes the amber below it
+# read as beer rather than as a candle. They stand on the table top, which is the legs
+# plus the thickness of the board, and upright() takes the foot rather than the middle.
+GLASS_Y = TOP_Y + PLANK
+
+
+def beer(tag, spot):
+    upright(f'civic_tables {tag} beer', (spot[0], GLASS_Y, spot[2]), .022, .055, 'plain:beer', tables, sides=6)
+    upright(f'civic_tables {tag} head', (spot[0], GLASS_Y + .055, spot[2]), .023, .014, 'plain:foam', tables, sides=6)
+
+
+for tag, anchor, spots in [
+    ('left', left, [(-.13, -.04), (-.02, .05), (.12, -.05)]),
+    ('right', right, [(-.11, .05), (.05, -.04), (.15, .04)]),
+]:
+    for i, (x, z) in enumerate(spots):
+        beer(f'{tag} {i + 1}', anchor(x, z))
+
+# A plate of bitterballen on the left-hand table, with the mustard beside them. Five balls
+# is what a plate holds in this country and it is also what the silhouette needs: fewer
+# reads as three stones, more reads as a heap.
+plate = left(.0, .0)
+rod('civic_tables plate', (plate[0], GLASS_Y, plate[2]), (plate[0], GLASS_Y + .008, plate[2]),
+    .058, 'plain:foam', tables, sides=8)
+for i, (bx, bz) in enumerate([(-.026, -.014), (.004, -.026), (.028, .006), (-.004, .022), (-.03, .016)]):
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=.019,
+                                          location=xyz((plate[0] + bx, GLASS_Y + .026, plate[2] + bz)))
+    adopt(bpy.context.object, f'civic_tables bitterbal {i + 1}', 'plain:crumb', tables)
+# The mustard, which is the one dab of colour on the whole table and the reason a plate of
+# small brown spheres reads as bitterballen rather than as pebbles.
+rod('civic_tables mustard', (plate[0] + .042, GLASS_Y + .008, plate[2] + .03),
+    (plate[0] + .042, GLASS_Y + .022, plate[2] + .03), .015, 'plain:mustard', tables, sides=6)
 
 # The tallest thing in the set, which is the water tower's copper tip. Buildings read this;
 # a roof composed onto one measures itself.
