@@ -21,6 +21,25 @@ const MOST = 16;
 const NUDGE = 0.16;
 const SKEW = 0.22;
 
+// How much paving to leave between two sets, in cells. Tables on neighbouring cells read
+// as one long table somebody has sawn in half, and a borrel wants room to stand between
+// them with a glass - which is the whole point of carrying them out.
+const APART = 3;
+
+// The cells, thinned out so that no two are within `APART` of each other, and then the
+// ones that were passed over added back in the same order. The second half matters: on a
+// small square the spread alone would hand back two spots for five sets, and a table that
+// cannot be carried out because the square is tidy is worse than two tables close together.
+function spread(cells) {
+  const kept = [];
+  const rest = [];
+  for (const c of cells) {
+    const room = kept.every(([x, z]) => Math.max(Math.abs(x - c[0]), Math.abs(z - c[1])) >= APART);
+    (room ? kept : rest).push(c);
+  }
+  return [...kept, ...rest];
+}
+
 // A small deterministic number from a cell, so the same table stands at the same angle on
 // the same island every Friday rather than shuffling on every page load.
 function wobble(gx, gz, salt) {
@@ -48,9 +67,10 @@ export function createBorrelTables(scene, geometry, material) {
     // order they arrive, so the first tables out are the ones nearest the middle and a
     // thin borrel still looks like it has a centre.
     setSpots(cells, { cellWorld, groundAt }) {
-      spots = Math.min(cells.length, MOST);
+      const room = spread(cells);
+      spots = Math.min(room.length, MOST);
       for (let i = 0; i < spots; i++) {
-        const [gx, gz] = cells[i];
+        const [gx, gz] = room[i];
         const [cx, cz] = cellWorld(gx, gz);
         const x = cx + (wobble(gx, gz, 1) - 0.5) * 2 * NUDGE;
         const z = cz + (wobble(gx, gz, 2) - 0.5) * 2 * NUDGE;
