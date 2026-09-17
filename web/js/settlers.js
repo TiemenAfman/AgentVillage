@@ -388,9 +388,27 @@ export function createSettlers(scene, material, terrain) {
 
   function startGather(f) {
     const gate = gateOf(f);
-    const dest = gate == null ? null : nearestSquareCell(gate);
-    const out = dest == null ? null : roadRoute(gate, dest);
+    if (gate == null || !squareList.length) { f.gathering = false; return; }
+    // Somewhere of your own on the square. Sending everybody to the cell nearest their own
+    // front door puts everyone who lives on the same side of town in one huddle against
+    // the same corner, which is exactly what it looked like. The cell comes out of the
+    // figure's own rng, so the same settler takes the same spot every Friday rather than
+    // shuffling about from one week to the next.
+    //
+    // Three tries and then the nearest cell after all: the square is one connected piece
+    // of paving, but a borrel that silently skipped anybody whose random cell happened to
+    // be unreachable would be a worse bargain than a slightly fuller corner.
+    let out = null;
+    for (let tries = 0; tries < 3 && !out; tries++) {
+      out = roadRoute(gate, squareList[f.rng.int(squareList.length)]);
+    }
+    if (!out) out = roadRoute(gate, nearestSquareCell(gate));
     if (!out || !out.length) { f.gathering = false; return; }
+    // And not onto the middle of that cell either. Two people sent to the same one would
+    // otherwise stand in the same place to the millimetre; a third of a cell either way
+    // keeps them inside their own square and out of each other.
+    const last = out[out.length - 1];
+    out[out.length - 1] = [last[0] + f.rng.range(-0.34, 0.34), last[1] + f.rng.range(-0.34, 0.34)];
     const home = [f.home[0], f.home[1]];
     walkRoute(f, out, () => {
       f.mode = 'idle';
