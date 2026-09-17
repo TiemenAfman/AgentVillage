@@ -239,7 +239,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 test('the register spans every set and answers by part name alone', () => {
   assert.deepEqual(models.setNames().sort(), ['cottage', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
   assert.deepEqual(models.assetNames().sort(), [
-    'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_seed_stall', 'civic_watertower',
+    'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_fountain', 'civic_seed_stall', 'civic_watertower',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',

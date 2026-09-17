@@ -1281,6 +1281,13 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.88 };
     }
     case 'fountain': {
+      // The square's centrepiece is a complete Blender asset now: a carved basin, tiered
+      // bowl, copper finial and four arcing streams. Keep the compact procedural version
+      // below as a boot-safe fallback for a checkout whose baked village set is stale.
+      if (models.hasAsset('civic_fountain')) {
+        for (const g of meshAsset('civic_fountain')) parts.push(g);
+        return { anchors, animated, height: assetRise('civic_fountain') };
+      }
       // An eight sided basin with a tiered column standing in it. The water sits just
       // below the rim so it catches the light instead of hiding in the shadow.
       parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10

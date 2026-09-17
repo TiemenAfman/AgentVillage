@@ -64,6 +64,7 @@ COLORS = {
     'plain:chalk': 0x27322b, 'plain:chalk-mark': 0xe8e2c9,
     'plain:seed-gold': 0xd6a83d, 'plain:seed-rust': 0xa95332,
     'plain:seed-green': 0x799447, 'plain:sack': 0xb99a68,
+    'plain:water': 0x64b4cf, 'stone:aged': 0xb7ad9b,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -297,6 +298,79 @@ box('addon_chimney_a crown', (0, .545, 0), (.194, .05, .194), 'stone:foundation'
 upright('addon_chimney_a pot', (0, .57, 0), .045, .13, 'stone:brick', chimney, sides=6)
 box('addon_chimney_a flue', (0, .704, 0), (.062, .008, .062), 'plain:iron', chimney)
 empty('smoke', (0, .72, 0), chimney)
+
+# ---------------------------------------------------------------- civic_fountain
+# The centrepiece of the square: a broad stone basin, a carved pedestal and two tiers of
+# water. Its old procedural version had the right outline, but the repeated collars,
+# petal bowl, copper finial and arcing jets give it the silhouette of a civic monument.
+fountain = asset('civic_fountain')
+
+# A sixteen-sided step under a rounder basin keeps the footprint compatible with the
+# flower bed that occupies this exact spot before the village earns its fountain.
+upright('civic_fountain foundation', (0, 0, 0), .55, .08,
+        'stone:foundation', fountain, top=.52, sides=16)
+upright('civic_fountain basin wall', (0, .08, 0), .49, .22,
+        'stone:aged', fountain, top=.47, sides=24)
+upright('civic_fountain basin foot', (0, .08, 0), .515, .055,
+        'stone:foundation', fountain, top=.50, sides=24)
+upright('civic_fountain basin rim', (0, .285, 0), .535, .065,
+        'stone:foundation', fountain, top=.525, sides=24)
+upright('civic_fountain basin water', (0, .305, 0), .445, .025,
+        'plain:water', fountain, sides=24)
+
+# Eight shallow ribs make the basin feel assembled and carved without spending geometry
+# on lettering that could never be read at the island's scale.
+for i in range(8):
+    a = (i / 8) * math.pi * 2
+    x, z = math.cos(a) * .492, math.sin(a) * .492
+    rod('civic_fountain basin rib', (x * .96, .105, z * .96), (x, .275, z),
+        .023, 'stone:foundation', fountain, sides=4)
+
+# The pedestal grows out of the water as a square plinth under a tapered, twelve-sided
+# column. Three proud collars catch highlights and keep it from reading as one cylinder.
+box('civic_fountain pedestal plinth', (0, .39, 0), (.30, .18, .30),
+    'stone:foundation', fountain)
+upright('civic_fountain pedestal foot', (0, .46, 0), .17, .07,
+        'stone:aged', fountain, top=.15, sides=12)
+upright('civic_fountain pedestal', (0, .51, 0), .125, .34,
+        'stone:aged', fountain, top=.095, sides=12)
+for y, r in [(.51, .15), (.67, .12), (.82, .14)]:
+    upright('civic_fountain pedestal collar', (0, y, 0), r, .045,
+            'stone:foundation', fountain, sides=12)
+
+# A flared upper bowl with a thin sheet of water. Eight small lobes below its edge give
+# the otherwise low-poly circle a flower-like profile from the town square.
+upright('civic_fountain upper bowl', (0, .82, 0), .13, .11,
+        'stone:aged', fountain, top=.29, sides=16)
+upright('civic_fountain upper rim', (0, .91, 0), .31, .045,
+        'stone:foundation', fountain, top=.295, sides=16)
+upright('civic_fountain upper water', (0, .932, 0), .27, .018,
+        'plain:water', fountain, sides=16)
+for i in range(8):
+    a = (i / 8) * math.pi * 2
+    x, z = math.cos(a) * .235, math.sin(a) * .235
+    upright('civic_fountain bowl lobe', (x, .865, z), .055, .06,
+            'stone:aged', fountain, top=.025, sides=6)
+
+# Four two-segment streams arc from the upper bowl into the lower basin. They remain
+# geometry, not particles, so the landmark is deterministic and costs no extra draw call.
+for i in range(4):
+    a = (i / 4) * math.pi * 2
+    d = Vector((math.cos(a), 0, math.sin(a)))
+    p0 = (d.x * .18, .90, d.z * .18)
+    p1 = (d.x * .32, .73, d.z * .32)
+    p2 = (d.x * .41, .34, d.z * .41)
+    rod('civic_fountain water jet', p0, p1, .013, 'plain:water', fountain, sides=5)
+    rod('civic_fountain water jet', p1, p2, .011, 'plain:water', fountain, sides=5)
+
+# A smaller crown repeats the lower pedestal and ends in a warm copper seed-shaped
+# finial, tying the monument back to the agricultural village around it.
+upright('civic_fountain crown stem', (0, .95, 0), .065, .20,
+        'stone:aged', fountain, top=.045, sides=10)
+upright('civic_fountain crown collar', (0, 1.12, 0), .095, .045,
+        'stone:foundation', fountain, top=.08, sides=10)
+upright('civic_fountain finial', (0, 1.16, 0), .075, .17,
+        'plain:copper', fountain, top=0, sides=10)
 
 # ---------------------------------------------------------------- civic_seed_stall
 # A proper little shop rather than three miniature trestles. The broad silhouette and
