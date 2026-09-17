@@ -34,3 +34,14 @@ test('stamps crossing the map boundary remain finite and inside the buffer',()=>
  assert.equal(f.data.length,128*128);
  assert.ok(sample(f,7,0)>240);
 });
+
+test('adjoining plaza cells make continuous paving with a graded outer edge',()=>{
+ const yards=[];
+ for(let z=-1;z<=1;z++)for(let x=-1;x<=1;x++)yards.push({x,z,rx:.84,rz:.84});
+ const f=groundWearField(16,1337,[],yards,256);
+ for(let z=-1;z<=1;z+=.1)for(let x=-1;x<=1;x+=.1)
+  assert.ok(sample(f,x,z)>210,'no holes between paving cells');
+ assert.ok(sample(f,1.9,0)>0 && sample(f,1.9,0)<200);
+ assert.equal(sample(f,2.6,0),0);
+ assert.ok(groundWearField(16,1337,[],[],256).data.every(v=>v===0),'removing a square clears its mask');
+});

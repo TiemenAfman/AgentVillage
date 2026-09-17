@@ -5,7 +5,7 @@ import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 's
 import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { groundWearField, dressGroundWear } from './ground-wear.js';
-import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, roundedOutline, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -258,7 +258,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const wearTexture = new THREE.DataTexture(new Uint8Array(wearResolution * wearResolution), wearResolution, wearResolution, THREE.RedFormat);
   wearTexture.magFilter = wearTexture.minFilter = THREE.LinearFilter;
   wearTexture.needsUpdate = true;
-  dressGroundWear(ground.material, wearTexture, size, THREE);
+  const plazaTexture = wearTexture.clone();
+  plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
+  plazaTexture.needsUpdate = true;
+  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture);
   ground.receiveShadow = true;
   ground.name = 'ground';
   group.add(ground);
@@ -952,11 +955,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
       if (b.door) strokes.push({ points: [[x,z],centre(b.door)], radius:.34, feather:.42 });
     }
     const field = groundWearField(size, wearVillage.seed || 0, strokes, yards, wearResolution);
+    const plazaYards = wearGraph.tiles.filter(t=>t.kind==='plaza').map(t=>{
+      const [x,z]=centre([t.gx,t.gz]);return {x,z,rx:.84,rz:.84};
+    });
+    const plaza = groundWearField(size, wearVillage.seed || 0, [], plazaYards, wearResolution);
+    for(let i=0;i<field.data.length;i++)field.data[i]=Math.max(field.data[i],plaza.data[i]);
+    plazaTexture.image.data=plaza.data;plazaTexture.needsUpdate=true;
     wearTexture.image.data = field.data;
     wearTexture.needsUpdate = true;
   }
 
-  let laneMeshes = [], pathTexture = null;
+
   function squareCells(v) {
     const out = [], town = v.island && v.island.town;
     if (town?.paved) out.push(...town.paved);
@@ -968,37 +977,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     return out;
   }
   function buildPaths(paths, squares = squareCells(wearVillage)) {
-    for (const m of laneMeshes) { group.remove(m); m.geometry.dispose(); m.material.dispose(); }
-    laneMeshes=[];
     wearGraph=roadGraph(paths,squares,size);
-    // Only the civic square is still laid in stone. All village lanes, front
-    // paths and countryside roads use the same continuous sandy terrain.
-    const b=bucket();
-    for(const t of wearGraph.tiles) {
-      if(t.kind!=='plaza')continue;
-      const [x,z]=terrain.cellWorld(t.gx,t.gz);
-      const corners=[!t.west&&!t.north,!t.west&&!t.south,!t.east&&!t.south,!t.east&&!t.north];
-      const ring=roundedOutline(x-.5,z-.5,x+.5,z+.5,.22,5,corners);
-      const base=b.v;
-      for(const [qx,qz] of [[x,z],...ring]) {
-        b.pos.push(qx,terrain.worldHeight(qx,qz)+.045,qz); b.uv.push(qx,qz);
-      }
-      for(let k=0;k<ring.length;k++)b.idx.push(base,base+1+k,base+1+(k+1)%ring.length);
-      b.v+=ring.length+1;
-    }
-    if(b.pos.length) {
-      const g=new THREE.BufferGeometry();
-      g.setAttribute('position',new THREE.Float32BufferAttribute(b.pos,3));
-      g.setAttribute('uv',new THREE.Float32BufferAttribute(b.uv,2));
-      g.setIndex(b.idx);g.computeVertexNormals();
-      const mat=new THREE.MeshStandardMaterial({map:pathTexture,color:pathTexture?0xffffff:0xd6cbb2,roughness:1,
-        polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
-      const m=new THREE.Mesh(g,mat);m.receiveShadow=true;group.add(m);laneMeshes.push(m);
-    }
     buildGroundWear();
   }
   buildPaths(village.paths);
-  sheet('path-cobble',(tex)=>{pathTexture=tex;buildPaths(wearVillage.paths);});
 
   // ---- riverbanks ----------------------------------------------------------
   // The water itself needs nothing drawn: it is under the same plane as the sea, and the
@@ -1525,11 +1507,6 @@ export function offCurve(pts, curve) {
     if (best > worst) worst = best;
   }
   return worst;
-}
-
-// One growing vertex buffer, so a pass can fill several of them and hand each to a mesh.
-function bucket() {
-  return { pos: [], col: [], uv: [], idx: [], v: 0 };
 }
 
 // ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------

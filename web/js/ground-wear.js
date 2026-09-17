@@ -46,9 +46,9 @@ export function groundWearField(size, seed, strokes, yards, resolution = Math.mi
   return { data, resolution };
 }
 
-export function dressGroundWear(material, texture, size, THREE) {
+export function dressGroundWear(material, texture, size, THREE, plazaTexture) {
   const uniforms = {
-    uWear: { value: texture }, uWearSize: { value: size },
+    uPlaza: { value: plazaTexture }, uWear: { value: texture }, uWearSize: { value: size },
     uEarth: { value: new THREE.Color(0xcbb58b) },
   };
   material.onBeforeCompile = (shader) => {
@@ -58,6 +58,7 @@ export function dressGroundWear(material, texture, size, THREE) {
       '#include <begin_vertex>\nvWearXZ = position.xz;');
     shader.fragmentShader = `varying vec2 vWearXZ;
 uniform sampler2D uWear;
+uniform sampler2D uPlaza;
 uniform float uWearSize;
 uniform vec3 uEarth;
 float wearHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -74,8 +75,26 @@ float coverage = clamp(wear + (fleck-.5)*.16*4.0*wear*(1.0-wear),0.0,1.0);
 float mottling = mix(.84,1.08,wearNoise(vWearXZ*3.0));
 vec3 earth = uEarth * mottling * mix(.92,1.06,fleck);
 diffuseColor.rgb = mix(diffuseColor.rgb,earth,coverage);
+// Worn limestone setts, with staggered rows and sandy, irregular joints.
+float plaza = texture2D(uPlaza,vWearXZ/uWearSize+0.5).r;
+if(plaza>.02) {
+  vec2 grid=vWearXZ*vec2(5.5,7.5);
+  grid.x+=mod(floor(grid.y),2.0)*.5;
+  vec2 cell=floor(grid), local=fract(grid)-.5;
+  float variation=wearHash(cell);
+  vec2 extent=vec2(.395,.375)+vec2(variation-.5,wearHash(cell+19.0)-.5)*.065;
+  float rim=length(max(abs(local)-extent,0.0))-.045;
+  float aa=max(fwidth(rim),.014);
+  float stone=1.0-smoothstep(-aa,aa,rim);
+  // The edge loses individual stones into sand before that sand fades to grass.
+  float edge=smoothstep(.36+variation*.24,.88,plaza);
+  diffuseColor.rgb=mix(diffuseColor.rgb,earth*.72,smoothstep(.40,.90,plaza)*.75);
+  vec3 limestone=mix(uEarth,vec3(.49,.46,.38),.55)*mix(.72,1.15,variation);
+  limestone*=mix(.95,1.04,fleck);
+  float bevel=1.0-smoothstep(-.07,0.0,rim)*.12;
+  diffuseColor.rgb=mix(diffuseColor.rgb,limestone*bevel,stone*edge);
+}
 `);
   };
-  material.customProgramCacheKey = () => 'ground-wear-v1';
+  material.customProgramCacheKey = () => 'ground-wear-plaza-v2';
 }
-
