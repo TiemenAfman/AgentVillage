@@ -668,9 +668,19 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
   // The hook for the day the server surveys the fields itself: `village.fields` arrives
   // in the shape this function returns, so the client draws what it is told rather than
   // guessing, and nothing else in the module has to know which of the two it got.
-  if (village.fields) return village.fields;
-
   const size = terrain.size;
+  // Derive the reservation here as well, so previews and server-surveyed fields
+  // obey the same rule as world.js. Town land is civic ground, not a garden.
+  if (!square) {
+    square = new Set();
+    const town = village.island?.town;
+    if (town?.paved) for (const [x,z] of town.paved) square.add(x+z*size);
+    else if (town?.square) {
+      const n = town.size || 3;
+      for (let z=0;z<n;z++) for (let x=0;x<n;x++)
+        square.add(town.square[0]+x+(town.square[1]+z)*size);
+    }
+  }
   const lat = village.island && village.island.lattice;
   const pitch = (lat && lat.pitch) || 4;
   const ax = lat ? lat.anchor[0] : 0, az = lat ? lat.anchor[1] : 0;
@@ -690,7 +700,10 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
   const candidate = (gx, gz) => {
     if (gx < 1 || gz < 1 || gx >= size - 1 || gz >= size - 1) return false;
     const k = gx + gz * size;
-    if (claimed[k] || cleared.has(k)) return false;
+    if (claimed[k] || cleared.has(k) || owner[k] === TOWN) return false;
+    // Apply before choosing a field type: kitchen gardens must leave the same
+    // verge as large parcels, including the visible headland and feather.
+    if (touchesSquare(gx, gz, 1, 1)) return false;
     // Out of reach of every door and every road: that is where a field stopped being a
     // field and became a pattern on the map.
     if (settled && settled.dist[k] > FIELD_REACH) return false;
@@ -736,6 +749,20 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
     }
     return false;
   };
+
+  if (village.fields) {
+    const allowed = (p) => {
+      if (touchesSquare(p.gx,p.gz,p.w,p.d)) return false;
+      for (let z=0;z<p.d;z++) for (let x=0;x<p.w;x++)
+        if (owner[p.gx+x+(p.gz+z)*size] === TOWN) return false;
+      return true;
+    };
+    return { ...village.fields,
+      patches: (village.fields.patches || []).filter(allowed),
+      orchards: (village.fields.orchards || []).filter(allowed),
+      gardens: (village.fields.gardens || []).filter(allowed),
+    };
+  }
 
   for (let gz = 1; gz < size - 1; gz++) {
     for (let gx = 1; gx < size - 1; gx++) {
