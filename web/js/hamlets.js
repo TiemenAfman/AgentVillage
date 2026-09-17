@@ -657,8 +657,14 @@ export const FIELD_REACH = 8;       // cells from settled ground that anybody st
 export const FIELD_COVERAGE = 0.75; // share of anchors in reach that a parcel is laid on
 const HEADLAND = 1;                // cells of turning ground kept clear around a parcel
 const FURLONG = 16;                // cells of countryside that share one ploughing direction
+// How much room the square keeps around it. A parcel with paving this close is dropped,
+// so the nearest furrow ends four cells out and there are three clear cells of grass
+// between the two. Measured on the live island rather than chosen: at three the nearest
+// parcel still stands clear, at four the two that close the square in come out, and at
+// five a third goes with them that nobody would say was standing against it.
+const SQUARE_VERGE = 4;
 
-export function planFields(village, terrain, owner, cleared, { coverage = FIELD_COVERAGE, settled = null } = {}) {
+export function planFields(village, terrain, owner, cleared, { coverage = FIELD_COVERAGE, settled = null, square = null } = {}) {
   // The hook for the day the server surveys the fields itself: `village.fields` arrives
   // in the shape this function returns, so the client draws what it is told rather than
   // guessing, and nothing else in the module has to know which of the two it got.
@@ -712,6 +718,25 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
     return cells;
   };
 
+  // Does this parcel stand against the square? A village opens out where it paves, and a
+  // fence and a furrow against the paving close it in: from above the middle of the island
+  // then reads as a farmyard rather than as the place everybody crosses. Nothing on the
+  // live island actually shares an edge with the paving - the nearest parcel is three cells
+  // off it - so the test is not "touching" but "within the verge", and the verge is the one
+  // number here that was measured rather than reasoned.
+  const touchesSquare = (gx, gz, w, d) => {
+    if (!square || !square.size) return false;
+    const v = SQUARE_VERGE;
+    for (let z = -v; z < d + v; z++) {
+      for (let x = -v; x < w + v; x++) {
+        const cx = gx + x, cz = gz + z;
+        if (cx < 0 || cz < 0 || cx >= size || cz >= size) continue;
+        if (square.has(cx + cz * size)) return true;
+      }
+    }
+    return false;
+  };
+
   for (let gz = 1; gz < size - 1; gz++) {
     for (let gx = 1; gx < size - 1; gx++) {
       if (!candidate(gx, gz)) continue;
@@ -748,8 +773,12 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
         }
         if (!w) continue;
         // Countryside: ploughed parcels and orchards, each with a hamlet to answer for it.
-        const lot = { cells: take(gx, gz, w, d, HEADLAND), w, d, gx, gz, owner: nearAt(k) };
-        (roll < 76 ? patches : orchards).push(lot);
+        // The ground is claimed either way - `take` first, the question second - so a parcel
+        // dropped for standing against the square takes its headland out of the survey with
+        // it. Nothing smaller creeps into the gap, and what is left round the paving is grass.
+        const cells = take(gx, gz, w, d, HEADLAND);
+        if (touchesSquare(gx, gz, w, d)) continue;
+        (roll < 76 ? patches : orchards).push({ cells, w, d, gx, gz, owner: nearAt(k) });
       } else {
         // Inside a hamlet, on land nobody has built on: a kitchen garden.
         if (roll < 70 && fits(gx, gz, 1, 2)) gardens.push({ cells: take(gx, gz, 1, 2, 0), gx, gz, w: 1, d: 2, owner: owner[k] });

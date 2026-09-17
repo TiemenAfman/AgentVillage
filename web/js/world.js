@@ -496,7 +496,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much of the countryside is under the plough. The chronicle hands down a share so
   // the fields arrive with the village that works them; a live village has none and gets
   // the full spread.
-  const fieldOpts = (v) => (v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare });
+  //
+  // The square goes in with it. A parcel that runs up against the paving hems the village
+  // in where it is meant to open out: the one piece of ground everybody crosses ends in a
+  // fence and a furrow instead of in grass, and from the air the heart of the island reads
+  // as a farmyard. So the survey is told where the paving lies and leaves it a verge.
+  const fieldOpts = (v) => ({
+    square: townSquare(v),
+    ...(v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare }),
+  });
 
   // Which cells the settlers walk on. The hedges have always needed this to know where to
   // leave a gate; the fields and the forest now need it too, because how far a cell is
@@ -506,6 +514,20 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const out = new Set();
     for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
     for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
+
+  // The paved heart of the village and nothing else. `squareCells` also hands back every
+  // district's paving, and that is a different kind of place - a hamlet's own yard, which
+  // has its fields right up against it because that is what a hamlet is.
+  const townSquare = (v) => {
+    const out = new Set();
+    const town = v.island && v.island.town;
+    if (town?.paved) for (const [gx, gz] of town.paved) out.add(gx + gz * size);
+    else if (town?.square) {
+      const n = town.size || 3;
+      for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.add((town.square[0] + x) + (town.square[1] + z) * size);
+    }
     return out;
   };
 
