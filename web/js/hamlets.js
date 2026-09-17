@@ -754,7 +754,7 @@ const FURLONG = 16;                // cells of countryside that share one plough
 // five a third goes with them that nobody would say was standing against it.
 const SQUARE_VERGE = 4;
 
-export function planFields(village, terrain, owner, cleared, { coverage = FIELD_COVERAGE, settled = null, square = null } = {}) {
+export function planFields(village, terrain, owner, cleared, { coverage = FIELD_COVERAGE, settled = null, square = null, paved = null } = {}) {
   // The hook for the day the server surveys the fields itself: `village.fields` arrives
   // in the shape this function returns, so the client draws what it is told rather than
   // guessing, and nothing else in the module has to know which of the two it got.
@@ -854,6 +854,35 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
     };
   }
 
+  // And does it stand against a lane or a hamlet's own paving? A parcel never sits *on*
+  // paving - clearedBase rules those cells out before the survey sees them - but the
+  // headland is drawn HEADLAND_OUT past the parcel's edge, onto the cell next door, and
+  // where that cell is paved the turning ground is laid over the stones. That is the
+  // brown band running across the cobbles beside a field.
+  //
+  // Edge to edge, not the whole ring: the headland reaches straight out over an edge and
+  // its corners are rounded away, so a parcel that meets paving only on the diagonal
+  // never covers any. On the live island the rule takes 13 of the 81 parcels - 10 fields
+  // and 3 orchards - and none of the 13 was diagonal only.
+  //
+  // This is a narrower thing than SQUARE_VERGE above and they are not the same rule. The
+  // square keeps a verge of four cells because the heart of the village has to read as
+  // open ground; a hamlet's yard keeps none, because a field against a farmyard is what a
+  // hamlet is. All that is asked here is that the paint stays off the stones.
+  const touchesPaving = (gx, gz, w, d) => {
+    if (!paved || !paved.size) return false;
+    for (let z = 0; z < d; z++) {
+      for (let x = 0; x < w; x++) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const cx = gx + x + dx, cz = gz + z + dz;
+          if (cx >= gx && cz >= gz && cx < gx + w && cz < gz + d) continue;   // still inside the parcel
+          if (cx < 0 || cz < 0 || cx >= size || cz >= size) continue;
+          if (paved.has(cx + cz * size)) return true;
+        }
+      }
+    }
+    return false;
+  };
   for (let gz = 1; gz < size - 1; gz++) {
     for (let gx = 1; gx < size - 1; gx++) {
       if (!candidate(gx, gz)) continue;
@@ -895,6 +924,7 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
         // it. Nothing smaller creeps into the gap, and what is left round the paving is grass.
         const cells = take(gx, gz, w, d, HEADLAND);
         if (touchesSquare(gx, gz, w, d)) continue;
+        if (touchesPaving(gx, gz, w, d)) continue;
         (roll < 76 ? patches : orchards).push({ cells, w, d, gx, gz, owner: nearAt(k) });
       } else {
         // Inside a hamlet, on land nobody has built on: a kitchen garden.

@@ -557,7 +557,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   wallVerge(own.owner, cleared);
   let roads = roadSet(village);
   let settled = settledDistance(terrain, own.owner, roads);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled });
+  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled, paved: roads });
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
@@ -1129,7 +1129,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     wallVerge(own.owner, clearedBase);
     roads = roadSet(v);
     settled = settledDistance(terrain, own.owner, roads);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled });
+    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled, paved: roads });
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
