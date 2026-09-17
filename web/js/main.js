@@ -1705,7 +1705,7 @@ function visibleAt(spec, t) {
 // polder is stamped into it rather than drawn on top - but the coast changes only once
 // per polder, so it is keyed separately and touched almost never. Re-laying the land is
 // the heavy one: `setOwnership` re-decodes ownership over the whole grid, re-plans the
-// fields, re-tints the ground and rebuilds the hedges. That cannot run per pointer move,
+// fields, re-tints the ground and rebuilds the boundaries. That cannot run per pointer move,
 // so the projection's key says what would actually be drawn and the work is throttled -
 // with a trailing pass, so the last position the slider stops at is always the one drawn.
 const LANDSCAPE_MS = 120;
@@ -1923,7 +1923,7 @@ function applyVillage(next, { animate }) {
     }
   }
 
-  // Outside the `animate` guard on purpose: the hedges and the tint have to be right on
+  // Outside the `animate` guard on purpose: the boundaries and the tint have to be right on
   // a silent reload too, and only the falling trees are an animation.
   if (state.world && (!prev || next.districtsRev !== prev.districtsRev)) {
     state.world.setOwnership(next);

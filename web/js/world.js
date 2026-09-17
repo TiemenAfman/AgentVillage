@@ -506,7 +506,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     ...(v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare }),
   });
 
-  // Which cells the settlers walk on. The hedges have always needed this to know where to
+  // Which cells the settlers walk on. The boundaries have always needed this to know where to
   // leave a gate; the fields and the forest now need it too, because how far a cell is
   // from a road is most of what decides whether anybody ploughs it or nobody has ever
   // cleared it. Built once here rather than three times over.
@@ -572,7 +572,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // and nothing is tilled on a cell that touches a boundary, which also gives every wall
   // the strip of grass along it that a wall in a field has anyway.
   //
-  // This mirrors the test in buildBorders(): the town puts up no hedge and the coast is
+  // This mirrors the test in buildBorders(): the town puts up no boundary and the coast is
   // its own boundary, so neither of those earns a verge.
   function wallVerge(ownerArr, into) {
     const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
@@ -1069,7 +1069,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
   }
 
-  // ---- hedges and fields ---------------------------------------------------
+  // ---- boundaries and fields ---------------------------------------------------
   let borderMesh = null, fieldMesh = null;
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
 
@@ -1077,13 +1077,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (borderMesh) { group.remove(borderMesh); borderMesh.geometry.dispose(); borderMesh.material.dispose(); borderMesh = null; }
     if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
 
-    // A hedge opens where a road crosses it, and the road set is the one the settlers
+    // A boundary opens where a road crosses it, and the road set is the one the settlers
     // already walk on, so no extra data is needed to know where the gates are. The field
     // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
     // same merged geometry, for no extra draw call.
     const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
-      // Rail, hedge and wall all come back welded into one geometry, so the sheet cannot
+      // Rail, palings and wall all come back welded into one geometry, so the sheet cannot
       // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
       // material reads that, projecting from three axes so nothing needs a UV. It dresses
       // itself when the sheets land, and draws the flat colours until they do.
@@ -1111,7 +1111,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   buildHamletDressing(village, season);
 
-  // The land register changed: a parcel grew, a hamlet was founded, a hedge moved out.
+  // The land register changed: a parcel grew, a hamlet was founded, a boundary moved out.
   function setOwnership(v, seasonName = currentSeason) {
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);

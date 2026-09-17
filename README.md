@@ -93,7 +93,7 @@ with a straw hat. WASD or the left stick to walk, drag the mouse or use the righ
 to look, Shift or a click of the left stick to run. Walk up to a house and press **E**
 (**X** on the pad) to read its dossier; **Esc** or **Back** flies you back up to the sky.
 
-**Space** jumps, which is enough to clear a doorstep or a low hedge. **C** crouches;
+**Space** jumps, which is enough to clear a doorstep or a low fence. **C** crouches;
 keep it held while standing still and the settler decides the day is over, lies down and
 puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does not end in
 a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
@@ -437,7 +437,7 @@ never checked again**. Folders get renamed and deleted long after their sessions
 name rather than quietly turn into somewhere else. That map survives a parse-format
 change for the same reason.
 
-A project earns a hamlet - a green, a sign, a hedge - on its third session. Below that it
+A project earns a hamlet - a green, a sign, a fence - on its third session. Below that it
 gets a lone farmhouse in the countryside, or a place on the town commons if the island has
 no room for one. When it reaches its third session it founds a hamlet, and the houses
 already standing keep their plots: they stay where they are for good.
@@ -446,9 +446,12 @@ Every session of one project stands on that project's own land, and the boundary
 says so: it runs all the way round the parcel and opens only where a road crosses, with a
 gatepost either side. What it is made of is the district's own standing rather than a die
 roll - average the houses inside, tent 0 through keep 5, and the answer is post and rail
-below a hut, a hedge around cottages, and dry stone from a house upward. Thickness is the
-one number that only ever grows: sevenfold from a rail round a camp of tents to the wall
-of a village of keeps, and never doubling back where one material hands over to the next.
+below a hut, a paling fence around cottages, and dry stone from a house upward. Thickness
+is the one number that only ever grows: sevenfold from a rail round a camp of tents to the
+wall of a village of keeps, and never doubling back where one material hands over to the
+next. The palings are a Blender model rather than a drawn shape - `assets/fence`, a bay to
+the ground cell with a post at every joint - because a fence is joinery and a swept
+outline can only ever be the silhouette of one.
 Sheds and civic lots do not count - neither is anybody's house.
 
 **`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
@@ -520,13 +523,13 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | A cork noticeboard on the square | The Jira sprint; one pinned note per open ticket |
 | A slate noticeboard facing it, under a copper roof | The GitHub issues of the island's own repository |
 | A house | One Claude Code session |
-| A hamlet: a green, a name sign, a hedge and one road to town | One git repository, from its third session on |
-| A hedge, a post-and-rail fence or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
-| How stout that edge is | The houses inside it: a rail round tents and huts, a hedge round cottages, dry stone round houses and manors - and the grander the houses the thicker the stone |
-| A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the hedge steps back and the water does the job |
+| A hamlet: a green, a name sign, a fence and one road to town | One git repository, from its third session on |
+| A post-and-rail fence, a paling fence or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
+| How stout that edge is | The houses inside it: a rail round tents and huts, palings round cottages, dry stone round houses and manors - and the grander the houses the thicker the stone |
+| A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the boundary steps back and the water does the job |
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
-| Houses around the town square with no hedge | The commons: whoever the island had no room for elsewhere |
+| Houses around the town square with no boundary | The commons: whoever the island had no room for elsewhere |
 | Flat green land behind an earth wall, out in a cove | A polder: land reclaimed once the island ran out, from 150 settlers on |
 | A small mill on a dike | The polder mill, which drains the first polder |
 | Ploughed fields and orchards | Countryside - buildable land no project has claimed |

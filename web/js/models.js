@@ -25,8 +25,9 @@ import { TOWNHALL } from './townhall-mesh.js';
 import { PROPS } from './props-mesh.js';
 import { VILLAGE } from './village-mesh.js';
 import { FLORA } from './flora-mesh.js';
+import { FENCE } from './fence-mesh.js';
 
-const SETS = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
+const SETS = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, fence: FENCE };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the

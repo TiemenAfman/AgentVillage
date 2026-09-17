@@ -19,10 +19,11 @@ import { TOWNHALL } from '../web/js/townhall-mesh.js';
 import { PROPS } from '../web/js/props-mesh.js';
 import { VILLAGE } from '../web/js/village-mesh.js';
 import { FLORA } from '../web/js/flora-mesh.js';
+import { FENCE } from '../web/js/fence-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA };
+const BAKED = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, fence: FENCE };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -35,6 +36,14 @@ delete globalThis.document;
 // The six loose props, which is the whole props set. Written out rather than taken from
 // models.variants('prop_'), so that a seventh has to be thought about here too.
 const PROP_ASSETS = ['prop_barrel', 'prop_cart', 'prop_crate', 'prop_tent', 'prop_washline', 'prop_woodpile'];
+
+// The fence set, which is `prop_` too and is not one of those. A bay of paling fence is
+// within a prop's budget and is put down by the hundred, so it is classed as one - but it
+// is nobody's yard furniture and there is no `fence` shape in shared/shapes.mjs that
+// answers to it. It is the middle rung of the hamlet boundary, laid by fenceRun() in
+// web/js/hamlets.js, which is why these are listed apart from the six above rather than
+// being expected to pass the catalogue tests they would fail.
+const FENCE_ASSETS = ['prop_fence_a', 'prop_fence_b', 'prop_fencepost'];
 
 // One legal part: `n` triangles standing on the ground and centred on the origin, so a
 // test can break exactly one rule and read one complaint.
@@ -218,13 +227,16 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['cottage', 'flora', 'house', 'hut', 'props', 'school', 'tavern', 'townhall', 'village']);
+  assert.deepEqual(models.setNames().sort(), ['cottage', 'fence', 'flora', 'house', 'hut', 'props', 'school', 'tavern', 'townhall', 'village']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_watertower',
     'flora_bush_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a',
-    ...PROP_ASSETS, 'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'tavern', 'townhall',
+    // Two sets' worth of `prop_`, sorted back together: the register is flat across sets
+    // on purpose, and this is the one place that shows it.
+    ...[...PROP_ASSETS, ...FENCE_ASSETS].sort(),
+    'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
   assert.equal(models.assetSet('tavern'), 'tavern');

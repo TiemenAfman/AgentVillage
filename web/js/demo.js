@@ -314,7 +314,7 @@ line(STAGES, (stage, x, z) => {
 }, 'Turnip, growing');
 
 // ---- hamlet pieces -------------------------------------------------------------
-// A hedge and a field decal both follow the ground, and on a flat plane you cannot tell
+// A boundary and a field decal both follow the ground, and on a flat plane you cannot tell
 // whether they do it correctly - you would ship something that looks perfect here and
 // floats on the island. So these rows get a gently rolling patch of their own, and they
 // are built by calling the real code against a small stand-in terrain.
@@ -379,7 +379,7 @@ line([
   ];
   // One row per rung of the ladder. Nothing here names a variant: each row puts a
   // different house on the same five cells and lets the rule pick what goes round them.
-  const LADDER = [['hut', 'post and rail'], ['cottage', 'hedge'], ['keep', 'dry stone']];
+  const LADDER = [['hut', 'post and rail'], ['cottage', 'palings'], ['keep', 'dry stone']];
   LADDER.forEach(([tier, what], vi) => {
     CASES.forEach((c, ci) => {
       const cells = 26, mid = cells / 2;
@@ -405,7 +405,7 @@ line([
       if (vi === 2) tag(ox, oz + 1.5, c.name, '');
     });
   });
-  tag(HEADING_X + PITCH * 1.1, z, 'rail / hedge / wall', 'by the houses inside');
+  tag(HEADING_X + PITCH * 1.1, z, 'rail / palings / wall', 'by the houses inside');
   row += 2;
 }
 
@@ -752,7 +752,7 @@ addEventListener('resize', () => {
 // interior can only be judged from inside it. So the field gets the island's own walk mode,
 // standing on a flat stand-in terrain, and the tavern gets a door.
 //
-// The rolling patches further down the sheet - the hedges, the fields, the bridges over
+// The rolling patches further down the sheet - the boundaries, the fields, the bridges over
 // their little valleys - build their own ground and this terrain knows nothing about it, so
 // down there you walk over the water rather than through it. That is the model sheet being
 // a model sheet; what this is for is the near rows, and what is inside them.
