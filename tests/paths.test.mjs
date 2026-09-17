@@ -108,18 +108,18 @@ test('every lane on a web of roads, footpaths and a plaza stays inside the bound
   for (const t of graph.tiles) assert.ok(t.west || t.east || t.north || t.south, 'a tile with no road on it');
 });
 
-test('a road is stone and the stub off it is sand, even where the two share cells', () => {
-  // Front paths braid into the road they leave, so a stub can own a cell or two of stone
-  // and the lane takes whichever most of it is. Here the stub starts on the road and only
-  // then turns off it, which is exactly what the router's REUSE produces.
+test('country roads and house paths share sand, with stone reserved for the plaza', () => {
+  // Front paths braid into the road they leave. Their shared cells must keep
+  // the same sand, while an explicitly paved town square takes precedence.
   const paths = [
     { id: 'road:spine', cells: run([5, 5], [E, E, E, E, E, E, E, E]) },
     { id: 'path:house:one', cells: run([9, 5], [S, S, S]) },
   ];
   const graph = roadGraph(paths, [], SIZE);
   const kinds = graph.chains.map((c) => c.kind).sort();
-  assert.deepEqual(kinds, ['sand', 'stone', 'stone']);
-  // The junction where the stub leaves the road keeps its own tile and its own stone.
+  assert.deepEqual(kinds, ['sand', 'sand', 'sand']);
+  // A junction shares the same sandy surface as both routes.
   const fork = graph.tiles.find((t) => t.gx === 9 && t.gz === 5);
-  assert.ok(fork && fork.kind === 'stone' && fork.south && fork.west && fork.east);
+  assert.ok(fork && fork.kind === 'sand' && fork.south && fork.west && fork.east);
+  assert.equal(roadGraph(paths, [[9,5]], SIZE).kind.get(9+5*SIZE), 'plaza');
 });
