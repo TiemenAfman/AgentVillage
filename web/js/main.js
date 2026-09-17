@@ -1749,6 +1749,13 @@ function passesFilter(spec) {
   if (spec.harbour) return state.filters.cowork;
   return state.filters.code;
 }
+// When the Friday borrel is on: half an hour, from half past four. One place rather than
+// three numbers in the middle of the frame loop, because this is the sort of thing that
+// gets asked for by the half hour and should be one line to move.
+const BORREL_DAY = 5;              // Sunday is 0, so Friday is 5
+const BORREL_FROM = 16.5;
+const BORREL_UNTIL = 17;
+
 function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
   return start <= t;
@@ -1785,7 +1792,13 @@ function layLandscape(shot) {
   state.shot = shot.village;
   w.setOwnership(shot.village);
   w.buildPaths(shot.village.paths, w.squareCells(shot.village));
-  if (state.settlers) state.settlers.setRoads(roadCells(shot.village));
+  // The square goes along with the roads, the same as it does on the line above and at
+  // the two other callers. It used to be left out here and that cost nothing, because
+  // `setRoads` only folded the square into the road network - but the Friday borrel
+  // remembers those cells separately as the place to walk to, so leaving them out empties
+  // that list. The result was a borrel that worked until you touched the chronicle and
+  // then silently never happened again, which is the worst shape a bug can have.
+  if (state.settlers) state.settlers.setRoads(roadCells(shot.village), w.squareCells(shot.village));
   syncHamlets(shot.village);
 }
 
@@ -2420,9 +2433,11 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday, 16:45-17:00: the whole village downs tools and heads for the square.
+    // Friday afternoon: the whole village downs tools and heads for the square, and stays
+    // there until closing time. Written as hours with the minutes as a fraction, because
+    // that is what currentHour() hands out.
     const d = new Date(timeNow());
-    state.settlers.setGather(d.getDay() === 5 && hour >= 16.75 && hour < 17);
+    state.settlers.setGather(d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL);
     state.settlers.update(dt, state.world ? state.world.state.night : 0);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);

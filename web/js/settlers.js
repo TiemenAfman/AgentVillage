@@ -396,6 +396,11 @@ export function createSettlers(scene, material, terrain) {
       f.mode = 'idle';
       f.target = null;
       f.pause = f.rng.range(2, 5);
+      // Stand about *here* for the rest of it. `home` is the point the idle wander circles
+      // and theirs is a field away, so without this they arrive on the square and then
+      // drift off it one small step at a time, heading for their own doorstep across the
+      // grass. The real one is put back by the walk home below.
+      f.home = [f.pos[0], f.pos[1]];
       f.strollHome = () => {
         walkRoute(f, [...out].reverse().concat([home]), () => {
           f.mode = 'idle';
@@ -568,7 +573,12 @@ export function createSettlers(scene, material, terrain) {
         // The borrel ending cuts every wait short, so nobody lingers on the square
         // past closing time just because their own pause timer hadn't run out yet.
         if (f.gathering && !gatherActive) f.pause = Math.min(f.pause, 0);
-        if (f.strollHome && f.pause <= 0) {
+        // Nobody goes home while the borrel is still on. The pause above is a fidget
+        // timer of a few seconds, not the length of the party, so without this they turn
+        // round and walk off again the moment they arrive. The line above is what lets
+        // them go: when the borrel ends it cuts the pause to nothing and this fires on
+        // the very next frame.
+        if (f.strollHome && f.pause <= 0 && !(f.gathering && gatherActive)) {
           const go = f.strollHome; f.strollHome = null; go();
           continue;
         }
