@@ -20,10 +20,12 @@ import { PROPS } from '../web/js/props-mesh.js';
 import { VILLAGE } from '../web/js/village-mesh.js';
 import { FLORA } from '../web/js/flora-mesh.js';
 import { FENCE } from '../web/js/fence-mesh.js';
+import { HEDGE } from '../web/js/hedge-mesh.js';
+import { WALL } from '../web/js/wall-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, fence: FENCE };
+const BAKED = { house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, fence: FENCE, hedge: HEDGE, wall: WALL };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -37,13 +39,17 @@ delete globalThis.document;
 // models.variants('prop_'), so that a seventh has to be thought about here too.
 const PROP_ASSETS = ['prop_barrel', 'prop_cart', 'prop_crate', 'prop_tent', 'prop_washline', 'prop_woodpile'];
 
-// The fence set, which is `prop_` too and is not one of those. A bay of paling fence is
-// within a prop's budget and is put down by the hundred, so it is classed as one - but it
-// is nobody's yard furniture and there is no `fence` shape in shared/shapes.mjs that
-// answers to it. It is the middle rung of the hamlet boundary, laid by fenceRun() in
-// web/js/hamlets.js, which is why these are listed apart from the six above rather than
-// being expected to pass the catalogue tests they would fail.
-const FENCE_ASSETS = ['prop_fence_a', 'prop_fence_b', 'prop_fencepost'];
+// The three boundary sets, which are `prop_` too and are none of those. A bay of paling
+// fence, of hedge or of dry stone is within a prop's budget and is put down by the
+// hundred, so each is classed as one - but none is anybody's yard furniture and no shape
+// in shared/shapes.mjs answers to them. They are three rungs of the hamlet boundary, laid
+// by modelled() in web/js/hamlets.js, which is why they are listed apart from the six
+// above rather than being expected to pass the catalogue tests they would fail.
+const BOUNDARY_ASSETS = [
+  'prop_fence_a', 'prop_fence_b', 'prop_fencepost',
+  'prop_hedge_a', 'prop_hedge_b',
+  'prop_wall_a', 'prop_wall_b', 'prop_wallpier',
+];
 
 // One legal part: `n` triangles standing on the ground and centred on the origin, so a
 // test can break exactly one rule and read one complaint.
@@ -227,15 +233,15 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['cottage', 'fence', 'flora', 'house', 'hut', 'props', 'school', 'tavern', 'townhall', 'village']);
+  assert.deepEqual(models.setNames().sort(), ['cottage', 'fence', 'flora', 'hedge', 'house', 'hut', 'props', 'school', 'tavern', 'townhall', 'village', 'wall']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_watertower',
     'flora_bush_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a',
-    // Two sets' worth of `prop_`, sorted back together: the register is flat across sets
+    // Four sets' worth of `prop_`, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...FENCE_ASSETS].sort(),
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');

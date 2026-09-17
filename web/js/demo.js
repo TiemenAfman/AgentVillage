@@ -378,13 +378,15 @@ line([
     { name: 'with a gate', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], roads: [[2, -1], [2, 0]] },
   ];
   // One row per rung of the ladder. Nothing here names a variant: each row puts a
-  // different house on the same five cells and lets the rule pick what goes round them.
-  const LADDER = [['hut', 'post and rail'], ['cottage', 'palings'], ['keep', 'dry stone']];
+  // different house on the same five cells and lets the rule pick what goes round them,
+  // so the four tiers below are chosen to land one in each band of BOUNDARY and the row
+  // labels are a claim the code has to make good on rather than a caption.
+  const LADDER = [['tent', 'post and rail'], ['cottage', 'palings'], ['house', 'hedge'], ['keep', 'dry stone']];
   LADDER.forEach(([tier, what], vi) => {
     CASES.forEach((c, ci) => {
       const cells = 26, mid = cells / 2;
       const ox = (ci - 1) * PITCH * 2.1;
-      const oz = z + (vi - 1) * 1.8;
+      const oz = z + (vi - (LADDER.length - 1) / 2) * 1.8;
       const t = demoTerrain(ox, oz, cells);
       const owner = new Int16Array(cells * cells).fill(NONE);
       for (const [cx, cz] of c.cells) owner[(mid + cx) + (mid + cz) * cells] = 0;
@@ -402,10 +404,10 @@ line([
         scene.add(m);
       }
       if (ci === 0) tag(ox - PITCH * 1.5, oz, what, `a hamlet of ${tier}s`);
-      if (vi === 2) tag(ox, oz + 1.5, c.name, '');
+      if (vi === LADDER.length - 1) tag(ox, oz + 1.5, c.name, '');
     });
   });
-  tag(HEADING_X + PITCH * 1.1, z, 'rail / palings / wall', 'by the houses inside');
+  tag(HEADING_X + PITCH * 1.1, z, 'rail / palings / hedge / wall', 'by the houses inside');
   row += 2;
 }
 

@@ -445,14 +445,20 @@ already standing keep their plots: they stay where they are for good.
 Every session of one project stands on that project's own land, and the boundary is what
 says so: it runs all the way round the parcel and opens only where a road crosses, with a
 gatepost either side. What it is made of is the district's own standing rather than a die
-roll - average the houses inside, tent 0 through keep 5, and the answer is post and rail
-below a hut, a paling fence around cottages, and dry stone from a house upward. Thickness
-is the one number that only ever grows: sevenfold from a rail round a camp of tents to the
-wall of a village of keeps, and never doubling back where one material hands over to the
-next. The palings are a Blender model rather than a drawn shape - `assets/fence`, a bay to
-the ground cell with a post at every joint - because a fence is joinery and a swept
-outline can only ever be the silhouette of one.
-Sheds and civic lots do not count - neither is anybody's house.
+roll - average the houses inside, tent 0 through keep 5, and the answer climbs four rungs:
+post and rail round a camp of tents, a paling fence round huts and cottages, a hedge once
+there are houses, dry stone from a manor upward. Thickness is the one number that only
+ever grows: sevenfold from end to end, and never doubling back where one material hands
+over to the next. Height is allowed one dip, and takes it in the one place where a dip is
+true to life - a well-grown hedge stands taller than the lowest dry stone. Sheds and civic
+lots do not count - neither is anybody's house.
+
+Three of those four are Blender models rather than drawn shapes - `assets/fence`,
+`assets/hedge` and `assets/wall`, a bay to the ground cell, warped onto the ground it
+stands on. A drawn outline can only ever say one thing, and it says it for the whole
+length of the island: extrude the best hedge silhouette there is over four hundred metres
+and what you have is topiary. A bay can be picked from two, so what you have instead is a
+boundary somebody built a bit at a time.
 
 **`PARCEL_VERSION`** in `lib/layout.mjs` is the one thing that can move a house. Land is
 owned, and a change to how it is divided means re-planning every house and shed at once -
@@ -524,8 +530,8 @@ recorded on the island at once. A village that starts today looks emptier for a 
 | A slate noticeboard facing it, under a copper roof | The GitHub issues of the island's own repository |
 | A house | One Claude Code session |
 | A hamlet: a green, a name sign, a fence and one road to town | One git repository, from its third session on |
-| A post-and-rail fence, a paling fence or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
-| How stout that edge is | The houses inside it: a rail round tents and huts, palings round cottages, dry stone round houses and manors - and the grander the houses the thicker the stone |
+| A post-and-rail fence, a paling fence, a hedge or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
+| How stout that edge is | The houses inside it: a rail round tents, palings round huts and cottages, a hedge round houses, dry stone round manors and keeps - and the grander the houses the thicker the stone |
 | A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the boundary steps back and the water does the job |
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |

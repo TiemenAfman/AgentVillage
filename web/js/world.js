@@ -506,10 +506,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     ...(v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare }),
   });
 
-  // Which cells the settlers walk on. The boundaries have always needed this to know where to
-  // leave a gate; the fields and the forest now need it too, because how far a cell is
-  // from a road is most of what decides whether anybody ploughs it or nobody has ever
-  // cleared it. Built once here rather than three times over.
+  // Which cells the settlers walk on. The boundaries have always needed this to know
+  // where to leave a gate; the fields and the forest now need it too, because how far a
+  // cell is from a road is most of what decides whether anybody ploughs it or nobody has
+  // ever cleared it. Built once here rather than three times over.
   const roadSet = (v) => {
     const out = new Set();
     for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
@@ -572,8 +572,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // and nothing is tilled on a cell that touches a boundary, which also gives every wall
   // the strip of grass along it that a wall in a field has anyway.
   //
-  // This mirrors the test in buildBorders(): the town puts up no boundary and the coast is
-  // its own boundary, so neither of those earns a verge.
+  // This mirrors the test in buildBorders(): the town puts up nothing of its own and the
+  // coast is a boundary already, so neither of those earns a verge.
   function wallVerge(ownerArr, into) {
     const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
     const walled = (o) => o !== NONE && o !== TOWN;
@@ -1069,7 +1069,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
   }
 
-  // ---- boundaries and fields ---------------------------------------------------
+  // ---- boundaries and fields -----------------------------------------------
   let borderMesh = null, fieldMesh = null;
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
 
@@ -1083,8 +1083,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // same merged geometry, for no extra draw call.
     const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
     if (bg) {
-      // Rail, palings and wall all come back welded into one geometry, so the sheet cannot
-      // be chosen per mesh: hamlets.js writes which one each vertex wants and its own
+      // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
+      // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
       // material reads that, projecting from three axes so nothing needs a UV. It dresses
       // itself when the sheets land, and draws the flat colours until they do.
       borderMesh = new THREE.Mesh(bg, createBoundaryMaterial());
