@@ -1082,6 +1082,15 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 2.9 };
     }
     case 'market': {
+      // The seed merchant is authored as one Blender asset now: a timber shop with a
+      // striped canopy, labelled drawers, open bins and sacks of stock. Keep the old
+      // three-stall composition below as a fallback so an unbaked development checkout
+      // can still open its market instead of leaving an empty square.
+      if (models.hasAsset('civic_seed_stall')) {
+        for (const g of meshAsset('civic_seed_stall')) parts.push(g);
+        Object.assign(anchors, meshAnchors('civic_seed_stall'));
+        return { anchors, animated, height: assetRise('civic_seed_stall') };
+      }
       // Three stalls, and the point of them is that they are three different stalls. The
       // market is what the island puts up at ten settlers and it used to be four sticks, a
       // roof and two spheres, three times over - which reads as scaffolding rather than as
@@ -1272,6 +1281,21 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.88 };
     }
     case 'fountain': {
+      // The square's centrepiece is a complete Blender asset now: a carved basin, tiered
+      // bowl, copper finial and four arcing streams. Keep the compact procedural version
+      // below as a boot-safe fallback for a checkout whose baked village set is stale.
+      if (models.hasAsset('civic_fountain')) {
+        const names = models.assetParts('civic_fountain');
+        const baked = meshAsset('civic_fountain');
+        for (let i = 0; i < baked.length; i++) {
+          // Water has to live in its own meshes: buildBuilding merges everything in
+          // `parts`, and a vertex inside that loaf can no longer ripple independently.
+          if (fountainWaterPart(names[i])) baked[i].dispose();
+          else parts.push(baked[i]);
+        }
+        animated.fountain = { at: [0, 0, 0] };
+        return { anchors, animated, height: assetRise('civic_fountain') };
+      }
       // An eight sided basin with a tiered column standing in it. The water sits just
       // below the rim so it catches the light instead of hiding in the shadow.
       parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
@@ -1848,6 +1872,31 @@ export function buildBuilding(spec, ctx = {}) {
 }
 
 // ---------------------------------------------------------------- extras
+// The fountain's water is baked in Blender with the stone, but returned separately at
+// runtime so its vertices can move. `surface` is the two filled bowls; `jets` is the four
+// pairs of falling rods. Keeping those two meshes apart lets the surface ripple without
+// bending a stream, and lets the streams pulse without lifting a whole basin of water.
+function fountainWaterPart(name, kind = 'all') {
+  if (!name || !name.startsWith('civic_fountain ')) return false;
+  const jets = name.startsWith('civic_fountain water jet');
+  const surface = name.endsWith('basin water') || name.endsWith('upper water');
+  return kind === 'jets' ? jets : kind === 'surface' ? surface : jets || surface;
+}
+
+export function buildFountainWaterGeometry(kind = 'all') {
+  if (!models.hasAsset('civic_fountain')) return new THREE.BufferGeometry();
+  const names = models.assetParts('civic_fountain');
+  const baked = meshAsset('civic_fountain');
+  const picked = [];
+  for (let i = 0; i < baked.length; i++) {
+    if (fountainWaterPart(names[i], kind)) picked.push(baked[i]);
+    else baked[i].dispose();
+  }
+  const geometry = merge(picked);
+  for (const g of picked) g.dispose();
+  return geometry;
+}
+
 export function buildScaffoldGeometry() {
   const parts = [];
   const h = 1;

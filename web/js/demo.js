@@ -21,6 +21,7 @@ import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
+import { attachFountain, updateFountain } from './fountain.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -150,6 +151,7 @@ const labels = document.getElementById('demo-labels');
 const tags = [];      // { el, world }
 const spinners = [];  // things with turning blades
 const clocks = [];    // things with hands, which on this page keep the wall's time
+const fountains = []; // separate water meshes, animated just as they are on the island
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -187,6 +189,10 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.clock) {
     const at = built.animated.clock.at;
     clocks.push(attachClock(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.fountain) {
+    const at = built.animated.fountain.at;
+    fountains.push(attachFountain(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -700,8 +706,9 @@ if (wanted) {
   const found = tags.find((t) => t.el.textContent.toLowerCase().startsWith(wanted.toLowerCase()));
   if (!found) console.warn('model sheet: nothing on the field is called', wanted);
   else {
-    controls.target.set(0, 0.6, found.world.z);
-    camera.position.set(0, 5.5, found.world.z + 13);
+    const focusZ = found.world.z - 1.1;
+    controls.target.set(found.world.x, 0.6, focusZ);
+    camera.position.set(found.world.x + 1.8, 2.1, focusZ + 2.8);
   }
 }
 controls.update();
@@ -886,6 +893,7 @@ function frame(now) {
   // whoever is looking at it.
   const wall = new Date();
   for (const c of clocks) updateClock(c, wall.getHours() + wall.getMinutes() / 60);
+  for (const f of fountains) updateFountain(f, dt);
 
   if (inside) {
     const w = inside.update(dt);
