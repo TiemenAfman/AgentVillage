@@ -854,10 +854,13 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   if (tier >= 4) {                                     // wing
     parts.push(box(0.44, dims.h * 0.72, 0.5, pal.wall, { x: dims.w * 0.62, z: -0.1, sheet: 'wall' }));
     parts.push(prismRoof(0.52, 0.58, 0.28, roofHex, { x: dims.w * 0.62, y: dims.h * 0.72, z: -0.1, ry: Math.PI / 2 }));
-    for (let i = 0; i < 4; i++) {                      // garden fence
-      parts.push(box(0.04, 0.18, 0.04, C.darkWood, { x: -0.42 + i * 0.28, z: 0.62 }));
+    // Two low fence sections leave a real opening in front of the door.
+    for (const x of [-0.60, -0.27, 0.27, 0.60]) {
+      parts.push(box(0.04, 0.18, 0.04, C.darkWood, { x, z: 0.62 }));
     }
-    parts.push(box(0.92, 0.03, 0.03, C.darkWood, { x: -0.28, y: 0.13, z: 0.62 }));
+    for (const x of [-0.435, 0.435]) {
+      parts.push(box(0.33, 0.03, 0.03, C.darkWood, { x, y: 0.13, z: 0.62 }));
+    }
   }
   if (tier === 5) {                                    // keep: corner tower + battlements
     parts.push(cylinder(0.2, 0.22, dims.h + 0.4, 8, pal.wall, { x: -dims.w * 0.42, z: -dims.w * 0.42, sheet: 'wall' }));
@@ -2084,6 +2087,7 @@ export function createFlagMesh(count) {
   mesh.count = 0;
   return mesh;
 }
+
 
 
 

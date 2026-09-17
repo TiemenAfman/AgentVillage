@@ -47,7 +47,7 @@ for row,y in enumerate(rows):
         detail('window frame',0,0,0,ww+.045,hh+.045,.028,'plank:dark')
         detail('pane',0,0,.018,ww,hh,.014,'plain:glass')
         detail('mullion',0,0,.03,.014,hh,.01,'plank:oak')
-        detail('sill',0,-hh/2-.02,.028,ww+.08,.027,.07,'stone:foundation' if D.get('stone') else 'plank:oak')
+        detail('sill',0,-hh/2-.02,.028,ww+.08,.027,D.get('sillDepth',.07),'stone:foundation' if D.get('stone') else 'plank:oak')
 # Deliberate differences authored per design: shutters, projecting floor or stone piers.
 if D.get('shutters'):
     for x in [-w*.30,w*.30]:
@@ -61,6 +61,9 @@ if D.get('braces'):
         o=box('diagonal brace',(x,h*.70,w*.23),(.027,h*.36,.027),'plank:dark');o.rotation_euler.x=.65
 if D.get('canopy'):
     o=box('door canopy',(0,dh+.20,dz+.09),(.33,.035,.20),'plank:oak');o.rotation_euler.x=.16
+if D.get('wing'):
+    box('study frame',(w*.62,h*.36,.16),(.25,.27,.026),'plank:dark')
+    box('study pane',(w*.62,h*.36,.18),(.20,.22,.012),'plain:glass')
 if D.get('windowbox'):
     x=w/2+.10;z=-w*.14;y=rows[0]-.19
     box('windowbox',(x,y,z),(.16,.10,.29),'plank:oak')
@@ -77,5 +80,6 @@ bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/('agentvillage-'+kind+'.blend')))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':kind})
 bpy.ops.render.render(write_still=True)
+
 
 
