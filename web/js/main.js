@@ -35,6 +35,7 @@ import { attachClock, updateClock } from './clock.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
+import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
 import { createAvatarStudio } from './studio.js';
@@ -290,7 +291,7 @@ const state = {
   crops: null, market: null, garden: null,
   // What the postbox on the town hall pavement knows: one unread count per account, as the
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
-  mailbox: null, mailCounts: [], mailAt: 0,
+  mailbox: null, mailCounts: [], mailAt: 0, borrel: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -1612,6 +1613,36 @@ function gateOf(village, d, li, lobe) {
 // (`group`, `built`, `id`) for `blockersOf` to read.
 let squareBed = null;
 
+// The extra tables for the borrel, and where on the square they may stand: the town's own
+// paving, minus every cell something is already built on, nearest the middle first. Worked
+// out when the village changes rather than when the borrel starts, because a Friday
+// afternoon is a bad moment to be walking a hundred and twenty cells.
+function syncBorrelTables(village) {
+  const town = village.island && village.island.town;
+  if (!town || !town.paved || !state.terrain) return;
+  if (!state.borrel) {
+    const built = buildBuilding({ id: 'civic:tables', kind: 'civic', civicType: 'tables', style: 'unknown' });
+    state.borrel = createBorrelTables(scene, built.geometry, buildingMat);
+  }
+  const taken = new Set();
+  for (const b of village.buildings || []) {
+    const p = b.plot;
+    if (!p) continue;
+    for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) taken.add(`${p.gx + x},${p.gz + z}`);
+  }
+  // The middle of the square is the flower bed or the fountain, and neither is a plot.
+  if (town.centre) taken.add(`${town.centre[0]},${town.centre[1]}`);
+  const centre = town.centre || [state.terrain.half, state.terrain.half];
+  const free = town.paved
+    .filter(([gx, gz]) => !taken.has(`${gx},${gz}`))
+    .sort((a, b) => ((a[0] - centre[0]) ** 2 + (a[1] - centre[1]) ** 2)
+      - ((b[0] - centre[0]) ** 2 + (b[1] - centre[1]) ** 2));
+  state.borrel.setSpots(free, {
+    cellWorld: (gx, gz) => state.terrain.cellWorld(gx, gz),
+    groundAt,
+  });
+}
+
 function syncSquareBed(village) {
   const town = village.island && village.island.town;
   if (!town || !town.centre || !state.terrain) return;
@@ -2007,6 +2038,7 @@ function applyVillage(next, { animate }) {
     syncHamlets(next);
   }
   syncSquareBed(next);
+  syncBorrelTables(next);
 
   const events = [];
   for (const [id, spec] of nextSpecs) {
@@ -2437,7 +2469,14 @@ function frame(nowMs) {
     // there until closing time. Written as hours with the minutes as a fraction, because
     // that is what currentHour() hands out.
     const d = new Date(timeNow());
-    state.settlers.setGather(d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL);
+    const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+    state.settlers.setGather(borrel);
+    // And the tables to stand at while it lasts: one set per ten islanders, of which the
+    // set the village earned is the first, so the rest are carried out and taken back in
+    // with the borrel itself.
+    if (state.borrel) {
+      state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
+    }
     state.settlers.update(dt, state.world ? state.world.state.night : 0);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
