@@ -240,7 +240,7 @@ test('the register spans every set and answers by part name alone', () => {
   assert.deepEqual(models.setNames().sort(), ['cottage', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a', 'civic_watertower',
-    'flora_bush_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
+    'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     // Five sets' worth of `prop_`, sorted back together: the register is flat across sets
@@ -373,7 +373,7 @@ test('the plants are inside the budget that being instanced by the thousand earn
   for (const [name, tris] of [
     ['flora_pine_a', 50], ['flora_pine_a_lo', 30],
     ['flora_oak_a', 50], ['flora_oak_a_lo', 30],
-    ['flora_bush_a', 40], ['flora_rock_a', 20], ['flora_rock_b', 20],
+    ['flora_bush_a', 40], ['flora_grass_a', 5], ['flora_rock_a', 20], ['flora_rock_b', 20],
   ]) {
     assert.equal(models.assetTris(name), tris, `${name} is ${models.assetTris(name)} triangles, not ${tris}`);
     assert.ok(models.assetTris(name) <= budgetOf(name, null), `${name} is over its budget`);
@@ -385,7 +385,7 @@ test('the plants are inside the budget that being instanced by the thousand earn
   assert.ok(models.assetTris('flora_oak_a_lo') < 40, 'the modest oak undercuts the old one');
   // A rock and a bush have no bark, and asking for the slots they do have is how the
   // caller gets a single-material geometry out of the same function.
-  for (const [name, slots] of [['flora_rock_a', ['plain']], ['flora_rock_b', ['plain']], ['flora_bush_a', ['foliage']]]) {
+  for (const [name, slots] of [['flora_rock_a', ['plain']], ['flora_rock_b', ['plain']], ['flora_bush_a', ['foliage']], ['flora_grass_a', ['foliage']]]) {
     const g = models.grouped(name, slots);
     assert.equal(g.groups.length, 1, `${name} draws in one group`);
     assert.equal(g.groups[0].count, g.attributes.position.count);

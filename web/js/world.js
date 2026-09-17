@@ -609,8 +609,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
   const barkMat = treeMat.clone();
   const foliageMat = treeMat.clone();
+  // Grass blades have no thickness in the Blender bake. Their own material shows the
+  // same foliage sheet from both sides without making every closed tree canopy double-sided.
+  const grassMat = treeMat.clone();
+  grassMat.side = THREE.DoubleSide;
   sheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
-  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliageMat.map = tex; foliageMat.needsUpdate = true; });
+  sheet('foliage', (tex) => {
+    tex.repeat.set(2, 2);
+    foliageMat.map = tex; foliageMat.needsUpdate = true;
+    grassMat.map = tex; grassMat.needsUpdate = true;
+  });
   // Which material draws which group. A plant is asked for by its slots and gets its
   // materials back in the same order, so the two can never be listed apart: handing an
   // InstancedMesh [bark, foliage] for a geometry grouped foliage-first is a tree with a
@@ -671,8 +679,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     ? { geo: models.grouped('flora_rock_b', ['plain']), mats: [treeMat] } : null;
   const bush = models.hasAsset('flora_bush_a')
     ? { geo: models.grouped('flora_bush_a', ['foliage']), mats: [foliageMat] } : null;
-  const grassGeo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
-  grassGeo.computeVertexNormals();
+  const grass = plant('flora_grass_a', ['foliage'], () => {
+    const geo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
+    geo.computeVertexNormals();
+    return { geo, mats: [treeMat] };
+  });
 
   // ---- where the forest stands ---------------------------------------------
   // It used to be noise alone, which put the same even spatter of trees on the town
@@ -816,7 +827,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const pineMesh = new THREE.InstancedMesh(pine.geo, pine.mats, Math.max(1, pines.length));
   const oakMesh = new THREE.InstancedMesh(oak.geo, oak.mats, Math.max(1, oaks.length));
   const rockMesh = new THREE.InstancedMesh(rock.geo, rock.mats, Math.max(1, rocks.length));
-  const grassMesh = new THREE.InstancedMesh(grassGeo, treeMat, Math.max(1, tufts.length));
+  const grassMesh = new THREE.InstancedMesh(grass.geo, grassMat, Math.max(1, tufts.length));
   const orchardMesh = new THREE.InstancedMesh(oak.geo, oak.mats, ORCHARD_CAP);
   for (const m of [pineMesh, oakMesh, rockMesh, orchardMesh]) { m.castShadow = true; m.receiveShadow = true; }
   // A tuft of grass is two hand spans high and its shadow would be a smudge under
@@ -826,7 +837,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   grassMesh.castShadow = false;
   group.add(pineMesh, oakMesh, rockMesh, grassMesh, orchardMesh);
 
-  // The sixth and seventh: undergrowth, and the shelf along the waterline. Both only
+  // The seventh and eighth: undergrowth, and the shelf along the waterline. Both only
   // exist when the flora set has been baked - see `plant()` - and both are left out of
   // the scene entirely when it has not, rather than added empty.
   const bushMesh = bush ? new THREE.InstancedMesh(bush.geo, bush.mats, Math.max(1, bushes.length)) : null;

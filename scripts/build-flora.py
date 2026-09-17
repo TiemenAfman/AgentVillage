@@ -17,6 +17,7 @@ What the budget buys, against what world.js drew before:
     flora_pine_a   trunk + four skirts     50    was a trunk and two cones, 44
     flora_oak_a    trunk + two lobes       50    was a trunk and one flat icosahedron, 40
     flora_bush_a   two lobes, no trunk     40    was nothing at all
+    flora_grass_a  five crossed blades      5    was one three-sided cone, 6
     flora_rock_a   one knocked-about ball  20    was a regular dodecahedron, 36
     flora_rock_b   the same, flattened     20    was nothing; it is the coast's shelf
 
@@ -67,6 +68,8 @@ COLORS = {
     'bark:oak': 0x6b4a2f,
     'foliage:oak': 0x5c9a3f,
     'foliage:bush': 0x53803c,
+    'foliage:grass': 0x7fb64d,
+    'foliage:grass-light': 0x91c85a,
     'plain:rock': 0x7f7a72,
 }
 materials = {}
@@ -192,6 +195,22 @@ def lobe(name, mat, coll, at, r, scale=(1, 1, 1), seed=0, rough=0.0):
     return adopt(name, mat, coll)
 
 
+def blade(name, mat, coll, at, width, height, angle, lean):
+    """One grass blade: a tapered triangle, drawn double-sided by its island material.
+
+    Grass is instanced by the thousand and casts no shadow, so silhouette is everything
+    and thickness buys nothing. Five crossed triangles cost one less than the cone they
+    replace, while reading as a clump instead of a green marker stuck in the ground.
+    """
+    x, y, z = at
+    along = (cos(angle), sin(angle))
+    across = (-along[1], along[0])
+    left = (x + across[0] * width / 2, y, z + across[1] * width / 2)
+    right = (x - across[0] * width / 2, y, z - across[1] * width / 2)
+    tip = (x + along[0] * lean, y + height, z + along[1] * lean)
+    return build(name, mat, coll, [left, right, tip], [(0, 1, 2)])
+
+
 def lowest(objs):
     """The lowest point of these objects above the grass, in island units.
 
@@ -267,6 +286,20 @@ bush_parts = [
     # daylight between them are two bushes, and at this size that reads as a mistake.
     lobe('flora_bush_a clump side', 'foliage:bush', bush, (.11, .10, -.05), .145, scale=(1.1, .84, 1.1), seed=12, rough=.04),
 ]
+
+# ----------------------------------------------------------------- flora_grass_a
+# Five fine blades share a foot but not one height or direction. The old cone was legible
+# only as a green spike; from above these crossed silhouettes spread into a small tuft,
+# while the two tones catch the same instance tint world.js has always applied.
+grass = asset('flora_grass_a')
+for i, (x, z, width, height, angle, lean, mat) in enumerate([
+    (-.020, .000, .050, .180, .10, .035, 'foliage:grass'),
+    ( .018,-.008, .045, .225, 1.35, .045, 'foliage:grass-light'),
+    ( .000, .016, .052, .155, 2.60, .040, 'foliage:grass'),
+    (-.012,-.018, .042, .195, 3.85, .050, 'foliage:grass-light'),
+    ( .020, .018, .046, .165, 5.10, .038, 'foliage:grass'),
+]):
+    blade(f'flora_grass_a blade {i + 1}', mat, grass, (x, 0, z), width, height, angle, lean)
 
 # ------------------------------------------------------- flora_rock_a, flora_rock_b
 # An icosphere each, knocked about hard enough to lose the sphere. `rock_a` is the
