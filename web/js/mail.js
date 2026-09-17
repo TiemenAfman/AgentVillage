@@ -42,6 +42,52 @@ function when(iso) {
 const who = (a) => (a && (a.name || a.address)) || 'somebody';
 const size = (n) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} kB`);
 
+// Where a domain keeps its mail, for the handful anybody actually types. Every mail
+// program on earth carries this table and fills the form in from it, which is why asking
+// for eight fields after somebody has typed their address reads as the island being
+// difficult on purpose.
+//
+// `note` is the other half of it, and the more useful half. All three of these have
+// stopped taking an ordinary account password over IMAP and want a token made for the
+// job - and being told that while filling the form in is worth a great deal more than
+// being told it by a refused login afterwards.
+const KNOWN = {
+  'gmail.com': {
+    imap: ['imap.gmail.com', 993, true], smtp: ['smtp.gmail.com', 587, false],
+    note: 'Gmail will not take your account password here. Make an app password at '
+      + 'myaccount.google.com/apppasswords — it needs two-step verification — and type those 16 characters without the spaces.',
+  },
+  'outlook.com': {
+    imap: ['outlook.office365.com', 993, true], smtp: ['smtp.office365.com', 587, false],
+    note: 'A Microsoft account usually wants an app password rather than your own: make one under Security, App passwords.',
+  },
+  'icloud.com': {
+    imap: ['imap.mail.me.com', 993, true], smtp: ['smtp.mail.me.com', 587, false],
+    note: 'iCloud always wants an app-specific password, made at appleid.apple.com.',
+  },
+};
+KNOWN['googlemail.com'] = KNOWN['gmail.com'];
+for (const also of ['hotmail.com', 'live.com', 'live.nl', 'msn.com']) KNOWN[also] = KNOWN['outlook.com'];
+for (const also of ['me.com', 'mac.com']) KNOWN[also] = KNOWN['icloud.com'];
+
+// What an address says about where its mail lives. A domain nobody has heard of gets the
+// guess every mail program makes - mail.<domain>, 993 and 587 - which is right more often
+// than it is wrong and is one field to correct when it is not. Exported so that the table
+// above is checked by tests/mailbox.test.mjs rather than only by somebody typing their
+// own address into it.
+export function guessServers(address) {
+  const at = String(address || '').split('@')[1];
+  if (!at || !at.includes('.') || /\s/.test(at)) return null;
+  const domain = at.toLowerCase();
+  const known = KNOWN[domain];
+  return {
+    imap: known ? [...known.imap] : [`mail.${domain}`, 993, true],
+    smtp: known ? [...known.smtp] : [`mail.${domain}`, 587, false],
+    note: known ? known.note : '',
+    known: !!known,
+  };
+}
+
 export function createMailbox(root, { onCounts, onClose } = {}) {
   let view = { accounts: [], counts: [] };
   let pick = null;            // which account is open
@@ -291,7 +337,11 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
       smtpPort: a ? a.smtp.port : 587,
       smtpSecure: a ? a.smtp.secure : false,
       insecure: a ? !!a.insecure : false,
+      note: '',
     };
+    // An account being edited already has its servers; this is only here for the note,
+    // which is the part worth saying again when somebody comes back to fix a login.
+    if (a) guessFrom(a.address);
   }
 
   function form() {
@@ -305,6 +355,7 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
         <label>Username<input type="text" name="user" value="${esc(d.user)}" placeholder="the same as the address, usually"></label>
         <label>Password<input type="password" name="pass" value="${esc(d.pass)}" autocomplete="off"
           placeholder="${d.hasPassword ? 'kept — type to change it' : 'the one you sign in with'}"></label>
+        ${d.note ? `<p class="ho-warn">${esc(d.note)}</p>` : ''}
         <fieldset>
           <legend>Incoming (IMAP)</legend>
           <label>Server<input type="text" name="imapHost" value="${esc(d.imapHost)}" placeholder="mail.example.com"></label>
@@ -328,6 +379,18 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
           <button type="button" class="btn quiet" data-cancel>Cancel</button>
         </div>
       </form>`;
+  }
+
+  // Fills in what can be worked out from the address, and never overwrites something
+  // somebody has typed: a house with its own mail server is the case this must not get in
+  // the way of.
+  function guessFrom(address) {
+    const guess = guessServers(address);
+    if (!guess) return;
+    if (!filling.imapHost) [filling.imapHost, filling.imapPort, filling.imapSecure] = guess.imap;
+    if (!filling.smtpHost) [filling.smtpHost, filling.smtpPort, filling.smtpSecure] = guess.smtp;
+    if (!filling.user) filling.user = address;
+    filling.note = guess.note;
   }
 
   // The form, as the server wants it. `pass` is left out entirely when nothing was typed
@@ -425,7 +488,16 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
         filling[t.name] = t.type === 'checkbox' ? t.checked : t.value;
       };
       f.addEventListener('input', keep);
-      f.addEventListener('change', keep);
+      f.addEventListener('change', (e) => {
+        keep(e);
+        // The servers are worked out when the address is finished rather than on every
+        // keystroke: filling it in mid-word would guess from half a domain, and redrawing
+        // the form under somebody's hands would take the caret with it.
+        if (e.target.name !== 'address') return;
+        const was = JSON.stringify([filling.imapHost, filling.smtpHost, filling.user, filling.note]);
+        guessFrom(filling.address);
+        if (JSON.stringify([filling.imapHost, filling.smtpHost, filling.user, filling.note]) !== was) render();
+      });
       f.addEventListener('submit', (e) => {
         e.preventDefault();
         const account = formValues();

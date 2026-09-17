@@ -184,6 +184,30 @@ test('an encoded header is cut on a character and never through one', () => {
   assert.ok(mailDate(new Date()).length > 20);
 });
 
+// ---- filling the form in for somebody --------------------------------------------------
+
+test('an address says where its mail lives', async () => {
+  const { guessServers } = await import('../web/js/mail.js');
+
+  const gmail = guessServers('somebody@GMail.com');
+  assert.deepEqual(gmail.imap, ['imap.gmail.com', 993, true]);
+  assert.deepEqual(gmail.smtp, ['smtp.gmail.com', 587, false], 'STARTTLS on 587, which is what Gmail wants');
+  assert.match(gmail.note, /app password/i, 'the account password has not worked there for years');
+  assert.deepEqual(guessServers('x@googlemail.com').imap, gmail.imap, 'the old spelling is the same provider');
+
+  // Everybody else: the guess every mail program makes, which is one field to fix when
+  // it is wrong and eight fields saved when it is right.
+  const own = guessServers('t.afman@boikon.nl');
+  assert.deepEqual(own.imap, ['mail.boikon.nl', 993, true]);
+  assert.deepEqual(own.smtp, ['mail.boikon.nl', 587, false]);
+  assert.equal(own.note, '');
+  assert.equal(own.known, false);
+
+  for (const nonsense of ['', 'nobody', 'nobody@', 'nobody@localhost', 'two words@x.nl ', null]) {
+    assert.equal(guessServers(nonsense), null, `"${nonsense}" is not something to guess from`);
+  }
+});
+
 // ---- the accounts ---------------------------------------------------------------------
 
 test('an account is refused before it can fail on the wire', () => {
