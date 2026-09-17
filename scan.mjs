@@ -189,6 +189,23 @@ function assemble({ config, model, layout, terrain, size, all }) {
       tools: {}, sheds: [],
     });
   }
+  // The postbox on the town hall's pavement. It stands as soon as the hall does and holds
+  // nothing of the village's: what is in it is read live over IMAP when somebody opens it,
+  // so nothing about anybody's mail is written into village.json, which is a file the
+  // scanner rewrites every minute and a visitor may be shown.
+  const boxPlot = plot('civic:mailbox');
+  if (boxPlot) {
+    civics.push({
+      id: 'civic:mailbox', kind: 'civic', civicType: 'mailbox', district: null,
+      plot: boxPlot, door: null, name: 'The postbox', label: 'Postbox',
+      title: 'Mail from off the island',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
   // The sprint board on the town square, with one pinned card per open issue.
   const boardPlot = plot('civic:board');
   if (boardPlot) {

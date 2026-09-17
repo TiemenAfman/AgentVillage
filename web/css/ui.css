@@ -580,3 +580,69 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .build-hud .why { color: #e0574a; }
 .build-hud kbd { font-size: 10px; }
 .build-hud .muted { opacity: .62; }
+
+/* --- the postbox on the town hall pavement ----------------------------- */
+/* Built out of the same pieces as the seed stall (.mk-row above): a row is a bordered
+   card, the accent is the island's gold, and nothing here invents a new shape. What it
+   adds is the one thing an inbox needs and a market stall does not - a line that reads
+   as unread until it has been read. */
+.mailbox .ho-sum { max-width: 64ch; }
+.mb-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.mb-tab { font: inherit; font-size: 12px; color: var(--ink); background: rgba(255,255,255,.05);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 5px 13px; cursor: pointer; }
+.mb-tab:hover { background: rgba(255,255,255,.12); }
+.mb-tab.on { border-color: rgba(232,180,92,.6); background: rgba(232,180,92,.13); color: var(--accent); }
+.mb-tab.quiet { color: var(--ink-dim); margin-left: auto; }
+.mb-tab i { font-style: normal; font-size: 10px; margin-left: 7px; padding: 1px 6px; border-radius: 99px; }
+.mb-new { background: var(--accent); color: #1c1814; font-weight: 700; }
+.mb-warn { background: rgba(232,112,92,.2); color: #e8705c; border: 1px solid rgba(232,112,92,.45); }
+.mb-said { font-size: 12px; margin: 0 0 10px; color: var(--ink); }
+.mb-said .bad { color: #e8705c; }
+
+.mb-list { display: grid; gap: 5px; max-height: 46vh; overflow: auto; }
+.mb-item { display: grid; grid-template-columns: 10px 1fr auto; gap: 11px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--edge); border-radius: 10px;
+  background: rgba(255,255,255,.03); cursor: pointer; transition: .14s; }
+.mb-item:hover, .mb-item:focus { outline: none; border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.08); }
+.mb-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+.mb-item.unread .mb-dot { background: var(--accent); }
+.mb-item.unread .mb-what b { color: var(--accent); }
+.mb-what b { font-size: 13px; }
+.mb-what p { margin: 2px 0 0; font-size: 12px; line-height: 1.35; color: var(--ink); opacity: .8;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.mb-when { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+.mb-row-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+.mb-row-keys .btn.tiny { margin-left: 0; }
+
+.mb-head { padding-bottom: 8px; border-bottom: 1px solid var(--edge); }
+.mb-head b { font-size: 14px; display: block; }
+.mb-head small { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-dim); }
+.mb-clips { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Somebody else's writing, shown as what it is: a preformatted block that wraps rather
+   than a paragraph, so a plain-text mail keeps the shape it was written in. */
+.mb-body { margin: 10px 0 0; padding: 11px 13px; max-height: 42vh; overflow: auto;
+  font: inherit; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  color: var(--ink); background: rgba(0,0,0,.28); border: 1px solid var(--edge); border-radius: 10px; }
+
+.mb-write { display: grid; gap: 8px; }
+.mb-write label, .mb-form label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.mb-write input, .mb-write textarea, .mb-form input {
+  display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 12.5px;
+  padding: 6px 9px; color: var(--ink); background: rgba(0,0,0,.35);
+  border: 1px solid var(--edge); border-radius: 7px; box-sizing: border-box;
+}
+.mb-write textarea { margin-top: 0; resize: vertical; line-height: 1.5; }
+.mb-write input:focus, .mb-write textarea:focus, .mb-form input:focus { outline: none; border-color: rgba(232,180,92,.75); }
+
+.mb-accounts { display: grid; gap: 5px; }
+.mb-account { display: grid; grid-template-columns: 1fr auto; gap: 11px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.mb-account .mb-row-keys { margin-top: 0; }
+.mb-account small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-dim); }
+.mb-form { display: grid; gap: 8px; margin-top: 12px; padding: 12px 14px;
+  border: 1px solid var(--edge); border-radius: 11px; background: rgba(255,255,255,.03); }
+.mb-form h4 { margin: 0; }
+.mb-form fieldset { margin: 0; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 9px; display: grid; gap: 7px; }
+.mb-form legend { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); padding: 0 5px; }
+.mb-form .mb-check { display: flex; gap: 7px; align-items: center; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+.mb-form .mb-check input { width: auto; margin: 0; }

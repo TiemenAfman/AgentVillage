@@ -17,6 +17,9 @@ import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
 import {
   cropsView, gardenView, buySeed, sellCrop, sellEverything, holdSeed, plantBed, harvestBed, digUpBed,
 } from './lib/garden.mjs';
+import {
+  mailView, saveAccount, removeAccount, check as checkAccount, inbox, readMessage, setFlag, send as sendMail,
+} from './lib/mail.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
@@ -907,6 +910,54 @@ async function handle(req, res) {
       // Only the beds are anybody else's business, and only they change the picture.
       if (['plant', 'harvest', 'dig'].includes(op)) broadcast({ at: Date.now(), op }, 'garden');
       return json(res, 200, { ok: true, ...done, garden: gardenView() });
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
+  }
+
+  // ---- the postbox on the town hall pavement ------------------------------------
+  // One path, and it is not on the public list in lib/access.mjs - which is the whole of
+  // the access control here, and deliberately so: the API is deny-by-default, so a route
+  // added for somebody's mail is local-only without anybody having to remember that it
+  // should be. A visitor walking an open island sees a postbox with a flag on it and can
+  // no more open it than they could read the post through the slot.
+  //
+  // The GET is the poll the flag runs on and is answered from a cache; the POST is
+  // everything the panel does. No password is ever written into a log line or handed
+  // back over the wire - see lib/mail.mjs.
+  if (p === '/api/mail') {
+    if (req.method === 'GET') {
+      try {
+        return json(res, 200, await mailView({ force: url.searchParams.get('force') === '1' }));
+      } catch (e) {
+        return json(res, 500, { error: String(e.message || e) });
+      }
+    }
+    if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+    let body;
+    try { body = await readBody(req, 128 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const op = String(body.op || '');
+    try {
+      if (op === 'save') {
+        const account = saveAccount(body.account || {});
+        log(`mail: kept the settings for ${account.address}`);
+        return json(res, 200, { ok: true, account, ...(await mailView({ force: true })) });
+      }
+      if (op === 'remove') {
+        const gone = removeAccount(body.id);
+        if (gone) log(`mail: took ${gone.address} out of the box`);
+        return json(res, 200, { ok: true, removed: gone, ...(await mailView()) });
+      }
+      if (op === 'check') return json(res, 200, { ok: true, ...(await checkAccount(body.account || {})) });
+      if (op === 'inbox') return json(res, 200, { ok: true, ...(await inbox(body.id, { limit: body.limit })) });
+      if (op === 'read') return json(res, 200, { ok: true, message: await readMessage(body.id, body.uid, { markSeen: !!body.markSeen }) });
+      if (op === 'flag') return json(res, 200, { ok: true, ...(await setFlag(body.id, body.uid, body.flag, body.on)) });
+      if (op === 'send') {
+        const sent = await sendMail(body.id, body.draft || {});
+        log(`mail: sent one to ${sent.to.join(', ')}${sent.filed ? ` (filed in ${sent.filed})` : ''}`);
+        return json(res, 200, { ok: true, sent });
+      }
+      return json(res, 400, { error: 'op is one of save, remove, check, inbox, read, flag, send' });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
     }

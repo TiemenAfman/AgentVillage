@@ -55,7 +55,7 @@ const SHEDS = ['explore', 'plan', 'general', 'guide', 'other'];
 const ORNAMENTS = ['forge', 'lumber', 'lantern', 'weathervane', 'pigeons', 'banner', 'lightningrod'];
 const CIVIC = ['townhall', 'board', 'issues', 'well', 'market', 'tavern', 'clocktower', 'tables',
   'school', 'windmill', 'watertower', 'chapel', 'fountain', 'lighthouse', 'statue', 'castle', 'poldermill'];
-const FURNITURE = ['planter', 'lamp', 'bench', 'terrace'];
+const FURNITURE = ['planter', 'lamp', 'bench', 'terrace', 'mailbox'];
 
 const title = (s) => s[0].toUpperCase() + s.slice(1);
 const civicSpec = (t) => ({ id: `c:${t}`, kind: 'civic', civicType: t, tier: 'civic', style: 'unknown', ornaments: [], cards: 6 });

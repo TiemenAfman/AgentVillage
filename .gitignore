@@ -16,3 +16,8 @@ config.json
 .env.*
 *.log
 *.log.1
+
+# the mail accounts behind the town hall postbox: servers, usernames and passwords. The
+# data/ rule above already covers it - this second one is deliberate, so that widening
+# that rule later cannot quietly start publishing somebody's mail password.
+data/mail.json

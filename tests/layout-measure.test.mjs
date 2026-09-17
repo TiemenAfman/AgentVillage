@@ -303,4 +303,24 @@ test('the ground under the village is the ground the forest keeps off', () => {
   for (const k of want) assert.ok(have.has(k), `${k} is built on or paved but the forest may grow over it`);
 });
 
+test('the postbox stands on the hall\'s pavement and never on its doorstep', () => {
+  const box = L.plots['civic:mailbox'];
+  const hall = L.plots['civic:townhall'];
+  if (!box || !hall) return;                  // an island too young to have a hall yet
+  assert.equal(box.w, 1, 'a postbox takes one cell');
+  // The cell the door opens onto is where the front path starts. A box planted there
+  // walls the hall in exactly the way a shed walls a house in, and nothing else on the
+  // island would ever say so.
+  const step = outsideDoor(hall.gx, hall.gz, hall.rot);
+  assert.notEqual(key([box.gx, box.gz]), key(step), 'the postbox is standing on the doorstep');
+  assert.ok(paved.has(key([box.gx, box.gz])), 'the postbox is standing on grass, not on the frontage');
+  // Beside the hall rather than somewhere out on the square: on its own ring of paving.
+  assert.ok(box.gx >= hall.gx - 1 && box.gx <= hall.gx + 3 && box.gz >= hall.gz - 1 && box.gz <= hall.gz + 3,
+    'the postbox has wandered off the town hall frontage');
+  for (const [id, p] of plots) {
+    if (id === 'civic:mailbox' || p.w !== 1) continue;
+    assert.notEqual(key([p.gx, p.gz]), key([box.gx, box.gz]), `${id} is standing in the postbox`);
+  }
+});
+
 test.after(() => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the tmp dir will go */ } });

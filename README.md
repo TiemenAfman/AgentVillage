@@ -6,9 +6,11 @@ session does. Subagents become apprentices with their own sheds in the yard, rep
 become hamlets with their own fenced land, and the whole thing is read from the session
 records already on this machine.
 
-Nothing is invented and nothing leaves the computer: no network calls, no API keys, no
-telemetry. The island is shut by default and listens only to this machine. Open it on
-purpose and other people can walk it with you — see
+Nothing is invented and nothing leaves the computer: no API keys, no telemetry, and the
+only thing that ever talks to another machine is the postbox on the town hall pavement,
+which talks to your own mail server because that is what a postbox is for. The island is
+shut by default and listens only to this machine. Open it on purpose and other people can
+walk it with you — see
 [Visitors and neighbours](docs/manual.md#visitors-and-neighbours) for exactly what they
 can and cannot see.
 
@@ -115,6 +117,10 @@ of them hand work out.
 - **Every hamlet that is a git repository has an office** on its square: the branch, what
   is waiting in the working tree, the recent history, a diff per file. It only reads.
   → [The office](docs/manual.md#the-office)
+- **A postbox stands on the town hall pavement** with your own inbox in it, read over IMAP
+  and answered over SMTP, up to eight accounts. The flag on it is up when something is
+  unread. The servers and passwords live in `data/mail.json`, which git has never tracked,
+  and no visitor can open the box. → [The postbox](docs/manual.md#the-postbox)
 
 ## Building the island itself
 

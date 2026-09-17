@@ -1203,6 +1203,29 @@ function civic(parts, spec, rng) {
       parts.push(sphere(0.026, C.iron, { y: y + 0.02 }));
       return { anchors, animated, height: y + 0.05 };
     }
+    case 'mailbox': {
+      // The postbox on the town hall's pavement: a pillar box on a cast post, with the
+      // slot on the side you walk up to and a flag on its right cheek.
+      //
+      // The flag is the whole point of it and is not drawn here. A building is one merged
+      // geometry that cannot move a piece of itself, and this piece has to go up when
+      // there is mail waiting - so it is published as an anchor and hung on the group as
+      // its own small mesh, exactly the way the clock tower's hands are. See
+      // web/js/mailflag.js, and `animated.clock` above it for the older instance of the
+      // same trick.
+      parts.push(cylinder(0.15, 0.17, 0.05, 8, C.foundation, { sheet: 'stone' }));        // the pad it is set in
+      parts.push(cylinder(0.045, 0.055, 0.6, 8, C.iron));                                 // the post
+      parts.push(box(0.36, 0.035, 0.26, C.iron, { y: 0.6 }));                             // the collar under the box
+      parts.push(box(0.34, 0.16, 0.24, C.red, { y: 0.635 }));
+      parts.push(box(0.34, 0.16, 0.24, C.red, { y: 0.635 + 0.16 }));                      // two courses: the seam is the door
+      parts.push(cylinder(0.12, 0.12, 0.34, 12, C.red, { x: 0.17, y: 0.955, rz: Math.PI / 2 }));
+      parts.push(box(0.2, 0.028, 0.02, C.iron, { y: 0.9, z: 0.121 }));                    // the slot
+      parts.push(box(0.26, 0.14, 0.012, 0xc05a49, { y: 0.645, z: 0.121 }));               // the door the postman opens
+      parts.push(sphere(0.022, C.gold, { x: 0.09, y: 0.715, z: 0.13 }));                  // its handle
+      parts.push(box(0.16, 0.038, 0.012, C.gold, { y: 0.815, z: 0.122 }));                // the plate with nothing on it
+      animated.mailflag = { at: [0.185, 0.7, 0] };
+      return { anchors, animated, height: 1.08 };
+    }
     case 'planter': {
       // A stone trough with something flowering in it. The colour is drawn per plant so
       // a row of them is not four copies of the same red.
@@ -1591,6 +1614,9 @@ const PORCH_UPTO = 0.45;      // above this a part is a roof or a chimney, not a
 // fountain are round - a square step under either would be the corner the well just
 // stopped having.
 const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues', 'statue', 'well', 'fountain',
+  // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
+  // round it would be a plinth under a letter box.
+  'mailbox',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower']);

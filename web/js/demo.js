@@ -26,6 +26,7 @@ const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
   ['board', 'Sprint board', 'always'],
   ['issues', 'Island board', 'always'],
+  ['mailbox', 'Postbox', 'with the hall'],
   ['well', 'Well', '5 settlers'],
   ['market', 'Market stalls', '10'],
   ['tavern', 'Tavern', '15'],

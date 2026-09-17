@@ -33,6 +33,8 @@ import { createPanels } from './panels.js';
 import { createCrops } from './crops.js';
 import { attachClock, updateClock } from './clock.js';
 import { createMarket, answerOf } from './market.js';
+import { createMailbox } from './mail.js';
+import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
 import { createAvatarStudio } from './studio.js';
@@ -286,6 +288,9 @@ const state = {
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   props: null, panels: null, buildMenu: null, ghost: null, islandchat: null,
   crops: null, market: null, garden: null,
+  // What the postbox on the town hall pavement knows: one unread count per account, as the
+  // last poll left it. Nothing else about anybody's mail is ever held on this side.
+  mailbox: null, mailCounts: [], mailAt: 0,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -424,6 +429,14 @@ function interactables() {
       out.push({ id: rec.id, kind: 'office', x: p.x, z: p.z, r: 2.4, label: rec.spec.name });
     } else if (rec.spec.civicType === 'townhall') {
       out.push({ id: rec.id, kind: 'townhall', x: p.x, z: p.z, r: 3.2, label: 'the town hall' });
+    } else if (rec.spec.civicType === 'mailbox') {
+      // The prompt says what the flag says, in words: a box with something in it is worth
+      // stopping at, and one without is worth knowing you can walk past.
+      const waiting = unreadTotal();
+      out.push({
+        id: rec.id, kind: 'mailbox', x: p.x, z: p.z, r: 2.0, label: 'the postbox',
+        prompt: waiting ? `open the postbox — ${waiting} new` : 'open the postbox',
+      });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
     } else if (rec.spec.civicType === 'tavern') {
@@ -666,10 +679,53 @@ function openMarket() {
   state.market.open();
 }
 
+// --------------------------------------------------------------- the postbox
+// The box holds somebody's mail and the server will not hand a visitor a line of it. The
+// refusal here is so that a guest is told so in a sentence rather than shown a panel that
+// fails to load - the same courtesy the seed stall and the town hall do.
+
+function openMailbox() {
+  if (keeperOnly('open the postbox')) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.ui.closeDossier();
+  state.mailbox.open();
+}
+
+const unreadTotal = () => (state.mailCounts || []).reduce((n, c) => n + (c.unread || 0), 0);
+
+// What the flag reads. Set from the poll below and from the panel, which knows sooner:
+// reading the last unread message drops the flag then and there rather than at the next
+// poll half a minute later.
+function showMail(counts) {
+  state.mailCounts = counts || [];
+  const waiting = unreadTotal() > 0;
+  for (const rec of state.byId.values()) {
+    if (rec.mailFlag) setMailFlag(rec.mailFlag, waiting);
+  }
+  // The prompt over the keys carries the count, so it has to be rebuilt when the count
+  // changes and not only when you walk up to something else.
+  if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
+}
+
+// Asked for on a timer, and only ever the counts - never a message, never a header. A
+// server that is being left alone because it refused a password answers from lib/mail.mjs
+// without going near the network, so this stays cheap even when something is wrong.
+const MAIL_POLL_MS = 45000;
+async function pollMail(force = false) {
+  if (state.guest) return;
+  if (document.hidden && !force) return;                 // nobody is looking at the flag
+  if (!force && Date.now() - state.mailAt < MAIL_POLL_MS - 1000) return;
+  state.mailAt = Date.now();
+  try {
+    const r = await answerOf(await fetch(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
+    showMail(r.counts || []);
+  } catch { /* no postbox on this island, or the server is older than the page */ }
+}
+
 // Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
-const PANELS = () => [state.board, state.chat, state.market,
+const PANELS = () => [state.board, state.chat, state.market, state.mailbox,
   state.townHall, state.office, state.studio, state.newSettler, state.buildMenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
@@ -684,6 +740,7 @@ function walkCallbacks() {
       else if (it.kind === 'office') openOffice(it.id);
       else if (it.kind === 'townhall') openTownHall();
       else if (it.kind === 'market') openMarket();
+      else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -691,7 +748,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'tavern'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1344,6 +1401,10 @@ function attachExtras(rec) {
   }
   if (built.animated && built.animated.clock) {
     rec.clock = attachClock(group, built.animated.clock.at, buildingMat);
+  }
+  if (built.animated && built.animated.mailflag) {
+    rec.mailFlag = attachMailFlag(group, built.animated.mailflag.at, buildingMat);
+    setMailFlag(rec.mailFlag, unreadTotal() > 0);
   }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
@@ -2376,6 +2437,7 @@ function frame(nowMs) {
     if (!rec.group.visible) continue;
     if (rec.blades) rec.blades.rotation.z += dt * 0.55;
     if (rec.clock) updateClock(rec.clock, hour);
+    if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
     if (rec.beacon) {
       rec.beacon.a += dt * 0.85;
       rec.beacon.target.position.set(Math.cos(rec.beacon.a) * 16, -2, Math.sin(rec.beacon.a) * 16);
@@ -2645,6 +2707,20 @@ async function boot() {
     },
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
   });
+
+  state.mailbox = createMailbox(document.body, {
+    // The panel knows the counts before the poll does, because it is the thing that
+    // changed them. Every route into the flag goes through showMail, so the box outside
+    // and the tabs inside can never disagree.
+    onCounts: (counts) => showMail(counts),
+    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+  });
+  // The flag is the whole reason for the timer: it is what tells you there is post
+  // without your having to walk over and look. It is skipped while the tab is in the
+  // background, and never runs for a visitor, who has no postbox to look at.
+  pollMail(true);
+  setInterval(() => pollMail(), MAIL_POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollMail(); });
 
   state.studio = createAvatarStudio(document.body, {
     // Re-dress the avatar the instant a swatch is picked, so if you are already walking

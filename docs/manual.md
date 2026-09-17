@@ -103,6 +103,52 @@ real decision. The purse, the pouch and the basket are yours alone: a visitor wa
 your island can see the beds standing in the ground, and that is all — the stall, like
 the tickets and the git, belongs to whoever lives here.
 
+## The postbox
+
+There is a red pillar box on the pavement in front of the town hall, beside the door.
+Walk up to it and press **E** and it opens your actual inbox: the subjects, who they are
+from, and the words in them. The flag on its cheek is up when something in it is unread,
+which is the point of standing it where you walk past twenty times a day.
+
+It holds up to eight accounts, one tab each, and the tab carries its own unread count.
+**Accounts** is where you put one in. What it wants is what any mail program wants:
+
+| | |
+|---|---|
+| **E-mail address** | who the mail is to and from |
+| **Username** | usually the same as the address, sometimes not |
+| **Password** | the one you sign in with |
+| **Incoming (IMAP)** | the server and its port. SSL on 993, or STARTTLS on 143 with the box unticked |
+| **Outgoing (SMTP)** | usually the same server. SSL on 465, or STARTTLS on 587 |
+
+**Test it** logs in and says what it found before anything is kept, which is the quick
+way to tell a wrong port from a wrong password. An account is read-only until you write
+something: open a message, press **Reply**, and it goes out over SMTP with a copy filed
+in your Sent folder if the server has one.
+
+Three things are worth knowing about where all this lives.
+
+The settings are written to `data/mail.json` on this machine and nowhere else. That file
+is named twice in `.gitignore` — once by the rule that covers everything in `data/`, and
+once on its own, so that widening the first rule later cannot start publishing a mail
+password. Nothing about your mail is written into `village.json`, which is the file the
+scanner rewrites every minute and the one a visitor is shown.
+
+No password is ever sent back to the page. The panel is told that an account has one, not
+what it is, and the field in the form starts empty: leave it empty and the password on
+file is kept.
+
+And an account whose login is refused is put aside rather than retried. The flag polls
+every forty-five seconds, and forty-five seconds against a wrong password is how a work
+account gets locked out — so the first refusal stops the polling for that account until
+you save it again or press **Try again** yourself.
+
+The postbox is not a milestone and is not earned: it has stood there since the hall was
+built, because what is in it was never the island's to give. It is also the one thing on
+the island a visitor cannot open at all. `/api/mail` is not on the public list in
+`lib/access.mjs`, so a guest walking an open island sees a postbox with a flag on it and
+can no more read it than they could read the post through the slot.
+
 ## Visitors and neighbours
 
 The island is shut by default and listens only to this computer. Open it and other people
