@@ -492,6 +492,13 @@ for x in [-.63, .63]:
     for y in [.065, .145, .225]:
         box('civic_seed_stall crate slat', (x, y, -.382), (.29, .035, .025), 'plank:dark', stall)
 
+# Match the village's original individual stalls (~0.8 wide, 0.65 high), with a
+# little extra room for the drawers. Scale both the mesh and its placement so the
+# Blender source, preview, runtime footprint and reported height all agree.
+for obj in stall.objects:
+    obj.location *= .55
+    obj.scale *= .55
+
 # ---------------------------------------------------------------- civic_watertower
 # The one whole building in the set, and the one the reference has that the island has no
 # way of drawing: a plank tank on four splayed legs, braced both ways, with a ladder up
