@@ -282,7 +282,7 @@ export function createSettlers(scene, material, terrain) {
       mode: opts.mode || 'idle', speed: 0.34, rng, phase: rng.range(0, 6.28),
       radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
       hammerSlot: -1, y: 0,
-      strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined,
+      strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined, gathering: false,
       // Whoever is talking to them, as [x, z], or null. See `attend`.
       attend: null,
     };
@@ -354,12 +354,57 @@ export function createSettlers(scene, material, terrain) {
     return d != null ? d : terrain.worldHeight(x, z);
   };
 
+  // The square's own cells, kept apart from the general road network so the Friday
+  // gathering has somewhere specific to aim for instead of "some road cell".
+  let squareList = [];
   function setRoads(paths, squares) {
     const cells = new Set();
     for (const p of paths || []) for (const [gx, gz] of p.cells) cells.add(gx + gz * terrain.size);
-    for (const [gx, gz] of squares || []) cells.add(gx + gz * terrain.size);
+    const sq = [];
+    for (const [gx, gz] of squares || []) { const k = gx + gz * terrain.size; cells.add(k); sq.push(k); }
+    squareList = sq;
     roads = cells.size ? { cells, list: [...cells] } : null;
     for (const f of figures.values()) f.gate = undefined;   // streets moved; look again
+  }
+
+  // Friday afternoon borrel: every settler not already spoken for walks to the square
+  // and stays there until `setGather(false)` sends them home again. Bypasses MAX_STROLL
+  // on purpose - this is the one time everyone is meant to be out at once.
+  let gatherActive = false;
+  function setGather(active) { gatherActive = active; }
+
+  function nearestSquareCell(gate) {
+    if (!squareList.length) return null;
+    const size = terrain.size;
+    const gx = gate % size, gz = (gate - (gate % size)) / size;
+    let best = squareList[0], bd = Infinity;
+    for (const k of squareList) {
+      const kx = k % size, kz = (k - (k % size)) / size;
+      const d = (kx - gx) * (kx - gx) + (kz - gz) * (kz - gz);
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  }
+
+  function startGather(f) {
+    const gate = gateOf(f);
+    const dest = gate == null ? null : nearestSquareCell(gate);
+    const out = dest == null ? null : roadRoute(gate, dest);
+    if (!out || !out.length) { f.gathering = false; return; }
+    const home = [f.home[0], f.home[1]];
+    walkRoute(f, out, () => {
+      f.mode = 'idle';
+      f.target = null;
+      f.pause = f.rng.range(2, 5);
+      f.strollHome = () => {
+        walkRoute(f, [...out].reverse().concat([home]), () => {
+          f.mode = 'idle';
+          f.keepHome = false;
+          f.home = home;
+          f.gathering = false;
+        });
+      };
+    });
   }
 
   // The road cell a figure steps out onto, cached: its front path by construction.
@@ -520,13 +565,21 @@ export function createSettlers(scene, material, terrain) {
         }
       } else {
         f.pause -= dt;
+        // The borrel ending cuts every wait short, so nobody lingers on the square
+        // past closing time just because their own pause timer hadn't run out yet.
+        if (f.gathering && !gatherActive) f.pause = Math.min(f.pause, 0);
         if (f.strollHome && f.pause <= 0) {
           const go = f.strollHome; f.strollHome = null; go();
           continue;
         }
+        if (gatherActive && !f.gathering && !f.deckY && roads && squareList.length) {
+          f.gathering = true;
+          startGather(f);
+          if (f.mode === 'walk') continue;
+        }
         // Fewer errands after dark, and never more at once than the eye can follow.
         f.strollIn -= dt;
-        if (f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
+        if (!gatherActive && f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
           if (nightAmount > 0.55 && f.rng.next() < nightAmount) f.strollIn = f.rng.range(20, 70);
           else startStroll(f);
           if (f.mode === 'walk') continue;
@@ -583,7 +636,7 @@ export function createSettlers(scene, material, terrain) {
   };
 
   return {
-    add, remove, setMode, setVisible, attend, unattend, setRoads, setDecks, walkIn, update, figures,
+    add, remove, setMode, setVisible, attend, unattend, setRoads, setDecks, setGather, walkIn, update, figures,
     pickables, figureAt,
     findPath: (a, b) => findPath(terrain, a, b, null),
   };
