@@ -1347,6 +1347,16 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('tavern') };
     }
     case 'chapel': {
+      // A brick village church with a saddleback tower, modelled in
+      // scripts/build-village.py. The branch below is the chapel the island drew before
+      // there was a bake of it, kept for the same reason the water tower keeps its four
+      // posts and a drum: a checkout that has never run Blender still boots and still has
+      // somewhere to ring a bell.
+      if (models.hasAsset('civic_chapel')) {
+        for (const g of meshAsset('civic_chapel')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_chapel'));
+        return { anchors, animated, height: assetRise('civic_chapel') };
+      }
       // A small stone chapel: a nave running front to back, a round window over the
       // door, an apse behind, and a tower carrying the bell.
       const f = 0.1;

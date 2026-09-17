@@ -308,6 +308,93 @@ upright('addon_chimney_a pot', (0, .57, 0), .045, .13, 'stone:brick', chimney, s
 box('addon_chimney_a flue', (0, .704, 0), (.062, .008, .062), 'plain:iron', chimney)
 empty('smoke', (0, .72, 0), chimney)
 
+# ---------------------------------------------------------------- civic_chapel
+# Village materials, with Bierum's saddleback tower and pierced western buttress.
+# Authored facing +Z; this is a stylised village church, not a historical replica.
+chapel = asset('civic_chapel')
+def cb(name, at, size, mat='stone:brick'):
+    return box('civic_chapel ' + name, at, size, mat, chapel)
+def cr(name, a, b, radius=.022, mat='plank:dark'):
+    return rod('civic_chapel ' + name, a, b, radius, mat, chapel, sides=4)
+
+cb('foundation', (0, .055, -.10), (.94, .11, 1.45), 'stone:foundation')
+cb('brick plinth', (0, .19, -.10), (.84, .20, 1.34))
+cb('limewashed nave', (0, .62, -.10), (.80, .70, 1.30), 'wall:cream')
+roof('civic_chapel nave roof', (0, .97, -.10), 1.46, .94, .43,
+     'roof:terracotta', chapel, turn=math.pi / 2)
+for x in [-.44, .44]:
+    cb('eaves timber', (x, .965, -.10), (.055, .055, 1.44), 'plankZ:dark')
+for z in [-.81, .61]:
+    for x in [-.45, .45]:
+        cr('gable verge', (x, .98, z), (0, 1.40, z), .025)
+for j in range(10):
+    z = -.76 + j * .14
+    rod('civic_chapel ridge tile', (0, 1.405, z), (0, 1.405, z+.12),
+        .032, 'roof:light', chapel, sides=6)
+
+# Side windows with pointed heads, framed with oak and warm glass.
+for side in [-1, 1]:
+    x = side * .414
+    for z in [-.52, -.10, .30]:
+        cb('window recess', (x, .66, z), (.026, .40, .20), 'plank:dark')
+        cb('window glass', (x+side*.016, .66, z), (.012, .34, .145), 'plain:glass')
+        cb('window mullion', (x+side*.024, .66, z), (.014, .35, .017), 'plank:dark')
+        cb('window sill', (x, .455, z), (.075, .035, .24), 'stone:foundation')
+    for z in [-.73, -.31, .11, .53]:
+        cb('wall stud', (x, .65, z), (.035, .63, .035), 'plankZ:dark')
+        cb('brick pier', (side*.435, .29, z), (.10, .40, .095))
+    cb('wall plate', (x, .90, -.10), (.035, .045, 1.30), 'plankZ:dark')
+
+# A rear timber gable gives the plaster-and-oak house style a quiet place on the church.
+roof('civic_chapel rear gable infill', (0, .97, -.742), .025, .80, .36,
+     'wall:cream', chapel, turn=math.pi/2)
+cr('rear king post', (0, .95, -.762), (0, 1.33, -.762))
+for x in [-.35, .35]:
+    cr('rear gable brace', (x, .98, -.765), (0, 1.25, -.765))
+
+# Brick saddleback tower rather than a tall needle spire.
+cb('tower footing', (0, .06, .53), (.62, .12, .58), 'stone:foundation')
+cb('tower', (0, .88, .53), (.54, 1.60, .50))
+for y in [.30, 1.15, 1.66]:
+    cb('tower string course', (0, y, .53), (.58, .035, .54), 'stone:foundation')
+roof('civic_chapel tower cap', (0, 1.69, .53), .68, .65, .32,
+     'roof:terracotta', chapel, turn=math.pi/2)
+for x in [-.31, .31]:
+    cr('tower verge', (x, 1.70, .865), (0, 2.01, .865), .025)
+cr('tower ridge', (0, 2.01, .21), (0, 2.01, .86), .027, 'roof:light')
+for x in [-.13, .13]:
+    cb('belfry opening', (x, 1.42, .788), (.09, .28, .018), 'plank:dark')
+    for y in [1.32, 1.40, 1.48]:
+        cb('belfry louvre', (x, y, .804), (.10, .022, .022), 'plank:oak')
+for x in [-.278, .278]:
+    cb('side belfry', (x, 1.42, .53), (.018, .28, .16), 'plank:dark')
+    for y in [1.32, 1.40, 1.48]:
+        cb('side louvre', (x, y, .53), (.028, .022, .17), 'plank:oak')
+
+# A solid extruded buttress with a real pointed passage underneath. Its concave outline
+# is triangulated by Blender on export; no painted black rectangle fakes the opening.
+outline = [(.78, 1.43), (1.30, .18), (1.30, 0), (1.16, 0),
+           (1.16, .48), (.99, .76), (.82, .48), (.82, 0), (.78, 0)]
+n = len(outline)
+verts = [xyz((x, y, z)) for x in [-.095, .095] for z, y in outline]
+faces = [tuple(reversed(range(n))), tuple(range(n, 2*n))]
+faces += [(i, (i+1)%n, (i+1)%n+n, i+n) for i in range(n)]
+me = bpy.data.meshes.new('pierced buttress')
+me.from_pydata(verts, [], faces)
+me.update()
+ob = bpy.data.objects.new('civic_chapel great buttress', me)
+bpy.context.scene.collection.objects.link(ob)
+adopt(ob, 'civic_chapel great buttress', 'stone:brick', chapel)
+cr('buttress coping', (0, 1.44, .78), (0, .19, 1.30), .065, 'stone:foundation')
+
+# The entrance is on the side of the nave, clear of the great supporting wall.
+cb('door surround', (.418, .36, .29), (.055, .54, .30), 'stone:brick')
+cb('oak door', (.452, .35, .29), (.018, .46, .23), 'plankZ:dark')
+cb('door strap', (.467, .30, .29), (.015, .022, .21), 'plain:iron')
+cb('threshold', (.48, .075, .29), (.19, .035, .34), 'stone:foundation')
+cr('cross upright', (0, 2.02, .53), (0, 2.19, .53), .012, 'plain:copper')
+cr('cross arms', (-.055, 2.13, .53), (.055, 2.13, .53), .010, 'plain:copper')
+
 # ---------------------------------------------------------------- civic_fountain
 # The centrepiece of the square: a broad stone basin, a carved pedestal and two tiers of
 # water. Its old procedural version had the right outline, but the repeated collars,
