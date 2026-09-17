@@ -793,6 +793,28 @@ function loadFieldSheet() {
 // often enough (a season, a parcel, a new hamlet) that waiting for one would show.
 export function dressFieldMaterial(material) {
   if (!material) return material;
+  // Each surface carries its whole plot bounds, not its cell bounds: the
+  // furrows stay continuous inside a field and only its outside edge fades.
+  if (!material.userData.fieldFeather) {
+    material.userData.fieldFeather = true;
+    material.transparent = true;
+    material.depthWrite = false;
+    material.onBeforeCompile = (shader) => {
+      shader.vertexShader = 'attribute vec4 fieldBounds; varying vec4 vFieldBounds; varying vec2 vFieldXZ;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nvFieldBounds=fieldBounds;vFieldXZ=position.xz;');
+      shader.fragmentShader = 'varying vec4 vFieldBounds; varying vec2 vFieldXZ;\n' + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+vec2 edge=min(vFieldXZ-vFieldBounds.xy,vFieldBounds.zw-vFieldXZ);
+float rag=sin(vFieldXZ.x*7.3+sin(vFieldXZ.y*4.1))*sin(vFieldXZ.y*9.1)*.065
+  +sin(vFieldXZ.x*21.0+vFieldXZ.y*17.0)*.025;
+float width=min(.55,min(vFieldBounds.z-vFieldBounds.x,vFieldBounds.w-vFieldBounds.y)*.30);
+float edgeFade=smoothstep(.015,width,min(edge.x,edge.y)+rag);
+diffuseColor.a*=edgeFade;
+`);
+    };
+    material.customProgramCacheKey = () => 'field-soft-edge-v1';
+  }
   if (!fieldSheetAsked) loadFieldSheet();
   if (!fieldSheet) { awaitingSheet.add(material); return material; }
   material.map = fieldSheet;
@@ -850,7 +872,8 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
   const bare = season === 'autumn' || season === 'winter';
   const pal = bare ? STUBBLE : FIELD;
   const head = bare ? HEADLAND_COL.dry : HEADLAND_COL.earth;
-  const pos = [], col = [], uv = [], idx = [];
+  const pos = [], col = [], uv = [], idx = [], bounds = [];
+  let plotBounds;
   let vi = 0;
   // UVs in world coordinates rather than per quad, as `buildPaths` does with its paving:
   // a field of five cells then reads as one ploughed field instead of the same stamp laid
@@ -862,6 +885,7 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
     for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
       pos.push(qx, terrain.worldHeight(qx, qz) + lift, qz);
       col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      bounds.push(...plotBounds);
       uv.push((alongX ? qx : qz) / FIELD_TEX_UNITS, (alongX ? qz : qx) / FIELD_TEX_UNITS);
     }
     idx.push(vi, vi + 2, vi + 1, vi + 1, vi + 2, vi + 3);
@@ -876,6 +900,7 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
     const vertex = (qx, qz) => {
       pos.push(qx, terrain.worldHeight(qx, qz) + lift, qz);
       col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      bounds.push(...plotBounds);
       uv.push((alongX ? qx : qz) / FIELD_TEX_UNITS, (alongX ? qz : qx) / FIELD_TEX_UNITS);
     };
     vertex((x0 + x1) / 2, (z0 + z1) / 2);
@@ -892,6 +917,7 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
   for (const p of plan.gardens) {
     const [ax, az] = terrain.cellWorld(p.gx, p.gz);
     const [bx, bz] = terrain.cellWorld(p.gx + p.w - 1, p.gz + p.d - 1);
+    plotBounds=[ax-.5,az-.5,bx+.5,bz+.5];
     patch(ax - 0.5, az - 0.5, bx + 0.5, bz + 0.5, 0.2, ownedBy(pal.base, p.owner, hues), 0.045, p.w >= p.d);
   }
 
@@ -901,7 +927,9 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
     const [ax, az] = terrain.cellWorld(p.gx, p.gz);
     const [bx, bz] = terrain.cellWorld(p.gx + p.w - 1, p.gz + p.d - 1);
     const o = HEADLAND_OUT;
+    plotBounds=[ax-.5-o,az-.5-o,bx+.5+o,bz+.5+o];
     patch(ax - 0.5 - o, az - 0.5 - o, bx + 0.5 + o, bz + 0.5 + o, HEADLAND_R, ownedBy(head, p.owner, hues), 0.04, alongX);
+    plotBounds=[ax-.5+HEADLAND_IN,az-.5+HEADLAND_IN,bx+.5-HEADLAND_IN,bz+.5-HEADLAND_IN];
     const base = ownedBy(pal.base, p.owner, hues);
     const furrow = ownedBy(pal.furrow, p.owner, hues);
     for (const [gx, gz] of p.cells) {
@@ -938,6 +966,7 @@ export function buildFieldDecals(plan, terrain, season, hues = null) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('fieldBounds', new THREE.Float32BufferAttribute(bounds, 4));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
