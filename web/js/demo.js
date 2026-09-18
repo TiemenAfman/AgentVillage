@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
-  buildBridgeGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
+  buildBridgeGeometry, buildPierGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
   meshAsset, mergeParts,
 } from './buildings.js';
 import * as models from './models.js';
@@ -293,11 +293,12 @@ line(['sailor', 'plaque'], (what, x, z) => {
 // hitboxes on and the row is where you find out whether that is actually true, which is
 // the only check that catches a cart put in a yard you can no longer cross.
 //
-// The bridge is left out: it is drawn to clear whatever it was put over and its deck sits
-// below the grass, so on a flat field it is a shape half buried. It has a row of its own
-// further down, over water, which is where it can be judged.
+// The bridge and the dock are left out: both are drawn to stand over water and their decks
+// sit below the grass, so on a flat field they are shapes half buried. The bridge has a row
+// of its own further down over a valley, and the dock is what the Quay row is made of.
+const DRY = (k) => k !== 'bridge' && k !== 'dock';
 for (let i = 0; i < KINDS.length; i += 7) {
-  const slice = KINDS.slice(i, i + 7).filter((k) => k !== 'bridge');
+  const slice = KINDS.slice(i, i + 7).filter(DRY);
   line(slice, (kind, x, z) => {
     const spec = { kind, x: 0, z: 0 };
     const solids = propFootprint(spec);
@@ -497,7 +498,10 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   const g = new THREE.PlaneGeometry(cells, cells, cells * 2, cells * 2);
   g.rotateX(-Math.PI / 2);
   const pos = g.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, wh(pos.getX(i), pos.getZ(i)));
+  // Raised onto the sheet's own field, whose grass is at FIELD_Y and would otherwise draw
+  // straight over a sea at zero. The whole patch goes up together - sand, water and the
+  // dock standing in it - so every height the row is here to show stays what it is.
+  for (let i = 0; i < pos.count; i++) pos.setY(i, wh(pos.getX(i), pos.getZ(i)) + FIELD_Y);
   g.computeVertexNormals();
   const gm = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x93b06a, roughness: 1, flatShading: true }));
   gm.position.set(originX, 0, originZ);
@@ -547,6 +551,101 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
     tag(ox, z + 2.4, name, `${run.length} cells — ${note}`);
   });
   tag(HEADING_X + PITCH * 1.1, z, 'over a real valley', 'cells derived, not hand-listed');
+  row += 2;
+}
+
+// ---- the quay ------------------------------------------------------------------
+// The docks, over the only thing they mean anything over. A pier is a straight run of
+// water cells out from one shore cell - what pierCells() in lib/layout.mjs hands out - so
+// each case here gets a real beach shelving into real water, and the run is taken off it
+// the way the layout takes it: out from the last cell that is still land.
+//
+// The three cases are the three shapes a pier comes out as. A long run in open water gets
+// its wide head, because there is sea either side of the last cell to take the wings; a run
+// down an inlet one cell across does not, and finishes on an ordinary bay with its mooring
+// posts at both corners instead. The third is the pier with no run to take a bearing from,
+// which is the one that has to fall back on the district behind it to know where the sea is.
+const SHELF = 0.34;        // how fast the sand falls away, in height per cell
+
+function shorePatch(originX, originZ, cells, { inlet }) {
+  const half = cells / 2;
+  // Land at the near edge, water at the far one, and where there is an inlet the two
+  // headlands either side of it stay well clear of the waterline.
+  // The waterline lands just past the middle of the patch, which leaves six cells of
+  // sea: one more than the longest run pierCells() will ever hand out, so a pier is
+  // never drawn off the end of its own beach.
+  const wh = (x, z) => 0.2 - SHELF * z + (inlet && Math.abs(x) > inlet / 2 ? 2 : 0);
+  const corner = (i, j) => wh(i - half, j - half);
+  const corners = (gx, gz) => [corner(gx, gz), corner(gx + 1, gz), corner(gx, gz + 1), corner(gx + 1, gz + 1)];
+  const t = {
+    size: cells, half, seed: 4747,
+    cellWorld: (gx, gz) => [gx - half + 0.5, gz - half + 0.5],
+    worldHeight: wh,
+    heightAt: (gx, gz) => corners(gx, gz).reduce((a, b) => a + b, 0) / 4,
+    isLand: (gx, gz) => corners(gx, gz).every((h) => h >= 0),
+    isWater: (gx, gz) => corners(gx, gz).reduce((a, b) => a + b, 0) / 4 < 0,
+  };
+
+  // the shore, displaced by the same function
+  const g = new THREE.PlaneGeometry(cells, cells, cells * 2, cells * 2);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  // Raised onto the sheet's own field, whose grass is at FIELD_Y and would otherwise draw
+  // straight over a sea at zero. The whole patch goes up together - sand, water and the
+  // dock standing in it - so every height the row is here to show stays what it is.
+  for (let i = 0; i < pos.count; i++) pos.setY(i, wh(pos.getX(i), pos.getZ(i)) + FIELD_Y);
+  g.computeVertexNormals();
+  const gm = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xc9bd8e, roughness: 1, flatShading: true }));
+  gm.position.set(originX, 0, originZ);
+  gm.receiveShadow = true;
+  scene.add(gm);
+
+  // and the sea, one flat sheet at sea level, which is all the island does either: the
+  // beach stands above it and hides it, so where it shows is exactly where the water is.
+  const wg = new THREE.PlaneGeometry(cells, cells);
+  wg.rotateX(-Math.PI / 2);
+  const wm = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({
+    color: 0x2f6f8c, roughness: 0.3, transparent: true, opacity: 0.88,
+  }));
+  // A whisker over the field rather than exactly on it: the sheet's own grass is at
+  // FIELD_Y too, and two coplanar sheets flicker between each other as the camera
+  // moves - which read as the sea draining away when you zoomed out.
+  wm.position.set(originX, FIELD_Y + 0.004, originZ);
+  scene.add(wm);
+  return t;
+}
+
+{
+  const z = row * ROW;
+  heading('Quay', z);
+  const CELLS = 13;
+  const CASES = [
+    ['open water', { inlet: 0 }, 5, 'the head, with room for its wings'],
+    ['a narrow inlet', { inlet: 1 }, 4, 'no room: the run ends on a bay'],
+    ['one cell out', { inlet: 0 }, 1, 'no run to take a bearing from'],
+  ];
+  CASES.forEach(([name, opts, reach, note], i) => {
+    const ox = (i - 1) * CELLS;
+    const t = shorePatch(ox, z, CELLS, opts);
+    // The run the layout would have recorded: out from the last land cell of the middle
+    // column, as far as asked or as far as the water goes.
+    const mid = Math.floor(CELLS / 2);
+    let shore = 0;
+    for (let gz = 0; gz < CELLS; gz++) if (t.isLand(mid, gz)) shore = gz;
+    const run = [];
+    for (let k = 1; k <= reach && t.isWater(mid, shore + k); k++) run.push([mid, shore + k]);
+    const [cx, cz] = t.cellWorld(run[0][0], run[0][1]);
+    const pier = buildPierGeometry(run, t, [cx, cz]);
+    if (pier) {
+      const m = new THREE.Mesh(pier, material);
+      m.position.set(ox + cx, FIELD_Y, z + cz);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+    }
+    tag(ox, z + 3.4, name, `${run.length} cells — ${note}`);
+  });
+  tag(HEADING_X + PITCH * 1.1, z, 'over a real beach', 'the run is derived, not hand-listed');
   row += 2;
 }
 

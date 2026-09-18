@@ -1682,6 +1682,10 @@ function syncHamlets(village) {
       if (g) {
         const pm = new THREE.Mesh(g, buildingMat);
         pm.position.set(px, 0, pz);
+        // The mooring posts stand half a unit over the deck, and their shadows falling
+        // across the planks and out onto the water are most of what makes a dock read as
+        // standing in the sea rather than lying on it.
+        pm.castShadow = true;
         pm.receiveShadow = true;
         hamletGroup.add(pm);
         hamletSigns.set(`pier:${d.id}`, { group: pm, dispose: () => pm.geometry.dispose() });

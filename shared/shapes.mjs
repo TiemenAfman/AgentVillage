@@ -15,6 +15,10 @@ export const SHAPES = {
   rock: { what: 'A boulder', takes: ['scale'] },
   bush: { what: 'A low shrub', takes: ['scale'] },
   bridge: { what: 'A plank bridge with railings, spanning whatever is under it', takes: ['rot', 'length'] },
+  // Built out of the quay's own dock set, and it sits on the sea rather than on the
+  // ground: a dock put down inland is a dock buried in a hillside, which is the right
+  // answer to asking for one there.
+  dock: { what: 'A plank dock on piles, with a ramp onto the beach and mooring posts', takes: ['rot', 'length'] },
   fence: { what: 'A run of paling fence', takes: ['rot', 'length'] },
   bench: { what: 'A bench to sit on', takes: ['rot'] },
   barrel: { what: 'An oak barrel, the tavern\'s own', takes: ['scale'] },
