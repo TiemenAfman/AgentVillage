@@ -53,25 +53,56 @@ export function seawardRun(terrain, shore) {
   return cells.length ? { dir: best.d, yaw: best.yaw, cells } : null;
 }
 
+// Where the planks actually start. `landing` is the obvious answer and on a small island
+// it is the right one - but it is not a coast cell. lib/layout.mjs:1469-1471 picks it as
+// the BEACH cell nearest the town centre, and a beach cell is only land below BEACH_MAX;
+// on a 64-grid the two coincide, and on a 256-grid the island is big enough to have wide
+// low flats well inland. This island's landing came out at [199,156] with no water within
+// six cells in any direction, and the quay silently did not get built.
+//
+// So the landing is a preference and not a promise: if it has open water off it, the quay
+// goes there, and otherwise it goes to the nearest coast cell that does. Deterministic
+// either way - coastCells is built in a fixed order by shared/terrain.mjs and ties fall to
+// whichever comes first - so all three sides still arrive at the same answer without a word
+// between them.
+export function quaySite(terrain, landing) {
+  if (landing && seawardRun(terrain, landing)) return landing;
+  const coast = terrain.coastCells || [];
+  const to = landing || [terrain.half, terrain.half];
+  let best = null, bestD = Infinity;
+  for (const c of coast) {
+    const dx = c[0] - to[0], dz = c[1] - to[1];
+    const d = dx * dx + dz * dz;          // squared, so no square root and no ties on rounding
+    if (d >= bestD) continue;
+    if (!seawardRun(terrain, c)) continue;
+    bestD = d;
+    best = c;
+  }
+  return best;
+}
+
 // The whole quay, in the island's OWN coordinates. A caller drawing it inside an offset
 // group wants exactly these; a caller speaking world coordinates - walk mode, the boat,
 // lib/boats.mjs - has to add the region's origin. Getting that the wrong way round is
 // invisible on an island at the origin and puts a guest island's quay a hundred units out
 // to sea, so the two are named apart: `local` here, and nothing called `world`.
 //
-// `landing` is the coast cell lib/layout.mjs:1382-1385 picks as the nearest to the town
-// centre - where a settler already walks ashore. Every island has one, from its seed alone,
-// whether or not it ever earned a quay district.
+// `landing` is where a settler already walks ashore, and every island has one from its seed
+// alone whether or not it ever earned a quay district - but see quaySite above: it is a
+// beach cell rather than a coast cell, so it is where the quay would like to be and not
+// where it necessarily can be.
 export function quayFor(terrain, landing) {
-  if (!landing) return null;
-  const run = seawardRun(terrain, landing);
+  const shore = quaySite(terrain, landing);
+  if (!shore) return null;
+  const run = seawardRun(terrain, shore);
   if (!run) return null;
-  const from = terrain.cellWorld(landing[0], landing[1]);
+  const from = terrain.cellWorld(shore[0], shore[1]);
   const head = terrain.cellWorld(
     run.cells[run.cells.length - 1][0],
     run.cells[run.cells.length - 1][1],
   );
   return {
+    shore,
     cells: run.cells,
     dir: run.dir,
     // Bow pointing out along the run, which is the way you leave.
