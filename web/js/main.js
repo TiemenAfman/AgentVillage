@@ -1434,6 +1434,57 @@ function spawnBoat(where, x, z, yaw) {
   return b;
 }
 
+// What is moored in the harbour, and putting it in the water.
+//
+// This is where the two halves meet. `/api/island` takes delivery of a bundle and parks it
+// (lib/guests.mjs); `joinIsland` can place a region and `raiseGuestIslands` can draw one.
+// Until now nothing joined them up, and the only island that ever appeared beside ours came
+// from the `?join=` debug parameter.
+//
+// Two requests rather than one on purpose: the list is a name, a seed and a size each and
+// costs a few hundred bytes, and the island whole is up to two megabytes. The SSE `guests`
+// event carries the list, and the page comes back for the ones it has not got.
+async function refreshHarbour() {
+  if (!state.terrain) return;
+  let moored;
+  try {
+    moored = (await fetch('/api/islands').then((r) => r.json())).islands || [];
+  } catch { return; }            // no harbour, no neighbours, no matter
+  let arrived = 0;
+  for (const berth of moored) {
+    if (state.sea.get(berth.id)) continue;
+    let bundle;
+    try {
+      bundle = await fetch(`/api/islands?id=${encodeURIComponent(berth.id)}`).then((r) => r.json());
+    } catch { continue; }
+    if (!bundle || !bundle.island) continue;
+    const region = joinIsland({
+      id: berth.id,
+      seed: bundle.island.seed,
+      gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
+      polders: bundle.polders || [],
+      terrainHash: bundle.island.terrainHash || null,
+      name: bundle.island.name,
+      village: bundle,
+    });
+    if (region) arrived++;
+  }
+  // A region that has sailed home takes its ground with it, so the sweep runs either way.
+  const here = new Set(moored.map((b) => b.id));
+  for (const r of state.sea.regions()) {
+    if (r === state.region || here.has(r.id) || r.id.startsWith('debug-')) continue;
+    state.sea.remove(r.id);
+  }
+  raiseGuestIslands();
+  buildDocks();
+  applyFogRange();
+  applyCameraRange();
+  if (arrived) {
+    state.walk && state.walk.setLevels && handOutDecks();
+    state.ui.toast(`<b>${escapeHtml(moored.map((b) => b.name).join(', '))}</b> is moored alongside.`);
+  }
+}
+
 function raiseGuestIslands() {
   // The water first, so a coast rises out of its own shallows rather than out of the flat
   // open sea. At boot this does nothing - the region was already in the sea when the world
@@ -3420,6 +3471,7 @@ async function boot() {
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   if (!state.guest) refreshNeighbours();
+  refreshHarbour();   // whatever was already moored when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
   // cannot arrive with nowhere to land.
@@ -3488,6 +3540,9 @@ function connect() {
   let es;
   const open = () => {
     es = new EventSource('/events');
+    // An island arriving in the harbour, or sailing home. Not localOnly: everybody standing
+    // on this island should see it happen, which is the whole point of putting it there.
+    es.addEventListener('guests', () => { refreshHarbour(); });
     es.addEventListener('update', debounce(async () => {
       try {
         const next = await fetchVillage();
@@ -3570,7 +3625,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, applyFogRange, applyCameraRange,
+  joinIsland, raiseGuestIslands, refreshHarbour, applyFogRange, applyCameraRange,
 };
 
 addEventListener('resize', () => {

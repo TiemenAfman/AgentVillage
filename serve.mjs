@@ -770,8 +770,9 @@ async function handle(req, res) {
   // forwards. All the page does is name a neighbour.
   if (p === '/api/visit') {
     if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
+    // readBody already parses, and hands back {} for an empty body.
     let asked;
-    try { asked = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'that is not JSON' }); }
+    try { asked = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     const host = String(asked && asked.host || '').trim();
     const port = Number(asked && asked.port);
     if (!/^[a-zA-Z0-9.\-:\[\]]{1,64}$/.test(host) || !(port >= 1 && port <= 65535)) {
