@@ -193,7 +193,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
-  const meadowNoise = makeSimplex2D(hash32(`meadow:${village.seed || 0}`));
+  // The island's own seed, which the village carries under `island` and not on itself.
+  // `village.seed` is undefined, so the `|| 0` that used to stand here quietly handed
+  // every island the same mottling - and the same shingle, sand and plaza wear below.
+  // `terrain.seed` is the copy the rest of this file already draws from, and it is left
+  // without a fallback on purpose: the next one of these should break rather than blend in.
+  const meadowNoise = makeSimplex2D(hash32(`meadow:${terrain.seed}`));
 
   // Reclaimed land, which is not a beach however low it lies. A polder floor is stamped
   // at exactly POLDER_H - 0.375, chosen over in terrain.mjs so that it clears the beach
@@ -261,7 +266,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const plazaTexture = wearTexture.clone();
   plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
   plazaTexture.needsUpdate = true;
-  const bank = riverBankField(size, village.seed || 0, terrain.riverBankCells, wearResolution);
+  const bank = riverBankField(size, terrain.seed, terrain.riverBankCells, wearResolution);
   const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
   bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
   bankTexture.needsUpdate = true;
@@ -1009,11 +1014,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
         strokes.push({ points: smoothLane(points,.18), radius:.34, feather:.42 });
       }
     }
-    const field = groundWearField(size, wearVillage.seed || 0, strokes, yards, wearResolution);
+    const field = groundWearField(size, terrain.seed, strokes, yards, wearResolution);
     const plazaYards = wearGraph.tiles.filter(t=>t.kind==='plaza').map(t=>{
       const [x,z]=centre([t.gx,t.gz]);return {x,z,rx:.84,rz:.84};
     });
-    const plaza = groundWearField(size, wearVillage.seed || 0, [], plazaYards, wearResolution);
+    const plaza = groundWearField(size, terrain.seed, [], plazaYards, wearResolution);
     for(let i=0;i<field.data.length;i++)field.data[i]=Math.max(field.data[i],plaza.data[i]);
     plazaTexture.image.data=plaza.data;plazaTexture.needsUpdate=true;
     wearTexture.image.data = field.data;
