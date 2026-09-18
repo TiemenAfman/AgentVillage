@@ -80,6 +80,12 @@ ground both the scanner and the viewer use, so it sticks to plain arithmetic —
 terrain on load and warns in the console if the two disagree. `web/index.html` maps
 `shared/` and `three` in an import map; Node gets the same through the test loader.
 
+**A village has no seed of its own.** It carries one at `village.island.seed`; there is
+no `village.seed`, so reading it gives `undefined` and any `|| 0` behind it silently draws
+every island as if it were seed 0. In `web/js/` the seed to reach for is `terrain.seed`,
+which `makeTerrain` puts on the terrain object and which the rest of the viewer already
+uses. Leave such a read without a fallback: four of them hid behind one for months.
+
 **One material, one draw call per building.** Which texture sheet a face uses is a number
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
