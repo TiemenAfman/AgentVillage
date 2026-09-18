@@ -86,11 +86,16 @@ test('an island that has not changed is not sent again', () => afloat(async ({ s
   const a = island();
   const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle });
   try {
-    // Wait for the client's *own* first publish to have landed, not merely for the island
-    // to exist: the two are a few milliseconds apart, and asking in between gets a
-    // perfectly correct "sent" that has nothing to do with what is being tested here.
+    // Wait for the client's *own* first publish to have landed and stopped moving. Not
+    // merely for the island to exist: the welcome kicks off a forced publish of its own,
+    // and one still in flight would bump the revision after it had been written down here,
+    // which reads as "an unchanged island was sent again" and is nothing of the kind.
     await until(async () => (await client.publish()).why === 'unchanged', 'the first publish never settled');
-    const after = sea.fleet.get(a.id).rev;
+    const after = await until(async () => {
+      const a1 = sea.fleet.get(a.id).rev;
+      await settle(80);
+      return sea.fleet.get(a.id).rev === a1 ? a1 : 0;
+    }, 'the revision never settled');
     assert.equal((await client.publish()).sent, false, 'unchanged islands stay home');
     assert.equal((await client.publish()).why, 'unchanged');
     assert.equal(sea.fleet.get(a.id).rev, after, 'and the revision does not move');

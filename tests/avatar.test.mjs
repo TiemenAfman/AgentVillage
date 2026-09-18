@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+// avatar.js reaches shared/palette.mjs for the swatches now: they moved there so the walk
+// can ask how tall somebody is from Node, without dragging three.js along.
+import { register } from 'node:module';
+register('./support/shared-loader.mjs', import.meta.url);
 import { Color, MeshBasicMaterial } from 'three';
-import { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
-  DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } from '../web/js/avatar.js';
-import { createClassicAvatar } from '../web/js/classic-avatar.js';
+// Imported dynamically, and it has to be: a static import is hoisted above the register()
+// call and would resolve 'shared/…' before the loader that knows what that means exists.
+const { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
+  DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } = await import('../web/js/avatar.js');
+const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
 
 test('every Blender hat fits walking clearance and produces one complete material mesh', () => {
   for (const { id } of HAT_SHAPES) {

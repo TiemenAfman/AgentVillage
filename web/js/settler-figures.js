@@ -12,10 +12,15 @@
 // derived from it rather than computed alongside the position.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { PALETTE } from './buildings.js';
 import { residentPart, residentNamedPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET } from './villager.js';
-import { HAT_SHAPES, SWATCHES } from './avatar.js';
-import { makeRng, hash32, clamp } from 'shared/rng.mjs';
+// The wardrobe. It moved to shared/ when the walk did, because a settler's height comes out
+// of its look and its stride comes out of its height - so the half that decides where a
+// body is has to be able to ask what it looks like, from Node. Re-exported here because
+// this file has always been where the rest of the island asks.
+import { HAT_SHAPES, settlerLook, styleLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { makeRng, hash32 } from 'shared/rng.mjs';
+
+export { settlerLook, styleLook, kindOf, styleOf };
 
 const tmpObj = new THREE.Object3D();
 const tmpColor = new THREE.Color();
@@ -25,7 +30,6 @@ const posedMat = new THREE.Matrix4();
 const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
-const SKIN = 0xf1c9a5;      // the island's first and only skin tone, now just a default
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
 export const CAPACITY = 640;
@@ -78,81 +82,6 @@ const RESIDENT_PIVOTS = {
   leftArm: [-0.10, 0.27, 0], rightArm: [0.10, 0.27, 0],
   leftHand: [-0.10, 0.27, 0], rightHand: [0.10, 0.27, 0],
 };
-
-// ---------------------------------------------------------------- the wardrobe
-// Which hat a model's people wore before anyone had a choice, and where its colour came
-// from in that model's palette. It is still the likeliest hat on that model's heads.
-const STYLE_HAT = {
-  fable: ['wizard', 'accent'],
-  opus: ['cap', 'roof'],
-  sonnet: ['dome', 'roof'],
-  haiku: ['wide', 'roof'],
-  unknown: ['band', 'trim'],
-};
-const SAILOR_HAT = 0x2b4c7e;
-// A sailor's cap is a uniform, not a preference: it is how the quay reads as a quay, so
-// it stays off other heads and no landsman draws it.
-const CIVILIAN_HATS = HAT_SHAPES.map((h) => h.id).filter((id) => id !== 'sailor');
-
-// The look every settler of a style used to have, and still the look of the figure that
-// walk.js, interior.js and the model sheet ask for by style alone.
-export function styleLook(style, sailor = false) {
-  const pal = PALETTE[style] || PALETTE.unknown;
-  const [shape, slot] = STYLE_HAT[style] || STYLE_HAT.unknown;
-  return {
-    skin: SKIN, tunic: pal.wall, trim: pal.trim,
-    hat: sailor ? SAILOR_HAT : pal[slot],
-    hatShape: sailor ? 'sailor' : shape,
-    height: 1, build: 1, head: 1,
-  };
-}
-
-// Cloth here is dyed in small batches: the same colour, never quite the same shade. Done
-// on the bytes rather than through HSL so it is the plain arithmetic it looks like, and
-// so a tunic can drift a little warm or a little cold without leaving its own colour.
-function dye(hex, rng) {
-  const mul = rng.range(0.86, 1.12);
-  const warm = rng.range(-0.06, 0.06);
-  const ch = (v, shift) => clamp(Math.round(v * mul * (1 + shift)), 0, 255);
-  return (ch((hex >> 16) & 255, warm) << 16) | (ch((hex >> 8) & 255, 0) << 8) | ch(hex & 255, -warm);
-}
-
-// What one settler looks like. Everyone a model built wears that model's cloth - it is
-// how a settler on the square reads as belonging to the house behind it - but trousers,
-// hat, skin and build are their own, and no two bolts of the same cloth took the dye the
-// same way. Everything here is hashed off one string the caller promises is the same on
-// every scan: village.json is thrown away and rebuilt from the transcripts every minute,
-// so a look drawn from Math.random, or from a slot number, or from anything the rebuild
-// is free to reorder, would give the same person a new face every time.
-export function settlerLook(seed, style, kind = 'adult') {
-  const pal = PALETTE[style] || PALETTE.unknown;
-  const base = styleLook(style, kind === 'sailor');
-  const rng = makeRng(hash32(`${seed}:look`));
-  const young = kind === 'apprentice';
-  return {
-    hatShape: kind === 'sailor' || rng.chance(0.45) ? base.hatShape : rng.pick(CIVILIAN_HATS),
-    hat: kind === 'sailor' ? SAILOR_HAT : (rng.chance(0.35) ? pal.roof : rng.pick(SWATCHES.hat).hex),
-    skin: rng.pick(SWATCHES.skin).hex,
-    tunic: dye(pal.wall, rng),
-    trim: rng.pick(SWATCHES.trim).hex,
-    height: rng.range(0.9, 1.1),
-    build: rng.range(0.9, 1.12),
-    // An apprentice is scaled down as a whole, which would give a child an adult's head
-    // in miniature. Keeping the head nearly full size is what makes small read as young
-    // instead of far away.
-    head: young ? rng.range(1.04, 1.16) : rng.range(0.93, 1.05),
-  };
-}
-
-// Which of the three kinds of resident a plot houses, and whose palette they wear. Both
-// halves need to agree about this - the walk sizes a shed-dweller's wander radius by it
-// and the wardrobe dresses them by it - so it is worked out in one place.
-export function kindOf(spec) {
-  return spec.kind === 'shed' ? 'apprentice' : (spec.harbour ? 'sailor' : 'adult');
-}
-export function styleOf(spec) {
-  return PALETTE[spec.style] ? spec.style : 'unknown';
-}
 
 // One figure, merged, for everything that draws a settler as a plain mesh: walk mode, the
 // interiors and the model sheet. The crowd outside does not go through here - it is drawn
