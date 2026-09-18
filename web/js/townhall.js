@@ -22,6 +22,7 @@ function when(iso) {
 export function createTownHall(root, { onInvited, onFound, onClose }) {
   let sessions = [];
   let filter = 'available';
+  let origin = 'both';   // 'both' | 'code' | 'cowork' - which kind of session the list shows
   let query = '';
   let busy = false;
 
@@ -69,6 +70,7 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
     let list = sessions;
     if (filter === 'available') list = list.filter((s) => !s.onIsland);
     else if (filter === 'island') list = list.filter((s) => s.onIsland);
+    if (origin !== 'both') list = list.filter((s) => s.kind === origin);
     if (q) {
       list = list.filter((s) => [s.name, s.title, s.project, s.model]
         .some((v) => String(v || '').toLowerCase().includes(q)));
@@ -79,6 +81,12 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
   function render() {
     const list = shown();
     const onIsland = sessions.filter((s) => s.onIsland).length;
+    // render() replaces the whole panel, `#th-list` included, so a fresh element always
+    // starts scrolled to the top - and inviting someone re-renders the same way a filter
+    // click does. Read the old list's position before it is thrown away, and put the new
+    // one back where it was, or a single invite scrolls you back to the register's start.
+    const oldList = el.querySelector('#th-list');
+    const savedScroll = oldList ? oldList.scrollTop : 0;
     el.innerHTML = `
       <div class="handover-panel wide">
         <button class="x" id="th-close">✕</button>
@@ -92,6 +100,11 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
             <button class="chip${filter === 'available' ? ' on' : ''}" data-f="available">Not here yet</button>
             <button class="chip${filter === 'island' ? ' on' : ''}" data-f="island">On the island</button>
             <button class="chip${filter === 'all' ? ' on' : ''}" data-f="all">Everyone</button>
+          </div>
+          <div class="chips">
+            <button class="chip${origin === 'both' ? ' on' : ''}" data-o="both">Both</button>
+            <button class="chip${origin === 'code' ? ' on' : ''}" data-o="code">Code</button>
+            <button class="chip${origin === 'cowork' ? ' on' : ''}" data-o="cowork">Cowork</button>
           </div>
         </div>
 
@@ -115,10 +128,13 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
       s2.setSelectionRange(pos, pos);
     });
     el.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; render(); }));
+    el.querySelectorAll('[data-o]').forEach((b) => b.addEventListener('click', () => { origin = b.dataset.o; render(); }));
     el.querySelector('#th-close').addEventListener('click', close);
     el.querySelector('#th-new').addEventListener('click', () => { close(); onFound && onFound(); });
     el.querySelectorAll('[data-invite]').forEach((b) => b.addEventListener('click', () => invite(b.dataset.invite, false)));
     el.querySelectorAll('[data-release]').forEach((b) => b.addEventListener('click', () => invite(b.dataset.release, true)));
+    const newList = el.querySelector('#th-list');
+    if (newList) newList.scrollTop = savedScroll;
   }
 
   function row(s) {

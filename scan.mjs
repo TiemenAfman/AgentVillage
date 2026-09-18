@@ -378,6 +378,13 @@ function assemble({ config, model, layout, terrain, size, all }) {
       const at = POLDER_AT + k * POLDER_EVERY;
       return { ...p, at, unlockedAt: iso(model.arrivals[at - 1] || null) };
     }),
+    // The harbour basin, and it travels for a harder reason than the polders do. A polder
+    // the viewer never heard of draws as sea it cannot build on; a basin it never heard of
+    // means the browser builds different ground from the scanner - the terrain hash check
+    // on load fires, and the quay's houses stand on stilts over grass the viewer still
+    // draws as a meadow. No dates on it: a basin is dug the moment the quay has a parcel,
+    // not earned at a settler count, so there is no ladder here to write down.
+    basins: layout.basins || [],
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),

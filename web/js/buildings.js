@@ -2146,9 +2146,19 @@ function spanToBanks(cells, terrain, k) {
   return out;
 }
 
-function bridgeStops(cells, terrain, axis) {
+// `quay` makes this a boardwalk instead of a crossing, and the difference is the whole
+// reason it exists. A bridge arches because it goes from one bank to the other over
+// something: the hump is what stops it reading as a plank lying in a ditch. A lane across
+// the harbour basin has no far bank - it runs from a house to a house - so an arch on it
+// is a hill in the middle of a quay, and where two of them cross they do it at different
+// heights and the pair reads as planks thrown over each other. Flat, at the height the
+// island's own piers already use, is what makes the quay one floor: the lanes, the pier
+// and the houses on their stilts all meet at QUAY_DECK and you can walk the lot.
+function bridgeStops(cells, terrain, axis, { quay = false } = {}) {
   const k = axis === 'x' ? 0 : 1;                    // the coordinate the run moves along
-  cells = spanToBanks(cells, terrain, k);
+  // Not extended to the banks either: the run is exactly the cells the layout recorded,
+  // because a quay lane ends where its planks end and there is no bank to reach for.
+  if (!quay) cells = spanToBanks(cells, terrain, k);
   const n = cells.length;
   const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) : 1;
   const abut = (end, sign) => { const c = [...end]; c[k] += sign * dir; return c; };
@@ -2179,7 +2189,7 @@ function bridgeStops(cells, terrain, axis) {
     const u = Math.min(1, Math.max(0, (p[k] - s0) / (s1 - s0)));
     return rise * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
   };
-  const deckYAt = (p) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(p)) + arch(p);
+  const deckYAt = (p) => (quay ? QUAY_DECK : Math.max(DECK_MIN, y0 + (y1 - y0) * t(p)) + arch(p));
   const deckY = (i) => deckYAt(world[i]);
   // `cells` goes back out because it is no longer the list that came in: whoever stands on
   // this deck has to be told about the part of it that was not written down.
@@ -2189,9 +2199,9 @@ function bridgeStops(cells, terrain, axis) {
 // Which cell of the crossing carries its deck at what height, for standing figures on it.
 // main.js keeps these in the map the settlers and walk mode read the ground from, so the
 // arch is in here too: they climb it rather than walking through it.
-export function bridgeDeckHeights(cells, terrain, axis) {
+export function bridgeDeckHeights(cells, terrain, axis, opts = {}) {
   if (!cells || !cells.length) return [];
-  const { cells: run, deckY } = bridgeStops(cells, terrain, axis);
+  const { cells: run, deckY } = bridgeStops(cells, terrain, axis, opts);
   return run.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
@@ -2199,9 +2209,9 @@ export function bridgeDeckHeights(cells, terrain, axis) {
 // edge of the planking, and a trestle in the water under every cell of the crossing. The
 // rail is posts and a beam rather than a solid parapet - a wall the right height for a
 // settler to hold would hide the decking from every angle the island is looked at from.
-export function buildBridgeGeometry(cells, terrain, from, axis) {
+export function buildBridgeGeometry(cells, terrain, from, axis, opts = {}) {
   if (!cells || !cells.length) return null;
-  const { world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  const { world, deckYAt, k } = bridgeStops(cells, terrain, axis, opts);
   // The arch is a curve and the deck is drawn in flat pieces, so each span between two
   // stops is halved. At one piece per cell a three cell crossing comes out as a roof
   // with a ridge; at two it reads as a curve from every distance the island is seen at.

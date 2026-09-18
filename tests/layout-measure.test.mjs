@@ -65,7 +65,7 @@ await scanOnce(fresh, path.join(work, 'fresh-village.json'));
 const F = readJson(fresh);
 
 const config = loadConfig();
-const terrain = makeTerrain(config.seed, { size: layout2.size, polders: layout2.polders || [] });
+const terrain = makeTerrain(config.seed, { size: layout2.size, polders: layout2.polders || [], basins: layout2.basins || [] });
 const L = layout2;
 const key = (c) => `${c[0]},${c[1]}`;
 const plots = Object.entries(L.plots);
@@ -268,8 +268,24 @@ test('the village is spread over the island, and nobody is a guest', () => {
 });
 
 test('a road is a road and not a kilometre of one', () => {
+  // What this is actually guarding is a road that *wanders* - the router losing the town
+  // and touring the island on its way there. It used to say so as a flat "under 60 cells",
+  // which reads as a rule about routing and is really a rule about island size: it holds
+  // on a 128-cell island because nothing on one is further than that from the square, and
+  // on a 256-cell island it forbids a district from being where the island put it. The
+  // quay is the one that finds out. It has to stand on the sea, and at 256 the town sits
+  // 85 cells inland - so its road is 97 cells long and perfectly straight, and the only
+  // way to keep the old number was to build the quay on a pond seven cells from the square.
+  //
+  // So the measure is detour, not distance: how much longer the road is than the straight
+  // line it had to cover. A road that wanders doubles back and scores far worse than this
+  // however short it is; a road to the far coast scores near 1 however long. The floor
+  // keeps the ratio honest on the very short ones, where one cell of give is a big share.
   for (const p of L.paths.filter((q) => String(q.id).startsWith('road:'))) {
-    assert.ok(p.cells.length < 60, `${p.id} is ${p.cells.length} cells long`);
+    const [a, b] = [p.cells[0], p.cells[p.cells.length - 1]];
+    const line = Math.max(12, Math.hypot(a[0] - b[0], a[1] - b[1]));
+    const detour = p.cells.length / line;
+    assert.ok(detour < 2.2, `${p.id} is ${p.cells.length} cells long over a ${Math.round(line)}-cell line (${detour.toFixed(1)}x)`);
   }
 });
 
@@ -358,6 +374,69 @@ test('the postbox stands on the hall\'s pavement and never on its doorstep', () 
     if (id === 'civic:mailbox' || p.w !== 1) continue;
     assert.notEqual(key([p.gx, p.gz]), key([box.gx, box.gz]), `${id} is standing in the postbox`);
   }
+});
+
+// ---- the harbour basin ---------------------------------------------------------------
+// The quay is the one district built to stand in the water: stilts instead of foundations,
+// no yard and no doorstep. placeAll dredges the ground out from under it once its parcel
+// exists. Everything below is what has to hold afterwards, and each of the three caught a
+// real failure while it was being written.
+test('the quay stands in water, and its water is the sea', () => {
+  const quay = Object.entries(L.districts).find(([, d]) => (d.pier || []).length && (d.lobes || []).length);
+  if (!quay) return;                                    // no Cowork work, so no quay yet
+  const [id, rec] = quay;
+  const basin = (L.basins || []).find((b) => b.id === `basin:${id}`);
+  assert.ok(basin, `${id} has a pier and a parcel but no basin under it`);
+  assert.ok(basin.cells.length, 'a basin with no cells in it');
+
+  // Every dug cell is water now. If this fails, BASIN_H has drifted above SEA_LEVEL and
+  // the whole thing is a very expensive way to flatten a field.
+  for (const [gx, gz] of basin.cells) {
+    assert.ok(terrain.isWater(gx, gz), `the basin left ${gx},${gz} dry`);
+  }
+
+  // And it is joined to the sea, which is the one that bites. A basin closed off by a
+  // single cell of land is a pond, `onOpenSea` in lib/layout.mjs then rules that the quay's
+  // own planks are standing in a puddle and takes them away - and the district moves again
+  // on the next scan, and the next, forever. The channel to the shore is what prevents it.
+  const sea = new Set();
+  const stack = [];
+  const push = (gx, gz) => {
+    if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) return;
+    const k = gx + gz * terrain.size;
+    if (sea.has(k) || !terrain.isWater(gx, gz)) return;
+    sea.add(k);
+    stack.push([gx, gz]);
+  };
+  for (let i = 0; i < terrain.size; i++) {
+    push(i, 0); push(i, terrain.size - 1); push(0, i); push(terrain.size - 1, i);
+  }
+  while (stack.length) {
+    const [gx, gz] = stack.pop();
+    push(gx + 1, gz); push(gx - 1, gz); push(gx, gz + 1); push(gx, gz - 1);
+  }
+  const joined = basin.cells.filter(([gx, gz]) => sea.has(gx + gz * terrain.size));
+  assert.equal(joined.length, basin.cells.length, 'part of the basin is cut off from the sea');
+  assert.ok(rec.pier.some(([gx, gz]) => sea.has(gx + gz * terrain.size)), 'the quay pier is not on the sea');
+});
+
+test('a lane over the basin is a deck, not a stripe on the seabed', () => {
+  // A road is not geometry: it is a wear mask painted on the ground mesh (web/js/world.js),
+  // and the ground under the basin is below the sea. So every paved cell that ended up
+  // over water has to have become a bridge - otherwise the lanes between the quay's houses
+  // are invisible and the settlers routing over them walk on the water.
+  for (const p of L.paths) {
+    for (const [gx, gz] of p.cells) {
+      assert.ok(terrain.isLand(gx, gz), `${p.id} paves ${gx},${gz}, which is under water`);
+    }
+  }
+  const quay = Object.entries(L.districts).find(([, d]) => (d.pier || []).length && (d.lobes || []).length);
+  if (!quay) return;
+  const basin = (L.basins || []).find((b) => b.id === `basin:${quay[0]}`);
+  if (!basin) return;
+  const wet = new Set(basin.cells.map(key));
+  const decked = (L.bridges || []).some((b) => b.cells.some((c) => wet.has(key(c))));
+  assert.ok(decked, 'the basin carries no deck at all: the quay cannot be walked to');
 });
 
 test.after(() => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the tmp dir will go */ } });

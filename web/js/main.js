@@ -1266,10 +1266,13 @@ function freeBerth(theirHalf) {
 //
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
-// them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null }) {
+// them out would put their coast in the wrong place and their houses in the water. `basins`
+// is the same stamp run the other way, and leaving one out is worse: the quay it dug would
+// come back as solid ground, with the visitor's harbour houses standing on stilts in a
+// meadow and their plank lanes lying on grass.
+function joinIsland({ id, seed, gridSize, polders = [], basins = [], terrainHash = null, name = null, village = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, basins });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -1314,6 +1317,10 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
   const region = joinIsland({
     id, seed, gridSize: homeTerrain.size, name: 'a test island',
     village: spec === 'self' ? homeVillage : null,
+    // Only for `self`, and only because the whole use of `self` is that the island to the
+    // east is house-for-house the one under your feet. Dug and drained ground is stamped
+    // into the heightfield, so leaving it out is what would make the copy differ.
+    ...(spec === 'self' ? { polders: homeVillage.polders || [], basins: homeVillage.basins || [] } : {}),
   });
   if (!region) return;
   debugJoins.push({
@@ -1335,10 +1342,15 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // places at once.
 // ---- the quay -------------------------------------------------------------------
 // Which way the water lies off a coast cell, and how far out you can build before the sea
-// floor comes back up. Both are twelve lines of lib/layout.mjs - `seawardDirection` at :1931
-// and `pierCells` at :1942 - copied rather than imported, because that file is Node's: it
-// reaches for lib/paths.mjs and the whole layout with it. If a third caller ever wants them
-// they belong in shared/.
+// floor comes back up. This started as twelve lines of lib/layout.mjs -
+// `seawardDirection`/`pierCells` - copied rather than imported, because that file is
+// Node's: it reaches for lib/paths.mjs and the whole layout with it. It has since grown a
+// piece that file doesn't need: `shore` here is always the island's `landing`, which
+// lib/layout.mjs picks as the nearest *beach* cell to town (gentle ground) rather than
+// the nearest *coast* cell (ground that touches water) - on plenty of seeds those are the
+// same cell, but not on this one, where the real waterline sits several dry cells further
+// out. A quay district's own shore has no such gap, because it is chosen from
+// `terrain.coastCells` in the first place.
 const QUAY_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 function seawardRun(terrain, shore) {
   let dir = null, reach = 0;
@@ -1357,23 +1369,81 @@ function seawardRun(terrain, shore) {
   return cells.length ? { dir, cells } : null;
 }
 
-// A dock at the island's landing. `landing` (lib/layout.mjs:1382-1385) is the coast cell
-// nearest the town centre - where a new settler already walks ashore - and it exists on
-// every island, seed alone, whether or not there is any Cowork work to earn it a quay
-// district. The planks are the same set a quay district gets; what is different is that this
-// one is not waiting for a district to appear before there is anywhere to tie up.
+// Which water is the sea, flooded from the border - where the map is open water by
+// construction. The same test lib/layout.mjs makes for the quay district's own pier, and
+// for the same reason: `isWater` says a fourteen-cell puddle in the middle of the island
+// is water exactly as loudly as the ocean does, and `coastCells` counts a pond's rim as
+// coast. Without this, six of twenty-four seeds measured put the island's dock in a pond.
+//
+// `inGrid` first, and it is not belt and braces: terrain's `isWater` answers true for every
+// cell off the edge of the map, so a fill without it walks out into the coordinate plane
+// and never comes back. Cached per terrain - one fill is 65k cells on a 256 island, and
+// buildDocks runs on every village that arrives.
+const seaByTerrain = new WeakMap();
+function seaCells(terrain) {
+  let sea = seaByTerrain.get(terrain);
+  if (sea) return sea;
+  sea = new Set();
+  const stack = [];
+  const push = (gx, gz) => {
+    if (!terrain.inGrid(gx, gz)) return;
+    const k = gx + gz * terrain.size;
+    if (sea.has(k) || !terrain.isWater(gx, gz)) return;
+    sea.add(k);
+    stack.push([gx, gz]);
+  };
+  for (let i = 0; i < terrain.size; i++) {
+    push(i, 0); push(i, terrain.size - 1); push(0, i); push(terrain.size - 1, i);
+  }
+  while (stack.length) {
+    const [gx, gz] = stack.pop();
+    push(gx + 1, gz); push(gx - 1, gz); push(gx, gz + 1); push(gx, gz - 1);
+  }
+  seaByTerrain.set(terrain, sea);
+  return sea;
+}
+
+// Where the dock actually stands. `landing` is the nearest *beach* cell to town - gentle,
+// low ground - and lib/layout.mjs never promised it touches the sea: `isBeach` is a height
+// test, `coastCells` is the one that means "has water next to it". On most seeds they are
+// the same cell and this returns the landing unchanged; on this island they are six cells
+// apart, and asking the landing which way the sea lies answered "nowhere" - which is why
+// there was no dock at all. So a landing that is set back walks to the nearest real
+// waterline instead, and the dock is built there: short, at the sea, and near enough to the
+// landing that it is still the place a settler comes ashore. Nearest *sea* waterline: a
+// pond is often nearer, and a dock on a pond is the joke this island already told once.
+function dockShore(terrain, landing) {
+  const sea = seaCells(terrain);
+  const onSea = (run) => run && run.cells.some(([gx, gz]) => sea.has(gx + gz * terrain.size));
+  if (onSea(seawardRun(terrain, landing))) return landing;
+  let best = null, bd = Infinity;
+  for (const c of terrain.coastCells) {
+    const d = (c[0] - landing[0]) ** 2 + (c[1] - landing[1]) ** 2;
+    if (d < bd && onSea(seawardRun(terrain, c))) { bd = d; best = c; }
+  }
+  return best;
+}
+
+// A dock at the island's landing. `landing` is the beach cell nearest the town centre -
+// where a new settler already walks ashore - and it exists on every island, seed alone,
+// whether or not there is any Cowork work to earn it a quay district. The planks are the
+// same set a quay district gets; what is different is that this one is not waiting for a
+// district to appear before there is anywhere to tie up. `dockShore` is what stands between
+// the landing and the water when the two are not the same cell.
 function dockFor(region, village) {
   const v = village || region.village;
   const landing = v && v.island && v.island.landing;
   if (!landing) return null;
-  const run = seawardRun(region.terrain, landing);
+  const shore = dockShore(region.terrain, landing);
+  if (!shore) return null;
+  const run = seawardRun(region.terrain, shore);
   if (!run) return null;
   // Both frames, and they are not the same thing - this is the rule from shared/regions.mjs
   // in one function. `from` is where the MESH stands, and the mesh goes inside the island's
   // own group, so it is local. `head` and `berth` are read by walk mode and by the boat,
   // which speak world coordinates and nothing else. On our own island the two are equal,
   // which is exactly how getting it wrong stays invisible until somebody joins.
-  const [lx, lz] = region.terrain.cellWorld(landing[0], landing[1]);
+  const [lx, lz] = region.terrain.cellWorld(shore[0], shore[1]);
   const head = run.cells[run.cells.length - 1];
   const [hx, hz] = region.cellWorld(head[0], head[1]);
   return {
@@ -1463,6 +1533,7 @@ async function refreshHarbour() {
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
+      basins: bundle.basins || [],
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
@@ -1950,7 +2021,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, basins: village.basins });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
   }
@@ -2334,7 +2405,11 @@ function layLandscape(shot) {
   if (shot.polders !== shownPolders) {
     shownPolders = shot.polders;
     const v = state.village;
-    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) });
+    // The basins are not sliced with the polders: a polder carries the settler count that
+    // earned it, so the chronicle can put the coast back as it was on any given day, and a
+    // basin carries no such date - it is dug the moment the quay has a parcel. Replaying it
+    // away would only fill the harbour in and leave its houses on stilts in a field.
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), basins: v.basins });
     state.terrain = next;
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
