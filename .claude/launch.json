@@ -20,6 +20,22 @@
       "autoPort": true
     },
     {
+      "name": "island-all",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve",
+        "--",
+        "--all",
+        "--port",
+        "4749",
+        "--no-rescan",
+        "--no-open"
+      ],
+      "port": 4749,
+      "autoPort": false
+    },
+    {
       "name": "island-buur",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
