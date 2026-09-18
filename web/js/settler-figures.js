@@ -19,6 +19,9 @@ import { residentPart, residentNamedPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET }
 // this file has always been where the rest of the island asks.
 import { HAT_SHAPES, settlerLook, styleLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { makeRng, hash32 } from 'shared/rng.mjs';
+// The heading is ours. The walk names a direction to turn towards and how briskly; turning
+// that into an angle needs atan2, and shared/ may not have one - see the header there.
+import { lerpAngle } from 'shared/settlerwalk.mjs';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -238,6 +241,11 @@ export function createFigures(scene, material) {
     let hammerCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
+      // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
+      // angle comes from outside - a boat knows its own heading and the body in it takes
+      // it whole, with no easing, because the hull has already done the turning.
+      if (f.faceAngle != null) f.yaw = f.faceAngle;
+      else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
       const walking = f.anim === 'walk' || f.anim === 'step';
       const hammering = f.anim === 'hammer';
       const bob = f.anim === 'walk' ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
