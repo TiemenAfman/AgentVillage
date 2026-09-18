@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
+import { textureUrl } from './assets.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -57,7 +58,6 @@ export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house:
 // material, and main.js hands that same material to the settlers, the crops, the boats
 // and the bridges, none of which have groups to match it. So: one material, one draw
 // call per building, and a branch in the fragment shader.
-const TEXTURES = 'textures/';
 const texLoader = new THREE.TextureLoader();
 // One white pixel until a sheet arrives, and for good if none ever does: white
 // multiplies out, so a building with no textures is the building the island always drew.
@@ -66,13 +66,13 @@ BLANK.needsUpdate = true;
 const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank' };
 const sheetUsers = [];               // the uniform block of every material handed out
 function loadSheet(name, slot) {
-  texLoader.load(`${TEXTURES}${name}.png`, (tex) => {
+  texLoader.load(textureUrl(name), (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
     for (const u of sheetUsers) u[SHEET_UNIFORM[slot]].value = tex;
   }, undefined, () => {
-    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
   });
 }
 loadSheet('wall-plaster', 'wall');

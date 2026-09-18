@@ -50,6 +50,7 @@ import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
+import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange } from './api.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -81,8 +82,8 @@ const held = [];
 function post(message, stack) {
   try {
     const body = JSON.stringify({ message: String(message), stack: stack ? String(stack) : null });
-    if (navigator.sendBeacon) navigator.sendBeacon('/api/log', new Blob([body], { type: 'application/json' }));
-    else fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
+    if (navigator.sendBeacon) navigator.sendBeacon(mineUrl('/api/log'), new Blob([body], { type: 'application/json' }));
+    else mine('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
   } catch { /* nothing more we can do */ }
 }
 function setVisiting(guest) {
@@ -233,7 +234,7 @@ function showCanvasTrouble(err, recoverable = false) {
 // out work should not depend on a graphics driver.
 async function openBoardWithoutIsland() {
   let village = { buildings: [], districts: [] };
-  try { village = await (await fetch('/village.json', { cache: 'no-store' })).json(); } catch { /* board still opens */ }
+  try { village = await (await mine('/village.json', { cache: 'no-store' })).json(); } catch { /* board still opens */ }
   const districts = new Map((village.districts || []).map((d) => [d.id, d]));
   const board = createBoard(document.body, {
     getSettlers: () => (village.buildings || [])
@@ -541,7 +542,7 @@ function reportWhere({ final = false } = {}) {
   whereSentAt = now;
   whereLastX = w.pos.x;
   whereLastZ = w.pos.z;
-  fetch('/api/where', {
+  mine('/api/where', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -576,7 +577,7 @@ function whatIsNear(w) {
 async function refreshProps({ animate = true } = {}) {
   if (!state.props) return;
   try {
-    const r = await fetch('/api/props', { cache: 'no-store' });
+    const r = await mine('/api/props', { cache: 'no-store' });
     const body = await r.json();
     const before = state.props.count();
     state.props.apply(body.props || [], { animate });
@@ -606,10 +607,10 @@ async function refreshGarden({ animate = true } = {}) {
   if (!state.crops) return;
   try {
     if (state.guest) {
-      const body = await answerOf(await fetch('/api/crops', { cache: 'no-store' }));
+      const body = await answerOf(await mine('/api/crops', { cache: 'no-store' }));
       state.crops.apply(body.crops || [], { animate });
     } else {
-      const garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
+      const garden = await answerOf(await mine('/api/garden', { cache: 'no-store' }));
       state.garden = garden;
       state.crops.apply(garden.beds || [], { animate });
     }
@@ -631,7 +632,7 @@ async function refreshGarden({ animate = true } = {}) {
 async function tend(body, said) {
   if (keeperOnly('do the farming here')) return null;
   try {
-    const answer = await answerOf(await fetch('/api/garden', {
+    const answer = await answerOf(await mine('/api/garden', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -772,7 +773,7 @@ async function pollMail(force = false) {
   if (!force && Date.now() - state.mailAt < MAIL_POLL_MS - 1000) return;
   state.mailAt = Date.now();
   try {
-    const r = await answerOf(await fetch(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
+    const r = await answerOf(await mine(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
     showMail(r.counts || []);
   } catch { /* no postbox on this island, or the server is older than the page */ }
 }
@@ -1055,7 +1056,7 @@ async function sendAway(id) {
   const sheds = (rec.spec.sheds || []).length;
   const restore = leaveAnimation(rec);
   try {
-    const r = await fetch('/api/banish', {
+    const r = await mine('/api/banish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildingId: id }),
@@ -1076,7 +1077,7 @@ async function sendAway(id) {
 
 async function bringBack(id) {
   try {
-    await fetch('/api/banish', {
+    await mine('/api/banish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildingId: id, undo: true }),
@@ -1156,7 +1157,7 @@ function bearingWord(n) {
 
 async function refreshNeighbours() {
   try {
-    const r = await fetch('/api/neighbours').then((x) => x.json());
+    const r = await sea('/api/neighbours').then((x) => x.json());
     applyNeighbours(r.neighbours || []);
   } catch { /* no beacon, no neighbours, no matter */ }
 }
@@ -1521,14 +1522,14 @@ async function refreshHarbour() {
   if (!state.terrain) return;
   let moored;
   try {
-    moored = (await fetch('/api/islands').then((r) => r.json())).islands || [];
+    moored = (await sea('/api/islands').then((r) => r.json())).islands || [];
   } catch { return; }            // no harbour, no neighbours, no matter
   let arrived = 0;
   for (const berth of moored) {
     if (state.sea.get(berth.id)) continue;
     let bundle;
     try {
-      bundle = await fetch(`/api/islands?id=${encodeURIComponent(berth.id)}`).then((r) => r.json());
+      bundle = await sea(`/api/islands?id=${encodeURIComponent(berth.id)}`).then((r) => r.json());
     } catch { continue; }
     if (!bundle || !bundle.island) continue;
     const region = joinIsland({
@@ -1667,7 +1668,7 @@ function visitNeighbour(id) {
 async function sendIslandTo(n) {
   if (!n || !n.address || !n.port) return;
   try {
-    const r = await fetch('/api/visit', {
+    const r = await sea('/api/visit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ host: n.address, port: n.port }),
@@ -2645,7 +2646,7 @@ function popIn(rec, delay = 0) {
 // --------------------------------------------------------------- data flow
 async function fetchVillage(retry = true) {
   try {
-    const r = await fetch(`/village.json?ts=${Date.now()}`, { cache: 'no-store' });
+    const r = await mine(`/village.json?ts=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     return await r.json();
   } catch (e) {
@@ -3380,7 +3381,7 @@ function setLiveMode() {
 // makes it open without any browser chrome around it.
 function registerWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-  navigator.serviceWorker.register('/sw.js').catch(() => { /* not installable, no matter */ });
+  navigator.serviceWorker.register(mineUrl('/sw.js')).catch(() => { /* not installable, no matter */ });
 }
 
 function escapeHtml(s) {
@@ -3400,7 +3401,7 @@ async function boot() {
     // one included, so what is drawn always comes from the server's answer.
     onSigns: async (mode) => {
       try {
-        const r = await fetch('/api/display', {
+        const r = await mine('/api/display', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'nameplates', value: mode }),
@@ -3521,7 +3522,7 @@ async function boot() {
       const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
       if (!faceToFace.end(walkOn)) walkOn();
       // whatever was said is in the transcript now, so let the island catch up
-      fetch('/api/rescan', { method: 'POST' }).catch(() => {});
+      mine('/api/rescan', { method: 'POST' }).catch(() => {});
     },
     onBusyChange: () => {},
   });
@@ -3560,10 +3561,24 @@ async function boot() {
   });
   state.input.mode('orbit', { active: () => true, handle: orbitPad });
 
-  // Who are we here: the keeper of this island, or somebody visiting it? The page only
-  // uses this to decide what to offer; the server refuses the rest either way.
+  // Who are we here, and is there a machine under us at all? Those used to be one
+  // question, because the island served the page and losing it meant the page was dead.
+  // They are two now:
+  //
+  //   state.hasIslander  whether the machine with the files on it is answering. A page
+  //                      on a phone or a second screen has no islander and never will,
+  //                      and that is a mode rather than a failure: it can see the world
+  //                      and walk in it, and it cannot touch anybody's disk.
+  //   state.guest        who we are on an island that *is* answering.
+  //
+  // The page only uses either to decide what to offer; the server refuses the rest
+  // whatever the page believes.
+  state.hasIslander = true;
   try {
-    const hello = await fetch('/api/hello').then((r) => r.json());
+    const hello = await mine('/api/hello').then((r) => r.json());
+    // Where the world is, if this island is pointed at one. Absent - which is every
+    // deployment today - leaves it exactly where it has always been: right here.
+    useSea(hello.sea && hello.sea.url);
     state.guest = hello.role !== 'islander';
     state.signs = hello.signs !== false;
     state.signMode = hello.display ? hello.display.nameplates : null;
@@ -3573,13 +3588,33 @@ async function boot() {
     if (state.guest) {
       state.ui.toast(`You are visiting <b>${escapeHtml(hello.islandName || 'this island')}</b>. Walk where you like — the tickets, the chat and the git belong to whoever lives here.`);
     }
-  } catch {
-    // An island that will not say is treated as our own - including about the signs.
-    // They start down so that a page which may not read them never builds them, and
-    // silence must not be what leaves the keeper's own island bare.
-    state.signs = true;
-    state.ui.setKeeper(true);
+  } catch (e) {
+    if (e && e.name === 'IslanderUnreachable') {
+      // Nobody home. Not ours, not a guest's - there is simply no machine here, so
+      // everything that would write to one is off the table and the keeper's tools must
+      // not be offered. Treating this as "our own island", which is what this did before
+      // there was anywhere else to run, is what would put a Build button on a phone.
+      state.hasIslander = false;
+      state.guest = true;
+      state.signs = true;
+      state.ui.setKeeper(false);
+      setVisiting(true);
+      state.ui.toast('No island server on this machine. You can look around and walk about — the garden, the post and the tickets live on the keeper’s own screen.');
+    } else {
+      // An island that answers but will not say is treated as our own - including about
+      // the signs. They start down so that a page which may not read them never builds
+      // them, and silence must not be what leaves the keeper's own island bare.
+      state.signs = true;
+      state.ui.setKeeper(true);
+    }
   }
+  // And if it goes away later - the keeper restarting their own server, which happens
+  // every time a file is saved - say so once rather than letting forty call sites each
+  // fail quietly in their own way.
+  onIslanderChange((ok) => {
+    state.hasIslander = ok;
+    if (!ok) state.ui.toast('The island server stopped answering. The world keeps going; anything that writes to this machine will wait.');
+  });
 
   let village;
   try {
@@ -3621,6 +3656,7 @@ async function boot() {
     onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,
+    url: seaSocket(),
     name: playerName(),
     onStatus: () => {},
     onPanels: (m) => applyPanelMessage(m),
@@ -3677,7 +3713,7 @@ async function boot() {
 function connect() {
   let es;
   const open = () => {
-    es = new EventSource('/events');
+    es = new EventSource(mineUrl('/events'));
     // An island arriving in the harbour, or sailing home. Not localOnly: everybody standing
     // on this island should see it happen, which is the whole point of putting it there.
     es.addEventListener('guests', () => { refreshHarbour(); });

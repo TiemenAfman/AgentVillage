@@ -3,6 +3,8 @@
 // It reads, it fetches, and it merges a branch into the one you are on when that can
 // be done cleanly. Staging, rebasing and untangling a conflict belong in a real client,
 // and the office has a button that opens the ones you have installed.
+import { mine } from './api.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createOffice(root, { onClose }) {
@@ -75,7 +77,7 @@ export function createOffice(root, { onClose }) {
 
   async function load() {
     try {
-      const r = await fetch(`/api/git?district=${encodeURIComponent(district.id)}&op=overview`, { cache: 'no-store' });
+      const r = await mine(`/api/git?district=${encodeURIComponent(district.id)}&op=overview`, { cache: 'no-store' });
       data = await r.json();
       if (!data.ok) { $('office-branch').textContent = data.reason || 'git had nothing to say'; return; }
       render();
@@ -179,7 +181,7 @@ export function createOffice(root, { onClose }) {
     const foot = $('office-foot');
     foot.textContent = `Merging ${ref}…`;
     try {
-      const r = await fetch('/api/git-action', {
+      const r = await mine('/api/git-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ district: district.id, op: 'merge', ref, noff }),
@@ -212,7 +214,7 @@ export function createOffice(root, { onClose }) {
     selected = { kind: 'file', id: file, staged };
     const d = $('office-detail');
     d.innerHTML = `<h4>${esc(file)}</h4><p class="muted">Reading the diff…</p>`;
-    const r = await fetch(`/api/git?district=${encodeURIComponent(district.id)}&op=diff&file=${encodeURIComponent(file)}&staged=${staged ? 1 : 0}`, { cache: 'no-store' });
+    const r = await mine(`/api/git?district=${encodeURIComponent(district.id)}&op=diff&file=${encodeURIComponent(file)}&staged=${staged ? 1 : 0}`, { cache: 'no-store' });
     const body = await r.json();
     if (selected.id !== file) return;                       // something else was clicked meanwhile
     d.innerHTML = `<h4>${esc(file)}</h4>${body.untracked ? '<p class="muted">New file, shown whole.</p>' : ''}${diffHtml(body.diff)}`;
@@ -224,8 +226,8 @@ export function createOffice(root, { onClose }) {
     const d = $('office-detail');
     d.innerHTML = '<p class="muted">Reading the commit…</p>';
     const [detail, diff] = await Promise.all([
-      fetch(`/api/git?district=${encodeURIComponent(district.id)}&op=commit&sha=${sha}`, { cache: 'no-store' }).then((r) => r.json()),
-      fetch(`/api/git?district=${encodeURIComponent(district.id)}&op=commit-diff&sha=${sha}`, { cache: 'no-store' }).then((r) => r.json()),
+      mine(`/api/git?district=${encodeURIComponent(district.id)}&op=commit&sha=${sha}`, { cache: 'no-store' }).then((r) => r.json()),
+      mine(`/api/git?district=${encodeURIComponent(district.id)}&op=commit-diff&sha=${sha}`, { cache: 'no-store' }).then((r) => r.json()),
     ]);
     if (selected.id !== sha) return;
     d.innerHTML = `
@@ -259,7 +261,7 @@ export function createOffice(root, { onClose }) {
     const was = foot.innerHTML;
     foot.textContent = op === 'fetch' ? 'Asking the remote…' : 'Opening…';
     try {
-      const r = await fetch('/api/git-action', {
+      const r = await mine('/api/git-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ district: district.id, op, ...extra }),

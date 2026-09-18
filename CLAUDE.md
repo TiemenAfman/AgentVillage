@@ -125,6 +125,17 @@ carried on the vertex, not a material of its own, and night glow is a per-vertex
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
 `?stats` reports the colour pass only — the shadow pass is not in it.
 
+**Nothing in the browser reaches the network without naming which machine it means.**
+Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
+the mail, the tickets, spawning agents) and `sea()` for the shared world. Assets go through
+`web/js/assets.js` — `textureUrl()`, `modelUrl()` — because a loader's path is just as
+absolute as a fetch and is far easier to miss. Both modules work their bases out from
+`import.meta.url`, never from `location` or the document, which is what lets the island be
+served from a subpath behind a reverse proxy; `shared/` is reached only through the import
+map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of that,
+including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
+proxy in front and load the island at a subpath: everything must come from under it.
+
 **The settlers walk in one file and are drawn in another, and one word crosses between
 them.** `settler-walk.js` writes `f.anim` each step — `walk`, `step`, `hammer` or `still` —
 and `settler-figures.js` derives the bob, the gait, the arm swing and the idle sway from it

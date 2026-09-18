@@ -1,4 +1,4 @@
-import { makeSimplex2D, hash32 } from '../../shared/rng.mjs';
+import { makeSimplex2D, hash32 } from 'shared/rng.mjs';
 
 // One coverage field for yards and paths. Taking the maximum joins footprints
 // without alpha stacking, seams at junctions or darker overlapping decals.

@@ -26,7 +26,12 @@ const FLAG_AIRBORNE = 8;
 const UI_MS = 160;
 const UI_PER_BEAT = 2;
 
-export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
+// `url` is where the world is. It used to be worked out from location.host, which was
+// right for as long as the page and the world came off the same server - and is the one
+// line that made a page unable to look at a sea running anywhere else. The caller knows
+// the answer (web/js/api.js does), so it passes it in and this file stops reading
+// location at all.
+export function createNet({ peers, walk, url, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
@@ -53,7 +58,6 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
 
   function open() {
     if (closed) return;
-    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
     try { sock = new WebSocket(url); } catch { schedule(); return; }
 
     sock.addEventListener('open', () => {

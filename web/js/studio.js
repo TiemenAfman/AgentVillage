@@ -8,6 +8,7 @@ import {
   loadAvatar, saveAvatar, normalizeAvatar,
 } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
+import { modelUrl } from './assets.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 
@@ -152,7 +153,7 @@ function makePreview(canvas) {
 
   let character = DEFAULT_AVATAR.character;
   let kenney = null, mixer = null;
-  new GLTFLoader().load('/models/kenney/character-male-a.glb', (gltf) => {
+  new GLTFLoader().load(modelUrl('kenney/character-male-a.glb'), (gltf) => {
     kenney = gltf.scene;
     kenney.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(kenney);

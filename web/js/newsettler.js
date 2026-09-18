@@ -1,6 +1,8 @@
 // Founding a settler from the island: pick a folder, pick a model, say the first word,
 // and a new session starts. It gets a house and stays, unlike an agent sent out with a
 // ticket. Afterwards you carry on with them in their conversation.
+import { mine } from './api.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const MODELS = [
@@ -41,7 +43,7 @@ export function createNewSettler(root, { onFounded, onClose }) {
     el.hidden = false;
     el.innerHTML = `<div class="handover-panel"><p class="muted">Looking for project folders…</p></div>`;
     let folders = [];
-    try { folders = (await (await fetch('/api/folders', { cache: 'no-store' })).json()).folders || []; } catch { /* type a path instead */ }
+    try { folders = (await (await mine('/api/folders', { cache: 'no-store' })).json()).folders || []; } catch { /* type a path instead */ }
     let last = '';
     try { last = localStorage.getItem(LAST_FOLDER) || ''; } catch { /* no storage */ }
 
@@ -95,7 +97,7 @@ export function createNewSettler(root, { onFounded, onClose }) {
     busy = true;
     out.textContent = 'Sending for them…';
     try {
-      const r = await fetch('/api/found', {
+      const r = await mine('/api/found', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cwd, model: model || null, prompt }),

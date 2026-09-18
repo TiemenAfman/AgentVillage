@@ -1,5 +1,7 @@
 // Talking to a settler. Their session transcript is the conversation, and what you type
 // carries it on in that very session, so the house grows while you talk.
+import { mine } from './api.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const MODES = [
@@ -170,7 +172,7 @@ export function createChat(root, { onClose, onBusyChange, onSendAway }) {
     input.focus();
     try {
       const q = `session=${encodeURIComponent(s.sessionId)}&limit=120${s.agentId ? `&agent=${encodeURIComponent(s.agentId)}` : ''}`;
-      const r = await fetch(`/api/transcript?${q}`, { cache: 'no-store' });
+      const r = await mine(`/api/transcript?${q}`, { cache: 'no-store' });
       const body = await r.json();
       messages = body.messages || [];
       if (!body.ok) draw([], { note: body.reason || 'Nothing to read yet. Say something and this becomes their first conversation.' });
@@ -196,7 +198,7 @@ export function createChat(root, { onClose, onBusyChange, onSendAway }) {
 
     controller = new AbortController();
     try {
-      const res = await fetch('/api/say', {
+      const res = await mine('/api/say', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: settler.sessionId, cwd: settler.cwd, text: t, mode }),

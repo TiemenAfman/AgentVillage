@@ -22,6 +22,7 @@ import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { modelUrl } from './assets.js';
 
 const CIVIC = [
   ['townhall', 'Town hall', '1st settler'],
@@ -746,7 +747,7 @@ function shorePatch(originX, originZ, cells, { inlet }) {
 // is the comparison this row exists for.
 const METRE = 0.25;
 const REAL = [
-  ['/models/boikon.glb', 'BOIKON', 'Leeksterveld · 30 × 10 × 12,5 m'],
+  [modelUrl('boikon.glb'), 'BOIKON', 'Leeksterveld · 30 × 10 × 12,5 m'],
 ];
 {
   // a row of clearance: 30 m of frontage is seven units wide even at the right scale
