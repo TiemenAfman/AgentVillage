@@ -84,6 +84,12 @@ ground both the scanner and the viewer use, so it sticks to plain arithmetic —
 terrain on load and warns in the console if the two disagree. `web/index.html` maps
 `shared/` and `three` in an import map; Node gets the same through the test loader.
 
+**A village has no seed of its own.** It carries one at `village.island.seed`; there is
+no `village.seed`, so reading it gives `undefined` and any `|| 0` behind it silently draws
+every island as if it were seed 0. In `web/js/` the seed to reach for is `terrain.seed`,
+which `makeTerrain` puts on the terrain object and which the rest of the viewer already
+uses. Leave such a read without a fallback: four of them hid behind one for months.
+
 **One world frame, many island-local frames.** `shared/regions.mjs` is the contract, and its
 header comment is the long version. `shared/terrain.mjs` and `data/layout.json` speak LOCAL
 coordinates — `-half..+half` around one island's own middle — and always will; `makeTerrain`
