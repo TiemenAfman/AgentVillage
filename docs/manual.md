@@ -657,7 +657,7 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | The town square, growing 3 -> 5 -> 7 cells across | 1, 30 and 90 settlers |
 | An outpost | A session in a git worktree, whether `.claude/worktrees` or `git worktree add` |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
-| A plank dock out over the water, with mooring posts | The quay's pier: where a Cowork task's settler comes ashore |
+| A plank dock out over the water, with mooring posts | The quay's pier: where a Cowork task's settler comes ashore. On the open sea, never on the lake or a river — a settler arriving by boat has to be able to get there |
 | A plank dock at the landing, on every island | The quay: stand on it and **E** gives you a boat — see [Visitors and neighbours](#visitors-and-neighbours) |
 | A boat out on the bay with a settler in it | Somebody's afternoon off — they will bring her back to the quay |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
