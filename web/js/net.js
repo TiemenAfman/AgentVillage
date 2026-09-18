@@ -32,7 +32,7 @@ const UI_PER_BEAT = 2;
 // the answer (web/js/api.js does), so it passes it in and this file stops reading
 // location at all.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
-  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, name = null } = {}) {
+  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -104,6 +104,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
         // The fleet changing: an island arriving, going quiet, or going home.
         case 'island': onWorld(null, m); break;
+        // Somebody else's settlers. `fr` says who the numbers mean and comes once per
+        // island; `f` is where they have got to and comes on the beat. Passed through as
+        // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and
+        // the page decodes it against the island's own half.
+        case 'fr': onCrowd({ kind: 'roster', island: m.i, ids: m.ids || [] }); break;
+        case 'f': onCrowd({ kind: 'where', island: m.i, a: m.a, k: m.k }); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a

@@ -5,6 +5,8 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
+import { createCrowdView } from './crowd-view.js';
+import { decodeCrowd } from 'shared/settlerwire.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
@@ -1667,6 +1669,30 @@ async function changeSea(what) {
   } catch { state.ui.toast('The island did not answer.'); }
 }
 
+// A roster that arrived before the island it names had been raised. The sea sends one the
+// moment an island joins, and the ground for it is built on the next sync - a few hundred
+// milliseconds later, because the bundle has to be fetched first. Kept rather than dropped:
+// without the roster nobody on that island has a face.
+const crowdRosters = new Map();
+
+// Somebody else's settlers. The wire format is shared/settlerwire.mjs and the drawing is
+// web/js/crowd-view.js; this only routes.
+function onCrowdMessage(m) {
+  const g = state.guests.find((x) => x.region.id === m.island);
+  if (m.kind === 'roster') {
+    if (g && g.crowd) g.crowd.roster(m.ids);
+    else crowdRosters.set(m.island, m.ids);
+    return;
+  }
+  if (!g || !g.crowd) return;
+  // Positions travel in the island's own frame, so they are decoded against its own half
+  // and the origin goes on inside the view. A message is walkers, or a slice of everybody
+  // else, or both.
+  const half = g.region.half;
+  const rows = decodeCrowd(m.k, half, decodeCrowd(m.a, half));
+  g.crowd.apply(rows, performance.now());
+}
+
 // The sea talking about its fleet: a welcome carrying the whole list, or one island
 // arriving, going quiet or going home.
 function onFleetNews(world, one) {
@@ -1694,6 +1720,15 @@ function raiseGuestIslands() {
       material: buildingMat, modest,
     });
     for (const rec of g.records) attachExtras(rec, { mail: false, signs: false });
+    // And the people. They are not simulated here - the sea walks them and sends where
+    // they got to - but they are drawn by exactly the same eleven meshes ours are, so a
+    // village of three hundred over there costs what a village of three hundred costs.
+    g.crowd = createCrowdView({
+      scene, material: buildingMat, region,
+      buildings: (region.village && region.village.buildings) || [],
+    });
+    const waiting = crowdRosters.get(region.id);
+    if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     state.guests.push(g);
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
@@ -1705,6 +1740,7 @@ function raiseGuestIslands() {
     if (state.sea.get(g.region.id)) continue;
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
+    if (g.crowd) g.crowd.dispose();
     g.dispose();
     state.guests.splice(i, 1);
   }
@@ -3363,6 +3399,10 @@ function frame(nowMs) {
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
     for (const rec of g.records) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    // Their people, drawn where the sea last said they were and interpolated between. The
+    // ground they stand on is their own region's, which is what puts a body on a quay's
+    // planks rather than in the water beside them.
+    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs);
   }
 
 
@@ -3858,6 +3898,7 @@ async function boot() {
     // does can reach anybody's disk.
     join: { v: 1, as: 'client', island: state.islandId || null },
     onWorld: onFleetNews,
+    onCrowd: onCrowdMessage,
     onRefused: (m) => state.ui.toast(`The sea would not have us: ${escapeHtml(String(m.why || 'no reason given'))}.`),
     name: playerName(),
     onStatus: () => {},

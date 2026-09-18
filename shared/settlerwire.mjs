@@ -1,4 +1,8 @@
-// Getting a crowd onto a wire.
+// Getting a crowd onto a wire, and off it again.
+//
+// In shared/ because both ends need it: the sea encodes and every browser decodes, and a
+// second copy of a wire format is a second copy that drifts. It is plain arithmetic and
+// obeys shared/'s rule without trying.
 //
 // The naive shape is one row per settler per beat with a string id on it: 274 settlers at
 // 10 Hz is about 123 kB/s per island per viewer, which is not a budget, it is a fire. Three

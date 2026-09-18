@@ -5,7 +5,7 @@
 // notice a stutter on a laptop six months later and blame the graphics.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeCrowd, decodeCrowd, crowdRoster, sliceCount, walkerEvery, GRID, KEYFRAME_S, WALKER_HZ, ANIMS } from '../lib/settlerwire.mjs';
+import { encodeCrowd, decodeCrowd, crowdRoster, sliceCount, walkerEvery, GRID, KEYFRAME_S, WALKER_HZ, ANIMS } from '../shared/settlerwire.mjs';
 import { createWalk, MAX_STROLL } from '../shared/settlerwalk.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
