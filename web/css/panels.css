@@ -222,6 +222,20 @@
   pointer-events: none;
 }
 
+/* A picture or a camera fills the board edge to edge, and is not laid out wide and folded
+   down the way a page above is: there is no layout inside a picture to get wrong. Contained
+   rather than cropped, so a four-by-three camera on a wide hoarding keeps its proportions
+   and the board goes dark either side of it instead of losing the ends of the view. */
+.face-billboard .bb-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #14100c;
+  pointer-events: none;
+}
+
 /* Until the site has painted. Over the frame rather than under it, so an empty board
    says whose it is instead of standing there white. */
 .face-billboard .bb-wait {

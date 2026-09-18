@@ -153,41 +153,116 @@ function tally({ prop, send }) {
 // read by both, so the menu can never accept something the board then quietly replaces.
 export const BILLBOARD = 'https://www.boikon.nl/';
 
-// A board carries the site it was put up with: `--note https://...` on the prop. Only a
-// whole https URL, because a bare host or a typo would frame nothing and there would be
-// no error to say so. Anything else falls back to the address above, so a mistake shows
-// the wrong billboard rather than a broken one. Only the keeper can put a prop up -
-// /api/build is not a public path - so this is the keeper's own choice, not a visitor's.
+// A board carries the site it was put up with: `--note https://...` on the prop. A whole
+// URL, http or https. A bare host or a typo would frame nothing and there would be no
+// error to say so, so those are refused; and so is anything that is not one of those two
+// schemes, because javascript: and data: are not addresses but a way to run something on
+// this page. http is allowed because the things worth hanging on a board on a private
+// island sit on the same network as the island - a camera in the hall, a machine on the
+// line, a printer's own status page - and none of them speak https.
+//
+// Anything refused falls back to the address above, so a mistake shows the wrong
+// billboard rather than a broken one. Only the keeper can put a prop up - /api/build is
+// not a public path - so this is the keeper's own choice, not a visitor's.
 export function siteUrl(note) {
   try {
     const u = new URL(String(note || '').trim());
-    return u.protocol === 'https:' ? u : null;
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u : null;
   } catch { return null; }
 }
+
+// Whether an address is a picture rather than a page: a still, or the endless run of
+// JPEGs a camera answers with. A picture does not belong in the frame. A frame is laid
+// out at desktop width and folded down to the board - see web/css/panels.css - which is
+// what a page needs, and what leaves a camera as a stamp in the corner of the board.
+//
+// The address is all there is to go on, because what is really there is only known once
+// it arrives. So this is a guess, and a guess of a picture that turns out to be a page
+// falls through to the frame below.
+const PICTURE = /\.(jpe?g|png|gif|webp|avif|bmp|svg|mjpe?g)($|[?#])|mjpe?g|snapshot|(video|image|cam|jpg)\.cgi/i;
 
 function billboard({ prop }) {
   const url = siteUrl(prop.note) || new URL(BILLBOARD);
   const el = document.createElement('div');
   el.className = 'face face-billboard';
   el.innerHTML = `
-    <iframe class="bb-glass" title="${esc(prop.label || url.host)}" tabindex="-1"
-            sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
     <div class="bb-wait">${esc(url.host)}</div>
     <div class="bb-strip">${esc(url.host)}</div>`;
-  const frame = el.querySelector('iframe');
-  // Fires for a cross-origin page too, which is as much as we are ever told about it.
-  frame.addEventListener('load', () => el.classList.add('lit'));
+  const wait = el.querySelector('.bb-wait');
+
+  let shown = null;        // the one element the address is shown in
+  let lit = false;         // whether anything has ever arrived in it
+  let fellBack = false;    // whether the guess above has already been given up on
+  let releasing = false;   // whether we are the ones ending the stream
+
+  // Hangs the address in an <img> or an <iframe>, over the strip and under the waiting
+  // host. Replaced rather than reused, because an element that has been pointed at one
+  // kind of thing does not become the other.
+  function put(picture) {
+    if (shown) shown.remove();
+    shown = document.createElement(picture ? 'img' : 'iframe');
+    shown.className = picture ? 'bb-shot' : 'bb-glass';
+    // Fires for a cross-origin page too, which is as much as we are ever told about one.
+    shown.addEventListener('load', () => { lit = true; el.classList.add('lit'); });
+    if (picture) {
+      shown.alt = '';
+      // An <img> is the one thing on this board that says when it failed. Before anything
+      // has arrived, that means the guess was wrong and the frame gets its turn. After
+      // something has, it means a camera that was working has stopped, and a board that
+      // empties itself is the honest picture of that.
+      shown.addEventListener('error', () => {
+        if (releasing) { releasing = false; return; }
+        el.classList.remove('lit');
+        if (lit || fellBack) return;
+        fellBack = true;
+        put(false);
+        shown.src = url.href;
+      });
+    } else {
+      shown.title = prop.label || url.host;
+      shown.tabIndex = -1;
+      shown.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      shown.setAttribute('referrerpolicy', 'no-referrer');
+    }
+    el.insertBefore(shown, wait);
+  }
 
   let asked = false;
+  let seenAt = 0;
+
+  // A stream has no end. Left alone, a board behind a hill would go on pulling twenty-five
+  // frames a second off somebody's camera for as long as the island is open, with nobody in
+  // front of it. update() runs only while the board is in view, so this watches for the
+  // moment it stops running and lets the stream go; the next look asks for it again. Only a
+  // picture is ever let go - a framed page costs nothing once it has painted.
+  const idle = setInterval(() => {
+    if (!asked || !(shown instanceof HTMLImageElement)) return;
+    if (performance.now() - seenAt < 4000) return;
+    asked = false;
+    lit = false;
+    releasing = true;
+    shown.src = '';            // what actually ends a stream; detaching it need not
+    shown.remove();
+    shown = null;
+    el.classList.remove('lit');
+  }, 2000);
+
   return {
     el,
     update() {
       // update() only runs while the board is in view, so an island that opens with a
       // billboard behind a hill fetches nothing off somebody else's server until a
       // person has walked round and looked at it.
+      seenAt = performance.now();
       if (asked) return;
       asked = true;
-      frame.src = url.href;
+      releasing = false;
+      if (!shown) put(!fellBack && PICTURE.test(url.pathname + url.search));
+      shown.src = url.href;
+    },
+    dispose() {
+      clearInterval(idle);
+      if (shown) shown.src = '';
     },
   };
 }

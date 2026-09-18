@@ -97,8 +97,9 @@ export function createBuildMenu(root, { onPick, onDemolish, onClose }) {
           <input class="bd-site" type="url" value="${esc(BILLBOARD)}" spellcheck="false" autocomplete="off">
         </label>
         <button class="btn tiny" data-site="1">Put it in my hand</button>
-        <span class="bd-hint muted">https only. Plenty of sites refuse to be framed and
-        leave the board blank, and there is no way to tell from here which ones.</span>
+        <span class="bd-hint muted">http or https, the whole address. A camera or a picture
+        is shown as itself; plenty of sites refuse to be framed and leave the board blank,
+        and there is no way to tell from here which ones.</span>
       </div>`;
   }
 
