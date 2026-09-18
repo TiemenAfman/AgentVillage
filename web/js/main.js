@@ -1275,7 +1275,7 @@ function freeBerth(theirHalf) {
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
 // them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null, origin = null }) {
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
   const terrain = makeTerrain(seed, { size: gridSize, polders });
   if (terrainHash && terrain.hash !== terrainHash) {
@@ -1301,7 +1301,8 @@ function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name
   // Hung on the region rather than passed around, because everything that later wants to
   // draw something of theirs - buildings now, paths and piers next - finds the region first.
   region.village = village;
-  console.info(`island: ${name || id} joined at [${at}]`);
+  region.rev = rev;
+  console.info(`island: ${name || id} joined at [${at}] (rev ${rev})`);
   return region;
 }
 
@@ -1588,9 +1589,28 @@ function syncHorizon() {
   return arrived;
 }
 
-async function syncFleet(rows) {
+// One at a time, and never lost.
+//
+// syncFleet awaits a fetch per island, and the sea says "island joined" once per island -
+// so two arriving together started two runs that interleaved. The second saw a region the
+// first had just dropped and was about to rebuild, decided it was gone, and the sweep took
+// it out. It showed as one of two islands quietly refusing to redraw after it changed,
+// which is not a symptom anybody would trace back to a race.
+let syncing = null;
+let syncAgain = false;
+function syncFleet(rows) {
+  if (rows) state.fleet = rows;
+  if (syncing) { syncAgain = true; return syncing; }
+  syncing = doSyncFleet().finally(() => {
+    syncing = null;
+    if (syncAgain) { syncAgain = false; syncFleet(); }
+  });
+  return syncing;
+}
+
+async function doSyncFleet() {
   if (!state.terrain) return;
-  const moored = rows || state.fleet || [];
+  const moored = state.fleet || [];
   // Nearest first, so the ones you can actually see get the detail. Our own island is not
   // in the running: we are standing on it. The ordering lives in shared/regions.mjs with
   // the rest of the coordinate contract, and its tiebreak is load-bearing - see there.
@@ -1604,12 +1624,17 @@ async function syncFleet(rows) {
   // anything new is raised.
   for (const region of state.sea.regions()) {
     if (region === state.region || region.id.startsWith('debug-')) continue;
-    if (!nearIds.has(region.id)) state.sea.remove(region.id);
+    if (!nearIds.has(region.id)) dropRegion(region.id);
   }
 
   const arrived = [];
   for (const row of near) {
-    if (state.sea.get(row.id)) continue;
+    const standing = state.sea.get(row.id);
+    // Already here and unchanged: nothing to do. Changed - a house built, a district
+    // founded - and it is fetched again and rebuilt. `rev` is the sea's own counter and
+    // moves on every publish, so this is exactly "their island is not what we drew".
+    if (standing && standing.rev === row.rev) continue;
+    if (standing) dropRegion(row.id);
     let bundle;
     try {
       bundle = await sea(`/island/${encodeURIComponent(row.id)}`).then((r) => r.json());
@@ -1617,6 +1642,7 @@ async function syncFleet(rows) {
     if (!bundle || !bundle.island) continue;
     const region = joinIsland({
       id: row.id,
+      rev: row.rev,
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
@@ -1693,9 +1719,31 @@ function onCrowdMessage(m) {
   g.crowd.apply(rows, performance.now());
 }
 
+// Take an island's ground back out of the world: its region, its buildings, its crowd. The
+// sweep below and the rebuild above both need it, and doing it in two places is how one of
+// them ends up leaking a hundred meshes.
+function dropRegion(id) {
+  state.sea.remove(id);
+  for (let i = state.guests.length - 1; i >= 0; i--) {
+    if (state.guests[i].region.id !== id) continue;
+    const g = state.guests[i];
+    const k = state.pickables.indexOf(g.ground);
+    if (k >= 0) state.pickables.splice(k, 1);
+    if (g.crowd) g.crowd.dispose();
+    g.dispose();
+    state.guests.splice(i, 1);
+  }
+}
+
 // The sea talking about its fleet: a welcome carrying the whole list, or one island
 // arriving, going quiet or going home.
-function onFleetNews(world, one) {
+function onFleetNews(world, one, clock) {
+  // The world's own clock, from the welcome. Kept as a skew rather than as a time, so it
+  // survives this tab being asleep for an hour without anybody having to re-ask.
+  if (clock && Number.isFinite(clock.now)) {
+    state.seaSkewMs = clock.now - Date.now();
+    if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
+  }
   if (world) { state.fleet = world.islands || []; syncFleet(state.fleet); return; }
   if (!one) return;
   const { t, a, ...row } = one;
@@ -2017,13 +2065,26 @@ function yardNudge(spec, built) {
 }
 function groundAt(x, z) { return state.terrain.worldHeight(x, z); }
 
+// What time it is in the world, as opposed to on this computer.
+//
+// The sea's clock is the island's, and the two numbers it sends are both needed: `now`
+// settles which moment it is and `tz` settles whose afternoon that is. An epoch on its own
+// is not a time of day, and getHours() would give a player in another time zone a
+// different sky over the same water - each of them certain the other was wrong.
+//
+// With no sea to ask, both fall back to this machine, which is exactly what the island did
+// before there were any.
 function timeNow() {
-  return state.chronicle.t == null ? Date.now() : state.chronicle.t;
+  if (state.chronicle.t != null) return state.chronicle.t;
+  return Date.now() + (state.seaSkewMs || 0);
 }
 function currentHour() {
   if (state.hourOverride != null) return state.hourOverride;
   const d = new Date(timeNow());
-  return d.getHours() + d.getMinutes() / 60;
+  const tz = state.seaTz == null ? -d.getTimezoneOffset() : state.seaTz;
+  // UTC plus the world's own offset, rather than this browser's idea of local time.
+  const mins = d.getUTCHours() * 60 + d.getUTCMinutes() + tz;
+  return (((mins % 1440) + 1440) % 1440) / 60;
 }
 
 // Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from

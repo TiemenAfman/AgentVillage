@@ -334,6 +334,11 @@ async function rescan(reason) {
   await scanning;
   scanning = null;
   if (pending) { pending = false; return rescan('coalesced'); }
+  // And tell the world, if the island actually changed. publish() compares what it last
+  // sent, so a scan that found nothing costs nothing - and a scan that found a house puts
+  // it on everybody else's horizon within the minute rather than whenever they next
+  // reload. This is the whole of "live, also between scans" for the shape of an island.
+  if (seaClient) seaClient.publish().catch(() => {});
   return null;
 }
 

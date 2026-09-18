@@ -84,8 +84,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         case 'refused': onRefused(m); break;
         case 'welcome':
           // The fleet, when the far end is a sea. An island on its own says nothing here
-          // and the page draws what it always drew.
-          if (m.world) onWorld(m.world);
+          // and the page draws what it always drew. The clock rides along: which moment it
+          // is and whose afternoon that is, so two players in different time zones do not
+          // see two different skies over the same water.
+          if (m.world) onWorld(m.world, null, { now: m.now, tz: m.tz });
           selfId = m.id;
           peers.setSelf(m.id);
           for (const p of m.players || []) peers.join(p);
