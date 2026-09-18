@@ -230,7 +230,11 @@ line([10, 24, 50, 100], (rooms, x, z) => {
 
 // a house on stilts, the sheds, and the ornaments in a row of their own
 line(['harbour'], (_, x, z) => {
-  place({ id: 'h:harbour', kind: 'house', tier: 'cottage', style: 'sonnet', harbour: true, ornaments: [] }, x, z, 'Quay house', 'arrives by boat');
+  // With a plot on it, because the landing outside its door is measured from one: a quay
+  // house drawn without a plot comes out as the box that floated beside the lane for
+  // several releases, and this page is where that would have been seen.
+  place({ id: 'h:harbour', kind: 'house', tier: 'cottage', style: 'sonnet', harbour: true, ornaments: [],
+    plot: { gx: 0, gz: 0, w: 3, d: 3, rot: 2 } }, x, z, 'Quay house', 'arrives by boat');
 }, 'Quay');
 
 line(SHEDS, (shedType, x, z) => {

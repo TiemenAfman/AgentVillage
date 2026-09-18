@@ -16,7 +16,7 @@ import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, HARBOUR_FLOOR,
-  HARBOUR_PIN, PALETTE, TIER_INDEX,
+  HARBOUR_PIN, quayPorchCells, quayPorchReach, PORCH_DIR, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createBoating } from './boating.js';
@@ -1896,7 +1896,12 @@ function makeRecord(spec) {
   // wide the shed came out - see yardNudge. `modest` goes in with it: a dormer and a
   // turret are luxuries drawn three hundred times over, and buildings.js leaves them off
   // when the card cannot afford them.
-  const built = buildBuilding(spec, { modest });
+  // A quay house's landing is measured against the lanes it has to meet, and this is the
+  // only place that has both: the spec from the village and the bridges it arrived with.
+  const built = buildBuilding(spec, {
+    modest,
+    ...(spec.harbour ? { porchReach: quayPorchReach(spec.plot, state.village && state.village.bridges) } : {}),
+  });
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
@@ -2127,17 +2132,36 @@ const bridgeGroup = new THREE.Group();
 const bridgeMeshes = new Map();
 let decks = new Map();
 
+// Where a quay house's landing comes alongside a lane, so the lane's railing can leave a
+// gateway there instead of fencing off the front door. One point per harbour house, in
+// world coordinates, worked out from the same reach the landing itself is built to.
+function quayGates(village) {
+  const t = state.terrain;
+  if (!t) return [];
+  const out = [];
+  for (const b of village.buildings || []) {
+    if (!b.harbour || !b.plot) continue;
+    const reach = quayPorchReach(b.plot, village.bridges);
+    if (!(reach > 0)) continue;
+    const [dx, dz] = PORCH_DIR[(b.plot.rot || 0) % 4];
+    const gx = b.plot.gx + Math.floor((b.plot.w - 1) / 2), gz = b.plot.gz + Math.floor((b.plot.d - 1) / 2);
+    out.push(t.cellWorld(gx + dx * reach, gz + dz * reach));
+  }
+  return out;
+}
+
 function syncBridges(village) {
   if (!bridgeGroup.parent) scene.add(bridgeGroup);
   const terrain = state.terrain;
   const list = village.bridges || [];
+  const gates = quayGates(village);
   decks = new Map();
   for (const [i, b] of list.entries()) {
     const key = `${b.id}#${i}`;
     // The flag has to reach both calls or they disagree: bridgeDeckHeights is the floor
     // a settler walks on and buildBridgeGeometry is the planks it sees, and a quay lane
     // that arches in one and lies flat in the other is a deck you walk through.
-    const opts = { quay: !!b.quay };
+    const opts = { quay: !!b.quay, gates: b.quay ? gates : [] };
     for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis, opts)) {
       decks.set(gx + gz * terrain.size, y);
     }
@@ -2178,6 +2202,18 @@ function handOutDecks() {
   // region carries a stride and this island's has to be added on. It is zero today, because
   // home is the first region in the sea; writing it out anyway is what stops a second
   // island's bridge from appearing as a deck in the sky over ours.
+  // The quay's landings. A harbour house stands in the middle cell of its plot while the
+  // lane runs along the outside of it, so without these the last stride to a front door is
+  // over open water: the planks are drawn by quayPorch and this is what makes them floor.
+  // Same height as everything else on the quay, because that is the whole point of it.
+  if (state.terrain) {
+    for (const rec of state.byId.values()) {
+      if (!rec.spec || !rec.spec.harbour) continue;
+      for (const [gx, gz] of quayPorchCells(rec.spec.plot)) {
+        flat.set(gx + gz * state.terrain.size, QUAY_DECK);
+      }
+    }
+  }
   const base = state.region ? state.region.levelBase : 0;
   // Our own quay, for the settlers. They walk this island and no other, so they take the
   // plain cell key - and they need the planks for the same reason you do: without them a

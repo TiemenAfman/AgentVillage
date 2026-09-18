@@ -1665,7 +1665,7 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower']);
 function wantsPorch(spec) {
-  if (spec.harbour) return false;                 // it stands on its own stilts, over water
+  if (spec.harbour) return false;                 // it gets planks instead - see quayPorch
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
   return true;
 }
@@ -1775,6 +1775,52 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   });
 }
 
+// The quay's own porch, and it is plank rather than stone for the reason the stone one is
+// stone: a step is what the ground under a door does, and under this door there is no
+// ground. So it is the jetty carried on to the house - same boards, same height, same piles
+// - and what it fixes is that a quay house had no way in at all. It stands where the stone
+// porch would go in buildBuilding, after the footprint is measured, because it is a floor
+// you walk onto and not a wall you walk into.
+//
+// It does not lift the building the way porch() does. A quay house's floor is pinned to
+// QUAY_DECK by main.js so the lanes, the pier and the doorsteps come out on one plane;
+// raising it by PORCH_RISE here would put every quay house a step above its own street.
+// How wide a quay house's floor is. A hand wider than the body standing on it, and that is
+// not decoration: the body's skirt is 1.0 across, so a floor of exactly 1.0 would put two
+// faces on one plane all the way round and leave the depth buffer to pick between planks
+// and masonry - which it does differently from one camera angle to the next.
+export const HARBOUR_SLAB = 1.06;     // the least it may be; a wider skirt widens it
+const PORCH_PLANK = 0.08;     // the boards, as thick as the jetty's own
+export const PORCH_WIDE = 0.86;   // a hand narrower than the house, so the wall still reads
+const PORCH_RAIL = 0.34;      // and a rail you could hold, at the height the jetty uses
+function quayPorch(parts, spec, deck, reach, span = HARBOUR_SLAB) {
+  if (!(reach > 0)) return;
+  // The landing starts where the house's own floor stops: the two meet edge to edge rather
+  // than overlapping, because two plank surfaces on one plane is the one thing the depth
+  // buffer cannot be asked to decide.
+  const z0 = span / 2, z1 = reach, len = z1 - z0;
+  if (len <= 0.05) return;
+  const zMid = (z0 + z1) / 2;
+  const half = PORCH_WIDE / 2;
+  group('quay-porch', () => {
+    parts.push(box(PORCH_WIDE, PORCH_PLANK, len, C.plank, { y: deck - PORCH_PLANK, z: zMid }));
+    // Piles at the outer corners only: the inner end is carried by the house's own four.
+    for (const sx of [-1, 1]) {
+      parts.push(cylinder(0.05, 0.055, deck + 0.7, 6, C.darkWood, { x: sx * (half - 0.06), y: -0.7, z: z1 - 0.06 }));
+    }
+    // A rail down each side and nothing across either end: the far end is where the lane
+    // arrives and the near end is the doorway, and a rail across either is a fence in front
+    // of a door. Three posts a side reads as a rail from the air and costs twelve triangles.
+    for (const sx of [-1, 1]) {
+      const x = sx * (half - 0.03);
+      for (let i = 0; i <= 2; i++) {
+        parts.push(cylinder(0.028, 0.028, PORCH_RAIL, 5, C.darkWood, { x, y: deck, z: z0 + (len * i) / 2 }));
+      }
+      parts.push(box(0.05, 0.05, len, C.wood, { x, y: deck + PORCH_RAIL - 0.05, z: zMid }));
+    }
+  });
+}
+
 // A rounded rectangle out of the primitives this file already has: two boxes crossed and
 // a post in each corner. The cross piece and the posts stop a hair short of the top,
 // because two faces on one plane is the single thing the depth buffer cannot be asked to
@@ -1795,7 +1841,7 @@ export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
   const parts = [];
-  let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [];
+  let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [], harbourSpan = HARBOUR_SLAB;
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
@@ -1805,14 +1851,36 @@ export function buildBuilding(spec, ctx = {}) {
     const r = shed(parts, spec, pal);
     anchors = r.anchors; height = r.height; w = 0.55;
   } else if (spec.harbour) {
-    // a house on stilts over the shoreline
-    const deck = 0.62;
+    // a house on stilts over the shoreline. The floor height is HARBOUR_FLOOR rather than a
+    // number of its own: main.js pins the house by exactly this, so the floor, the landing
+    // outside it and the lane beyond all come out on QUAY_DECK.
+    const deck = HARBOUR_FLOOR;
     for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
       parts.push(cylinder(0.05, 0.055, deck + 0.7, 6, C.darkWood, { x, y: -0.7, z }));
     }
-    parts.push(box(1.0, 0.08, 1.0, C.plank, { y: deck - 0.08 }));
     const inner = [];
     const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
+    // The floor, and it is as thick as whatever the body reaches below its own ground line.
+    // A dwelling is modelled with a skirt under it - the stone course that keeps a gap from
+    // opening on the downhill side - and on land that skirt is buried. Over water there is
+    // nothing to bury it in: measured on the hut, 0.30 of masonry hung under every house on
+    // the quay, which from the sea read as a stone block slung beneath a house on stilts.
+    // So the deck is thickened to exactly cover it, the way ground would, and the base
+    // course comes out proud of the planks by the same hair it stands proud of a lawn.
+    let sink = 0, out = 0;
+    for (const g of inner) {
+      g.computeBoundingBox();
+      const bb = g.boundingBox;
+      if (bb.min.y >= 0) continue;                       // nothing of it is under the floor
+      sink = Math.min(sink, bb.min.y);
+      out = Math.max(out, -bb.min.x, bb.max.x, -bb.min.z, bb.max.z);
+    }
+    // Wide enough to cover what it is covering, rather than a number that happened to fit
+    // the hut: a cottage's skirt is 1.12 across and a floor of 1.06 left a finger of masonry
+    // showing all the way round. The hair over is what keeps the two out of one plane.
+    const slab = Math.max(0.08, -sink);
+    harbourSpan = Math.max(HARBOUR_SLAB, out * 2 + 0.06);
+    parts.push(box(harbourSpan, slab, harbourSpan, C.plank, { y: deck - slab }));
     for (const g of inner) parts.push(lift(g, deck));
     parts.push(cylinder(0.05, 0.05, 0.36, 6, C.darkWood, { x: 0.44, y: deck, z: 0.44 }));
     parts.push(box(0.1, 0.12, 0.1, 0xffb347, { x: 0.44, y: deck + 0.36, z: 0.44, emissive: 1 }));
@@ -1849,7 +1917,13 @@ export function buildBuilding(spec, ctx = {}) {
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
   const wallRects = footprintOf(parts, WALK_CLEARANCE / s);
-  if (wantsPorch(spec)) {
+  if (spec.harbour) {
+    // The quay gets planks instead of a step, and keeps its height: see quayPorch. The reach
+    // is handed in by whoever knows where the lanes are - main.js does, from the village it
+    // is drawing - and falls back to the edge of the plot for a caller that does not.
+    quayPorch(parts, spec, HARBOUR_FLOOR,
+      ctx.porchReach != null ? ctx.porchReach : quayPorchReach(spec.plot), harbourSpan);
+  } else if (wantsPorch(spec)) {
     porch(parts, anchors, animated, porchOverhang(spec));
     height += PORCH_RISE;
   }
@@ -2010,6 +2084,99 @@ export const QUAY_DECK = SEA_LEVEL + 0.44;
 // quay by the same arithmetic instead of a second copy of the constant.
 export const HARBOUR_FLOOR = 0.62;
 export const HARBOUR_PIN = QUAY_DECK - HARBOUR_FLOOR;
+
+// A quay house's landing: the planks between its own floor and the lane, and the cells they
+// cover. One rule with two readers, which is why it is written here rather than in either -
+// buildings.js lays the boards and main.js makes them floor, and a landing you can see but
+// not walk on is worse than none.
+//
+// The house is built in the middle cell of a three-by-three plot while the lane runs along
+// the outside of it, so a quay house stood 1.06 of open water from its own front door: from
+// above, sixteen boxes floating beside a jetty that passed them by. The landing reaches to
+// the edge of the plot, where the lane's own planks begin, because that is the one distance
+// that is true whatever the lane did - the layout routes a front path from `outsideDoor`,
+// which is the cell just beyond that edge.
+//
+// The direction is the layout's, shared with scan.mjs's doorOf and settlers.js's DOOR_DIR:
+// rot 0 faces -z, 1 faces +x, 2 faces +z, 3 faces -x. In the model the front is +z and the
+// island turns it, so the planks are laid along +z here and come out facing the door.
+export const PORCH_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+export const porchReach = (plot) => (!plot ? 0 : ((plot.rot || 0) % 2 ? plot.w : plot.d) / 2);
+// How far that landing may reach: to the near edge of the lane outside the door, and not a
+// plank further. Measured rather than assumed, because the lane lies two ways round and the
+// two are 0.66 apart. Where it crosses the front, its boards stop DECK_HALF from the cell's
+// middle and the landing has 1.56 to cover; where it runs at the door instead, the deck's
+// own end lip already reaches 0.90 towards the house and a landing built for the other case
+// would lie along the lane on exactly its plane - which is the one thing the depth buffer
+// cannot be asked to decide, and it shows up as planks that flicker as the camera moves.
+//
+// With no lanes to measure - a visiting island draws its houses but not its roads - it
+// falls back to the edge of the plot, which is where the lane would have been.
+export function quayPorchReach(plot, bridges = null) {
+  const limit = porchReach(plot);
+  if (limit < 1) return 0;
+  if (!bridges || !bridges.length) return limit;
+  const [dx, dz] = PORCH_DIR[(plot.rot || 0) % 4];
+  const cx = plot.gx + Math.floor((plot.w - 1) / 2), cz = plot.gz + Math.floor((plot.d - 1) / 2);
+  const half = PORCH_WIDE / 2;
+  let best = Infinity;
+  for (const b of bridges) {
+    if (!b.quay) continue;
+    for (const r of deckSquares(b)) {
+      // Only a deck that is in the way of the landing's whole width: one that misses it is a
+      // lane somewhere else on the quay. And only ahead of the house - a deck behind it, or
+      // one the house itself stands over, is not something the landing runs into.
+      const t = dx
+        ? (cz + half <= r.z0 || cz - half >= r.z1 ? null : (dx > 0 ? r.x0 - cx : cx - r.x1))
+        : (cx + half <= r.x0 || cx - half >= r.x1 ? null : (dz > 0 ? r.z0 - cz : cz - r.z1));
+      if (t != null && t > 0.45 && t < best) best = t;
+    }
+  }
+  // Nothing in the way: the edge of the plot, which is where the lane would have been. And
+  // never past the middle of the door cell, which is as far as this house's own ground goes.
+  if (best === Infinity) return limit;
+  return best < 0.5 ? 0 : Math.min(best, limit + 0.5);
+}
+
+// A deck's footprint, cell by cell. One rectangle for the whole run would do if every run
+// were straight, and they are not: drownRoads splits a path at the cells somebody else's
+// deck already carries, which leaves runs that turn a corner - [[38,12],[38,13],[38,14],
+// [37,14]] is on the island as it stands. Taking the run's `axis` for all four puts that
+// last cell's boards a cell and a half from where they are drawn, and a landing measured
+// against it stops in open water or lies across the lane on its own plane.
+//
+// So each cell is squared off along its own piece of the run: DECK_HALF to either side,
+// half a cell along, and DECK_LIP more at the two ends, which is exactly what bridgeStops
+// lays. At a corner the two squares overlap, which is also what the boards do.
+function deckSquares(b) {
+  const cells = (b && b.cells) || [];
+  const out = [];
+  for (let i = 0; i < cells.length; i++) {
+    const prev = cells[i - 1] || cells[i], next = cells[i + 1] || cells[i];
+    // The way the run goes here. A single cell has no neighbours to ask, so it falls back
+    // to the axis the record carries.
+    let k;
+    if (next[0] !== prev[0]) k = 0;
+    else if (next[1] !== prev[1]) k = 1;
+    else k = b.axis === 'x' ? 0 : 1;
+    const end = (i === 0 || i === cells.length - 1) ? DECK_LIP : 0;
+    const along = 0.5 + end, across = DECK_HALF;
+    const [ax, az] = k === 0 ? [along, across] : [across, along];
+    out.push({ x0: cells[i][0] - ax, x1: cells[i][0] + ax, z0: cells[i][1] - az, z1: cells[i][1] + az });
+  }
+  return out;
+}
+
+export function quayPorchCells(plot) {
+  if (!plot) return [];
+  const reach = porchReach(plot);
+  if (reach < 1) return [];                      // a one-cell lot has no room for a landing
+  const [dx, dz] = PORCH_DIR[(plot.rot || 0) % 4];
+  const gx = plot.gx + Math.floor((plot.w - 1) / 2), gz = plot.gz + Math.floor((plot.d - 1) / 2);
+  const out = [];
+  for (let i = 0; i < Math.round(reach - 0.5) + 1; i++) out.push([gx + dx * i, gz + dz * i]);
+  return out;
+}
 const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
 const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
 const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway
@@ -2117,6 +2284,11 @@ export const DECK_MIN = SEA_LEVEL + WAVE + FREEBOARD;
 // How far the crown of the deck rides over its two ends. A wooden footbridge humps, and
 // a flat plank laid from bank to bank reads as a jetty that happens to have two ends.
 const BRIDGE_ARCH = 0.34;
+// Half the width of a deck, across its run. buildBridgeGeometry lays its boards to this and
+// quayPorchReach measures against it, so it is a constant rather than a number in two
+// places: a landing that thinks the lane is wider than it is stops short of it in open
+// water, and one that thinks it narrower lies across it on the same plane.
+const DECK_HALF = 0.44;
 
 // Where a deck runs and how high it is along it. `cells` is the crossing the layout
 // recorded, in order; the deck covers those cells and reaches a little way onto the bank
@@ -2235,12 +2407,20 @@ export function buildBridgeGeometry(cells, terrain, from, axis, opts = {}) {
   stops.push(world[world.length - 1]);
   const ys = stops.map(deckYAt);
   const at = stops.map(([x, z]) => [x - from[0], z - from[1]]);
-  const W = 0.44;                                    // half the deck width
+  const W = DECK_HALF;                                // half the deck width
   const parts = [];
   const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
   // The boards are laid across the run, so the grain lies across it too - which is the
   // sheet turned a quarter when the crossing runs along x.
   const deckSheet = k === 0 ? 'plankZ' : 'plank';
+  // Where a landing comes alongside, the rail has to stop. A quay lane runs past the front
+  // doors rather than between two banks, and a post-and-rail down its whole length is a
+  // fence across every doorway on the quay - which is the thing this file already refuses
+  // to do with a porch step. `gates` are those meetings in world coordinates; main.js works
+  // them out, because it is the one that knows both the houses and the lanes.
+  const gates = (opts.gates || []).map((g) => [g[0] - from[0], g[1] - from[1]]);
+  const GATE_R = 0.44;            // half a landing, so the opening is exactly its mouth
+  const barred = (x, z) => gates.some((g) => Math.abs(g[0] - x) < GATE_R && Math.abs(g[1] - z) < GATE_R);
 
   for (let i = 0; i < at.length - 1; i++) {
     const p = at[i], q = at[i + 1];
@@ -2249,6 +2429,7 @@ export function buildBridgeGeometry(cells, terrain, from, axis, opts = {}) {
     parts.push(quad([[pl[0], yp, pl[1]], [pr[0], yp, pr[1]], [qr[0], yq, qr[1]], [ql[0], yq, ql[1]]], C.plank, { sheet: deckSheet }));
     for (const s of [-1, 1]) {
       const e0 = across(p, s * W), e1 = across(q, s * W);
+      if (barred((e0[0] + e1[0]) / 2, (e0[1] + e1[1]) / 2)) continue;
       // A kerb standing on the edge of the planking, and the beam over it.
       parts.push(quad([
         [e0[0], yp, e0[1]], [e1[0], yq, e1[1]], [e1[0], yq + 0.075, e1[1]], [e0[0], yp + 0.075, e0[1]],
@@ -2266,8 +2447,12 @@ export function buildBridgeGeometry(cells, terrain, from, axis, opts = {}) {
     const inWater = i > 0 && i < at.length - 1;
     for (const s of [-1, 1]) {
       const c = across(at[i], s * (W - 0.03));
-      parts.push(box(0.075, BRIDGE_RAIL, 0.075, C.darkWood, { x: c[0], y, z: c[1] }));
-      parts.push(sphere(0.052, C.wood, { x: c[0], y: y + BRIDGE_RAIL + 0.02, z: c[1] }));
+      // The trestle underneath stays wherever the rail above it goes: it is what holds the
+      // planking up, and a gateway is a hole in the railing, not in the deck.
+      if (!barred(c[0], c[1])) {
+        parts.push(box(0.075, BRIDGE_RAIL, 0.075, C.darkWood, { x: c[0], y, z: c[1] }));
+        parts.push(sphere(0.052, C.wood, { x: c[0], y: y + BRIDGE_RAIL + 0.02, z: c[1] }));
+      }
       if (!inWater) continue;
       const t = across(at[i], s * (W - 0.09));
       parts.push(cylinder(0.05, 0.05, y + 0.8, 6, C.darkWood, { x: t[0], y: -0.8, z: t[1], sheet: deckSheet }));

@@ -44,6 +44,29 @@ planks it sees, which are only ever right together — and `bridge()` in
 `lib/islandbundle.mjs` names it in the whitelist, or a visitor's quay arches while ours lies
 flat.
 
+**The landings.** A quay house is built in the middle cell of a three-by-three plot while
+the lane runs along the outside of it, so for several releases there was 1.06 of open water
+between a front door and the planks it was supposed to open onto: from the air, boxes
+floating beside a jetty that passed them by. `quayPorch` lays the boards that cover it -
+plank rather than the stone step every other house gets, because a step is what the ground
+under a door does and under this door there is no ground.
+
+Two things make it a floor rather than a picture of one. `quayPorchCells` hands its cells to
+`handOutDecks`, which is the map the settlers and walk mode read their footing from. And
+`quayPorchReach` measures how far it may go: to the near edge of the lane outside the door
+and not a plank further. That is measured rather than assumed, because a lane lies two ways
+round and the two are 0.66 apart - across the front its boards stop `DECK_HALF` from the
+middle of the door cell, and running at the door its own end lip already reaches most of
+the way. A landing cut for the wrong one either stops in open water or lies along the lane
+on exactly its plane, which is the one thing the depth buffer cannot be asked to decide.
+Measured per cell, not per run: `drownRoads` leaves runs that turn a corner, and taking the
+record's `axis` for all of them puts a deck a cell and a half from where it is drawn.
+
+Where a landing arrives, the lane's railing opens. `buildBridgeGeometry` takes the meeting
+points as `gates` and leaves out the kerb, the beam and the posts across them - a
+post-and-rail down the whole length of a quay lane is a fence in front of every door on the
+quay. The trestles underneath stay: a gateway is a hole in the railing, not in the deck.
+
 **The houses.** `makeRecord` pins a harbour house over water to `HARBOUR_PIN`, which is
 `QUAY_DECK` less `HARBOUR_FLOOR` (0.62, the height its floor stands over its own origin and
 the number `main.js` already stands a settler on a harbour house with). The two constants
@@ -51,7 +74,15 @@ live beside `QUAY_DECK` in `buildings.js` so they cannot drift, and `web/js/gues
 reaches for the same ones rather than keeping a copy.
 
 It used to pin to the waterline instead, which put the floor at 0.31 against a walkway at
-0.44: a step up onto every doorstep on the quay. And the test that decides *whether* to pin
+0.44: a step up onto every doorstep on the quay.
+
+Its floor is as thick and as wide as whatever the body reaches below its own ground line. A
+dwelling is modelled with a skirt under it - the course that stops a gap opening on the
+downhill side - and on land that skirt is buried. Over water there is nothing to bury it in:
+0.30 of masonry hung under every house on the quay, which from the sea read as a stone block
+slung beneath a house that is supposed to be standing on posts. So the floor covers it the
+way ground would, and it is measured off the body rather than set to a number - the number
+that fitted the hut left a finger of a cottage's 1.12 skirt showing all the way round. And the test that decides *whether* to pin
 is the sea, not the beach line — a house whose ground is dry sand at 0.27 was being lowered
 into ground it has nothing to sink into, with its stone base buried, while The Quay, whose
 ground runs from 1.65 to 1.99, had nineteen houses pinned at 0.05 and read from the air as
@@ -112,9 +143,9 @@ between this design and an island that reorganises itself nightly.
 node --test "tests/*.test.mjs"
 ```
 
-182 at the time of writing. `tests/quay-deck.test.mjs` measures the three heights against
-each other on a terrain with a basin dredged into it, so it holds on a checkout with no
-sessions on disk; the two in `tests/layout-measure.test.mjs` — *the quay stands in water,
+187 at the time of writing. `tests/quay-deck.test.mjs` measures the heights against each
+other on a terrain with a basin dredged into it, and the landing against a lane in all four
+rotations and both orientations, so it holds on a checkout with no sessions on disk; the two in `tests/layout-measure.test.mjs` — *the quay stands in water,
 and its water is the sea*, and *a lane over the basin is a deck, not a stripe on the
 seabed* — measure the real island and return early when there is no Cowork work to earn a
 quay district.
