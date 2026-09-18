@@ -64,8 +64,12 @@ function labelTexture(text) {
 // no name; a tavern registers itself under its own, and a peer moves between them as
 // their pose says so. One peer list either way: the label, the geometry and the join
 // bookkeeping are the same wherever somebody happens to be standing.
-export function createPeers({ scene, material, terrain, onCursor = () => {} }) {
-  const places = new Map([[null, { scene, terrain }]]);
+// `ground` is anything that answers `worldHeight(x, z)`: one island's terrain, or the whole
+// archipelago's facade. It is what the outdoors stands on, and once there is more than one
+// island it has to be the archipelago - otherwise a peer walking the island to the east is
+// stood on the height our own coast happens to have at that x and z, which is the sea.
+export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {} }) {
+  const places = new Map([[null, { scene, terrain: ground || terrain }]]);
   // One geometry per style, shared by everyone wearing it. Never disposed while the page
   // lives: handing it to a peer and then throwing it away when that peer leaves is how
   // the next arrival of the same style renders as garbage.
@@ -269,6 +273,9 @@ export function createPeers({ scene, material, terrain, onCursor = () => {} }) {
       // exception: that arc is not something the ground can tell us.
       // The ground of the room they are in, not of the island: indoors that is a flat
       // floor a little over the water line, and the island's terrain knows nothing of it.
+      // Outdoors it is the whole archipelago, which is what finally makes the paragraph
+      // above true rather than merely careful: a peer on the island to the east now stands
+      // on THAT island's ground, and in the channel between them on nothing at all.
       const floor = (places.get(p.room) || {}).terrain;
       const ground = floor ? floor.worldHeight(x, z) : 0;
       const base = airborne ? (a.y + (b.y - a.y) * k) : (ground < 0 ? -0.07 : ground);

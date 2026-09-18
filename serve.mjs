@@ -28,6 +28,8 @@ import { createWsServer } from './lib/ws.mjs';
 import { createRoster } from './lib/players.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
+import { buildBundle, parseBundle } from './lib/islandbundle.mjs';
+import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
 import os from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -200,6 +202,31 @@ function readBody(req, limit = 64 * 1024) {
   });
 }
 
+// The same shape as readBody - and the same promise that the request is destroyed the
+// moment the limit is passed, rather than read to the end and thrown away - with two
+// differences that matter at two megabytes rather than at sixty-four kilobytes.
+//
+// It counts bytes. readBody concatenates chunks onto a string and measures that, so its
+// limit is in UTF-16 units and a body of four-byte characters can be four times the
+// number it was given. Here the ceiling is also a disk ceiling, so it has to be honest.
+//
+// It decodes once, at the end. Appending a Buffer to a string decodes each chunk on its
+// own, and a multi-byte character split across two chunks comes out as U+FFFD - which in
+// a body this size is not hypothetical.
+function readRawBody(req, limit = 2 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let bytes = 0;
+    req.on('data', (c) => {
+      bytes += c.length;
+      if (bytes > limit) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
 // Does this folder carry a project skill by that name? It is what decides whether an
 // agent sent there is told to follow the workflow or to be told it in full.
 //
@@ -314,6 +341,11 @@ const server = http.createServer((req, res) => {
 // open, get the island and each other and nothing else. The reasoning behind the three
 // checks that decide this lives in lib/access.mjs.
 const access = createAccess({ port: PORT, config });
+
+// Where a visitor's own island is parked while they are here. Made at start-up, which is
+// also when it sweeps whatever was left in data/guests/ - see lib/guests.mjs for why a
+// berth is not allowed to survive a restart.
+const guests = createGuests({ log });
 
 // Everyone who opens the page gets a body to walk around in. The upgrade event is a
 // second front door - handle() below never sees it - so the same classification has to
@@ -647,6 +679,84 @@ async function handle(req, res) {
 
   if (p === '/api/neighbours') {
     return json(res, 200, { me: neighbours ? neighbours.me() : null, neighbours: neighbours ? neighbours.list() : [] });
+  }
+
+  // ---- sailing your island over to somebody else's ------------------------------
+  // Three routes, and the split between them is the access story.
+  //
+  // This first one is the guest's own machine packing its own island up, so it is
+  // islander-only: it is not on PUBLIC_API, which is deny-by-default, so nobody but this
+  // computer can ask this island to hand itself over in one piece. The redaction still
+  // runs inside buildBundle - it is not this route's job to be the only thing between a
+  // session title and the network.
+  if (p === '/api/visit-bundle') {
+    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
+    const village = readJson(VILLAGE_FILE, null);
+    if (!village) return json(res, 503, { error: 'this island has not been scanned yet' });
+    try {
+      return json(res, 200, buildBundle({
+        config,
+        village,
+        props: listProps(),
+        crops: cropsView(),
+        // The live beacon id, so the island in somebody's harbour and the island on their
+        // horizon are recognisably the same one. Without discovery there is no beacon and
+        // buildBundle works it out from the config.
+        id: neighbours ? neighbours.me() : null,
+        keeper: islanderName,
+      }));
+    } catch (e) {
+      return json(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  // And this one is the host taking delivery: reachable by a visitor, which makes it the
+  // first write route on the public list. The reasoning is written down above PUBLIC_API
+  // in lib/access.mjs, where somebody adding the second one will read it.
+  if (p === '/api/island') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
+    const addr = req.socket && req.socket.remoteAddress;
+    // Before the body, not after: refusing two megabytes once it has already been read is
+    // a rate limit that costs exactly what it was meant to save.
+    if (!guests.take(addr)) return json(res, 429, { error: 'one island at a time; try again in a moment' });
+
+    let raw;
+    try {
+      raw = await readRawBody(req, MAX_BERTH_BYTES);
+    } catch (e) {
+      // The socket is already destroyed when the limit was the reason, so this answer is
+      // as likely to be read as any other; the status still has to tell the two apart.
+      const tooBig = /too large/.test(String(e.message || ''));
+      return json(res, tooBig ? 413 : 400, { error: String(e.message || e) });
+    }
+    let sent;
+    try { sent = JSON.parse(raw); } catch { return json(res, 400, { error: 'that is not JSON' }); }
+
+    let bundle;
+    try { bundle = parseBundle(sent); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+
+    try {
+      const berth = guests.park({ id: bundle.island.id, address: addr, bundle });
+      // Not localOnly: an island appearing in the harbour is the whole point, and
+      // everybody standing on this island should see it arrive.
+      broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
+      return json(res, 201, { ok: true, berth });
+    } catch (e) {
+      return json(res, e.status || 400, { error: String(e.message || e) });
+    }
+  }
+
+  // What is moored here. Without `id` it is the list the page draws the horizon from -
+  // a name, a seed and a size each, a few hundred bytes. With one it is that island
+  // whole, which is two megabytes and is not something to push down every open SSE
+  // stream, so the event above carries the list and the page comes back for the island.
+  if (p === '/api/islands') {
+    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
+    const id = url.searchParams.get('id');
+    if (!id) return json(res, 200, { islands: guests.list() });
+    const bundle = guests.read(id);
+    if (!bundle) return json(res, 404, { error: 'no island is moored there' });
+    return json(res, 200, bundle);
   }
 
   // Hands a card to a settler and starts the agent that works it.

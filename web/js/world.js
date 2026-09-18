@@ -12,7 +12,7 @@ const tmpTint = new THREE.Color();
 
 const tmpObj = new THREE.Object3D();
 
-const SEASON = {
+export const SEASON = {
   spring: { meadow: 0x93cf62, upland: 0x74ad4c, canopyMul: 1.06, summit: 0xa39d90 },
   summer: { meadow: 0x8fbf5a, upland: 0x6fa64a, canopyMul: 1.0, summit: 0xa39d90 },
   autumn: { meadow: 0x91ad68, upland: 0x738b53, canopyMul: 0.95, summit: 0xa39d90 },
@@ -85,14 +85,14 @@ export function sunDirection(hour) {
 // of the picture came out shadowless. Widening it for good instead would spend the same
 // shadow map on nine times the ground and blur every eave you zoom in on, so it breathes:
 // tight when you are down among the houses, wide enough for the coast when you pull back.
-// Half-width of the shadow frustum, tightest and widest. `followShadow` breathes between
-// them with the zoom, so the ceiling only costs anything at the zoom that needs it: at 130
-// the map is 2048/260 = 7.9 texels per unit, at 190 it is 5.4. The ceiling was 130, which
-// covered 260 units - the whole of one island with room to spare, and rather less than the
-// whole of an archipelago. Framing two 64-grids a berth apart puts the camera at about 150,
-// which asks for 72, and pulling further back to see both coasts asked for more than 130
-// and silently stopped getting it: the far half of the neighbour lost its shadows. On foot
-// followShadow still clamps to 42, so nothing you look at closely changed.
+//
+// The ceiling was 130, which covers 260 units: the whole of one island with room to spare,
+// and rather less than the whole of an archipelago. Pulling back far enough to see both a
+// berth and home asked for more than 130 and silently stopped getting it, so the far half
+// of the neighbour lost its shadows. Since the span breathes, raising the ceiling costs
+// nothing at any zoom that does not need it - at 130 the map is 2048/260 = 7.9 texels per
+// unit, at 190 it is 5.4 - and on foot it still clamps to 42, so nothing you look at
+// closely changed.
 const SHADOW_SPAN = [42, 190];
 const SHADOW_OF_DIST = 0.48;
 
@@ -103,10 +103,13 @@ const SHADOW_OF_DIST = 0.48;
 // rather than a contour line running round the island like a coastline on a map.
 // `terrain.mjs` is untouched on purpose: what moved is the painting, not the rule, so
 // `isBeach` answers exactly what it did and Node and the browser still agree.
-const SHORE = [0.25, 0.6];
-const SHORE_SAND = 0xefddb2;
+export const SHORE = [0.25, 0.6];
+export const SHORE_SAND = 0xefddb2;
 
-function bandColour(h, season) {
+// What height reads as what ground. Exported so a guest island's ground is painted by
+// this function and not by a second copy of these numbers: two islands in one frame that
+// disagree about where sand becomes meadow is a seam you cannot unsee.
+export function bandColour(h, season) {
   const s = SEASON[season];
   if (h < -0.6) return 0x3f6a7c;
   if (h < 0) return 0x8f9f7a;
@@ -352,7 +355,6 @@ export function createWorld(scene, terrain, village, opts = {}) {
   //
   // This lives in `group`, which is the only createWorld that draws the decor and is always
   // the one at the origin; a region at a berth is drawn by a world that makes no water.
-  const ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
   // Depth in world coordinates, from the archipelago: inside a region it is that island's
   // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
   // every caller that has not been given one - it is this island and the old flat -2.5
@@ -360,13 +362,28 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const depthAt = opts.sea
     ? (x, z) => opts.sea.height(x, z)
     : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
-  const waterGeo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
-  waterGeo.rotateX(-Math.PI / 2);
-  waterGeo.translate(ws.cx, 0, ws.cz);
-  const wp = waterGeo.attributes.position;
-  const depth = new Float32Array(wp.count);
-  for (let i = 0; i < wp.count; i++) depth[i] = depthAt(wp.getX(i), wp.getZ(i));
-  waterGeo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+
+  // Built in a function rather than inline because the span is no longer settled once and
+  // for all: an island that joins after the page has booted makes the archipelago wider,
+  // and a patch that still reaches only as far as our own coast leaves the newcomer sitting
+  // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
+  // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
+  // that holds a reference to the mesh has to know.
+  let ws = null, waterGeo = null, wp = null;
+  function buildWaterGeometry() {
+    ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
+    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(ws.cx, 0, ws.cz);
+    const p = geo.attributes.position;
+    const d = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) d[i] = depthAt(p.getX(i), p.getZ(i));
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
+    waterGeo = geo;
+    wp = p;
+    return geo;
+  }
+  buildWaterGeometry();
 
   const waterMat = new THREE.ShaderMaterial({
     fog: true,
@@ -1472,6 +1489,31 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // already incremental: the colour attribute is written in place by `paintGround`, and
   // the scatter never touches a polder or its dike, so nothing is left hanging in the
   // air when the water returns.
+  // The depths only. Cheap - one pass over the attribute already allocated - and right
+  // whenever the coasts have moved but the archipelago has not grown.
+  function resampleWater() {
+    const wa = waterGeo.attributes.aDepth;
+    for (let i = 0; i < wp.count; i++) wa.array[i] = depthAt(wp.getX(i), wp.getZ(i));
+    wa.needsUpdate = true;
+  }
+
+  // The whole patch, for when the archipelago itself has changed shape: an island joined, or
+  // left. Rebuilding is only worth it when the span actually moved, because the geometry is
+  // the heaviest thing on the island - 135k triangles for one island, 193k for two - so this
+  // compares first and usually does nothing.
+  function reshapeWater() {
+    const next = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
+    if (ws && next.minX === ws.minX && next.maxX === ws.maxX
+      && next.minZ === ws.minZ && next.maxZ === ws.maxZ) {
+      resampleWater();
+      return false;
+    }
+    const old = waterGeo;
+    water.geometry = buildWaterGeometry();
+    old.dispose();
+    return true;
+  }
+
   function reshape(next) {
     terrain = next;
     const pa = geo.attributes.position;
@@ -1485,14 +1527,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // Resampled through the same function the patch was built with, so a coast that moves
     // during a chronicle replay takes the shallows with it wherever it is - and so that
     // there is one place, not two, that knows what the water over a region looks like.
-    const wa = waterGeo.attributes.aDepth;
-    for (let i = 0; i < wp.count; i++) wa.array[i] = depthAt(wp.getX(i), wp.getZ(i));
-    wa.needsUpdate = true;
+    resampleWater();
   }
 
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
     buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, recentre,
+    reshapeWater,
     ownership: () => own, state,
     season: () => currentSeason, reshape,
   };

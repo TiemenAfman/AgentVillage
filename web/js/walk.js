@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
+import { stepBoat, DECK_Y } from './boat.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -132,9 +133,27 @@ function loungeGeometry() {
 // aiming past it. Under a ceiling the aim comes down to the chest, because a room wants the
 // camera low and a low camera aiming at eye level is looking at the rafters.
 export function createWalkMode({
-  scene, camera, terrain, material, dom, avatar: avatarSpec,
+  scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null,
 }) {
+  // What is underfoot, and which cell of which island a surface belongs to.
+  //
+  // `terrain` is one island: local, origin-centred, and all a room or the workbench ever
+  // needs - see the flat floor interior.js hands in. `ground` is an archipelago
+  // (shared/regions.mjs): it answers in world coordinates, it says OPEN_SEA between islands
+  // rather than handing back the nearest coast the way a single terrain's own clamp does,
+  // and its level key carries a per-island stride. That stride is the point: two islands of
+  // the same size produce identical `gx + gz*size` keys, so without it a bridge on one
+  // island is a deck in mid-air on the other.
+  //
+  // Given a `ground` it wins; without one nothing changes at all, which is why interior.js
+  // and demo.js are untouched.
+  const heightUnder = ground
+    ? (x, z) => ground.height(x, z)
+    : (x, z) => terrain.worldHeight(x, z);
+  const cellKey = ground
+    ? (x, z) => ground.levelKey(x, z)
+    : (x, z) => Math.round(x + terrain.half - 0.5) + Math.round(z + terrain.half - 0.5) * terrain.size;
   // Both figures live below one parent so movement, collisions and the camera do not care
   // which look is selected. The original figure gets four lightweight pivots; Kenney uses
   // the animation clips in its GLB.
@@ -387,21 +406,27 @@ export function createWalkMode({
   // swim across. Step off the side and you are wading again.
   let levels = new Map();
 
+  // The boat under you, or nothing. A plain object { x, z, yaw, v } that boat.js steps;
+  // walk mode owns no boat of its own, it is handed one and hands it back.
+  state.vehicle = null;
+
   // How far up you will take a surface without jumping. Wider than the 0.32 a deck rides
   // above its bank, so you walk onto a bridge rather than bump into it; well under a
   // storey, or you would step off the ground straight onto your own roof.
   const STEP_UP = 0.45;
 
   function levelsIn(x, z) {
-    const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
-    return levels.get(gx + gz * terrain.size);
+    const key = cellKey(x, z);
+    // Null out at sea: there is nothing there to be on a level of, and `levels.get(null)`
+    // would quietly answer for whatever happened to be stored under it.
+    return key === null ? undefined : levels.get(key);
   }
 
   // The highest surface that is not over your head. `from` is where your feet are now;
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
   function groundAt(x, z, from = Infinity) {
-    let best = terrain.worldHeight(x, z);
+    let best = heightUnder(x, z);
     const above = levelsIn(x, z);
     if (!above) return best;
     const reach = from + STEP_UP;
@@ -448,6 +473,43 @@ export function createWalkMode({
     return false;
   }
 
+  // Aboard. The camera pulls back - a hull is longer than a settler and you are steering it
+  // rather than walking it - and any pose that does not survive standing on a deck is
+  // dropped: you cannot sit down in a rowing boat and then stand up on the water.
+  function board(boat) {
+    if (!boat) return;
+    state.vehicle = boat;
+    standUp();
+    state.crouching = false;
+    state.lying = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.vy = 0;
+    back = camBack * 2.2;
+  }
+
+  // Ashore at `at`, which is where the bow is pointing. The same step-back loop `enter`
+  // uses, so you never land inside a wall or in the water you have just crossed - and if
+  // forty tries find nothing legal you stay aboard, which is a stuck boat rather than a
+  // drowned settler.
+  function unboard(at) {
+    if (!state.vehicle) return false;
+    let [x, z] = at;
+    let ok = !blocked(x, z);
+    for (let i = 0; i < 40 && !ok; i++) {
+      x += 0.25; z += 0.18;
+      ok = !blocked(x, z);
+    }
+    if (!ok) return false;
+    state.vehicle = null;
+    back = camBack;
+    state.pos.set(x, groundAt(x, z), z);
+    state.floor = state.pos.y;
+    state.grounded = true;
+    state.vy = 0;
+    return true;
+  }
+
   function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onExit, onRelease }) {
     state.blockers = blockers || [];
@@ -478,6 +540,8 @@ export function createWalkMode({
   }
 
   function exit() {
+    state.vehicle = null;
+    back = camBack;
     release();
     state.active = false;
     avatar.visible = false;
@@ -582,6 +646,32 @@ export function createWalkMode({
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
+    // ---- aboard ------------------------------------------------------------
+    // A boat is not feet, so `blocked` is left exactly as it is. It refuses open water
+    // unless a shore is within SWIM_REACH, which is what makes a strip of sea between two
+    // islands a crossing rather than a paddle - that line turned from a limitation into the
+    // reason the boat exists, and teaching it about vehicles would have put a mode flag
+    // inside the collision test of every walking frame. The vehicle simply steers instead
+    // of walking, and land is its wall the way water is ours.
+    if (state.vehicle) {
+      stepBoat(state.vehicle, { throttle: iz, turn: ix }, dt, (x, z) => groundAt(x, z, Infinity));
+      state.pos.set(state.vehicle.x, state.vehicle.deckY ?? DECK_Y, state.vehicle.z);
+      state.yaw = state.vehicle.yaw;
+      // The camera trails the bow rather than staying where the mouse left it. You steer
+      // with a rudder here, not by walking towards what you are looking at, so a camera
+      // that did not follow would leave you sailing sideways out of frame. It lerps, so a
+      // look around still works and simply drifts back.
+      state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5));
+      state.moving = Math.abs(state.vehicle.v) > 0.05;
+      state.running = false;
+      state.grounded = true;
+      state.swimming = false;
+      state.floor = state.pos.y;
+      state.vy = 0;
+      state.bob += dt * 1.2;
+      return afterMove(dt);
+    }
+
     const push = Math.min(1, Math.hypot(ix, iz));
     const speed = (state.lying || state.sitting ? 0
       : state.swimming ? SWIM_SPEED
@@ -649,6 +739,14 @@ export function createWalkMode({
       else if (performance.now() - state.crouchSince >= LIE_AFTER_MS) { state.lying = true; state.crouching = false; }
     }
 
+    return afterMove(dt);
+  }
+
+  // What both a walker and a boat end with: the pose, the animation, where the camera sits
+  // and what is within reach. Split out when the boat arrived, because a boat needs all of
+  // it and none of the walking above it - and a second copy of the camera block would have
+  // been two places to remember the next time the eye height changes.
+  function afterMove(dt) {
     avatar.scale.setScalar(1);
     lounge.visible = state.lying;
     if (state.lying) {
@@ -766,7 +864,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {

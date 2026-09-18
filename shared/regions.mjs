@@ -306,6 +306,11 @@ export function createArchipelago() {
   }
 
   return {
+    // `worldHeight` is `height` under the name every terrain-shaped consumer already uses -
+    // web/js/interior.js:532-542 duck-types a terrain with exactly that method, and
+    // web/js/peers.js asks its floor for it. Having the alias means an archipelago can be
+    // handed to anything that wanted a terrain for its heights, which is most things.
+    worldHeight: height,
     add, remove, replace, get, regionAt, height, isWaterAt, levelKey, bounds, gridBounds, radius,
     nearestCoast, shoreWithin,
     regions: () => list.slice(),

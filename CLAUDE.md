@@ -103,6 +103,23 @@ offset group, not the facade. Outside every region, `archipelago.height` is `OPE
 `gridSize` still cannot grow (`loadLayout` throws the town away when `size` changes): two
 islands means two terrains at an offset, never one bigger heightfield.
 
+**A visiting island is a place, not a village.** `web/js/guest-island.js` draws a region at a
+berth: its ground, its buildings, its moving parts, its collision. It deliberately does not
+go through `applyVillage` or into `state.byId` - those own the chronicle, the dossier, the
+milestones and the filters, and region-scoping them would mean touching the post, the market
+and the garden to draw a coastline. Guest ids are namespaced `guest:<region>:<id>`, because
+both islands have a `civic:board`. No nameplates over there: 41 of them measured 123 draw
+calls and 41 canvas textures, which took a second island from 1.35x the call count to 1.76x
+against a 1.6x budget - `attachExtras(rec, { signs: false })` is what keeps that true.
+
+**`POST /api/island` is the first write route on the public allowlist**, deliberately
+against the rule below. See the carve-out written above `PUBLIC_API` in `lib/access.mjs`;
+the short version is that LAN membership is the whole gate, so the size cap, the rate limit,
+the quarantine under `data/guests/` and the whitelisting rebuilder in `lib/islandbundle.mjs`
+are the only defences - and an `inviteCode` now buys writes where it used to buy a look.
+A berth never survives a restart: `createGuests()` clears the tree on start, which is what
+keeps an uploaded island a *visit* rather than an export.
+
 **One material, one draw call per building.** Which texture sheet a face uses is a number
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
@@ -159,7 +176,7 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`.
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
 | `shared/` | terrain, regions (the world/local contract), rng, crops, shapes — Node and browser both |
-| `web/js/` | `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `settlers.js`, `walk.js`; `*-mesh.js` are baked output — never hand-edit |
+| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `settlers.js`, `walk.js`; `*-mesh.js` are baked output — never hand-edit |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |

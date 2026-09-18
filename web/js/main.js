@@ -4,9 +4,11 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { createArchipelago, placeIsland, berthOf } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
 import { clamp, hash32 } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { createGuestIsland } from './guest-island.js';
+import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { projectVillage } from './history.js';
 import {
@@ -281,7 +283,7 @@ const state = {
   // `sea` is every island there is, in world coordinates, and it is what the camera, the
   // haze and anything asking "is there ground here" read. For an island on its own the two
   // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
-  sea: createArchipelago(), region: null,
+  sea: createArchipelago(), region: null, guests: [], boats: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
@@ -422,6 +424,9 @@ function walkableBlockers() {
   if (squareBed && squareBed.group.visible) out.push(...blockersOf(squareBed));
   // A tree somebody asked for is as solid as a house. A bridge is not: it is walked over.
   if (state.props) out.push(...state.props.blockers());
+  // And so are the houses on a guest island, which are not in state.byId - see
+  // guest-island.js for why they are deliberately kept out of it.
+  for (const g of state.guests) out.push(...g.blockers());
   return out;
 }
 
@@ -461,6 +466,20 @@ function interactables() {
   // props, because that is the half that knows how wide a board is and whether its page
   // is up yet.
   if (state.panels) out.push(...state.panels.interactables());
+  // The boats. Aboard one, the same entry becomes the way out - reaching the shore is not a
+  // separate control, it is the same key saying a different thing.
+  const aboard = state.walk && state.walk.aboard();
+  for (const b of state.boats) {
+    if (aboard && aboard === b) {
+      const bx = b.x + Math.sin(b.yaw) * BOW, bz = b.z + Math.cos(b.yaw) * BOW;
+      if (state.sea.height(bx, bz) >= 0.06) {
+        out.push({ id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the shore', prompt: 'step ashore' });
+      }
+      continue;
+    }
+    if (aboard) continue;                       // one boat at a time
+    out.push({ id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat', prompt: 'take the boat' });
+  }
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
   // the prompt above the keys counts the last minutes down on its own.
   if (state.crops) {
@@ -741,6 +760,29 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
 // stepping back out of a room re-enters walk mode, and a second copy of this list would
 // drift away from the first one.
+// Aboard. The boat is handed to walk mode, which steers it from there; nothing else about
+// being on foot changes, which is why `blocked` and the wading rule are untouched.
+function takeBoat(id) {
+  const b = boatAt(id);
+  if (!b || !state.walk) return;
+  state.walk.board(b);
+  // Told as a room rather than as a flag. `room()` in lib/players.mjs:55 already accepts
+  // this slug and tick() only sends slot [6] when it is set, so an older client sees
+  // somebody walking and nothing worse - where a new flag bit would have needed the mask
+  // at lib/players.mjs:162 widened on the server first.
+  if (state.net) state.net.setRoom('boat', state.walk);
+  state.ui.toast('You cast off. <b>W</b> and <b>S</b> for the oars, <b>A</b> and <b>D</b> for the tiller.');
+}
+
+// Off at the bow, which is the end pointing at whatever you have come alongside.
+function stepAshore() {
+  const b = state.walk && state.walk.aboard();
+  if (!b) return;
+  const at = [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
+  if (!state.walk.unboard(at)) { state.ui.toast('Nowhere to land here.'); return; }
+  if (state.net) state.net.setRoom(null, state.walk);
+}
+
 function walkCallbacks() {
   return {
     onInteract: (it) => {
@@ -753,11 +795,13 @@ function walkCallbacks() {
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
+      else if (it.kind === 'boat') takeBoat(it.id);
+      else if (it.kind === 'ashore') stepAshore();
       else talkTo(it.id);
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern', 'boat', 'ashore'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -898,6 +942,9 @@ function enterWalk(spot = null) {
   state.tween = null;
   state.ui.closeDossier();
   state.ui.setWalking(true, state.padSeen);
+  // A boat is only ever something you board on foot. From the orbit camera it would be a
+  // speck; from up there the horizon draws the sea better than a hull would.
+  launchBoats();
   if (state.net) state.net.setWalking(true);
   state.walk.enter({
     at,
@@ -1115,7 +1162,24 @@ function applyFogRange() {
     out = Math.max(out, Math.hypot(r.origin[0], r.origin[1]) + r.half);
   }
   scene.fog.near = half * 1.1;
-  scene.fog.far = out > 0 ? Math.max(half * 3.4, out + 110) : half * 3.4;
+  if (out <= 0) { scene.fog.far = half * 3.4; return; }
+
+  // How far the eye actually is from the furthest coast it could be looking at. Without
+  // this the haze is a fixed ring round the origin, and an archipelago cannot be framed:
+  // with four berths taken it is 269 units across, so seeing it whole means standing back
+  // most of the orbit leash - and at that distance a far end of `out + 110` has closed over
+  // everything, islands, coasts and all. One island never showed this because you never
+  // needed to pull that far back from it.
+  //
+  // It moves with the zoom, like the shadow frustum does (world.js followShadow) and for
+  // the same reason: a number that has to cover both a walk along the beach and a look at
+  // the whole sea cannot be one number. This is still the only place that decides it.
+  let reach = 0;
+  for (const r of state.sea.regions()) {
+    const dx = camera.position.x - r.origin[0], dz = camera.position.z - r.origin[1];
+    reach = Math.max(reach, Math.sqrt(dx * dx + dz * dz + camera.position.y * camera.position.y) + r.half);
+  }
+  scene.fog.far = Math.max(half * 3.4, out + 110, reach + 40);
 }
 
 // Islands that are not on the beacon: an island conjured by `?join=` so that the whole
@@ -1130,46 +1194,180 @@ const debugJoins = [];
 // The point of `self` is that it is the one case where you know exactly what the answer
 // should look like: if the island to the east is not the mirror of the one you are standing
 // on, the offset is wrong rather than merely odd.
-// The region half, which has to happen before the world is built: the water is laid over
-// the archipelago as it stands at that moment, and an island that arrives afterwards gets
-// no shallows. Called from buildScene, straight after the home region is placed.
-function joinRegionsFromParams(homeTerrain) {
+// Which berth a newcomer gets. Four of them, snapped to the compass, and the first free one
+// wins - so the second island to arrive does not land on top of the first. berthOf works
+// off both radii, which is what stops a 256-grid neighbour from coming ashore inside a
+// 64-grid host: web/js/horizon.js:13-18 records that bug having happened once already.
+function freeBerth(theirHalf) {
+  const ours = state.region ? state.region.half : 32;
+  for (let i = 0; i < MAX_BERTHS; i++) {
+    const origin = berthOf(i, ours, theirHalf);
+    const clash = state.sea.regions().some((r) => {
+      const gapX = Math.abs(origin[0] - r.origin[0]) - (theirHalf + r.half);
+      const gapZ = Math.abs(origin[1] - r.origin[1]) - (theirHalf + r.half);
+      return gapX < 0 && gapZ < 0;
+    });
+    if (!clash) return origin;
+  }
+  return null;
+}
+
+// An island joins the sea. One way in for every kind of newcomer - the `?join=` debug
+// parameter now, an uploaded bundle next - because the awkward parts are the same either
+// way: the terrain has to be rebuilt from their seed rather than trusted, the hash has to be
+// checked, a berth has to be free, and what comes back has to be a region the rest of the
+// page can ask questions of.
+//
+// `polders` matters more than it looks. A polder is stamped into the heightfield rather than
+// drawn on top of it, so an island that has drained one is a different shape - and leaving
+// them out would put their coast in the wrong place and their houses in the water.
+function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null }) {
+  if (state.sea.get(id)) return state.sea.get(id);
+  const terrain = makeTerrain(seed, { size: gridSize, polders });
+  if (terrainHash && terrain.hash !== terrainHash) {
+    // A warning here and not a refusal, the same as buildScene does for our own island
+    // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
+    // them is running older code. The server refuses the upload outright for the same
+    // reason; by the time it reaches the page it is worth drawing and worth saying.
+    console.warn(`island: ${id} hashes ${terrain.hash} here and ${terrainHash} there`);
+  }
+  const origin = freeBerth(terrain.half);
+  if (!origin) { console.warn(`island: no berth free for ${id}`); return null; }
+  let region;
+  try {
+    region = state.sea.add(placeIsland(terrain, { id, origin }));
+  } catch (e) {
+    console.warn(`island: ${e.message}`);
+    return null;
+  }
+  // Hung on the region rather than passed around, because everything that later wants to
+  // draw something of theirs - buildings now, paths and piers next - finds the region first.
+  region.village = village;
+  console.info(`island: ${name || id} joined at berth [${origin}]`);
+  return region;
+}
+
+// The debug way in: ?join=self, or ?join=seed:12345. It runs from buildScene, before the
+// world is built, because the water is laid over the archipelago as it stands at that
+// moment and an island that arrives afterwards would get no shallows.
+//
+// `self` is the one worth having: it is the only case where you already know what the answer
+// should look like, so an island to the east that is not the mirror of the one under your
+// feet is a wrong offset rather than merely an odd-looking coast.
+function joinRegionsFromParams(homeTerrain, homeVillage) {
   const spec = params.get('join');
   if (!spec) return;
   const seed = spec === 'self' ? homeTerrain.seed
     : /^seed:-?\d+$/.test(spec) ? Number(spec.slice(5)) : null;
   if (seed === null) { console.warn(`island: cannot make sense of ?join=${spec}`); return; }
-  const size = homeTerrain.size;
-  const terrain = makeTerrain(seed, { size });
   const id = `debug-${seed}`;
-  const origin = berthOf(0, homeTerrain.half, terrain.half);
-  try {
-    state.sea.add(placeIsland(terrain, { id, origin }));
-  } catch (e) {
-    console.warn(`island: ${e.message}`);
-    return;
-  }
-  debugJoins.push({
-    id, name: 'a test island', island: `seed ${seed}`, seed, gridSize: size, settlers: 0,
-    url: location.href, address: null, port: 0,
+  // With ?join=self it gets our own village too, which is the point of `self`: an island to
+  // the east that is not house-for-house the one under your feet is a wrong offset rather
+  // than a coast that merely looks odd. A different seed gets bare ground - their buildings
+  // would be standing on plots their layout never planned.
+  const region = joinIsland({
+    id, seed, gridSize: homeTerrain.size, name: 'a test island',
+    village: spec === 'self' ? homeVillage : null,
   });
-  console.info(`island: joined seed ${seed} at berth [${origin}]`);
+  if (!region) return;
+  debugJoins.push({
+    id, name: 'a test island', island: `seed ${seed}`, seed, gridSize: homeTerrain.size,
+    settlers: 0, url: location.href, address: null, port: 0,
+  });
 }
 
-// And the silhouette half, once there is a horizon to draw it on.
-function pinDebugJoins() {
-  if (!state.horizon || !debugJoins.length) return;
-  for (const info of debugJoins) {
-    const r = state.sea.get(info.id);
-    if (r) state.horizon.pin(info.id, r.origin);
+// Every island in the sea that is not ours gets ground you can stand on. Called from
+// buildScene after the world - so the water is already laid over the whole archipelago and
+// a guest coast rises out of real shallows rather than out of the flat open-ocean disc -
+// and again whenever one joins later.
+//
+// Idempotent, and deliberately so: an island that is already standing is left exactly as it
+// is rather than disposed and rebuilt, because somebody may be walking on it.
+//
+// Their ground goes into `state.pickables` so the existing raycast finds it. It does NOT go
+// on the horizon: see the filter in applyNeighbours for why an island cannot be in both
+// places at once.
+// Where a boat lies when nobody is sailing it. `landing` is the one mooring every island
+// has: lib/layout.mjs:1382-1385 picks it as the coast cell nearest the town centre, which
+// is where a new settler already walks ashore, and it exists whether or not the island ever
+// earned a quay. A pier is nicer and comes from a quay district, which only exists once
+// there is Cowork work on that island - so a crossing cannot be made to depend on one.
+function mooringOf(region, village) {
+  const v = village || region.village;
+  const landing = v && v.island && v.island.landing;
+  if (!landing) return null;
+  const [lx, lz] = region.cellWorld(landing[0], landing[1]);
+  // A pace or two out from the beach cell, seaward, so the hull floats rather than sitting
+  // on the sand the moment it is put down. Seaward is away from the island's middle, which
+  // for a coast cell is the direction with the water in it.
+  const len = Math.hypot(lx - region.origin[0], lz - region.origin[1]) || 1;
+  const ox = (lx - region.origin[0]) / len, oz = (lz - region.origin[1]) / len;
+  return {
+    id: `boat:${region.id}`,
+    x: lx + ox * 2.2, z: lz + oz * 2.2,
+    // Bow pointing out to sea, which is the way you leave.
+    yaw: Math.atan2(ox, oz),
+  };
+}
+
+// One boat per island, moored at its landing. Made when walk mode starts, because a boat
+// is only ever a thing you board on foot - from the air it is scenery the horizon already
+// draws better.
+function launchBoats() {
+  if (state.boats.length) return;
+  for (const region of state.sea.regions()) {
+    const m = mooringOf(region, region === state.region ? state.village : null);
+    if (!m) continue;
+    const craft = createBoat({ scene, material: buildingMat });
+    craft.place(m.x, m.z, m.yaw);
+    state.boats.push({
+      ...m, craft, v: 0, aground: false,
+      // What walk mode stands a rider on: the deck, swell included, so a body does not
+      // sink into a hull that has just risen on a wave.
+      deckY: DECK_Y,
+    });
   }
-  state.horizon.apply(debugJoins);
-  applyFogRange();
+}
+
+function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
+
+function raiseGuestIslands() {
+  // The water first, so a coast rises out of its own shallows rather than out of the flat
+  // open sea. At boot this does nothing - the region was already in the sea when the world
+  // was built - and it earns its keep the moment an island joins a page that is running.
+  if (state.world) state.world.reshapeWater();
+  const standing = new Set(state.guests.map((g) => g.region.id));
+  for (const region of state.sea.regions()) {
+    if (region === state.region || standing.has(region.id)) continue;
+    const g = createGuestIsland({
+      scene, region, month: new Date().getMonth(),
+      buildings: (region.village && region.village.buildings) || [],
+      material: buildingMat, modest,
+    });
+    for (const rec of g.records) attachExtras(rec, { mail: false, signs: false });
+    state.guests.push(g);
+    state.pickables.push(g.ground);
+    console.info(`island: raised ${region.id} at [${region.origin}]`
+      + `, ${g.triangles} triangles of ground and ${g.buildingCount} buildings`);
+  }
+  // A region that has gone takes its ground with it.
+  for (let i = state.guests.length - 1; i >= 0; i--) {
+    const g = state.guests[i];
+    if (state.sea.get(g.region.id)) continue;
+    const k = state.pickables.indexOf(g.ground);
+    if (k >= 0) state.pickables.splice(k, 1);
+    g.dispose();
+    state.guests.splice(i, 1);
+  }
 }
 
 function applyNeighbours(list) {
   if (!state.horizon || state.guest) return;
-  const arrived = state.horizon.apply([...(list || []), ...debugJoins]);
+  // An island that is really here is not also a rumour on the horizon. Left in, it would
+  // be drawn twice - once at half resolution and turned by a hashed angle - in the same
+  // water, and clicking the silhouette would offer to sail to somewhere under your feet.
+  const here = new Set(state.sea.regions().map((r) => r.id));
+  const arrived = state.horizon.apply([...(list || []), ...debugJoins].filter((n) => !here.has(n.id)));
   applyFogRange();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
@@ -1474,7 +1672,7 @@ function makeRecord(spec) {
   return rec;
 }
 
-function attachExtras(rec) {
+function attachExtras(rec, { mail = true, signs = true } = {}) {
   const { spec, built, group } = rec;
   if (built.animated && built.animated.blades) {
     const m = new THREE.Mesh(bladesGeo, buildingMat);
@@ -1498,7 +1696,9 @@ function attachExtras(rec) {
   if (built.animated && built.animated.fountain) {
     rec.fountain = attachFountain(group, built.animated.fountain.at, buildingMat);
   }
-  if (built.animated && built.animated.mailflag) {
+  // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
+  // mail, and hanging that on somebody else's wall is both wrong and a small leak.
+  if (mail && built.animated && built.animated.mailflag) {
     rec.mailFlag = attachMailFlag(group, built.animated.mailflag.at, buildingMat);
     setMailFlag(rec.mailFlag, unreadTotal() > 0);
   }
@@ -1521,7 +1721,14 @@ function attachExtras(rec) {
   if (built.anchors && built.anchors.smoke) rec.smokeAnchor = built.anchors.smoke;
 
   // A yard sign with the session's own name, for the houses that have one.
-  if (spec.kind === 'house' || spec.kind === 'camp') {
+  //
+  // `signs` is off for a guest island, and it is not a detail: a nameplate is three meshes -
+  // a leg, a board and a lettered face - and the face carries a canvas texture of its own.
+  // Forty-one of them on this village is 123 draw calls and forty-one textures, which
+  // measured at 1.76x the island's whole call count for a second island against a 1.6x
+  // budget. Their houses stay hoverable, which says the same thing for a tenth of the
+  // price, and the rule reads well enough: a yard sign is for the island you live on.
+  if (signs && (spec.kind === 'house' || spec.kind === 'camp')) {
     const label = spec.title || spec.name;
     const plate = createNameplate(label, { small: spec.kind === 'camp' });
     // front-left of the plot, clear of the door, facing the street like the house does
@@ -1532,7 +1739,7 @@ function attachExtras(rec) {
   }
 
   // A signboard in front of the office carrying the repository's name.
-  if (spec.civicType === 'office' && spec.repoName) {
+  if (signs && spec.civicType === 'office' && spec.repoName) {
     const plate = createNameplate(spec.repoName);
     plate.group.position.set(-0.02, 0, 0.72);
     group.add(plate.group);
@@ -1575,7 +1782,7 @@ function buildScene(village) {
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
   state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
-  joinRegionsFromParams(terrain);   // a ?join= island has to be in the sea before the water is laid
+  joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
     shadowSize: modest ? 1024 : 2048,
@@ -1587,6 +1794,7 @@ function buildScene(village) {
   // rather than on the first neighbour sync so that no frame is ever drawn without them.
   applyFogRange();
   applyCameraRange();
+  raiseGuestIslands();
   state.settlers = createSettlers(scene, buildingMat, terrain);
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
@@ -1654,8 +1862,16 @@ function handOutDecks() {
   if (state.props && state.terrain) {
     for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
+  // Two consumers, two keyings, and they are not the same any more. The settlers walk this
+  // island and nothing else, so they keep the plain `gx + gz*size` cell the bridges and the
+  // props are recorded under. Walk mode reads the whole archipelago, where that number is
+  // ambiguous - two islands of one size give corresponding cells identical keys - so every
+  // region carries a stride and this island's has to be added on. It is zero today, because
+  // home is the first region in the sea; writing it out anyway is what stops a second
+  // island's bridge from appearing as a deck in the sky over ours.
+  const base = state.region ? state.region.levelBase : 0;
   const stacked = new Map();
-  for (const [cell, y] of flat) stacked.set(cell, [y]);
+  for (const [cell, y] of flat) stacked.set(base + cell, [y]);
   if (state.settlers) state.settlers.setDecks(flat);
   if (state.walk) state.walk.setLevels(stacked);
 }
@@ -2603,41 +2819,35 @@ function frame(nowMs) {
   }
   if (state.crops) state.crops.update(dt);
 
+  // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
+  // put the hull where that has left it; a moored one sits still and bobs.
+  for (const b of state.boats) {
+    b.craft.place(b.x, b.z, b.yaw);
+    b.craft.bob(nowMs / 1000);
+    b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
+  }
+
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
-  for (const rec of state.byId.values()) {
-    if (!rec.group.visible) continue;
-    if (rec.blades) rec.blades.rotation.z += dt * 0.55;
-    if (rec.clock) updateClock(rec.clock, hour);
-    if (rec.fountain) updateFountain(rec.fountain, dt);
-    if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
-    if (rec.beacon) {
-      rec.beacon.a += dt * 0.85;
-      rec.beacon.target.position.set(Math.cos(rec.beacon.a) * 16, -2, Math.sin(rec.beacon.a) * 16);
-      rec.beacon.light.intensity = 55 * nightAmt;
-    }
-    if (rec.flame) {
-      const s = 1 + 0.16 * Math.sin(nowMs / 1000 * 17 + rec.id.length);
-      rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
-      if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
-    }
-    const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
-    if (rec.smokeAnchor && (rec.spec.active || civicFire)
-      && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
-      rec.smokeT += dt;
-      if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {
-        rec.smokeT = 0;
-        const v = new THREE.Vector3(...rec.smokeAnchor).applyMatrix4(rec.group.matrixWorld);
-        state.particles.smoke([v.x, v.y, v.z]);
-      }
-    }
-    if (rec.flagIdx >= 0) updateFlagInstance(rec, true);
+  for (const rec of state.byId.values()) animateExtras(rec, dt, hour, nightAmt, nowMs);
+  // The same hands turn the mills on somebody else's island. None of this is the server's:
+  // it only ever said which building this is, and the turning, the clock, the fountain and
+  // the chimney smoke have always been the browser's own. So a guest island gets them for
+  // the price of walking a second list - it is a village over there too, and a village whose
+  // mills have stopped reads as a diorama.
+  for (const g of state.guests) {
+    for (const rec of g.records) animateExtras(rec, dt, hour, nightAmt, nowMs);
   }
+
 
   // The sky and the open sea ride with the eye, wherever the eye is. Once a frame, before
   // either camera branch below, because both of them move the camera and neither of them
   // owns the horizon.
   if (state.world) state.world.recentre(camera.position.x, camera.position.z);
+  // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
+  // is. Only once there is a second island: on our own it is the fixed ring it always was,
+  // and this then costs one comparison a frame.
+  if (state.sea.count() > 1) applyFogRange();
 
   if (!state.intro && state.mode !== 'walk') {
     controls.update();
@@ -3016,11 +3226,14 @@ async function boot() {
   }
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
-  state.walk = createWalkMode({ scene, camera, terrain: state.terrain, material: buildingMat, dom: renderer.domElement });
+  state.walk = createWalkMode({
+    scene, camera, terrain: state.terrain, ground: state.sea,
+    material: buildingMat, dom: renderer.domElement,
+  });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
   state.peers = createPeers({
-    scene, material: buildingMat, terrain: state.terrain,
+    scene, material: buildingMat, terrain: state.terrain, ground: state.sea,
     // Somebody else's hand on a board. It rides in with their pose, so it arrives here
     // rather than as a message of its own - see web/js/net.js.
     onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
@@ -3029,7 +3242,6 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
-  pinDebugJoins();
   if (!state.guest) refreshNeighbours();
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
@@ -3134,7 +3346,44 @@ function debounce(fn, msv) {
 }
 
 // a handle for poking at the island from the console
-window.settlers = { state, scene, camera, controls, renderer, THREE, frameIsland, focusOn };
+// Everything on one building that moves. Split out of the tick so that our island and a
+// guest island are animated by one piece of code rather than two that drift apart.
+function animateExtras(rec, dt, hour, nightAmt, nowMs) {
+  if (!rec.group.visible) return;
+  if (rec.blades) rec.blades.rotation.z += dt * 0.55;
+  if (rec.clock) updateClock(rec.clock, hour);
+  if (rec.fountain) updateFountain(rec.fountain, dt);
+  if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
+  if (rec.beacon) {
+    rec.beacon.a += dt * 0.85;
+    rec.beacon.target.position.set(Math.cos(rec.beacon.a) * 16, -2, Math.sin(rec.beacon.a) * 16);
+    rec.beacon.light.intensity = 55 * nightAmt;
+  }
+  if (rec.flame) {
+    const s = 1 + 0.16 * Math.sin(nowMs / 1000 * 17 + rec.id.length);
+    rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
+    if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
+  }
+  const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
+  if (rec.smokeAnchor && (rec.spec.active || civicFire)
+    && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
+    rec.smokeT += dt;
+    if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {
+      rec.smokeT = 0;
+      const v = new THREE.Vector3(...rec.smokeAnchor).applyMatrix4(rec.group.matrixWorld);
+      state.particles.smoke([v.x, v.y, v.z]);
+    }
+  }
+  if (rec.flagIdx >= 0) updateFlagInstance(rec, true);
+}
+
+// The console's way in. `joinIsland` and `raiseGuestIslands` are here because an island
+// arriving is the one thing in this page that is hard to get at from the outside and easy
+// to want to try: ?join= only fires at boot, and a bundle needs a second machine.
+window.settlers = {
+  state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
+  joinIsland, raiseGuestIslands, applyFogRange, applyCameraRange,
+};
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
