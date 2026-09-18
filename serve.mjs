@@ -28,7 +28,9 @@ import { createWsServer } from './lib/ws.mjs';
 import { createRoster } from './lib/players.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
-import { buildBundle, parseBundle } from './lib/islandbundle.mjs';
+import { buildBundle, parseBundle, beaconId } from './lib/islandbundle.mjs';
+import { createSea } from './lib/sea.mjs';
+import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { berthOf } from './shared/regions.mjs';
@@ -549,6 +551,16 @@ async function handle(req, res) {
       // keeper's panel that shows it; a visitor gets the yes or no and nothing else.
       signs: nameplatesVisibleTo(config.display.nameplates, who.role),
       display: who.role === 'islander' ? { nameplates: config.display.nameplates } : null,
+      // Where the world is, and who this island is in it. The url is what web/js/api.js
+      // points sea() and the socket at; absent, the page talks to this server for the
+      // world too, which is exactly what it did before there were seas.
+      //
+      // The token is the keeper's alone. It is what holds this island's claim in the sea,
+      // so it goes only to a page on this machine - a visitor who had it could publish
+      // over the island from anywhere.
+      islandId: ISLAND_ID,
+      sea: seaUrlFor(req),
+      token: who.role === 'islander' ? ISLAND_TOKEN : null,
     });
   }
 
@@ -1413,6 +1425,97 @@ if (access.open) {
   server.requestTimeout = 30000;
   server.maxConnections = 128;
 }
+// ---- which world this island lives in --------------------------------------------
+//
+// One code path for all three answers. Single player starts a sea in this very process,
+// bound to loopback, and joins it with one island in it; hosting is that same sea bound to
+// the network; joining is somebody else's address. The page cannot tell the three apart and
+// does not have to - the difference is how many rows come back in the fleet.
+//
+// The alternative was an offline mode beside a multiplayer one, and that is two drawing
+// paths, two sets of bugs and a "works alone, breaks together" class of failure that only
+// ever shows up in front of somebody else.
+const SEA = config.multiplayer.sea || {};
+const ISLAND_ID = beaconId(PORT);
+const ISLAND_TOKEN = mintToken();
+let ownSea = null;
+let seaClient = null;
+
+// What this island looks like to the world. Built here, on the machine that holds the
+// secrets, because that is where the redaction has to run.
+function islandBundle() {
+  const village = readJson(VILLAGE_FILE, null);
+  if (!village) return null;
+  try {
+    return buildBundle({
+      config,
+      village,
+      props: listProps(),
+      crops: cropsView(),
+      id: ISLAND_ID,
+      keeper: islanderName,
+    });
+  } catch {
+    // An island that has never been scanned has no terrain hash, and buildBundle says so
+    // rather than sending something the other end is obliged to reject. Nothing to
+    // publish yet is a perfectly ordinary state a minute after first run.
+    return null;
+  }
+}
+
+// Where this page should look for the world.
+//
+// A joined sea is one absolute address and everybody uses it. A sea of our own is on this
+// same machine, one port over - and the address has to be built from the Host the page
+// actually arrived on, not from localhost. A phone at http://192.168.2.8:4747/ that was
+// handed "localhost" would spend the rest of the evening trying to reach its own browser.
+function seaUrlFor(req) {
+  const mode = SEA.mode === 'host' || SEA.mode === 'join' ? SEA.mode : 'single';
+  if (mode === 'join') return SEA.url || null;
+  if (!ownSea) return null;
+  const port = (ownSea.address() || {}).port;
+  if (!port) return null;
+  const host = String(req.headers.host || '').trim();
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0];
+  return `http://${name || 'localhost'}:${port}/`;
+}
+
+async function putToSea() {
+  if (!config.multiplayer.enabled) return;
+  const mode = SEA.mode === 'host' || SEA.mode === 'join' ? SEA.mode : 'single';
+  let url = SEA.url;
+
+  if (mode !== 'join') {
+    const host = mode === 'host' ? '0.0.0.0' : '127.0.0.1';
+    ownSea = createSea({
+      port: Number(SEA.port) || 4750,
+      host,
+      name: SEA.name || `${config.islandName}'s sea`,
+      key: SEA.key || null,
+      tickMs: config.multiplayer.tickMs,
+      maxPlayers: config.multiplayer.maxPlayers,
+      log: (m) => log(`sea: ${m}`),
+    });
+    const addr = await ownSea.listen();
+    url = `http://127.0.0.1:${addr.port}/`;
+    if (mode === 'host') {
+      log(`hosting a sea on port ${addr.port}. Others join it at:`);
+      for (const a of access.addresses()) log(`    http://${a.includes(':') ? `[${a}]` : a}:${addr.port}/`);
+    }
+  }
+
+  if (!url) { log('no sea to join: set multiplayer.sea.url, or switch the mode back to single'); return; }
+  seaClient = createSeaClient({
+    url,
+    islandId: ISLAND_ID,
+    token: ISLAND_TOKEN,
+    key: SEA.key || null,
+    name: islanderName,
+    bundle: islandBundle,
+    log: (m) => log(`sea: ${m}`),
+  });
+}
+
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
   checkVendor();
@@ -1438,6 +1541,9 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
     if (r && !r.note && r.fetchedAt && r.fetchedAt !== before) rescan('issues');
   };
   readIssues();
+  // Join the world once the first scan has produced an island worth showing.
+  await putToSea();
+  if (seaClient) seaClient.publish({ force: true }).catch(() => {});
   if (RESCAN) setInterval(() => { readIssues(); rescan('timer'); }, RESCAN).unref?.();
   if (OPEN) openBrowser(`http://localhost:${PORT}/`);
 });

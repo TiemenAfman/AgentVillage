@@ -1,0 +1,49 @@
+// Start an open sea.
+//
+//   node sea.mjs                  on loopback, port 4750
+//   node sea.mjs --open           bound to every interface, so the LAN can join
+//   node sea.mjs --port 4750 --name "De Waddenzee"
+//
+// This is the thin end. Everything is in lib/sea.mjs, which is a module rather than an
+// entry point on purpose: serve.mjs starts one in its own process for single player and
+// for hosting, so that the three ways in - alone, hosting, joining - are one code path
+// with a different address rather than three modes to keep in step.
+import { createSea } from './lib/sea.mjs';
+
+const argv = process.argv.slice(2);
+const flag = (name) => argv.includes(`--${name}`);
+const value = (name, fallback) => {
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
+};
+
+const port = Number(value('port', process.env.SEA_PORT || 4750));
+const open = flag('open');
+const name = value('name', process.env.SEA_NAME || 'an open sea');
+const key = value('key', process.env.SEA_KEY || null);
+
+const stamp = () => new Date().toISOString();
+const log = (m) => console.log(`${stamp()} ${m}`);
+
+const sea = createSea({
+  port,
+  host: open ? '0.0.0.0' : '127.0.0.1',
+  name,
+  key,
+  log,
+});
+
+await sea.listen();
+console.log(`[sea] "${name}" is at http://${open ? '0.0.0.0' : 'localhost'}:${port}/`);
+console.log(open
+  ? '      open to the network. It holds no files and writes nothing to disk.'
+  : '      loopback only. Pass --open to let the rest of the network in.');
+if (open && !key) console.log('      no key set: anyone on this network can park an island here.');
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, async () => {
+    console.log('\n[sea] closing. The world goes with it, which is the arrangement.');
+    await sea.close();
+    process.exit(0);
+  });
+}

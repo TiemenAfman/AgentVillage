@@ -1157,7 +1157,7 @@ function bearingWord(n) {
 
 async function refreshNeighbours() {
   try {
-    const r = await sea('/api/neighbours').then((x) => x.json());
+    const r = await mine('/api/neighbours').then((x) => x.json());
     applyNeighbours(r.neighbours || []);
   } catch { /* no beacon, no neighbours, no matter */ }
 }
@@ -1273,7 +1273,7 @@ function freeBerth(theirHalf) {
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
 // them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null }) {
+function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
   const terrain = makeTerrain(seed, { size: gridSize, polders });
   if (terrainHash && terrain.hash !== terrainHash) {
@@ -1283,11 +1283,15 @@ function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name
     // reason; by the time it reaches the page it is worth drawing and worth saying.
     console.warn(`island: ${id} hashes ${terrain.hash} here and ${terrainHash} there`);
   }
-  const origin = freeBerth(terrain.half);
-  if (!origin) { console.warn(`island: no berth free for ${id}`); return null; }
+  // The sea decides where an island lies, and every client is told the same answer - that
+  // is what makes two people looking at the same water see the same thing. freeBerth is
+  // the fallback for the one case with no sea in it: the ?join= debug parameter, which
+  // conjures an island out of a seed with nobody to ask.
+  const at = Array.isArray(origin) ? origin : freeBerth(terrain.half);
+  if (!at) { console.warn(`island: no berth free for ${id}`); return null; }
   let region;
   try {
-    region = state.sea.add(placeIsland(terrain, { id, origin }));
+    region = state.sea.add(placeIsland(terrain, { id, origin: at }));
   } catch (e) {
     console.warn(`island: ${e.message}`);
     return null;
@@ -1295,7 +1299,7 @@ function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name
   // Hung on the region rather than passed around, because everything that later wants to
   // draw something of theirs - buildings now, paths and piers next - finds the region first.
   region.village = village;
-  console.info(`island: ${name || id} joined at berth [${origin}]`);
+  console.info(`island: ${name || id} joined at [${at}]`);
   return region;
 }
 
@@ -1518,32 +1522,55 @@ function onBoatFromServer(m) {
 // Two requests rather than one on purpose: the list is a name, a seed and a size each and
 // costs a few hundred bytes, and the island whole is up to two megabytes. The SSE `guests`
 // event carries the list, and the page comes back for the ones it has not got.
-async function refreshHarbour() {
-  if (!state.terrain) return;
-  let moored;
+// Where the sea says this island lies, before anything is drawn with it. Also the first
+// look at the fleet, so a page that boots into a busy world raises every coast in one go
+// rather than watching them pop in one socket message at a time.
+async function learnTheWorld() {
+  state.homeOrigin = [0, 0];
+  state.fleet = [];
   try {
-    moored = (await sea('/api/islands').then((r) => r.json())).islands || [];
-  } catch { return; }            // no harbour, no neighbours, no matter
-  let arrived = 0;
-  for (const berth of moored) {
-    if (state.sea.get(berth.id)) continue;
+    const world = await sea('/world').then((r) => r.json());
+    state.fleet = world.islands || [];
+    const me = state.fleet.find((i) => i.id === state.islandId);
+    if (me && Array.isArray(me.origin)) state.homeOrigin = me.origin;
+  } catch {
+    // No sea, or one that is not up yet. An island at the origin on its own is exactly
+    // what this was before there were seas, and the socket will bring the world when it
+    // connects.
+  }
+}
+
+// Bring the page's idea of the fleet up to the sea's. Everything except our own island,
+// which we have already got and are standing on: the sea lists it too, and joining it a
+// second time would put a duplicate coast on top of the one under our feet.
+//
+// The manifest is a few hundred bytes an island; an island whole is up to two megabytes,
+// so the list arrives often and the islands are fetched once each.
+async function syncFleet(rows) {
+  if (!state.terrain) return;
+  const moored = rows || state.fleet || [];
+  const arrived = [];
+  for (const row of moored) {
+    if (row.id === state.islandId) continue;
+    if (state.sea.get(row.id)) continue;
     let bundle;
     try {
-      bundle = await sea(`/api/islands?id=${encodeURIComponent(berth.id)}`).then((r) => r.json());
+      bundle = await sea(`/island/${encodeURIComponent(row.id)}`).then((r) => r.json());
     } catch { continue; }
     if (!bundle || !bundle.island) continue;
     const region = joinIsland({
-      id: berth.id,
+      id: row.id,
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
+      origin: row.origin,
     });
-    if (region) arrived++;
+    if (region) arrived.push(row.name);
   }
-  // A region that has sailed home takes its ground with it, so the sweep runs either way.
+  // An island that has sailed home takes its ground with it, so the sweep runs either way.
   const here = new Set(moored.map((b) => b.id));
   for (const r of state.sea.regions()) {
     if (r === state.region || here.has(r.id) || r.id.startsWith('debug-')) continue;
@@ -1554,10 +1581,25 @@ async function refreshHarbour() {
   launchBoats();
   applyFogRange();
   applyCameraRange();
-  if (arrived) {
+  if (arrived.length) {
     state.walk && state.walk.setLevels && handOutDecks();
-    state.ui.toast(`<b>${escapeHtml(moored.map((b) => b.name).join(', '))}</b> is moored alongside.`);
+    state.ui.toast(`<b>${escapeHtml(arrived.join(', '))}</b> ${arrived.length === 1 ? 'is' : 'are'} in the water alongside.`);
   }
+}
+
+// The sea talking about its fleet: a welcome carrying the whole list, or one island
+// arriving, going quiet or going home.
+function onFleetNews(world, one) {
+  if (world) { state.fleet = world.islands || []; syncFleet(state.fleet); return; }
+  if (!one) return;
+  const rows = (state.fleet || []).filter((r) => r.id !== one.id);
+  if (one.a === 'gone') {
+    state.fleet = rows;
+  } else {
+    const { t, a, ...row } = one;
+    state.fleet = [...rows, row];
+  }
+  syncFleet(state.fleet);
 }
 
 function raiseGuestIslands() {
@@ -1668,7 +1710,7 @@ function visitNeighbour(id) {
 async function sendIslandTo(n) {
   if (!n || !n.address || !n.port) return;
   try {
-    const r = await sea('/api/visit', {
+    const r = await mine('/api/visit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ host: n.address, port: n.port }),
@@ -2065,7 +2107,16 @@ function buildScene(village) {
   // archipelago a question gets the same answer it used to get from the terrain directly.
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
-  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
+  // Where the sea put us. It is [0, 0] for the first island into a world, which is every
+  // single-player island and every host - but a joiner is placed somewhere else, and it
+  // has to agree with everybody else about where that is. Poses travel in world
+  // coordinates (lib/players.mjs), so a client that quietly kept itself at the origin
+  // would see every other body in the wrong place and be seen in the wrong place itself.
+  //
+  // The local terrain is still origin-centred and layout.json is still local: only the
+  // region's offset changes, which is exactly the asymmetry shared/regions.mjs was built
+  // around, so a house still never moves.
+  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: state.homeOrigin || [0, 0] }));
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
@@ -2465,7 +2516,7 @@ function layLandscape(shot) {
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
     // shallows stay where the polder used to be while the ground under them has gone.
-    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: [0, 0] }));
+    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: state.homeOrigin || [0, 0] }));
     w.reshape(next);
   }
   state.shot = shot.village;
@@ -3576,9 +3627,13 @@ async function boot() {
   state.hasIslander = true;
   try {
     const hello = await mine('/api/hello').then((r) => r.json());
-    // Where the world is, if this island is pointed at one. Absent - which is every
-    // deployment today - leaves it exactly where it has always been: right here.
-    useSea(hello.sea && hello.sea.url);
+    // Where the world is. An island always has a sea now - single player is a sea of one,
+    // started in the islander's own process - but an island that says nothing still works:
+    // useSea(null) leaves every world call pointed at this same server.
+    useSea(hello.sea);
+    state.islandId = hello.islandId || null;
+    state.islandToken = hello.token || null;
+    await learnTheWorld();
     state.guest = hello.role !== 'islander';
     state.signs = hello.signs !== false;
     state.signMode = hello.display ? hello.display.nameplates : null;
@@ -3643,7 +3698,7 @@ async function boot() {
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   if (!state.guest) refreshNeighbours();
-  refreshHarbour();   // whatever was already moored when this page opened
+  syncFleet();        // whatever was already in the water when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
   // cannot arrive with nowhere to land.
@@ -3657,6 +3712,12 @@ async function boot() {
     peers: state.peers,
     walk: state.walk,
     url: seaSocket(),
+    // Which world, and whose coast this body belongs over. A page with no islander of its
+    // own sends no island and is a wanderer: it gets the world and a body, and nothing it
+    // does can reach anybody's disk.
+    join: { v: 1, as: 'client', island: state.islandId || null },
+    onWorld: onFleetNews,
+    onRefused: (m) => state.ui.toast(`The sea would not have us: ${escapeHtml(String(m.why || 'no reason given'))}.`),
     name: playerName(),
     onStatus: () => {},
     onPanels: (m) => applyPanelMessage(m),
@@ -3716,7 +3777,11 @@ function connect() {
     es = new EventSource(mineUrl('/events'));
     // An island arriving in the harbour, or sailing home. Not localOnly: everybody standing
     // on this island should see it happen, which is the whole point of putting it there.
-    es.addEventListener('guests', () => { refreshHarbour(); });
+    // The berth event is the islander's old way of announcing a visiting island, and the
+    // sea has taken that job over: the fleet arrives on the socket now. Kept as a nudge
+    // rather than removed, so an islander still running the old route is not silently
+    // ignored.
+    es.addEventListener('guests', () => { syncFleet(); });
     es.addEventListener('update', debounce(async () => {
       try {
         const next = await fetchVillage();
@@ -3799,7 +3864,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, refreshHarbour, applyFogRange, applyCameraRange,
+  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange,
 };
 
 addEventListener('resize', () => {

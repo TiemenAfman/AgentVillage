@@ -144,3 +144,20 @@ test('shared/ is reached through the import map, never by climbing out', () => {
   }
   assert.deepEqual(offenders, [], "import from 'shared/…' instead");
 });
+
+// The sea's whole surface, named. It was guessed at when api.js was written - before there
+// was a sea to ask - and /api/neighbours went to it and came back 404, because the UDP
+// beacon lives on the machine with the network interfaces on it. Now that lib/sea.mjs
+// exists the line is exact, and worth pinning: anything under /api/ is the islander's.
+test('only the world goes to the sea', () => {
+  const offenders = [];
+  for (const name of fs.readdirSync(WEBJS)) {
+    if (!name.endsWith('.js') || name === 'api.js') continue;
+    const src = code(fs.readFileSync(path.join(WEBJS, name), 'utf8'));
+    for (const m of src.matchAll(/\bsea\((['`])([^'`$]*)/g)) {
+      const at = m[2];
+      if (!/^\/(world|island\/)/.test(at)) offenders.push(`${name}: sea('${at}')`);
+    }
+  }
+  assert.deepEqual(offenders, [], "the sea serves /world and /island/:id; everything else is mine()");
+});

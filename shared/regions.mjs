@@ -77,6 +77,70 @@ export function berthOf(index, ownHalf, theirHalf, gap = SEA_GAP) {
   return [dir[0] * d, dir[1] * d];
 }
 
+// Whether two islands have open water between them, rather than merely not overlapping.
+// `add()` below only refuses squares that intersect; this is the stronger thing a fleet
+// wants, and it is berthOf's own rule read backwards: separated on one axis by at least
+// both halves plus the gap. One axis is enough because the grids are squares, so clearing
+// on either one puts a full strip of sea along the whole facing side.
+export function clearOf(a, b, gap = SEA_GAP) {
+  const need = a.half + b.half + gap;
+  return Math.abs(a.origin[0] - b.origin[0]) >= need
+    || Math.abs(a.origin[1] - b.origin[1]) >= need;
+}
+
+// Where a newcomer drops anchor, given everybody already at anchor.
+//
+// berthOf answers "where is that island relative to me", which is the right question with
+// one neighbour and the wrong one with seven: it has four bearings, and it is relative, so
+// every screen would have to agree about who the middle is. A fleet needs absolute origins
+// and no ceiling, so this walks a lattice outwards and takes the first free point.
+//
+// Two properties this has to have, and they are the whole design:
+//
+//   An island that has an origin keeps it. Nothing here ever moves one, because a newcomer
+//   that shifted the fleet would slide the world under the feet of everybody standing on
+//   it - the same reasoning replace() applies to levelBase further down.
+//   The answer depends only on who is already placed, not on the order they are asked
+//   about, so two machines given the same fleet reach the same lattice point.
+//
+// The pitch is set by the biggest island present, so a 256-grid joining a fleet of 64s
+// simply lands further out rather than anybody having to move. And the first four points
+// are the four bearings in berthOf's own order, so with one neighbour of the same size
+// this puts them due east - exactly where the old code did, and where horizon.js has
+// always taught you to look.
+export function nextOrigin(placed, half, gap = SEA_GAP) {
+  if (!placed.length) return [0, 0];
+  let biggest = half;
+  for (const p of placed) if (p.half > biggest) biggest = p.half;
+  const pitch = 2 * biggest + gap;
+  const mine = { half, origin: [0, 0] };
+  for (let ring = 1; ring < 64; ring++) {
+    for (const [i, j] of ringPoints(ring)) {
+      mine.origin = [i * pitch, j * pitch];
+      let ok = true;
+      for (const p of placed) if (!clearOf(mine, p, gap)) { ok = false; break; }
+      if (ok) return mine.origin;
+    }
+  }
+  return null;    // sixty-four rings out is not a crowded sea, it is a bug somewhere else
+}
+
+// The lattice points at distance `ring`, in a fixed order: the four bearings first, in
+// BEARINGS' own order, then the rest of the square's edge. Sorted rather than walked round
+// the perimeter so the order is stated in one place and cannot drift.
+function ringPoints(ring) {
+  const out = [];
+  for (const [dx, dz] of BEARINGS) out.push([dx * ring, dz * ring]);
+  for (let i = -ring; i <= ring; i++) {
+    for (let j = -ring; j <= ring; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
+      if ((i === 0 || j === 0) && (Math.abs(i) === ring || Math.abs(j) === ring)) continue;
+      out.push([i, j]);
+    }
+  }
+  return out;
+}
+
 // A terrain facade in world coordinates. Same method names, same meanings, so every
 // existing consumer takes one without knowing it is not a makeTerrain result - the way
 // web/js/interior.js:532-542 already hands a flat floor to createWalkMode and peers.place().

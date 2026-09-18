@@ -31,8 +31,8 @@ const UI_PER_BEAT = 2;
 // line that made a page unable to look at a sea running anywhere else. The caller knows
 // the answer (web/js/api.js does), so it passes it in and this file stops reading
 // location at all.
-export function createNet({ peers, walk, url, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
-  onBoat = () => {}, name = null } = {}) {
+export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
+  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -63,6 +63,12 @@ export function createNet({ peers, walk, url, onStatus = () => {}, onPanels = ()
     sock.addEventListener('open', () => {
       retry = RETRY_MIN;
       onStatus('on');
+      // The handshake. A sea answers nothing else until it has had one - it has to know
+      // which world you meant and which coast your body belongs over - and it is sent
+      // here rather than by the caller so a reconnect repeats it without anybody
+      // remembering to. An island with no sea ignores it, which is what makes this safe
+      // to send either way.
+      if (join) send({ t: 'join', ...join });
       if (name) send({ t: 'hello', name });
       send({ t: 'w', on: walking });
       last.f = -1;                      // force the first pose through
@@ -72,7 +78,14 @@ export function createNet({ peers, walk, url, onStatus = () => {}, onPanels = ()
       let m;
       try { m = JSON.parse(e.data); } catch { return; }
       switch (m.t) {
+        // Turned away: a version, a key, or an island somebody else is still holding.
+        // None of those fix themselves, so the page is told and the retry loop is left to
+        // its own devices rather than hammering a door that has been answered.
+        case 'refused': onRefused(m); break;
         case 'welcome':
+          // The fleet, when the far end is a sea. An island on its own says nothing here
+          // and the page draws what it always drew.
+          if (m.world) onWorld(m.world);
           selfId = m.id;
           peers.setSelf(m.id);
           for (const p of m.players || []) peers.join(p);
@@ -89,6 +102,8 @@ export function createNet({ peers, walk, url, onStatus = () => {}, onPanels = ()
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
         case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
+        // The fleet changing: an island arriving, going quiet, or going home.
+        case 'island': onWorld(null, m); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a
