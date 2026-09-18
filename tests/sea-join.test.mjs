@@ -203,14 +203,39 @@ test('an islander with the wrong token cannot take over a live island', () => af
   await thief.closed;
 }));
 
-test('the sea writes nothing to disk', () => afloat(async ({ base, sea }) => {
-  // Not a filesystem assertion - a statement of the module's surface. lib/sea.mjs imports
-  // node:http and its own two modules, and nothing that can write. If that ever changes,
-  // the property the whole design rests on has gone with it.
-  const src = await (await import('node:fs/promises')).readFile(new URL('../lib/sea.mjs', import.meta.url), 'utf8');
-  for (const forbidden of ['node:fs', 'writeFile', 'writeJsonAtomic', 'mkdir']) {
-    assert.ok(!src.includes(forbidden), `lib/sea.mjs reaches for ${forbidden}`);
-  }
+// The property the whole design rests on, asserted structurally rather than promised.
+//
+// A sea holds a world and writes none of it down: no schema, no migration, no upgrade path,
+// and a restart is a second of blank water while everybody reconnects. Checking the source
+// of one file would not hold - the reach could come in through any of its imports - so this
+// walks the whole graph from sea.mjs and asserts what it is allowed to touch.
+test('nothing the sea imports can reach a disk or start a process', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const root = path.dirname(fileURLToPath(new URL('../sea.mjs', import.meta.url)));
+
+  const seen = new Set();
+  const builtins = new Set();
+  const walk = (f) => {
+    f = path.resolve(f);
+    if (seen.has(f)) return;
+    seen.add(f);
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/^import .*from '([^']+)'/gm)) {
+      if (m[1].startsWith('node:')) { builtins.add(m[1]); continue; }
+      walk(path.join(path.dirname(f), m[1]));
+    }
+  };
+  walk(path.join(root, 'sea.mjs'));
+
+  // Three, and each of them earns its place: http serves, crypto makes an id, os names the
+  // machine. Anything that can open a file, spawn a process or reach the network on its own
+  // behalf is not on this list and must not get on it.
+  assert.deepEqual([...builtins].sort(), ['node:crypto', 'node:http', 'node:os']);
+  assert.ok(seen.size > 10, 'the walk found almost nothing, so it is not walking');
+});
+
+test('an island the sea holds is held in memory and nowhere else', () => afloat(async ({ base, sea }) => {
   const a = island();
   await post(base, a.id, a.bundle, 'tok');
   assert.equal(sea.fleet.count(), 1, 'it is all in memory, and that is the point');
