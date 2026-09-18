@@ -30,6 +30,11 @@ import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
 import { buildBundle, parseBundle } from './lib/islandbundle.mjs';
 import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
+import { makeTerrain } from './shared/terrain.mjs';
+import { berthOf } from './shared/regions.mjs';
+import { mooringFor } from './shared/quay.mjs';
+import { createJournal, JOURNAL_OPS } from './lib/journal.mjs';
+import { createVisit, hostIdFor } from './lib/visits.mjs';
 import os from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -358,7 +363,70 @@ const panelFaces = () => {
   for (const prop of listProps()) if (prop.kind === 'panel') out.set(prop.id, prop.face || 'notice');
   return out;
 };
-const roster = createRoster({ maxPlayers: config.multiplayer.maxPlayers, panelFaces, log });
+// Where every island's boat starts. Derived and not stored, from the same shared/quay.mjs
+// the browsers use, so an untouched boat is in the same place on every screen without a
+// message being sent about it - which is the whole reason that module exists.
+//
+// Recomputed rather than cached: an island arrives in the harbour or sails home while the
+// server runs, and a fleet that still has a mooring for an island that has gone would hold
+// a boat in open water. The work is a terrain per island, which is why it is done when the
+// harbour changes and not per message.
+function mooringsNow() {
+  const out = [];
+  const village = readJson(VILLAGE_FILE, null);
+  if (village && village.island) {
+    const t = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
+    const m = mooringFor('home', t, village.island.landing);
+    if (m) out.push(m);
+  }
+  // The guests, at the berths the browsers will put them at. The same berthOf and the same
+  // order, so the two sides agree; a berth that cannot be worked out is simply left without
+  // a boat rather than guessed at.
+  const own = village && village.grid ? village.grid.size / 2 : 32;
+  let i = 0;
+  for (const berth of guests.list()) {
+    const bundle = guests.read(berth.id);
+    if (!bundle || !bundle.island || !bundle.island.landing) { i++; continue; }
+    const size = bundle.grid ? bundle.grid.size : bundle.island.gridSize;
+    const t = makeTerrain(bundle.island.seed, { size, polders: bundle.polders || [] });
+    const m = mooringFor(berth.id, t, bundle.island.landing, berthOf(i, own, size / 2));
+    if (m) out.push(m);
+    i++;
+  }
+  return out;
+}
+
+// Telling every open socket about one boat. The roster broadcasts its own messages; this
+// is for the two places outside it that change the fleet - an island mooring or unmooring.
+const broadcast2 = (b) => { if (ws) ws.broadcast(JSON.stringify({ t: 'boat', ...b })); };
+
+// One journal per berth, made the first time somebody changes something on that island.
+// It lives in the berth's own directory, so evicting the berth takes the journal with it -
+// which is right: a record of what was done to an island that has sailed home is of no use
+// to anybody, and the guest has either collected it or decided not to.
+const journals = new Map();
+function journalFor(id) {
+  if (!journals.has(id)) journals.set(id, createJournal({ dir: path.join(guests.dir, id) }));
+  return journals.get(id);
+}
+
+// The hostId a guest works out for us, derived the same way on both sides: the hostname it
+// dialled and the port we answer on. lib/visits.mjs refuses a journal whose hostId is not
+// the one it set out for, which is what stops two visits at once from applying each
+// other's lines.
+function hostIdAsSeenBy(req) {
+  const asked = String((req.headers && req.headers.host) || '').replace(/:\d+$/, '');
+  return asked ? hostIdFor(asked, PORT) : null;
+}
+
+// The visit this island is on, if any: the loop that pulls its own changes home. One at a
+// time, because a settler is in one place.
+let visit = null;
+
+const roster = createRoster({
+  maxPlayers: config.multiplayer.maxPlayers, panelFaces, log,
+  moorings: mooringsNow(),
+});
 // A board taken off the island takes what it said with it, rather than waiting for a
 // restart to be forgotten.
 const forgetGonePanels = () => roster.panels.forget([...panelFaces().keys()]);
@@ -400,6 +468,7 @@ function sawSomebodyLeave(conn) {
       if (guests.parkedFrom(berth.id) !== address) continue;
       guests.evict(berth.id);
       log(`the island ${berth.name || berth.id} has sailed home`);
+      for (const b of roster.boats.moor(mooringsNow())) broadcast2(b);
       broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
     }
   }, GRACE).unref?.();
@@ -793,7 +862,16 @@ async function handle(req, res) {
       const answer = await r.json().catch(() => ({}));
       if (!r.ok) return json(res, 502, { error: answer.error || `they answered ${r.status}`, status: r.status });
       log(`sent this island to ${host}:${port}`);
-      return json(res, 200, { ok: true, berth: answer.berth, id: bundle.island.id });
+      // And the way home. From here on this island pulls its own changes back: whatever is
+      // done to it over there lands in that host's journal, and this loop collects it and
+      // runs it through the same props and garden this island uses itself. A pull and not a
+      // push, so the write happens on the machine that owns the file, through code that
+      // already validates it, under its own limits - and nothing over there ever needs a
+      // way to reach in here.
+      if (visit) visit.stop();
+      visit = createVisit({ host, port, islandId: bundle.island.id, log });
+      visit.start();
+      return json(res, 200, { ok: true, berth: answer.berth, id: bundle.island.id, comingHome: true });
     } catch (e) {
       return json(res, 502, { error: String(e.message || e) });
     }
@@ -828,11 +906,104 @@ async function handle(req, res) {
       const berth = guests.park({ id: bundle.island.id, address: addr, bundle });
       // Not localOnly: an island appearing in the harbour is the whole point, and
       // everybody standing on this island should see it arrive.
+      // The fleet learns about the new island: a berth without a mooring is an island you
+      // cannot leave, and one that has gone would hold a boat in open water.
+      for (const b of roster.boats.moor(mooringsNow())) broadcast2(b);
       broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
       return json(res, 201, { ok: true, berth });
     } catch (e) {
       return json(res, e.status || 400, { error: String(e.message || e) });
     }
+  }
+
+  // Changing something on an island that is moored here. One route and not seven: the
+  // allowlist of what may be done lives in lib/journal.mjs and is checked in one place, and
+  // seven near-identical handlers would be seven places to forget a check. Reachable by a
+  // visitor, for the same reason and under the same rules as /api/island - it is their own
+  // island they are changing, parked in our harbour.
+  //
+  // Nothing here touches this island. The berth has its own props and its own garden, fed
+  // the island's seed and grid so that "may a bed go here" is answered against THEIR
+  // coastline and not ours - a berth has no layout.json of its own and never will, because
+  // a layout deliberately does not travel.
+  if (p === '/api/island-do') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
+    const addr = req.socket && req.socket.remoteAddress;
+    if (!guests.take(addr)) return json(res, 429, { error: 'one at a time; try again in a moment' });
+    let asked;
+    try { asked = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const island = String(asked && asked.island || '');
+    const op = String(asked && asked.op || '');
+    const payload = (asked && asked.payload) || {};
+    if (!JOURNAL_OPS.includes(op)) return json(res, 400, { error: `${op} is not something that can be done` });
+    const bundle = guests.read(island);
+    if (!bundle) return json(res, 404, { error: 'no island is moored there' });
+
+    const dir = path.join(guests.dir, island);
+    const opts = {
+      file: path.join(dir, 'props.json'),
+      gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
+    };
+    // The garden needs the whole island to answer "is this ground": its seed, its size and
+    // the polders it has drained. See lib/garden.mjs, which grew these arguments for
+    // exactly this caller.
+    const garden = {
+      file: path.join(dir, 'garden.json'),
+      seed: bundle.island.seed,
+      gridSize: opts.gridSize,
+      polders: bundle.polders || [],
+    };
+
+    let done;
+    try {
+      if (op === 'build') done = addProp(payload, opts);
+      else if (op === 'unbuild') done = removeProp(String(payload.id || ''), { file: opts.file });
+      else if (op === 'sow') done = plantBed(payload, garden);
+      else if (op === 'harvest') done = harvestBed(String(payload.id || ''), garden);
+      else if (op === 'dig') done = digUpBed(String(payload.id || ''), garden);
+      else if (op === 'buy') done = buySeed(String(payload.kind || ''), Number(payload.count) || 1, garden);
+      else if (op === 'sell') done = sellCrop(String(payload.kind || ''), payload.count ?? 'all', garden);
+    } catch (e) {
+      return json(res, 400, { error: String(e.message || e) });
+    }
+    if (!done) return json(res, 409, { error: 'that could not be done here' });
+
+    // The minted id goes in the journal, not the one that was asked for. addProp and
+    // plantBed make their own, and the guest's copy at home will make a different one - so
+    // the line has to carry what it became or the `unbuild` that follows it a minute later
+    // would find nothing at home and leave the bench standing for ever.
+    const entry = journalFor(island).append({
+      op, by: addr, payload: { ...payload, id: (done && done.id) || payload.id || null },
+    });
+    return json(res, 200, { ok: true, entry, done });
+  }
+
+  // Coming home. Stops the pull and answers with what it collected, so the page can say
+  // what came back rather than leaving it to the log.
+  if (p === '/api/visit-end') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
+    if (!visit) return json(res, 200, { ok: true, wasAway: false });
+    let last = null;
+    try { last = await visit.pull(); } catch (e) { log(`the last of the journal did not come home: ${e.message}`); }
+    visit.stop();
+    visit = null;
+    return json(res, 200, { ok: true, wasAway: true, last });
+  }
+
+  // The record of what has been done to an island moored here, for that island to come and
+  // collect. Answering with the hostId we are, so a guest can tell a journal from this
+  // island apart from one from somebody else's - see lib/visits.mjs.
+  if (p === '/api/island-journal') {
+    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
+    const island = url.searchParams.get('island') || '';
+    if (!guests.read(island)) return json(res, 404, { error: 'no island is moored there' });
+    const since = Math.max(0, Math.floor(Number(url.searchParams.get('since')) || 0));
+    return json(res, 200, {
+      hostId: hostIdAsSeenBy(req),
+      island,
+      since,
+      entries: journalFor(island).since(since),
+    });
   }
 
   // What is moored here. Without `id` it is the list the page draws the horizon from -
