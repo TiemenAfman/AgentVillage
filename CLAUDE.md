@@ -112,13 +112,26 @@ both islands have a `civic:board`. No nameplates over there: 41 of them measured
 calls and 41 canvas textures, which took a second island from 1.35x the call count to 1.76x
 against a 1.6x budget - `attachExtras(rec, { signs: false })` is what keeps that true.
 
-**`POST /api/island` is the first write route on the public allowlist**, deliberately
-against the rule below. See the carve-out written above `PUBLIC_API` in `lib/access.mjs`;
-the short version is that LAN membership is the whole gate, so the size cap, the rate limit,
-the quarantine under `data/guests/` and the whitelisting rebuilder in `lib/islandbundle.mjs`
-are the only defences - and an `inviteCode` now buys writes where it used to buy a look.
-A berth never survives a restart: `createGuests()` clears the tree on start, which is what
-keeps an uploaded island a *visit* rather than an export.
+Its people come the same way: `web/js/crowd-view.js` feeds positions off the wire into the
+same `createFigures` our own crowd is drawn with, so a village of three hundred over there
+costs the same eleven draw calls a village of three does. And only the near ones are drawn
+whole — `DETAILED` in `main.js`, nearest first by `nearestFirst()` — while the rest are
+silhouettes at their real berth through `horizon.js`. Eight islands in full does not render;
+measured at six, 850 draw calls against 788 for one.
+
+There is no longer any way to visit somebody by *leaving*. `cross()`, `visitNeighbour()`
+and `?arrive=` are gone with the berth machinery: an island in your sea is water you can
+cross, and an island on the horizon is one in a sea you have not joined — which is a choice
+in Settings, not a boat.
+
+**Nothing a visitor can reach writes anything.** There is no write route on `PUBLIC_API`
+and there is not meant to be one. There was — `POST /api/island` took delivery of somebody
+else's island and parked it under `data/guests/` — and the sea took that job: an island is
+published to a world that holds it in memory and never writes it down. So `lib/access.mjs`
+is back to all three of a loopback socket, a known `Host` and a matching `Origin`, with no
+flag and no path list that can spend any of them, and an `inviteCode` is back to buying a
+look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
+`parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
 
 **One material, one draw call per building.** Which texture sheet a face uses is a number
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive

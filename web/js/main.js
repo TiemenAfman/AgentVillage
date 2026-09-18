@@ -1804,150 +1804,13 @@ function applyNeighbours(list) {
   const arrived = syncHorizon();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
-    state.ui.toast(
-      `<b>${escapeHtml(n.name)}</b> is keeping an island off to the ${mark ? bearingWord(mark) : 'west'}.`
-      + ` <button class="act" type="button">Sail over</button>`
-      + ` <button class="act ghost" type="button">Later</button>`,
-      (card) => {
-        const [go, later] = card.querySelectorAll('button');
-        go.addEventListener('click', () => { card.remove(); visitNeighbour(n.id); });
-        later.addEventListener('click', () => card.remove());
-      },
-    );
+    // No offer to sail over any more, because there is nowhere to go: an island on the
+    // horizon is one that is in no sea of ours, and the way to reach it is to join the sea
+    // it is in - which is a choice in Settings, not a boat. An island in *our* sea is not
+    // a rumour on the horizon at all; it is water you can cross.
+    state.ui.toast(`<b>${escapeHtml(n.name)}</b> is keeping an island off to the ${mark ? bearingWord(mark) : 'west'}.`);
   }
 }
-
-// Clicking an island on the horizon does not simply take you there: it is somebody
-// else's machine, and leaving is worth a moment's thought.
-function askToVisit(pickId) {
-  const n = state.horizon && state.horizon.find(pickId);
-  if (!n) return;
-  state.ui.toast(
-    `Sail over to <b>${escapeHtml(n.name)}</b>?`
-    + ` <span class="muted">You will be a visitor there.</span>`
-    + ` <button class="act" type="button">Sail</button>`
-    + ` <button class="act ghost" type="button">Stay</button>`,
-    (card) => {
-      const [go, stay] = card.querySelectorAll('button');
-      go.addEventListener('click', () => { card.remove(); visitNeighbour(n.id); });
-      stay.addEventListener('click', () => card.remove());
-    },
-  );
-}
-
-// Sailing over is a real crossing to their server: their island, their rules, and you
-// arrive there as a visitor. The animation is the handover, not a trick - the page really
-// does go there.
-function visitNeighbour(id) {
-  if (state.sailing) return;
-  const n = state.horizon && state.horizon.find(id);
-  if (!n) return;
-  if (state.mode === 'walk') exitWalk();
-  state.intro = null;
-  state.tween = null;
-  controls.enabled = false;
-  state.ui.closeDossier();
-  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>, and taking this island with you…`);
-  // The island goes too. Sent while the camera is still crossing, because building the
-  // bundle and posting it takes about as long as the animation does and there is no reason
-  // to watch a spinner for it - and sent by our own server rather than from here, so the
-  // redaction runs on the same side as the secrets and this page never holds an unredacted
-  // copy that it then forwards.
-  //
-  // A failure is not a reason to stay home: you can visit an island without mooring your
-  // own beside it, which is what every visit was until now. But it is a reason to say so,
-  // because "my island did not come" is otherwise a silence - and the likeliest cause by
-  // far is that the two of you are running different code, which parseBundle refuses
-  // outright rather than drawing houses in the sea.
-  sendIslandTo(n);
-
-  const target = new THREE.Vector3(n.x * 0.45, 16, n.z * 0.45);
-  state.sailing = { t: 0, dur: 2.6, from: camera.position.clone(), target, to: n, gone: false };
-  // The crossing is driven by the animation, and animation stops in a tab nobody is
-  // looking at. Without this you could start a journey, switch away, and come back to a
-  // frozen sea - so the arrival is on a clock as well, and whichever comes first wins.
-  setTimeout(() => { if (state.sailing) cross(state.sailing); }, 2.6 * 1000 + 1500);
-}
-
-async function sendIslandTo(n) {
-  if (!n || !n.address || !n.port) return;
-  try {
-    const r = await mine('/api/visit', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ host: n.address, port: n.port }),
-    });
-    const said = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      state.ui.toast(`Your island stayed here: ${escapeHtml(said.error || r.statusText)}`);
-      return;
-    }
-    console.info(`island: moored at ${n.name} as ${said.id}`);
-  } catch (e) {
-    state.ui.toast(`Your island stayed here: ${escapeHtml(String(e.message || e))}`);
-  }
-}
-
-function cross(s) {
-  if (s.gone) return;
-  s.gone = true;
-  const url = new URL(s.to.url);
-  url.searchParams.set('arrive', state.village && state.village.island ? state.village.island.name : 'a neighbour');
-  location.href = url.toString();
-}
-
-function sail(dt) {
-  const s = state.sailing;
-  s.t += dt;
-  const k = clamp(s.t / s.dur, 0, 1);
-  const e = k * k * (3 - 2 * k);
-  camera.position.lerpVectors(s.from, s.target, e);
-  camera.lookAt(s.to.x, 4, s.to.z);
-  const veil = document.getElementById('veil');
-  if (veil) veil.style.opacity = String(clamp((k - 0.5) / 0.5, 0, 1));
-  if (k >= 1) cross(s);
-}
-
-// Coming in off the water onto somebody else's island, on the bearing we left on.
-function comeAshore(from) {
-  // Lift the water off the screen on a timer, not on an animation frame. A tab that is
-  // not being looked at stops animating, and a veil that only clears on the next frame
-  // would leave somebody staring at a black rectangle.
-  const veil = document.getElementById('veil');
-  if (veil) {
-    veil.style.opacity = '1';
-    veil.style.transition = 'opacity 1.1s ease';
-    setTimeout(() => { veil.style.opacity = '0'; }, 40);
-  }
-  const a = (hash32(String(from)) / 4294967296) * Math.PI * 2;
-  const cx = Math.sin(a) * 120, cz = Math.cos(a) * 120;
-  camera.position.set(cx, 26, cz);
-  controls.target.set(0, 1, 0);
-  controls.enabled = false;
-  state.tween = {
-    t: 0, dur: 3.4,
-    from: controls.target.clone(), to: new THREE.Vector3(0, 1, 0),
-    fromPos: camera.position.clone(), toPos: new THREE.Vector3(cx * 0.28, 15, cz * 0.28),
-    onDone: () => { controls.enabled = true; },
-  };
-  // The way back comes from the browser, not from our own URL: sessionStorage belongs to
-  // the origin we just left, and a "from" parameter would be a link anyone could write
-  // for us. The referrer is the one account of where we came from that we did not author.
-  let home = null;
-  try {
-    const r = document.referrer && new URL(document.referrer);
-    if (r && /^https?:$/.test(r.protocol) && r.origin !== location.origin) home = `${r.origin}/`;
-  } catch { /* no referrer, no way home but the back button */ }
-  state.ui.toast(
-    `You have come ashore on <b>${escapeHtml(state.village && state.village.island ? state.village.island.name : 'this island')}</b>, from ${escapeHtml(from)}.`
-    + (home ? ` <button class="act ghost" type="button">Sail home to ${escapeHtml(new URL(home).host)}</button>` : ''),
-    home ? (card) => {
-      const b = card.querySelector('button');
-      b && b.addEventListener('click', () => { location.href = home; });
-    } : null,
-  );
-}
-
 // --------------------------------------------------------------- particles
 function createParticles() {
   const MAX = 2200;
@@ -3242,8 +3105,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
-    if (hit && String(hit).startsWith('neighbour:')) askToVisit(hit);
-    else if (hit) { select(hit); } else { state.ui.closeDossier(); }
+    // A silhouette on the horizon is not somewhere to go any more - see applyNeighbours -
+    // so a click on one is a click on nothing, and closing the dossier is the right answer.
+    if (hit && !String(hit).startsWith('neighbour:')) select(hit);
+    else state.ui.closeDossier();
   }
   downAt = null;
 });
@@ -3412,7 +3277,6 @@ function frame(nowMs) {
     state.settlers.update(dt, state.world ? state.world.state.night : 0);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
-  if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -4006,8 +3870,7 @@ async function boot() {
   applyVillage(village, { animate: false });
   setLiveMode();
   // Arriving from a neighbour replaces the usual opening sweep with a landing.
-  const from = params.get('arrive');
-  if (from) comeAshore(from.slice(0, 40)); else startIntro();
+  startIntro();
   state.ui.boot(true);
   requestAnimationFrame(tick);
   connect();
