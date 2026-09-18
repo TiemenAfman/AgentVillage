@@ -46,21 +46,32 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   const material = new THREE.MeshStandardMaterial();
   const terrain = { half: 32, size: 64, worldHeight: () => 0 };
   const settlers = createSettlers(scene, material, terrain);
-  assert.equal(scene.children.length, 12, 'five body, six hats, one existing hammer batch');
+  assert.equal(scene.children.length, 18, 'eleven articulated body, six hats, one hammer batch');
   for (let i = 0; i < 100; i++) settlers.add(`resident:${i}`, { style: 'sonnet', kind: 'hut' }, [i,0,0]);
-  settlers.update(0, 0);
-  assert.equal(scene.children.length, 12, 'no mesh per person');
-  const [torso, limbs, head, hands, details] = scene.children;
-  for (const mesh of [torso, limbs, head, hands, details]) assert.equal(mesh.count, 100);
-  assert.deepEqual([...head.instanceColor.array], [...hands.instanceColor.array]);
-  assert.deepEqual([...torso.instanceMatrix.array], [...hands.instanceMatrix.array]);
+  const walker = settlers.figures.get('resident:0');
+  walker.mode = 'walk'; walker.path = [[0, 0], [2, 0]]; walker.pathI = 0; walker.pos = [0, 0];
+  settlers.update(0.1, 0);
+  assert.equal(scene.children.length, 18, 'no mesh per person');
+  const [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details] = scene.children;
+  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
+  for (const mesh of body) assert.equal(mesh.count, 100);
+  for (const mesh of [leftHand, rightHand, skinCore]) {
+    assert.deepEqual([...head.instanceColor.array], [...mesh.instanceColor.array]);
+  }
+  for (const mesh of [leftArm, rightArm]) assert.deepEqual([...torso.instanceColor.array], [...mesh.instanceColor.array]);
+  for (const mesh of [leftLeg, rightLeg]) assert.deepEqual([...trim.instanceColor.array], [...mesh.instanceColor.array]);
+  assert.deepEqual([...torso.instanceMatrix.array], [...trim.instanceMatrix.array]);
+  const torsoPose = new THREE.Matrix4(), legPose = new THREE.Matrix4(), otherLegPose = new THREE.Matrix4();
+  torso.getMatrixAt(0, torsoPose); leftLeg.getMatrixAt(0, legPose); rightLeg.getMatrixAt(0, otherLegPose);
+  assert.notDeepEqual(torsoPose.elements, legPose.elements);
+  assert.notDeepEqual(legPose.elements, otherLegPose.elements);
   assert.deepEqual([...head.instanceMatrix.array], [...details.instanceMatrix.array]);
   assert.deepEqual(settlers.pickables(), [torso, head]);
   assert.equal(settlers.figureAt(head, 3).id, 'resident:3');
   settlers.remove('resident:3');
   assert.equal(settlers.figureAt(head, 3), null);
   const matrix = new THREE.Matrix4();
-  for (const mesh of [torso, limbs, head, hands, details]) {
+  for (const mesh of body) {
     mesh.getMatrixAt(3, matrix);
     assert.equal(matrix.elements[13], -999);
   }

@@ -2,11 +2,13 @@
 // WASD, terrain underfoot, buildings you cannot walk through, and a prompt when you
 // come close to something you can interact with.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
-import { avatarPlayerGeometry, loadAvatar, PLAYER_EYE } from './avatar.js';
+import { loadAvatar, PLAYER_EYE } from './avatar.js';
+import { createClassicAvatar } from './classic-avatar.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -59,6 +61,8 @@ const HEAD = WALK_CLEARANCE;
 // The keys the feet use. Lifted out of onKeyDown because a board being worked hands
 // every other key to the page and keeps only these.
 const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
+const KENNEY_CHARACTER = '/models/kenney/character-male-a.glb';
+const KENNEY_HEIGHT = 0.54;
 
 // A field on a board takes its letters. In here w is a w, not a step, so the feet keep
 // out of it entirely - which is the whole of "type quit and you plant a tree".
@@ -131,7 +135,14 @@ export function createWalkMode({
   scene, camera, terrain, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null,
 }) {
-  const avatar = new THREE.Mesh(avatarPlayerGeometry(avatarSpec || loadAvatar()), material);
+  // Both figures live below one parent so movement, collisions and the camera do not care
+  // which look is selected. The original figure gets four lightweight pivots; Kenney uses
+  // the animation clips in its GLB.
+  const avatar = new THREE.Group();
+  let avatarLook = avatarSpec || loadAvatar();
+  let character = avatarLook.character || 'kenney';
+  const classicAvatar = createClassicAvatar(avatarLook, material);
+  avatar.add(classicAvatar.object);
   // Yaw first, then the swimmer's pitch about its own axis. The default XYZ order would
   // tip the body in world space and then spin it. With x = 0 both orders agree, so the
   // walk animation is untouched.
@@ -139,6 +150,58 @@ export function createWalkMode({
   avatar.castShadow = true;
   avatar.visible = false;
   scene.add(avatar);
+
+  let kenneyModel = null;
+  let kenneyMixer = null;
+  let kenneyAction = null;
+  let kenneyClip = '';
+  let disposed = false;
+  new GLTFLoader().load(KENNEY_CHARACTER, (gltf) => {
+    if (disposed) return;
+    kenneyModel = gltf.scene;
+    kenneyModel.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(kenneyModel);
+    const size = bounds.getSize(new THREE.Vector3());
+    const scale = size.y > 0 ? KENNEY_HEIGHT / size.y : 1;
+    kenneyModel.scale.setScalar(scale);
+    // Centre the authored model over walk mode's feet and keep its soles on y=0.
+    kenneyModel.position.set(
+      -(bounds.min.x + bounds.max.x) * 0.5 * scale,
+      -bounds.min.y * scale,
+      -(bounds.min.z + bounds.max.z) * 0.5 * scale,
+    );
+    // The kit and AgentVillage both use +Z as the character's forward direction.
+    kenneyModel.traverse((part) => {
+      if (!part.isMesh) return;
+      part.castShadow = true;
+      part.receiveShadow = true;
+    });
+    avatar.add(kenneyModel);
+    kenneyMixer = new THREE.AnimationMixer(kenneyModel);
+    kenneyModel.userData.clips = new Map(gltf.animations.map((clip) => [clip.name, clip]));
+    playKenney('idle', 0);
+    showCharacter();
+  }, undefined, (error) => {
+    console.warn(`Could not load ${KENNEY_CHARACTER}; using the built-in avatar instead.`, error);
+  });
+
+  function playKenney(name, fade = 0.14) {
+    if (!kenneyMixer || name === kenneyClip) return;
+    const clip = kenneyModel.userData.clips.get(name) || kenneyModel.userData.clips.get('idle');
+    if (!clip) return;
+    const next = kenneyMixer.clipAction(clip);
+    next.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+    if (kenneyAction && fade > 0) kenneyAction.crossFadeTo(next, fade, true);
+    else if (kenneyAction) kenneyAction.stop();
+    kenneyAction = next;
+    kenneyClip = name;
+  }
+
+  function showCharacter() {
+    classicAvatar.object.visible = character === 'classic' || !kenneyModel;
+    if (kenneyModel) kenneyModel.visible = character === 'kenney';
+  }
+  showCharacter();
 
   const lounge = new THREE.Mesh(loungeGeometry(), material);
   lounge.castShadow = true;
@@ -433,9 +496,10 @@ export function createWalkMode({
   // only the geometry is swapped, so a change made in the studio shows on your character
   // the instant you pick it, even mid-stride.
   function setAvatar(spec) {
-    const next = avatarPlayerGeometry(spec);
-    avatar.geometry.dispose();
-    avatar.geometry = next;
+    avatarLook = spec;
+    character = spec.character || 'kenney';
+    classicAvatar.set(spec);
+    showCharacter();
   }
 
   const forward = new THREE.Vector3();
@@ -595,11 +659,9 @@ export function createWalkMode({
       lounge.position.set(state.pos.x, state.pos.y + 0.01, state.pos.z);
       lounge.rotation.set(0, state.yaw, 0);
     } else if (state.sitting) {
-      // Upright but shortened, which at this scale is what reads as sitting: the figure is
-      // one merged mesh with no legs to fold, so the body itself does the folding.
+      // Both character rigs provide their own seated pose.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(0, state.yaw, 0);
-      avatar.scale.set(1, SIT_SCALE, 1);
     } else if (state.swimming) {
       // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
       // limbs to animate - the whole body leans into it instead, which at this scale is
@@ -611,10 +673,26 @@ export function createWalkMode({
       // sign swims feet first.
       avatar.rotation.set(1.32 + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
     } else {
-      const bobY = state.moving && state.grounded ? Math.abs(Math.sin(state.bob)) * 0.045 : 0;
-      avatar.position.set(state.pos.x, state.pos.y + bobY, state.pos.z);
-      avatar.rotation.set(0, state.yaw, state.moving ? Math.sin(state.bob) * 0.045 : 0);
-      if (state.crouching) avatar.scale.set(1, CROUCH_SCALE, 1);
+      avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
+      avatar.rotation.set(0, state.yaw, 0);
+      if (state.crouching && classicAvatar.object.visible) avatar.scale.set(1, 0.82, 1);
+    }
+
+    if (classicAvatar.object.visible) {
+      classicAvatar.update({
+        moving: state.moving, running: state.running, grounded: state.grounded,
+        crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
+        phase: state.bob,
+      }, dt);
+    }
+    if (kenneyMixer && kenneyModel.visible) {
+      const clip = state.lying || state.sitting ? 'sit'
+        : !state.grounded ? 'fall'
+          : state.crouching ? 'crouch'
+            : state.running ? 'sprint'
+              : state.moving ? 'walk' : 'idle';
+      playKenney(clip);
+      kenneyMixer.update(dt);
     }
 
     // camera sits behind and above, and never dips under the ground
@@ -652,6 +730,7 @@ export function createWalkMode({
   }
 
   function dispose() {
+    disposed = true;
     removeEventListener('keydown', onKeyDown);
     removeEventListener('keyup', onKeyUp);
     removeEventListener('blur', onBlur);
@@ -660,7 +739,17 @@ export function createWalkMode({
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('wheel', onWheel);
     scene.remove(avatar);
-    avatar.geometry.dispose();
+    classicAvatar.dispose();
+    if (kenneyModel) kenneyModel.traverse((part) => {
+      if (!part.isMesh) return;
+      part.geometry?.dispose();
+      const materials = Array.isArray(part.material) ? part.material : [part.material];
+      for (const mat of materials) {
+        if (!mat) continue;
+        for (const value of Object.values(mat)) if (value?.isTexture) value.dispose();
+        mat.dispose();
+      }
+    });
   }
 
   // What stands above the terrain, per cell, lowest first. main.js merges the layout's

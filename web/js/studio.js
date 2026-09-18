@@ -2,10 +2,12 @@
 // exactly the figure you will walk as; the swatches on the right change it as you pick.
 // Nothing is committed until you wear it - "Never mind" puts back what you had on.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   SWATCHES, HAT_SHAPES, DEFAULT_AVATAR,
-  loadAvatar, saveAvatar, normalizeAvatar, avatarPlayerGeometry,
+  loadAvatar, saveAvatar, normalizeAvatar,
 } from './avatar.js';
+import { createClassicAvatar } from './classic-avatar.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 
@@ -58,6 +60,10 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <div class="av-body">
           <div class="av-stage"><canvas id="av-canvas"></canvas></div>
           <div class="av-controls">
+            <h4>Character</h4><div class="av-hats">
+              <button class="av-model chip" data-character="kenney">Kenney</button>
+              <button class="av-model chip" data-character="classic">Original</button>
+            </div>
             <h4>Skin</h4><div class="av-swatches" data-row="skin">${swatchRow('skin')}</div>
             <h4>Tunic</h4><div class="av-swatches" data-row="tunic">${swatchRow('tunic')}</div>
             <h4>Leather &amp; trim</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
@@ -82,6 +88,9 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     el.querySelectorAll('.av-hat').forEach((b) => b.addEventListener('click', () => {
       spec.hatShape = b.dataset.shape; sync(); apply();
     }));
+    el.querySelectorAll('.av-model').forEach((b) => b.addEventListener('click', () => {
+      spec.character = b.dataset.character; sync(); apply();
+    }));
 
     preview = makePreview(el.querySelector('#av-canvas'));
     sync();
@@ -92,6 +101,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   function sync() {
     el.querySelectorAll('.av-sw').forEach((b) => b.classList.toggle('on', Number(b.dataset.hex) === spec[b.dataset.part]));
     el.querySelectorAll('.av-hat').forEach((b) => b.classList.toggle('on', b.dataset.shape === spec.hatShape));
+    el.querySelectorAll('.av-model').forEach((b) => b.classList.toggle('on', b.dataset.character === spec.character));
   }
 
   // Show the change on the turntable and on the character out on the island at once.
@@ -135,10 +145,37 @@ function makePreview(canvas) {
   scene.add(key);
 
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0 });
-  const mesh = new THREE.Mesh(avatarPlayerGeometry(DEFAULT_AVATAR), mat);
   const pivot = new THREE.Group();
-  pivot.add(mesh);
+  const classic = createClassicAvatar(DEFAULT_AVATAR, mat);
+  pivot.add(classic.object);
   scene.add(pivot);
+
+  let character = DEFAULT_AVATAR.character;
+  let kenney = null, mixer = null;
+  new GLTFLoader().load('/models/kenney/character-male-a.glb', (gltf) => {
+    kenney = gltf.scene;
+    kenney.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(kenney);
+    const scale = 0.54 / bounds.getSize(new THREE.Vector3()).y;
+    kenney.scale.setScalar(scale);
+    kenney.position.set(
+      -(bounds.min.x + bounds.max.x) * 0.5 * scale,
+      -bounds.min.y * scale,
+      -(bounds.min.z + bounds.max.z) * 0.5 * scale,
+    );
+    kenney.traverse((part) => { if (part.isMesh) part.castShadow = true; });
+    pivot.add(kenney);
+    mixer = new THREE.AnimationMixer(kenney);
+    const walk = gltf.animations.find((clip) => clip.name === 'walk');
+    if (walk) mixer.clipAction(walk).play();
+    syncCharacter();
+  });
+
+  function syncCharacter() {
+    classic.object.visible = character === 'classic' || !kenney;
+    if (kenney) kenney.visible = character === 'kenney';
+  }
+  syncCharacter();
 
   function resize() {
     const w = canvas.clientWidth || 220, h = canvas.clientHeight || 300;
@@ -155,17 +192,34 @@ function makePreview(canvas) {
     raf = requestAnimationFrame(tick);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     pivot.rotation.y += dt * 0.7;
+    classic.update({ moving: true, running: false, grounded: true, crouching: false,
+      sitting: false, lying: false, phase: now * 0.009 }, dt);
+    if (mixer && kenney.visible) mixer.update(dt);
     renderer.render(scene, cam);
   }
   raf = requestAnimationFrame(tick);
 
   return {
-    set(spec) { mesh.geometry.dispose(); mesh.geometry = avatarPlayerGeometry(spec); },
+    set(spec) {
+      character = spec.character;
+      classic.set(spec);
+      syncCharacter();
+    },
     dispose() {
       alive = false;
       cancelAnimationFrame(raf);
       removeEventListener('resize', resize);
-      mesh.geometry.dispose();
+      classic.dispose();
+      if (kenney) kenney.traverse((part) => {
+        if (!part.isMesh) return;
+        part.geometry?.dispose();
+        const materials = Array.isArray(part.material) ? part.material : [part.material];
+        for (const kenneyMat of materials) {
+          if (!kenneyMat) continue;
+          for (const value of Object.values(kenneyMat)) if (value?.isTexture) value.dispose();
+          kenneyMat.dispose();
+        }
+      });
       mat.dispose();
       renderer.dispose();
     },

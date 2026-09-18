@@ -6,9 +6,8 @@ import { SETTLER_PARTS, SETTLER_COLORS, SETTLER_EYE_Y } from './villager-mesh.js
 export const RESIDENT_HEAD_Y = 0.350;
 export const RESIDENT_EYE_OFFSET = SETTLER_EYE_Y - RESIDENT_HEAD_Y;
 
-// Passing a tint replaces the part colour; null preserves hair and facial details.
-export function residentPart(variant, tint = null, dy = 0) {
-  const parts = SETTLER_PARTS.filter((part) => part.variant === variant).map((part) => {
+function buildParts(parts, tint, dy) {
+  const geometries = parts.map((part) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
     const count = g.attributes.position.count;
@@ -20,7 +19,19 @@ export function residentPart(variant, tint = null, dy = 0) {
     g.translate(0, dy, 0);
     return g;
   });
-  const merged = mergeGeometries(parts, false);
-  parts.forEach((g) => g.dispose());
+  const merged = mergeGeometries(geometries, false);
+  geometries.forEach((g) => g.dispose());
   return merged;
+}
+
+// Passing a tint replaces the part colour; null preserves hair and facial details.
+export function residentPart(variant, tint = null, dy = 0) {
+  return buildParts(SETTLER_PARTS.filter((part) => part.variant === variant), tint, dy);
+}
+
+// Crowd animation uses the authored Blender object names as its rig seams. Geometry is
+// still instanced per batch; this only decides which named pieces share a transform.
+export function residentNamedPart(names, tint = null, dy = 0) {
+  const wanted = new Set(names);
+  return buildParts(SETTLER_PARTS.filter((part) => wanted.has(part.name)), tint, dy);
 }

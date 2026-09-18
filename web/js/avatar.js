@@ -59,13 +59,17 @@ export const SWATCHES = {
 };
 
 // The wide-brimmed, straw-hatted settler the player has always been.
-export const DEFAULT_AVATAR = { skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide' };
+export const DEFAULT_AVATAR = {
+  character: 'kenney',
+  skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
+};
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
   const shape = HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
   return {
+    character: spec.character === 'classic' ? 'classic' : d.character,
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
     trim: num(spec.trim, d.trim),
@@ -90,10 +94,11 @@ export function saveAvatar(spec) {
 
 // Blender meshes carry wardrobe slots instead of fixed materials. Recolouring merges
 // them into the same single vertex-coloured mesh used by the studio and walk mode.
-function buildFigure(spec, gear) {
+function buildFigure(spec, gear, include = null) {
   const s = normalizeAvatar(spec);
   const parts = SETTLER_PARTS.filter((p) => p.variant === 'body'
-    || (gear && p.variant === 'gear') || p.variant === s.hatShape).map((part) => {
+    || (gear && p.variant === 'gear') || p.variant === s.hatShape)
+    .filter((part) => !include || include.has(part.name)).map((part) => {
     const g = new THREE.BufferGeometry();
     const position = new Float32Array(part.positions);
     const count = position.length / 3;
@@ -119,6 +124,18 @@ export function avatarFigureGeometry(spec) {
 
 export function avatarPlayerGeometry(spec) {
   const geometry = buildFigure(spec, true);
+  geometry.scale(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+// The ordinary avatar is merged for one draw call. Walk mode can instead ask for named
+// Blender pieces and put each piece under a small pivot, giving the original character
+// articulated arms and legs without changing the saved wardrobe or adding a skeleton to
+// the source file.
+export function avatarPlayerComponentGeometry(spec, names) {
+  const geometry = buildFigure(spec, true, new Set(names));
   geometry.scale(PLAYER_SCALE, PLAYER_SCALE, PLAYER_SCALE);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

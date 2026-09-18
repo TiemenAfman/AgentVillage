@@ -9,10 +9,12 @@ bedroll and hammer. Created in Blender 5.2; no game assets or textures are used.
 - `settler-preview.png`: Blender studio render of the default wardrobe.
 - `../../web/js/settler-mesh.js`: generated geometry used directly by the app.
 
-The player remains a single merged mesh with vertex colours, `aEmissive = 0` and
-`aSheet = 0`, compatible with the island material. It costs one draw call per ordinary
-render pass, plus the existing shadow pass. There is no skeleton: walking, crouching,
-swimming and sitting retain the existing whole-character transforms in `walk.js`.
+The studio preview remains a vertex-coloured model with `aEmissive = 0` and
+`aSheet = 0`, compatible with the island material. In walk mode the same named Blender
+parts are split into a core and four limb groups by `classic-avatar.js`. This lightweight
+procedural rig adds idle, walk, sprint, jump, crouch and sit poses without changing the
+source mesh, wardrobe colours or saved avatar format. The Avatar panel switches between
+this **Original** character and the rigged Kenney character.
 NPC settlers use their own Blender resident model described below.
 
 The browser's `promptholm.avatar` schema and seven hat choices are unchanged. Skin,
@@ -53,12 +55,13 @@ waistcoat, pocket apron and compact work hats. They share the player's facial st
 but have no expedition pack or bedroll. `villager-preview.png` shows one resident;
 `/characters.html` compares the runtime models, including an apprentice and sailor.
 
-The population uses five body batches (shirt, workwear, hands, head, face details)
-and six hat batches, plus the existing hammer batch. This adds two fixed batches
-to the previous crowd, rather than adding draw calls per resident. Skin colours,
-model-based clothing colours, seeded proportions, picking, walking and working
-animations remain supported. The uninstanced figures used in interiors use these
-same parts and proportions. Resident eye height is used by face-to-face conversations.
+The population uses eleven fixed articulated body batches (core clothing, paired arms,
+hands and legs, neck, head and face details) and six hat batches, plus the hammer batch.
+The count is constant regardless of population: adding a resident still adds no draw
+call. Skin colours, model-based clothing colours, seeded proportions and picking remain
+supported, while walking residents now swing opposite arms and legs and workers lift the
+hammer arm. The uninstanced figures used in interiors use these same parts and
+proportions. Resident eye height is used by face-to-face conversations.
 
 To export manual edits to the resident blend, run:
 

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './buildings.js';
-import { residentPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET } from './villager.js';
+import { residentPart, residentNamedPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET } from './villager.js';
 import { HAT_SHAPES, SWATCHES } from './avatar.js';
 import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 
@@ -14,6 +14,10 @@ const tmpObj = new THREE.Object3D();
 const tmpColor = new THREE.Color();
 const bodyMat = new THREE.Matrix4();
 const headMat = new THREE.Matrix4();
+const posedMat = new THREE.Matrix4();
+const pivotMat = new THREE.Matrix4();
+const rotateMat = new THREE.Matrix4();
+const unpivotMat = new THREE.Matrix4();
 const SKIN = 0xf1c9a5;      // the island's first and only skin tone, now just a default
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
@@ -52,6 +56,24 @@ function mergeParts(parts) {
   g.computeBoundingSphere();
   return g;
 }
+
+const RESIDENT_PIECES = {
+  torso: ['Work shirt'],
+  trim: ['Left waistcoat', 'Right waistcoat', 'Short work apron', 'Apron pocket', 'Waist tie',
+    'Shirt button', 'Shirt button.001', 'Shirt button.002'],
+  leftLeg: ['Left clog', 'Left trousers'],
+  rightLeg: ['Right clog', 'Right trousers'],
+  leftArm: ['Left rolled sleeve', 'Left rolled cuff'],
+  rightArm: ['Right rolled sleeve', 'Right rolled cuff'],
+  leftHand: ['Left hand'],
+  rightHand: ['Right hand'],
+  skinCore: ['Neck'],
+};
+const RESIDENT_PIVOTS = {
+  leftLeg: [-0.052, 0.14, 0], rightLeg: [0.052, 0.14, 0],
+  leftArm: [-0.10, 0.27, 0], rightArm: [0.10, 0.27, 0],
+  leftHand: [-0.10, 0.27, 0], rightHand: [0.10, 0.27, 0],
+};
 
 // ---------------------------------------------------------------- the wardrobe
 // Which hat a model's people wore before anyone had a choice, and where its colour came
@@ -199,18 +221,32 @@ export function createSettlers(scene, material, terrain) {
     mesh.instanceColor.needsUpdate = true;
   };
 
-  // Everyone shares one slot number across the five meshes that everyone has, which is
+  // Everyone shares one slot number across the articulated meshes that everyone has, which is
   // also what lets a ray hit on a torso or a head name the person it belongs to.
   const roster = [];
   let slots = 0;
-  const torso = makeMesh(mergeParts([torsoGeometry(WHITE)]));
-  const limbs = makeMesh(mergeParts(limbParts(WHITE)));
+  const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
+  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]));
+  const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
+  const rightLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)]));
+  const leftArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)]));
+  const rightArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)]));
+  const leftHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)]));
+  const rightHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)]));
+  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const hands = makeMesh(mergeParts([handGeometry(WHITE)]));
   const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
-  const body = [torso, limbs, hands, head, details];
+  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
+
+  function setPosed(mesh, slot, base, pivot, angle) {
+    pivotMat.makeTranslation(pivot[0], pivot[1], pivot[2]);
+    rotateMat.makeRotationX(angle);
+    unpivotMat.makeTranslation(-pivot[0], -pivot[1], -pivot[2]);
+    posedMat.copy(base).multiply(pivotMat).multiply(rotateMat).multiply(unpivotMat);
+    mesh.setMatrixAt(slot, posedMat);
+  }
   // The hats keep their own slots: a settler is in exactly one of these meshes, or in
   // none of them if it is bare-headed.
   const hats = new Map();
@@ -246,9 +282,10 @@ export function createSettlers(scene, material, terrain) {
     // settler who moves up from a hut to a manor is still recognisably the same person.
     const look = settlerLook(id, style, kind);
     tint(torso, slot, look.tunic);
-    tint(limbs, slot, look.trim);
+    for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
+    for (const mesh of [trim, leftLeg, rightLeg]) tint(mesh, slot, look.trim);
     tint(head, slot, look.skin);
-    tint(hands, slot, look.skin);
+    for (const mesh of [leftHand, rightHand, skinCore]) tint(mesh, slot, look.skin);
     const hatBucket = hats.get(look.hatShape) || null;
     let hatSlot = -1;
     if (hatBucket && hatBucket.slots < CAPACITY) {
@@ -540,6 +577,8 @@ export function createSettlers(scene, material, terrain) {
     for (const f of figures.values()) {
       if (!f.visible) continue;
       let bob = 0;
+      let walking = false;
+      let hammering = false;
 
       if (f.attend) {
         // Held by a conversation: no step, no errand, no hammer - only the head coming
@@ -558,6 +597,7 @@ export function createSettlers(scene, material, terrain) {
             if (f.onDone) { const cb = f.onDone; f.onDone = null; cb(); }
           }
         } else {
+          walking = true;
           const step = Math.min(d, f.speed * dt);
           f.pos[0] += (dx / d) * step;
           f.pos[1] += (dz / d) * step;
@@ -565,6 +605,7 @@ export function createSettlers(scene, material, terrain) {
         }
         bob = Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035;
       } else if (f.mode === 'hammer') {
+        hammering = true;
         const dx = f.home[0] - f.pos[0], dz = f.home[1] - f.pos[1];
         const d = Math.hypot(dx, dz);
         const want = 0.52;
@@ -620,6 +661,7 @@ export function createSettlers(scene, material, terrain) {
           const dx = f.target[0] - f.pos[0], dz = f.target[1] - f.pos[1];
           const d = Math.hypot(dx, dz);
           if (d < 0.06) { f.target = null; f.pause = f.rng.range(1.2, 4.5); } else {
+            walking = true;
             const step = Math.min(d, f.speed * dt);
             f.pos[0] += (dx / d) * step;
             f.pos[1] += (dz / d) * step;
@@ -633,13 +675,26 @@ export function createSettlers(scene, material, terrain) {
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
-      tmpObj.rotation.set(0, f.yaw, Math.sin(time * 9 + f.phase) * (bob > 0.001 ? 0.05 : 0.012));
+      const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
+      tmpObj.rotation.set(0, f.yaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01));
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
       torso.setMatrixAt(f.slot, bodyMat);
-      limbs.setMatrixAt(f.slot, bodyMat);
-      hands.setMatrixAt(f.slot, bodyMat);
+      trim.setMatrixAt(f.slot, bodyMat);
+      skinCore.setMatrixAt(f.slot, bodyMat);
+      const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
+      const idle = walking || hammering ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
+      const leftArmAngle = walking ? -stride * 0.9 : idle;
+      const rightArmAngle = hammering
+        ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
+        : walking ? stride * 0.9 : -idle;
+      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, stride);
+      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, -stride);
+      setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
+      setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+      setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle);
+      setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);

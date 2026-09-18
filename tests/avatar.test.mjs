@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Color } from 'three';
+import { Color, MeshBasicMaterial } from 'three';
 import { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
   DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } from '../web/js/avatar.js';
+import { createClassicAvatar } from '../web/js/classic-avatar.js';
 
 test('every Blender hat fits walking clearance and produces one complete material mesh', () => {
   for (const { id } of HAT_SHAPES) {
@@ -50,10 +51,30 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
     saveAvatar(spec);
     assert.deepEqual(JSON.parse(values.get('promptholm.avatar')), spec);
     assert.deepEqual(loadAvatar(), spec);
+    assert.equal(saveAvatar({ ...spec, character: 'classic' }).character, 'classic');
+    assert.equal(saveAvatar({ ...spec, character: 'unknown' }).character, DEFAULT_AVATAR.character);
     values.set('promptholm.avatar', '{broken');
     assert.deepEqual(loadAvatar(), DEFAULT_AVATAR);
   } finally {
     if (original === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = original;
   }
+});
+
+test('the original avatar keeps every triangle while its limbs animate independently', () => {
+  const spec = { ...DEFAULT_AVATAR, character: 'classic' };
+  const merged = avatarPlayerGeometry(spec);
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const animated = createClassicAvatar(spec, material);
+  let vertices = 0;
+  animated.object.traverse((part) => { if (part.isMesh) vertices += part.geometry.attributes.position.count; });
+  assert.equal(vertices, merged.attributes.position.count);
+  animated.update({ moving: true, running: false, grounded: true, crouching: false,
+    sitting: false, lying: false, phase: Math.PI / 2 }, 1);
+  const rotations = animated.object.children.slice(1).map((part) => part.rotation.x);
+  assert.ok(rotations.some((angle) => Math.abs(angle) > 0.2));
+  assert.ok(rotations.some((angle) => angle < 0) && rotations.some((angle) => angle > 0));
+  animated.dispose();
+  material.dispose();
+  merged.dispose();
 });
