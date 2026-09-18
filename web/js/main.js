@@ -5,7 +5,7 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
-import { clamp, hash32 } from 'shared/rng.mjs';
+import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
@@ -17,6 +17,7 @@ import {
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
+import { createBoating } from './boating.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
@@ -496,13 +497,16 @@ function interactables() {
   // is up yet.
   if (state.panels) out.push(...state.panels.interactables());
   for (const d of state.docks) {
-    const moored = state.boats.find((b) => Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
+    const moored = state.boats.find((b) => !b.crew && Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
     out.push({
       id: d.id, kind: 'dock', x: d.head[0], z: d.head[1], r: 3.2,
       label: 'the quay', prompt: moored ? 'take the boat' : 'take a boat',
     });
   }
   for (const b of state.boats) {
+    // A hull with a settler standing in it is somebody's afternoon, not a free boat. There
+    // is no "throw them out" here on purpose: they came down the lane for this.
+    if (b.crew) continue;
     out.push({ id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat', prompt: 'take the boat' });
   }
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
@@ -798,7 +802,7 @@ const BOATS_PER_QUAY = 3;
 function takeBoatAt(dockId) {
   const d = dockAt(dockId);
   if (!d) return;
-  const alongside = state.boats.find((x) => Math.hypot(x.x - d.berth[0], x.z - d.berth[1]) < 3);
+  const alongside = state.boats.find((x) => !x.crew && Math.hypot(x.x - d.berth[0], x.z - d.berth[1]) < 3);
   if (alongside) { takeBoat(alongside); return; }
   const hers = state.boats.filter((x) => x.id.startsWith(`boat:${d.region.id}:`)).length;
   if (hers >= BOATS_PER_QUAY) { state.ui.toast('Every boat from this quay is out on the water.'); return; }
@@ -1378,6 +1382,9 @@ function dockFor(region, village) {
   const [hx, hz] = region.cellWorld(head[0], head[1]);
   return {
     id: `dock:${region.id}`, region, cells: run.cells, dir: run.dir,
+    // The land cell the planks start from, kept because it is where a settler walking down
+    // to the water has to be routed to: the roads stop on land and the planks begin here.
+    landing,
     from: [lx, lz],
     // Where a boat comes alongside: one cell off the head, to the side, so the hull is not
     // sitting on the planks. Which side does not matter - both are water, or the head would
@@ -1416,6 +1423,34 @@ function buildDocks(homeVillage) {
 
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
 function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
+
+// The village's own end of the fleet. A settler going out takes one of the same three
+// boats you could have taken - that is the point of counting them here rather than giving
+// the outings a fleet of their own - and putting one away takes the hull off the water,
+// because a boat nobody is in and nobody rowed home is litter.
+const villageFleet = {
+  take(crew) {
+    const d = homeDock();
+    if (!d) return null;
+    const hers = state.boats.filter((x) => x.id.startsWith(`boat:${d.region.id}:`)).length;
+    if (hers >= BOATS_PER_QUAY) return null;
+    const b = spawnBoat(d.region.id, d.berth[0], d.berth[1], d.yaw);
+    b.crew = crew;
+    return b;
+  },
+  release(b) {
+    if (!b) return;
+    const i = state.boats.indexOf(b);
+    if (i >= 0) state.boats.splice(i, 1);
+    b.crew = null;
+    b.craft.dispose();
+  },
+};
+
+// This island's dock, which is the only one a settler of this island can walk to.
+function homeDock() {
+  return state.docks.find((d) => d.region === state.region) || null;
+}
 
 // A boat, put in the water and left there. Nothing moors it but where it stops.
 //
@@ -1974,7 +2009,18 @@ function buildScene(village) {
   applyCameraRange();
   raiseGuestIslands();
   buildDocks(village);
+  if (state.boating) state.boating.clear();
   state.settlers = createSettlers(scene, buildingMat, terrain);
+  // Outings. Everything it needs is asked for rather than held, because a reseed replaces
+  // the terrain and rebuilds the docks under it - see the note at the top of boating.js.
+  state.boating = createBoating({
+    terrain: () => state.terrain,
+    settlers: state.settlers,
+    dock: homeDock,
+    fleet: villageFleet,
+    rng: makeRng(hash32(`${village.island.name}:boating`)),
+    eager: params.has('sail'),
+  });
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
@@ -2049,6 +2095,14 @@ function handOutDecks() {
   // home is the first region in the sea; writing it out anyway is what stops a second
   // island's bridge from appearing as a deck in the sky over ours.
   const base = state.region ? state.region.levelBase : 0;
+  // Our own quay, for the settlers. They walk this island and no other, so they take the
+  // plain cell key - and they need the planks for the same reason you do: without them a
+  // settler on an outing wades out to the boat alongside the dock instead of walking out
+  // along it. Only the home region's, because `flat` is this island's map.
+  for (const d of state.docks) {
+    if (state.region && d.region !== state.region) continue;
+    for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
+  }
   const stacked = new Map();
   for (const [cell, y] of flat) stacked.set(base + cell, [y]);
   // The quay's planks are a floor over water, exactly as a bridge deck is - without this
@@ -2999,6 +3053,11 @@ function frame(nowMs) {
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
+    // Whoever fancied an afternoon on the water, and they go first: an outing moves a hull
+    // and settlers.update puts the body standing in it wherever that hull now is. The other
+    // way round the rider reads last frame's position and trails the boat by one step -
+    // measured, 0.15 of a unit at cruising speed, which is a settler standing in the wake.
+    if (state.boating) state.boating.update(dt, state.world ? state.world.state.night : 0);
     state.settlers.update(dt, state.world ? state.world.state.night : 0);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);

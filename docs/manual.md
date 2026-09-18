@@ -286,6 +286,15 @@ find it, a hard turn spends the way you had on, and a hull that runs up a beach 
 and has to be backed off. Press her at a coast and she will not climb it — the water's
 edge is the only place you can get in or out of a boat at all.
 
+**Settlers go out on the water too.** Every now and then somebody who has nothing on walks
+down the lane, out along the planks, steps into one of the quay's boats and takes her round
+the bay for the pleasure of it. It is the same three boats: while a settler is out there is
+one fewer at the berth for you, and a hull with somebody standing in it is not one **E**
+will offer — they came down the lane for this. Two afternoons at a time at most, never
+after dark, and they always come home, which is why the route is a wide circle out and back
+rather than a wander. If the dock is up a creek too narrow to turn in, the walk to the end
+of the pier is the whole of the outing.
+
 On foot the open water is still a wall. You may wade in as long as the shore stays within
 about two metres, and not a step further, which is what has always kept you from setting
 out for the horizon. That refusal is the reason the boat is worth having: it is what makes
@@ -642,6 +651,7 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
 | A plank dock out over the water, with mooring posts | The quay's pier: where a Cowork task's settler comes ashore |
 | A plank dock at the landing, on every island | The quay: stand on it and **E** gives you a boat — see [Visitors and neighbours](#visitors-and-neighbours) |
+| A boat out on the bay with a settler in it | Somebody's afternoon off — they will bring her back to the quay |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
 | Tower with a copper dome | Fable |
 | Stone walls, slate roof | Opus |

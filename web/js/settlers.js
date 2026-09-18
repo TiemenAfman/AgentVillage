@@ -320,6 +320,11 @@ export function createSettlers(scene, material, terrain) {
       radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
       hammerSlot: -1, y: 0,
       strollIn: rng.range(4, 150), strollHome: null, keepHome: false, gate: undefined, gathering: false,
+      // Lent out. `chartered` means an errand planned somewhere else has this body and
+      // nothing in here may plan another one for it; `aboard` is a function saying where
+      // that errand is holding it, for the frames when it is not walking there itself.
+      // See `charter` below - between them they are the whole of being borrowed.
+      chartered: false, aboard: null, rideY: 0,
       // Whoever is talking to them, as [x, z], or null. See `attend`.
       attend: null,
     };
@@ -382,6 +387,9 @@ export function createSettlers(scene, material, terrain) {
   // already existed: no new movement code, only a reason to move.
   let roads = null;
   let strolling = 0;
+  // The nearest road cell to a destination off the network, cached - see nearestRoadCell.
+  // Up here rather than beside it because setRoads has to empty it when the streets move.
+  const roadNear = new Map();
   // Where a bridge carries the road over a river, and how high its deck is there.
   let deckAt = new Map();
   function setDecks(map) { deckAt = map || new Map(); }
@@ -402,6 +410,7 @@ export function createSettlers(scene, material, terrain) {
     squareList = sq;
     roads = cells.size ? { cells, list: [...cells] } : null;
     for (const f of figures.values()) f.gate = undefined;   // streets moved; look again
+    roadNear.clear();                                       // and so did the way to the quay
   }
 
   // Friday afternoon borrel: every settler not already spoken for walks to the square
@@ -571,6 +580,140 @@ export function createSettlers(scene, material, terrain) {
     f.visible = true;
   }
 
+  // ---- lending a settler out --------------------------------------------------
+  // Everything above plans its own errands. What follows lets another part of the island
+  // plan one instead - today that is web/js/boating.js, taking somebody out on the water -
+  // without that part having to know anything about slots, gaits or the road graph.
+  //
+  // The bargain is `chartered`. A borrowed settler is invisible to the stroll timer, to
+  // the borrel and to the idle wander, because two planners moving one body is how a
+  // settler ends up walking to the square from the middle of the sea. `release` gives them
+  // back, and nothing here ever takes them back on its own: an errand that stops halfway
+  // leaves somebody standing where it stopped, which is at least legible.
+
+  // Who could be spared. The same tests the stroll makes - at home, doing nothing, and
+  // with a street to step out onto - plus not already lent out and not at the borrel.
+  // Shuffled with the caller's rng, so it is not the same handful of neighbours who get
+  // every afternoon off.
+  function available(want, rng) {
+    const out = [];
+    if (gatherActive) return out;          // Friday afternoon: the whole village is busy
+    for (const f of figures.values()) {
+      if (!f.visible || f.chartered || f.gathering || f.attend || f.deckY) continue;
+      if (f.mode !== 'idle' || f.strollHome) continue;
+      if (gateOf(f) == null) continue;
+      out.push(f);
+    }
+    for (let i = out.length - 1; i > 0 && rng; i--) {
+      const j = rng.int(i + 1);
+      const swap = out[i];
+      out[i] = out[j];
+      out[j] = swap;
+    }
+    return out.slice(0, want).map((f) => ({ id: f.id, name: f.spec.name, home: [f.home[0], f.home[1]] }));
+  }
+
+  // Take one. `keepHome` is what stops the walk that follows from deciding the quay is
+  // where this settler lives now - see the note on it in the walk branch of update().
+  function charter(id) {
+    const f = figures.get(id);
+    if (!f || f.chartered || !f.visible) return false;
+    f.chartered = true;
+    f.keepHome = true;
+    f.target = null;
+    f.strollHome = null;
+    return true;
+  }
+
+  // A route from a settler's own door to any cell on the island: the road network as far
+  // as it reaches, then open ground for the last stretch. The roads stop short of the
+  // water - no lane is laid over sand - so a walk to the shore is always these two halves.
+  // The nearest road cell to a destination is cached, because a caller asks for the same
+  // quay over and over and the road list is thousands of cells long.
+  function nearestRoadCell(cell) {
+    const key = `${cell[0]},${cell[1]}`;
+    if (roadNear.has(key)) return roadNear.get(key);
+    let best = null, bd = Infinity;
+    if (roads) {
+      const size = terrain.size;
+      for (const k of roads.list) {
+        const kx = k % size, kz = (k - (k % size)) / size;
+        const d = (kx - cell[0]) * (kx - cell[0]) + (kz - cell[1]) * (kz - cell[1]);
+        if (d < bd) { bd = d; best = k; }
+      }
+    }
+    roadNear.set(key, best);
+    return best;
+  }
+  function routeTo(id, cell) {
+    const f = figures.get(id);
+    const gate = f ? gateOf(f) : null;
+    if (gate == null || !roads) return null;
+    const end = nearestRoadCell(cell);
+    if (end == null) return null;
+    const byRoad = end === gate ? [] : roadRoute(gate, end);
+    if (byRoad === null) return null;
+    const size = terrain.size;
+    const overland = findPath(terrain, [end % size, (end - (end % size)) / size], cell, null);
+    if (!overland || !overland.length) return null;
+    return [...byRoad, ...overland.slice(1)];
+  }
+
+  // Walk them along a route somebody else worked out. `onDone` is called with true on
+  // arrival and with false if there was nothing to walk, so a caller never has to wonder
+  // whether its errand started.
+  function sendOut(id, points, onDone) {
+    const f = figures.get(id);
+    if (!f || !f.chartered || !points || !points.length) { onDone && onDone(false); return false; }
+    walkRoute(f, points, () => { f.mode = 'idle'; onDone && onDone(true); });
+    return true;
+  }
+
+  // Off their own feet: `at` is called every frame and answers { x, z, yaw, y }, which is
+  // a hull's position and the height of its deck. Called with null they stand on the
+  // ground again, wherever the ride left them.
+  function carry(id, at) {
+    const f = figures.get(id);
+    if (!f || !f.chartered) return;
+    f.aboard = typeof at === 'function' ? at : null;
+    f.mode = 'idle';
+    f.path = null;
+    f.onDone = null;
+  }
+
+  // Given back. They keep the door they started at - `charter` pinned it - and go to the
+  // back of the errand queue, so nobody comes home from the water and strolls straight off
+  // again.
+  function release(id) {
+    const f = figures.get(id);
+    if (!f) return;
+    f.chartered = false;
+    f.aboard = null;
+    f.keepHome = false;
+    f.mode = 'idle';
+    f.path = null;
+    f.onDone = null;
+    f.pause = f.rng.range(1, 4);
+    f.strollIn = f.rng.range(40, 160);
+  }
+
+  // Where a settler is standing, height and all. The height is the interesting half:
+  // a body on the quay's planks is at the deck's height and one on the lane is on the
+  // ground, and whoever is about to lift them into a boat has to start the lift from
+  // wherever they actually are rather than from a guess about which it was.
+  function where(id) {
+    const f = figures.get(id);
+    return f ? { x: f.pos[0], z: f.pos[1], yaw: f.yaw, y: f.y } : null;
+  }
+
+  // Whether a borrowed settler is still there to be borrowed. A village rebuild takes
+  // figures away under an errand's feet, and an outing that kept steering a boat for a
+  // settler who no longer exists would sail it round the island for ever.
+  function has(id) {
+    const f = figures.get(id);
+    return !!(f && f.visible && f.chartered);
+  }
+
   function update(dt, nightAmount) {
     time += dt;
     let hammerCount = 0;
@@ -580,7 +723,19 @@ export function createSettlers(scene, material, terrain) {
       let walking = false;
       let hammering = false;
 
-      if (f.attend) {
+      if (f.aboard) {
+        // Carried. Something else - a boat - is deciding where this body is, and all that
+        // is left here is to stand in it and face the way it is going. Tested before
+        // `attend`, because being spoken to must not anchor somebody to a spot the hull
+        // they are standing in has already left.
+        const at = f.aboard();
+        if (at) {
+          f.pos[0] = at.x;
+          f.pos[1] = at.z;
+          f.yaw = at.yaw;
+          f.rideY = at.y;
+        }
+      } else if (f.attend) {
         // Held by a conversation: no step, no errand, no hammer - only the head coming
         // round to whoever is talking. The same lerp the walking uses, so they turn at
         // the speed they take corners at instead of snapping to face you.
@@ -627,6 +782,11 @@ export function createSettlers(scene, material, terrain) {
           tmpObj.updateMatrix();
           hammers.setMatrixAt(hammerCount++, tmpObj.matrix);
         }
+      } else if (f.chartered) {
+        // Between the legs of somebody else's errand: off the planks and into the boat, or
+        // standing on the quay waiting for a hull. Whoever chartered them says what happens
+        // next, and a stroll started here would walk away from it mid-sentence.
+        f.pause = 0;
       } else {
         f.pause -= dt;
         // The borrel ending cuts every wait short, so nobody lingers on the square
@@ -671,7 +831,7 @@ export function createSettlers(scene, material, terrain) {
         }
       }
 
-      f.y = f.deckY != null ? f.deckY : groundOrDeck(f.pos[0], f.pos[1]);
+      f.y = f.aboard ? f.rideY : (f.deckY != null ? f.deckY : groundOrDeck(f.pos[0], f.pos[1]));
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
@@ -720,6 +880,7 @@ export function createSettlers(scene, material, terrain) {
 
   return {
     add, remove, setMode, setVisible, attend, unattend, setRoads, setDecks, setGather, walkIn, update, figures,
+    available, charter, routeTo, sendOut, carry, release, has, where,
     pickables, figureAt,
     findPath: (a, b) => findPath(terrain, a, b, null),
   };
