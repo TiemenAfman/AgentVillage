@@ -31,6 +31,7 @@ import { guestVillage } from './lib/guestview.mjs';
 import { buildBundle, parseBundle, beaconId } from './lib/islandbundle.mjs';
 import { createSea } from './lib/sea.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
+import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { berthOf } from './shared/regions.mjs';
@@ -830,6 +831,28 @@ async function handle(req, res) {
   // than after. A sea that does not answer stays in the list with the reason on it: "gone"
   // and "still looking" are different things and a picker that conflates them is a picker
   // that looks broken every time the wifi hiccups.
+  // The renderer telling the island where it actually put things.
+  //
+  // A building's position is not its plot: housePlacement and yardNudge move it by up to
+  // half a cell, and both of them measure the built geometry, which exists nowhere but in
+  // a browser. A settler stands outside its own door, so a sea working from the surveyed
+  // cell centre would stand apprentices inside their own sheds - measured at a median of
+  // 0.35 units off, against a shed's door reach of 0.46.
+  //
+  // Keeper-only, and not because the numbers are secret: they are scenery, and they go
+  // out in every bundle. It is because this is a write, and the API here is deny-by-default
+  // for writes. A visitor's browser drew the same island and has nothing to add.
+  if (p === '/api/placements' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let saved;
+    try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
+    // Worth republishing at once rather than waiting for the next scan: until this arrives
+    // the sea has everybody standing a third of a cell out of place.
+    if (seaClient) seaClient.publish().catch(() => {});
+    return json(res, 200, { ok: true, buildings: Object.keys(saved.at).length, decks: Object.keys(saved.decks).length });
+  }
+
   if (p === '/api/seas') {
     const cfg = config.multiplayer.sea || {};
     const candidates = new Map();
@@ -1520,6 +1543,9 @@ function islandBundle() {
       village,
       props: listProps(),
       crops: cropsView(),
+      // Where the buildings really stand, which only a renderer knows - see the header of
+      // lib/placements.mjs. Empty until a browser has drawn this island once.
+      placements: loadPlacements(),
       id: ISLAND_ID,
       keeper: islanderName,
     });

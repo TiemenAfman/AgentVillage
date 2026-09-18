@@ -1631,6 +1631,10 @@ async function syncFleet(rows) {
   launchBoats();
   applyFogRange();
   applyCameraRange();
+  // The quay's planks are a deck, and they are built here rather than with the village -
+  // so the report that goes out with applyVillage has not seen them yet. Sent again from
+  // here, and it costs nothing when nothing changed: reportPlacements compares first.
+  reportPlacements();
   if (arrived.length) {
     state.walk && state.walk.setLevels && handOutDecks();
     state.ui.toast(`<b>${escapeHtml(arrived.join(', '))}</b> ${arrived.length === 1 ? 'is' : 'are'} in the water alongside.`);
@@ -2279,6 +2283,22 @@ function syncBridges(village) {
 // Called from both sides: the two lists arrive at different moments - the layout's with a
 // village update, a built one with the props - and whichever came last used to win by
 // replacing the other.
+// The decks on THIS island, on the plain cell key, which is what a settler walking here
+// uses and what an island bundle carries. handOutDecks below builds the same map and then
+// adds the region stride for walk mode, which reads the whole archipelago; this is the half
+// before that, kept apart so neither has to undo the other's work.
+function deckMapForHome() {
+  const flat = new Map(decks);
+  if (state.props && state.terrain) {
+    for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
+  }
+  for (const d of state.docks) {
+    if (state.region && d.region !== state.region) continue;
+    for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
+  }
+  return flat;
+}
+
 function handOutDecks() {
   const flat = new Map(decks);
   if (state.props && state.terrain) {
@@ -2867,8 +2887,45 @@ function applyVillage(next, { animate }) {
     state.walk.setInteractables(interactables());
   }
 
-  if (!animate) { for (const e of events) applyEventInstantly(e); return; }
+  if (!animate) { for (const e of events) applyEventInstantly(e); reportPlacements(); return; }
   for (const e of events) scheduleEvent(e);
+  reportPlacements();
+}
+
+// Tell the island where the buildings actually ended up.
+//
+// Their positions are not their plots: housePlacement loosens the building line and
+// yardNudge pushes a shed out to the edge of its master's yard, and *both measure the
+// built geometry*, which exists nowhere but here. A settler stands outside its own front
+// door, so the sea - which has a bundle and no meshes - would otherwise put apprentices
+// inside their own sheds. Measured on this village: 259 of 274 buildings are nudged, by a
+// median of a third of a cell.
+//
+// Only the keeper's page, and only when the answer has changed. A visitor drew the same
+// island from the same bundle and has nothing to add; the islander refuses them anyway.
+let toldPlacements = '';
+function reportPlacements() {
+  if (!islanderHere() || state.guest || !state.terrain) return;
+  const at = {};
+  for (const [id, rec] of state.byId) {
+    if (!rec.group || !rec.spec || !rec.spec.plot) continue;
+    at[id] = [Math.round(rec.group.position.x * 1000) / 1000, Math.round(rec.group.position.z * 1000) / 1000];
+  }
+  // And where the roads are carried over water. Same story: a bridge's deck height comes
+  // out of its own built arch, so a sea working without it walks settlers along the
+  // riverbed. Our own island's cells only, on the plain key the bridges are recorded
+  // under - a bundle is one island and the region strides do not come into it.
+  const decks = {};
+  const size = state.terrain.size;
+  for (const [cell, y] of deckMapForHome()) decks[cell] = Math.round(y * 1000) / 1000;
+  const key = JSON.stringify([at, decks]);
+  if (key === toldPlacements) return;
+  toldPlacements = key;
+  mine('/api/placements', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ at, decks }),
+  }).catch(() => { toldPlacements = ''; });   // it will be sent again on the next rebuild
 }
 
 function placeFigure(rec) {
