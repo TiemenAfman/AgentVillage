@@ -1730,6 +1730,8 @@ function dropRegion(id) {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.props) g.props.dispose();
+    if (g.crops) g.crops.dispose();
     g.dispose();
     state.guests.splice(i, 1);
   }
@@ -1775,6 +1777,18 @@ function raiseGuestIslands() {
       scene, material: buildingMat, region,
       buildings: (region.village && region.village.buildings) || [],
     });
+    // Their scenery and their vegetable beds. Built into the island's own offset group
+    // with its RAW local terrain, which is the rule from shared/regions.mjs: a module that
+    // works out its own positions wants the local terrain and a group, not the world
+    // facade - hand these the facade and every jetty and every bed sinks a metre.
+    //
+    // A bundle has carried both since it was written; they were arriving and being read by
+    // nobody. No animation on the first pass: a hundred props rising out of the ground the
+    // moment an island appears reads as a glitch rather than as somebody gardening.
+    g.props = createProps({ scene: g.group, terrain: region.terrain, material: buildingMat });
+    g.props.apply((region.village && region.village.props) || [], { animate: false });
+    g.crops = createCrops({ scene: g.group, terrain: region.terrain, material: buildingMat });
+    g.crops.apply((region.village && region.village.crops) || [], { animate: false });
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     state.guests.push(g);
@@ -1789,6 +1803,8 @@ function raiseGuestIslands() {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.props) g.props.dispose();
+    if (g.crops) g.crops.dispose();
     g.dispose();
     state.guests.splice(i, 1);
   }
