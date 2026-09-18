@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
@@ -1546,12 +1546,67 @@ async function learnTheWorld() {
 //
 // The manifest is a few hundred bytes an island; an island whole is up to two megabytes,
 // so the list arrives often and the islands are fetched once each.
+// How many other islands are drawn whole. Past that they are silhouettes at their real
+// berth - the same land from the same seed, every other vertex, no buildings and no
+// collision - which is web/js/horizon.js doing the job it was already good at.
+//
+// The number is the draw budget and nothing else. CLAUDE.md records what one full guest
+// island costs: 41 nameplates alone took the call count from 1.35x to 1.76x against a
+// 1.6x budget, and that was with signs off, no forest and no settlers. Eight islands in
+// full does not render, and the honest way to have eight in the world is to draw the near
+// ones and suggest the rest.
+const DETAILED = modest ? 2 : 4;
+
+function farFrom(origin) {
+  const home = state.homeOrigin || [0, 0];
+  const dx = (origin ? origin[0] : 0) - home[0];
+  const dz = (origin ? origin[1] : 0) - home[1];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+// The whole horizon, from both the things that can feed it: islands in our own sea that
+// are too far to draw in full, and islands on the network that are in no sea of ours at
+// all. One caller, because horizon.apply() removes whatever is not in the list it is
+// given - two callers would each spend their turn deleting the other's islands.
+function syncHorizon() {
+  if (!state.horizon || state.guest) return [];
+  const here = new Set(state.sea.regions().map((r) => r.id));
+  const shown = new Map();
+  for (const row of state.farFleet || []) {
+    if (here.has(row.id)) continue;
+    state.horizon.pin(row.id, row.origin);
+    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0 });
+  }
+  for (const n of [...(state.neighbours || []), ...debugJoins]) {
+    if (here.has(n.id) || shown.has(n.id)) continue;
+    shown.set(n.id, n);
+  }
+  const arrived = state.horizon.apply([...shown.values()]);
+  applyFogRange();
+  return arrived;
+}
+
 async function syncFleet(rows) {
   if (!state.terrain) return;
   const moored = rows || state.fleet || [];
+  // Nearest first, so the ones you can actually see get the detail. Our own island is not
+  // in the running: we are standing on it. The ordering lives in shared/regions.mjs with
+  // the rest of the coordinate contract, and its tiebreak is load-bearing - see there.
+  const others = nearestFirst(moored.filter((r) => r.id !== state.islandId), state.homeOrigin || [0, 0]);
+  const near = others.slice(0, DETAILED);
+  const nearIds = new Set(near.map((r) => r.id));
+  state.farFleet = others.slice(DETAILED);
+
+  // An island that has drifted out of the near set gives its ground back and becomes a
+  // silhouette again. Done before the fetches below, so the budget is free by the time
+  // anything new is raised.
+  for (const region of state.sea.regions()) {
+    if (region === state.region || region.id.startsWith('debug-')) continue;
+    if (!nearIds.has(region.id)) state.sea.remove(region.id);
+  }
+
   const arrived = [];
-  for (const row of moored) {
-    if (row.id === state.islandId) continue;
+  for (const row of near) {
     if (state.sea.get(row.id)) continue;
     let bundle;
     try {
@@ -1570,12 +1625,7 @@ async function syncFleet(rows) {
     });
     if (region) arrived.push(row.name);
   }
-  // An island that has sailed home takes its ground with it, so the sweep runs either way.
-  const here = new Set(moored.map((b) => b.id));
-  for (const r of state.sea.regions()) {
-    if (r === state.region || here.has(r.id) || r.id.startsWith('debug-')) continue;
-    state.sea.remove(r.id);
-  }
+  syncHorizon();
   raiseGuestIslands();
   buildDocks();
   launchBoats();
@@ -1618,13 +1668,11 @@ async function changeSea(what) {
 function onFleetNews(world, one) {
   if (world) { state.fleet = world.islands || []; syncFleet(state.fleet); return; }
   if (!one) return;
+  const { t, a, ...row } = one;
   const rows = (state.fleet || []).filter((r) => r.id !== one.id);
-  if (one.a === 'gone') {
-    state.fleet = rows;
-  } else {
-    const { t, a, ...row } = one;
-    state.fleet = [...rows, row];
-  }
+  // Sorted by id rather than by arrival, so "the fleet" is the same list on every machine
+  // and in every order the messages happen to turn up in.
+  state.fleet = (one.a === 'gone' ? rows : [...rows, row]).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
   syncFleet(state.fleet);
 }
 
@@ -1663,9 +1711,9 @@ function applyNeighbours(list) {
   // An island that is really here is not also a rumour on the horizon. Left in, it would
   // be drawn twice - once at half resolution and turned by a hashed angle - in the same
   // water, and clicking the silhouette would offer to sail to somewhere under your feet.
-  const here = new Set(state.sea.regions().map((r) => r.id));
-  const arrived = state.horizon.apply([...(list || []), ...debugJoins].filter((n) => !here.has(n.id)));
-  applyFogRange();
+  // syncHorizon owns that filtering now, and the merge with the far half of our own fleet.
+  state.neighbours = list || [];
+  const arrived = syncHorizon();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
     state.ui.toast(

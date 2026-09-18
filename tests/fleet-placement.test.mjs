@@ -6,7 +6,7 @@
 // it on every screen at once.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextOrigin, clearOf, berthOf, SEA_GAP, createArchipelago, placeIsland } from '../shared/regions.mjs';
+import { nextOrigin, clearOf, berthOf, SEA_GAP, createArchipelago, placeIsland, nearestFirst } from '../shared/regions.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
 const isle = (half, origin) => ({ half, origin });
@@ -111,4 +111,32 @@ test('the archipelago accepts a whole fleet without complaint', () => {
     assert.ok(r, `nothing at the middle of island ${n}`);
     assert.equal(r.id, `isle-${n}`);
   }
+});
+
+// Which islands get drawn whole. A lattice puts four islands at the same distance from the
+// middle, so "nearest first" is ambiguous unless something settles it - and what settled it
+// before was the order the socket messages had arrived in. The near set then swapped
+// members between two equally close islands, and every swap tore down a coast and built it
+// again, announcing the same island as newly arrived every few seconds.
+test('equally close islands are ordered the same way every time', () => {
+  const ring = [
+    { id: 'dd', origin: [304, 0] },
+    { id: 'aa', origin: [0, 304] },
+    { id: 'cc', origin: [-304, 0] },
+    { id: 'bb', origin: [0, -304] },
+    { id: 'ee', origin: [-304, -304] },
+  ];
+  const once = nearestFirst(ring, [0, 0]).map((r) => r.id);
+  assert.deepEqual(once, ['aa', 'bb', 'cc', 'dd', 'ee'], 'the four at 304 sort by id, the corner last');
+  // Any arrival order, the same answer.
+  for (const shuffled of [[...ring].reverse(), [ring[2], ring[4], ring[0], ring[1], ring[3]]]) {
+    assert.deepEqual(nearestFirst(shuffled, [0, 0]).map((r) => r.id), once);
+  }
+});
+
+test('nearest is measured from home, not from the middle of the world', () => {
+  const rows = [{ id: 'far', origin: [0, 0] }, { id: 'near', origin: [608, 0] }];
+  assert.deepEqual(nearestFirst(rows, [304, 0]).map((r) => r.id), ['far', 'near'],
+    'both are 304 away, so the tiebreak decides - and it is stable');
+  assert.deepEqual(nearestFirst(rows, [600, 0]).map((r) => r.id), ['near', 'far']);
 });

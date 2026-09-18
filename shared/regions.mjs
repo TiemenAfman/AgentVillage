@@ -125,6 +125,22 @@ export function nextOrigin(placed, half, gap = SEA_GAP) {
   return null;    // sixty-four rings out is not a crowded sea, it is a bug somewhere else
 }
 
+// Which islands are near enough to be worth drawing whole, nearest first.
+//
+// The tiebreak on id is not tidiness. Berths are a lattice, so four islands sit at exactly
+// the same distance from the middle as often as not, and without it the order fell out of
+// whichever socket message had arrived last - so the near set swapped members between two
+// equally close islands, and every swap tore down a coast and built it again. It showed
+// itself as the same island being welcomed twice, a few seconds apart, for ever.
+export function nearestFirst(rows, home = [0, 0]) {
+  const d = (r) => {
+    const o = r.origin || [0, 0];
+    const dx = o[0] - home[0], dz = o[1] - home[1];
+    return Math.sqrt(dx * dx + dz * dz);
+  };
+  return [...rows].sort((a, b) => (d(a) - d(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 // The lattice points at distance `ring`, in a fixed order: the four bearings first, in
 // BEARINGS' own order, then the rest of the square's edge. Sorted rather than walked round
 // the perimeter so the order is stated in one place and cannot drift.
