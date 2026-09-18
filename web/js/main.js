@@ -1595,7 +1595,19 @@ function visitNeighbour(id) {
   state.tween = null;
   controls.enabled = false;
   state.ui.closeDossier();
-  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>…`);
+  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>, and taking this island with you…`);
+  // The island goes too. Sent while the camera is still crossing, because building the
+  // bundle and posting it takes about as long as the animation does and there is no reason
+  // to watch a spinner for it - and sent by our own server rather than from here, so the
+  // redaction runs on the same side as the secrets and this page never holds an unredacted
+  // copy that it then forwards.
+  //
+  // A failure is not a reason to stay home: you can visit an island without mooring your
+  // own beside it, which is what every visit was until now. But it is a reason to say so,
+  // because "my island did not come" is otherwise a silence - and the likeliest cause by
+  // far is that the two of you are running different code, which parseBundle refuses
+  // outright rather than drawing houses in the sea.
+  sendIslandTo(n);
 
   const target = new THREE.Vector3(n.x * 0.45, 16, n.z * 0.45);
   state.sailing = { t: 0, dur: 2.6, from: camera.position.clone(), target, to: n, gone: false };
@@ -1603,6 +1615,25 @@ function visitNeighbour(id) {
   // looking at. Without this you could start a journey, switch away, and come back to a
   // frozen sea - so the arrival is on a clock as well, and whichever comes first wins.
   setTimeout(() => { if (state.sailing) cross(state.sailing); }, 2.6 * 1000 + 1500);
+}
+
+async function sendIslandTo(n) {
+  if (!n || !n.address || !n.port) return;
+  try {
+    const r = await fetch('/api/visit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ host: n.address, port: n.port }),
+    });
+    const said = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      state.ui.toast(`Your island stayed here: ${escapeHtml(said.error || r.statusText)}`);
+      return;
+    }
+    console.info(`island: moored at ${n.name} as ${said.id}`);
+  } catch (e) {
+    state.ui.toast(`Your island stayed here: ${escapeHtml(String(e.message || e))}`);
+  }
 }
 
 function cross(s) {

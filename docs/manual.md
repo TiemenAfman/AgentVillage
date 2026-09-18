@@ -172,17 +172,24 @@ can no more read it than they could read the post through the slot.
 
 ## Visitors and neighbours
 
-The island is shut by default and listens only to this computer. Open it and other people
-can walk it with you, each connection getting its own settler to steer; two islands on the
-same network also find each other, and lie on each other's horizon.
+The island is open. Other people can walk it with you, each connection getting its own
+settler to steer; two islands on the same network find each other, lie on each other's
+horizon, and can be moored side by side. It answers on every address the machine has, and
+phones and laptops reach it at `http://<the machine's name>:4747/`.
+
+It was shut by default once, and that was right while a visitor could only look. Visiting
+is what the island is for now, and an island nobody can reach has no neighbours - so the
+lock is off and the thing to know is how to put it back on:
 
 ```json
-"network":     { "public": true, "inviteCode": null, "hosts": [] },
+"network":     { "public": false, "inviteCode": null, "hosts": [] },
 "multiplayer": { "enabled": true, "maxPlayers": 16, "guestView": "redacted", "name": null }
 ```
 
-or `node serve.mjs --public` for an afternoon. Then it answers on every address the
-machine has, and phones and laptops reach it at `http://<the machine's name>:4747/`.
+A shut island keeps its mouth closed and its ears open: it listens only to this computer,
+it does not announce itself, and it still sees the neighbours who did open theirs and can
+go and visit them. `node serve.mjs --public` opens one for an afternoon without editing
+anything.
 Windows Firewall asks about the port the first time, and about UDP 47474, which is how
 islands announce themselves to each other.
 

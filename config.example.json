@@ -8,7 +8,7 @@
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
   "network": {
-    "public": false,
+    "public": true,
     "inviteCode": null,
     "hosts": []
   },
