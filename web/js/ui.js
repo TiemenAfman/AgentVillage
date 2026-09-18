@@ -70,10 +70,11 @@ export function createUI(handlers) {
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
+  el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { close('dossier'); close('legend'); }
+    if (e.key === 'Escape') { close('dossier'); close('legend'); close('settings'); }
     // Space belongs to the player on foot, where it jumps. Restarting the history from
     // under someone's feet is not what the key means down there.
     if (e.key === ' ' && e.target === document.body && !walking) { e.preventDefault(); el('play-btn').click(); }
@@ -84,15 +85,17 @@ export function createUI(handlers) {
     if (which === 'dossier') { state.open = null; handlers.onSelect(null); }
     syncSidebar();
   }
-  function openLegend() { el('dossier').hidden = true; el('legend').hidden = false; syncSidebar(); }
+  function openLegend() { el('dossier').hidden = true; el('settings').hidden = true; el('legend').hidden = false; syncSidebar(); }
+  function openSettings() { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = false; syncSidebar(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
-    const panelOpen = !el('dossier').hidden || !el('legend').hidden;
+    const panelOpen = !el('dossier').hidden || !el('legend').hidden || !el('settings').hidden;
     el('building-now').hidden = walking || panelOpen || !hasBuilders;
     const w = el('waiting-now');
     if (w) w.hidden = walking || panelOpen || !w.querySelector('li');
     el('chronicle').hidden = walking;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
+    el('settings-btn').classList.toggle('on', !el('settings').hidden);
   }
   let hasBuilders = false;
   let walking = false;
@@ -178,6 +181,7 @@ export function createUI(handlers) {
   function showDossier(b, ctx) {
     state.open = b.id;
     el('legend').hidden = true;
+    el('settings').hidden = true;
     el('dossier').hidden = false;
     syncSidebar();
     el('dossier-name').textContent = b.name;
@@ -325,6 +329,38 @@ export function createUI(handlers) {
     return `<div class="legend-item"><span class="sw" style="background:${cssHex(hex)}"></span><div><b>${esc(name)}</b><small>${esc(blurb)}</small></div></div>`;
   }
 
+  // --- settings ------------------------------------------------------------
+  // Only ever shown to the keeper: every setting in here is written into config.json on
+  // the machine the island runs on, and the server refuses a visitor the route anyway.
+  // So the chip stays hidden rather than offering a panel that cannot do anything.
+  const NAMEPLATES = [
+    ['everyone', 'Everyone', 'Visitors read the signs too.'],
+    ['keeper', 'Only me', 'A visitor walks past empty front yards, and is never sent the lettering.'],
+    ['nobody', 'Nobody', 'No signs at all, here or for a visitor.'],
+  ];
+  let signMode = null;
+
+  function setKeeper(keeper) { el('settings-btn').hidden = !keeper; }
+
+  // The server owns this setting, so the panel never decides for itself what is on:
+  // it draws whatever came back, and a click only asks.
+  function setSigns(mode) {
+    signMode = mode;
+    renderSettings();
+  }
+
+  function renderSettings() {
+    const chosen = NAMEPLATES.find(([k]) => k === signMode);
+    el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
+      + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
+      + `<div class="chips wrap">${NAMEPLATES
+        .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
+      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+    el('settings-body').querySelectorAll('[data-signs]')
+      .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+  }
+  renderSettings();
+
   // --- labels & toasts -----------------------------------------------------
   const labelRoot = el('labels');
   const labelPool = [];
@@ -450,7 +486,7 @@ export function createUI(handlers) {
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
     el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
-    if (on) { el('dossier').hidden = true; el('legend').hidden = true; renderWalkKeys(); }
+    if (on) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; renderWalkKeys(); }
     syncSidebar();
   }
   // Both of these are called every frame while you walk, and both usually have nothing
@@ -551,10 +587,11 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
+    setSigns, setKeeper,
     setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
-    // What B clears from up in the sky: neither of these is modal, so nothing else changes.
-    closeOverlays: () => { close('dossier'); close('legend'); },
+    // What B clears from up in the sky: none of these is modal, so nothing else changes.
+    closeOverlays: () => { close('dossier'); close('legend'); close('settings'); },
   };
 }
 

@@ -20,6 +20,9 @@
     "name": null,
     "discovery": true
   },
+  "display": {
+    "nameplates": "keeper"
+  },
   "dispatch": {
     "opening": "Pick up {key}",
     "skill": null,

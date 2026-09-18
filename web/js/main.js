@@ -288,6 +288,10 @@ const state = {
   // are in it.
   inside: null,
   peers: null, net: null, guest: false, horizon: null, sailing: null,
+  // Whether the yard signs are standing. The island answers this at /api/hello before
+  // anything is built, so a page that may not read them never makes them in the first
+  // place; false until it does, because that is the answer that gives nothing away.
+  signs: false, signMode: null,
   props: null, panels: null, buildMenu: null, ghost: null, islandchat: null,
   crops: null, market: null, garden: null,
   // What the postbox on the town hall pavement knows: one unread count per account, as the
@@ -1430,24 +1434,45 @@ function attachExtras(rec) {
   if (built.anchors && built.anchors.flag) rec.flagAnchor = built.anchors.flag;
   if (built.anchors && built.anchors.smoke) rec.smokeAnchor = built.anchors.smoke;
 
-  // A yard sign with the session's own name, for the houses that have one.
+  // A yard sign with the session's own name, for the houses that have one. Written down
+  // rather than built: whether it is standing is the keeper's to say, and signOn below
+  // is what puts it up.
   if (spec.kind === 'house' || spec.kind === 'camp') {
-    const label = spec.title || spec.name;
-    const plate = createNameplate(label, { small: spec.kind === 'camp' });
-    // front-left of the plot, clear of the door, facing the street like the house does
-    plate.group.position.set(-0.52, 0, 0.66);
-    plate.group.rotation.y = -0.22;
-    group.add(plate.group);
-    rec.nameplate = plate;
+    rec.sign = {
+      text: spec.title || spec.name,
+      opts: { small: spec.kind === 'camp' },
+      // front-left of the plot, clear of the door, facing the street like the house does
+      at: [-0.52, 0, 0.66], turn: -0.22,
+    };
   }
 
   // A signboard in front of the office carrying the repository's name.
   if (spec.civicType === 'office' && spec.repoName) {
-    const plate = createNameplate(spec.repoName);
-    plate.group.position.set(-0.02, 0, 0.72);
-    group.add(plate.group);
-    rec.nameplate = plate;
+    rec.sign = { text: spec.repoName, opts: {}, at: [-0.02, 0, 0.72], turn: 0 };
   }
+  if (rec.sign && state.signs) signOn(rec);
+}
+
+// Signs on and off. Built and thrown away rather than built and hidden, for two reasons.
+// Each sign paints a canvas of its own, so a hidden one still costs a texture per house
+// and three hundred houses is three hundred textures nobody is looking at. And a page
+// that is not allowed to read the lettering should not be the page that rasterised it.
+function signOn(rec) {
+  if (!rec.sign || rec.nameplate) return;
+  const plate = createNameplate(rec.sign.text, rec.sign.opts);
+  plate.group.position.set(...rec.sign.at);
+  plate.group.rotation.y = rec.sign.turn;
+  rec.group.add(plate.group);
+  rec.nameplate = plate;
+}
+function signOff(rec) {
+  if (!rec.nameplate) return;
+  rec.group.remove(rec.nameplate.group);
+  rec.nameplate.dispose();
+  rec.nameplate = null;
+}
+function applySigns() {
+  for (const rec of state.byId.values()) (state.signs ? signOn : signOff)(rec);
 }
 function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fire) n++; return n; }
 
@@ -2730,6 +2755,18 @@ function playerName() {
 async function boot() {
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
+    // Only asks. The island writes the setting down and tells every open window, this
+    // one included, so what is drawn always comes from the server's answer.
+    onSigns: async (mode) => {
+      try {
+        const r = await fetch('/api/display', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'nameplates', value: mode }),
+        });
+        if (!r.ok) state.ui.toast(`The signs stayed as they were: ${escapeHtml((await r.json().catch(() => ({}))).error || r.statusText)}`);
+      } catch { state.ui.toast('The island did not answer.'); }
+    },
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
     onOverview: () => { state.intro = null; state.tween = null; controls.enabled = true; frameIsland(); },
@@ -2887,11 +2924,21 @@ async function boot() {
   try {
     const hello = await fetch('/api/hello').then((r) => r.json());
     state.guest = hello.role !== 'islander';
+    state.signs = hello.signs !== false;
+    state.signMode = hello.display ? hello.display.nameplates : null;
+    state.ui.setKeeper(!state.guest);
+    state.ui.setSigns(state.signMode);
     setVisiting(state.guest);
     if (state.guest) {
       state.ui.toast(`You are visiting <b>${escapeHtml(hello.islandName || 'this island')}</b>. Walk where you like — the tickets, the chat and the git belong to whoever lives here.`);
     }
-  } catch { /* an island that will not say is treated as our own */ }
+  } catch {
+    // An island that will not say is treated as our own - including about the signs.
+    // They start down so that a page which may not read them never builds them, and
+    // silence must not be what leaves the keeper's own island bare.
+    state.signs = true;
+    state.ui.setKeeper(true);
+  }
 
   let village;
   try {
@@ -2994,6 +3041,17 @@ function connect() {
     es.addEventListener('props', debounce(() => refreshProps({ animate: true }), 150));
     // A bed was sown, pulled or dug up - by another open page, or by whoever is walking.
     es.addEventListener('garden', debounce(() => refreshGarden({ animate: true }), 150));
+    // The keeper changed what the island shows - from this window or from another one.
+    // A visitor is sent this too, and it is the only say they get in it.
+    es.addEventListener('display', (e) => {
+      try {
+        const m = JSON.parse(e.data);
+        state.signs = m.signs !== false;
+        state.signMode = m.display ? m.display.nameplates : null;
+        state.ui.setSigns(state.signMode);
+        applySigns();
+      } catch { /* malformed, ignore */ }
+    });
     // The server can ask for a reload after its own code changed underneath us.
     es.addEventListener('reload', () => location.reload());
     // Somebody on the network raised or struck their flag. Only the keeper is sent this.
