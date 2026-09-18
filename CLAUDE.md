@@ -125,6 +125,18 @@ carried on the vertex, not a material of its own, and night glow is a per-vertex
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
 `?stats` reports the colour pass only — the shadow pass is not in it.
 
+**The settlers walk in one file and are drawn in another, and one word crosses between
+them.** `settler-walk.js` writes `f.anim` each step — `walk`, `step`, `hammer` or `still` —
+and `settler-figures.js` derives the bob, the gait, the arm swing and the idle sway from it
+off its *own* clock. None of those sine waves feed back into a position, which is what made
+the split possible; keep it that way, or the drawing becomes something the wire has to
+carry. Two more rules hold the seam: the walk's rng stream (`<id>:walk`) is ordered and
+load-bearing, so anything cosmetic draws from `<id>:gait` instead and never from the middle
+of it; and a figure's errand hooks are records (`f.after`, `f.then`), never closures,
+because a closure cannot be compared against another machine's copy or resumed after a
+restart. `f.onDone` is still a function and is only for `walkIn` and `sendOut`, which are
+somebody else's errand.
+
 **Nothing is fetched at boot.** Blender sets are baked into ordinary modules
 (`web/js/*-mesh.js`) imported synchronously through `web/js/models.js`, so every shape
 exists before the first line of `main.js` runs. Do not introduce a loader: the boot screen
@@ -180,7 +192,10 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a b
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
 | `shared/` | terrain, regions (the world/local contract), rng, crops, shapes — Node and browser both |
-| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure) and `boating.js` (settlers taking one of those boats out), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `settlers.js`, `walk.js`; `*-mesh.js` are baked output — never hand-edit |
+| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure) and `boating.js` (settlers taking one of those boats out), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (where a body
+is; no three.js, no document, so it can run in Node), `settler-figures.js` (what is drawn
+there; every mesh and every sine wave) and `settlers.js`, the seam that joins them and the
+only one anything else imports; `*-mesh.js` are baked output — never hand-edit |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
