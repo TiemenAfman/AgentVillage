@@ -127,7 +127,8 @@ function village() {
       },
     ],
     paths: [{ id: 'path:civic:clocktower', cells: [[32, 35], [32, 34], [32, 33]] }],
-    bridges: [{ id: 'bridge:road:west:0', axis: 'x', cells: [[20, 40], [21, 40]] }],
+    bridges: [{ id: 'bridge:road:west:0', axis: 'x', cells: [[20, 40], [21, 40]] },
+      { id: 'bridge:quay:0', axis: 'z', cells: [[30, 10], [30, 11]], quay: true }],
     cleared: [[31, 26], [32, 26], [33, 26]],
     polders: [],
     milestones: [{ id: 'well', at: 5, label: 'The village well', unlockedAt: '2026-09-17T08:00:00.000Z' }],
@@ -225,6 +226,12 @@ test('what is left is still drawable', () => {
   assert.deepEqual(b.buildings[0].ornaments, ['forge', 'weathervane']);
   assert.equal(b.paths[0].cells.length, 3);
   assert.equal(b.bridges[0].axis, 'x');
+  // A lane over a harbour basin lies flat instead of arching, and that is a field like any
+  // other: a flag this whitelist does not name does not arrive, and the visitor's quay
+  // would hump while the same lane at home lay flat. False rather than absent on the
+  // ordinary crossing, so the round trip through JSON stays a fixed point.
+  assert.equal(b.bridges[0].quay, false);
+  assert.equal(b.bridges[1].quay, true);
   assert.equal(b.cleared.length, 3);
   assert.equal(b.props[0].kind, 'tree');
   assert.equal(b.crops[0].crop, 6);

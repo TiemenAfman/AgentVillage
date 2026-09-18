@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { makeTerrain } from 'shared/terrain.mjs';
+import { makeTerrain, SEA_LEVEL } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
@@ -15,7 +15,8 @@ import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
+  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, HARBOUR_FLOOR,
+  HARBOUR_PIN, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createBoating } from './boating.js';
@@ -1877,11 +1878,6 @@ function currentHour() {
   return d.getHours() + d.getMinutes() / 60;
 }
 
-// Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from
-// shared/terrain.mjs, which is the same line the terrain itself uses to decide where the
-// sand stops, so a house is treated as standing in the water by exactly the rule that
-// draws the water.
-const HARBOUR_WATERLINE = 0.35;
 // Eight ways to look for a beach from a hull that has come alongside one.
 const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
   [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
@@ -1891,7 +1887,7 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // is nothing under it to stand on - and wrong for one on dry land, where it left the
 // settlers of The Quay hanging in the air beside their own front doors. A house on land
 // has ground under it like anyone else, so its settler uses the ground.
-const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
+const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= HARBOUR_PIN;
 
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
@@ -1905,15 +1901,20 @@ function makeRecord(spec) {
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
   let y = groundAt(x, z);
-  // A harbour house stands on stilts, and this pins its deck just above the waterline.
-  // That is right for one built out over the water at the end of a pier, and ruinous for
-  // one whose plot turned out to be dry land: The Quay's ground runs from 1.65 to 1.99
-  // and all nineteen of its harbour houses were pinned at 0.05, which buried the house,
-  // the stilts and everything but the ridge of the roof. From the air a district of them
-  // reads as green wedges lying in the grass. So the clamp only applies where there is
-  // actually water to stand in - anything above the beach line stands on the ground like
-  // any other building, stilts and all, which is what a house on a quayside does anyway.
-  if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
+  // A harbour house stands on stilts, and this pins it so its floor lands on the quay -
+  // HARBOUR_PIN is exactly QUAY_DECK less the floor's own height, so the pier, the lanes
+  // over the basin and every doorstep come out on one plane and the quay is walkable end
+  // to end. It used to pin to the waterline instead, which put the floor 0.13 under the
+  // planks beside it.
+  //
+  // And it fires on water rather than on the beach line, which are not the same test: the
+  // beach line is 0.35, so a plot of dry sand at 0.27 was *lowered* into ground it has
+  // nothing to sink into - Dreamy Vibrant Einstein stood there with its stone base buried.
+  // Worse the other way on The Quay, whose ground runs from 1.65 to 1.99: nineteen harbour
+  // houses pinned at 0.05 read from the air as green wedges lying in the grass. A house
+  // whose plot turned out to be land stands on that land like any other building, stilts
+  // and all, which is what a house on a quayside does anyway.
+  if (spec.harbour && y < SEA_LEVEL) y = HARBOUR_PIN;
   group.position.set(x, y, z);
   // The layout's convention, shared by scan.mjs's doorOf and settlers.js's DOOR_DIR, is
   // that rot 0 faces -z, 1 faces +x, 2 faces +z, 3 faces -x. Turning by rot * 90 degrees
@@ -2133,12 +2134,16 @@ function syncBridges(village) {
   decks = new Map();
   for (const [i, b] of list.entries()) {
     const key = `${b.id}#${i}`;
-    for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis)) {
+    // The flag has to reach both calls or they disagree: bridgeDeckHeights is the floor
+    // a settler walks on and buildBridgeGeometry is the planks it sees, and a quay lane
+    // that arches in one and lies flat in the other is a deck you walk through.
+    const opts = { quay: !!b.quay };
+    for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis, opts)) {
       decks.set(gx + gz * terrain.size, y);
     }
     if (bridgeMeshes.has(key)) continue;
     const [x, z] = terrain.cellWorld(b.cells[0][0], b.cells[0][1]);
-    const g = buildBridgeGeometry(b.cells, terrain, [x, z], b.axis);
+    const g = buildBridgeGeometry(b.cells, terrain, [x, z], b.axis, opts);
     if (!g) continue;
     const m = new THREE.Mesh(g, buildingMat);
     m.position.set(x, 0, z);
@@ -2761,7 +2766,7 @@ function placeFigure(rec) {
   if (rec.spec.kind === 'civic') return;
   const p = rec.group.position;
   const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z], { yaw: rec.group.rotation.y });
-  if (f && overWater(rec)) f.deckY = p.y + 0.62;
+  if (f && overWater(rec)) f.deckY = p.y + HARBOUR_FLOOR;
   if (f && rec.spec.active) f.mode = 'hammer';
 }
 
@@ -2778,7 +2783,7 @@ function placeFigureRefresh(rec) {
     f.spec = rec.spec;
     const reach = rec.spec.kind === 'shed' ? .46 : .85, yaw = rec.group.rotation.y;
     f.home = [rec.group.position.x + Math.sin(yaw)*reach, rec.group.position.z + Math.cos(yaw)*reach];
-    if (overWater(rec)) f.deckY = rec.group.position.y + 0.62;
+    if (overWater(rec)) f.deckY = rec.group.position.y + HARBOUR_FLOOR;
   }
   else placeFigure(rec);
   if (rec.spec.active) { addScaffold(rec); state.settlers.setMode(rec.id, 'hammer'); }

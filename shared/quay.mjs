@@ -60,13 +60,60 @@ export function seawardRun(terrain, shore) {
 // low flats well inland. This island's landing came out at [199,156] with no water within
 // six cells in any direction, and the quay silently did not get built.
 //
-// So the landing is a preference and not a promise: if it has open water off it, the quay
-// goes there, and otherwise it goes to the nearest coast cell that does. Deterministic
+// So the landing is a preference and not a promise: if it has open sea off it, the quay
+// goes there, and otherwise it goes to the nearest coast cell that does - the *sea*, per
+// onOpenSea below, because a pond is often the nearer water and a dock on a pond is a joke
+// this island has already told once. Deterministic
 // either way - coastCells is built in a fixed order by shared/terrain.mjs and ties fall to
 // whichever comes first - so all three sides still arrive at the same answer without a word
 // between them.
+// Which water is the sea. Flooded four-connected from the map border, where the map is
+// open water by construction, because `isWater` says a fourteen-cell puddle in the middle
+// of the island is water exactly as loudly as the ocean does - and `coastCells` counts a
+// pond's rim as coast. Without this test the quay goes to the nearest coast cell full stop,
+// and on a 256 island the town sits eighty-five cells from the sea while a puddle sits
+// seven: six of twenty-four landings measured over twelve seeds at both sizes put the
+// island's dock, its boat and its mooring in a pond.
+//
+// `inGrid` first, and it is not belt and braces: terrain's `isWater` answers true for every
+// cell off the edge of the map, so a fill without it walks out into the coordinate plane
+// and never comes back. Cached per terrain - one fill is 65k cells on a 256 island, and
+// quayFor is asked the same question again for every island that arrives.
+const seaByTerrain = new WeakMap();
+export function seaCells(terrain) {
+  let sea = seaByTerrain.get(terrain);
+  if (sea) return sea;
+  sea = new Set();
+  const stack = [];
+  const push = (gx, gz) => {
+    if (!terrain.inGrid(gx, gz)) return;
+    const k = gx + gz * terrain.size;
+    if (sea.has(k) || !terrain.isWater(gx, gz)) return;
+    sea.add(k);
+    stack.push([gx, gz]);
+  };
+  for (let i = 0; i < terrain.size; i++) {
+    push(i, 0); push(i, terrain.size - 1); push(0, i); push(terrain.size - 1, i);
+  }
+  while (stack.length) {
+    const [gx, gz] = stack.pop();
+    push(gx + 1, gz); push(gx - 1, gz); push(gx, gz + 1); push(gx, gz - 1);
+  }
+  seaByTerrain.set(terrain, sea);
+  return sea;
+}
+
+// Whether a run of planks reaches open sea rather than a puddle. One cell of the run is
+// enough: a run is straight and starts at a shore, so if any of it is in the fill all of it
+// is on the same body of water.
+function onOpenSea(terrain, run) {
+  if (!run) return false;
+  const sea = seaCells(terrain);
+  return run.cells.some(([gx, gz]) => sea.has(gx + gz * terrain.size));
+}
+
 export function quaySite(terrain, landing) {
-  if (landing && seawardRun(terrain, landing)) return landing;
+  if (landing && onOpenSea(terrain, seawardRun(terrain, landing))) return landing;
   const coast = terrain.coastCells || [];
   const to = landing || [terrain.half, terrain.half];
   let best = null, bestD = Infinity;
@@ -74,7 +121,7 @@ export function quaySite(terrain, landing) {
     const dx = c[0] - to[0], dz = c[1] - to[1];
     const d = dx * dx + dz * dz;          // squared, so no square root and no ties on rounding
     if (d >= bestD) continue;
-    if (!seawardRun(terrain, c)) continue;
+    if (!onOpenSea(terrain, seawardRun(terrain, c))) continue;
     bestD = d;
     best = c;
   }

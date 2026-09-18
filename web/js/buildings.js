@@ -1998,6 +1998,18 @@ export function buildBladesGeometry() {
 // at 0.16, under the 0.09 its own waves reach: at any hour of the day the crests washed
 // straight through the deck.
 export const QUAY_DECK = SEA_LEVEL + 0.44;
+
+// How far a harbour house's floor stands over its own origin, and where that origin has to
+// sit for that floor to come out level with the planks. The whole point of a quay is that
+// it is one storey: pier, lanes and house decks at one height, walkable end to end. Pinning
+// the houses to the waterline instead - which is what this did while the basin was being
+// dug - left them at 0.31 against a walkway at 0.44, so every doorstep on the quay was a
+// step up and a settler crossing a lane walked into the side of the house it was heading
+// for. 0.62 is the number web/js/main.js already stands a settler on a harbour house with;
+// it lives here now so the two cannot drift, and so guest-island.js can pin a visitor's
+// quay by the same arithmetic instead of a second copy of the constant.
+export const HARBOUR_FLOOR = 0.62;
+export const HARBOUR_PIN = QUAY_DECK - HARBOUR_FLOOR;
 const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
 const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
 const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway

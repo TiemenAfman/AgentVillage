@@ -20,15 +20,16 @@
 // unsee.
 import * as THREE from 'three';
 import { bandColour, seasonOf, SEASON, SHORE, SHORE_SAND } from './world.js';
-import { buildBuilding } from './buildings.js';
+import { buildBuilding, HARBOUR_PIN } from './buildings.js';
 import { housePlacement } from './house-placement.js';
 import { smoothstep } from 'shared/rng.mjs';
+import { SEA_LEVEL } from 'shared/terrain.mjs';
 
-// A harbour house stands on stilts, and this pins its deck just above the waterline - but
-// only where there is actually water to stand in. The same number and the same reasoning as
-// main.js:1511; see the comment there for the district of green wedges lying in the grass
-// that got it written down.
-const HARBOUR_WATERLINE = 0.35;
+// A visitor's harbour house is pinned exactly as ours is - floor on the planks, and only
+// where there is water to stand in. The number itself comes from buildings.js now rather
+// than being typed out again here: the two copies drifted once already, and a constant that
+// is only right on one of the two islands puts a guest's quay under its own decking while
+// ours lies flat. See makeRecord in main.js for what each half of the test is for.
 
 // A vertex per grid corner, like our own ground - not the every-other-one the horizon draws
 // a silhouette with (horizon.js:29). Once you can walk on it, half resolution is a cliff
@@ -168,7 +169,7 @@ export function createGuestIsland({
       const x = c[0] + nudge[0] + pose.x;
       const z = c[1] + nudge[1] + pose.z;
       let y = local.worldHeight(x, z);
-      if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
+      if (spec.harbour && y < SEA_LEVEL) y = HARBOUR_PIN;
 
       const g = new THREE.Group();
       g.position.set(x, y, z);

@@ -435,8 +435,20 @@ test('a lane over the basin is a deck, not a stripe on the seabed', () => {
   const basin = (L.basins || []).find((b) => b.id === `basin:${quay[0]}`);
   if (!basin) return;
   const wet = new Set(basin.cells.map(key));
-  const decked = (L.bridges || []).some((b) => b.cells.some((c) => wet.has(key(c))));
-  assert.ok(decked, 'the basin carries no deck at all: the quay cannot be walked to');
+  const over = (L.bridges || []).filter((b) => b.cells.some((c) => wet.has(key(c))));
+  assert.ok(over.length, 'the basin carries no deck at all: the quay cannot be walked to');
+  // And it knows it is a quay lane. drownRoads is the only place that can tell dredged
+  // water from a river - by the time web/js/buildings.js has the record both are simply not
+  // land - so if the flag is not written here the lanes are built as bridges, arch, and
+  // cross each other at different heights in the middle of a quay that is meant to be one
+  // floor. Nothing downstream can work it out again.
+  for (const b of over) assert.equal(b.quay, true, `${b.id} decks the basin but arches like a bridge`);
+  // The other half of the same rule: a crossing that shares no cell with a basin is an
+  // ordinary bridge over a river and has to keep its hump.
+  for (const b of L.bridges || []) {
+    if (b.cells.some((c) => wet.has(key(c)))) continue;
+    assert.notEqual(b.quay, true, `${b.id} lies flat over a river`);
+  }
 });
 
 test.after(() => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* the tmp dir will go */ } });
