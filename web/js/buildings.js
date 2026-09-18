@@ -1984,13 +1984,107 @@ export function buildBladesGeometry() {
   return merge(parts);
 }
 
+// ---------------------------------------------------------------- the quay
+// How high the quay's planks ride over the sea, and how high they ride in the .blend they
+// came out of. The island drops the whole dock by the difference, which is the one number
+// that has to be got right about this set: every piece of it - decking, head, ramp and
+// mooring post - is modelled in one frame, so one lift puts all four on the same plane and
+// there is no seam anywhere along the run. See the note at the top of scripts/build-docks.py.
+//
+// 0.44 is a hand more clearance than DECK_MIN below, which is what a bridge over a river
+// keeps. A pier stands in open water instead, where the swell is the whole sea rather than
+// a channel, and 1.8 m of daylight is also what makes it read as something a boat comes
+// alongside rather than as planks lying on the surface. The pier that was here before rode
+// at 0.16, under the 0.09 its own waves reach: at any hour of the day the crests washed
+// straight through the deck.
+export const QUAY_DECK = SEA_LEVEL + 0.44;
+const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
+const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
+const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway
+
+// The quay's planks: the pier the layout recorded, built out of the dock set.
+//
+// `cells` is the run of water cells pierCells() walked out from the shore, in order from
+// the beach, and `from` is the world point the mesh will stand on - the district's own
+// centre, because that is where main.js puts it.
+//
+// What goes where: a ramp on the shore cell behind the run, decking along it, and the wide
+// head on the last cell - but only where there is water either side to take the wings,
+// because the head is 1.6 across and a pier can perfectly well end in an inlet one cell
+// wide. Mooring posts stand outside the walkway, in pairs down the run and at the four
+// corners of the head. They carry nothing; they are what a dock is recognised by from the
+// air, where the deck is one line on the water and the posts are the row of marks along it.
 export function buildPierGeometry(cells, terrain, from) {
+  if (!cells || !cells.length) return null;
+  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+  const n = cells.length;
+  // Which way the run goes, as a unit step over the cell grid. A pier is a straight line
+  // out from one shore cell along one of the four axes, so the first two cells say it -
+  // and a pier of a single cell has none to compare, so it takes its bearing from the
+  // district it belongs to, which is inland of it by construction.
+  let step = n > 1
+    ? [Math.sign(cells[n - 1][0] - cells[0][0]), Math.sign(cells[n - 1][1] - cells[0][1])]
+    : null;
+  if (!step) {
+    const [x, z] = terrain.cellWorld(cells[0][0], cells[0][1]);
+    const [dx, dz] = [x - from[0], z - from[1]];
+    step = Math.abs(dx) > Math.abs(dz) ? [Math.sign(dx) || 1, 0] : [0, Math.sign(dz) || 1];
+  }
+  // The set is modelled running along +z, like the fence and the bridge, so one rotation
+  // turns the whole pier to face whichever way the sea is.
+  const ry = Math.atan2(step[0], step[1]);
+  const across = [step[1], -step[0]];
+  const lift = QUAY_DECK - DOCK_DECK;
+
+  const parts = [];
+  const put = (asset, cell, along = 0, side = 0) => {
+    const [x, z] = terrain.cellWorld(cell[0], cell[1]);
+    parts.push(...meshAsset(asset, 0xffffff, {
+      ry, y: lift,
+      x: x - from[0] + step[0] * along + across[0] * side,
+      z: z - from[1] + step[1] * along + across[1] * side,
+    }));
+  };
+  const posts = (cell, along = 0, side = DOCK_POST_X) => {
+    put('prop_dock_post', cell, along, side);
+    put('prop_dock_post', cell, along, -side);
+  };
+
+  // The shore cell, which is not in the run: the layout records the water a pier covers
+  // and the beach it leaves from is the cell behind the first of them.
+  put('prop_dock_ramp', [cells[0][0] - step[0], cells[0][1] - step[1]]);
+
+  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
+    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
+  const head = wide(cells[n - 1]);
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1;
+    // Alternating bays, because four copies of one bay along a run is a corrugation. Off
+    // the index rather than off a hash: a pier is a handful of cells and the point is that
+    // no two neighbours match, which alternating does exactly and a hash does mostly.
+    if (last && head) put('prop_dock_head', cells[i]);
+    else put(i % 2 ? 'prop_dock_deck_b' : 'prop_dock_deck_a', cells[i]);
+    // A pair of posts every second bay, and the run always ends in one: they mark where a
+    // boat may lie, so the head - or the last bay, if the water was too narrow for one -
+    // gets them at both corners.
+    if (last && head) {
+      for (const along of [-0.42, 0.42]) posts(cells[i], along, DOCK_HEAD_HALF + 0.1);
+    } else if (last || i % 2 === 0) posts(cells[i], last ? 0.3 : 0);
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// What a pier was before there was a model of one, kept for a checkout where the set has
+// never been baked - the same contract props.js keeps for the barrel. A slab and two pins
+// per cell is not a dock, but it is plainly a pier, and it is better than a quay district
+// with nothing on the water at all.
+function drawnPier(cells, terrain, from) {
   const parts = [];
   for (const [gx, gz] of cells) {
     const [x, z] = terrain.cellWorld(gx, gz);
-    parts.push(box(0.62, 0.07, 0.62, C.plank, { x: x - from[0], y: 0.16, z: z - from[1] }));
-    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] - 0.24, y: -0.55, z: z - from[1] - 0.24 }));
-    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] + 0.24, y: -0.55, z: z - from[1] + 0.24 }));
+    parts.push(box(0.62, 0.07, 0.62, C.plank, { x: x - from[0], y: QUAY_DECK, z: z - from[1] }));
+    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] - 0.24, y: QUAY_DECK - 0.71, z: z - from[1] - 0.24 }));
+    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] + 0.24, y: QUAY_DECK - 0.71, z: z - from[1] + 0.24 }));
   }
   return parts.length ? merge(parts) : null;
 }

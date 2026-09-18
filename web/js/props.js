@@ -8,7 +8,7 @@
 // in shared/shapes.mjs, and that is all. Anything the catalogue has no builder for
 // stands as a cairn, so a name nobody has drawn yet still puts something on the ground.
 import * as THREE from 'three';
-import { box, cylinder, cone, sphere, dome, prismRoof, meshAsset, mergeParts as merge } from './buildings.js';
+import { box, cylinder, cone, sphere, dome, prismRoof, meshAsset, buildPierGeometry, mergeParts as merge } from './buildings.js';
 import * as models from './models.js';
 
 const WOOD = 0x6b4a2f;
@@ -115,6 +115,29 @@ function bridge(p) {
   parts.push(box(0.16, 0.6, 0.16, WOOD, { x: -0.6, y: -0.68, z: half - 0.3 }));
   parts.push(box(0.16, 0.6, 0.16, WOOD, { x: 0.6, y: -0.68, z: half - 0.3 }));
   return merge(parts);
+}
+
+// A dock: a ramp onto a run of decking with a wide head at the end of it, and the mooring
+// posts down both sides. It runs along z like the bridge and the fence, so --rot turns it
+// out to sea.
+//
+// Drawn by handing buildPierGeometry() a pier of its own rather than by laying the pieces
+// out again here, which is the whole reason that function takes a terrain instead of
+// reading the island's: a dock somebody puts down by hand and the dock a Cowork district
+// arrives at are then the same dock, down to which bay is the _a and which the _b. The
+// shim is the smallest terrain that answers the two questions it asks - where a cell is,
+// and whether the next one over is water - and the answer to the second is yes, because
+// somebody who asks for a dock has asked for the head as well.
+//
+// The cells are numbered from the shore, as the layout numbers them, so cell 0 carries the
+// ramp and the run is 1..bays. Shifting them back by half the run centres the lot on the
+// point it was asked for, ramp included: a prop is placed by its middle.
+function dock(p) {
+  const bays = Math.max(1, Math.round(p.length || 4));
+  const cells = [];
+  for (let i = 1; i <= bays; i++) cells.push([0, i]);
+  const shim = { cellWorld: (gx, gz) => [gx, gz - bays / 2], isWater: () => true };
+  return buildPierGeometry(cells, shim, [0, 0]) || cairn(p);
 }
 
 function fence(p) {
@@ -259,6 +282,11 @@ const SHAPES = {
   // the cart and the washing line arrived, which need a `run` to block along and have one
   // length each, being baked meshes.
   bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75, stretch: true },
+  // A dock stands in the sea at one height whatever is under it, and that height is
+  // already in the geometry: buildPierGeometry works in world y so that the quay's own
+  // pier comes out level whatever the district's centre happens to sit at. So this one
+  // is not lifted at all, which is the only shape here that is true of.
+  dock: { build: dock, r: 0, lift: () => 0, stretch: true },
   fence: { build: fence, r: 0, run: 0.22, stretch: true, wall: (p) => Math.max(1, p.length || 4) },
   bench: { build: bench, r: 0.45 },
   // 0.13 is the barrel itself: 0.23 across at the widest hoop, half of that and a hair.

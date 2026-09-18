@@ -152,6 +152,10 @@ SessionStart hook's stdout is injected into the model's context) and always exit
   hedge, which are not drawn with the building material.
 - Triangle budgets follow the name prefix: `flora_` 60, `prop_` 120, `addon_` 150, `roof_`
   300, `house_` 600, `civic_` 1500, hero 4000.
+- A set that stands over water is modelled in **one frame**, with its piles' feet at y = 0
+  and everything else measured from there, so the island can drop the whole set by one
+  number (`QUAY_DECK - DOCK_DECK` in `buildings.js`) and get a deck with no step in it.
+  `assets/docks` is the worked example; `tests/docks.test.mjs` asserts the joins.
 
 The rules live once in `scripts/model-rules.mjs`, and `tests/models.test.mjs` runs the same
 `checkAll()` over what is committed — so the suite catches a bad bake on a machine that has
