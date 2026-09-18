@@ -864,7 +864,12 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, dispose, isActive: () => state.active };
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle,
+    // What is underfoot here, decks included. The archipelago alone answers with water
+    // over a quay, because planks are a level rather than ground - and "can I step out
+    // here" has to mean the same thing as "will my feet find something".
+    groundAt: (x, z) => groundAt(x, z),
+    dispose, isActive: () => state.active };
 }
 
 export function lerpAngle(a, b, t) {

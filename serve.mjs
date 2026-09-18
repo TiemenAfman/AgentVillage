@@ -371,9 +371,39 @@ const ws = config.multiplayer.enabled ? createWsServer(server, {
   isAllowed: (req) => whoFor(req).role !== 'refused',
   onOpen: (conn, req) => roster.attach(conn, { keeper: whoFor(req).role === 'islander' }),
   onMessage: (conn, text) => roster.message(conn, text),
-  onClose: (conn) => roster.detach(conn),
+  onClose: (conn) => { roster.detach(conn); sawSomebodyLeave(conn); },
   log,
 }) : null;
+
+// A berth is keyed by an island and an address; a player is a connection. The two do not
+// line up on their own, so "the visit is over" has to be worked out: when the last socket
+// from the address that parked an island has gone, and stayed gone for the grace, the
+// island goes with it.
+//
+// The grace matters more than it looks. A page reload drops every socket for a second or
+// two, and evicting on that would make refreshing the page throw your island out of the
+// harbour - which is exactly the sort of thing that is discovered by somebody else, later.
+// Without this the only thing that ever cleared a berth was the sweep at start-up, so an
+// island stayed moored for as long as the server ran.
+const GRACE = Math.max(5000, Number(config.visitorGraceMs) || 1800000);
+function stillHere(address) {
+  let found = false;
+  if (ws) ws.each((c) => { if (!found && c.socket && c.socket.remoteAddress === address) found = true; });
+  return found;
+}
+function sawSomebodyLeave(conn) {
+  const address = conn && conn.socket && conn.socket.remoteAddress;
+  if (!address) return;
+  setTimeout(() => {
+    if (stillHere(address)) return;
+    for (const berth of guests.list()) {
+      if (guests.parkedFrom(berth.id) !== address) continue;
+      guests.evict(berth.id);
+      log(`the island ${berth.name || berth.id} has sailed home`);
+      broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
+    }
+  }, GRACE).unref?.();
+}
 if (ws) setInterval(() => roster.tick(), Math.max(33, Number(config.multiplayer.tickMs) || 66)).unref?.();
 
 // Who else is out there. Only the keeper is told: a list of the other machines on your
@@ -707,6 +737,40 @@ async function handle(req, res) {
       }));
     } catch (e) {
       return json(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  // Sending this island somewhere. Islander-only, and it is the server that makes the
+  // journey rather than the page: the bundle is built here anyway, the redaction runs on
+  // the same side as the secrets, and the browser never holds an unredacted copy it then
+  // forwards. All the page does is name a neighbour.
+  if (p === '/api/visit') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
+    let asked;
+    try { asked = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'that is not JSON' }); }
+    const host = String(asked && asked.host || '').trim();
+    const port = Number(asked && asked.port);
+    if (!/^[a-zA-Z0-9.\-:\[\]]{1,64}$/.test(host) || !(port >= 1 && port <= 65535)) {
+      return json(res, 400, { error: 'that is not a neighbour' });
+    }
+    const village = readJson(VILLAGE_FILE, null);
+    if (!village) return json(res, 503, { error: 'this island has not been scanned yet' });
+    try {
+      const bundle = buildBundle({
+        config, village, props: listProps(), crops: cropsView(),
+        id: neighbours ? neighbours.me() : null, keeper: islanderName,
+      });
+      const r = await fetch(`http://${host}:${port}/api/island`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(bundle),
+      });
+      const answer = await r.json().catch(() => ({}));
+      if (!r.ok) return json(res, 502, { error: answer.error || `they answered ${r.status}`, status: r.status });
+      log(`sent this island to ${host}:${port}`);
+      return json(res, 200, { ok: true, berth: answer.berth, id: bundle.island.id });
+    } catch (e) {
+      return json(res, 502, { error: String(e.message || e) });
     }
   }
 

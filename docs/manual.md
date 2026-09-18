@@ -186,13 +186,31 @@ machine has, and phones and laptops reach it at `http://<the machine's name>:474
 Windows Firewall asks about the port the first time, and about UDP 47474, which is how
 islands announce themselves to each other.
 
-**What a visitor can do.** Walk, swim, look at the village, read a settler's dossier, and
-bump into the other people walking it. That is all. Handing out a ticket, talking to a
-settler, founding one, sending one away, anything touching git, the sprint board and the
-town hall are refused — not hidden, refused, by the server, for anyone who is not on this
-machine. The rule is not a list of forbidden things but the other way round: a handful of
-paths are public and everything else is local-only, so a route added later is shut unless
-somebody deliberately opens it.
+**What a visitor can do.** Walk, swim, sail, look at the village, read a settler's dossier,
+and bump into the other people walking it. Handing out a ticket, talking to a settler,
+founding one, sending one away, anything touching git, the sprint board and the town hall
+are refused — not hidden, refused, by the server, for anyone who is not on this machine.
+The rule is not a list of forbidden things but the other way round: a handful of paths are
+public and everything else is local-only, so a route added later is shut unless somebody
+deliberately opens it.
+
+Exactly one route has been deliberately opened the other way, and it is worth knowing
+about because it is the first one a visitor may *write* to. `POST /api/island` takes a
+whole island — somebody else's — and moors it in the water beside yours. The carve-out is
+written out in full above `PUBLIC_API` in `lib/access.mjs`, where whoever opens the second
+one will read it; what guards it is this. An island that arrives is two megabytes at most,
+and one address may send one every ten seconds, with three in hand for somebody who
+reloads while finding their feet — asked at the door, before the body is read, so a
+refusal costs nothing. There are four berths and no more. What arrives is parked under
+`data/guests/`, where nothing merges it into the village, the scanner does not know it
+exists, and it can reach neither `village.json` nor `layout.json`. It is not checked and
+passed on: `lib/islandbundle.mjs` builds a brand new island out of a whitelist, field by
+field, so a field it has never heard of cannot reach this disk whatever the sender calls
+it. And the land is rebuilt from their seed here rather than taken on trust — if their
+island hashes to something other than what they said it does, the two machines are not
+running the same terrain generator, their houses would stand in the sea, and the upload is
+refused outright. A berth is swept when the server starts, which is the rule that keeps an
+uploaded island a visit rather than a copy of somebody's island living on your disk.
 
 **What a visitor can see.** The place and the people: the island, the houses, the settlers'
 names, and the project folders' names. Not the conversations. A session's title is its
@@ -200,7 +218,10 @@ opening prompt and is stripped, and so is anything else written out of a transcr
 branch names, ticket summaries. Absolute paths are cut back to the folder's own name, so
 `C:\Users\you\Desktop\pixelart` reaches a visitor as `pixelart`, and the identifiers that
 carry a path or a session id are renamed. `"guestView": "full"` turns all of that off for
-a network you trust.
+a network you trust. An island packed up to be carried to somebody else's machine is
+redacted whatever that setting says: it is one thing to let a neighbour look through your
+own window, and another to write your branch names onto their disk, where they stay until
+they restart a server they do not think of as holding your data.
 
 **Neighbours.** Every island shouts its name, its seed and its port over UDP every five
 seconds. Their seed is enough to draw their island's true shape on your horizon without
@@ -208,12 +229,63 @@ ever connecting to them, always on the same bearing, so you learn where to look.
 and you sail over: the page really does go to their server, where you are a visitor like
 anyone else. Who is on your network is yours alone — a visitor is never told.
 
+**An island at a berth.** The horizon is not the only place a neighbour can be. An island
+can also be moored beside yours — a real berth, with a strip of open sea between the two
+coasts and ground on the far side you can stand on. There are four of them and they are
+snapped to the compass, east, west, south and north, for the same reason the horizon puts
+a neighbour on a fixed bearing: you learn where to look. An island on a berth is no longer
+a silhouette on the horizon, because it cannot be in both places at once.
+
+What comes with it is their land and their village. Their coast, their hills, their lake
+and their rivers are all real — those are what their seed makes, which is why an island
+can be drawn at all without asking them for anything — and their houses, sheds and civic
+buildings stand on the plots their own layout recorded, built by the same code that builds
+yours. Hover one and it says whose it is.
+
+What deliberately does not come with it is everything that would make it a second village
+rather than a place. There is no forest over there, no fields, no worn ground, no hamlet
+greens or fences, and no settlers walking about. There are no yard signs either: a
+nameplate is drawn into a texture of its own and forty of them are a large fraction of
+everything on the screen, and the rule that replaces them reads well enough — a yard sign
+is for the island you live on. Nothing over there turns, flies, chimes or smokes, because
+none of that changes what the place looks like from across the water. Their chronicle,
+their dossiers, their milestones and their post are not there at all. Your island is a
+village; theirs is a place.
+
+And it is a **snapshot of the moment it was uploaded**. There is no line open to the other
+machine. A house that goes up over there does not go up over here, a settler who arrives
+does not arrive, and nothing at that berth changes until the whole island is sent again.
+
+**The quay and the boat.** Every island has a landing — the coast cell nearest the town
+centre, where a new settler already walks ashore — and a plank dock now stands out over
+the water from it. It is there on every island, seed alone, whether or not there was ever
+enough harbour work to earn it a quay district.
+
+Walk out along the planks and press **E**, and there is a boat alongside: one per dock, so
+pressing it twice does not leave a raft of hulls tied up together. Aboard, **W** and **S**
+are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
+there is shore to step onto. She is quicker than running and takes a couple of seconds to
+find it, a hard turn spends the way you had on, and a hull that runs up a beach stops dead
+and has to be backed off. Press her at a coast and she will not climb it — the water's
+edge is the only place you can get in or out of a boat at all.
+
+On foot the open water is still a wall. You may wade in as long as the shore stays within
+about two metres, and not a step further, which is what has always kept you from setting
+out for the horizon. That refusal is the reason the boat is worth having: it is what makes
+the strip of sea between two islands a crossing rather than a paddle. Leave it in place.
+
 **One thing this cannot defend against.** A port forwarder on this machine — `netsh
 interface portproxy`, ngrok, `ssh -L`, Docker's userland proxy, a reverse proxy — makes
 every visitor arrive from 127.0.0.1, and the island has no way to tell from the inside.
 Anyone reaching it that way is the keeper, with the full run of the machine. Do not put
 one in front of this. To let somebody in from outside your own network, set an
 `inviteCode` and send them `http://…/?key=…`; without one, only your own subnet is let in.
+
+An invite code used to buy a stranger a look at the island, and it now buys them a berth
+as well. Membership of your own network is the whole gate on the one write route there is,
+and a code is what stands in for that membership from outside — so whoever holds it can
+moor an island here, which is four berths of two megabytes of somebody else's data sitting
+in `data/guests/` until you restart. Hand one out to people, not to a mailing list.
 
 ## Talking to a settler
 
@@ -552,6 +624,7 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | An outpost | A session in a git worktree, whether `.claude/worktrees` or `git worktree add` |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
 | A plank dock out over the water, with mooring posts | The quay's pier: where a Cowork task's settler comes ashore |
+| A plank dock at the landing, on every island | The quay: stand on it and **E** gives you a boat — see [Visitors and neighbours](#visitors-and-neighbours) |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
 | Tower with a copper dome | Fable |
 | Stone walls, slate roof | Opus |

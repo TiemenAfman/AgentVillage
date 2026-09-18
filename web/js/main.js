@@ -14,7 +14,7 @@ import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, PALETTE, TIER_INDEX,
+  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
 import { createNameplate } from './nameplate.js';
@@ -283,7 +283,7 @@ const state = {
   // `sea` is every island there is, in world coordinates, and it is what the camera, the
   // haze and anything asking "is there ground here" read. For an island on its own the two
   // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
-  sea: createArchipelago(), region: null, guests: [], boats: [],
+  sea: createArchipelago(), region: null, guests: [], boats: [], docks: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
@@ -432,6 +432,31 @@ function walkableBlockers() {
 
 function interactables() {
   const out = [];
+  // One key does both. Aboard, E puts you ashore - but only where there is shore to put you
+  // on, which is what makes it safe to be the same key: in open water there is nothing to
+  // offer and the prompt simply is not there. On foot it is the dock that offers a boat, and
+  // any hull somebody left lying about.
+  const aboard = state.walk && state.walk.aboard();
+  if (aboard) {
+    const bx = aboard.x + Math.sin(aboard.yaw) * (BOW + 0.7);
+    const bz = aboard.z + Math.cos(aboard.yaw) * (BOW + 0.7);
+    // Ahead of the bow first, because that is where you are looking; then anywhere within a
+    // hull's length, so coming alongside a dock sideways still lets you off.
+    // Asked of walk mode, not of the archipelago: a quay is planks over water, so the sea
+    // says -0.4 where your own dock is and stepping out onto your own dock would be refused.
+    const under = (x, z) => state.walk.groundAt(x, z);
+    const landAhead = under(bx, bz) >= 0.06;
+    const landBeside = !landAhead && LAND_PROBE.some(([dx, dz]) =>
+      under(aboard.x + dx * 1.6, aboard.z + dz * 1.6) >= 0.06);
+    if (landAhead || landBeside) {
+      out.push({
+        id: aboard.id, kind: 'ashore', x: aboard.x, z: aboard.z, r: 99,
+        label: 'the shore', prompt: 'step ashore',
+      });
+    }
+    return out;
+  }
+
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
     const p = rec.group.position;
@@ -466,18 +491,14 @@ function interactables() {
   // props, because that is the half that knows how wide a board is and whether its page
   // is up yet.
   if (state.panels) out.push(...state.panels.interactables());
-  // The boats. Aboard one, the same entry becomes the way out - reaching the shore is not a
-  // separate control, it is the same key saying a different thing.
-  const aboard = state.walk && state.walk.aboard();
+  for (const d of state.docks) {
+    const moored = state.boats.find((b) => Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
+    out.push({
+      id: d.id, kind: 'dock', x: d.head[0], z: d.head[1], r: 3.2,
+      label: 'the quay', prompt: moored ? 'take the boat' : 'take a boat',
+    });
+  }
   for (const b of state.boats) {
-    if (aboard && aboard === b) {
-      const bx = b.x + Math.sin(b.yaw) * BOW, bz = b.z + Math.cos(b.yaw) * BOW;
-      if (state.sea.height(bx, bz) >= 0.06) {
-        out.push({ id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the shore', prompt: 'step ashore' });
-      }
-      continue;
-    }
-    if (aboard) continue;                       // one boat at a time
     out.push({ id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat', prompt: 'take the boat' });
   }
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
@@ -762,8 +783,29 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 // drift away from the first one.
 // Aboard. The boat is handed to walk mode, which steers it from there; nothing else about
 // being on foot changes, which is why `blocked` and the wading rule are untouched.
-function takeBoat(id) {
-  const b = boatAt(id);
+// The quay's own key. A boat is lying here, or one is put in the water for you.
+//
+// Nothing is moved to reach you: if a hull is already alongside you board that one, and
+// otherwise a new one goes in at the berth, a pace from where you are standing. A boat left
+// on some other beach stays on that beach - it is not summoned, and you are not carried to
+// it. Three to a quay, which is enough that leaving one on the far island never strands
+// you and few enough that leaning on the key does not build a raft.
+const BOATS_PER_QUAY = 3;
+function takeBoatAt(dockId) {
+  const d = dockAt(dockId);
+  if (!d) return;
+  const alongside = state.boats.find((x) => Math.hypot(x.x - d.berth[0], x.z - d.berth[1]) < 3);
+  if (alongside) { takeBoat(alongside); return; }
+  const hers = state.boats.filter((x) => x.id.startsWith(`boat:${d.region.id}:`)).length;
+  if (hers >= BOATS_PER_QUAY) { state.ui.toast('Every boat from this quay is out on the water.'); return; }
+  takeBoat(spawnBoat(d.region.id, d.berth[0], d.berth[1], d.yaw));
+}
+
+function takeBoat(which) {
+  // The boat itself, or its id from the interactable that named it. Taking the object where
+  // there is one is not a convenience: looking a boat up by id is exactly what went wrong
+  // when two of them shared one.
+  const b = typeof which === 'string' ? boatAt(which) : which;
   if (!b || !state.walk) return;
   state.walk.board(b);
   // Told as a room rather than as a flag. `room()` in lib/players.mjs:55 already accepts
@@ -771,6 +813,7 @@ function takeBoat(id) {
   // somebody walking and nothing worse - where a new flag bit would have needed the mask
   // at lib/players.mjs:162 widened on the server first.
   if (state.net) state.net.setRoom('boat', state.walk);
+  state.walk.setInteractables(interactables());   // E means something else now
   state.ui.toast('You cast off. <b>W</b> and <b>S</b> for the oars, <b>A</b> and <b>D</b> for the tiller.');
 }
 
@@ -781,6 +824,7 @@ function stepAshore() {
   const at = [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
   if (!state.walk.unboard(at)) { state.ui.toast('Nowhere to land here.'); return; }
   if (state.net) state.net.setRoom(null, state.walk);
+  state.walk.setInteractables(interactables());
 }
 
 function walkCallbacks() {
@@ -796,12 +840,13 @@ function walkCallbacks() {
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
       else if (it.kind === 'boat') takeBoat(it.id);
+      else if (it.kind === 'dock') takeBoatAt(it.id);
       else if (it.kind === 'ashore') stepAshore();
       else talkTo(it.id);
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern', 'boat', 'ashore'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -942,9 +987,6 @@ function enterWalk(spot = null) {
   state.tween = null;
   state.ui.closeDossier();
   state.ui.setWalking(true, state.padSeen);
-  // A boat is only ever something you board on foot. From the orbit camera it would be a
-  // speck; from up there the horizon draws the sea better than a hull would.
-  launchBoats();
   if (state.net) state.net.setWalking(true);
   state.walk.enter({
     at,
@@ -1287,49 +1329,104 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // Their ground goes into `state.pickables` so the existing raycast finds it. It does NOT go
 // on the horizon: see the filter in applyNeighbours for why an island cannot be in both
 // places at once.
-// Where a boat lies when nobody is sailing it. `landing` is the one mooring every island
-// has: lib/layout.mjs:1382-1385 picks it as the coast cell nearest the town centre, which
-// is where a new settler already walks ashore, and it exists whether or not the island ever
-// earned a quay. A pier is nicer and comes from a quay district, which only exists once
-// there is Cowork work on that island - so a crossing cannot be made to depend on one.
-function mooringOf(region, village) {
+// ---- the quay -------------------------------------------------------------------
+// Which way the water lies off a coast cell, and how far out you can build before the sea
+// floor comes back up. Both are twelve lines of lib/layout.mjs - `seawardDirection` at :1931
+// and `pierCells` at :1942 - copied rather than imported, because that file is Node's: it
+// reaches for lib/paths.mjs and the whole layout with it. If a third caller ever wants them
+// they belong in shared/.
+const QUAY_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function seawardRun(terrain, shore) {
+  let dir = null, reach = 0;
+  for (const [dx, dz] of QUAY_DIRS) {
+    let n = 0;
+    for (let i = 1; i <= 6; i++) { if (!terrain.isWater(shore[0] + dx * i, shore[1] + dz * i)) break; n++; }
+    if (n > reach) { reach = n; dir = [dx, dz]; }
+  }
+  if (!dir) return null;
+  const cells = [];
+  for (let i = 1; i <= 5; i++) {
+    const c = [shore[0] + dir[0] * i, shore[1] + dir[1] * i];
+    if (!terrain.isWater(c[0], c[1])) break;
+    cells.push(c);
+  }
+  return cells.length ? { dir, cells } : null;
+}
+
+// A dock at the island's landing. `landing` (lib/layout.mjs:1382-1385) is the coast cell
+// nearest the town centre - where a new settler already walks ashore - and it exists on
+// every island, seed alone, whether or not there is any Cowork work to earn it a quay
+// district. The planks are the same set a quay district gets; what is different is that this
+// one is not waiting for a district to appear before there is anywhere to tie up.
+function dockFor(region, village) {
   const v = village || region.village;
   const landing = v && v.island && v.island.landing;
   if (!landing) return null;
-  const [lx, lz] = region.cellWorld(landing[0], landing[1]);
-  // A pace or two out from the beach cell, seaward, so the hull floats rather than sitting
-  // on the sand the moment it is put down. Seaward is away from the island's middle, which
-  // for a coast cell is the direction with the water in it.
-  const len = Math.hypot(lx - region.origin[0], lz - region.origin[1]) || 1;
-  const ox = (lx - region.origin[0]) / len, oz = (lz - region.origin[1]) / len;
+  const run = seawardRun(region.terrain, landing);
+  if (!run) return null;
+  // Both frames, and they are not the same thing - this is the rule from shared/regions.mjs
+  // in one function. `from` is where the MESH stands, and the mesh goes inside the island's
+  // own group, so it is local. `head` and `berth` are read by walk mode and by the boat,
+  // which speak world coordinates and nothing else. On our own island the two are equal,
+  // which is exactly how getting it wrong stays invisible until somebody joins.
+  const [lx, lz] = region.terrain.cellWorld(landing[0], landing[1]);
+  const head = run.cells[run.cells.length - 1];
+  const [hx, hz] = region.cellWorld(head[0], head[1]);
   return {
-    id: `boat:${region.id}`,
-    x: lx + ox * 2.2, z: lz + oz * 2.2,
-    // Bow pointing out to sea, which is the way you leave.
-    yaw: Math.atan2(ox, oz),
+    id: `dock:${region.id}`, region, cells: run.cells, dir: run.dir,
+    from: [lx, lz],
+    // Where a boat comes alongside: one cell off the head, to the side, so the hull is not
+    // sitting on the planks. Which side does not matter - both are water, or the head would
+    // not be there.
+    berth: [hx - run.dir[1] * 1.3, hz + run.dir[0] * 1.3],
+    // Bow pointing out along the run, which is the way you leave.
+    yaw: Math.atan2(run.dir[0], run.dir[1]),
+    head: [hx, hz],
   };
 }
 
-// One boat per island, moored at its landing. Made when walk mode starts, because a boat
-// is only ever a thing you board on foot - from the air it is scenery the horizon already
-// draws better.
-function launchBoats() {
-  if (state.boats.length) return;
+// The docks, built with the world so they are there to look at from the orbit camera too -
+// a dock is scenery as much as it is a way off the island.
+function buildDocks(homeVillage) {
+  for (const d of state.docks) d.dispose();
+  state.docks = [];
   for (const region of state.sea.regions()) {
-    const m = mooringOf(region, region === state.region ? state.village : null);
-    if (!m) continue;
-    const craft = createBoat({ scene, material: buildingMat });
-    craft.place(m.x, m.z, m.yaw);
-    state.boats.push({
-      ...m, craft, v: 0, aground: false,
-      // What walk mode stands a rider on: the deck, swell included, so a body does not
-      // sink into a hull that has just risen on a wave.
-      deckY: DECK_Y,
-    });
+    const spec = dockFor(region, region === state.region ? (homeVillage || state.village) : null);
+    if (!spec) continue;
+    const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
+    if (!geo) continue;
+    const mesh = new THREE.Mesh(geo, buildingMat);
+    // In the island's own frame: at the origin for home, inside the guest group otherwise.
+    const parent = region === state.region
+      ? scene
+      : (state.guests.find((g) => g.region === region) || {}).group || scene;
+    mesh.position.set(spec.from[0], 0, spec.from[1]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.id = spec.id;
+    parent.add(mesh);
+    state.docks.push({ ...spec, mesh, dispose: () => { parent.remove(mesh); geo.dispose(); } });
+    state.pickables.push(mesh);
   }
 }
 
+function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
 function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
+
+// A boat, put in the water and left there. Nothing moors it but where it stops.
+//
+// The id is counted, not named after the quay it came from. Two boats sharing one id is
+// what made taking a new boat teleport you into the old one: the new hull went in at the
+// berth, and boarding by id then found the first boat of that name - the one still lying
+// on whatever beach it was left on - and took you to it.
+let boatsLaunched = 0;
+function spawnBoat(where, x, z, yaw) {
+  const craft = createBoat({ scene, material: buildingMat });
+  craft.place(x, z, yaw);
+  const b = { id: `boat:${where}:${++boatsLaunched}`, x, z, yaw, v: 0, aground: false, craft, deckY: DECK_Y };
+  state.boats.push(b);
+  return b;
+}
 
 function raiseGuestIslands() {
   // The water first, so a coast rises out of its own shallows rather than out of the flat
@@ -1615,6 +1712,9 @@ function currentHour() {
 // sand stops, so a house is treated as standing in the water by exactly the rule that
 // draws the water.
 const HARBOUR_WATERLINE = 0.35;
+// Eight ways to look for a beach from a hull that has come alongside one.
+const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
+  [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
 
 // Whose settler stands on a deck rather than on the ground. `deckY` pins a figure to one
 // height wherever it walks, which is right for a house built out over the water - there
@@ -1795,6 +1895,7 @@ function buildScene(village) {
   applyFogRange();
   applyCameraRange();
   raiseGuestIslands();
+  buildDocks(village);
   state.settlers = createSettlers(scene, buildingMat, terrain);
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
@@ -1872,6 +1973,16 @@ function handOutDecks() {
   const base = state.region ? state.region.levelBase : 0;
   const stacked = new Map();
   for (const [cell, y] of flat) stacked.set(base + cell, [y]);
+  // The quay's planks are a floor over water, exactly as a bridge deck is - without this
+  // you wade alongside your own dock instead of walking out along it, which is both wrong
+  // and the difference between a dock and a decoration. Keyed per region, so a guest
+  // island's quay is its own storey and not a deck in the air over ours.
+  for (const d of state.docks) {
+    const r = d.region;
+    for (const [gx, gz] of d.cells) {
+      stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
+    }
+  }
   if (state.settlers) state.settlers.setDecks(flat);
   if (state.walk) state.walk.setLevels(stacked);
 }
@@ -2829,6 +2940,12 @@ function frame(nowMs) {
     b.craft.place(b.x, b.z, b.yaw);
     b.craft.bob(nowMs / 1000);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
+  }
+  // While you are sailing, whether there is anywhere to step out changes with every metre,
+  // so the offer is rebuilt with it. Cheap because aboard a boat the whole list is that one
+  // offer - there is nothing to talk to, nothing to sow and no door to open from the water.
+  if (state.mode === 'walk' && state.walk && state.walk.aboard()) {
+    state.walk.setInteractables(interactables());
   }
 
   // per-building animated bits

@@ -25,10 +25,11 @@ import { FENCE } from '../web/js/fence-mesh.js';
 import { HEDGE } from '../web/js/hedge-mesh.js';
 import { WALL } from '../web/js/wall-mesh.js';
 import { DOCKS } from '../web/js/docks-mesh.js';
+import { BENCHY } from '../web/js/benchy-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS };
+const BAKED = { manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -247,9 +248,13 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a',
+    // The boat. A hero, because it is one hull authored as one thing and you ride in it -
+    // and unlike every other set here its source is an STL rather than a .blend; see
+    // scripts/build-benchy.py for why that is, and why it is still baked the same way.
+    'benchy',
     'civic_chapel', 'civic_fountain', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',

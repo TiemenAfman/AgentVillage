@@ -19,7 +19,8 @@
 // in the keyboard rather than in the sign.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
-import { buildBoatGeometry } from './buildings.js';
+import { buildBoatGeometry, mesh } from './buildings.js';
+import * as models from './models.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
 export const BOAT_REVERSE = 2.8;    // pushing off a beach, not a way to travel - slower than a walk
@@ -28,13 +29,43 @@ export const BOAT_DRAG = 0.9;       // let go and it coasts ~4 s to a stop
 export const BOAT_TURN = 1.25;      // rad/s at speed
 export const BOAT_TURN_MIN = 0.35;  // rad/s at rest - an oar, so you are never stuck
 export const BOAT_TURN_BITE = 0.25; // a hard turn spends way: v *= 1 - BITE*|turn|*dt
-export const DECK_Y = 0.12;         // where a body stands, measured from the hull's own middle
+// How deep she sits, and where a body stands once she is sitting there.
+//
+// Both come off the baked hull rather than being chosen. scripts/build-benchy.py measures
+// the cabin of the STL - floor at 8.2 mm, the underside of its roof at 36.8 - and scales the
+// whole boat so that 28.5 mm holds a settler of 0.54 with a hand's width over his head. The
+// keel then sits at y = 0, because every asset on this island must (scripts/model-rules.mjs
+// refuses one that does not), so the island is what puts her in the water: DRAUGHT sinks her
+// to the boot-topping, the band the paint changes at, and the cabin floor is CABIN_FLOOR
+// above the keel.
+// The baked hull's one part. One part, so one draw call.
+const HULL = 'benchy hull';
+
+export const DRAUGHT = 0.13;
+const CABIN_FLOOR = 0.179;
+export const DECK_Y = CABIN_FLOOR - DRAUGHT;
 
 // Half the hull, and the whole reason grounding looks right: buildBoatGeometry's hull is a
 // 0.8-long cylinder centred on the origin, so this is its tip. Testing the middle instead
 // beaches the stern on the way in and the bow on the way out, and you end up halfway up a
 // dune with the water still under your waist.
-export const BOW = 0.4;
+// Half the hull, read off the hull rather than written down beside it. It is the bow that
+// is tested against the ground, not the middle, or you beach the stern on the way in and
+// the bow on the way out and end up halfway up a dune with the water still round your
+// waist - so this number has to follow the model, and a model is re-baked by a script that
+// has no idea this file exists.
+//
+// Measured from the baked positions, which are plain numbers: no THREE, so `stepBoat` stays
+// the pure function tests/boat.test.mjs can sail under bare Node. 0.4 is the drawn hull's
+// half-length, for an island whose benchy set has not been baked.
+function hullReach() {
+  const part = models.has(HULL) ? models.part(HULL) : null;
+  if (!part) return 0.4;
+  let far = 0;
+  for (let i = 2; i < part.positions.length; i += 3) far = Math.max(far, Math.abs(part.positions[i]));
+  return far;
+}
+export const BOW = hullReach();
 
 // Where the hull stops floating. The same 0.06 walk.js:440 calls the water's edge, kept
 // deliberately identical and pointed the other way: feet refuse everything below it, the
@@ -173,7 +204,12 @@ const BOB_RISE = 0.03;    // sailIn's own numbers, for the same feel: a hull at 
 const BOB_PITCH = 0.04;   // never quite still, and a boat that is reads as a prop
 const BOB_ROLL = 0.03;
 export function createBoat({ scene, material }) {
-  const geometry = buildBoatGeometry();
+  // The Benchy, if it has been baked; the drawn hull otherwise. The same `models.has` guard
+  // barrel() in props.js uses, and for the same reason: a set that is not there yet should
+  // leave the island drawing something rather than throwing on the boot path.
+  const geometry = models.has(HULL)
+    ? mesh(HULL, 0xffffff, { y: -DRAUGHT })
+    : buildBoatGeometry();
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
   scene.add(object);
@@ -195,6 +231,8 @@ export function createBoat({ scene, material }) {
     // jetty rising together is what a jetty looks like.
     bob(time) {
       const t = Number.isFinite(time) ? time : 0;
+      // The hull is baked with its keel on y = 0 and dropped by DRAUGHT in the geometry, so
+      // the swell rides on top of that rather than replacing it.
       object.position.y = BOB_RISE * Math.sin(t * 2);
       object.rotation.set(BOB_PITCH * Math.sin(t * 1.7), heading, BOB_ROLL * Math.sin(t * 1.3));
     },
