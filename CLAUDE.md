@@ -136,17 +136,30 @@ map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of
 including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
 proxy in front and load the island at a subpath: everything must come from under it.
 
-**The settlers walk in one file and are drawn in another, and one word crosses between
-them.** `settler-walk.js` writes `f.anim` each step — `walk`, `step`, `hammer` or `still` —
-and `settler-figures.js` derives the bob, the gait, the arm swing and the idle sway from it
-off its *own* clock. None of those sine waves feed back into a position, which is what made
-the split possible; keep it that way, or the drawing becomes something the wire has to
-carry. Two more rules hold the seam: the walk's rng stream (`<id>:walk`) is ordered and
+**The settlers walk in `shared/settlerwalk.mjs` and are drawn in
+`web/js/settler-figures.js`, and two things cross between them.** The walk writes `f.anim`
+each step — `walk`, `step`, `hammer` or `still` — and the renderer derives the bob, the
+gait, the arm swing and the idle sway from it off its *own* clock; and it writes `f.face`
+plus `f.turn`, a direction and how briskly to turn towards it, because an *angle* needs
+`atan2` and the walk may not have one. None of the cosmetic sine waves feed back into a
+position, which is what made the split possible; keep it that way, or the drawing becomes
+something the wire has to carry.
+
+The walk obeys `shared/`'s rule in full: no transcendental functions, no clock, no three.js,
+and `tests/settler-walk.test.mjs` asserts all three by reading the source. It counts *ticks*
+(`advance(n)`, `DT = 0.05`) rather than taking a `dt`, because two runtimes accumulating
+wall-clock time diverge immediately however identical the code is. That test file
+deliberately registers no loader and stubs no `document`: the moment it needs one, something
+has reached back into the browser and the sea can no longer step a crowd.
+
+Three more rules hold the seam. The walk's rng stream (`<id>:walk`) is ordered and
 load-bearing, so anything cosmetic draws from `<id>:gait` instead and never from the middle
-of it; and a figure's errand hooks are records (`f.after`, `f.then`), never closures,
-because a closure cannot be compared against another machine's copy or resumed after a
-restart. `f.onDone` is still a function and is only for `walkIn` and `sendOut`, which are
-somebody else's errand.
+of it. A figure's errand hooks are records (`f.after`, `f.then`), never closures, because a
+closure cannot be compared against another machine's copy or resumed after a restart;
+`f.onDone` is still a function and only for `walkIn` and `sendOut`, which are somebody
+else's errand. And the door a settler stands outside comes from `DOOR_DIR[plot.rot]` alone —
+`placeFigure` used to pass the building mesh's own yaw, which the sea does not have; the two
+were checked against each other for all four rotations and agree exactly.
 
 **Nothing is fetched at boot.** Blender sets are baked into ordinary modules
 (`web/js/*-mesh.js`) imported synchronously through `web/js/models.js`, so every shape
