@@ -7,6 +7,18 @@
       "autoPort": false
     },
     {
+      "name": "island",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "serve",
+        "--",
+        "--no-open"
+      ],
+      "port": 4747,
+      "autoPort": false
+    },
+    {
       "name": "island-worktree",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

@@ -1271,10 +1271,13 @@ function freeBerth(theirHalf) {
 //
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
-// them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null }) {
+// them out would put their coast in the wrong place and their houses in the water. `basins`
+// is the same stamp run the other way, and leaving one out is worse: the quay it dug would
+// come back as solid ground, with the visitor's harbour houses standing on stilts in a
+// meadow and their plank lanes lying on grass.
+function joinIsland({ id, seed, gridSize, polders = [], basins = [], terrainHash = null, name = null, village = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, basins });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -1319,6 +1322,10 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
   const region = joinIsland({
     id, seed, gridSize: homeTerrain.size, name: 'a test island',
     village: spec === 'self' ? homeVillage : null,
+    // Only for `self`, and only because the whole use of `self` is that the island to the
+    // east is house-for-house the one under your feet. Dug and drained ground is stamped
+    // into the heightfield, so leaving it out is what would make the copy differ.
+    ...(spec === 'self' ? { polders: homeVillage.polders || [], basins: homeVillage.basins || [] } : {}),
   });
   if (!region) return;
   debugJoins.push({
@@ -1536,6 +1543,7 @@ async function refreshHarbour() {
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
+      basins: bundle.basins || [],
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
@@ -2055,7 +2063,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, basins: village.basins });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
   }
@@ -2459,7 +2467,11 @@ function layLandscape(shot) {
   if (shot.polders !== shownPolders) {
     shownPolders = shot.polders;
     const v = state.village;
-    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) });
+    // The basins are not sliced with the polders: a polder carries the settler count that
+    // earned it, so the chronicle can put the coast back as it was on any given day, and a
+    // basin carries no such date - it is dug the moment the quay has a parcel. Replaying it
+    // away would only fill the harbour in and leave its houses on stilts in a field.
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), basins: v.basins });
     state.terrain = next;
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the

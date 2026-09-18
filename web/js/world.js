@@ -657,7 +657,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     for (const [gx, gz] of p.cells || []) cleared.add(gx + gz * size);
   }
 
-  let own = decodeOwnership(village, size);
+  let own = decodeOwnership(village, size, terrain);
   let hues = village.districts.map((d) => d.hue);
   // Before the fields are planned, not after: clearedBase is what planFields reads to
   // decide where a patch may go.
@@ -1242,7 +1242,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // The land register changed: a parcel grew, a hamlet was founded, a boundary moved out.
   function setOwnership(v, seasonName = currentSeason) {
-    own = decodeOwnership(v, size);
+    own = decodeOwnership(v, size, terrain);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
     wallVerge(own.owner, clearedBase);

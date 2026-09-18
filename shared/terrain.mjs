@@ -15,6 +15,14 @@ export const BUILD_HEIGHT_MAX = 4.2;
 // the island rather than the highest beach.
 export const POLDER_H = 96 / 256;
 export const DIKE_H = 224 / 256;
+// A basin is the polder run backwards: ground dredged away until the sea stands in it, so
+// the quay's houses are on stilts over water and the lanes between them are planks rather
+// than a stone track nobody can see. -80/256 is on the heightfield's own quantum, like
+// POLDER_H, and the depth is chosen against two numbers that already exist: it has to be
+// under SEA_LEVEL for `isWater` to call it water at all, and a harbour house is pinned by
+// the viewer into [-0.35, 0.05], so anything deeper only buries the stilts it stands on.
+// Dredged harbour water, in other words, not the open sea.
+export const BASIN_H = -80 / 256;
 
 // ---- rivers -----------------------------------------------------------------
 // One or two watercourses, from the flank of the hill down the gradient to the sea. A
@@ -163,6 +171,7 @@ export function hashHeights(H) {
 export function makeTerrain(seed, opts) {
   const size = (opts && opts.size) || 64;
   const polders = (opts && opts.polders) || [];
+  const basins = (opts && opts.basins) || [];
   const N = size + 1, half = size / 2;
   let H = new Float64Array(N * N);
   const nShape = makeSimplex2D(hash32(seed + ':shape'));
@@ -253,6 +262,12 @@ export function makeTerrain(seed, opts) {
     for (const c of p.pools || []) setCell(c[0], c[1], POLDER_H);
     for (const c of p.dike || []) setCell(c[0], c[1], DIKE_H);
   }
+  // After the polders, and it is the one order that is defensible: a polder is land people
+  // made and a basin is land people dug away again, so the later work wins wherever the two
+  // ever meet. Which cells those are is decided once in lib/layout.mjs and written into the
+  // layout, never worked out here - the same rule the polders keep, and the reason an island
+  // with no basin carves exactly the ground it always carved and hashes the same.
+  for (const b of basins) for (const c of b.cells || []) setCell(c[0], c[1], BASIN_H);
 
   const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
   const corner = (i, j) => H[clamp(i, 0, size) + clamp(j, 0, size) * N];

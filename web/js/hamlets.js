@@ -54,7 +54,15 @@ export function roundedOutline(x0, z0, x1, z1, radius, seg = 4, corners = CORNER
 // A super-cell owns the pitch x pitch ground cells at its min corner. `inset` counts how
 // deep inside its own land a cell sits, up to three, which gives both the border set
 // (depth one, with a neighbour outside) and the feather for the ground tint.
-export function decodeOwnership(village, size) {
+// `terrain` is optional and does one thing: a cell under water is owned by nobody. A
+// parcel is recorded in super-cells and the ground inside one is whatever the island put
+// there, which used to mean nothing worse than a fence running along a riverbank. The
+// quay's harbour basin makes it matter - that whole parcel is water now, and everything
+// downstream of this map draws on the ground: a hedge that follows `worldHeight` sinks
+// under the surface, a field parcel becomes a ploughed seabed, and both are read through
+// the water as a green smear. Leaving those cells unowned is one rule in one place, and it
+// is the right rule for a riverbank too.
+export function decodeOwnership(village, size, terrain = null) {
   const owner = new Int16Array(size * size).fill(NONE);
   const lat = village.island && village.island.lattice;
   if (!lat) return { owner, inset: new Uint8Array(size * size), lat: null };
@@ -71,6 +79,7 @@ export function decodeOwnership(village, size) {
           for (let x = 0; x < lat.pitch; x++) {
             const gx = gx0 + x, gz = gz0 + z;
             if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+            if (terrain && terrain.isWater(gx, gz)) continue;
             owner[gx + gz * size] = k;
           }
         }
