@@ -241,6 +241,16 @@ export function makeTerrain(seed, opts) {
   };
   for (const p of polders) {
     for (const c of p.cells || []) setCell(c[0], c[1], POLDER_H);
+    // Water the works cornered. A dike drawn round whole super-cells leaves wedges of
+    // sea between the new wall and the old shore that the tide can no longer reach, and
+    // they read as puddles in somebody's front garden. They are filled to the height of
+    // the polder itself: they lie outside the wall, so they are shore rather than
+    // meadow, but they are dry. Which cells those are is decided once in lib/layout.mjs
+    // and written into the polder, never worked out here - a polder planned before this
+    // existed has no `pools`, carves exactly the ground it always carved, and so hashes
+    // the same. That is what keeps an island that already has one from being replanned
+    // from nothing the first time it runs this code.
+    for (const c of p.pools || []) setCell(c[0], c[1], POLDER_H);
     for (const c of p.dike || []) setCell(c[0], c[1], DIKE_H);
   }
 

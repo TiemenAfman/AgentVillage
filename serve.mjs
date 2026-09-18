@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -475,7 +475,31 @@ async function handle(req, res) {
         maxPlayers: config.multiplayer.maxPlayers,
         tickMs: config.multiplayer.tickMs,
       },
+      // Answered here rather than left to the page: a visitor's browser is not where the
+      // decision belongs. The setting itself only goes to the keeper, because it is the
+      // keeper's panel that shows it; a visitor gets the yes or no and nothing else.
+      signs: nameplatesVisibleTo(config.display.nameplates, who.role),
+      display: who.role === 'islander' ? { nameplates: config.display.nameplates } : null,
     });
+  }
+
+  // Changes what the island shows. Not a public path, so only the keeper reaches it -
+  // see lib/access.mjs, where the API is deny-by-default.
+  if (p === '/api/display' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { key, value } = body || {};
+    let display;
+    try { display = setDisplay(String(key), String(value)); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    config.display = display;                       // the running server, not only the file
+    log(`display.${key} is now ${value}`);
+    // Every open island hears it at once, and each hears what it is allowed to: the
+    // keeper's window and a visitor's are looking at the same setting from two sides.
+    broadcast((c) => ({
+      signs: nameplatesVisibleTo(display.nameplates, c.local ? 'islander' : 'guest'),
+      display: c.local ? display : null,
+    }), 'display');
+    return json(res, 200, { ok: true, display });
   }
 
   // Saves a picture the page took of itself, for the readme. Names are strict and the
@@ -1162,10 +1186,14 @@ async function handle(req, res) {
   sendFile(req, res, f, { noStore: !rel.startsWith('vendor/') && !rel.startsWith('icons/') });
 }
 
+// A payload may also be a function of the listener, for the events whose answer is not
+// the same for the keeper as for a visitor. Worked out per client rather than once, so
+// such an event still goes out in a single pass over the room.
 function broadcast(payload, event = 'update', { localOnly = false } = {}) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const same = typeof payload === 'function' ? null : `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const c of clients) {
     if (localOnly && !c.local) continue;
+    const msg = same || `event: ${event}\ndata: ${JSON.stringify(payload(c))}\n\n`;
     try { c.res.write(msg); } catch { clients.delete(c); }
   }
 }

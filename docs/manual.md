@@ -223,6 +223,23 @@ redacted whatever that setting says: it is one thing to let a neighbour look thr
 own window, and another to write your branch names onto their disk, where they stay until
 they restart a server they do not think of as holding your data.
 
+**The house signs.** The board in a settler's front yard is the one label that spells a
+title out in the world itself rather than in a panel you have to open, so it has a setting
+of its own, under **Settings** in the top right:
+
+| | |
+|---|---|
+| Everyone | Visitors see the signs too. |
+| Only me | The default. A visitor's page is never told to build them. |
+| Nobody | No signs at all, yours included. |
+
+It is `"display": { "nameplates": "keeper" }` in `config.json`, and the panel writes it
+there. The decision is the server's, not the page's: `/api/hello` tells each window
+whether it may have the signs, and changing it reaches every open island at once. Under
+`"guestView": "redacted"` a visitor's sign would carry the settler's made-up name and not
+the title anyway — this is the belt to that pair of braces, and the setting that matters
+if you ever turn the redaction off.
+
 **Neighbours.** Every island shouts its name, its seed and its port over UDP every five
 seconds. Their seed is enough to draw their island's true shape on your horizon without
 ever connecting to them, always on the same bearing, so you learn where to look. Click one

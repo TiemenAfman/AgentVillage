@@ -200,6 +200,43 @@ test('every house can be reached from its own front door', () => {
   }
 });
 
+test('and can walk from that door to the town square', () => {
+  // The test above asks whether a house has a way to its door. It cannot ask where that
+  // way goes, and for a long time nothing did - which is how this island grew a polder
+  // whose three houses each had a tidy front path onto a road that ran to the sea wall
+  // and stopped. Every stone was in place and every local check passed; the only thing
+  // wrong was that none of it joined the island.
+  //
+  // So: one flood fill over all the paving, out from the town square, and every door has
+  // to be in it. Four-connected, because that is how `settlers.js` walks - a lane that
+  // meets the next one only at a corner is not a route a settler can take.
+  const open = new Set();
+  const q = [];
+  const push = (c) => { const k = key(c); if (!paved.has(k) || open.has(k)) return; open.add(k); q.push(c); };
+  push(L.town.square);
+  for (const c of (L.town.paved || [])) push(c);
+  for (let h = 0; h < q.length; h++) {
+    const [x, z] = q[h];
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) push([x + dx, z + dz]);
+  }
+  assert.ok(open.size > 0, 'the town square has no paving on it at all');
+
+  // A door counts as joined if the cell it opens onto is on the network, or if any cell
+  // of the house's own front path is: a path is recorded from the doorstep outward, so
+  // its far end is the one that meets the lane.
+  const cut = houses.filter(([id, p]) => {
+    const door = outsideDoor(p.gx, p.gz, p.rot);
+    if (open.has(key(door))) return false;
+    const own = L.paths.find((r) => r.id === `path:${id}`);
+    return !(own && own.cells.some((c) => open.has(key(c))));
+  });
+  assert.deepEqual(cut.map(([id]) => id), [], 'houses that cannot walk to the town square');
+
+  // And no orphaned paving. A stretch of road that reaches nothing is either a lane that
+  // lost its junction or, as on the polder, a road that was never joined to the island.
+  assert.equal(open.size, paved.size, `${paved.size - open.size} paved cells are cut off from the square`);
+});
+
 test('every civic lot keeps its road', () => {
   // One road per three-by-three civic lot, no more and no fewer. A bump of
   // PARCEL_VERSION empties `paths`, and a civic building is not placed again afterwards -
