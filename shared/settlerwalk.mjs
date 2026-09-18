@@ -42,6 +42,20 @@ export const MAX_STROLL = 36;      // settlers out on an errand at the same time
 // figures is cheap. A constant rather than an argument because it is the thing both
 // sides have to agree about - see `advance`.
 export const DT = 0.05;
+
+// How many settlers may start their walk to the square in one tick.
+//
+// The borrel is the one moment the whole village plans a route at once, and a route is the
+// expensive thing in here - roadRoute is a breadth-first search over every paved cell.
+// Measured on a village of 274: the first tick after `setGather(true)` cost 19 ms against
+// an ordinary tick's 0.04. One island fits inside a 50 ms tick and eight ringing the bell
+// at the same moment do not, and they would: the borrel is on a clock, and everybody's
+// clock says Friday afternoon at the same time.
+//
+// So it is spread. Eight a tick empties a village of 274 in about a second and a half,
+// which reads as people drifting in rather than arriving in a block - and that is better
+// than what it replaced, not a compromise.
+const GATHER_PER_TICK = 8;
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
 const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
@@ -562,6 +576,8 @@ export function createWalk(terrain) {
   // 'step' is the small idle wander, 'hammer' is building, 'still' is everything else.
   // The renderer turns those into bob, gait and arm swing off its own clock.
   function step(dt, nightAmount) {
+    // How many have set off for the square so far this tick - see GATHER_PER_TICK.
+    let starting = 0;
     for (const f of figures.values()) {
       if (!f.visible) continue;
       f.anim = 'still';
@@ -637,8 +653,9 @@ export function createWalk(terrain) {
           const t = f.then; f.then = null; resume(f, t);
           continue;
         }
-        if (gatherActive && !f.gathering && !f.deckY && roads && squareList.length) {
+        if (gatherActive && !f.gathering && !f.deckY && roads && squareList.length && starting < GATHER_PER_TICK) {
           f.gathering = true;
+          starting++;
           startGather(f);
           if (f.mode === 'walk') continue;
         }
