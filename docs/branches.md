@@ -49,13 +49,15 @@ it again.
 
 ## The version gates, and which one to reach for
 
-Three numbers in `lib/layout.mjs`, in descending order of violence:
+Five numbers in `lib/layout.mjs`, in descending order of violence:
 
 | | Throws away |
 |---|---|
 | `LAYOUT_VERSION` | Everything, the town and the terrain included. Almost never right. |
 | `PARCEL_VERSION` | Houses, sheds, parcels and paths - re-planned at once. The town keeps every stone. |
 | `ROAD_VERSION` | The hamlet roads and `cleared`, and nothing else. |
+| `SQUARE_VERSION` | One plot on the town square, and only if it stands inside another one. |
+| `QUAY_VERSION` | The quay: its planks and its parcel, if those planks are not over open sea. |
 
 The reason the smallest one exists is worth keeping: roads are the one part of the layout
 that can be thrown away cheaply, because they are derived geometry that no building stands

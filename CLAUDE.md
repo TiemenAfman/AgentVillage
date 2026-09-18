@@ -70,10 +70,12 @@ without a hook firing.
 ## Invariants worth knowing before changing anything
 
 **A house never moves.** `data/layout.json` is append-only and is the only irreplaceable
-file under `data/`; `village.json` and `cache.json` rebuild themselves. Four version gates
+file under `data/`; `village.json` and `cache.json` rebuild themselves. Five version gates
 in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
-paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`. Reach
+paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
+`QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
+`placeAll` rather than `loadLayout`, because it has to ask the ground a question). Reach
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
 assert after a layout change, and the trap: **stop the server before measuring**
 (`stop-island.cmd`), or its own rescan interleaves with yours and every plot looks moved.
