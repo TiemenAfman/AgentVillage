@@ -52,15 +52,27 @@ async function afloat(fn, opts = {}) {
   }
 }
 
-const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
+// Wait for the thing to be true rather than for a number of milliseconds. The runner runs
+// test files in parallel, so a fixed pause that is generous on an idle machine is not
+// generous on a busy one - and a flaky test about a socket is worse than no test, because
+// it teaches you to re-run instead of to look.
+async function until(what, why = 'it never happened', ms = 5000) {
+  const stop = Date.now() + ms;
+  for (;;) {
+    const v = await what();
+    if (v) return v;
+    if (Date.now() > stop) throw new Error(why);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
 test('an islander joins, publishes itself, and turns up in the world', () => afloat(async ({ sea, url }) => {
   const a = island({ houses: 3 });
   const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle });
   try {
-    await settle();
-    assert.equal(client.connected(), true, 'the socket is up');
-    assert.equal(sea.fleet.count(), 1);
+    await until(() => client.connected(), 'the socket never came up');
+    await until(() => sea.fleet.count() === 1, 'the island never arrived');
     const row = sea.fleet.manifest().islands[0];
     assert.equal(row.name, 'Promptholm');
     assert.equal(row.buildings, 3);
@@ -74,7 +86,10 @@ test('an island that has not changed is not sent again', () => afloat(async ({ s
   const a = island();
   const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle });
   try {
-    await settle();
+    // Wait for the client's *own* first publish to have landed, not merely for the island
+    // to exist: the two are a few milliseconds apart, and asking in between gets a
+    // perfectly correct "sent" that has nothing to do with what is being tested here.
+    await until(async () => (await client.publish()).why === 'unchanged', 'the first publish never settled');
     const after = sea.fleet.get(a.id).rev;
     assert.equal((await client.publish()).sent, false, 'unchanged islands stay home');
     assert.equal((await client.publish()).why, 'unchanged');
@@ -92,7 +107,7 @@ test('a house being built is what makes an island worth sending again', () => af
   let current = island({ houses: 1 });
   const client = createSeaClient({ url, islandId: current.id, bundle: () => current.bundle });
   try {
-    await settle();
+    await until(async () => (await client.publish()).why === 'unchanged', 'the first publish never settled');
     assert.equal(sea.fleet.manifest().islands[0].buildings, 1);
 
     // The scan ran and found another house. Same island, same id, new contents.
@@ -110,18 +125,16 @@ test('the islander keeps its berth across a reconnect, and the sea keeps its isl
   const a = island();
   const token = mintToken();
   const first = createSeaClient({ url, islandId: a.id, token, bundle: () => a.bundle });
-  await settle();
+  await until(() => sea.fleet.has(a.id), 'the island never arrived');
   const berth = sea.fleet.get(a.id).origin;
   first.close();
-  await settle();
+  await until(() => sea.fleet.get(a.id).live === false, 'the sea never noticed the keeper leave');
 
   assert.equal(sea.fleet.count(), 1, 'the island stays while the keeper is away');
-  assert.equal(sea.fleet.get(a.id).live, false);
 
   const again = createSeaClient({ url, islandId: a.id, token, bundle: () => a.bundle });
   try {
-    await settle();
-    assert.equal(sea.fleet.get(a.id).live, true, 'and is live again the moment it is back');
+    await until(() => sea.fleet.get(a.id).live === true, 'it never came back');
     assert.deepEqual(sea.fleet.get(a.id).origin, berth, 'in the same place');
   } finally {
     again.close();
@@ -134,15 +147,14 @@ test('a sea that has restarted gets the island again without anybody editing a f
   // its socket drops, which is what makes the island reappear rather than stay invisible.
   const a = island();
   const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle });
-  await settle();
+  await until(() => client.connected(), 'the socket never came up');
   client.close();
 
   const fresh = createSea({ port: 0, name: 'a fresh sea' });
   const addr = await fresh.listen();
   const again = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: a.id, bundle: () => a.bundle });
   try {
-    await settle();
-    assert.equal(fresh.fleet.count(), 1, 'the world reassembles itself');
+    await until(() => fresh.fleet.count() === 1, 'the world never reassembled itself');
   } finally {
     again.close();
     await fresh.close();
@@ -156,7 +168,8 @@ test('a sea that speaks another version is told once and not hammered', () => af
     url, islandId: a.id, bundle: () => a.bundle, v: SEA_V + 99, log: (m) => said.push(m),
   });
   try {
-    await settle(400);
+    await until(() => said.some((m) => /turned this island away/.test(m)), 'it was never turned away');
+    await settle(300);                            // long enough for a retry to have happened
     assert.equal(client.connected(), false);
     assert.equal(said.filter((m) => /turned this island away/.test(m)).length, 1,
       'said once, then left alone');
@@ -168,13 +181,12 @@ test('a sea that speaks another version is told once and not hammered', () => af
 test('two islanders cannot claim the same island', () => afloat(async ({ sea, url }) => {
   const a = island();
   const real = createSeaClient({ url, islandId: a.id, token: 'the-real-one', bundle: () => a.bundle });
-  await settle();
+  await until(() => sea.fleet.has(a.id), 'the island never arrived');
   const said = [];
   const thief = createSeaClient({ url, islandId: a.id, token: 'not-it', bundle: () => a.bundle, log: (m) => said.push(m) });
   try {
-    await settle();
+    await until(() => said.some((m) => /claimed/.test(m)), 'the thief was never refused');
     assert.equal(thief.connected(), false);
-    assert.ok(said.some((m) => /claimed/.test(m)), said.join(' | '));
     assert.equal(sea.fleet.get(a.id).token, 'the-real-one');
   } finally {
     thief.close();

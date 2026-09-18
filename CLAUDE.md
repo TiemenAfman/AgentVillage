@@ -153,6 +153,35 @@ somebody else's errand.
 exists before the first line of `main.js` runs. Do not introduce a loader: the boot screen
 stuck on "Charting the island…" is a failure this project has already had.
 
+**There are three processes now, and only one of them is dangerous.** The *sea*
+(`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay with no island
+of its own: it reads no transcripts, never scans, and **writes nothing to disk**. That last
+one is load-bearing rather than an omission - it is what means there is no schema, no
+migration and no upgrade path, and a restart is a second of blank water while everybody
+reconnects. The *islander* (`serve.mjs`) owns this machine: the scan, `data/`, the agents,
+the mail, the tickets, and it listens on loopback only. The *client* draws both.
+
+Single player is not a mode. `serve.mjs` starts a sea in its own process bound to loopback
+and joins it with one island in it; hosting is that same sea bound to the network; joining
+is somebody else's address (`config.multiplayer.sea.mode`, changed at runtime through
+`POST /api/sea`). One code path — the difference between being alone and being in company
+is how many rows are in `world.islands`. There is deliberately no offline mode to keep in
+step, because that is two drawing paths and a class of bug that only appears in front of
+other people.
+
+Two rules that hold the world together. **An island never moves once it has an origin** —
+`nextOrigin()` in `shared/regions.mjs` is the policy and `clearOf()` is the invariant, and
+a newcomer that shifted the fleet would slide the world under the feet of everybody
+standing on it. And **our own island stands where the sea says it does**, not at `[0,0]`:
+poses travel in world coordinates, so a client that quietly kept itself at the origin would
+see every other body in the wrong place and be seen in the wrong place itself. The local
+terrain is still origin-centred and `layout.json` is still local; only the region's offset
+changes.
+
+The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
+sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
+route open to anybody — so an inbound half would be a change of posture, not a convenience.
+
 **The server is dangerous on purpose.** `/api/assign` spawns real Claude Code sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
 loopback socket, a known `Host` and a matching `Origin`, and never reads

@@ -1587,6 +1587,32 @@ async function syncFleet(rows) {
   }
 }
 
+// Move this island to another world. The islander writes it down and actually does it -
+// closes the sea it was in and joins the new one - and the page needs to do nothing about
+// its own socket: net.js has been retrying since the old one dropped, and the new welcome
+// carries the new fleet.
+async function changeSea(what) {
+  try {
+    const r = await mine('/api/sea', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(what),
+    });
+    const said = await r.json().catch(() => ({}));
+    if (!r.ok) { state.ui.toast(`The island stayed where it was: ${escapeHtml(said.error || r.statusText)}`); return; }
+    // Every region except our own goes: the world we were in is not the world we are in.
+    for (const region of state.sea.regions()) {
+      if (region !== state.region) state.sea.remove(region.id);
+    }
+    state.fleet = [];
+    syncFleet([]);
+    state.ui.toast(what.mode === 'join' ? 'Setting out for another sea…' : what.mode === 'host' ? 'Hosting a sea. Others can join it now.' : 'On our own again.');
+    setTimeout(() => state.ui.setSeas(null), 0);
+    const fresh = await mine('/api/seas').then((x) => x.json()).catch(() => null);
+    if (fresh) state.ui.setSeas(fresh);
+  } catch { state.ui.toast('The island did not answer.'); }
+}
+
 // The sea talking about its fleet: a welcome carrying the whole list, or one island
 // arriving, going quiet or going home.
 function onFleetNews(world, one) {
@@ -3460,6 +3486,16 @@ async function boot() {
         if (!r.ok) state.ui.toast(`The signs stayed as they were: ${escapeHtml((await r.json().catch(() => ({}))).error || r.statusText)}`);
       } catch { state.ui.toast('The island did not answer.'); }
     },
+    // The picker. Opening the panel asks the islander who is out there - it probes each
+    // candidate's /health, so the list says whether anybody is home before you choose.
+    onSettingsOpen: async () => {
+      if (!islanderHere()) return;               // a phone has no islander and nothing to set
+      try {
+        state.ui.setSeas(await mine('/api/seas').then((r) => r.json()));
+      } catch { state.ui.setSeas({ mode: 'single', seas: [] }); }
+    },
+    onSeaMode: (mode) => changeSea({ mode }),
+    onJoinSea: (url) => changeSea({ mode: 'join', url }),
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
     onOverview: () => { state.intro = null; state.tween = null; controls.enabled = true; frameIsland(); },

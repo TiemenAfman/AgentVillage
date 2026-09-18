@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, setSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -509,6 +509,14 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   seed: config.seed,
   gridSize: config.gridSize,
   announcing: access.open,
+  // Only a sea anybody else can actually reach. Single player's sea is on loopback, so
+  // shouting about it across the network would put an address in everybody's server list
+  // that resolves, on their machine, to their own browser.
+  sea: () => {
+    if (!ownSea || (config.multiplayer.sea || {}).mode !== 'host') return null;
+    const addr = ownSea.address();
+    return addr ? { sea: addr.port, seaName: (config.multiplayer.sea || {}).name || `${config.islandName}'s sea` } : null;
+  },
   settlers: () => {
     const v = readJson(VILLAGE_FILE, null);
     return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
@@ -811,6 +819,65 @@ async function handle(req, res) {
   if (p === '/api/folders') return json(res, 200, { folders: await projectFolders() });
 
   if (p === '/api/agents') return json(res, 200, { agents: liveAgents() });
+
+  // Which seas there are to join. Three sources, one list:
+  //
+  //   the network   islands on this LAN that say they are hosting one (the beacon above)
+  //   the known one a fixed address in the config, for the sea that is always up
+  //   your own      whatever you have typed in before and kept
+  //
+  // Each is asked /health, so the list says whether anybody is home before you pick rather
+  // than after. A sea that does not answer stays in the list with the reason on it: "gone"
+  // and "still looking" are different things and a picker that conflates them is a picker
+  // that looks broken every time the wifi hiccups.
+  if (p === '/api/seas') {
+    const cfg = config.multiplayer.sea || {};
+    const candidates = new Map();
+    const offer = (o) => { if (o && o.url && !candidates.has(o.url)) candidates.set(o.url, o); };
+
+    if (ownSea) {
+      const addr = ownSea.address();
+      const mode = cfg.mode === 'host' ? 'host' : 'single';
+      if (addr) offer({ url: seaUrlFor(req), name: cfg.name || `${config.islandName}'s sea`, from: mode, mine: true });
+    }
+    for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
+    for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
+    if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });
+
+    const asked = await Promise.all([...candidates.values()].map(async (o) => {
+      try {
+        const r = await fetch(new URL('health', o.url).href, { signal: AbortSignal.timeout(2000) });
+        if (!r.ok) return { ...o, up: false, why: `answered ${r.status}` };
+        const h = await r.json();
+        return { ...o, up: true, name: o.name || h.sea || null, islands: h.islands ?? 0, players: h.players ?? 0, v: h.v };
+      } catch (e) {
+        return { ...o, up: false, why: e.name === 'TimeoutError' ? 'no answer' : String(e.message || e) };
+      }
+    }));
+    return json(res, 200, { mode: cfg.mode || 'single', current: cfg.url || null, seas: asked });
+  }
+
+  // Move this island to another world. Keeper-only, like every other setting: it writes
+  // config.json and then actually does it - closes whatever sea we were in and joins the
+  // new one - rather than leaving a file that only takes effect on the next restart.
+  //
+  // The page reconnects on its own: web/js/net.js has been retrying since the moment the
+  // old socket dropped, and the new welcome carries the new fleet.
+  if (p === '/api/sea' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let sea;
+    try { sea = setSea(body || {}); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    config.multiplayer.sea = sea;
+    if (seaClient) { seaClient.close(); seaClient = null; }
+    if (ownSea) { await ownSea.close().catch(() => {}); ownSea = null; }
+    await putToSea();
+    if (seaClient) seaClient.publish({ force: true }).catch(() => {});
+    log(`this island is now ${sea.mode === 'join' ? `in ${sea.url}` : sea.mode === 'host' ? 'hosting a sea' : 'on its own'}`);
+    // Everyone's page is told where to look now, including a visitor's.
+    broadcast(() => ({ sea: sea.mode === 'join' ? sea.url : null, mode: sea.mode }), 'sea');
+    return json(res, 200, { ok: true, sea: { mode: sea.mode, url: sea.url } });
+  }
 
   if (p === '/api/neighbours') {
     return json(res, 200, { me: neighbours ? neighbours.me() : null, neighbours: neighbours ? neighbours.list() : [] });
@@ -1435,7 +1502,8 @@ if (access.open) {
 // The alternative was an offline mode beside a multiplayer one, and that is two drawing
 // paths, two sets of bugs and a "works alone, breaks together" class of failure that only
 // ever shows up in front of somebody else.
-const SEA = config.multiplayer.sea || {};
+// Read through config rather than captured, so /api/sea changing it is enough.
+const SEA = () => config.multiplayer.sea || {};
 const ISLAND_ID = beaconId(PORT);
 const ISLAND_TOKEN = mintToken();
 let ownSea = null;
@@ -1470,8 +1538,8 @@ function islandBundle() {
 // actually arrived on, not from localhost. A phone at http://192.168.2.8:4747/ that was
 // handed "localhost" would spend the rest of the evening trying to reach its own browser.
 function seaUrlFor(req) {
-  const mode = SEA.mode === 'host' || SEA.mode === 'join' ? SEA.mode : 'single';
-  if (mode === 'join') return SEA.url || null;
+  const mode = SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single';
+  if (mode === 'join') return SEA().url || null;
   if (!ownSea) return null;
   const port = (ownSea.address() || {}).port;
   if (!port) return null;
@@ -1482,16 +1550,17 @@ function seaUrlFor(req) {
 
 async function putToSea() {
   if (!config.multiplayer.enabled) return;
-  const mode = SEA.mode === 'host' || SEA.mode === 'join' ? SEA.mode : 'single';
-  let url = SEA.url;
+  const cfg = SEA();
+  const mode = cfg.mode === 'host' || cfg.mode === 'join' ? cfg.mode : 'single';
+  let url = cfg.url;
 
   if (mode !== 'join') {
     const host = mode === 'host' ? '0.0.0.0' : '127.0.0.1';
     ownSea = createSea({
-      port: Number(SEA.port) || 4750,
+      port: Number(cfg.port) || 4750,
       host,
-      name: SEA.name || `${config.islandName}'s sea`,
-      key: SEA.key || null,
+      name: cfg.name || `${config.islandName}'s sea`,
+      key: cfg.key || null,
       tickMs: config.multiplayer.tickMs,
       maxPlayers: config.multiplayer.maxPlayers,
       log: (m) => log(`sea: ${m}`),
@@ -1509,7 +1578,7 @@ async function putToSea() {
     url,
     islandId: ISLAND_ID,
     token: ISLAND_TOKEN,
-    key: SEA.key || null,
+    key: cfg.key || null,
     name: islanderName,
     bundle: islandBundle,
     log: (m) => log(`sea: ${m}`),
