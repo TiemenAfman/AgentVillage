@@ -1420,6 +1420,8 @@ function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
 // berth, and boarding by id then found the first boat of that name - the one still lying
 // on whatever beach it was left on - and took you to it.
 let boatsLaunched = 0;
+// Whether the last frame was spent afloat, so the frame you step off can notice.
+let wasAboard = false;
 function spawnBoat(where, x, z, yaw) {
   const craft = createBoat({ scene, material: buildingMat });
   craft.place(x, z, yaw);
@@ -2944,8 +2946,15 @@ function frame(nowMs) {
   // While you are sailing, whether there is anywhere to step out changes with every metre,
   // so the offer is rebuilt with it. Cheap because aboard a boat the whole list is that one
   // offer - there is nothing to talk to, nothing to sow and no door to open from the water.
-  if (state.mode === 'walk' && state.walk && state.walk.aboard()) {
-    state.walk.setInteractables(interactables());
+  //
+  // And once more on the way out, because the list a boat leaves behind is that same single
+  // offer, or nothing at all in open water. Rebuilding only on the way ashore would have
+  // been enough for the one route that goes that way and left every other route - a boat
+  // taken away, a walk mode re-entered - standing on a quay with nothing in reach.
+  if (state.mode === 'walk' && state.walk) {
+    const aboard = !!state.walk.aboard();
+    if (aboard || aboard !== wasAboard) state.walk.setInteractables(interactables());
+    wasAboard = aboard;
   }
 
   // per-building animated bits
