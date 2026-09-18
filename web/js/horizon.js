@@ -91,18 +91,31 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
   const lampGeo = new THREE.SphereGeometry(0.9, 8, 6);
 
   const islands = new Map();   // id -> { group, mesh, lamp, info, x, z, top }
+  // Islands that are not out on the ring but at a real berth: an island somebody has
+  // joined, which lies where shared/regions.mjs says it lies. Two things go with being
+  // pinned. The hashed bearing is not used, because a berth is a decision rather than a
+  // hash; and the hashed rotation is not either, because the island is walkable now and its
+  // own coordinates have to mean what layout.json says they mean - a village turned nine
+  // degrees is a village whose houses are not where its plots are.
+  const pins = new Map();      // id -> [ox, oz]
 
   function place(info) {
     const h = hash32(info.id);
-    const angle = (h / 4294967296) * Math.PI * 2;
     const theirs = (info.gridSize || 64) / 2;
-    const dist = half + theirs + GAP + ((h >>> 16) % SPREAD);
-    const x = Math.sin(angle) * dist;
-    const z = Math.cos(angle) * dist;
+    const pinned = pins.get(info.id) || null;
+    let x, z;
+    if (pinned) {
+      x = pinned[0]; z = pinned[1];
+    } else {
+      const angle = (h / 4294967296) * Math.PI * 2;
+      const dist = half + theirs + GAP + ((h >>> 16) % SPREAD);
+      x = Math.sin(angle) * dist;
+      z = Math.cos(angle) * dist;
+    }
 
     const group = new THREE.Group();
     group.position.set(x, 0, z);
-    group.rotation.y = ((h >>> 8) % 360) * Math.PI / 180;   // not all facing the same way
+    if (!pinned) group.rotation.y = ((h >>> 8) % 360) * Math.PI / 180;   // not all facing the same way
 
     const geo = islandGeometry(info.seed, info.gridSize);
     const mesh = new THREE.Mesh(geo, material);
@@ -117,7 +130,23 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
 
     scene.add(group);
     pickables.push(mesh);
-    islands.set(info.id, { group, mesh, lamp, info, x, z, top, dist, radius: theirs });
+    const dist = Math.sqrt(x * x + z * z);
+    islands.set(info.id, { group, mesh, lamp, info, x, z, top, dist, radius: theirs, pinned: !!pinned });
+  }
+
+  // Put an island at a berth instead of out on the ring, or take the pin away again. Safe
+  // to call before the island has arrived: the pin is remembered and `place` reads it.
+  function pin(id, origin) {
+    if (origin) pins.set(id, [origin[0], origin[1]]); else pins.delete(id);
+    const it = islands.get(id);
+    if (it) {
+      // Rebuilt rather than moved, because unpinning has to give the hashed rotation back
+      // and there is nowhere to keep the old one. There are at most a handful of these.
+      const info = it.info;
+      remove(id);
+      place(info);
+    }
+    measureRing();
   }
 
   // Where the neighbours actually lie, now that they are placed: the nearest coast and
@@ -126,6 +155,10 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
   function measureRing() {
     let near = Infinity, far = -Infinity;
     for (const it of islands.values()) {
+      // A pinned island is not on the ring, and the haze does not learn its distance from
+      // here: it is a region now, and main.js measures the archipelago it belongs to. Left
+      // in, it would drag the fog out to a berth even when the ring itself is empty.
+      if (it.pinned) continue;
       near = Math.min(near, it.dist - it.radius);
       far = Math.max(far, it.dist + it.radius);
     }
@@ -191,7 +224,12 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     update,
     marks,
     find,
+    pin,
+    remove,
     count: () => islands.size,
+    // How many are still out on the ring. What the haze cares about: a pinned island is a
+    // place you can look at, not a rumour on the horizon.
+    ringCount: () => [...islands.values()].filter((it) => !it.pinned).length,
     dispose: () => {
       for (const id of [...islands.keys()]) remove(id);
       material.dispose();

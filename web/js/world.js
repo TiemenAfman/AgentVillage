@@ -85,7 +85,15 @@ export function sunDirection(hour) {
 // of the picture came out shadowless. Widening it for good instead would spend the same
 // shadow map on nine times the ground and blur every eave you zoom in on, so it breathes:
 // tight when you are down among the houses, wide enough for the coast when you pull back.
-const SHADOW_SPAN = [42, 130];
+// Half-width of the shadow frustum, tightest and widest. `followShadow` breathes between
+// them with the zoom, so the ceiling only costs anything at the zoom that needs it: at 130
+// the map is 2048/260 = 7.9 texels per unit, at 190 it is 5.4. The ceiling was 130, which
+// covered 260 units - the whole of one island with room to spare, and rather less than the
+// whole of an archipelago. Framing two 64-grids a berth apart puts the camera at about 150,
+// which asks for 72, and pulling further back to see both coasts asked for more than 130
+// and silently stopped getting it: the far half of the neighbour lost its shadows. On foot
+// followShadow still clamps to 42, so nothing you look at closely changed.
+const SHADOW_SPAN = [42, 190];
 const SHADOW_OF_DIST = 0.48;
 
 // Where the sand gives up and the meadow takes over. The bands below still change on a
@@ -123,6 +131,34 @@ function sheet(name, onLoad) {
   }, undefined, () => {
     console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
   });
+}
+
+// How big the detailed water patch is and where its middle sits. Exported and pure so the
+// budget can be asserted without a WebGL context - tests/water-span.test.mjs - because the
+// patch is by a wide margin the heaviest geometry on the island (135k triangles of the
+// 430k on a 64-grid) and it is now sized by something that can grow.
+//
+// `gridBounds` is the union of every island's own square, or null for one island at the
+// origin. The margin is what a lone island of this size always had - 130 out from a
+// 64-grid, 60 for the largest - so an island on its own gets exactly the patch it had, to
+// the vertex. A rectangle rather than a square over the longest side: two 64-grids a berth
+// apart come out 372x260 instead of 372x372, which is a third of the triangles saved on
+// water nobody can see.
+export function waterPatchSpan(half, gridBounds, modest = false) {
+  const margin = Math.max(60, 130 - half);
+  const gb = gridBounds || { minX: -half, maxX: half, minZ: -half, maxZ: half };
+  const minX = gb.minX - margin, maxX = gb.maxX + margin;
+  const minZ = gb.minZ - margin, maxZ = gb.maxZ + margin;
+  const width = maxX - minX, depth = maxZ - minZ;
+  return {
+    minX, maxX, minZ, maxZ, width, depth,
+    cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2,
+    // A vertex per unit, or every other one on integrated graphics. The rivers are what
+    // ask for it: a channel two cells across had barely a vertex in it on the old two-unit
+    // grid, so the depth it shaded by came from the bank.
+    segX: Math.max(1, Math.round(modest ? width / 2 : width)),
+    segZ: Math.max(1, Math.round(modest ? depth / 2 : depth)),
+  };
 }
 
 export function createWorld(scene, terrain, village, opts = {}) {
@@ -289,16 +325,42 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // can be 512, and then the detailed patch stopped at 130 while the coast ran on to 256:
   // half the island's own water had no rivers shaded into it. It follows the island now,
   // with the same margin - which on a small island is less to draw than before, not more.
-  const wSpan = Math.max(260, size + 120);
-  const wSeg = opts.modest ? Math.round(wSpan / 2) : wSpan;
-  const waterGeo = new THREE.PlaneGeometry(wSpan, wSpan, wSeg, wSeg);
+  //
+  // And now it follows the whole archipelago, as ONE surface rather than one per island.
+  // Three reasons, in the order they bite:
+  //
+  //   - A second island at a berth is 112 out with its coast at 144, and a patch that
+  //     stopped at 130 left most of its water on the open-ocean disc: no shallows, no
+  //     surf, no depth colour, a hard line where its beach met the deep.
+  //   - Two patches would overlap in the channel between the islands - two transparent
+  //     depthWrite:false planes at y=0 - and blend twice and flicker.
+  //   - The wave is `sin(p.x * 1.3 + uTime)` on the LOCAL position, while vWorld comes off
+  //     the modelMatrix. A patch translated to a berth therefore carries a wave that is out
+  //     of phase with ours, and the swell would visibly jump at the seam. One surface has
+  //     one wave clock, which is the same reason the ocean disc shares these uniforms.
+  //
+  // A rectangle over the union of the grids rather than a square over its longest side: on
+  // two 64-grids side by side that is 372x260 instead of 372x372, which is a third of the
+  // triangles saved for water nobody can see. The margin is what it always was for an
+  // island of this size - 130 out from a 64-grid, 60 for the largest - so an island on its
+  // own gets exactly the patch it had.
+  //
+  // This lives in `group`, which is the only createWorld that draws the decor and is always
+  // the one at the origin; a region at a berth is drawn by a world that makes no water.
+  const ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
+  // Depth in world coordinates, from the archipelago: inside a region it is that island's
+  // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
+  // every caller that has not been given one - it is this island and the old flat -2.5
+  // past its edge, exactly as before.
+  const depthAt = opts.sea
+    ? (x, z) => opts.sea.height(x, z)
+    : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
+  const waterGeo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
   waterGeo.rotateX(-Math.PI / 2);
+  waterGeo.translate(ws.cx, 0, ws.cz);
   const wp = waterGeo.attributes.position;
   const depth = new Float32Array(wp.count);
-  for (let i = 0; i < wp.count; i++) {
-    depth[i] = terrain.worldHeight(wp.getX(i), wp.getZ(i));
-    if (Math.abs(wp.getX(i)) > half || Math.abs(wp.getZ(i)) > half) depth[i] = -2.5;
-  }
+  for (let i = 0; i < wp.count; i++) depth[i] = depthAt(wp.getX(i), wp.getZ(i));
   waterGeo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
 
   const waterMat = new THREE.ShaderMaterial({
@@ -446,6 +508,30 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(11, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }));
   const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
   group.add(sunDisc, moonDisc);
+
+  // Where the backdrop is parked. The sky, the open sea and the sun are the horizon, and a
+  // horizon is a direction rather than a place - so all four ride with the camera and none
+  // of them is anchored to this island.
+  //
+  // Not cosmetic. The sky sphere is r1340 and the ocean disc r1200, both centred here, and
+  // the camera's far plane is 1400 (main.js:261). Stand a hundred and seventy units east -
+  // which is where a neighbour's island is - look away from home, and the far side of the
+  // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
+  // cuts a straight line through the horizon. Invisible until somebody is over there, and
+  // then unmistakable. Raising the far plane and the radii instead would buy the same thing
+  // with depth precision, which is a real cost for no gain.
+  //
+  // `recentre` only stores it; `update` is what puts the sun and moon in their places, so
+  // it adds this to their direction rather than being overwritten by it every frame. The
+  // clouds are deliberately NOT in here: they cast shadows, and a cloud shadow that slides
+  // as you pan is worse than a sky with no cloud over the far island. They drift in a fixed
+  // box for now and want widening to the archipelago, not parking on the camera.
+  const horizonAt = new THREE.Vector3();
+  const recentre = (x, z) => {
+    horizonAt.set(x, 0, z);
+    sky.position.x = x; sky.position.z = z;
+    ocean.position.x = x; ocean.position.z = z;
+  };
 
   // The haze exists here because every material has to compile knowing there is fog, but
   // the two distances are set from main.js and nowhere else. They used to be set in both
@@ -1303,7 +1389,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
-    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430);
+    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430).add(horizonAt);
 
     for (const c of cloudDrift) {
       c.x += c.speed * dt;
@@ -1391,17 +1477,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
     paintGround(currentSeason);
     // The decals stand on the heightfield, so a coast that has moved takes them with it.
     buildGroundWear();
+    // Resampled through the same function the patch was built with, so a coast that moves
+    // during a chronicle replay takes the shallows with it wherever it is - and so that
+    // there is one place, not two, that knows what the water over a region looks like.
     const wa = waterGeo.attributes.aDepth;
-    for (let i = 0; i < wp.count; i++) {
-      const x = wp.getX(i), z = wp.getZ(i);
-      wa.array[i] = (Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z);
-    }
+    for (let i = 0; i < wp.count; i++) wa.array[i] = depthAt(wp.getX(i), wp.getZ(i));
     wa.needsUpdate = true;
   }
 
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
-    buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, ownership: () => own, state,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, recentre,
+    ownership: () => own, state,
     season: () => currentSeason, reshape,
   };
 }

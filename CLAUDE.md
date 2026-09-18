@@ -29,6 +29,10 @@ quote it and let Node expand it:
 node --test "tests/*.test.mjs"
 ```
 
+Two of `tests/layout-measure.test.mjs`'s assertions fail against the live `data/layout.json`
+on this machine and have nothing to do with your change — check against a clean tree before
+chasing one.
+
 ```bash
 node --test tests/models.test.mjs
 ```
@@ -79,6 +83,19 @@ ground both the scanner and the viewer use, so it sticks to plain arithmetic —
 `cos` or `pow`, which can differ in the last bit between runtimes. The viewer hashes the
 terrain on load and warns in the console if the two disagree. `web/index.html` maps
 `shared/` and `three` in an import map; Node gets the same through the test loader.
+
+**One world frame, many island-local frames.** `shared/regions.mjs` is the contract, and its
+header comment is the long version. `shared/terrain.mjs` and `data/layout.json` speak LOCAL
+coordinates — `-half..+half` around one island's own middle — and always will; `makeTerrain`
+stays origin-centred so a house never moves. A second island gets a *region*: the same
+terrain with a world offset, through a facade with the same method names. The asymmetry that
+makes every existing caller correct for free is that **`cellWorld` adds the origin and
+`worldHeight` subtracts it**. The rule that does not follow from it: a module that builds its
+own positions out of `half` (`world.js`, `hamlets.js`) wants the RAW local terrain and an
+offset group, not the facade. Outside every region, `archipelago.height` is `OPEN_SEA`
+(-2.5), not the nearest coast — which is what `makeTerrain`'s own clamp would hand back.
+`gridSize` still cannot grow (`loadLayout` throws the town away when `size` changes): two
+islands means two terrains at an offset, never one bigger heightfield.
 
 **One material, one draw call per building.** Which texture sheet a face uses is a number
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
@@ -135,7 +152,7 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`.
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
-| `shared/` | terrain, rng, crops, shapes — Node and browser both |
+| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes — Node and browser both |
 | `web/js/` | `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `settlers.js`, `walk.js`; `*-mesh.js` are baked output — never hand-edit |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |

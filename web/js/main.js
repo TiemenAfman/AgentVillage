@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
+import { createArchipelago, placeIsland, berthOf } from 'shared/regions.mjs';
 import { clamp, hash32 } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { housePlacement } from './house-placement.js';
@@ -275,6 +276,12 @@ const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
   village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
+  // `terrain` is this island, local and origin-centred, and stays exactly that: world.js
+  // and hamlets.js build their own positions out of its `half`, so they need the raw one.
+  // `sea` is every island there is, in world coordinates, and it is what the camera, the
+  // haze and anything asking "is there ground here" read. For an island on its own the two
+  // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
+  sea: createArchipelago(), region: null,
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
   filters: { code: true, cowork: true, apprentices: true },
@@ -1056,6 +1063,21 @@ async function refreshNeighbours() {
   } catch { /* no beacon, no neighbours, no matter */ }
 }
 
+// How far the camera may stand back, and how far it may wander. Both come off the whole
+// archipelago rather than off this island, because an island at a berth is a place you have
+// to be able to look at: the orbit target used to be clamped to our own land every frame
+// (see the clamp in `tick`), which meant a second island could be drawn and still be
+// physically impossible to point the camera at.
+//
+// `bounds` is measured over the LAND, the way frameIsland does it - a grid square reaches
+// several cells past the last beach, and a leash on the grid lets you drift out over empty
+// water until the island falls off the bottom of the frame. Both numbers are floors, so an
+// island on its own keeps exactly the framing it was tuned with.
+function applyCameraRange() {
+  state.bounds = state.sea.bounds();
+  controls.maxDistance = Math.max(200, state.sea.radius() * 2);
+}
+
 // Where the haze begins and where it closes, and the only place that decides either.
 // world.js makes the Fog object and tints it with the sky; these two distances were being
 // set there as well, and this one - a flat 235 chosen for a grid of 64 - overwrote it on
@@ -1069,17 +1091,85 @@ async function refreshNeighbours() {
 // world. There is sea out there; world.js lays a disc of it to 500. So while somebody is
 // out there, hold the fog off until past the ring, and never closer in than the island
 // itself asked for.
+// A second island at a berth is the same problem as a neighbour on the ring, one step
+// worse: a berth for two 64-grids is 112 out and its far coast is at 144, where the old far
+// of half*3.4 = 109 put the whole thing behind the wall. So the far end is now the furthest
+// of three things - our own island's own reach, the ring if anybody is still out on it, and
+// the archipelago if anybody has come in off it.
+//
+// `near` stays tied to our own half on purpose. That near haze is what makes the distance
+// read at all; open it up with the far end and the sea goes flat and the island loses its
+// depth, which is the thing the reference picture has and a wide-open scene does not.
 function applyFogRange() {
   if (!scene.fog) return;
   const half = state.terrain ? state.terrain.half : 64;
-  const out = !!state.horizon && state.horizon.count() > 0;
+  // How far away the furthest thing that is NOT our own island lies. Our own island is
+  // already covered by half*3.4, and the +110 was only ever about holding the haze off
+  // something out on the water - so home must not count towards it. Taking the whole
+  // archipelago's radius here instead looks right and is not: on an island with no
+  // neighbours at all it would read 32 and open the far end from 109 to 142, quietly giving
+  // every island a third more visible distance than it was drawn for.
+  let out = state.horizon && state.horizon.ringCount() > 0 ? RING.far : 0;
+  for (const r of state.sea.regions()) {
+    if (r === state.region) continue;
+    out = Math.max(out, Math.hypot(r.origin[0], r.origin[1]) + r.half);
+  }
   scene.fog.near = half * 1.1;
-  scene.fog.far = out ? Math.max(half * 3.4, RING.far + 110) : half * 3.4;
+  scene.fog.far = out > 0 ? Math.max(half * 3.4, out + 110) : half * 3.4;
+}
+
+// Islands that are not on the beacon: an island conjured by `?join=` so that the whole
+// coordinate path - berth, region, haze, camera leash, picking - can be exercised with one
+// server, no multicast and no second machine. They ride along with every beacon sync,
+// because `apply` takes the whole list and whoever is not in it has gone home.
+const debugJoins = [];
+
+// ?join=self            our own island, again, at the berth due east
+// ?join=seed:12345      a stranger's island of that seed, same grid as ours
+//
+// The point of `self` is that it is the one case where you know exactly what the answer
+// should look like: if the island to the east is not the mirror of the one you are standing
+// on, the offset is wrong rather than merely odd.
+// The region half, which has to happen before the world is built: the water is laid over
+// the archipelago as it stands at that moment, and an island that arrives afterwards gets
+// no shallows. Called from buildScene, straight after the home region is placed.
+function joinRegionsFromParams(homeTerrain) {
+  const spec = params.get('join');
+  if (!spec) return;
+  const seed = spec === 'self' ? homeTerrain.seed
+    : /^seed:-?\d+$/.test(spec) ? Number(spec.slice(5)) : null;
+  if (seed === null) { console.warn(`island: cannot make sense of ?join=${spec}`); return; }
+  const size = homeTerrain.size;
+  const terrain = makeTerrain(seed, { size });
+  const id = `debug-${seed}`;
+  const origin = berthOf(0, homeTerrain.half, terrain.half);
+  try {
+    state.sea.add(placeIsland(terrain, { id, origin }));
+  } catch (e) {
+    console.warn(`island: ${e.message}`);
+    return;
+  }
+  debugJoins.push({
+    id, name: 'a test island', island: `seed ${seed}`, seed, gridSize: size, settlers: 0,
+    url: location.href, address: null, port: 0,
+  });
+  console.info(`island: joined seed ${seed} at berth [${origin}]`);
+}
+
+// And the silhouette half, once there is a horizon to draw it on.
+function pinDebugJoins() {
+  if (!state.horizon || !debugJoins.length) return;
+  for (const info of debugJoins) {
+    const r = state.sea.get(info.id);
+    if (r) state.horizon.pin(info.id, r.origin);
+  }
+  state.horizon.apply(debugJoins);
+  applyFogRange();
 }
 
 function applyNeighbours(list) {
   if (!state.horizon || state.guest) return;
-  const arrived = state.horizon.apply(list);
+  const arrived = state.horizon.apply([...(list || []), ...debugJoins]);
   applyFogRange();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
@@ -1480,17 +1570,23 @@ function buildScene(village) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
   }
   state.terrain = terrain;
+  // This island becomes the first region, at the origin, so everything that asks the
+  // archipelago a question gets the same answer it used to get from the terrain directly.
+  // Rebuilt rather than mutated because buildScene runs again on a reseed.
+  state.sea = createArchipelago();
+  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
+  joinRegionsFromParams(terrain);   // a ?join= island has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
     shadowSize: modest ? 1024 : 2048,
     modest,
+    // So the water is laid over everything there is, not over this island alone.
+    sea: state.sea,
   });
   // The fog object arrives with the world; the distances are ours, and they are set here
   // rather than on the first neighbour sync so that no frame is ever drawn without them.
   applyFogRange();
-  // Room to stand back far enough for whatever island this is - both numbers are floors,
-  // so a small island keeps exactly the framing it was tuned with.
-  controls.maxDistance = Math.max(200, terrain.half * 2);
+  applyCameraRange();
   state.settlers = createSettlers(scene, buildingMat, terrain);
   syncBridges(village);
   state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
@@ -1733,9 +1829,11 @@ function frameIsland() {
     minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
   }
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
-  // Measured once, here, so the fit above and the pan clamps below read one place rather
-  // than three numbers that each have to be remembered when the island changes size.
-  state.bounds = { minX, maxX, minZ, maxZ };
+  // This measures OUR island, because that is the one the opening sweep frames: you arrive
+  // home, not over the archipelago. What the camera is then leashed to is a different
+  // question with a different answer - see applyCameraRange, which measures everything.
+  // The two used to be the same line, and that is exactly why a second island could not be
+  // looked at: framing home also decided how far you were allowed to wander from it.
   // fit the wider of the two spans, then pull in a little so the island fills the frame
   const r = 0.5 * Math.max(maxX - minX, maxZ - minZ) + 2;
   const fov = camera.fov * Math.PI / 180;
@@ -1827,7 +1925,13 @@ function layLandscape(shot) {
   if (shot.polders !== shownPolders) {
     shownPolders = shot.polders;
     const v = state.village;
-    w.reshape(makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) }));
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) });
+    state.terrain = next;
+    // The region holds the terrain it was placed with, and the water patch now reads its
+    // depths through the archipelago - so a coast that moves has to move here too, or the
+    // shallows stay where the polder used to be while the ground under them has gone.
+    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: [0, 0] }));
+    w.reshape(next);
   }
   state.shot = shot.village;
   w.setOwnership(shot.village);
@@ -2530,9 +2634,18 @@ function frame(nowMs) {
     if (rec.flagIdx >= 0) updateFlagInstance(rec, true);
   }
 
+  // The sky and the open sea ride with the eye, wherever the eye is. Once a frame, before
+  // either camera branch below, because both of them move the camera and neither of them
+  // owns the horizon.
+  if (state.world) state.world.recentre(camera.position.x, camera.position.z);
+
   if (!state.intro && state.mode !== 'walk') {
     controls.update();
-    const y = state.terrain ? state.terrain.worldHeight(camera.position.x, camera.position.z) + 0.9 : 0;
+    // Whatever ground is under the camera, on whichever island - and out between them the
+    // archipelago answers with open sea rather than with the nearest coast, so the camera
+    // may come right down to the water in the channel instead of being held up at the
+    // height of a beach it is nowhere near.
+    const y = state.sea.height(camera.position.x, camera.position.z) + 0.9;
     if (camera.position.y < y) camera.position.y = y;
     const b = state.bounds;
     controls.target.x = clamp(controls.target.x, b.minX - 3, b.maxX + 3);
@@ -2912,7 +3025,11 @@ async function boot() {
     // rather than as a message of its own - see web/js/net.js.
     onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
   });
-  state.horizon = createHorizon({ scene, pickables: state.pickables });
+  // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
+  // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
+  // units further out than the gap it was computing asked for.
+  state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
+  pinDebugJoins();
   if (!state.guest) refreshNeighbours();
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
