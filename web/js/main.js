@@ -5,6 +5,7 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
+import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
@@ -497,16 +498,13 @@ function interactables() {
   // is up yet.
   if (state.panels) out.push(...state.panels.interactables());
   for (const d of state.docks) {
-    const moored = state.boats.find((b) => !b.crew && Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
+    const moored = state.boats.find((b) => Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
     out.push({
       id: d.id, kind: 'dock', x: d.head[0], z: d.head[1], r: 3.2,
       label: 'the quay', prompt: moored ? 'take the boat' : 'take a boat',
     });
   }
   for (const b of state.boats) {
-    // A hull with a settler standing in it is somebody's afternoon, not a free boat. There
-    // is no "throw them out" here on purpose: they came down the lane for this.
-    if (b.crew) continue;
     out.push({ id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat', prompt: 'take the boat' });
   }
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
@@ -791,22 +789,24 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 // drift away from the first one.
 // Aboard. The boat is handed to walk mode, which steers it from there; nothing else about
 // being on foot changes, which is why `blocked` and the wading rule are untouched.
-// The quay's own key. A boat is lying here, or one is put in the water for you.
-//
-// Nothing is moved to reach you: if a hull is already alongside you board that one, and
-// otherwise a new one goes in at the berth, a pace from where you are standing. A boat left
-// on some other beach stays on that beach - it is not summoned, and you are not carried to
-// it. Three to a quay, which is enough that leaving one on the far island never strands
-// you and few enough that leaning on the key does not build a raft.
-const BOATS_PER_QUAY = 3;
+// The quay's own key. This island has one boat and it is at its mooring, or it is wherever
+// somebody left it - and if that is the far shore, then that is where it is. Nothing is
+// summoned to reach you and you are not carried to it, which is the whole of what a boat
+// belonging to nobody means.
 function takeBoatAt(dockId) {
   const d = dockAt(dockId);
   if (!d) return;
-  const alongside = state.boats.find((x) => !x.crew && Math.hypot(x.x - d.berth[0], x.z - d.berth[1]) < 3);
-  if (alongside) { takeBoat(alongside); return; }
-  const hers = state.boats.filter((x) => x.id.startsWith(`boat:${d.region.id}:`)).length;
-  if (hers >= BOATS_PER_QUAY) { state.ui.toast('Every boat from this quay is out on the water.'); return; }
-  takeBoat(spawnBoat(d.region.id, d.berth[0], d.berth[1], d.yaw));
+  const b = boatFor(d.region);
+  if (!b) return;
+  if (Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) > 4) {
+    state.ui.toast('The boat is out on the water.');
+    return;
+  }
+  if (b.pilot && state.net && b.pilot !== state.net.id()) {
+    state.ui.toast('Somebody else has the tiller.');
+    return;
+  }
+  takeBoat(b);
 }
 
 function takeBoat(which) {
@@ -816,6 +816,7 @@ function takeBoat(which) {
   const b = typeof which === 'string' ? boatAt(which) : which;
   if (!b || !state.walk) return;
   state.walk.board(b);
+  if (state.net) state.net.takeBoat(b.id);
   // Told as a room rather than as a flag. `room()` in lib/players.mjs:55 already accepts
   // this slug and tick() only sends slot [6] when it is set, so an older client sees
   // somebody walking and nothing worse - where a new flag bit would have needed the mask
@@ -831,7 +832,7 @@ function stepAshore() {
   if (!b) return;
   const at = [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
   if (!state.walk.unboard(at)) { state.ui.toast('Nowhere to land here.'); return; }
-  if (state.net) state.net.setRoom(null, state.walk);
+  if (state.net) { state.net.dropBoat(b.id); state.net.setRoom(null, state.walk); }
   state.walk.setInteractables(interactables());
 }
 
@@ -1338,61 +1339,31 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // on the horizon: see the filter in applyNeighbours for why an island cannot be in both
 // places at once.
 // ---- the quay -------------------------------------------------------------------
-// Which way the water lies off a coast cell, and how far out you can build before the sea
-// floor comes back up. Both are twelve lines of lib/layout.mjs - `seawardDirection` at :1931
-// and `pierCells` at :1942 - copied rather than imported, because that file is Node's: it
-// reaches for lib/paths.mjs and the whole layout with it. If a third caller ever wants them
-// they belong in shared/.
-const QUAY_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-function seawardRun(terrain, shore) {
-  let dir = null, reach = 0;
-  for (const [dx, dz] of QUAY_DIRS) {
-    let n = 0;
-    for (let i = 1; i <= 6; i++) { if (!terrain.isWater(shore[0] + dx * i, shore[1] + dz * i)) break; n++; }
-    if (n > reach) { reach = n; dir = [dx, dz]; }
-  }
-  if (!dir) return null;
-  const cells = [];
-  for (let i = 1; i <= 5; i++) {
-    const c = [shore[0] + dir[0] * i, shore[1] + dir[1] * i];
-    if (!terrain.isWater(c[0], c[1])) break;
-    cells.push(c);
-  }
-  return cells.length ? { dir, cells } : null;
-}
-
-// A dock at the island's landing. `landing` (lib/layout.mjs:1382-1385) is the coast cell
-// nearest the town centre - where a new settler already walks ashore - and it exists on
-// every island, seed alone, whether or not there is any Cowork work to earn it a quay
-// district. The planks are the same set a quay district gets; what is different is that this
-// one is not waiting for a district to appear before there is anywhere to tie up.
+// The derivation moved to shared/quay.mjs the moment there was a third caller: this file
+// draws the planks and puts the hull in the water, serve.mjs hands lib/boats.mjs the
+// moorings, and the browser across the channel has to find an untouched boat in the same
+// place. Three sides agreeing without a message between them is only possible if all three
+// do the same arithmetic, which is what shared/ is for.
 function dockFor(region, village) {
   const v = village || region.village;
   const landing = v && v.island && v.island.landing;
   if (!landing) return null;
-  const run = seawardRun(region.terrain, landing);
-  if (!run) return null;
-  // Both frames, and they are not the same thing - this is the rule from shared/regions.mjs
-  // in one function. `from` is where the MESH stands, and the mesh goes inside the island's
-  // own group, so it is local. `head` and `berth` are read by walk mode and by the boat,
-  // which speak world coordinates and nothing else. On our own island the two are equal,
-  // which is exactly how getting it wrong stays invisible until somebody joins.
-  const [lx, lz] = region.terrain.cellWorld(landing[0], landing[1]);
-  const head = run.cells[run.cells.length - 1];
-  const [hx, hz] = region.cellWorld(head[0], head[1]);
+  // Local coordinates, because the mesh goes inside the island's own group - and world
+  // coordinates for `head` and `berth`, because walk mode and the boat speak nothing else.
+  // shared/quay.mjs names them apart for exactly this reason.
+  const quay = quayFor(region.terrain, landing);
+  if (!quay) return null;
+  const [ox, oz] = region.origin;
   return {
-    id: `dock:${region.id}`, region, cells: run.cells, dir: run.dir,
-    // The land cell the planks start from, kept because it is where a settler walking down
-    // to the water has to be routed to: the roads stop on land and the planks begin here.
-    landing,
-    from: [lx, lz],
-    // Where a boat comes alongside: one cell off the head, to the side, so the hull is not
-    // sitting on the planks. Which side does not matter - both are water, or the head would
-    // not be there.
-    berth: [hx - run.dir[1] * 1.3, hz + run.dir[0] * 1.3],
-    // Bow pointing out along the run, which is the way you leave.
-    yaw: Math.atan2(run.dir[0], run.dir[1]),
-    head: [hx, hz],
+    id: `dock:${region.id}`, region, cells: quay.cells, dir: quay.dir,
+    from: quay.from,
+    yaw: quay.yaw,
+    head: [quay.head[0] + ox, quay.head[1] + oz],
+    berth: [quay.berth[0] + ox, quay.berth[1] + oz],
+    // The land cell the planks start from, in the island's OWN grid - which is what a
+    // settler walking down to the water has to be routed to, because the roads stop on land
+    // and the planks begin here. quaySite picks it, and it is not always the landing.
+    shore: quay.shore,
   };
 }
 
@@ -1424,49 +1395,116 @@ function buildDocks(homeVillage) {
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
 function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
 
-// The village's own end of the fleet. A settler going out takes one of the same three
-// boats you could have taken - that is the point of counting them here rather than giving
-// the outings a fleet of their own - and putting one away takes the hull off the water,
-// because a boat nobody is in and nobody rowed home is litter.
-const villageFleet = {
-  take(crew) {
-    const d = homeDock();
-    if (!d) return null;
-    const hers = state.boats.filter((x) => x.id.startsWith(`boat:${d.region.id}:`)).length;
-    if (hers >= BOATS_PER_QUAY) return null;
-    const b = spawnBoat(d.region.id, d.berth[0], d.berth[1], d.yaw);
-    b.crew = crew;
-    return b;
-  },
-  release(b) {
-    if (!b) return;
-    const i = state.boats.indexOf(b);
-    if (i >= 0) state.boats.splice(i, 1);
-    b.crew = null;
+// Every island's boat, put in the water with the island. Not when walk mode starts: a boat
+// somebody across the channel is sailing has to be drawn whether or not you are on foot.
+function launchBoats() {
+  for (const region of state.sea.regions()) boatFor(region);
+  for (let i = state.boats.length - 1; i >= 0; i--) {
+    const b = state.boats[i];
+    if (state.sea.regions().some((r) => b.id === `boat:${r.id}`)) continue;
     b.craft.dispose();
-  },
-};
+    state.boats.splice(i, 1);
+  }
+}
 
 // This island's dock, which is the only one a settler of this island can walk to.
 function homeDock() {
   return state.docks.find((d) => d.region === state.region) || null;
 }
 
-// A boat, put in the water and left there. Nothing moors it but where it stops.
+// The hull a settler takes out for the afternoon, and why it is not the island's own.
 //
-// The id is counted, not named after the quay it came from. Two boats sharing one id is
-// what made taking a new boat teleport you into the old one: the new hull went in at the
-// berth, and boarding by id then found the first boat of that name - the one still lying
-// on whatever beach it was left on - and took you to it.
-let boatsLaunched = 0;
+// It was, and it cannot be any more. There is one boat to an island now, its position is
+// world state lib/boats.mjs holds and every browser agrees about, and only its pilot may
+// write to it - so a settler moving it would be moving a hull nobody across the channel
+// can see move, and, worse, would take away the one thing anybody has to cross with. The
+// crossing outranks the outing.
+//
+// So an outing brings its own dinghy: the same baked Benchy drawn with the same material,
+// made when somebody steps down into it and disposed of when they step back out, and never
+// in `state.boats`. Nothing offers it to you, nothing reports it to the server, and the
+// island's boat is at its mooring all afternoon whether or not anybody is out on the water.
+// `deckY` is kept on it in the shape walk mode and settlers.js both read a deck height in.
+const outingFleet = {
+  take() {
+    const d = homeDock();
+    if (!d) return null;
+    const craft = createBoat({ scene, material: buildingMat });
+    // Alongside the head on the side the island's own boat is not, so the two are not drawn
+    // through each other while one of them is at home.
+    const x = d.head[0] + d.dir[1] * 1.3, z = d.head[1] - d.dir[0] * 1.3;
+    const b = { id: `outing:${d.region.id}`, x, z, yaw: d.yaw, craft, deckY: DECK_Y };
+    craft.place(x, z, d.yaw);
+    return b;
+  },
+  release(b) {
+    if (b) b.craft.dispose();
+  },
+  // The swell, and the deck the rider stands on. state.boats gets this in the frame loop;
+  // a dinghy that is in no list has to be told.
+  bob(b, time) {
+    b.craft.place(b.x, b.z, b.yaw);
+    b.craft.bob(time);
+    b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
+  },
+};
+
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
-function spawnBoat(where, x, z, yaw) {
+
+// One boat per island, at the mooring shared/quay.mjs derives - the same arithmetic the
+// server does for lib/boats.mjs and the same every other browser does, so an untouched
+// boat is in the same water on every screen without a message being sent about it.
+//
+// One and not three. Three was mine and it was a way of never being stranded, but a boat
+// that belongs to nobody cannot also be always to hand: if somebody has left the island's
+// boat on the far shore, that is where it is, and the answer is the other island's boat and
+// not a spare conjured at the jetty. The same reasoning lib/boats.mjs gives for putting
+// them back at their moorings on a restart.
+function boatFor(region) {
+  const v = region === state.region ? state.village : region.village;
+  const landing = v && v.island && v.island.landing;
+  const m = landing ? mooringFor(region.id, region.terrain, landing, region.origin) : null;
+  if (!m) return null;
+  const had = state.boats.find((b) => b.id === m.id);
+  if (had) return had;
   const craft = createBoat({ scene, material: buildingMat });
-  craft.place(x, z, yaw);
-  const b = { id: `boat:${where}:${++boatsLaunched}`, x, z, yaw, v: 0, aground: false, craft, deckY: DECK_Y };
+  craft.place(m.x, m.z, m.yaw);
+  const b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
   state.boats.push(b);
   return b;
+}
+
+// What the server says about a boat: taken, dropped, moved, or unmoored because its island
+// has gone. A boat under somebody else's hand is theirs to place; ours is placed by us.
+function onBoatFromServer(m) {
+  const b = state.boats.find((x) => x.id === m.id);
+  if (m.gone) {
+    if (!b) return;
+    b.craft.dispose();
+    state.boats.splice(state.boats.indexOf(b), 1);
+    if (state.walk && state.walk.aboard() === b) state.walk.unboard([b.x, b.z]);
+    return;
+  }
+  const region = state.sea.regions().find((r) => m.id === `boat:${r.id}`);
+  const craft = b || (region ? boatFor(region) : null);
+  if (!craft) return;
+  // Only when the message names one. A `moved` says where the hull is and nothing about
+  // whose hand is on it, so taking `m.pilot` as authoritative there wiped the tiller ten
+  // times a second - the boat moved for everybody and belonged to nobody.
+  if ('pilot' in m) craft.pilot = m.pilot || null;
+  const mine = state.net && craft.pilot && craft.pilot === state.net.id();
+  // Somebody else has the tiller: their word is where it is. Our own boat we are steering
+  // ourselves, and taking the server's echo of our own message would jitter it back a
+  // fifth of a second on every reply.
+  if (!mine) {
+    craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw;
+    craft.v = 0;
+  }
+  // And if it was ours and now is not, we are no longer sailing it.
+  if (state.walk && state.walk.aboard() === craft && craft.pilot && !mine) {
+    state.walk.unboard([craft.x, craft.z]);
+  }
 }
 
 // What is moored in the harbour, and putting it in the water.
@@ -1512,6 +1550,7 @@ async function refreshHarbour() {
   }
   raiseGuestIslands();
   buildDocks();
+  launchBoats();
   applyFogRange();
   applyCameraRange();
   if (arrived) {
@@ -1603,7 +1642,19 @@ function visitNeighbour(id) {
   state.tween = null;
   controls.enabled = false;
   state.ui.closeDossier();
-  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>…`);
+  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>, and taking this island with you…`);
+  // The island goes too. Sent while the camera is still crossing, because building the
+  // bundle and posting it takes about as long as the animation does and there is no reason
+  // to watch a spinner for it - and sent by our own server rather than from here, so the
+  // redaction runs on the same side as the secrets and this page never holds an unredacted
+  // copy that it then forwards.
+  //
+  // A failure is not a reason to stay home: you can visit an island without mooring your
+  // own beside it, which is what every visit was until now. But it is a reason to say so,
+  // because "my island did not come" is otherwise a silence - and the likeliest cause by
+  // far is that the two of you are running different code, which parseBundle refuses
+  // outright rather than drawing houses in the sea.
+  sendIslandTo(n);
 
   const target = new THREE.Vector3(n.x * 0.45, 16, n.z * 0.45);
   state.sailing = { t: 0, dur: 2.6, from: camera.position.clone(), target, to: n, gone: false };
@@ -1611,6 +1662,25 @@ function visitNeighbour(id) {
   // looking at. Without this you could start a journey, switch away, and come back to a
   // frozen sea - so the arrival is on a clock as well, and whichever comes first wins.
   setTimeout(() => { if (state.sailing) cross(state.sailing); }, 2.6 * 1000 + 1500);
+}
+
+async function sendIslandTo(n) {
+  if (!n || !n.address || !n.port) return;
+  try {
+    const r = await fetch('/api/visit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ host: n.address, port: n.port }),
+    });
+    const said = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      state.ui.toast(`Your island stayed here: ${escapeHtml(said.error || r.statusText)}`);
+      return;
+    }
+    console.info(`island: moored at ${n.name} as ${said.id}`);
+  } catch (e) {
+    state.ui.toast(`Your island stayed here: ${escapeHtml(String(e.message || e))}`);
+  }
 }
 
 function cross(s) {
@@ -2009,6 +2079,7 @@ function buildScene(village) {
   applyCameraRange();
   raiseGuestIslands();
   buildDocks(village);
+  launchBoats();
   if (state.boating) state.boating.clear();
   state.settlers = createSettlers(scene, buildingMat, terrain);
   // Outings. Everything it needs is asked for rather than held, because a reseed replaces
@@ -2017,7 +2088,7 @@ function buildScene(village) {
     terrain: () => state.terrain,
     settlers: state.settlers,
     dock: homeDock,
-    fleet: villageFleet,
+    fleet: outingFleet,
     rng: makeRng(hash32(`${village.island.name}:boating`)),
     eager: params.has('sail'),
   });
@@ -3073,7 +3144,14 @@ function frame(nowMs) {
 
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.
+  const mine = state.walk && state.walk.aboard();
   for (const b of state.boats) {
+    // Only the hull under our own hands is reported; everybody else's arrives as a message.
+    if (b === mine && state.net && (Math.abs(b.x - (b.sentX ?? 1e9)) > 0.05
+      || Math.abs(b.z - (b.sentZ ?? 1e9)) > 0.05 || Math.abs(b.yaw - (b.sentYaw ?? 1e9)) > 0.03)) {
+      state.net.movedBoat(b.id, b.x, b.z, b.yaw);
+      b.sentX = b.x; b.sentZ = b.z; b.sentYaw = b.yaw;
+    }
     b.craft.place(b.x, b.z, b.yaw);
     b.craft.bob(nowMs / 1000);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
@@ -3540,6 +3618,7 @@ async function boot() {
     blocked: () => !!openPanel(),
   });
   state.net = createNet({
+    onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,
     name: playerName(),

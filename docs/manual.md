@@ -172,17 +172,24 @@ can no more read it than they could read the post through the slot.
 
 ## Visitors and neighbours
 
-The island is shut by default and listens only to this computer. Open it and other people
-can walk it with you, each connection getting its own settler to steer; two islands on the
-same network also find each other, and lie on each other's horizon.
+The island is open. Other people can walk it with you, each connection getting its own
+settler to steer; two islands on the same network find each other, lie on each other's
+horizon, and can be moored side by side. It answers on every address the machine has, and
+phones and laptops reach it at `http://<the machine's name>:4747/`.
+
+It was shut by default once, and that was right while a visitor could only look. Visiting
+is what the island is for now, and an island nobody can reach has no neighbours - so the
+lock is off and the thing to know is how to put it back on:
 
 ```json
-"network":     { "public": true, "inviteCode": null, "hosts": [] },
+"network":     { "public": false, "inviteCode": null, "hosts": [] },
 "multiplayer": { "enabled": true, "maxPlayers": 16, "guestView": "redacted", "name": null }
 ```
 
-or `node serve.mjs --public` for an afternoon. Then it answers on every address the
-machine has, and phones and laptops reach it at `http://<the machine's name>:4747/`.
+A shut island keeps its mouth closed and its ears open: it listens only to this computer,
+it does not announce itself, and it still sees the neighbours who did open theirs and can
+go and visit them. `node serve.mjs --public` opens one for an afternoon without editing
+anything.
 Windows Firewall asks about the port the first time, and about UDP 47474, which is how
 islands announce themselves to each other.
 
@@ -287,13 +294,14 @@ and has to be backed off. Press her at a coast and she will not climb it — the
 edge is the only place you can get in or out of a boat at all.
 
 **Settlers go out on the water too.** Every now and then somebody who has nothing on walks
-down the lane, out along the planks, steps into one of the quay's boats and takes her round
-the bay for the pleasure of it. It is the same three boats: while a settler is out there is
-one fewer at the berth for you, and a hull with somebody standing in it is not one **E**
-will offer — they came down the lane for this. Two afternoons at a time at most, never
-after dark, and they always come home, which is why the route is a wide circle out and back
-rather than a wander. If the dock is up a creek too narrow to turn in, the walk to the end
-of the pier is the whole of the outing.
+down the lane, out along the planks, and takes a little boat round the bay for the pleasure
+of it. Not the island's boat — that one is the crossing, it is shared with everybody on the
+island and with whoever is across the channel, and a settler is never in your way to it.
+They bring a dinghy of their own instead, which comes alongside the far side of the head
+and goes away again when they step out. Two afternoons at a time at most, never after dark,
+and they always come home, which is why the route is a wide circle out and back rather than
+a wander. If the dock is up a creek too narrow to turn in, the walk to the end of the pier
+is the whole of the outing.
 
 On foot the open water is still a wall. You may wade in as long as the shore stays within
 about two metres, and not a step further, which is what has always kept you from setting

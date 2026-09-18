@@ -26,7 +26,8 @@ const FLAG_AIRBORNE = 8;
 const UI_MS = 160;
 const UI_PER_BEAT = 2;
 
-export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, onSaid = () => {}, name = null } = {}) {
+export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
+  onBoat = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -73,6 +74,9 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
           for (const p of m.players || []) peers.join(p);
           // Whatever the boards already said before we walked up.
           onPanels({ kind: 'all', boards: m.panels || [] });
+          // Wherever the boats have got to. An untouched one is not in here: both
+          // sides derive its mooring from the island (shared/quay.mjs).
+          for (const b of m.boats || []) onBoat(b);
           break;
         case 'join': peers.join(m.p); break;
         case 'leave': peers.leave(m.id); break;
@@ -81,6 +85,13 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
         case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
+        // A boat taken, dropped, moved, or unmoored because its island has gone.
+        // Passed through as it arrived, and that matters: `moved` carries the position
+        // and no pilot, because the tiller does not change ten times a second and a
+        // message that repeated it would have the page re-deciding whose hand it is on
+        // every beat. So "no pilot named" and "nobody at the tiller" are different things
+        // and the page has to be able to tell them apart.
+        case 'boat': onBoat(m); break;
         // Somebody talking. The server sends this to everybody including us, so our own
         // line comes back down this same wire and the page can show the conversation in
         // the order the island saw it instead of the order we typed it.
@@ -176,6 +187,14 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
     // Standing at a board, and letting go of it. Both go out at once - they are one
     // press each, and waiting for the beat would make E feel slow.
     takePanel(id) { send({ t: 'take', id }); },
+    // The tiller. Take and drop go out at once, like a board's - they are one press each.
+    takeBoat(id) { send({ t: 'boat', a: 'take', id }); },
+    dropBoat(id) { send({ t: 'boat', a: 'drop', id }); },
+    // And where the hull has got to, on the pose beat rather than a beat of its own: the
+    // pilot is already sending ten poses a second and the boat is under them, so this is
+    // one more message on the same bucket and no new ceiling to reason about. Only while
+    // it has actually moved, which is what the pose beat already decides.
+    movedBoat(id, x, z, yaw) { send({ t: 'boat', a: 'moved', id, x, z, yaw }); },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
     // One sentence out loud, to everybody on the island. Sent at once rather than on a
     // beat: a sixth of a second of waiting is nothing on a board, but on a conversation

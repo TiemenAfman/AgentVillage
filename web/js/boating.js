@@ -136,6 +136,10 @@ export function planVoyage(terrain, start, dir, rng, { samples = 20 } = {}) {
 // so what it shows is the real thing happening more often.
 export function createBoating({ terrain, settlers, dock, fleet, rng, eager = false }) {
   let wait = eager ? 2 : rng.range(20, WAIT_MAX);
+  // The island's own clock, for the swell. Kept here rather than read off performance.now
+  // because a dinghy that is in no list is bobbed by this file and by nothing else, and a
+  // tab that slept for an hour should come back to the sea it went away from.
+  let clock = 0;
   const trips = [];
 
   // The walk from the shore cell out to the end of the planks, in world points. Taken from
@@ -177,9 +181,10 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
     const person = who[0];
     if (!settlers.charter(person.id)) return false;
 
-    // The landing is a land cell by construction (lib/layout.mjs picks it off the coast),
-    // so the walk is an ordinary walk and only the planks after it are not.
-    const shore = d.landing;
+    // Where the planks start, which is a land cell by construction (shared/quay.mjs picks a
+    // coast cell with water off it), so the walk is an ordinary walk and only the planks
+    // after it are not.
+    const shore = d.shore;
     const lane = settlers.routeTo(person.id, shore);
     if (!lane) { settlers.release(person.id); return false; }
     const ashore = [...lane, ...planks(d)];
@@ -255,6 +260,7 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
   }
 
   function update(dt, nightAmount = 0) {
+    clock += dt;
     for (const trip of trips) {
       if (trip.done) continue;
       trip.age += dt;
@@ -279,6 +285,10 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
           walkHome(trip);
         }
       }
+      // After the stage, so the hull is drawn where this frame put it and the deck the
+      // rider stands on is that hull's. The island's own boats get this from the frame
+      // loop in main.js; a dinghy that is in no list has only this.
+      if (trip.boat) fleet.bob(trip.boat, clock);
     }
     for (let i = trips.length - 1; i >= 0; i--) if (trips[i].done) trips.splice(i, 1);
 
