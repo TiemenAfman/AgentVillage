@@ -94,8 +94,17 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // performance.now() is a bug that reads as every body standing perfectly still - the
   // difference comes out as a number of hours and the interpolation clamps at its far end,
   // for ever.
-  function draw(dt, groundAt, now) {
+  function draw(dt, groundAt, now, showing = true) {
+    // Off while the chronicle is scrubbed back. Their people are here, now, and the island
+    // on the screen is somebody's island in May - so they are hidden rather than left to
+    // walk through a history they were not in. The positions keep arriving and keep being
+    // applied, so coming back to Live puts everybody where they actually are.
+    if (!showing) {
+      for (const f of figures.values()) { if (f.visible) { f.visible = false; view.hide(f); } }
+      return;
+    }
     for (const f of figures.values()) {
+      if (!f.visible) f.visible = true;
       if (!f.to) continue;
       const age = now - f.at;
       const t = Math.min((age + LAG_MS) / f.took, 1 + MAX_GUESS_MS / f.took);

@@ -3198,7 +3198,15 @@ function frame(nowMs) {
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
   // somebody crossing the island.
+  //
+  // But not while you are looking at the past. Scrubbing the chronicle back is a view of
+  // this island in May, and other people's bodies and other islands' settlers are here and
+  // now - they would be wandering through a village that has not been built yet. One
+  // condition rather than a second drawing path: `state.chronicle.t` is exactly "not on
+  // Live", and it is the same test timeNow() already makes.
+  const live = state.chronicle.t == null;
   if (state.peers) {
+    state.peers.setVisible(live);
     state.peers.update(dt);
     // Only the people in the room you are standing in are people you can bump into.
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
@@ -3327,7 +3335,7 @@ function frame(nowMs) {
     // Their people, drawn where the sea last said they were and interpolated between. The
     // ground they stand on is their own region's, which is what puts a body on a quay's
     // planks rather than in the water beside them.
-    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs);
+    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs, live);
   }
 
 
