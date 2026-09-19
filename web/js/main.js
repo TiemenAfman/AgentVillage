@@ -3160,11 +3160,11 @@ function frame(nowMs) {
   const mine = state.walk && state.walk.aboard();
   for (const b of state.boats) {
     // Only the hull under our own hands is reported; everybody else's arrives as a message.
-    if (b === mine && state.net && (Math.abs(b.x - (b.sentX ?? 1e9)) > 0.05
-      || Math.abs(b.z - (b.sentZ ?? 1e9)) > 0.05 || Math.abs(b.yaw - (b.sentYaw ?? 1e9)) > 0.03)) {
-      state.net.movedBoat(b.id, b.x, b.z, b.yaw);
-      b.sentX = b.x; b.sentZ = b.z; b.sentYaw = b.yaw;
-    }
+    // Every frame, and not only the ones that moved far enough: net.js coalesces this onto
+    // the pose beat, so what is handed over here is the hull's position and not a message.
+    // Deciding here whether it was worth sending is what made this sixty messages a second
+    // and took the socket down under the pilot - see `hull` in net.js.
+    if (b === mine && state.net) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
     b.craft.place(b.x, b.z, b.yaw);
     b.craft.bob(nowMs / 1000);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;

@@ -45,6 +45,22 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
   // One pending value per board and field, so the last word wins and the ones it
   // overtook are never sent at all.
   const pending = new Map();
+  // The hull under our own hands, waiting for the pose beat. Coalesced exactly as the
+  // boards' fields are above, and for the same reason: where a boat has got to is the last
+  // word and not a history, so a frame that overtakes another costs nothing.
+  //
+  // This is the whole of the fix for a boat that sailed ten metres and sprang five back.
+  // main.js hands the hull over on every frame it moved - sixty a second at speed - and
+  // this used to put each one on the wire. Sixty plus the pose beat's ten against a bucket
+  // that holds forty and refills at twenty-five (lib/players.mjs) empties it in about a
+  // second, and the server does not throttle when it runs dry: it closes the socket with
+  // 1008. The page reconnects, gets a new id, and the boat it was sailing is released and
+  // put back where the server last heard of it - which is the spring back, once a second,
+  // for as long as you stayed at the tiller.
+  //
+  // One object, mutated. A boat position per frame is not worth an allocation per frame.
+  const hull = { id: null, x: 0, z: 0, yaw: 0, live: false };
+  const hullSent = { id: null, x: 0, z: 0, yaw: 0 };
 
   const send = (obj) => {
     if (sock && sock.readyState === 1) { sock.send(JSON.stringify(obj)); return true; }
@@ -124,7 +140,25 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
   // stops rendering entirely, and hanging this off the frame would freeze your body in
   // front of everyone else in a way they cannot tell from a crash. setInterval is clamped
   // to about a second in the background, which is exactly the right amount of alive.
+  // Where the hull has got to, if it has got anywhere since the last beat. Its own thresholds
+  // are the pose's: the pilot's body is the boat, so a hull that has moved enough to be worth
+  // a message is exactly a pose that has.
+  //
+  // Sent before the pose rather than after, and outside every early return the pose has: a
+  // pilot sitting at the tiller with the throttle shut is `still`, and the last metre of way
+  // she carried before stopping still has to reach the server.
+  function sendHull() {
+    if (!hull.live) return;
+    if (hull.id === hullSent.id
+      && Math.abs(hull.x - hullSent.x) < MOVED
+      && Math.abs(hull.z - hullSent.z) < MOVED
+      && Math.abs(hull.yaw - hullSent.yaw) < TURNED) return;
+    if (!send({ t: 'boat', a: 'moved', id: hull.id, x: hull.x, z: hull.z, yaw: hull.yaw })) return;
+    hullSent.id = hull.id; hullSent.x = hull.x; hullSent.z = hull.z; hullSent.yaw = hull.yaw;
+  }
+
   const beat = setInterval(() => {
+    sendHull();
     if (!walking || !here || !here.state.active) return;
     const s = here.state;
     const f = (s.moving ? FLAG_MOVING : 0)
@@ -188,13 +222,31 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
     // press each, and waiting for the beat would make E feel slow.
     takePanel(id) { send({ t: 'take', id }); },
     // The tiller. Take and drop go out at once, like a board's - they are one press each.
-    takeBoat(id) { send({ t: 'boat', a: 'take', id }); },
-    dropBoat(id) { send({ t: 'boat', a: 'drop', id }); },
+    // Taking one forgets whatever the last hull's last word was, so the first beat under
+    // way is always sent however near the old boat this one happens to lie.
+    takeBoat(id) {
+      hullSent.id = null;
+      send({ t: 'boat', a: 'take', id });
+    },
+    // Mooring her. The pending position goes first: the last beat may be ninety
+    // milliseconds old, which at nine and a half units a second is most of a boat's
+    // length, and letting the drop overtake it leaves the hull short of where it stopped.
+    dropBoat(id) {
+      sendHull();
+      hull.live = false;
+      send({ t: 'boat', a: 'drop', id });
+    },
     // And where the hull has got to, on the pose beat rather than a beat of its own: the
     // pilot is already sending ten poses a second and the boat is under them, so this is
-    // one more message on the same bucket and no new ceiling to reason about. Only while
-    // it has actually moved, which is what the pose beat already decides.
-    movedBoat(id, x, z, yaw) { send({ t: 'boat', a: 'moved', id, x, z, yaw }); },
+    // one more message on the same bucket and no new ceiling to reason about. Twenty a
+    // second against a refill of twenty-five, and the board beat cannot be busy at the
+    // same time - there is nothing to type at from the water.
+    //
+    // Called from the frame loop, so it only records. See `hull` above for what sending
+    // each of those frames did.
+    movedBoat(id, x, z, yaw) {
+      hull.id = id; hull.x = x; hull.z = z; hull.yaw = yaw; hull.live = true;
+    },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
     // One sentence out loud, to everybody on the island. Sent at once rather than on a
     // beat: a sixth of a second of waiting is nothing on a board, but on a conversation
