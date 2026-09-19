@@ -66,6 +66,7 @@ if (statsReadout) {
 // module graph came up at all. Set before anything below can throw, so that a later crash
 // stays main.js's own to report rather than something the watchdog has to guess at.
 window.__islandRunning = true;
+window.__islandRunning = true;
 
 // Anything that goes wrong in the page is reported to the server, so a crash leaves a
 // trace in data/server.log instead of only a blank tab.
@@ -1422,13 +1423,25 @@ function dockFor(region, village) {
   };
 }
 
+// The village the home dock was last built from.
+//
+// Our own dock needs our own districts, because the kade is one of them - and the two
+// callers that rebuild the docks for a reason of their own do not have a village to hand.
+// syncFleet's rebuild is about who else is in the water, and at boot it runs *before*
+// applyVillage has set state.village: so `homeVillage || state.village` was undefined,
+// dockFor answered null, and the dock buildScene had just built correctly was torn down
+// and not put back until the next publish. Remembering it is what makes a rebuild for
+// somebody else's island harmless to ours.
+let dockVillage = null;
+
 // The docks, built with the world so they are there to look at from the orbit camera too -
 // a dock is scenery as much as it is a way off the island.
 function buildDocks(homeVillage) {
+  dockVillage = homeVillage || state.village || dockVillage;
   for (const d of state.docks) d.dispose();
   state.docks = [];
   for (const region of state.sea.regions()) {
-    const spec = dockFor(region, region === state.region ? (homeVillage || state.village) : null);
+    const spec = dockFor(region, region === state.region ? dockVillage : null);
     if (!spec) continue;
     const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
     if (!geo) continue;
@@ -1457,6 +1470,13 @@ function buildDocks(homeVillage) {
     });
     state.pickables.push(mesh);
   }
+  // The planks are a floor, and the floor is worked out from these docks - so whoever
+  // rebuilds them has rebuilt the floor too, whether or not they were thinking about it.
+  // Paired here rather than left to each caller, because the one caller that forgot
+  // (syncFleet, which only re-handed them when a *guest* arrived) left the kade drawn and
+  // unwalkable: planks in the picture, open water underfoot. A no-op before walk mode
+  // exists, which is the order buildScene runs in.
+  handOutDecks();
 }
 
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
@@ -1681,7 +1701,6 @@ async function doSyncFleet() {
   // here, and it costs nothing when nothing changed: reportPlacements compares first.
   reportPlacements();
   if (arrived.length) {
-    state.walk && state.walk.setLevels && handOutDecks();
     state.ui.toast(`<b>${escapeHtml(arrived.join(', '))}</b> ${arrived.length === 1 ? 'is' : 'are'} in the water alongside.`);
   }
 }
@@ -2963,7 +2982,7 @@ function applyVillage(next, { animate }) {
     // again is a rebuild nobody asked for. The fleet is left alone either way - a boat is
     // where somebody left it, and the server re-moors an untouched one from the same
     // shared/quay.mjs.
-    if (prev) { buildDocks(next); handOutDecks(); }
+    if (prev) buildDocks(next);
   }
   syncSquareBed(next);
   syncBorrelTables(next);
