@@ -72,3 +72,19 @@ test('the box holds nothing, and says so by having nowhere to put it', () => {
   // And the key has to be reachable from the stack environment, or a keeper cannot set one.
   assert.match(compose, /SEA_KEY: \$\{SEA_KEY/);
 });
+
+test('a 404 says what was asked for, not only what exists', async () => {
+  // Behind a reverse proxy these are different questions. A proxy that rewrites - a forward
+  // path in Nginx Proxy Manager, a location with a trailing slash - turns every route into
+  // this 404, and a message that lists the routes without naming the path reads as "the sea
+  // is broken" when it means "your proxy is sending me somewhere else". Measured on a live
+  // one: /health, /world and /island/:id all came back identical and said nothing.
+  const { afloat } = await import('./support/sea.mjs');
+  await afloat(async ({ base }) => {
+    const r = await fetch(`${base}/somewhere/else`);
+    assert.equal(r.status, 404);
+    const said = await r.json();
+    assert.equal(said.asked, '/somewhere/else');
+    assert.match(said.error, /\/somewhere\/else/);
+  });
+});
