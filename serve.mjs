@@ -381,6 +381,19 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
 }) : null;
 
+// Why a sea did not answer, in words a row in the menu can say. Node's own message for
+// everything under the HTTP layer is the bare "fetch failed", which tells a reader nothing
+// about whether the address is wrong or the machine is simply off - the code that does say
+// it is one level down, in `cause`.
+function whyNot(e) {
+  if (e && e.name === 'TimeoutError') return 'no answer';
+  const code = (e && e.cause && e.cause.code) || (e && e.code) || '';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'no such address';
+  if (code === 'ECONNREFUSED') return 'nothing listening';
+  if (code === 'ECONNRESET' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'could not be reached';
+  return 'no answer';
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = decodeURIComponent(url.pathname);
@@ -728,7 +741,7 @@ async function handle(req, res) {
         const h = await r.json();
         return { ...o, up: true, name: o.name || h.sea || null, islands: h.islands ?? 0, players: h.players ?? 0, v: h.v };
       } catch (e) {
-        return { ...o, up: false, why: e.name === 'TimeoutError' ? 'no answer' : String(e.message || e) };
+        return { ...o, up: false, why: whyNot(e) };
       }
     }));
     return json(res, 200, { mode: cfg.mode || 'single', current: cfg.url || null, seas: asked });

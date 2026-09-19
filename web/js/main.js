@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
+import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd } from 'shared/settlerwire.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
@@ -2510,6 +2511,38 @@ function frameIsland() {
   return { cx, cz, dist, az, el };
 }
 
+// The card that asks which sea, and the island's own answer to it. Both routes are real -
+// /api/seas probes every candidate's /health, and POST /api/sea writes config.json and then
+// actually closes the sea it was in and joins the new one - so this is a menu over working
+// plumbing rather than a picture of one.
+function openMainMenu() {
+  const menu = createMainMenu({
+    islandName: (state.village && state.village.island && state.village.island.name) || 'this island',
+    hasIslander: islanderHere() && !state.guest,
+    seas: async () => (await mine('/api/seas')).json(),
+    choose: async (what) => {
+      const r = await mine('/api/sea', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(what),
+      });
+      const said = await r.json().catch(() => ({}));
+      if (!r.ok) return { ok: false, error: said.error || r.statusText };
+      // The world we were in is not the world we are in. Everything but our own island
+      // goes, and the socket brings the new fleet when it reconnects on its own.
+      for (const region of state.sea.regions()) {
+        if (region !== state.region) dropRegion(region.id);
+      }
+      state.fleet = [];
+      syncFleet([]);
+      return { ok: true };
+    },
+    // Whatever was chosen, the opening sweep happens afterwards rather than under it.
+    onDone: () => startIntro(),
+  });
+  menu.open();
+}
+
 function startIntro() {
   if (params.has('nointro')) return;
   const f = frameIsland();
@@ -3893,8 +3926,14 @@ async function boot() {
   refreshGarden({ animate: false });
   applyVillage(village, { animate: false });
   setLiveMode();
-  // Arriving from a neighbour replaces the usual opening sweep with a landing.
-  startIntro();
+  // Which world this island lives in, asked over the island now that there is one to look
+  // at. The opening sweep waits for the answer: a camera flying over a village while a
+  // card asks you something is two things happening at once and neither reads.
+  //
+  // ?nointro skips it along with the sweep. That parameter has always meant "just show me
+  // the island", and it is what every measurement and every screenshot uses.
+  if (params.has('nointro')) startIntro();
+  else openMainMenu();
   state.ui.boot(true);
   requestAnimationFrame(tick);
   connect();
