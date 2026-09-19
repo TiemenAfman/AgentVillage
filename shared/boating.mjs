@@ -28,7 +28,22 @@
 //
 // planVoyage is pure - a terrain, a point, a direction and an rng - which is what
 // tests/boating.test.mjs sails a hundred voyages over a coast of its own making.
-import { clamp } from 'shared/rng.mjs';
+//
+// **This file is in shared/ and does not carry shared/'s bit-identity rule.** It steers
+// with sin, cos, atan2 and exp, all of which shared/terrain.mjs and shared/settlerwalk.mjs
+// are forbidden. That is allowed here, and the distinction is worth being exact about,
+// because it is the difference between a rule and a habit: the ban exists so two runtimes
+// can derive *the same* answer from the same inputs without speaking. Nothing derives a
+// voyage twice. Exactly one machine plans and steers it - the sea, once the crowd is its -
+// and what reaches every other screen is the hull's position, on the wire, the way
+// shared/settlerwire.mjs sends a settler's. A position that arrives cannot drift from one
+// nobody computed.
+//
+// So it is here for the plainer reason: it has no three.js, no document and no clock of
+// its own, and both the sea and a browser have to be able to import it. The moment
+// anything starts predicting a voyage instead of being told about one, the four
+// substitutions at the top of shared/settlerwalk.mjs apply to this file too.
+import { clamp } from './rng.mjs';
 
 // How fast a settler potters. The boat you steer tops out at 9.5 (BOAT_TOP); this is a
 // third of that, which is the speed the hull's own bow wave would sit right at and, more

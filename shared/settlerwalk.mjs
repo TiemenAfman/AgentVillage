@@ -31,7 +31,7 @@
 // move a millimetre.
 //
 // One figure object is still shared between this file and the renderer rather than split
-// in two. main.js, facetoface.js and boating.js all reach into `figures` and read `f.pos`,
+// in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
 import { makeRng, hash32, clamp } from './rng.mjs';
 
@@ -352,7 +352,7 @@ export function createWalk(terrain) {
   //
   // `f.onDone` stays a function, and only for the two calls that come from outside this
   // file - walkIn and sendOut. Those are somebody else's errand and will move when
-  // boating.js does.
+  // shared/boating.mjs does.
   function walkRoute(f, points, after = null, onDone = null) {
     f.path = [[f.pos[0], f.pos[1]], ...points];
     f.pathI = 0;
@@ -437,7 +437,7 @@ export function createWalk(terrain) {
 
   // ---- lending a settler out --------------------------------------------------
   // Everything above plans its own errands. What follows lets another part of the island
-  // plan one instead - today that is web/js/boating.js, taking somebody out on the water -
+  // plan one instead - today that is shared/boating.mjs, taking somebody out on the water -
   // without that part having to know anything about slots, gaits or the road graph.
   //
   // The bargain is `chartered`. A borrowed settler is invisible to the stroll timer, to

@@ -21,7 +21,7 @@ import {
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createSettlers } from './settlers.js';
-import { createBoating } from './boating.js';
+import { createBoating } from 'shared/boating.mjs';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
@@ -2190,7 +2190,7 @@ function buildScene(village) {
   if (state.boating) state.boating.clear();
   state.settlers = createSettlers(scene, buildingMat, terrain);
   // Outings. Everything it needs is asked for rather than held, because a reseed replaces
-  // the terrain and rebuilds the docks under it - see the note at the top of boating.js.
+  // the terrain and rebuilds the docks under it - see the note at the top of shared/boating.mjs.
   state.boating = createBoating({
     terrain: () => state.terrain,
     settlers: state.settlers,

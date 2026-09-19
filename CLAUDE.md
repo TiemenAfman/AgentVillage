@@ -257,8 +257,8 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a b
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
-| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes — Node and browser both |
-| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure) and `boating.js` (settlers taking one of those boats out), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (where a body
+| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out) — Node and browser both |
+| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (where a body
 is; no three.js, no document, so it can run in Node), `settler-figures.js` (what is drawn
 there; every mesh and every sine wave) and `settlers.js`, the seam that joins them and the
 only one anything else imports; `*-mesh.js` are baked output — never hand-edit |
