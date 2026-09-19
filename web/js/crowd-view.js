@@ -15,6 +15,7 @@
 // roster carries building ids, and settlerLook hashes the identical person out of one on
 // both sides, which is the promise the wardrobe has always made.
 import { createFigures } from './settler-figures.js';
+import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 
 // How far behind the sea we draw. The same reasoning and the same number as web/js/peers.js:
@@ -33,6 +34,12 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // bundle is already on the region; this is only a faster way to look one up.
   const byId = new Map(buildings.map((b) => [b.id, b]));
   const [ox, oz] = region.origin;
+
+  // The afternoon boats. index -> what the last message said about that outing, and
+  // index -> the hull drawn for it. Two maps rather than one object, because the hull is
+  // ours and the row is theirs and only one of the two survives a message.
+  const rides = new Map();
+  const hulls = new Map();
 
   // Who the indices mean. Sent when the island arrives and again when its village changes,
   // which is the only time the order can move.
@@ -85,6 +92,28 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     }
   }
 
+  // The dinghies, which arrive whole every beat - so a row that is not in this message is
+  // an outing that has finished, and its hull comes out of the water here.
+  //
+  // No interpolation on a hull. It is sent every beat where a walker is sent every fourth,
+  // and it moves at CRUISE - a fifth of a unit between messages, at the distance another
+  // island is watched from. The body standing in it comes in the same row for the same
+  // reason, so the two can never drift apart.
+  function applyRides(rows, now) {
+    for (const [idx, hull] of hulls) {
+      if (rows.has(idx)) continue;
+      hull.dispose();
+      hulls.delete(idx);
+      // Ashore again, and the crowd's own interpolation takes over on the next message.
+      // Its clock is restarted here: `apply` measures how long the last step took from
+      // `at`, and a voyage's worth of staleness would make the first step ashore crawl.
+      const f = figures.get(idx);
+      if (f) { f.from = null; f.to = null; f.at = now; f.faceAngle = null; }
+    }
+    rides.clear();
+    for (const [idx, r] of rows) rides.set(idx, r);
+  }
+
   // Draw everybody where they have got to. Positions are interpolated from the last two
   // messages and then extrapolated a little; the heading comes out of the movement, which
   // is exactly what the renderer already does for our own settlers - it is handed a
@@ -101,10 +130,36 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     // applied, so coming back to Live puts everybody where they actually are.
     if (!showing) {
       for (const f of figures.values()) { if (f.visible) { f.visible = false; view.hide(f); } }
+      for (const hull of hulls.values()) hull.object.visible = false;
       return;
     }
-    for (const f of figures.values()) {
+    // Whoever is on the water first: their hull decides where they are, how high and
+    // which way round, so none of the interpolation below applies to them.
+    const time = now / 1000;
+    for (const [idx, r] of rides) {
+      let hull = hulls.get(idx);
+      if (!hull) { hull = createBoat({ scene, material }); hulls.set(idx, hull); }
+      hull.object.visible = true;
+      hull.place(r.x + ox, r.z + oz, r.yaw);
+      hull.bob(time);
+      const f = figures.get(idx);
+      if (!f) continue;
       if (!f.visible) f.visible = true;
+      f.pos[0] = r.rx + ox;
+      f.pos[1] = r.rz + oz;
+      // The height on the wire is the deck with no swell in it - see the note on
+      // encodeRides - so the rise this hull happens to be on goes on here. That makes a
+      // seated rider exactly hull.deck() without a clock ever having been sent.
+      f.y = r.ry + hull.object.position.y;
+      f.face = null;
+      f.faceAngle = r.ryaw;
+      f.anim = 'still';
+      f.mode = 'idle';
+    }
+    for (const [idx, f] of figures) {
+      if (!f.visible) f.visible = true;
+      // Already placed by the hull they are standing in.
+      if (rides.has(idx)) continue;
       if (!f.to) continue;
       const age = now - f.at;
       const t = Math.min((age + LAG_MS) / f.took, 1 + MAX_GUESS_MS / f.took);
@@ -123,10 +178,13 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
 
   function dispose() {
     for (const idx of [...figures.keys()]) retire(idx);
+    for (const hull of hulls.values()) hull.dispose();
+    hulls.clear();
+    rides.clear();
   }
 
   return {
-    roster, apply, draw, dispose,
+    roster, apply, applyRides, draw, dispose,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

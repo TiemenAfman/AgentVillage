@@ -7,7 +7,7 @@ import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
-import { decodeCrowd } from 'shared/settlerwire.mjs';
+import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
@@ -1716,8 +1716,12 @@ function onCrowdMessage(m) {
   // and the origin goes on inside the view. A message is walkers, or a slice of everybody
   // else, or both.
   const half = g.region.half;
+  const now = performance.now();
   const rows = decodeCrowd(m.k, half, decodeCrowd(m.a, half));
-  g.crowd.apply(rows, performance.now());
+  g.crowd.apply(rows, now);
+  // And whoever is out on the water. Sent whole every beat, so this is handed the message
+  // even when it is empty - an empty one is how a hull is taken back out of the water.
+  g.crowd.applyRides(decodeRides(m.b, half), now);
 }
 
 // Take an island's ground back out of the world: its region, its buildings, its crowd. The

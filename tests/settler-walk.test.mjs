@@ -221,3 +221,40 @@ test('findPath stays on land and gives a route you can follow', () => {
     assert.ok(terrain.isLand(gx, gz), `the route goes through water at ${gx},${gz}`);
   }
 });
+
+test('an errand that arrives says so, and says it once', () => {
+  const v = village(8);
+  const walk = v.make();
+  const who = [...walk.figures.values()][0];
+  assert.equal(walk.charter(who.id), true);
+
+  // Two waypoints along the lane, which the settler can certainly reach.
+  const mid = Math.round(v.terrain.half);
+  const points = [v.lane[3], v.lane[5]].map(([gx]) => v.terrain.cellWorld(gx, mid));
+
+  const said = [];
+  assert.equal(walk.sendOut(who.id, points, (arrived) => said.push(arrived)), true);
+
+  // Long enough for the slowest stride to cover a couple of cells, and then some.
+  for (let i = 0; i < 4000 && !said.length; i++) walk.advance(1, 0);
+
+  // The bug this is here for: walkRoute grew an `after` parameter ahead of `onDone` when
+  // the errand hooks became records, and sendOut kept passing its callback third. It
+  // landed in `f.after`, finishPath found no `kind` on a function and dropped it, and
+  // every caller of sendOut - which is to say every outing on the water - waited for an
+  // arrival that had already happened. Nothing threw and nothing looked broken.
+  assert.deepEqual(said, [true], 'sendOut never called back on arrival');
+  assert.equal(who.mode, 'idle');
+
+  for (let i = 0; i < 200; i++) walk.advance(1, 0);
+  assert.equal(said.length, 1, 'and it must not go on saying so');
+});
+
+test('an errand with nowhere to walk fails loudly instead of hanging', () => {
+  const walk = village(4).make();
+  const who = [...walk.figures.values()][0];
+  walk.charter(who.id);
+  const said = [];
+  assert.equal(walk.sendOut(who.id, [], (arrived) => said.push(arrived)), false);
+  assert.deepEqual(said, [false]);
+});

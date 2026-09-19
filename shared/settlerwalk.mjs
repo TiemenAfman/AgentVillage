@@ -520,7 +520,14 @@ export function createWalk(terrain) {
   function sendOut(id, points, onDone) {
     const f = figures.get(id);
     if (!f || !f.chartered || !points || !points.length) { onDone && onDone(false); return false; }
-    walkRoute(f, points, () => { f.mode = 'idle'; onDone && onDone(true); });
+    // Fourth argument, not third. walkRoute took the callback third until the errand hooks
+    // became records and `after` was slotted in ahead of it; this call was not moved with
+    // it, so the arrival closure was landing in `f.after`, where finishPath looked for a
+    // `kind`, found undefined on a function, matched none of its four branches and dropped
+    // it without a word. Every outing therefore walked to the end of the planks, stood
+    // there for the ten minutes of VOYAGE_MAX and was written off as overdue - which is a
+    // failure that looks exactly like nobody having felt like sailing.
+    walkRoute(f, points, null, () => { f.mode = 'idle'; onDone && onDone(true); });
     return true;
   }
 

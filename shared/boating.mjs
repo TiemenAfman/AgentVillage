@@ -322,6 +322,25 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
     update,
     // Who is out, for anything that wants to know whether a hull has somebody in it.
     crews: () => trips.filter((t) => t.boat).map((t) => ({ id: t.id, boat: t.boat.id })),
+    // Every outing that is in a hull this moment: where the hull is, and where the body
+    // riding it has its feet and its bow. This is what goes on the wire when the sea is
+    // the one doing the sailing - a browser that is only watching has no trip, no timer
+    // and no route, it has a dinghy to draw and somebody standing in it.
+    //
+    // The rider is asked for separately from the hull rather than assumed to be in it,
+    // because for the second it takes to step down they are not: rideOf is mid-lerp
+    // between the planks and the deck, and a body that snaps into the boat is the exact
+    // thing BOARDING exists to prevent.
+    rides() {
+      const out = [];
+      for (const t of trips) {
+        if (t.done || !t.boat) continue;
+        const r = rideOf(t);
+        if (!r) continue;
+        out.push({ id: t.id, x: t.boat.x, z: t.boat.z, yaw: t.boat.yaw, rx: r.x, rz: r.z, ry: r.y, ryaw: r.yaw });
+      }
+      return out;
+    },
     // Everybody back ashore, for a reseed: the village is about to be rebuilt under them.
     clear() {
       for (const trip of trips) if (!trip.done) abandon(trip, 'cleared');

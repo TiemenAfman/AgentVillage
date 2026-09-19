@@ -5,7 +5,7 @@
 // notice a stutter on a laptop six months later and blame the graphics.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeCrowd, decodeCrowd, crowdRoster, sliceCount, walkerEvery, GRID, KEYFRAME_S, WALKER_HZ, ANIMS } from '../shared/settlerwire.mjs';
+import { encodeCrowd, decodeCrowd, encodeRides, decodeRides, crowdRoster, sliceCount, walkerEvery, GRID, TURNS, KEYFRAME_S, WALKER_HZ, ANIMS } from '../shared/settlerwire.mjs';
 import { createWalk, MAX_STROLL } from '../shared/settlerwalk.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
@@ -134,4 +134,73 @@ test('nonsense off the wire is ignored rather than believed', () => {
   const one = decodeCrowd([0, 100, 200, 99], HALF);
   assert.equal(one.get(0).anim, 'still', 'an animation nobody has heard of is standing still');
   assert.deepEqual(ANIMS[0], 'still');
+});
+
+// ---- the dinghies -------------------------------------------------------------------
+
+const TAU = Math.PI * 2;
+const RIDE = {
+  idx: 3, x: 7.25, z: -11.5, yaw: 2.1,
+  rx: 7.1, rz: -11.4, ry: 0.049, ryaw: -1.4,
+};
+
+test('an outing survives the trip, hull and rider both', () => {
+  const back = decodeRides(encodeRides([RIDE], HALF), HALF);
+  const got = back.get(3);
+  assert.ok(got, 'the outing did not travel');
+  const step = 0.5 / GRID;
+  for (const k of ['x', 'z', 'rx', 'rz', 'ry']) {
+    assert.ok(Math.abs(got[k] - RIDE[k]) <= step, `${k} came back ${got[k]}, not ${RIDE[k]}`);
+  }
+  // A heading wraps, so the two have to be compared the long way round.
+  for (const k of ['yaw', 'ryaw']) {
+    let d = got[k] - RIDE[k];
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    assert.ok(Math.abs(d) <= TAU / TURNS, `${k} came back ${got[k]}, not ${RIDE[k]}`);
+  }
+});
+
+test('an empty message takes the hull back out of the water', () => {
+  const into = decodeRides(encodeRides([RIDE], HALF), HALF);
+  assert.equal(into.size, 1);
+  // The same map, handed the beat on which nobody is sailing. It has to come back empty:
+  // the far end disposes a hull precisely because its row stopped arriving.
+  decodeRides([], HALF, into);
+  assert.equal(into.size, 0);
+  decodeRides(null, HALF, into);
+  assert.equal(into.size, 0, 'nonsense is an empty sea, not the last one kept');
+});
+
+test('somebody in a boat is left out of the crowd entirely', () => {
+  const c = crowd(12);
+  const first = [...c.figures.values()][0];
+  // Chartered and carried, which is what an outing does to a settler.
+  c.walk.charter(first.id);
+  c.walk.carry(first.id, () => ({ x: 1, z: 2, yaw: 0, y: 0.05 }));
+  c.walk.advance(2, 0);
+  const { a, k } = encodeCrowd(c, { half: HALF, slices: 1 });
+  const seen = decodeCrowd(k, HALF, decodeCrowd(a, HALF));
+  assert.equal(seen.has(0), false, 'a rider was described twice, by the crowd and by its boat');
+  assert.equal(seen.size, 11, 'and everybody else still travelled');
+});
+
+test('what an outing costs, as a number rather than a feeling', () => {
+  const c = crowd(274);
+  c.walk.advance(1200, 0);
+  const { a, k } = encodeCrowd(c, { half: HALF, slices: sliceCount(66) });
+  const crowdBytes = JSON.stringify({ a, k }).length;
+
+  // Almost every beat: nobody is out, and the field is four bytes saying so. That is what
+  // makes the shape affordable, so it is the half worth pinning.
+  assert.ok(JSON.stringify({ b: encodeRides([], HALF) }).length <= 8,
+    'an island with nobody on the water should cost nothing to say so');
+
+  // And the worst beat there is: MAX_OUT in shared/boating.mjs is two, so this is the most
+  // an island can ever have out at once. Not a rounding error - about a third again on top
+  // of the crowd - which is the number the header's reasoning rests on.
+  const b = encodeRides([RIDE, { ...RIDE, idx: 9 }], HALF);
+  const rideBytes = JSON.stringify({ b }).length;
+  assert.ok(rideBytes < crowdBytes / 2,
+    `both boats out is ${rideBytes} B against the crowd's ${crowdBytes} B a beat`);
 });

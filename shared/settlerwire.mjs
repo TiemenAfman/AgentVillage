@@ -73,12 +73,80 @@ export function encodeCrowd(crowd, { half, slice = 0, slices = 1, movers = true 
   for (const f of crowd.figures.values()) {
     idx++;
     if (!f.visible) continue;
+    // Somebody in a boat is left out of both lists: encodeRides below says where they
+    // are, how high and which way round, all of it every beat, and a second and slower
+    // account of the same body would only argue with it. They come back into the crowd on
+    // the beat they step ashore.
+    if (f.aboard) continue;
     const row = [idx, quant(f.pos[0], half), quant(f.pos[1], half), ANIM_OF.get(f.anim) ?? 0];
-    const moving = f.anim === 'walk' || !!f.aboard;
-    if (moving) { if (movers) walkers.push(row); }
+    if (f.anim === 'walk') { if (movers) walkers.push(row); }
     else if (slices <= 1 || idx % slices === slice) pinned.push(row);
   }
   return { a: walkers.flat(), k: pinned.flat() };
+}
+
+// How finely a heading travels. A full turn in a thousand and twenty-four steps is a third
+// of a degree, well under what an eye separates on a hull two hundred units away, and it
+// keeps a bearing in ten bits. A power of two so the wrap is a mask and not a modulo that
+// has to be told what to do with a negative.
+export const TURNS = 1024;
+const TAU = Math.PI * 2;
+const qturn = (a) => Math.round((a / TAU) * TURNS) & (TURNS - 1);
+const unturn = (q) => (q / TURNS) * TAU;
+
+// The dinghies, and the bodies standing in them.
+//
+// A row is the whole of an outing: where the hull is, and where the body standing in it
+// is. Everything the water adds and the land answered for free - a settler ashore is
+// grounded by the far end with groundOrDeck and turned by the way it is walking, and in a
+// boat it is standing still on something that is moving, so both give the wrong answer.
+//
+// The rider is carried here rather than left in the crowd's own list, which is where the
+// first version put it. Two rates were the problem: the hull would arrive every beat and
+// the body every fourth, and a settler visibly trailing the boat it is standing in is
+// worse than either rate on its own. So they travel together, at the hull's rate.
+//
+// Sent whole every beat rather than only when it changes, because that is what makes a
+// row's *absence* mean the outing is over - the only signal the far end gets to take a
+// hull back out of the water.
+//
+// What that costs, measured rather than waved at: an island with both its boats out pays
+// 67 B a beat against the crowd's own 213, so while anybody is sailing this is about a
+// third again on top - roughly 1 kB/s. That is not nothing, and it is affordable only
+// because of how rare an outing is: MAX_OUT is two and the wait between them is fifty to
+// two hundred seconds, so most beats carry `"b":[]` and four bytes. The cheaper shape -
+// the walker rate, with the hull interpolated the way a body is - was left on the shelf
+// because at CRUISE that is two thirds of a unit between messages and every voyage would
+// need the same from/to machinery figures have. Reach for it if a sea ever has eight
+// islands all sailing at once; until then this is the plain one.
+//
+// The height is the deck with no swell in it. The browser bobs its own hulls off its own
+// clock (web/js/boat.js), so it adds that rise to the rider it draws and the two agree
+// without a clock ever being sent.
+export function encodeRides(rides, half) {
+  const out = [];
+  for (const r of rides) {
+    out.push(r.idx, quant(r.x, half), quant(r.z, half), qturn(r.yaw),
+      quant(r.rx, half), quant(r.rz, half), Math.round(r.ry * GRID), qturn(r.ryaw));
+  }
+  return out;
+}
+
+export function decodeRides(flat, half, into = new Map()) {
+  into.clear();
+  if (!Array.isArray(flat)) return into;
+  for (let i = 0; i + 7 < flat.length; i += 8) {
+    into.set(flat[i], {
+      x: unquant(flat[i + 1], half),
+      z: unquant(flat[i + 2], half),
+      yaw: unturn(flat[i + 3]),
+      rx: unquant(flat[i + 4], half),
+      rz: unquant(flat[i + 5], half),
+      ry: flat[i + 6] / GRID,
+      ryaw: unturn(flat[i + 7]),
+    });
+  }
+  return into;
 }
 
 // And back again. Rows land in a map the far end keeps, so a settler that was not in this
