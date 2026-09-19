@@ -112,9 +112,10 @@ both islands have a `civic:board`. No nameplates over there: 41 of them measured
 calls and 41 canvas textures, which took a second island from 1.35x the call count to 1.76x
 against a 1.6x budget - `attachExtras(rec, { signs: false })` is what keeps that true.
 
-Its people come the same way: `web/js/crowd-view.js` feeds positions off the wire into the
-same `createFigures` our own crowd is drawn with, so a village of three hundred over there
-costs the same eleven draw calls a village of three does. And only the near ones are drawn
+Its people come the same way — and so do ours. **There is no local simulation left in the
+browser.** `web/js/crowd-view.js` feeds positions off the wire into `createFigures` for
+every island including our own, so a village of three hundred costs the same eleven draw
+calls a village of three does. And only the near ones are drawn
 whole — `DETAILED` in `main.js`, nearest first by `nearestFirst()` — while the rest are
 silhouettes at their real berth through `horizon.js`. Eight islands in full does not render;
 measured at six, 850 draw calls against 788 for one.
@@ -148,6 +149,37 @@ served from a subpath behind a reverse proxy; `shared/` is reached only through 
 map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of that,
 including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
 proxy in front and load the island at a subpath: everything must come from under it.
+
+**A crowd is rebuilt on every publish, and the difference between two of them is the only
+thing that knows who is new.** `createCrowd(island, { known })` is handed the ids the crowd
+before it had; anybody not in that set walks up from the landing beach. `known` is null for
+the first crowd an island ever has — and after a sea restart — so a whole village never
+comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
+arrival, so nobody walks. No flag in the bundle and no timestamp to trust.
+
+**Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
+where they are: a body enrolled by a roster starts at its island's own middle, and drawing
+it there put a stranger on the town square until its slice came round. And a joining client
+is handed every position at once, once (`slices: 1` at the handshake in `lib/sea.mjs`),
+because the beat's rotation takes `KEYFRAME_S` to get round everybody and watching a village
+fill up over ten seconds is not a first impression worth having. The client holds that one
+message while it translates the roster — see below — or it would be dropped in full, which
+is exactly the ten seconds back again.
+
+**The sea walks every crowd, ours included, and the roster it sends back is in redacted
+names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
+renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page
+never drew a house under. The islander is the only thing that can join the two, because it
+did the renaming, and a shed's id in particular cannot be reconstructed from outside
+(`shed:s3:x7` carries a counter). So `buildBundle(…, out)` hands back
+`renamed -> real`, derived from the two arrays rather than from the swap table — `clean()`
+maps an array to an array, so position is preserved by construction and a rename added
+tomorrow is carried for free. It reaches the page through `GET /api/crowd-ids`, which is
+**deliberately not on `PUBLIC_API`**: it is the exact inverse of the redaction, and one
+request would undo all of it. `tests/crowd-ids.test.mjs` asserts both halves.
+
+A settler with no face is what a broken mapping looks like, and the temptation is to make
+the route public to fix it. Don't.
 
 **The settlers walk in `shared/settlerwalk.mjs` and are drawn in
 `web/js/settler-figures.js`, and two things cross between them.** The walk writes `f.anim`
@@ -249,7 +281,8 @@ is not deterministic.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a boat out at once and often, instead of one outing every few minutes).
+Debug query params: `?nointro`, `?hour=21`, `?stats`. (`?sail` is gone with the browser's
+own boating — outings are the sea's, and `eager` is a flag on `createBoating` there.)
 
 ## Layout of the source
 
@@ -257,11 +290,11 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a b
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
-| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out) — Node and browser both |
-| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (where a body
-is; no three.js, no document, so it can run in Node), `settler-figures.js` (what is drawn
-there; every mesh and every sine wave) and `settlers.js`, the seam that joins them and the
-only one anything else imports; `*-mesh.js` are baked output — never hand-edit |
+| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
+| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (a re-export of
+`shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
+drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
+any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |

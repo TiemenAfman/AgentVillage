@@ -41,6 +41,13 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   const rides = new Map();
   const hulls = new Map();
 
+  // The same bodies, by building id. The wire counts in indices because that is what is
+  // cheap to send; everything on this side that is *about* somebody - the dossier, the
+  // hover label, a filter, a conversation - has always known them by the id of the house
+  // they live in. Kept beside the index map rather than searched for, because the picker
+  // runs on every mouse move.
+  const byIdx = new Map();
+
   // Who the indices mean. Sent when the island arrives and again when its village changes,
   // which is the only time the order can move.
   function roster(ids) {
@@ -61,6 +68,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       };
       if (!view.enrol(f, look, kind)) return;  // the crowd is full; better a gap than a lie
       figures.set(idx, f);
+      byIdx.set(id, f);
     });
   }
 
@@ -70,6 +78,17 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     f.visible = false;
     view.hide(f);
     figures.delete(idx);
+    if (byIdx.get(f.id) === f) byIdx.delete(f.id);
+  }
+
+  // Taken out of sight without being forgotten: a filter, a chronicle scrubbed back past
+  // the day they arrived, a house that is popping in or out. A separate word from
+  // `visible`, which `draw` writes every frame - hanging a filter on that one would put
+  // everybody back the next time anything moved.
+  function setVisible(id, on) {
+    const f = byIdx.get(id);
+    if (!f) return;
+    f.hidden = !on;
   }
 
   // A message from the sea. Positions are in the island's OWN frame, so they survive a
@@ -143,7 +162,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       hull.place(r.x + ox, r.z + oz, r.yaw);
       hull.bob(time);
       const f = figures.get(idx);
-      if (!f) continue;
+      if (!f || f.hidden) continue;
       if (!f.visible) f.visible = true;
       f.pos[0] = r.rx + ox;
       f.pos[1] = r.rz + oz;
@@ -157,10 +176,17 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       f.mode = 'idle';
     }
     for (const [idx, f] of figures) {
-      if (!f.visible) f.visible = true;
+      if (f.hidden) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
       // Already placed by the hull they are standing in.
       if (rides.has(idx)) continue;
-      if (!f.to) continue;
+      // And nobody at all before the sea has said where they are. A body enrolled by a
+      // roster starts at `pos = [ox, oz]`, which is the island's own middle, and stood
+      // there in plain sight until its slice came round - up to ten seconds of a stranger
+      // in the town square. It shows worst at the one moment it matters most: a newcomer
+      // is enrolled and walked up from the beach in the same breath, so the arrival began
+      // with them standing on the square and vanishing.
+      if (!f.to) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
+      if (!f.visible) f.visible = true;
       const age = now - f.at;
       const t = Math.min((age + LAG_MS) / f.took, 1 + MAX_GUESS_MS / f.took);
       const nx = f.from[0] + (f.to[0] - f.from[0]) * t;
@@ -178,16 +204,27 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
 
   function dispose() {
     for (const idx of [...figures.keys()]) retire(idx);
+    byIdx.clear();
+    view.dispose();
     for (const hull of hulls.values()) hull.dispose();
     hulls.clear();
     rides.clear();
   }
 
   return {
-    roster, apply, applyRides, draw, dispose,
+    roster, apply, applyRides, draw, dispose, setVisible,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.
     figures: () => figures,
+    // And by the name the rest of the island calls them. `figure` is the one lookup
+    // everything that is about a person goes through.
+    figure: (id) => byIdx.get(id) || null,
+    byId: () => byIdx,
+    // Picking somebody out of the crowd with the mouse. Straight through to the meshes:
+    // a view has no opinion about it, and the figures are instanced, so an instance id is
+    // the only way back from a ray to a body.
+    pickables: () => view.pickables(),
+    figureAt: (object, instanceId) => view.figureAt(object, instanceId),
   };
 }

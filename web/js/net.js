@@ -111,7 +111,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and
         // the page decodes it against the island's own half.
         case 'fr': onCrowd({ kind: 'roster', island: m.i, ids: m.ids || [] }); break;
-        case 'f': onCrowd({ kind: 'where', island: m.i, a: m.a, k: m.k }); break;
+        case 'f': onCrowd({ kind: 'where', island: m.i, a: m.a, k: m.k, b: m.b }); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a

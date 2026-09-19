@@ -311,5 +311,19 @@ export function createFigures(scene, material) {
     return f && f.visible ? f : null;
   };
 
-  return { enrol, hide, draw, pickables, figureAt };
+  // Everything this crowd put into the scene, taken back out again. There was no way to
+  // do that while a crowd lasted as long as the page did; now one is built per island and
+  // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
+  // is a leak that only shows up on the machine somebody has had open all day.
+  function dispose() {
+    for (const m of [...body, hammers, ...[...hats.values()].map((h) => h.mesh)]) {
+      if (!m) continue;
+      if (m.parent) m.parent.remove(m);
+      if (m.geometry) m.geometry.dispose();
+    }
+    roster.length = 0;
+    slots = 0;
+  }
+
+  return { enrol, hide, draw, pickables, figureAt, dispose };
 }

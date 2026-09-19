@@ -17,6 +17,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 import { createSea, SEA_V } from '../lib/sea.mjs';
 import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
+import { decodeCrowd } from '../shared/settlerwire.mjs';
 
 const SIZE = 64;
 const SEED = 1337;
@@ -142,6 +143,35 @@ test('a wanderer with no island of their own cannot hold anybody', async () => {
     // Nothing to wait for, so give the sea a few beats to have done the wrong thing.
     await new Promise((r) => setTimeout(r, 120));
     assert.equal(f.attend, null);
+    me.close();
+    await me.closed;
+  });
+});
+
+test('somebody who has just joined is handed the whole village at once', async () => {
+  // The beat pins one slice of a crowd per tick and takes KEYFRAME_S to get round
+  // everybody. That is right for keeping a crowd honest and quite wrong for somebody who
+  // has just walked in: they would watch the village fill up over ten seconds, and until
+  // a body has been placed once it is not drawn at all.
+  await afloat(async ({ sea, base, wsUrl }) => {
+    const a = island();
+    await post(base, a.id, a.bundle);
+    const lives = sea.crowds.get(a.id).figures.size;
+    assert.ok(lives > 1, 'the fixture village is too small to tell a slice from a crowd');
+
+    const me = talk(wsUrl);
+    await me.ready;
+    me.say({ t: 'join', v: SEA_V, as: 'client', island: a.id, name: 'Martijn' });
+    await me.until((m) => m.t === 'welcome');
+
+    const roster = await me.until((m) => m.t === 'fr' && m.i === a.id);
+    assert.equal(roster.ids.length, lives);
+
+    // The very next thing about this island is everybody in it, not a slice of two.
+    const where = await me.until((m) => m.t === 'f' && m.i === a.id, 4);
+    const rows = decodeCrowd(where.k, 32, decodeCrowd(where.a, 32));
+    assert.equal(rows.size, lives, `placed ${rows.size} of ${lives} on the first message`);
+
     me.close();
     await me.closed;
   });

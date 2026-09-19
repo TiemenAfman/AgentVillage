@@ -9,7 +9,7 @@ import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { quayFor, mooringFor } from 'shared/quay.mjs';
-import { clamp, hash32, makeRng } from 'shared/rng.mjs';
+import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
@@ -20,8 +20,6 @@ import {
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
-import { createSettlers } from './settlers.js';
-import { createBoating } from 'shared/boating.mjs';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
@@ -367,20 +365,11 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  // Both, for as long as there are two crowds. The sea is what makes everybody else see
-  // them turn round; the local walk is what makes it happen in this frame rather than in
-  // two beats' time, and it is still the one drawing our own island. When that second
-  // half goes - when we draw ourselves out of crowd-view.js like any other island - only
-  // the line below it has to be deleted, and being looked at goes on working.
   if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
-  if (state.settlers.attend) state.settlers.attend(id, [w.pos.x, w.pos.z]);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => {
-      if (state.net) state.net.unattend(id);
-      if (state.settlers.unattend) state.settlers.unattend(id);
-    },
+    onLetGo: () => { if (state.net) state.net.unattend(id); },
   });
 }
 
@@ -391,7 +380,7 @@ function talkTo(id) {
   if (!rec || rec.spec.kind === 'civic' || !rec.spec.sessionId) return;
   // Who you are actually addressing: the figure scurrying about that doorstep, not the
   // doorstep. Only settlers.js knows where they got to, and it is keyed by building id.
-  const fig = state.settlers ? state.settlers.figures.get(id) : null;
+  const fig = state.settlers ? state.settlers.figure(id) : null;
   // From the sky there is nobody standing in front of you yet. The dossier's "Talk to
   // them" is a wish to speak to somebody, so it walks you over to them first and leaves
   // you standing there afterwards: the same conversation, in the same place, from the
@@ -1425,48 +1414,6 @@ function launchBoats() {
   }
 }
 
-// This island's dock, which is the only one a settler of this island can walk to.
-function homeDock() {
-  return state.docks.find((d) => d.region === state.region) || null;
-}
-
-// The hull a settler takes out for the afternoon, and why it is not the island's own.
-//
-// It was, and it cannot be any more. There is one boat to an island now, its position is
-// world state lib/boats.mjs holds and every browser agrees about, and only its pilot may
-// write to it - so a settler moving it would be moving a hull nobody across the channel
-// can see move, and, worse, would take away the one thing anybody has to cross with. The
-// crossing outranks the outing.
-//
-// So an outing brings its own dinghy: the same baked Benchy drawn with the same material,
-// made when somebody steps down into it and disposed of when they step back out, and never
-// in `state.boats`. Nothing offers it to you, nothing reports it to the server, and the
-// island's boat is at its mooring all afternoon whether or not anybody is out on the water.
-// `deckY` is kept on it in the shape walk mode and settlers.js both read a deck height in.
-const outingFleet = {
-  take() {
-    const d = homeDock();
-    if (!d) return null;
-    const craft = createBoat({ scene, material: buildingMat });
-    // Alongside the head on the side the island's own boat is not, so the two are not drawn
-    // through each other while one of them is at home.
-    const x = d.head[0] + d.dir[1] * 1.3, z = d.head[1] - d.dir[0] * 1.3;
-    const b = { id: `outing:${d.region.id}`, x, z, yaw: d.yaw, craft, deckY: DECK_Y };
-    craft.place(x, z, d.yaw);
-    return b;
-  },
-  release(b) {
-    if (b) b.craft.dispose();
-  },
-  // The swell, and the deck the rider stands on. state.boats gets this in the frame loop;
-  // a dinghy that is in no list has to be told.
-  bob(b, time) {
-    b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(time);
-    b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
-  },
-};
-
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
 
@@ -1711,13 +1658,77 @@ async function changeSea(what) {
 // without the roster nobody on that island has a face.
 const crowdRosters = new Map();
 
+// Our own roster, in the sea's names and then in ours.
+//
+// The bundle this island published is the redacted one - it is the same bundle everybody
+// else is handed, and it has to be - so the sea knows our settlers as `house:s3` and this
+// page drew their houses as `house:<uuid>`. The islander is the only thing that can join
+// the two, because it did the renaming; it hands the map over loopback and never to
+// anybody else (serve.mjs, /api/crowd-ids).
+//
+// Fetched when a roster arrives rather than kept in step: a roster is one message per
+// scan, so this is a request a minute at the very most, and the alternative is a cache
+// that is wrong for exactly as long as nobody notices.
+let ourIds = null;
+// The fetch, while it is out, and whatever the sea said about where everybody is while we
+// were waiting for it.
+//
+// The sea sends a roster and then, immediately, one message placing the whole village -
+// that pair is what stops a joiner watching the island fill up over ten seconds. But
+// translating the roster means a round trip to our own islander, and positions land by
+// index into figures that do not exist until that comes back, so the message would be
+// dropped in full and the ten seconds would be back. It is the join case exactly: the one
+// message big enough to matter is the one guaranteed to arrive at the wrong moment.
+let namingIds = null;
+let heldWhere = null;
+async function ourRoster(ids) {
+  const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
+  if (unknown) {
+    namingIds = mine('/api/crowd-ids').then((r) => r.json()).then((x) => x.ids || {}).catch(() => null);
+    ourIds = await namingIds;
+    namingIds = null;
+  }
+  // Untranslated ids are left as they are rather than dropped: an island whose islander
+  // cannot be reached still has a crowd worth drawing, and a name nobody recognises only
+  // costs that one settler their face.
+  state.homeRoster = ourIds ? ids.map((id) => ourIds[id] || id) : ids;
+  if (state.settlers) state.settlers.roster(state.homeRoster);
+  // And now the positions that arrived while nobody had a name yet.
+  if (heldWhere) { const held = heldWhere; heldWhere = null; placeOurs(held); }
+}
+
+// Where our own people are. Split out of the router because the join case has to be able
+// to replay one.
+function placeOurs(m) {
+  if (!state.settlers || !state.region) return;
+  const half = state.region.half;
+  const now = performance.now();
+  state.settlers.apply(decodeCrowd(m.k, half, decodeCrowd(m.a, half)), now);
+  state.settlers.applyRides(decodeRides(m.b, half), now);
+}
+
 // Somebody else's settlers. The wire format is shared/settlerwire.mjs and the drawing is
 // web/js/crowd-view.js; this only routes.
 function onCrowdMessage(m) {
-  const g = state.guests.find((x) => x.region.id === m.island);
+  // Our own island is on this wire like any other: the sea walks our crowd too, and this
+  // page draws it rather than simulating it. The roster is kept as well as applied, because
+  // a reseed throws the scene away and builds a new view, and the sea has no reason to say
+  // it all again - see the note where that view is made.
+  const home = state.islandId && m.island === state.islandId;
+  const crowd = home ? state.settlers : null;
+  const region = home ? state.region : null;
+  const g = home ? null : state.guests.find((x) => x.region.id === m.island);
   if (m.kind === 'roster') {
+    if (home) { ourRoster(m.ids); return; }
     if (g && g.crowd) g.crowd.roster(m.ids);
     else crowdRosters.set(m.island, m.ids);
+    return;
+  }
+  if (home) {
+    // Held rather than dropped while the roster is being translated - see there. Only the
+    // last one: they are absolute positions, so an older one has nothing to add.
+    if (namingIds) { heldWhere = m; return; }
+    placeOurs(m);
     return;
   }
   if (!g || !g.crowd) return;
@@ -1994,7 +2005,6 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // is nothing under it to stand on - and wrong for one on dry land, where it left the
 // settlers of The Quay hanging in the air beside their own front doors. A house on land
 // has ground under it like anyone else, so its settler uses the ground.
-const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
 
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
@@ -2200,20 +2210,22 @@ function buildScene(village) {
   raiseGuestIslands();
   buildDocks(village);
   launchBoats();
-  if (state.boating) state.boating.clear();
-  state.settlers = createSettlers(scene, buildingMat, terrain);
-  // Outings. Everything it needs is asked for rather than held, because a reseed replaces
-  // the terrain and rebuilds the docks under it - see the note at the top of shared/boating.mjs.
-  state.boating = createBoating({
-    terrain: () => state.terrain,
-    settlers: state.settlers,
-    dock: homeDock,
-    fleet: outingFleet,
-    rng: makeRng(hash32(`${village.island.name}:boating`)),
-    eager: params.has('sail'),
+  // Our own people, drawn exactly the way everybody else's are. They are not simulated
+  // here any more: the sea walks them - ours and the neighbours' in one loop, off the same
+  // shared/settlerwalk.mjs - and sends where they got to. What that buys is a village that
+  // carries on living while this page reloads, and a village doing the same thing on every
+  // screen watching it. What it costs is a beat and a half of lag on our own doorstep,
+  // which is the price of there being one answer instead of two.
+  if (state.settlers) state.settlers.dispose();
+  state.settlers = createCrowdView({
+    scene, material: buildingMat, region: state.region,
+    buildings: village.buildings || [],
   });
+  // The last roster the sea sent, if it arrived before this scene existed - at boot it
+  // always does, and after a reseed it is the scene that was rebuilt, not the island.
+  // Without this nobody is drawn until the next time the village changes.
+  if (state.homeRoster) state.settlers.roster(state.homeRoster);
   syncBridges(village);
-  state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
@@ -2322,15 +2334,7 @@ function handOutDecks() {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
     }
   }
-  if (state.settlers) state.settlers.setDecks(flat);
   if (state.walk) state.walk.setLevels(stacked);
-}
-
-// The road network a settler may walk: the paths, the squares, and the decks - a bridge
-// carries no road surface of its own, so without it every crossing is a hole in the graph
-// and the hamlet on the far bank is unreachable on foot.
-function roadCells(village) {
-  return [...(village.paths || []), ...(village.bridges || [])];
 }
 
 // A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
@@ -2644,7 +2648,6 @@ function layLandscape(shot) {
   // remembers those cells separately as the place to walk to, so leaving them out empties
   // that list. The result was a borrel that worked until you touched the chronicle and
   // then silently never happened again, which is the worst shape a bug can have.
-  if (state.settlers) state.settlers.setRoads(roadCells(shot.village), w.squareCells(shot.village));
   syncHamlets(shot.village);
 }
 
@@ -2842,7 +2845,6 @@ function applyVillage(next, { animate }) {
     if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
       syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
-      state.settlers.setRoads(roadCells(next), state.world.squareCells(next));
     }
   }
 
@@ -2861,7 +2863,6 @@ function applyVillage(next, { animate }) {
     const rec = state.byId.get(id);
     if (!rec) {
       const fresh = makeRecord(spec);
-      placeFigure(fresh);
       if (animate) events.push({ type: 'arrive', rec: fresh, spec });
       continue;
     }
@@ -2890,7 +2891,6 @@ function applyVillage(next, { animate }) {
   for (const [id, rec] of [...state.byId]) {
     if (nextSpecs.has(id)) continue;
     if (animate && rec.group.visible) leaveAnimation(rec);
-    state.settlers.remove(id);
     setTimeout(() => { if (!specById(state.village).has(id)) disposeRecord(rec); }, animate ? 1000 : 0);
     state.byId.delete(id);
     if (state.selected === id) { state.selected = null; state.ui.closeDossier(); }
@@ -2950,31 +2950,19 @@ function reportPlacements() {
   }).catch(() => { toldPlacements = ''; });   // it will be sent again on the next rebuild
 }
 
-function placeFigure(rec) {
-  if (rec.spec.kind === 'civic') return;
-  const p = rec.group.position;
-  const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z], { yaw: rec.group.rotation.y });
-  if (f && overWater(rec)) f.deckY = p.y + 0.62;
-  if (f && rec.spec.active) f.mode = 'hammer';
-}
-
+// Who lives where, and what they are doing, is the sea's answer now: it spawns a crowd out
+// of the bundle this island published and sends a fresh roster with every republish. So
+// nothing here adds, removes or poses anybody - a house built in this browser is drawn at
+// once, and whoever lives in it turns up on the next roster, a beat later.
+//
+// The scaffolding is not part of that. It hangs on the building rather than on the person,
+// it is this browser's own animation, and the sea has never known about it.
 function applyEventInstantly(e) {
   if (e.type === 'upgrade' || e.type === 'refit') {
     const rec = state.byId.get(e.id);
-    if (rec) { const fresh = rebuild(rec, e.spec); placeFigureRefresh(fresh); }
-  } else if (e.type === 'start') { const r = state.byId.get(e.id); if (r) { addScaffold(r); state.settlers.setMode(e.id, 'hammer'); } }
-  else if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) { removeScaffold(r, false); state.settlers.setMode(e.id, 'idle'); } }
-}
-function placeFigureRefresh(rec) {
-  const f = state.settlers.figures.get(rec.id);
-  if (f) {
-    f.spec = rec.spec;
-    const reach = rec.spec.kind === 'shed' ? .46 : .85, yaw = rec.group.rotation.y;
-    f.home = [rec.group.position.x + Math.sin(yaw)*reach, rec.group.position.z + Math.cos(yaw)*reach];
-    if (overWater(rec)) f.deckY = rec.group.position.y + 0.62;
-  }
-  else placeFigure(rec);
-  if (rec.spec.active) { addScaffold(rec); state.settlers.setMode(rec.id, 'hammer'); }
+    if (rec) rebuild(rec, e.spec);
+  } else if (e.type === 'start') { const r = state.byId.get(e.id); if (r) addScaffold(r); }
+  else if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) removeScaffold(r, false); }
 }
 
 function scheduleEvent(e) {
@@ -2997,16 +2985,14 @@ function scheduleEvent(e) {
         const rec = state.byId.get(e.id);
         if (!rec) return;
         addScaffold(rec);
-        state.settlers.setMode(e.id, 'hammer');
         const p = rec.group.position;
         state.particles.puff([p.x, p.y + 0.3, p.z], 10);
         await wait(1.5);
         const fresh = rebuild(rec, e.spec);
         addScaffold(fresh);
-        placeFigureRefresh(fresh);
         state.particles.puff([p.x, p.y + 0.3, p.z], 12);
         await wait(0.5);
-        if (!e.spec.active) { removeScaffold(fresh); state.settlers.setMode(e.id, 'idle'); }
+        if (!e.spec.active) removeScaffold(fresh);
         assignFlags();
         state.ui.toast(`<b>${e.spec.name}</b> built a ${String(e.spec.tier)}.`);
       },
@@ -3017,30 +3003,24 @@ function scheduleEvent(e) {
     const rec = state.byId.get(e.id);
     if (!rec) return;
     const fresh = rebuild(rec, e.spec);
-    placeFigureRefresh(fresh);
     const p = fresh.group.position;
     state.particles.puff([p.x, p.y + 0.2, p.z], 7);
     assignFlags();
     return;
   }
   if (e.type === 'start') { applyEventInstantly(e); return; }
-  if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) { removeScaffold(r, true); state.settlers.setMode(e.id, 'idle'); } return; }
+  if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) removeScaffold(r, true); return; }
   if (e.type === 'milestone') { state.ui.toast(`Milestone at ${e.m.at} settlers — <b>${e.m.label}</b> is built.`); return; }
   if (e.type === 'district') { state.ui.toast(`A new district: <b>${e.d.name}</b>.`); return; }
 }
 
+// The tent going up. The newcomer walking to it from the landing beach is the sea's half
+// now (lib/crowd.mjs): it compares the crowd it is building against the one that stood
+// there before, and whoever is new comes up the beach. That happens on the publish after
+// this scan rather than in this frame, so the two are not in step - the tent is up, and
+// they are walking towards it a beat later - and in exchange everybody watching this
+// island sees them arrive, instead of only this screen.
 async function walkIn(rec) {
-  const landing = state.village.island.landing;
-  const door = rec.spec.door || [rec.spec.plot.gx + 1, rec.spec.plot.gz + 1];
-  const f = state.settlers.figures.get(rec.id);
-  if (!landing || !f) { await popIn(rec); return; }
-  const [hx, hz] = [f.home[0], f.home[1]];
-  await new Promise((resolve) => {
-    let settled = false;
-    state.settlers.walkIn(rec.id, landing, door, () => { settled = true; resolve(); });
-    setTimeout(() => { if (!settled) resolve(); }, 9000);
-  });
-  if (f) f.home = [hx, hz];
   await popIn(rec);
   state.ui.toast(`<b>${rec.spec.name}</b> arrived and pitched a tent.`);
 }
@@ -3327,24 +3307,20 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday afternoon: the whole village downs tools and heads for the square, and stays
-    // there until closing time. Written as hours with the minutes as a fraction, because
-    // that is what currentHour() hands out.
+    // Friday afternoon: the whole village downs tools and heads for the square. Whether
+    // they go is the sea's decision - it keeps the clock everybody shares - and what is
+    // left here is the furniture, which is scenery and always was: one set of tables per
+    // ten islanders, of which the set the village earned is the first, so the rest are
+    // carried out and taken back in with the borrel itself.
     const d = new Date(timeNow());
     const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
-    state.settlers.setGather(borrel);
-    // And the tables to stand at while it lasts: one set per ten islanders, of which the
-    // set the village earned is the first, so the rest are carried out and taken back in
-    // with the borrel itself.
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
-    // Whoever fancied an afternoon on the water, and they go first: an outing moves a hull
-    // and settlers.update puts the body standing in it wherever that hull now is. The other
-    // way round the rider reads last frame's position and trails the boat by one step -
-    // measured, 0.15 of a unit at cruising speed, which is a settler standing in the wake.
-    if (state.boating) state.boating.update(dt, state.world ? state.world.state.night : 0);
-    state.settlers.update(dt, state.world ? state.world.state.night : 0);
+    // And our own people, off the wire like any other island's. The ground is this island's
+    // own, which is what stands somebody on a quay's planks rather than in the water beside
+    // them.
+    state.settlers.draw(dt, (x, z) => state.region.worldHeight(x, z), nowMs, live);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.particles) state.particles.update(dt);

@@ -720,6 +720,17 @@ async function handle(req, res) {
     return json(res, 200, { ok: true, buildings: Object.keys(saved.at).length, decks: Object.keys(saved.decks).length });
   }
 
+  // Who the sea's roster means, in this island's own names. Not on PUBLIC_API: it is the
+  // inverse of the redaction (see crowdIds above), so it never leaves this machine.
+  //
+  // Rebuilt rather than served from the last publish, because a page may ask before this
+  // island has ever sailed - at boot, with the sea still connecting - and an empty map
+  // reads to the page as "nobody lives here" rather than as "ask again".
+  if (p === '/api/crowd-ids' && req.method === 'GET') {
+    if (!Object.keys(crowdIds).length) islandBundle();
+    return json(res, 200, { ids: crowdIds });
+  }
+
   if (p === '/api/seas') {
     const cfg = config.multiplayer.sea || {};
     const candidates = new Map();
@@ -1183,11 +1194,24 @@ let seaClient = null;
 
 // What this island looks like to the world. Built here, on the machine that holds the
 // secrets, because that is where the redaction has to run.
+// The last bundle's `renamed id -> real id`, for this island's own page.
+//
+// The sea walks our crowd out of the bundle we published, so the roster it sends back
+// names everybody by their redacted id - and this page drew its houses under the real
+// ones. Something has to join the two, and it has to be the machine that did the
+// renaming: the shed ids in particular cannot be reconstructed from the outside, which
+// is the whole point of redacting them.
+//
+// Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
+// visitor would undo every bit of it in one request.
+let crowdIds = {};
+
 function islandBundle() {
   const village = readJson(VILLAGE_FILE, null);
   if (!village) return null;
+  const named = {};
   try {
-    return buildBundle({
+    const bundle = buildBundle({
       config,
       village,
       props: listProps(),
@@ -1197,7 +1221,9 @@ function islandBundle() {
       placements: loadPlacements(),
       id: ISLAND_ID,
       keeper: islanderName,
-    });
+    }, named);
+    crowdIds = named.ids || {};
+    return bundle;
   } catch {
     // An island that has never been scanned has no terrain hash, and buildBundle says so
     // rather than sending something the other end is obliged to reject. Nothing to
