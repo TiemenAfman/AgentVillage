@@ -1218,16 +1218,41 @@ async function putToSea() {
 
   if (mode !== 'join') {
     const host = mode === 'host' ? '0.0.0.0' : '127.0.0.1';
-    ownSea = createSea({
-      port: Number(cfg.port) || 4750,
-      host,
-      name: cfg.name || `${config.islandName}'s sea`,
-      key: cfg.key || null,
-      tickMs: config.multiplayer.tickMs,
-      maxPlayers: config.multiplayer.maxPlayers,
-      log: (m) => log(`sea: ${m}`),
-    });
-    const addr = await ownSea.listen();
+    const wanted = Number(cfg.port) || 4750;
+    // The configured port first, and any free one if it is taken.
+    //
+    // Two islands on one machine is the ordinary case here, not an edge: .claude/launch.json
+    // has island-worktree on an auto-port precisely so a branch can be previewed beside the
+    // island already running. Their seas collided on 4750, the second one threw
+    // EADDRINUSE into the uncaughtException handler, and that island then served perfectly
+    // while having no world at all - no fleet, no settlers, no socket for the page to join.
+    // It logged one line and looked fine, which is the worst way for this to fail.
+    //
+    // The fixed port is still tried first, because it is the address somebody types to join
+    // a host. A fallback only costs the one who was second.
+    const open = async (port) => {
+      const sea = createSea({
+        port,
+        host,
+        name: cfg.name || `${config.islandName}'s sea`,
+        key: cfg.key || null,
+        tickMs: config.multiplayer.tickMs,
+        maxPlayers: config.multiplayer.maxPlayers,
+        log: (m) => log(`sea: ${m}`),
+      });
+      const addr = await sea.listen();
+      return { sea, addr };
+    };
+    let opened;
+    try {
+      opened = await open(wanted);
+    } catch (e) {
+      if (e && e.code !== 'EADDRINUSE') throw e;
+      log(`sea: port ${wanted} is taken - another island on this machine has it. Taking any free port instead.`);
+      opened = await open(0);
+    }
+    ownSea = opened.sea;
+    const addr = opened.addr;
     url = `http://127.0.0.1:${addr.port}/`;
     if (mode === 'host') {
       log(`hosting a sea on port ${addr.port}. Others join it at:`);
