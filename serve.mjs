@@ -32,7 +32,7 @@ import { buildBundle, parseBundle } from './lib/islandbundle.mjs';
 import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { berthOf } from './shared/regions.mjs';
-import { mooringFor } from './shared/quay.mjs';
+import { mooringFor, planksOf } from './shared/quay.mjs';
 import { createJournal, JOURNAL_OPS } from './lib/journal.mjs';
 import { createVisit, hostIdFor } from './lib/visits.mjs';
 import os from 'node:os';
@@ -376,7 +376,7 @@ function mooringsNow() {
   const village = readJson(VILLAGE_FILE, null);
   if (village && village.island) {
     const t = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
-    const m = mooringFor('home', t, village.island.landing);
+    const m = mooringFor('home', t, village.island.landing, [0, 0], planksOf(village));
     if (m) out.push(m);
   }
   // The guests, at the berths the browsers will put them at. The same berthOf and the same
@@ -389,7 +389,7 @@ function mooringsNow() {
     if (!bundle || !bundle.island || !bundle.island.landing) { i++; continue; }
     const size = bundle.grid ? bundle.grid.size : bundle.island.gridSize;
     const t = makeTerrain(bundle.island.seed, { size, polders: bundle.polders || [] });
-    const m = mooringFor(berth.id, t, bundle.island.landing, berthOf(i, own, size / 2));
+    const m = mooringFor(berth.id, t, bundle.island.landing, berthOf(i, own, size / 2), planksOf(bundle));
     if (m) out.push(m);
     i++;
   }

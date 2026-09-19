@@ -280,10 +280,12 @@ And it is a **snapshot of the moment it was uploaded**. There is no line open to
 machine. A house that goes up over there does not go up over here, a settler who arrives
 does not arrive, and nothing at that berth changes until the whole island is sent again.
 
-**The quay and the boat.** Every island has a landing — the coast cell nearest the town
-centre, where a new settler already walks ashore — and a plank dock now stands out over
-the water from it. It is there on every island, seed alone, whether or not there was ever
-enough harbour work to earn it a quay district.
+**The quay and the boat.** Where a village has earned a quay district, its kade is the
+island's dock: the same planks a Cowork settler sails up to, with the boat tied up at the
+end of them. An island that never earned one still gets a dock — out over the water from
+its landing, the coast cell nearest the town centre where a new settler walks ashore — so
+there is always somewhere to cast off from, seed alone. Either way there is exactly one,
+and it is the one the harbour houses are looking at.
 
 Walk out along the planks and press **E**, and there is a boat alongside: one per dock, so
 pressing it twice does not leave a raft of hulls tied up together. Aboard, **W** and **S**
@@ -657,8 +659,8 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | The town square, growing 3 -> 5 -> 7 cells across | 1, 30 and 90 settlers |
 | An outpost | A session in a git worktree, whether `.claude/worktrees` or `git worktree add` |
 | A house on stilts at the quay | A Cowork task; its settler arrives by boat |
-| A plank dock out over the water, with mooring posts | The quay's pier: where a Cowork task's settler comes ashore. On the open sea, never on the lake or a river — a settler arriving by boat has to be able to get there |
-| A plank dock at the landing, on every island | The quay: stand on it and **E** gives you a boat — see [Visitors and neighbours](#visitors-and-neighbours) |
+| A plank dock out over the water, with mooring posts | The quay: where a Cowork task's settler comes ashore, and where the island's boat lies. Stand on it and **E** gives you the boat — see [Visitors and neighbours](#visitors-and-neighbours). On the open sea, never on the lake or a river — a settler arriving by boat has to be able to get there |
+| One dock and no more, on every island | The quay district's planks where there is a quay district, and a dock at the landing where there is not |
 | A boat out on the bay with a settler in it | Somebody's afternoon off — they will bring her back to the quay |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
 | Tower with a copper dome | Fable |

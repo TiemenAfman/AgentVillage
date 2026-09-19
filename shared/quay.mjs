@@ -1,4 +1,5 @@
-// Where an island's boat lies, worked out from the island alone.
+// Where an island's quay is and where its boat lies: the planks its village built, or,
+// failing those, a site worked out from the island alone.
 //
 // This exists because three callers need the same answer and have to agree about it
 // without talking: web/js/main.js draws the quay and puts the hull in the water,
@@ -29,6 +30,13 @@ const SEAWARD = [
 // has are the same planks and must not come out different lengths.
 export const QUAY_REACH = 5;
 const PROBE = 6;
+
+// Which of the four ways a unit step is, or null for anything else. The yaw literals live
+// in SEAWARD and nowhere else, which is what keeps atan2 out of a file under shared/.
+function wayOf(d) {
+  for (const way of SEAWARD) if (way.d[0] === d[0] && way.d[1] === d[1]) return way;
+  return null;
+}
 
 // Which way the open water lies off `shore`, and the run of water cells out into it.
 // Null where there is no water worth a plank - a cell in a one-wide inlet, or a shore cell
@@ -81,6 +89,55 @@ export function quaySite(terrain, landing) {
   return best;
 }
 
+// The planks a village actually built, out of the village (or the guest bundle) that
+// carries them. Null for an island nobody has districts for.
+//
+// A quay district records its pier in data/layout.json the day it is planned, and that run
+// of planks is the island's harbour in every sense that matters: it is where a new settler
+// sails in (main.js:sailIn), what the quayside parcel faces, and the only thing on this
+// coast that looks like somewhere a boat ties up. quaySite below picks a site off the
+// landing instead, which is the right answer for an island nobody has a village for and
+// the wrong one the moment there is a quay - it put a second pier on the far side of this
+// island, moored the boat at that one, and left the kade a decoration you could not walk
+// on. Three commits moved the kade to the sea; this is what makes the move mean something.
+export function planksOf(village) {
+  const list = (village && village.districts) || [];
+  for (const d of list) {
+    if (d && d.kind === 'quay' && d.pier && d.pier.length) return { pier: d.pier, shore: d.shore || null };
+  }
+  return null;
+}
+
+// The same shape seawardRun hands back, built out of planks somebody else recorded - and
+// trusted only as far as this terrain agrees with them.
+//
+// What is checked: a straight run along one of the four axes, every cell of it still water,
+// and dry land behind the first plank. A layout written before a polder was drained carries
+// planks over a field, and a guest bundle arrives from a stranger's socket; either way the
+// answer is to fall back to the derivation rather than to moor a boat in a meadow.
+//
+// `shore` is the cell the ramp stands on. It is recorded alongside the pier, but an old
+// layout may not have it, so a run of two or more planks derives it from its own bearing -
+// which is exactly what buildPierGeometry does to put the ramp down.
+function runFromPlanks(terrain, planks) {
+  const cells = planks && planks.pier;
+  if (!cells || !cells.length) return null;
+  const n = cells.length;
+  const dir = n > 1
+    ? [Math.sign(cells[n - 1][0] - cells[0][0]), Math.sign(cells[n - 1][1] - cells[0][1])]
+    : (planks.shore ? [Math.sign(cells[0][0] - planks.shore[0]), Math.sign(cells[0][1] - planks.shore[1])] : null);
+  const way = dir && wayOf(dir);
+  if (!way) return null;                                  // a bend, a diagonal, or one plank with no shore
+  for (let i = 0; i < n; i++) {
+    if (cells[i][0] !== cells[0][0] + way.d[0] * i) return null;
+    if (cells[i][1] !== cells[0][1] + way.d[1] * i) return null;
+    if (!terrain.isWater(cells[i][0], cells[i][1])) return null;
+  }
+  const shore = [cells[0][0] - way.d[0], cells[0][1] - way.d[1]];
+  if (terrain.isWater(shore[0], shore[1])) return null;   // planks that start in the water lead nowhere
+  return { dir: way.d, yaw: way.yaw, cells, shore };
+}
+
 // The whole quay, in the island's OWN coordinates. A caller drawing it inside an offset
 // group wants exactly these; a caller speaking world coordinates - walk mode, the boat,
 // lib/boats.mjs - has to add the region's origin. Getting that the wrong way round is
@@ -91,10 +148,15 @@ export function quaySite(terrain, landing) {
 // alone whether or not it ever earned a quay district - but see quaySite above: it is a
 // beach cell rather than a coast cell, so it is where the quay would like to be and not
 // where it necessarily can be.
-export function quayFor(terrain, landing) {
-  const shore = quaySite(terrain, landing);
+// `planks` is what the village built, from planksOf() - the quay district's own pier. It
+// wins where it is sound, because a village that has a kade has exactly one quay and it is
+// that one. Leaving it out asks for the derived quay, which is all an island known from a
+// datagram can offer.
+export function quayFor(terrain, landing, planks = null) {
+  const built = runFromPlanks(terrain, planks);
+  const shore = built ? built.shore : quaySite(terrain, landing);
   if (!shore) return null;
-  const run = seawardRun(terrain, shore);
+  const run = built || seawardRun(terrain, shore);
   if (!run) return null;
   const from = terrain.cellWorld(shore[0], shore[1]);
   const head = terrain.cellWorld(
@@ -119,8 +181,8 @@ export function quayFor(terrain, landing) {
 // What lib/boats.mjs wants: one mooring per island, named after it. The id has to survive
 // BOAT_ID over there, and it has to be the same on both sides of the channel - so it is
 // built from the region's own id and nothing else.
-export function mooringFor(regionId, terrain, landing, origin = [0, 0]) {
-  const quay = quayFor(terrain, landing);
+export function mooringFor(regionId, terrain, landing, origin = [0, 0], planks = null) {
+  const quay = quayFor(terrain, landing, planks);
   if (!quay) return null;
   return {
     id: `boat:${regionId}`,

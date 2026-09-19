@@ -5,7 +5,7 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
-import { quayFor, mooringFor } from 'shared/quay.mjs';
+import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp, hash32, makeRng } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
@@ -1351,7 +1351,11 @@ function dockFor(region, village) {
   // Local coordinates, because the mesh goes inside the island's own group - and world
   // coordinates for `head` and `berth`, because walk mode and the boat speak nothing else.
   // shared/quay.mjs names them apart for exactly this reason.
-  const quay = quayFor(region.terrain, landing);
+  // The kade this village built, where it built one: the quay district's own planks are the
+  // island's harbour, and the derivation off the landing is the fallback for an island whose
+  // districts we do not have. Without this the island grew a second pier somewhere else on
+  // its coast, and that one - not the kade - got the deck, the boat and the prompt.
+  const quay = quayFor(region.terrain, landing, planksOf(v));
   if (!quay) return null;
   const [ox, oz] = region.origin;
   return {
@@ -1387,7 +1391,19 @@ function buildDocks(homeVillage) {
     mesh.receiveShadow = true;
     mesh.userData.id = spec.id;
     parent.add(mesh);
-    state.docks.push({ ...spec, mesh, dispose: () => { parent.remove(mesh); geo.dispose(); } });
+    // Out of the raycast as well as out of the scene. It used to only leave the group, and
+    // the raycast's own `m.parent` filter covered for that - which was true and quiet right
+    // up until buildDocks started running on every change of district instead of once.
+    state.docks.push({
+      ...spec,
+      mesh,
+      dispose: () => {
+        parent.remove(mesh);
+        const k = state.pickables.indexOf(mesh);
+        if (k >= 0) state.pickables.splice(k, 1);
+        geo.dispose();
+      },
+    });
     state.pickables.push(mesh);
   }
 }
@@ -1464,7 +1480,7 @@ let wasAboard = false;
 function boatFor(region) {
   const v = region === state.region ? state.village : region.village;
   const landing = v && v.island && v.island.landing;
-  const m = landing ? mooringFor(region.id, region.terrain, landing, region.origin) : null;
+  const m = landing ? mooringFor(region.id, region.terrain, landing, region.origin, planksOf(v)) : null;
   if (!m) return null;
   const had = state.boats.find((b) => b.id === m.id);
   if (had) return had;
@@ -2302,21 +2318,10 @@ function syncHamlets(village) {
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
-    if (d.pier && d.pier.length && !hamletSigns.has(`pier:${d.id}`)) {
-      const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
-      const g = buildPierGeometry(d.pier, terrain, [px, pz]);
-      if (g) {
-        const pm = new THREE.Mesh(g, buildingMat);
-        pm.position.set(px, 0, pz);
-        // The mooring posts stand half a unit over the deck, and their shadows falling
-        // across the planks and out onto the water are most of what makes a dock read as
-        // standing in the sea rather than lying on it.
-        pm.castShadow = true;
-        pm.receiveShadow = true;
-        hamletGroup.add(pm);
-        hamletSigns.set(`pier:${d.id}`, { group: pm, dispose: () => pm.geometry.dispose() });
-      }
-    }
+    // The quay's planks used to be drawn here, as scenery belonging to the district. They
+    // are a dock now and buildDocks draws them, because they are the same planks the boat
+    // moors at and walk mode floors - and two meshes over one run of water is a seam you
+    // can see from the air.
     if (!d.center || d.tier === 'farmstead') continue;
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
@@ -2347,7 +2352,7 @@ function syncHamlets(village) {
     }
   }
   for (const [key, rec] of [...hamletSigns]) {
-    if (key.startsWith('pier:') || live.has(key)) continue;
+    if (live.has(key)) continue;
     hamletGroup.remove(rec.group);
     rec.dispose();
     hamletSigns.delete(key);
@@ -2683,6 +2688,14 @@ function applyVillage(next, { animate }) {
   if (state.world && (!prev || next.districtsRev !== prev.districtsRev)) {
     state.world.setOwnership(next);
     syncHamlets(next);
+    // The kade belongs to a district, so the dock changes when the districts do - the day a
+    // village earns its quay, the planks have to appear under the reader's feet and not
+    // only after a reload. Only on a *change*: the first village through here is the one
+    // buildScene has just built the docks from, and disposing them to make the same ones
+    // again is a rebuild nobody asked for. The fleet is left alone either way - a boat is
+    // where somebody left it, and the server re-moors an untouched one from the same
+    // shared/quay.mjs.
+    if (prev) { buildDocks(next); handOutDecks(); }
   }
   syncSquareBed(next);
   syncBorrelTables(next);

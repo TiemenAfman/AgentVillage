@@ -324,6 +324,10 @@ function assemble({ config, model, layout, terrain, size, all }) {
     return {
       id: d.id, kind: d.kind, name: d.name, root: d.root, hue: d.hue,
       center: (l && l.centre) || null, square: (l && l.square) || null, pier: (l && l.pier) || [],
+      // The cell the ramp stands on, which is behind the first plank and is not in `pier`.
+      // shared/quay.mjs can work it out from a run of two or more, and cannot from a run of
+      // one - and the layout has known it all along, so it may as well say so.
+      shore: (l && l.shore) || null,
       firstSeenAt: iso(d.firstSeenAt), population: d.population,
       outposts: d.outposts || [],
       tier: (l && l.tier) || 'farmstead',
