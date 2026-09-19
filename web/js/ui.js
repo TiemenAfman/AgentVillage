@@ -86,7 +86,7 @@ export function createUI(handlers) {
     syncSidebar();
   }
   function openLegend() { el('dossier').hidden = true; el('settings').hidden = true; el('legend').hidden = false; syncSidebar(); }
-  function openSettings() { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = false; syncSidebar(); }
+  function openSettings() { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
     const panelOpen = !el('dossier').hidden || !el('legend').hidden || !el('settings').hidden;
@@ -349,15 +349,62 @@ export function createUI(handlers) {
     renderSettings();
   }
 
+  // Which world this island is in. Only ever offered here, to the keeper, because all
+  // three answers are things the *islander* does: single player and hosting both start a
+  // sea in its process, and joining points it at somebody else's. A page with no islander
+  // of its own - a phone, a second screen - has nothing to choose and is shown nothing.
+  const MODES = [
+    ['single', 'On my own', 'A sea of one, on this machine. Nobody else can reach it.'],
+    ['host', 'Host', 'The same sea, open to the network, for other islands to join.'],
+    ['join', 'Join', 'Somebody else’s sea. Pick one below.'],
+  ];
+  let seas = null;
+
+  function setSeas(data) { seas = data; renderSettings(); }
+
+  function seaSection() {
+    if (!seas) return '<h3 class="sec">The sea</h3><p class="muted">Asking around…</p>';
+    const chosen = MODES.find(([k]) => k === seas.mode) || MODES[0];
+    const rows = (seas.seas || []).map((o) => {
+      const here = o.url === seas.current || (o.mine && seas.mode !== 'join');
+      const said = o.up
+        ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'}, ${o.players ?? 0} here`
+        : esc(o.why || 'no answer');
+      const from = o.from === 'network' ? 'on this network' : o.from === 'known' ? 'always on' : o.mine ? 'mine' : 'saved';
+      return `<div class="row${here ? ' on' : ''}" style="display:flex;gap:8px;align-items:baseline;justify-content:space-between;margin:5px 0">`
+        + `<span><b>${esc(o.name || o.url)}</b> <span class="muted">${esc(from)} · ${said}</span></span>`
+        + (here ? '<span class="muted">here</span>'
+          : `<button class="chip" data-sea="${esc(o.url)}"${o.up ? '' : ' disabled'}>Join</button>`)
+        + '</div>';
+    }).join('') || '<p class="muted">No seas found yet.</p>';
+    return '<h3 class="sec">The sea</h3>'
+      + `<p class="muted" style="margin:0 0 9px">Which world this island lives in. Everyone in one sea sees each other's coasts, settlers and boats.</p>`
+      + `<div class="chips wrap">${MODES
+        .map(([k, label]) => `<button class="chip${k === seas.mode ? ' on' : ''}" data-seamode="${k}">${label}</button>`).join('')}</div>`
+      + `<p class="muted" style="margin:9px 0">${esc(chosen[2])}</p>`
+      + rows
+      + `<div style="display:flex;gap:6px;margin-top:8px"><input id="sea-url" class="field" placeholder="http://address:4750/" style="flex:1"><button class="chip" id="sea-add">Add</button></div>`;
+  }
+
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
       + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
-      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
+      + seaSection();
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+    el('settings-body').querySelectorAll('[data-seamode]')
+      .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
+    el('settings-body').querySelectorAll('[data-sea]')
+      .forEach((b) => b.addEventListener('click', () => handlers.onJoinSea(b.dataset.sea)));
+    const add = el('settings-body').querySelector('#sea-add');
+    if (add) add.addEventListener('click', () => {
+      const field = el('settings-body').querySelector('#sea-url');
+      if (field && field.value.trim()) handlers.onJoinSea(field.value.trim());
+    });
   }
   renderSettings();
 
@@ -425,6 +472,30 @@ export function createUI(handlers) {
     setTimeout(() => { d.classList.add('fade'); setTimeout(() => d.remove(), 600); }, wire ? 11000 : 5600);
     const kids = el('toasts').children;
     while (kids.length > 4) kids[0].remove();
+  }
+
+  // Somebody in this world is running different code.
+  //
+  // A toast is wrong for this and a console warning is worse. Three machines make a world
+  // now - this page, the islander that packed a bundle, and whichever islander packed
+  // somebody else's - and when their shared/terrain.mjs disagree, an island is drawn in
+  // the wrong shape: houses in the sea, a coast where a field was. Nothing crashes and
+  // nothing is logged where anybody looks, so it gets reported as "the island looks
+  // strange" weeks later.
+  //
+  // So it stays on screen, and it names who is out of step rather than saying that
+  // somebody is. One line per island, because two out of date is a different conversation
+  // from one.
+  const skewed = new Map();
+  function setSkew(id, name) {
+    if (name) skewed.set(id, name); else skewed.delete(id);
+    const box = el('skew');
+    if (!skewed.size) { box.hidden = true; box.innerHTML = ''; return; }
+    const who = [...skewed.values()];
+    box.hidden = false;
+    box.innerHTML = `<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
+      + 'running a different version of the island, so their land is drawn from numbers this '
+      + 'page disagrees with. Pull and restart on both sides.';
   }
 
   // The two-step confirmation shown while walking, before anyone is sent away.
@@ -588,9 +659,10 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
+    setHover, toast, setSkew, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
+    setSeas,
     closeOverlays: () => { close('dossier'); close('legend'); close('settings'); },
   };
 }

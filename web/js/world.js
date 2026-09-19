@@ -6,6 +6,7 @@ import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
+import { textureUrl } from './assets.js';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -123,16 +124,15 @@ export function bandColour(h, season) {
 // The sheets the island is drawn on, and the one place that knows how to fetch one.
 // Everything here is optional: a sheet that does not arrive leaves the surface exactly
 // as it was drawn before there were any, which is why nothing below waits on one.
-const TEXTURES = 'textures/';
 const texLoader = new THREE.TextureLoader();
 function sheet(name, onLoad) {
-  texLoader.load(`${TEXTURES}${name}.png`, (tex) => {
+  texLoader.load(textureUrl(name), (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
     onLoad(tex);
   }, undefined, () => {
-    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
   });
 }
 

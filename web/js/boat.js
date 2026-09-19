@@ -19,6 +19,7 @@
 // in the keyboard rather than in the sign.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
+import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
 import { buildBoatGeometry, mesh } from './buildings.js';
 import * as models from './models.js';
 
@@ -29,21 +30,13 @@ export const BOAT_DRAG = 0.9;       // let go and it coasts ~4 s to a stop
 export const BOAT_TURN = 1.25;      // rad/s at speed
 export const BOAT_TURN_MIN = 0.35;  // rad/s at rest - an oar, so you are never stuck
 export const BOAT_TURN_BITE = 0.25; // a hard turn spends way: v *= 1 - BITE*|turn|*dt
-// How deep she sits, and where a body stands once she is sitting there.
-//
-// Both come off the baked hull rather than being chosen. scripts/build-benchy.py measures
-// the cabin of the STL - floor at 8.2 mm, the underside of its roof at 36.8 - and scales the
-// whole boat so that 28.5 mm holds a settler of 0.54 with a hand's width over his head. The
-// keel then sits at y = 0, because every asset on this island must (scripts/model-rules.mjs
-// refuses one that does not), so the island is what puts her in the water: DRAUGHT sinks her
-// to the boot-topping, the band the paint changes at, and the cabin floor is CABIN_FLOOR
-// above the keel.
 // The baked hull's one part. One part, so one draw call.
 const HULL = 'benchy hull';
 
-export const DRAUGHT = 0.13;
-const CABIN_FLOOR = 0.179;
-export const DECK_Y = CABIN_FLOOR - DRAUGHT;
+// How deep she sits, and where a body stands once she is sitting there. In shared/hull.mjs
+// because the sea seats a rider without ever drawing one; re-exported here so the call
+// sites that think of it as the boat's business can carry on saying so.
+export { DRAUGHT, DECK_Y };
 
 // Half the hull, and the whole reason grounding looks right: buildBoatGeometry's hull is a
 // 0.8-long cylinder centred on the origin, so this is its tip. Testing the middle instead

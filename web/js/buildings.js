@@ -5,8 +5,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
+// The palette moved to shared/ so Node can read it without importing this file -
+// see the header of shared/palette.mjs. Re-exported because most of the tree asks
+// here for it, and the colours of the island are this file's subject.
+import { PALETTE } from 'shared/palette.mjs';
+export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
+import { textureUrl } from './assets.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -20,13 +26,6 @@ import * as models from './models.js';
 // darkest, sonnet brightest, haiku palest. They are also what the Blender roofs are
 // painted with, so a gable off `roof_gable_a` and a `prismRoof` fallback are the same
 // colour on the same street.
-export const PALETTE = {
-  fable: { wall: 0xcfc4e6, trim: 0x6e5aa8, roof: 0xb8552f, accent: 0x7a4fb0, glow: 0xffd27f, name: 'Fable' },
-  opus: { wall: 0xa8a59e, trim: 0x6f6b64, roof: 0x8f4a3a, accent: 0x5a3a24, glow: 0xffcf7a, name: 'Opus' },
-  sonnet: { wall: 0xf0e2c8, trim: 0x6b4a2f, roof: 0xc4623a, accent: 0x8a4b2a, glow: 0xffd88a, name: 'Sonnet' },
-  haiku: { wall: 0xd9b98c, trim: 0x7d5a3a, roof: 0xd08a4a, accent: 0x5a3c28, glow: 0xffe0a0, name: 'Haiku' },
-  unknown: { wall: 0x9a9a9a, trim: 0x6f6f6f, roof: 0x8a6a5a, accent: 0x555555, glow: 0xffffff, name: 'Unknown' },
-};
 
 export const C = {
   foundation: 0x8d8577, wood: 0x8b5e3c, darkWood: 0x5a3c28, canvas: 0xe9d8b4,
@@ -57,7 +56,6 @@ export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house:
 // material, and main.js hands that same material to the settlers, the crops, the boats
 // and the bridges, none of which have groups to match it. So: one material, one draw
 // call per building, and a branch in the fragment shader.
-const TEXTURES = 'textures/';
 const texLoader = new THREE.TextureLoader();
 // One white pixel until a sheet arrives, and for good if none ever does: white
 // multiplies out, so a building with no textures is the building the island always drew.
@@ -66,13 +64,13 @@ BLANK.needsUpdate = true;
 const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank' };
 const sheetUsers = [];               // the uniform block of every material handed out
 function loadSheet(name, slot) {
-  texLoader.load(`${TEXTURES}${name}.png`, (tex) => {
+  texLoader.load(textureUrl(name), (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
     for (const u of sheetUsers) u[SHEET_UNIFORM[slot]].value = tex;
   }, undefined, () => {
-    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
   });
 }
 loadSheet('wall-plaster', 'wall');

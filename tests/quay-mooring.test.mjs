@@ -68,7 +68,7 @@ for (const seed of SEEDS) {
   });
 
   test(`an island with no districts still gets the derived quay (seed ${seed})`, () => {
-    const terrain = makeTerrain(seed, SIZE);
+    const terrain = makeTerrain(seed, { size: SIZE });
     const landing = terrain.landCells[0];
     const bare = quayFor(terrain, landing);
     assert.deepEqual(quayFor(terrain, landing, planksOf(null)), bare, 'no village, same answer as before');

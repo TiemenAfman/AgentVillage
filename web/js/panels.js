@@ -87,7 +87,41 @@ export function createPanels({
   let shown = true;
   let held = null;               // the record we are standing at and working
 
+  // A board on somebody else's island.
+  //
+  // What a board *says* is read with one islander's credentials - a Jira token, a GitHub
+  // token, a git checkout - and that is not going on the sea and not going to a stranger's
+  // browser. So it renders with nothing on it, and the whole point is the sentence: an
+  // empty board with no explanation reads as broken, and the first thing anybody does with
+  // a broken board is report it.
+  function away(p) {
+    const el = document.createElement('div');
+    el.className = 'panel3d';
+    el.style.width = `${FACE_W}px`;
+    el.style.height = `${FACE_H}px`;
+    el.style.pointerEvents = 'none';
+    const face = document.createElement('div');
+    face.className = 'face panel-away';
+    const what = p.label ? String(p.label) : 'This board';
+    face.innerHTML = `<div class="panel-away-what"></div><div class="panel-away-why"></div>`;
+    face.querySelector('.panel-away-what').textContent = what;
+    face.querySelector('.panel-away-why').textContent = p.away === true
+      ? 'is read on another islander’s machine.'
+      : `is read on ${p.away}’s machine.`;
+    el.appendChild(face);
+    const object = new CSS3DObject(el);
+    place(object, p);
+    scene.add(object);
+    // `see` is what update() tests the camera distance against, and a record without one
+    // compares against NaN and is never drawn. The same sum a board of ours gets: there is
+    // no reason a neighbour's board should become readable at a different range than the
+    // identical board on this side of the water.
+    const see = Math.max(MAX_DIST, panelFace(p).w * SEE_WIDTHS);
+    records.set(p.id, { spec: p, el, object, foreign: true, see, driver: null, cursors: new Map(), state: {}, face: {} });
+  }
+
   function add(p) {
+    if (p.away) { away(p); return; }
     const name = p.face || 'notice';
     const state = startState(name);
     // A press is applied here at once and asked for in the same breath.
@@ -142,7 +176,10 @@ export function createPanels({
     const scale = p.scale || 1;
     const rot = p.rot || 0;
     const s = Math.sin(rot), c = Math.cos(rot);
-    const ground = terrain.worldHeight(p.x, p.z) - 0.03;
+    // A board on somebody else's island brings its own ground with it: this layer was
+    // handed one terrain when it was built, and that is ours. Everything else about a
+    // foreign board is already in world coordinates by the time it gets here.
+    const ground = (typeof p.y === 'number' ? p.y : terrain.worldHeight(p.x, p.z)) - 0.03;
     object.position.set(p.x + s * f.z * scale, ground + f.y * scale, p.z + c * f.z * scale);
     object.rotation.set(0, rot, 0);
     object.scale.setScalar((f.w * scale) / FACE_W);
@@ -182,7 +219,7 @@ export function createPanels({
   function take(id) {
     release();
     const rec = records.get(id);
-    if (!rec) return false;
+    if (!rec || rec.foreign) return false;   // read over the water, not worked
     held = rec;
     rec.el.classList.add('worked');
     onTake(id);
@@ -308,6 +345,7 @@ export function createPanels({
   function interactables() {
     const out = [];
     for (const rec of records.values()) {
+      if (rec.foreign) continue;             // there is nothing to press over there
       const p = rec.spec;
       const what = p.label || 'the board';
       out.push({

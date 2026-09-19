@@ -28,7 +28,22 @@
 //
 // planVoyage is pure - a terrain, a point, a direction and an rng - which is what
 // tests/boating.test.mjs sails a hundred voyages over a coast of its own making.
-import { clamp } from 'shared/rng.mjs';
+//
+// **This file is in shared/ and does not carry shared/'s bit-identity rule.** It steers
+// with sin, cos, atan2 and exp, all of which shared/terrain.mjs and shared/settlerwalk.mjs
+// are forbidden. That is allowed here, and the distinction is worth being exact about,
+// because it is the difference between a rule and a habit: the ban exists so two runtimes
+// can derive *the same* answer from the same inputs without speaking. Nothing derives a
+// voyage twice. Exactly one machine plans and steers it - the sea, once the crowd is its -
+// and what reaches every other screen is the hull's position, on the wire, the way
+// shared/settlerwire.mjs sends a settler's. A position that arrives cannot drift from one
+// nobody computed.
+//
+// So it is here for the plainer reason: it has no three.js, no document and no clock of
+// its own, and both the sea and a browser have to be able to import it. The moment
+// anything starts predicting a voyage instead of being told about one, the four
+// substitutions at the top of shared/settlerwalk.mjs apply to this file too.
+import { clamp } from './rng.mjs';
 
 // How fast a settler potters. The boat you steer tops out at 9.5 (BOAT_TOP); this is a
 // third of that, which is the speed the hull's own bow wave would sit right at and, more
@@ -307,6 +322,25 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
     update,
     // Who is out, for anything that wants to know whether a hull has somebody in it.
     crews: () => trips.filter((t) => t.boat).map((t) => ({ id: t.id, boat: t.boat.id })),
+    // Every outing that is in a hull this moment: where the hull is, and where the body
+    // riding it has its feet and its bow. This is what goes on the wire when the sea is
+    // the one doing the sailing - a browser that is only watching has no trip, no timer
+    // and no route, it has a dinghy to draw and somebody standing in it.
+    //
+    // The rider is asked for separately from the hull rather than assumed to be in it,
+    // because for the second it takes to step down they are not: rideOf is mid-lerp
+    // between the planks and the deck, and a body that snaps into the boat is the exact
+    // thing BOARDING exists to prevent.
+    rides() {
+      const out = [];
+      for (const t of trips) {
+        if (t.done || !t.boat) continue;
+        const r = rideOf(t);
+        if (!r) continue;
+        out.push({ id: t.id, x: t.boat.x, z: t.boat.z, yaw: t.boat.yaw, rx: r.x, rz: r.z, ry: r.y, ryaw: r.yaw });
+      }
+      return out;
+    },
     // Everybody back ashore, for a reseed: the village is about to be rebuilt under them.
     clear() {
       for (const trip of trips) if (!trip.done) abandon(trip, 'cleared');

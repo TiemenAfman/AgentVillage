@@ -16,6 +16,7 @@ import {
   createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT,
   box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad, mesh,
 } from './buildings.js';
+import { mine } from './api.js';
 
 // ---------------------------------------------------------------- the shapes
 // Every primitive takes its dimensions, then a colour, then a placement, which is what
@@ -1158,7 +1159,7 @@ el('ed-save').onclick = async () => {
   btn.disabled = true;
   say('Writing into buildings.js...');
   try {
-    const r = await fetch('/api/model-save', {
+    const r = await mine('/api/model-save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ edits }),
@@ -1201,7 +1202,7 @@ gizmo.setTranslationSnap(step);
 // name the line you will actually be looking for, and lets Save know in advance whether
 // there is anything there to replace.
 try {
-  const r = await fetch('/js/buildings.js');
+  const r = await mine('/js/buildings.js');
   source = r.ok ? await r.text() : '';
 } catch { source = ''; }
 

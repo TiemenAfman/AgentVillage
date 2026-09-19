@@ -12,13 +12,14 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { makeRng } from '../shared/rng.mjs';
 
-// boating.js imports `shared/` the way the browser's import map spells it, so Node needs
-// the same loader every other test of a web module uses.
+// Nothing here needs the shared-loader any more - boating lives in shared/ and reaches
+// its neighbours by relative path - but it is left registered because the fake terrain
+// below is the browser's, and a future assertion here will want it.
 register('./support/shared-loader.mjs', import.meta.url);
-const { planVoyage, openWater } = await import('../web/js/boating.js');
+const { planVoyage, openWater } = await import('../shared/boating.mjs');
 
 // A coast that shelves into open sea. Land to the north of `shore`, water past it, and a
-// grid wide enough that a big circle has somewhere to be. `half` is what boating.js turns
+// grid wide enough that a big circle has somewhere to be. `half` is what boating turns
 // a world point into a cell with, so the fake keeps the island's own convention.
 function coast({ size = 96, shore = 30 } = {}) {
   const half = size / 2;

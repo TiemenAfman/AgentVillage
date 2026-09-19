@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash32 } from 'shared/rng.mjs';
 import { TIER_INDEX } from './buildings.js';
 import * as models from './models.js';
+import { textureUrl } from './assets.js';
 
 export const NONE = -1, TOWN = -2;
 
@@ -446,7 +447,6 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
 // The wall takes the stacked stone the plinths already use and everything wooden takes
 // the sawn boards off the decking - both were drawn for this kind of job. Only the hedge
 // needed a sheet of its own, because nothing on the island was leaves at hedge scale.
-const TEXTURES = 'textures/';
 // What the vertex carries and the shader branches on. Zero is no sheet at all, which the
 // shader reads as "leave this flat" - an iron or painted part of a baked model.
 const SHEET = { leaf: 1, plank: 2, stone: 3 };
@@ -468,13 +468,13 @@ BLANK.needsUpdate = true;
 // that arrives late reaches the material built after it as well as the one before.
 const SHEETS = { uLeaf: { value: BLANK }, uPlank: { value: BLANK }, uStone: { value: BLANK } };
 for (const [name, slot] of [['hedge-leaf', 'uLeaf'], ['plank', 'uPlank'], ['stone-stacked', 'uStone']]) {
-  new THREE.TextureLoader().load(`${TEXTURES}${name}.png`, (tex) => {
+  new THREE.TextureLoader().load(textureUrl(name), (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
     SHEETS[slot].value = tex;
   }, undefined, () => {
-    console.warn(`[island] no texture at web/${TEXTURES}${name}.png; that surface stays as it was`);
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
   });
 }
 
@@ -945,7 +945,7 @@ export function planFields(village, terrain, owner, cleared, { coverage = FIELD_
 //
 // `field.png` is brightness only, around 0.8 - the vertex colours underneath carry the
 // season, so a stubble field in autumn stays stubble-coloured and merely gains a tilth.
-const FIELD_SHEET = `${TEXTURES}field.png`;
+const FIELD_SHEET = textureUrl('field');
 let fieldSheet = null, fieldSheetAsked = false;
 const awaitingSheet = new Set();
 

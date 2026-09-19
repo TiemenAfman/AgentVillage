@@ -4,9 +4,12 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
+import { createCrowdView } from './crowd-view.js';
+import { createMainMenu } from './mainmenu.js';
+import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
-import { clamp, hash32, makeRng } from 'shared/rng.mjs';
+import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
@@ -17,8 +20,6 @@ import {
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
-import { createSettlers } from './settlers.js';
-import { createBoating } from './boating.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
 import { createWalkMode } from './walk.js';
@@ -35,6 +36,7 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
+import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
 import { createCrops } from './crops.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
@@ -50,6 +52,7 @@ import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
+import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange } from './api.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -81,8 +84,8 @@ const held = [];
 function post(message, stack) {
   try {
     const body = JSON.stringify({ message: String(message), stack: stack ? String(stack) : null });
-    if (navigator.sendBeacon) navigator.sendBeacon('/api/log', new Blob([body], { type: 'application/json' }));
-    else fetch('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
+    if (navigator.sendBeacon) navigator.sendBeacon(mineUrl('/api/log'), new Blob([body], { type: 'application/json' }));
+    else mine('/api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
   } catch { /* nothing more we can do */ }
 }
 function setVisiting(guest) {
@@ -233,7 +236,7 @@ function showCanvasTrouble(err, recoverable = false) {
 // out work should not depend on a graphics driver.
 async function openBoardWithoutIsland() {
   let village = { buildings: [], districts: [] };
-  try { village = await (await fetch('/village.json', { cache: 'no-store' })).json(); } catch { /* board still opens */ }
+  try { village = await (await mine('/village.json', { cache: 'no-store' })).json(); } catch { /* board still opens */ }
   const districts = new Map((village.districts || []).map((d) => [d.id, d]));
   const board = createBoard(document.body, {
     getSettlers: () => (village.buildings || [])
@@ -363,11 +366,11 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  state.settlers.attend(id, [w.pos.x, w.pos.z]);
+  if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => state.settlers.unattend(id),
+    onLetGo: () => { if (state.net) state.net.unattend(id); },
   });
 }
 
@@ -378,7 +381,7 @@ function talkTo(id) {
   if (!rec || rec.spec.kind === 'civic' || !rec.spec.sessionId) return;
   // Who you are actually addressing: the figure scurrying about that doorstep, not the
   // doorstep. Only settlers.js knows where they got to, and it is keyed by building id.
-  const fig = state.settlers ? state.settlers.figures.get(id) : null;
+  const fig = state.settlers ? state.settlers.figure(id) : null;
   // From the sky there is nobody standing in front of you yet. The dossier's "Talk to
   // them" is a wish to speak to somebody, so it walks you over to them first and leaves
   // you standing there afterwards: the same conversation, in the same place, from the
@@ -541,7 +544,7 @@ function reportWhere({ final = false } = {}) {
   whereSentAt = now;
   whereLastX = w.pos.x;
   whereLastZ = w.pos.z;
-  fetch('/api/where', {
+  mine('/api/where', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -576,14 +579,16 @@ function whatIsNear(w) {
 async function refreshProps({ animate = true } = {}) {
   if (!state.props) return;
   try {
-    const r = await fetch('/api/props', { cache: 'no-store' });
+    const r = await mine('/api/props', { cache: 'no-store' });
     const body = await r.json();
     const before = state.props.count();
     state.props.apply(body.props || [], { animate });
     const after = state.props.count();
     // The same list, read a second time for its panels: props.js draws the woodwork and
-    // panels.js hangs the page in front of it.
-    if (state.panels) state.panels.apply(body.props || []);
+    // panels.js hangs the page in front of it. Kept, because the boards on the neighbours'
+    // islands go in the same list and arrive at a different moment.
+    state.ownProps = body.props || [];
+    syncBoards();
     handOutDecks();                                   // a bridge that has just gone up
     if (state.mode === 'walk') {
       state.walk.setBlockers(walkableBlockers());
@@ -606,10 +611,10 @@ async function refreshGarden({ animate = true } = {}) {
   if (!state.crops) return;
   try {
     if (state.guest) {
-      const body = await answerOf(await fetch('/api/crops', { cache: 'no-store' }));
+      const body = await answerOf(await mine('/api/crops', { cache: 'no-store' }));
       state.crops.apply(body.crops || [], { animate });
     } else {
-      const garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
+      const garden = await answerOf(await mine('/api/garden', { cache: 'no-store' }));
       state.garden = garden;
       state.crops.apply(garden.beds || [], { animate });
     }
@@ -631,7 +636,7 @@ async function refreshGarden({ animate = true } = {}) {
 async function tend(body, said) {
   if (keeperOnly('do the farming here')) return null;
   try {
-    const answer = await answerOf(await fetch('/api/garden', {
+    const answer = await answerOf(await mine('/api/garden', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -772,7 +777,7 @@ async function pollMail(force = false) {
   if (!force && Date.now() - state.mailAt < MAIL_POLL_MS - 1000) return;
   state.mailAt = Date.now();
   try {
-    const r = await answerOf(await fetch(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
+    const r = await answerOf(await mine(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
     showMail(r.counts || []);
   } catch { /* no postbox on this island, or the server is older than the page */ }
 }
@@ -890,15 +895,53 @@ function peerName(id) {
 
 // What the island says the boards say. Everything that changes a panel comes through
 // here - our own presses included, which went out as a request and come back as fact.
+// A board's name on the wire, and the same board's name here. Both halves live in
+// shared/panels.mjs, with the reasoning and the server's half of the contract.
+const scopePanel = (id) => scopeBoard(state.islandId, id);
+const ourPanel = (id) => ourBoard(state.islandId, id);
+
+// Turned away at the sea's door.
+//
+// Once per reason, and not once per attempt. net.js keeps retrying - which is right, a
+// refusal can stop being true the moment somebody fixes a config - but none of these
+// reasons fix *themselves*, so the retry loop turned one problem into a toast every few
+// seconds. What made it unreadable is that the message was also the bare word the wire
+// uses: three lines of "The sea would not have us: key." says what is wrong to whoever
+// wrote the protocol and nothing at all to whoever has to fix it.
+const REFUSALS = {
+  key: 'This sea wants a key. Put it in <b>multiplayer.sea.key</b> in config.json, or type it in the world picker.',
+  version: 'This sea speaks a different version of the protocol. One of the two machines needs its code updating.',
+  claimed: 'Another islander is already moored here under this island’s name.',
+  full: 'This sea is full.',
+};
+let lastRefusal = null;
+function onRefusedBySea(m) {
+  const why = String((m && m.why) || 'no reason given');
+  if (why === lastRefusal) return;
+  lastRefusal = why;
+  state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
+}
+
 function applyPanelMessage(m) {
   if (!state.panels) return;
-  if (m.kind === 'all') { state.panels.all(m.boards); return; }
-  if (m.kind === 'ui') { state.panels.field(m.id, m.action, m.value); return; }
+  if (m.kind === 'all') {
+    state.panels.all((m.boards || [])
+      .map((b) => ({ ...b, id: ourPanel(b.id) }))
+      .filter((b) => b.id));
+    return;
+  }
+  if (m.kind === 'ui') {
+    const id = ourPanel(m.id);
+    if (id) state.panels.field(id, m.action, m.value);
+    return;
+  }
   if (m.kind === 'drove') {
     // The roster is where an id becomes a name, so the name is put on here rather than
     // in the panel layer, which has never heard of players.
-    if (m.driver) state.panels.drivenBy(m.id, peerName(m.driver));
-    const taken = state.panels.driven(m.id, m.driver);
+    const id = ourPanel(m.id);
+    if (!id) return;
+    if (m.driver) state.panels.drivenBy(id, peerName(m.driver));
+    const taken = state.panels.driven(id, m.driver);
     if (taken) {
       state.walk.setWorking(null);
       state.ui.toast(`<b>${escapeHtml(peerName(taken))}</b> is working that board. You can read over their shoulder.`);
@@ -1055,7 +1098,7 @@ async function sendAway(id) {
   const sheds = (rec.spec.sheds || []).length;
   const restore = leaveAnimation(rec);
   try {
-    const r = await fetch('/api/banish', {
+    const r = await mine('/api/banish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildingId: id }),
@@ -1076,7 +1119,7 @@ async function sendAway(id) {
 
 async function bringBack(id) {
   try {
-    await fetch('/api/banish', {
+    await mine('/api/banish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildingId: id, undo: true }),
@@ -1156,7 +1199,7 @@ function bearingWord(n) {
 
 async function refreshNeighbours() {
   try {
-    const r = await fetch('/api/neighbours').then((x) => x.json());
+    const r = await mine('/api/neighbours').then((x) => x.json());
     applyNeighbours(r.neighbours || []);
   } catch { /* no beacon, no neighbours, no matter */ }
 }
@@ -1272,7 +1315,7 @@ function freeBerth(theirHalf) {
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
 // them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name = null, village = null }) {
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
   const terrain = makeTerrain(seed, { size: gridSize, polders });
   if (terrainHash && terrain.hash !== terrainHash) {
@@ -1281,12 +1324,19 @@ function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name
     // them is running older code. The server refuses the upload outright for the same
     // reason; by the time it reaches the page it is worth drawing and worth saying.
     console.warn(`island: ${id} hashes ${terrain.hash} here and ${terrainHash} there`);
+    // And where somebody will see it. A console warning is where this used to stop, which
+    // meant a neighbour drawn in the wrong shape was found by somebody sailing into it.
+    if (state.ui) state.ui.setSkew(id, name || id);
   }
-  const origin = freeBerth(terrain.half);
-  if (!origin) { console.warn(`island: no berth free for ${id}`); return null; }
+  // The sea decides where an island lies, and every client is told the same answer - that
+  // is what makes two people looking at the same water see the same thing. freeBerth is
+  // the fallback for the one case with no sea in it: the ?join= debug parameter, which
+  // conjures an island out of a seed with nobody to ask.
+  const at = Array.isArray(origin) ? origin : freeBerth(terrain.half);
+  if (!at) { console.warn(`island: no berth free for ${id}`); return null; }
   let region;
   try {
-    region = state.sea.add(placeIsland(terrain, { id, origin }));
+    region = state.sea.add(placeIsland(terrain, { id, origin: at }));
   } catch (e) {
     console.warn(`island: ${e.message}`);
     return null;
@@ -1294,7 +1344,8 @@ function joinIsland({ id, seed, gridSize, polders = [], terrainHash = null, name
   // Hung on the region rather than passed around, because everything that later wants to
   // draw something of theirs - buildings now, paths and piers next - finds the region first.
   region.village = village;
-  console.info(`island: ${name || id} joined at berth [${origin}]`);
+  region.rev = rev;
+  console.info(`island: ${name || id} joined at [${at}] (rev ${rev})`);
   return region;
 }
 
@@ -1423,48 +1474,6 @@ function launchBoats() {
   }
 }
 
-// This island's dock, which is the only one a settler of this island can walk to.
-function homeDock() {
-  return state.docks.find((d) => d.region === state.region) || null;
-}
-
-// The hull a settler takes out for the afternoon, and why it is not the island's own.
-//
-// It was, and it cannot be any more. There is one boat to an island now, its position is
-// world state lib/boats.mjs holds and every browser agrees about, and only its pilot may
-// write to it - so a settler moving it would be moving a hull nobody across the channel
-// can see move, and, worse, would take away the one thing anybody has to cross with. The
-// crossing outranks the outing.
-//
-// So an outing brings its own dinghy: the same baked Benchy drawn with the same material,
-// made when somebody steps down into it and disposed of when they step back out, and never
-// in `state.boats`. Nothing offers it to you, nothing reports it to the server, and the
-// island's boat is at its mooring all afternoon whether or not anybody is out on the water.
-// `deckY` is kept on it in the shape walk mode and settlers.js both read a deck height in.
-const outingFleet = {
-  take() {
-    const d = homeDock();
-    if (!d) return null;
-    const craft = createBoat({ scene, material: buildingMat });
-    // Alongside the head on the side the island's own boat is not, so the two are not drawn
-    // through each other while one of them is at home.
-    const x = d.head[0] + d.dir[1] * 1.3, z = d.head[1] - d.dir[0] * 1.3;
-    const b = { id: `outing:${d.region.id}`, x, z, yaw: d.yaw, craft, deckY: DECK_Y };
-    craft.place(x, z, d.yaw);
-    return b;
-  },
-  release(b) {
-    if (b) b.craft.dispose();
-  },
-  // The swell, and the deck the rider stands on. state.boats gets this in the frame loop;
-  // a dinghy that is in no list has to be told.
-  bob(b, time) {
-    b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(time);
-    b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
-  },
-};
-
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
 
@@ -1533,46 +1542,352 @@ function onBoatFromServer(m) {
 // Two requests rather than one on purpose: the list is a name, a seed and a size each and
 // costs a few hundred bytes, and the island whole is up to two megabytes. The SSE `guests`
 // event carries the list, and the page comes back for the ones it has not got.
-async function refreshHarbour() {
-  if (!state.terrain) return;
-  let moored;
+// Where the sea says this island lies, before anything is drawn with it. Also the first
+// look at the fleet, so a page that boots into a busy world raises every coast in one go
+// rather than watching them pop in one socket message at a time.
+async function learnTheWorld() {
+  state.homeOrigin = [0, 0];
+  state.fleet = [];
   try {
-    moored = (await fetch('/api/islands').then((r) => r.json())).islands || [];
-  } catch { return; }            // no harbour, no neighbours, no matter
-  let arrived = 0;
-  for (const berth of moored) {
-    if (state.sea.get(berth.id)) continue;
+    const world = await sea('/world').then((r) => r.json());
+    state.fleet = world.islands || [];
+    const me = state.fleet.find((i) => i.id === state.islandId);
+    if (me && Array.isArray(me.origin)) state.homeOrigin = me.origin;
+  } catch {
+    // No sea, or one that is not up yet. An island at the origin on its own is exactly
+    // what this was before there were seas, and the socket will bring the world when it
+    // connects.
+  }
+}
+
+// Bring the page's idea of the fleet up to the sea's. Everything except our own island,
+// which we have already got and are standing on: the sea lists it too, and joining it a
+// second time would put a duplicate coast on top of the one under our feet.
+//
+// The manifest is a few hundred bytes an island; an island whole is up to two megabytes,
+// so the list arrives often and the islands are fetched once each.
+// How many other islands are drawn whole. Past that they are silhouettes at their real
+// berth - the same land from the same seed, every other vertex, no buildings and no
+// collision - which is web/js/horizon.js doing the job it was already good at.
+//
+// The number is the draw budget and nothing else. CLAUDE.md records what one full guest
+// island costs: 41 nameplates alone took the call count from 1.35x to 1.76x against a
+// 1.6x budget, and that was with signs off, no forest and no settlers. Eight islands in
+// full does not render, and the honest way to have eight in the world is to draw the near
+// ones and suggest the rest.
+const DETAILED = modest ? 2 : 4;
+
+function farFrom(origin) {
+  const home = state.homeOrigin || [0, 0];
+  const dx = (origin ? origin[0] : 0) - home[0];
+  const dz = (origin ? origin[1] : 0) - home[1];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+// The whole horizon, from both the things that can feed it: islands in our own sea that
+// are too far to draw in full, and islands on the network that are in no sea of ours at
+// all. One caller, because horizon.apply() removes whatever is not in the list it is
+// given - two callers would each spend their turn deleting the other's islands.
+function syncHorizon() {
+  if (!state.horizon || state.guest) return [];
+  const here = new Set(state.sea.regions().map((r) => r.id));
+  const shown = new Map();
+  for (const row of state.farFleet || []) {
+    if (here.has(row.id)) continue;
+    state.horizon.pin(row.id, row.origin);
+    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0 });
+  }
+  for (const n of [...(state.neighbours || []), ...debugJoins]) {
+    if (here.has(n.id) || shown.has(n.id)) continue;
+    shown.set(n.id, n);
+  }
+  const arrived = state.horizon.apply([...shown.values()]);
+  applyFogRange();
+  return arrived;
+}
+
+// One at a time, and never lost.
+//
+// syncFleet awaits a fetch per island, and the sea says "island joined" once per island -
+// so two arriving together started two runs that interleaved. The second saw a region the
+// first had just dropped and was about to rebuild, decided it was gone, and the sweep took
+// it out. It showed as one of two islands quietly refusing to redraw after it changed,
+// which is not a symptom anybody would trace back to a race.
+let syncing = null;
+let syncAgain = false;
+function syncFleet(rows) {
+  if (rows) state.fleet = rows;
+  if (syncing) { syncAgain = true; return syncing; }
+  syncing = doSyncFleet().finally(() => {
+    syncing = null;
+    if (syncAgain) { syncAgain = false; syncFleet(); }
+  });
+  return syncing;
+}
+
+async function doSyncFleet() {
+  if (!state.terrain) return;
+  const moored = state.fleet || [];
+  // Nearest first, so the ones you can actually see get the detail. Our own island is not
+  // in the running: we are standing on it. The ordering lives in shared/regions.mjs with
+  // the rest of the coordinate contract, and its tiebreak is load-bearing - see there.
+  const others = nearestFirst(moored.filter((r) => r.id !== state.islandId), state.homeOrigin || [0, 0]);
+  const near = others.slice(0, DETAILED);
+  const nearIds = new Set(near.map((r) => r.id));
+  state.farFleet = others.slice(DETAILED);
+
+  // An island that has drifted out of the near set gives its ground back and becomes a
+  // silhouette again. Done before the fetches below, so the budget is free by the time
+  // anything new is raised.
+  for (const region of state.sea.regions()) {
+    if (region === state.region || region.id.startsWith('debug-')) continue;
+    if (!nearIds.has(region.id)) dropRegion(region.id);
+  }
+
+  const arrived = [];
+  for (const row of near) {
+    const standing = state.sea.get(row.id);
+    // Already here and unchanged: nothing to do. Changed - a house built, a district
+    // founded - and it is fetched again and rebuilt. `rev` is the sea's own counter and
+    // moves on every publish, so this is exactly "their island is not what we drew".
+    if (standing && standing.rev === row.rev) continue;
+    if (standing) dropRegion(row.id);
     let bundle;
     try {
-      bundle = await fetch(`/api/islands?id=${encodeURIComponent(berth.id)}`).then((r) => r.json());
+      bundle = await sea(`/island/${encodeURIComponent(row.id)}`).then((r) => r.json());
     } catch { continue; }
     if (!bundle || !bundle.island) continue;
     const region = joinIsland({
-      id: berth.id,
+      id: row.id,
+      rev: row.rev,
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
+      origin: row.origin,
     });
-    if (region) arrived++;
+    if (region) arrived.push(row.name);
   }
-  // A region that has sailed home takes its ground with it, so the sweep runs either way.
-  const here = new Set(moored.map((b) => b.id));
-  for (const r of state.sea.regions()) {
-    if (r === state.region || here.has(r.id) || r.id.startsWith('debug-')) continue;
-    state.sea.remove(r.id);
-  }
+  syncHorizon();
   raiseGuestIslands();
   buildDocks();
   launchBoats();
   applyFogRange();
   applyCameraRange();
-  if (arrived) {
+  // The quay's planks are a deck, and they are built here rather than with the village -
+  // so the report that goes out with applyVillage has not seen them yet. Sent again from
+  // here, and it costs nothing when nothing changed: reportPlacements compares first.
+  reportPlacements();
+  if (arrived.length) {
     state.walk && state.walk.setLevels && handOutDecks();
-    state.ui.toast(`<b>${escapeHtml(moored.map((b) => b.name).join(', '))}</b> is moored alongside.`);
+    state.ui.toast(`<b>${escapeHtml(arrived.join(', '))}</b> ${arrived.length === 1 ? 'is' : 'are'} in the water alongside.`);
   }
+}
+
+// Move this island to another world. The islander writes it down and actually does it -
+// closes the sea it was in and joins the new one - and the page needs to do nothing about
+// its own socket: net.js has been retrying since the old one dropped, and the new welcome
+// carries the new fleet.
+async function changeSea(what) {
+  try {
+    const r = await mine('/api/sea', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(what),
+    });
+    const said = await r.json().catch(() => ({}));
+    if (!r.ok) { state.ui.toast(`The island stayed where it was: ${escapeHtml(said.error || r.statusText)}`); return; }
+    // Every region except our own goes: the world we were in is not the world we are in.
+    for (const region of state.sea.regions()) {
+      if (region !== state.region) state.sea.remove(region.id);
+    }
+    state.fleet = [];
+    syncFleet([]);
+    state.ui.toast(what.mode === 'join' ? 'Setting out for another sea…' : what.mode === 'host' ? 'Hosting a sea. Others can join it now.' : 'On our own again.');
+    setTimeout(() => state.ui.setSeas(null), 0);
+    const fresh = await mine('/api/seas').then((x) => x.json()).catch(() => null);
+    if (fresh) state.ui.setSeas(fresh);
+  } catch { state.ui.toast('The island did not answer.'); }
+}
+
+// A roster that arrived before the island it names had been raised. The sea sends one the
+// moment an island joins, and the ground for it is built on the next sync - a few hundred
+// milliseconds later, because the bundle has to be fetched first. Kept rather than dropped:
+// without the roster nobody on that island has a face.
+const crowdRosters = new Map();
+
+// Our own roster, in the sea's names and then in ours.
+//
+// The bundle this island published is the redacted one - it is the same bundle everybody
+// else is handed, and it has to be - so the sea knows our settlers as `house:s3` and this
+// page drew their houses as `house:<uuid>`. The islander is the only thing that can join
+// the two, because it did the renaming; it hands the map over loopback and never to
+// anybody else (serve.mjs, /api/crowd-ids).
+//
+// Fetched when a roster arrives rather than kept in step: a roster is one message per
+// scan, so this is a request a minute at the very most, and the alternative is a cache
+// that is wrong for exactly as long as nobody notices.
+let ourIds = null;
+// The fetch, while it is out, and whatever the sea said about where everybody is while we
+// were waiting for it.
+//
+// The sea sends a roster and then, immediately, one message placing the whole village -
+// that pair is what stops a joiner watching the island fill up over ten seconds. But
+// translating the roster means a round trip to our own islander, and positions land by
+// index into figures that do not exist until that comes back, so the message would be
+// dropped in full and the ten seconds would be back. It is the join case exactly: the one
+// message big enough to matter is the one guaranteed to arrive at the wrong moment.
+let namingIds = null;
+let heldWhere = null;
+async function ourRoster(ids) {
+  const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
+  if (unknown) {
+    namingIds = mine('/api/crowd-ids').then((r) => r.json()).then((x) => x.ids || {}).catch(() => null);
+    ourIds = await namingIds;
+    namingIds = null;
+  }
+  // Untranslated ids are left as they are rather than dropped: an island whose islander
+  // cannot be reached still has a crowd worth drawing, and a name nobody recognises only
+  // costs that one settler their face.
+  state.homeRoster = ourIds ? ids.map((id) => ourIds[id] || id) : ids;
+  if (state.settlers) state.settlers.roster(state.homeRoster);
+  // And now the positions that arrived while nobody had a name yet.
+  if (heldWhere) { const held = heldWhere; heldWhere = null; placeOurs(held); }
+}
+
+// Where our own people are. Split out of the router because the join case has to be able
+// to replay one.
+function placeOurs(m) {
+  if (!state.settlers || !state.region) return;
+  const half = state.region.half;
+  const now = performance.now();
+  state.settlers.apply(decodeCrowd(m.k, half, decodeCrowd(m.a, half)), now);
+  state.settlers.applyRides(decodeRides(m.b, half), now);
+}
+
+// Somebody else's settlers. The wire format is shared/settlerwire.mjs and the drawing is
+// web/js/crowd-view.js; this only routes.
+function onCrowdMessage(m) {
+  // Our own island is on this wire like any other: the sea walks our crowd too, and this
+  // page draws it rather than simulating it. The roster is kept as well as applied, because
+  // a reseed throws the scene away and builds a new view, and the sea has no reason to say
+  // it all again - see the note where that view is made.
+  const home = state.islandId && m.island === state.islandId;
+  const crowd = home ? state.settlers : null;
+  const region = home ? state.region : null;
+  const g = home ? null : state.guests.find((x) => x.region.id === m.island);
+  if (m.kind === 'roster') {
+    if (home) { ourRoster(m.ids); return; }
+    if (g && g.crowd) g.crowd.roster(m.ids);
+    else crowdRosters.set(m.island, m.ids);
+    return;
+  }
+  if (home) {
+    // Held rather than dropped while the roster is being translated - see there. Only the
+    // last one: they are absolute positions, so an older one has nothing to add.
+    if (namingIds) { heldWhere = m; return; }
+    placeOurs(m);
+    return;
+  }
+  if (!g || !g.crowd) return;
+  // Positions travel in the island's own frame, so they are decoded against its own half
+  // and the origin goes on inside the view. A message is walkers, or a slice of everybody
+  // else, or both.
+  const half = g.region.half;
+  const now = performance.now();
+  const rows = decodeCrowd(m.k, half, decodeCrowd(m.a, half));
+  g.crowd.apply(rows, now);
+  // And whoever is out on the water. Sent whole every beat, so this is handed the message
+  // even when it is empty - an empty one is how a hull is taken back out of the water.
+  g.crowd.applyRides(decodeRides(m.b, half), now);
+}
+
+// Take an island's ground back out of the world: its region, its buildings, its crowd. The
+// sweep below and the rebuild above both need it, and doing it in two places is how one of
+// them ends up leaking a hundred meshes.
+function dropRegion(id) {
+  if (state.ui) state.ui.setSkew(id, null);
+  state.sea.remove(id);
+  for (let i = state.guests.length - 1; i >= 0; i--) {
+    if (state.guests[i].region.id !== id) continue;
+    const g = state.guests[i];
+    const k = state.pickables.indexOf(g.ground);
+    if (k >= 0) state.pickables.splice(k, 1);
+    if (g.crowd) g.crowd.dispose();
+    if (g.props) g.props.dispose();
+    if (g.crops) g.crops.dispose();
+    g.dispose();
+    syncBoards();
+    state.guests.splice(i, 1);
+  }
+}
+
+// The sea talking about its fleet: a welcome carrying the whole list, or one island
+// arriving, going quiet or going home.
+function onFleetNews(world, one, clock) {
+  // The world's own clock, from the welcome. Kept as a skew rather than as a time, so it
+  // survives this tab being asleep for an hour without anybody having to re-ask.
+  if (clock && Number.isFinite(clock.now)) {
+    state.seaSkewMs = clock.now - Date.now();
+    if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
+  }
+  // In at last - so the next refusal is news again rather than a repeat.
+  if (world) { lastRefusal = null; state.fleet = world.islands || []; syncFleet(state.fleet); return; }
+  if (!one) return;
+  // A tree planted, a jetty put up, a bed sown on somebody else's island. Their coastline
+  // is what it was, so this is not a fleet change and must not go anywhere near syncFleet:
+  // that compares `rev`, and the whole point of a parcel is that `rev` did not move.
+  //
+  // The region's own copy is updated as well as the drawing, because raiseGuestIslands
+  // builds from `region.village` and would otherwise put the old garden back the next time
+  // that island is raised.
+  if (one.a === 'parcel') {
+    const g = state.guests.find((x) => x.region.id === one.i);
+    if (!g) return;
+    if (g.region.village) { g.region.village.props = one.props || []; g.region.village.crops = one.crops || []; }
+    if (g.props) g.props.apply(one.props || [], { animate: true });
+    if (g.crops) g.crops.apply(one.crops || [], { animate: true });
+    syncBoards();
+    return;
+  }
+  const { t, a, ...row } = one;
+  const rows = (state.fleet || []).filter((r) => r.id !== one.id);
+  // Sorted by id rather than by arrival, so "the fleet" is the same list on every machine
+  // and in every order the messages happen to turn up in.
+  state.fleet = (one.a === 'gone' ? rows : [...rows, row]).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  syncFleet(state.fleet);
+}
+
+// Every board the page can see, ours and the neighbours', in one list.
+//
+// One panels layer and not one per island: it is a CSS3D renderer over the whole canvas,
+// and a second of those is a second full-screen pass every frame for a board you cannot
+// touch. What a foreign board needs instead is two things it can carry itself - world
+// coordinates, and the ground under it, because this layer was handed our terrain when it
+// was built and a neighbour's board does not stand on it.
+//
+// Their boards render blank with a sentence saying whose machine reads them. That is not
+// a fallback: what a board says comes out of one islander's Jira token, GitHub token and
+// git checkout, and none of those are going on the sea. An empty board with no explanation
+// reads as broken, though, and the first thing anybody does with a broken board is report
+// it - so it says so.
+function syncBoards() {
+  if (!state.panels) return;
+  const list = [...(state.ownProps || [])];
+  for (const g of state.guests) {
+    const v = g.region.village;
+    if (!v) continue;
+    const [ox, oz] = g.region.origin;
+    const keeper = (v.island && v.island.keeper) || true;
+    for (const p of v.props || []) {
+      if (p.kind !== 'panel') continue;
+      const x = p.x + ox, z = p.z + oz;
+      list.push({ ...p, id: `${g.region.id}:${p.id}`, x, z, y: g.region.worldHeight(x, z), away: keeper });
+    }
+  }
+  state.panels.apply(list);
 }
 
 function raiseGuestIslands() {
@@ -1589,10 +1904,32 @@ function raiseGuestIslands() {
       material: buildingMat, modest,
     });
     for (const rec of g.records) attachExtras(rec, { mail: false, signs: false });
+    // And the people. They are not simulated here - the sea walks them and sends where
+    // they got to - but they are drawn by exactly the same eleven meshes ours are, so a
+    // village of three hundred over there costs what a village of three hundred costs.
+    g.crowd = createCrowdView({
+      scene, material: buildingMat, region,
+      buildings: (region.village && region.village.buildings) || [],
+    });
+    // Their scenery and their vegetable beds. Built into the island's own offset group
+    // with its RAW local terrain, which is the rule from shared/regions.mjs: a module that
+    // works out its own positions wants the local terrain and a group, not the world
+    // facade - hand these the facade and every jetty and every bed sinks a metre.
+    //
+    // A bundle has carried both since it was written; they were arriving and being read by
+    // nobody. No animation on the first pass: a hundred props rising out of the ground the
+    // moment an island appears reads as a glitch rather than as somebody gardening.
+    g.props = createProps({ scene: g.group, terrain: region.terrain, material: buildingMat });
+    g.props.apply((region.village && region.village.props) || [], { animate: false });
+    g.crops = createCrops({ scene: g.group, terrain: region.terrain, material: buildingMat });
+    g.crops.apply((region.village && region.village.crops) || [], { animate: false });
+    const waiting = crowdRosters.get(region.id);
+    if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     state.guests.push(g);
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
       + `, ${g.triangles} triangles of ground and ${g.buildingCount} buildings`);
+    syncBoards();
   }
   // A region that has gone takes its ground with it.
   for (let i = state.guests.length - 1; i >= 0; i--) {
@@ -1600,7 +1937,11 @@ function raiseGuestIslands() {
     if (state.sea.get(g.region.id)) continue;
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
+    if (g.crowd) g.crowd.dispose();
+    if (g.props) g.props.dispose();
+    if (g.crops) g.crops.dispose();
     g.dispose();
+    syncBoards();
     state.guests.splice(i, 1);
   }
 }
@@ -1610,155 +1951,18 @@ function applyNeighbours(list) {
   // An island that is really here is not also a rumour on the horizon. Left in, it would
   // be drawn twice - once at half resolution and turned by a hashed angle - in the same
   // water, and clicking the silhouette would offer to sail to somewhere under your feet.
-  const here = new Set(state.sea.regions().map((r) => r.id));
-  const arrived = state.horizon.apply([...(list || []), ...debugJoins].filter((n) => !here.has(n.id)));
-  applyFogRange();
+  // syncHorizon owns that filtering now, and the merge with the far half of our own fleet.
+  state.neighbours = list || [];
+  const arrived = syncHorizon();
   for (const n of arrived) {
     const mark = state.horizon.find(n.id);
-    state.ui.toast(
-      `<b>${escapeHtml(n.name)}</b> is keeping an island off to the ${mark ? bearingWord(mark) : 'west'}.`
-      + ` <button class="act" type="button">Sail over</button>`
-      + ` <button class="act ghost" type="button">Later</button>`,
-      (card) => {
-        const [go, later] = card.querySelectorAll('button');
-        go.addEventListener('click', () => { card.remove(); visitNeighbour(n.id); });
-        later.addEventListener('click', () => card.remove());
-      },
-    );
+    // No offer to sail over any more, because there is nowhere to go: an island on the
+    // horizon is one that is in no sea of ours, and the way to reach it is to join the sea
+    // it is in - which is a choice in Settings, not a boat. An island in *our* sea is not
+    // a rumour on the horizon at all; it is water you can cross.
+    state.ui.toast(`<b>${escapeHtml(n.name)}</b> is keeping an island off to the ${mark ? bearingWord(mark) : 'west'}.`);
   }
 }
-
-// Clicking an island on the horizon does not simply take you there: it is somebody
-// else's machine, and leaving is worth a moment's thought.
-function askToVisit(pickId) {
-  const n = state.horizon && state.horizon.find(pickId);
-  if (!n) return;
-  state.ui.toast(
-    `Sail over to <b>${escapeHtml(n.name)}</b>?`
-    + ` <span class="muted">You will be a visitor there.</span>`
-    + ` <button class="act" type="button">Sail</button>`
-    + ` <button class="act ghost" type="button">Stay</button>`,
-    (card) => {
-      const [go, stay] = card.querySelectorAll('button');
-      go.addEventListener('click', () => { card.remove(); visitNeighbour(n.id); });
-      stay.addEventListener('click', () => card.remove());
-    },
-  );
-}
-
-// Sailing over is a real crossing to their server: their island, their rules, and you
-// arrive there as a visitor. The animation is the handover, not a trick - the page really
-// does go there.
-function visitNeighbour(id) {
-  if (state.sailing) return;
-  const n = state.horizon && state.horizon.find(id);
-  if (!n) return;
-  if (state.mode === 'walk') exitWalk();
-  state.intro = null;
-  state.tween = null;
-  controls.enabled = false;
-  state.ui.closeDossier();
-  state.ui.toast(`Sailing to <b>${escapeHtml(n.name)}</b>, and taking this island with you…`);
-  // The island goes too. Sent while the camera is still crossing, because building the
-  // bundle and posting it takes about as long as the animation does and there is no reason
-  // to watch a spinner for it - and sent by our own server rather than from here, so the
-  // redaction runs on the same side as the secrets and this page never holds an unredacted
-  // copy that it then forwards.
-  //
-  // A failure is not a reason to stay home: you can visit an island without mooring your
-  // own beside it, which is what every visit was until now. But it is a reason to say so,
-  // because "my island did not come" is otherwise a silence - and the likeliest cause by
-  // far is that the two of you are running different code, which parseBundle refuses
-  // outright rather than drawing houses in the sea.
-  sendIslandTo(n);
-
-  const target = new THREE.Vector3(n.x * 0.45, 16, n.z * 0.45);
-  state.sailing = { t: 0, dur: 2.6, from: camera.position.clone(), target, to: n, gone: false };
-  // The crossing is driven by the animation, and animation stops in a tab nobody is
-  // looking at. Without this you could start a journey, switch away, and come back to a
-  // frozen sea - so the arrival is on a clock as well, and whichever comes first wins.
-  setTimeout(() => { if (state.sailing) cross(state.sailing); }, 2.6 * 1000 + 1500);
-}
-
-async function sendIslandTo(n) {
-  if (!n || !n.address || !n.port) return;
-  try {
-    const r = await fetch('/api/visit', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ host: n.address, port: n.port }),
-    });
-    const said = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      state.ui.toast(`Your island stayed here: ${escapeHtml(said.error || r.statusText)}`);
-      return;
-    }
-    console.info(`island: moored at ${n.name} as ${said.id}`);
-  } catch (e) {
-    state.ui.toast(`Your island stayed here: ${escapeHtml(String(e.message || e))}`);
-  }
-}
-
-function cross(s) {
-  if (s.gone) return;
-  s.gone = true;
-  const url = new URL(s.to.url);
-  url.searchParams.set('arrive', state.village && state.village.island ? state.village.island.name : 'a neighbour');
-  location.href = url.toString();
-}
-
-function sail(dt) {
-  const s = state.sailing;
-  s.t += dt;
-  const k = clamp(s.t / s.dur, 0, 1);
-  const e = k * k * (3 - 2 * k);
-  camera.position.lerpVectors(s.from, s.target, e);
-  camera.lookAt(s.to.x, 4, s.to.z);
-  const veil = document.getElementById('veil');
-  if (veil) veil.style.opacity = String(clamp((k - 0.5) / 0.5, 0, 1));
-  if (k >= 1) cross(s);
-}
-
-// Coming in off the water onto somebody else's island, on the bearing we left on.
-function comeAshore(from) {
-  // Lift the water off the screen on a timer, not on an animation frame. A tab that is
-  // not being looked at stops animating, and a veil that only clears on the next frame
-  // would leave somebody staring at a black rectangle.
-  const veil = document.getElementById('veil');
-  if (veil) {
-    veil.style.opacity = '1';
-    veil.style.transition = 'opacity 1.1s ease';
-    setTimeout(() => { veil.style.opacity = '0'; }, 40);
-  }
-  const a = (hash32(String(from)) / 4294967296) * Math.PI * 2;
-  const cx = Math.sin(a) * 120, cz = Math.cos(a) * 120;
-  camera.position.set(cx, 26, cz);
-  controls.target.set(0, 1, 0);
-  controls.enabled = false;
-  state.tween = {
-    t: 0, dur: 3.4,
-    from: controls.target.clone(), to: new THREE.Vector3(0, 1, 0),
-    fromPos: camera.position.clone(), toPos: new THREE.Vector3(cx * 0.28, 15, cz * 0.28),
-    onDone: () => { controls.enabled = true; },
-  };
-  // The way back comes from the browser, not from our own URL: sessionStorage belongs to
-  // the origin we just left, and a "from" parameter would be a link anyone could write
-  // for us. The referrer is the one account of where we came from that we did not author.
-  let home = null;
-  try {
-    const r = document.referrer && new URL(document.referrer);
-    if (r && /^https?:$/.test(r.protocol) && r.origin !== location.origin) home = `${r.origin}/`;
-  } catch { /* no referrer, no way home but the back button */ }
-  state.ui.toast(
-    `You have come ashore on <b>${escapeHtml(state.village && state.village.island ? state.village.island.name : 'this island')}</b>, from ${escapeHtml(from)}.`
-    + (home ? ` <button class="act ghost" type="button">Sail home to ${escapeHtml(new URL(home).host)}</button>` : ''),
-    home ? (card) => {
-      const b = card.querySelector('button');
-      b && b.addEventListener('click', () => { location.href = home; });
-    } : null,
-  );
-}
-
 // --------------------------------------------------------------- particles
 function createParticles() {
   const MAX = 2200;
@@ -1876,13 +2080,26 @@ function yardNudge(spec, built) {
 }
 function groundAt(x, z) { return state.terrain.worldHeight(x, z); }
 
+// What time it is in the world, as opposed to on this computer.
+//
+// The sea's clock is the island's, and the two numbers it sends are both needed: `now`
+// settles which moment it is and `tz` settles whose afternoon that is. An epoch on its own
+// is not a time of day, and getHours() would give a player in another time zone a
+// different sky over the same water - each of them certain the other was wrong.
+//
+// With no sea to ask, both fall back to this machine, which is exactly what the island did
+// before there were any.
 function timeNow() {
-  return state.chronicle.t == null ? Date.now() : state.chronicle.t;
+  if (state.chronicle.t != null) return state.chronicle.t;
+  return Date.now() + (state.seaSkewMs || 0);
 }
 function currentHour() {
   if (state.hourOverride != null) return state.hourOverride;
   const d = new Date(timeNow());
-  return d.getHours() + d.getMinutes() / 60;
+  const tz = state.seaTz == null ? -d.getTimezoneOffset() : state.seaTz;
+  // UTC plus the world's own offset, rather than this browser's idea of local time.
+  const mins = d.getUTCHours() * 60 + d.getUTCMinutes() + tz;
+  return (((mins % 1440) + 1440) % 1440) / 60;
 }
 
 // Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from
@@ -1899,7 +2116,6 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // is nothing under it to stand on - and wrong for one on dry land, where it left the
 // settlers of The Quay hanging in the air beside their own front doors. A house on land
 // has ground under it like anyone else, so its settler uses the ground.
-const overWater = (rec) => rec.spec.harbour && rec.group.position.y <= 0.05;
 
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
@@ -2074,13 +2290,25 @@ function buildScene(village) {
   const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
+    // Our own island, against our own scanner: the page is newer or older than the server
+    // that packed village.json. Same banner, because it has the same consequence.
+    if (state.ui) state.ui.setSkew('home', 'This island’s own scanner');
   }
   state.terrain = terrain;
   // This island becomes the first region, at the origin, so everything that asks the
   // archipelago a question gets the same answer it used to get from the terrain directly.
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
-  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
+  // Where the sea put us. It is [0, 0] for the first island into a world, which is every
+  // single-player island and every host - but a joiner is placed somewhere else, and it
+  // has to agree with everybody else about where that is. Poses travel in world
+  // coordinates (lib/players.mjs), so a client that quietly kept itself at the origin
+  // would see every other body in the wrong place and be seen in the wrong place itself.
+  //
+  // The local terrain is still origin-centred and layout.json is still local: only the
+  // region's offset changes, which is exactly the asymmetry shared/regions.mjs was built
+  // around, so a house still never moves.
+  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: state.homeOrigin || [0, 0] }));
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
@@ -2096,20 +2324,22 @@ function buildScene(village) {
   raiseGuestIslands();
   buildDocks(village);
   launchBoats();
-  if (state.boating) state.boating.clear();
-  state.settlers = createSettlers(scene, buildingMat, terrain);
-  // Outings. Everything it needs is asked for rather than held, because a reseed replaces
-  // the terrain and rebuilds the docks under it - see the note at the top of boating.js.
-  state.boating = createBoating({
-    terrain: () => state.terrain,
-    settlers: state.settlers,
-    dock: homeDock,
-    fleet: outingFleet,
-    rng: makeRng(hash32(`${village.island.name}:boating`)),
-    eager: params.has('sail'),
+  // Our own people, drawn exactly the way everybody else's are. They are not simulated
+  // here any more: the sea walks them - ours and the neighbours' in one loop, off the same
+  // shared/settlerwalk.mjs - and sends where they got to. What that buys is a village that
+  // carries on living while this page reloads, and a village doing the same thing on every
+  // screen watching it. What it costs is a beat and a half of lag on our own doorstep,
+  // which is the price of there being one answer instead of two.
+  if (state.settlers) state.settlers.dispose();
+  state.settlers = createCrowdView({
+    scene, material: buildingMat, region: state.region,
+    buildings: village.buildings || [],
   });
+  // The last roster the sea sent, if it arrived before this scene existed - at boot it
+  // always does, and after a reseed it is the scene that was rebuilt, not the island.
+  // Without this nobody is drawn until the next time the village changes.
+  if (state.homeRoster) state.settlers.roster(state.homeRoster);
   syncBridges(village);
-  state.settlers.setRoads(roadCells(village), state.world.squareCells(village));
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
@@ -2169,6 +2399,22 @@ function syncBridges(village) {
 // Called from both sides: the two lists arrive at different moments - the layout's with a
 // village update, a built one with the props - and whichever came last used to win by
 // replacing the other.
+// The decks on THIS island, on the plain cell key, which is what a settler walking here
+// uses and what an island bundle carries. handOutDecks below builds the same map and then
+// adds the region stride for walk mode, which reads the whole archipelago; this is the half
+// before that, kept apart so neither has to undo the other's work.
+function deckMapForHome() {
+  const flat = new Map(decks);
+  if (state.props && state.terrain) {
+    for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
+  }
+  for (const d of state.docks) {
+    if (state.region && d.region !== state.region) continue;
+    for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
+  }
+  return flat;
+}
+
 function handOutDecks() {
   const flat = new Map(decks);
   if (state.props && state.terrain) {
@@ -2202,15 +2448,7 @@ function handOutDecks() {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
     }
   }
-  if (state.settlers) state.settlers.setDecks(flat);
   if (state.walk) state.walk.setLevels(stacked);
-}
-
-// The road network a settler may walk: the paths, the squares, and the decks - a bridge
-// carries no road surface of its own, so without it every crossing is a hole in the graph
-// and the hamlet on the far bank is unreachable on foot.
-function roadCells(village) {
-  return [...(village.paths || []), ...(village.bridges || [])];
 }
 
 // A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
@@ -2393,6 +2631,38 @@ function frameIsland() {
   return { cx, cz, dist, az, el };
 }
 
+// The card that asks which sea, and the island's own answer to it. Both routes are real -
+// /api/seas probes every candidate's /health, and POST /api/sea writes config.json and then
+// actually closes the sea it was in and joins the new one - so this is a menu over working
+// plumbing rather than a picture of one.
+function openMainMenu() {
+  const menu = createMainMenu({
+    islandName: (state.village && state.village.island && state.village.island.name) || 'this island',
+    hasIslander: islanderHere() && !state.guest,
+    seas: async () => (await mine('/api/seas')).json(),
+    choose: async (what) => {
+      const r = await mine('/api/sea', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(what),
+      });
+      const said = await r.json().catch(() => ({}));
+      if (!r.ok) return { ok: false, error: said.error || r.statusText };
+      // The world we were in is not the world we are in. Everything but our own island
+      // goes, and the socket brings the new fleet when it reconnects on its own.
+      for (const region of state.sea.regions()) {
+        if (region !== state.region) dropRegion(region.id);
+      }
+      state.fleet = [];
+      syncFleet([]);
+      return { ok: true };
+    },
+    // Whatever was chosen, the opening sweep happens afterwards rather than under it.
+    onDone: () => startIntro(),
+  });
+  menu.open();
+}
+
 function startIntro() {
   if (params.has('nointro')) return;
   const f = frameIsland();
@@ -2469,7 +2739,7 @@ function layLandscape(shot) {
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
     // shallows stay where the polder used to be while the ground under them has gone.
-    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: [0, 0] }));
+    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: state.homeOrigin || [0, 0] }));
     w.reshape(next);
   }
   state.shot = shot.village;
@@ -2481,7 +2751,6 @@ function layLandscape(shot) {
   // remembers those cells separately as the place to walk to, so leaving them out empties
   // that list. The result was a borrel that worked until you touched the chronicle and
   // then silently never happened again, which is the worst shape a bug can have.
-  if (state.settlers) state.settlers.setRoads(roadCells(shot.village), w.squareCells(shot.village));
   syncHamlets(shot.village);
 }
 
@@ -2650,7 +2919,7 @@ function popIn(rec, delay = 0) {
 // --------------------------------------------------------------- data flow
 async function fetchVillage(retry = true) {
   try {
-    const r = await fetch(`/village.json?ts=${Date.now()}`, { cache: 'no-store' });
+    const r = await mine(`/village.json?ts=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     return await r.json();
   } catch (e) {
@@ -2679,7 +2948,6 @@ function applyVillage(next, { animate }) {
     if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
       syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
-      state.settlers.setRoads(roadCells(next), state.world.squareCells(next));
     }
   }
 
@@ -2706,7 +2974,6 @@ function applyVillage(next, { animate }) {
     const rec = state.byId.get(id);
     if (!rec) {
       const fresh = makeRecord(spec);
-      placeFigure(fresh);
       if (animate) events.push({ type: 'arrive', rec: fresh, spec });
       continue;
     }
@@ -2735,7 +3002,6 @@ function applyVillage(next, { animate }) {
   for (const [id, rec] of [...state.byId]) {
     if (nextSpecs.has(id)) continue;
     if (animate && rec.group.visible) leaveAnimation(rec);
-    state.settlers.remove(id);
     setTimeout(() => { if (!specById(state.village).has(id)) disposeRecord(rec); }, animate ? 1000 : 0);
     state.byId.delete(id);
     if (state.selected === id) { state.selected = null; state.ui.closeDossier(); }
@@ -2754,35 +3020,60 @@ function applyVillage(next, { animate }) {
     state.walk.setInteractables(interactables());
   }
 
-  if (!animate) { for (const e of events) applyEventInstantly(e); return; }
+  if (!animate) { for (const e of events) applyEventInstantly(e); reportPlacements(); return; }
   for (const e of events) scheduleEvent(e);
+  reportPlacements();
 }
 
-function placeFigure(rec) {
-  if (rec.spec.kind === 'civic') return;
-  const p = rec.group.position;
-  const f = state.settlers.add(rec.id, rec.spec, [p.x, p.y, p.z], { yaw: rec.group.rotation.y });
-  if (f && overWater(rec)) f.deckY = p.y + 0.62;
-  if (f && rec.spec.active) f.mode = 'hammer';
+// Tell the island where the buildings actually ended up.
+//
+// Their positions are not their plots: housePlacement loosens the building line and
+// yardNudge pushes a shed out to the edge of its master's yard, and *both measure the
+// built geometry*, which exists nowhere but here. A settler stands outside its own front
+// door, so the sea - which has a bundle and no meshes - would otherwise put apprentices
+// inside their own sheds. Measured on this village: 259 of 274 buildings are nudged, by a
+// median of a third of a cell.
+//
+// Only the keeper's page, and only when the answer has changed. A visitor drew the same
+// island from the same bundle and has nothing to add; the islander refuses them anyway.
+let toldPlacements = '';
+function reportPlacements() {
+  if (!islanderHere() || state.guest || !state.terrain) return;
+  const at = {};
+  for (const [id, rec] of state.byId) {
+    if (!rec.group || !rec.spec || !rec.spec.plot) continue;
+    at[id] = [Math.round(rec.group.position.x * 1000) / 1000, Math.round(rec.group.position.z * 1000) / 1000];
+  }
+  // And where the roads are carried over water. Same story: a bridge's deck height comes
+  // out of its own built arch, so a sea working without it walks settlers along the
+  // riverbed. Our own island's cells only, on the plain key the bridges are recorded
+  // under - a bundle is one island and the region strides do not come into it.
+  const decks = {};
+  const size = state.terrain.size;
+  for (const [cell, y] of deckMapForHome()) decks[cell] = Math.round(y * 1000) / 1000;
+  const key = JSON.stringify([at, decks]);
+  if (key === toldPlacements) return;
+  toldPlacements = key;
+  mine('/api/placements', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ at, decks }),
+  }).catch(() => { toldPlacements = ''; });   // it will be sent again on the next rebuild
 }
 
+// Who lives where, and what they are doing, is the sea's answer now: it spawns a crowd out
+// of the bundle this island published and sends a fresh roster with every republish. So
+// nothing here adds, removes or poses anybody - a house built in this browser is drawn at
+// once, and whoever lives in it turns up on the next roster, a beat later.
+//
+// The scaffolding is not part of that. It hangs on the building rather than on the person,
+// it is this browser's own animation, and the sea has never known about it.
 function applyEventInstantly(e) {
   if (e.type === 'upgrade' || e.type === 'refit') {
     const rec = state.byId.get(e.id);
-    if (rec) { const fresh = rebuild(rec, e.spec); placeFigureRefresh(fresh); }
-  } else if (e.type === 'start') { const r = state.byId.get(e.id); if (r) { addScaffold(r); state.settlers.setMode(e.id, 'hammer'); } }
-  else if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) { removeScaffold(r, false); state.settlers.setMode(e.id, 'idle'); } }
-}
-function placeFigureRefresh(rec) {
-  const f = state.settlers.figures.get(rec.id);
-  if (f) {
-    f.spec = rec.spec;
-    const reach = rec.spec.kind === 'shed' ? .46 : .85, yaw = rec.group.rotation.y;
-    f.home = [rec.group.position.x + Math.sin(yaw)*reach, rec.group.position.z + Math.cos(yaw)*reach];
-    if (overWater(rec)) f.deckY = rec.group.position.y + 0.62;
-  }
-  else placeFigure(rec);
-  if (rec.spec.active) { addScaffold(rec); state.settlers.setMode(rec.id, 'hammer'); }
+    if (rec) rebuild(rec, e.spec);
+  } else if (e.type === 'start') { const r = state.byId.get(e.id); if (r) addScaffold(r); }
+  else if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) removeScaffold(r, false); }
 }
 
 function scheduleEvent(e) {
@@ -2805,16 +3096,14 @@ function scheduleEvent(e) {
         const rec = state.byId.get(e.id);
         if (!rec) return;
         addScaffold(rec);
-        state.settlers.setMode(e.id, 'hammer');
         const p = rec.group.position;
         state.particles.puff([p.x, p.y + 0.3, p.z], 10);
         await wait(1.5);
         const fresh = rebuild(rec, e.spec);
         addScaffold(fresh);
-        placeFigureRefresh(fresh);
         state.particles.puff([p.x, p.y + 0.3, p.z], 12);
         await wait(0.5);
-        if (!e.spec.active) { removeScaffold(fresh); state.settlers.setMode(e.id, 'idle'); }
+        if (!e.spec.active) removeScaffold(fresh);
         assignFlags();
         state.ui.toast(`<b>${e.spec.name}</b> built a ${String(e.spec.tier)}.`);
       },
@@ -2825,30 +3114,24 @@ function scheduleEvent(e) {
     const rec = state.byId.get(e.id);
     if (!rec) return;
     const fresh = rebuild(rec, e.spec);
-    placeFigureRefresh(fresh);
     const p = fresh.group.position;
     state.particles.puff([p.x, p.y + 0.2, p.z], 7);
     assignFlags();
     return;
   }
   if (e.type === 'start') { applyEventInstantly(e); return; }
-  if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) { removeScaffold(r, true); state.settlers.setMode(e.id, 'idle'); } return; }
+  if (e.type === 'finish') { const r = state.byId.get(e.id); if (r) removeScaffold(r, true); return; }
   if (e.type === 'milestone') { state.ui.toast(`Milestone at ${e.m.at} settlers — <b>${e.m.label}</b> is built.`); return; }
   if (e.type === 'district') { state.ui.toast(`A new district: <b>${e.d.name}</b>.`); return; }
 }
 
+// The tent going up. The newcomer walking to it from the landing beach is the sea's half
+// now (lib/crowd.mjs): it compares the crowd it is building against the one that stood
+// there before, and whoever is new comes up the beach. That happens on the publish after
+// this scan rather than in this frame, so the two are not in step - the tent is up, and
+// they are walking towards it a beat later - and in exchange everybody watching this
+// island sees them arrive, instead of only this screen.
 async function walkIn(rec) {
-  const landing = state.village.island.landing;
-  const door = rec.spec.door || [rec.spec.plot.gx + 1, rec.spec.plot.gz + 1];
-  const f = state.settlers.figures.get(rec.id);
-  if (!landing || !f) { await popIn(rec); return; }
-  const [hx, hz] = [f.home[0], f.home[1]];
-  await new Promise((resolve) => {
-    let settled = false;
-    state.settlers.walkIn(rec.id, landing, door, () => { settled = true; resolve(); });
-    setTimeout(() => { if (!settled) resolve(); }, 9000);
-  });
-  if (f) f.home = [hx, hz];
   await popIn(rec);
   state.ui.toast(`<b>${rec.spec.name}</b> arrived and pitched a tent.`);
 }
@@ -2975,8 +3258,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
-    if (hit && String(hit).startsWith('neighbour:')) askToVisit(hit);
-    else if (hit) { select(hit); } else { state.ui.closeDossier(); }
+    // A silhouette on the horizon is not somewhere to go any more - see applyNeighbours -
+    // so a click on one is a click on nothing, and closing the dossier is the right answer.
+    if (hit && !String(hit).startsWith('neighbour:')) select(hit);
+    else state.ui.closeDossier();
   }
   downAt = null;
 });
@@ -3066,7 +3351,15 @@ function frame(nowMs) {
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
   // somebody crossing the island.
+  //
+  // But not while you are looking at the past. Scrubbing the chronicle back is a view of
+  // this island in May, and other people's bodies and other islands' settlers are here and
+  // now - they would be wandering through a village that has not been built yet. One
+  // condition rather than a second drawing path: `state.chronicle.t` is exactly "not on
+  // Live", and it is the same test timeNow() already makes.
+  const live = state.chronicle.t == null;
   if (state.peers) {
+    state.peers.setVisible(live);
     state.peers.update(dt);
     // Only the people in the room you are standing in are people you can bump into.
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
@@ -3125,27 +3418,22 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday afternoon: the whole village downs tools and heads for the square, and stays
-    // there until closing time. Written as hours with the minutes as a fraction, because
-    // that is what currentHour() hands out.
+    // Friday afternoon: the whole village downs tools and heads for the square. Whether
+    // they go is the sea's decision - it keeps the clock everybody shares - and what is
+    // left here is the furniture, which is scenery and always was: one set of tables per
+    // ten islanders, of which the set the village earned is the first, so the rest are
+    // carried out and taken back in with the borrel itself.
     const d = new Date(timeNow());
     const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
-    state.settlers.setGather(borrel);
-    // And the tables to stand at while it lasts: one set per ten islanders, of which the
-    // set the village earned is the first, so the rest are carried out and taken back in
-    // with the borrel itself.
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
-    // Whoever fancied an afternoon on the water, and they go first: an outing moves a hull
-    // and settlers.update puts the body standing in it wherever that hull now is. The other
-    // way round the rider reads last frame's position and trails the boat by one step -
-    // measured, 0.15 of a unit at cruising speed, which is a settler standing in the wake.
-    if (state.boating) state.boating.update(dt, state.world ? state.world.state.night : 0);
-    state.settlers.update(dt, state.world ? state.world.state.night : 0);
+    // And our own people, off the wire like any other island's. The ground is this island's
+    // own, which is what stands somebody on a quay's planks rather than in the water beside
+    // them.
+    state.settlers.draw(dt, (x, z) => state.region.worldHeight(x, z), nowMs, live);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
-  if (state.sailing) sail(dt);
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -3193,6 +3481,10 @@ function frame(nowMs) {
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
     for (const rec of g.records) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    // Their people, drawn where the sea last said they were and interpolated between. The
+    // ground they stand on is their own region's, which is what puts a body on a quay's
+    // planks rather than in the water beside them.
+    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs, live);
   }
 
 
@@ -3393,7 +3685,7 @@ function setLiveMode() {
 // makes it open without any browser chrome around it.
 function registerWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-  navigator.serviceWorker.register('/sw.js').catch(() => { /* not installable, no matter */ });
+  navigator.serviceWorker.register(mineUrl('/sw.js')).catch(() => { /* not installable, no matter */ });
 }
 
 function escapeHtml(s) {
@@ -3413,7 +3705,7 @@ async function boot() {
     // one included, so what is drawn always comes from the server's answer.
     onSigns: async (mode) => {
       try {
-        const r = await fetch('/api/display', {
+        const r = await mine('/api/display', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'nameplates', value: mode }),
@@ -3421,6 +3713,16 @@ async function boot() {
         if (!r.ok) state.ui.toast(`The signs stayed as they were: ${escapeHtml((await r.json().catch(() => ({}))).error || r.statusText)}`);
       } catch { state.ui.toast('The island did not answer.'); }
     },
+    // The picker. Opening the panel asks the islander who is out there - it probes each
+    // candidate's /health, so the list says whether anybody is home before you choose.
+    onSettingsOpen: async () => {
+      if (!islanderHere()) return;               // a phone has no islander and nothing to set
+      try {
+        state.ui.setSeas(await mine('/api/seas').then((r) => r.json()));
+      } catch { state.ui.setSeas({ mode: 'single', seas: [] }); }
+    },
+    onSeaMode: (mode) => changeSea({ mode }),
+    onJoinSea: (url) => changeSea({ mode: 'join', url }),
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
     onOverview: () => { state.intro = null; state.tween = null; controls.enabled = true; frameIsland(); },
@@ -3534,7 +3836,7 @@ async function boot() {
       const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
       if (!faceToFace.end(walkOn)) walkOn();
       // whatever was said is in the transcript now, so let the island catch up
-      fetch('/api/rescan', { method: 'POST' }).catch(() => {});
+      mine('/api/rescan', { method: 'POST' }).catch(() => {});
     },
     onBusyChange: () => {},
   });
@@ -3573,10 +3875,29 @@ async function boot() {
   });
   state.input.mode('orbit', { active: () => true, handle: orbitPad });
 
-  // Who are we here: the keeper of this island, or somebody visiting it? The page only
-  // uses this to decide what to offer; the server refuses the rest either way.
+  // Who are we here, and is there a machine under us at all? Those used to be one
+  // question, because the island served the page and losing it meant the page was dead.
+  // They are two now:
+  //
+  //   state.hasIslander  whether the machine with the files on it is answering. A page
+  //                      on a phone or a second screen has no islander and never will,
+  //                      and that is a mode rather than a failure: it can see the world
+  //                      and walk in it, and it cannot touch anybody's disk.
+  //   state.guest        who we are on an island that *is* answering.
+  //
+  // The page only uses either to decide what to offer; the server refuses the rest
+  // whatever the page believes.
+  state.hasIslander = true;
   try {
-    const hello = await fetch('/api/hello').then((r) => r.json());
+    const hello = await mine('/api/hello').then((r) => r.json());
+    // Where the world is. An island always has a sea now - single player is a sea of one,
+    // started in the islander's own process - but an island that says nothing still works:
+    // useSea(null) leaves every world call pointed at this same server.
+    useSea(hello.sea);
+    state.islandId = hello.islandId || null;
+    state.islandToken = hello.token || null;
+    state.seaKey = hello.seaKey || null;
+    await learnTheWorld();
     state.guest = hello.role !== 'islander';
     state.signs = hello.signs !== false;
     state.signMode = hello.display ? hello.display.nameplates : null;
@@ -3586,13 +3907,33 @@ async function boot() {
     if (state.guest) {
       state.ui.toast(`You are visiting <b>${escapeHtml(hello.islandName || 'this island')}</b>. Walk where you like — the tickets, the chat and the git belong to whoever lives here.`);
     }
-  } catch {
-    // An island that will not say is treated as our own - including about the signs.
-    // They start down so that a page which may not read them never builds them, and
-    // silence must not be what leaves the keeper's own island bare.
-    state.signs = true;
-    state.ui.setKeeper(true);
+  } catch (e) {
+    if (e && e.name === 'IslanderUnreachable') {
+      // Nobody home. Not ours, not a guest's - there is simply no machine here, so
+      // everything that would write to one is off the table and the keeper's tools must
+      // not be offered. Treating this as "our own island", which is what this did before
+      // there was anywhere else to run, is what would put a Build button on a phone.
+      state.hasIslander = false;
+      state.guest = true;
+      state.signs = true;
+      state.ui.setKeeper(false);
+      setVisiting(true);
+      state.ui.toast('No island server on this machine. You can look around and walk about — the garden, the post and the tickets live on the keeper’s own screen.');
+    } else {
+      // An island that answers but will not say is treated as our own - including about
+      // the signs. They start down so that a page which may not read them never builds
+      // them, and silence must not be what leaves the keeper's own island bare.
+      state.signs = true;
+      state.ui.setKeeper(true);
+    }
   }
+  // And if it goes away later - the keeper restarting their own server, which happens
+  // every time a file is saved - say so once rather than letting forty call sites each
+  // fail quietly in their own way.
+  onIslanderChange((ok) => {
+    state.hasIslander = ok;
+    if (!ok) state.ui.toast('The island server stopped answering. The world keeps going; anything that writes to this machine will wait.');
+  });
 
   let village;
   try {
@@ -3614,14 +3955,21 @@ async function boot() {
     scene, material: buildingMat, terrain: state.terrain, ground: state.sea,
     // Somebody else's hand on a board. It rides in with their pose, so it arrives here
     // rather than as a message of its own - see web/js/net.js.
-    onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
+    // A hand on a board, scoped the same way take and drop are - and unscoped again on
+    // the way in, so a hand on a neighbour's notice board is nobody's hand here rather
+    // than a hand on whichever of ours happens to share its eight hex digits.
+    onCursor: (who, at) => {
+      if (!state.panels) return;
+      const board = at ? ourPanel(at.board) : null;
+      state.panels.peerCursor(who, board ? { ...at, board } : null);
+    },
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   if (!state.guest) refreshNeighbours();
-  refreshHarbour();   // whatever was already moored when this page opened
+  syncFleet();        // whatever was already in the water when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
   // cannot arrive with nowhere to land.
@@ -3634,6 +3982,16 @@ async function boot() {
     onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,
+    url: seaSocket(),
+    // Which world, and whose coast this body belongs over. A page with no islander of its
+    // own sends no island and is a wanderer: it gets the world and a body, and nothing it
+    // does can reach anybody's disk.
+    // `key` is whatever the islander was given for this sea; a sea without one ignores it,
+    // and a sea with one refuses everybody who cannot say it.
+    join: { v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null },
+    onWorld: onFleetNews,
+    onCrowd: onCrowdMessage,
+    onRefused: onRefusedBySea,
     name: playerName(),
     onStatus: () => {},
     onPanels: (m) => applyPanelMessage(m),
@@ -3667,10 +4025,10 @@ async function boot() {
     },
     // Nothing a board says is decided here. A press asks the island, the island answers
     // every copy at once, and applyPanelMessage below is where the answer lands.
-    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(id, action, value); },
-    onTake: (id) => { if (state.net) state.net.takePanel(id); },
-    onDrop: (id) => { if (state.net) state.net.dropPanel(id); },
-    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at); },
+    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(scopePanel(id), action, value); },
+    onTake: (id) => { if (state.net) state.net.takePanel(scopePanel(id)); },
+    onDrop: (id) => { if (state.net) state.net.dropPanel(scopePanel(id)); },
+    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at ? { ...at, id: scopePanel(at.id) } : null); },
     self: () => (state.net ? state.net.id() : null),
   });
   refreshProps({ animate: false });
@@ -3678,9 +4036,14 @@ async function boot() {
   refreshGarden({ animate: false });
   applyVillage(village, { animate: false });
   setLiveMode();
-  // Arriving from a neighbour replaces the usual opening sweep with a landing.
-  const from = params.get('arrive');
-  if (from) comeAshore(from.slice(0, 40)); else startIntro();
+  // Which world this island lives in, asked over the island now that there is one to look
+  // at. The opening sweep waits for the answer: a camera flying over a village while a
+  // card asks you something is two things happening at once and neither reads.
+  //
+  // ?nointro skips it along with the sweep. That parameter has always meant "just show me
+  // the island", and it is what every measurement and every screenshot uses.
+  if (params.has('nointro')) startIntro();
+  else openMainMenu();
   state.ui.boot(true);
   requestAnimationFrame(tick);
   connect();
@@ -3690,10 +4053,14 @@ async function boot() {
 function connect() {
   let es;
   const open = () => {
-    es = new EventSource('/events');
+    es = new EventSource(mineUrl('/events'));
     // An island arriving in the harbour, or sailing home. Not localOnly: everybody standing
     // on this island should see it happen, which is the whole point of putting it there.
-    es.addEventListener('guests', () => { refreshHarbour(); });
+    // The berth event is the islander's old way of announcing a visiting island, and the
+    // sea has taken that job over: the fleet arrives on the socket now. Kept as a nudge
+    // rather than removed, so an islander still running the old route is not silently
+    // ignored.
+    es.addEventListener('guests', () => { syncFleet(); });
     es.addEventListener('update', debounce(async () => {
       try {
         const next = await fetchVillage();
@@ -3776,7 +4143,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, refreshHarbour, applyFogRange, applyCameraRange,
+  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange,
 };
 
 addEventListener('resize', () => {

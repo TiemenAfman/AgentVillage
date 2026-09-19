@@ -10,6 +10,8 @@
 // else's writing, and all of it goes through esc() or into a textContent. The server
 // strips a message down to text before it ever gets here, and this escapes it again on
 // the way in. Two locks on one door, the same as the panels on the island have.
+import { mine } from './api.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // What the island said, or why it could not be read. The same shape as the seed stall's
@@ -125,7 +127,7 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
   addEventListener('keydown', onKey);
 
   async function ask(body) {
-    return answerOf(await fetch('/api/mail', {
+    return answerOf(await mine('/api/mail', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -133,7 +135,7 @@ export function createMailbox(root, { onCounts, onClose } = {}) {
   }
 
   async function load(force = false) {
-    view = await answerOf(await fetch(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
+    view = await answerOf(await mine(`/api/mail${force ? '?force=1' : ''}`, { cache: 'no-store' }));
     if (onCounts) onCounts(view.counts || []);
     if (!view.accounts.length) { page = 'settings'; startForm('new'); pick = null; return; }
     if (!pick || !view.accounts.some((a) => a.id === pick)) pick = view.accounts[0].id;

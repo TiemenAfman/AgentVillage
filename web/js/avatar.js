@@ -7,6 +7,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_PARTS, SETTLER_COLORS, SETTLER_EYE_Y } from './settler-mesh.js';
+// The wardrobe moved to shared/ so the walk can ask how tall somebody is without
+// dragging three.js into Node - see the header of shared/palette.mjs. Re-exported
+// because composing an avatar is this file's subject and everyone asks here.
+import { HAT_SHAPES, SWATCHES } from 'shared/palette.mjs';
+export { HAT_SHAPES, SWATCHES };
 
 const KEY = 'promptholm.avatar';
 
@@ -17,46 +22,9 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
 // it is the one you start in.
-export const HAT_SHAPES = [
-  { id: 'wide', name: 'Wide brim' },
-  { id: 'band', name: 'Head band' },
-  { id: 'cap', name: 'Flat cap' },
-  { id: 'sailor', name: 'Sailor cap' },
-  { id: 'dome', name: 'Dome' },
-  { id: 'wizard', name: 'Pointed' },
-  { id: 'none', name: 'Bare-headed' },
-];
 
 // A curated swatch per part. Skin tones are named for materials rather than people, and
 // the rest borrow the village's own palette so a settler you make still belongs here.
-export const SWATCHES = {
-  skin: [
-    { name: 'Porcelain', hex: 0xf6d5b8 }, { name: 'Sand', hex: 0xf1c9a5 },
-    { name: 'Honey', hex: 0xe0aa7c }, { name: 'Amber', hex: 0xc68642 },
-    { name: 'Umber', hex: 0xa9713b }, { name: 'Chestnut', hex: 0x8d5524 },
-    { name: 'Cocoa', hex: 0x6b4326 }, { name: 'Espresso', hex: 0x4a2f1d },
-  ],
-  tunic: [
-    { name: 'Cream', hex: 0xf0e2c8 }, { name: 'Lilac', hex: 0xcfc4e6 },
-    { name: 'Ash', hex: 0xa8a59e }, { name: 'Wheat', hex: 0xd9b98c },
-    { name: 'Meadow', hex: 0x6fb84a }, { name: 'Poppy', hex: 0xd94f3d },
-    { name: 'Cornflower', hex: 0x3d7ed9 }, { name: 'Gold', hex: 0xd9a33d },
-    { name: 'Teal', hex: 0x3aa899 }, { name: 'Plum', hex: 0x8a4b7a },
-  ],
-  trim: [
-    { name: 'Leather', hex: 0x6b4a2f }, { name: 'Walnut', hex: 0x5a3c28 },
-    { name: 'Charcoal', hex: 0x3a3a3f }, { name: 'Violet', hex: 0x6e5aa8 },
-    { name: 'Navy', hex: 0x2b4c7e }, { name: 'Tan', hex: 0x7d5a3a },
-    { name: 'Rust', hex: 0x8a4b2a }, { name: 'Slate', hex: 0x4c5566 },
-  ],
-  hat: [
-    { name: 'Straw', hex: 0xc9a75c }, { name: 'Slate', hex: 0x4c5566 },
-    { name: 'Copper', hex: 0xb87333 }, { name: 'Violet', hex: 0x7a4fb0 },
-    { name: 'Red', hex: 0xd94f3d }, { name: 'Navy', hex: 0x2b4c7e },
-    { name: 'Green', hex: 0x5c8a4a }, { name: 'White', hex: 0xf5efe0 },
-    { name: 'Black', hex: 0x3a3a3f },
-  ],
-};
 
 // The wide-brimmed, straw-hatted settler the player has always been.
 export const DEFAULT_AVATAR = {

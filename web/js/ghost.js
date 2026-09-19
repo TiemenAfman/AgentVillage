@@ -26,6 +26,7 @@
 import * as THREE from 'three';
 import { propGeometry, propLift, propFootprint, propReach, PANEL_WIDEST } from './props.js';
 import { wheelsFor } from 'shared/shapes.mjs';
+import { mine } from './api.js';
 
 // How far you can reach on foot. From the sky there is no limit - you put it where you
 // are looking - and this is the one place the two modes differ.
@@ -243,7 +244,7 @@ export function createGhost({
     if (spec.note) body.note = spec.note;
 
     try {
-      const r = await fetch('/api/build', {
+      const r = await mine('/api/build', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       const text = await r.text();
@@ -259,7 +260,7 @@ export function createGhost({
 
   async function take(id) {
     try {
-      const r = await fetch('/api/unbuild', {
+      const r = await mine('/api/unbuild', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
       });
       if (!r.ok) throw new Error(`the island said ${r.status}`);

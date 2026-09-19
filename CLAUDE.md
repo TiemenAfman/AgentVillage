@@ -114,23 +114,195 @@ both islands have a `civic:board`. No nameplates over there: 41 of them measured
 calls and 41 canvas textures, which took a second island from 1.35x the call count to 1.76x
 against a 1.6x budget - `attachExtras(rec, { signs: false })` is what keeps that true.
 
-**`POST /api/island` is the first write route on the public allowlist**, deliberately
-against the rule below. See the carve-out written above `PUBLIC_API` in `lib/access.mjs`;
-the short version is that LAN membership is the whole gate, so the size cap, the rate limit,
-the quarantine under `data/guests/` and the whitelisting rebuilder in `lib/islandbundle.mjs`
-are the only defences - and an `inviteCode` now buys writes where it used to buy a look.
-A berth never survives a restart: `createGuests()` clears the tree on start, which is what
-keeps an uploaded island a *visit* rather than an export.
+Its people come the same way — and so do ours. **There is no local simulation left in the
+browser.** `web/js/crowd-view.js` feeds positions off the wire into `createFigures` for
+every island including our own, so a village of three hundred costs the same eleven draw
+calls a village of three does. And only the near ones are drawn
+whole — `DETAILED` in `main.js`, nearest first by `nearestFirst()` — while the rest are
+silhouettes at their real berth through `horizon.js`. Eight islands in full does not render;
+measured at six, 850 draw calls against 788 for one.
+
+There is no longer any way to visit somebody by *leaving*. `cross()`, `visitNeighbour()`
+and `?arrive=` are gone with the berth machinery: an island in your sea is water you can
+cross, and an island on the horizon is one in a sea you have not joined — which is a choice
+in Settings, not a boat.
+
+**Nothing a visitor can reach writes anything.** There is no write route on `PUBLIC_API`
+and there is not meant to be one. There was — `POST /api/island` took delivery of somebody
+else's island and parked it under `data/guests/` — and the sea took that job: an island is
+published to a world that holds it in memory and never writes it down. So `lib/access.mjs`
+is back to all three of a loopback socket, a known `Host` and a matching `Origin`, with no
+flag and no path list that can spend any of them, and an `inviteCode` is back to buying a
+look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
+`parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
 
 **One material, one draw call per building.** Which texture sheet a face uses is a number
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
 `?stats` reports the colour pass only — the shadow pass is not in it.
 
+**Nothing in the browser reaches the network without naming which machine it means.**
+Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
+the mail, the tickets, spawning agents) and `sea()` for the shared world. Assets go through
+`web/js/assets.js` — `textureUrl()`, `modelUrl()` — because a loader's path is just as
+absolute as a fetch and is far easier to miss. Both modules work their bases out from
+`import.meta.url`, never from `location` or the document, which is what lets the island be
+served from a subpath behind a reverse proxy; `shared/` is reached only through the import
+map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of that,
+including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
+proxy in front and load the island at a subpath: everything must come from under it.
+
+**A board says which island it is on, and a neighbour's board says whose it is.**
+`lib/players.mjs` has accepted `<islandId>:prop:<uuid>` since the boards moved to the sea
+and for a long time nothing sent one, which is plumbing with no button; `scopePanel` /
+`ourPanel` in `shared/panels.mjs` are the button, and they must stay exact inverses —
+`panels.all()` replaces the whole set, so one of somebody else's leaking in would empty
+ours rather than merely clutter it. There is **one** panels layer, not one per island: it
+is a CSS3D renderer over the whole canvas. A foreign board therefore carries what that
+layer cannot work out for it — world coordinates and its own `y`, because the layer was
+handed our terrain — and renders blank with a sentence naming whose machine reads it.
+That sentence is the feature: what a board says comes out of one islander's Jira token,
+GitHub token and git checkout, none of which go on the sea, and an unexplained empty board
+gets reported as broken.
+
+**A tree does not cost a coastline.** A bundle is a snapshot and live is a stream, and the
+two do not combine for free: a republish is 206 kB, makes every viewer drop a region and
+build its ground and buildings again, and — since the sea walks the crowd — sends every
+settler on that island back to their own front door. So what is *standing* on an island
+goes through a door of its own, `POST /island/:id/parcel`, which updates the bundle and
+broadcasts `{t:'island', a:'parcel'}` and **deliberately does not move `rev`**. `rev` means
+"their island is not what we drew"; moving it is what triggers the rebuild. The cost of not
+moving it is that a viewer disconnected across a patch misses the tree until the next scan
+republishes — a minute at most.
+
+Both halves are needed and they are not symmetrical: `packParcel` (forgiving, `context(false)`,
+fills a missing `scale` in) on the sender, `parseParcel` (strict, refuses) on the sea. Props
+in `props.json` carry only what whoever built them gave them, so raw props sent down that
+door come back as "a measurement arrived as something that is not a number" and the tree
+silently never appears anywhere else. It is the same asymmetry `buildBundle`/`parseBundle`
+have always had; it only became possible to get wrong when a second door was cut beside them.
+
+**A crowd is rebuilt on every publish, and the difference between two of them is the only
+thing that knows who is new.** `createCrowd(island, { known })` is handed the ids the crowd
+before it had; anybody not in that set walks up from the landing beach. `known` is null for
+the first crowd an island ever has — and after a sea restart — so a whole village never
+comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
+arrival, so nobody walks. No flag in the bundle and no timestamp to trust.
+
+**Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
+where they are: a body enrolled by a roster starts at its island's own middle, and drawing
+it there put a stranger on the town square until its slice came round. And a joining client
+is handed every position at once, once (`slices: 1` at the handshake in `lib/sea.mjs`),
+because the beat's rotation takes `KEYFRAME_S` to get round everybody and watching a village
+fill up over ten seconds is not a first impression worth having. The client holds that one
+message while it translates the roster — see below — or it would be dropped in full, which
+is exactly the ten seconds back again.
+
+**The sea walks every crowd, ours included, and the roster it sends back is in redacted
+names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
+renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page
+never drew a house under. The islander is the only thing that can join the two, because it
+did the renaming, and a shed's id in particular cannot be reconstructed from outside
+(`shed:s3:x7` carries a counter). So `buildBundle(…, out)` hands back
+`renamed -> real`, derived from the two arrays rather than from the swap table — `clean()`
+maps an array to an array, so position is preserved by construction and a rename added
+tomorrow is carried for free. It reaches the page through `GET /api/crowd-ids`, which is
+**deliberately not on `PUBLIC_API`**: it is the exact inverse of the redaction, and one
+request would undo all of it. `tests/crowd-ids.test.mjs` asserts both halves.
+
+A settler with no face is what a broken mapping looks like, and the temptation is to make
+the route public to fix it. Don't.
+
+**The settlers walk in `shared/settlerwalk.mjs` and are drawn in
+`web/js/settler-figures.js`, and two things cross between them.** The walk writes `f.anim`
+each step — `walk`, `step`, `hammer` or `still` — and the renderer derives the bob, the
+gait, the arm swing and the idle sway from it off its *own* clock; and it writes `f.face`
+plus `f.turn`, a direction and how briskly to turn towards it, because an *angle* needs
+`atan2` and the walk may not have one. None of the cosmetic sine waves feed back into a
+position, which is what made the split possible; keep it that way, or the drawing becomes
+something the wire has to carry.
+
+The walk obeys `shared/`'s rule in full: no transcendental functions, no clock, no three.js,
+and `tests/settler-walk.test.mjs` asserts all three by reading the source. It counts *ticks*
+(`advance(n)`, `DT = 0.05`) rather than taking a `dt`, because two runtimes accumulating
+wall-clock time diverge immediately however identical the code is. That test file
+deliberately registers no loader and stubs no `document`: the moment it needs one, something
+has reached back into the browser and the sea can no longer step a crowd.
+
+Three more rules hold the seam. The walk's rng stream (`<id>:walk`) is ordered and
+load-bearing, so anything cosmetic draws from `<id>:gait` instead and never from the middle
+of it. A figure's errand hooks are records (`f.after`, `f.then`), never closures, because a
+closure cannot be compared against another machine's copy or resumed after a restart;
+`f.onDone` is still a function and only for `walkIn` and `sendOut`, which are somebody
+else's errand. And the door a settler stands outside comes from `DOOR_DIR[plot.rot]` alone —
+`placeFigure` used to pass the building mesh's own yaw, which the sea does not have; the two
+were checked against each other for all four rotations and agree exactly.
+
 **Nothing is fetched at boot.** Blender sets are baked into ordinary modules
 (`web/js/*-mesh.js`) imported synchronously through `web/js/models.js`, so every shape
 exists before the first line of `main.js` runs. Do not introduce a loader: the boot screen
 stuck on "Charting the island…" is a failure this project has already had.
+
+**There are three processes now, and only one of them is dangerous.** The *sea*
+(`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay with no island
+of its own: it reads no transcripts, never scans, and **writes nothing to disk**. That last
+one is load-bearing rather than an omission - it is what means there is no schema, no
+migration and no upgrade path, and a restart is a second of blank water while everybody
+reconnects. The *islander* (`serve.mjs`) owns this machine: the scan, `data/`, the agents,
+the mail, the tickets, and it listens on loopback only. The *client* draws both.
+
+Single player is not a mode. `serve.mjs` starts a sea in its own process bound to loopback
+and joins it with one island in it; hosting is that same sea bound to the network; joining
+is somebody else's address (`config.multiplayer.sea.mode`, changed at runtime through
+`POST /api/sea`). One code path — the difference between being alone and being in company
+is how many rows are in `world.islands`. There is deliberately no offline mode to keep in
+step, because that is two drawing paths and a class of bug that only appears in front of
+other people.
+
+Two rules that hold the world together. **An island never moves once it has an origin** —
+`nextOrigin()` in `shared/regions.mjs` is the policy and `clearOf()` is the invariant, and
+a newcomer that shifted the fleet would slide the world under the feet of everybody
+standing on it. And **our own island stands where the sea says it does**, not at `[0,0]`:
+poses travel in world coordinates, so a client that quietly kept itself at the origin would
+see every other body in the wrong place and be seen in the wrong place itself. The local
+terrain is still origin-centred and `layout.json` is still local; only the region's offset
+changes.
+
+The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
+sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
+route open to anybody — so an inbound half would be a change of posture, not a convenience.
+
+**The sea can go in a box; the islander never can.** `Dockerfile.sea` copies `sea.mjs`,
+`lib/` and `shared/` **by name** and not the tree, because the tree holds the scanner, the
+mail server and the agent dispatcher. That naming is also the failure mode — an import into
+a fourth folder works here and produces a container that dies on its first line, on a box
+nobody watches — so `tests/sea-image.test.mjs` walks the real import graph and checks every
+file in it is inside something the Dockerfile copies. `--open` in the `CMD` is not optional:
+inside a container, loopback is nobody, and what keeps the sea shut is the network it is
+published on plus `SEA_KEY`. No volumes, deliberately.
+
+A sea says *that* it wants a key in `/health` (`keyed`), never which one — without that the
+picker cannot tell a sea that will have you from one that will turn you away, and the only
+way to find out is to move the island and watch it be refused. A refusal is also said
+**once per reason, not once per attempt**: `net.js` keeps retrying, which is right, but none
+of these reasons fix themselves, so the loop turned one problem into a toast every few
+seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
+is wrong and tells whoever has to fix it nothing.
+
+`SEA_KEY` is shared by everybody in a world. Each islander keeps it in
+`multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
+never a visitor, who could otherwise park an island and wear a name there. Without that
+hand-off a sea that gets a key locks out the browser of the very island publishing to it.
+
+Behind Nginx Proxy Manager, two settings or the island connects and then sits in silence:
+**Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
+(`proxy_read_timeout 300s`). Everything after the handshake goes over that socket.
+
+**Somebody running different code is a banner, not a console warning.** Three machines make
+a world — this page, the islander that packed a bundle, whichever islander packed somebody
+else's — and when their `shared/terrain.mjs` disagree an island is drawn in the wrong shape
+with nothing crashing and nothing logged where anybody looks. `ui.setSkew(id, name)` keeps
+it on screen and names who.
 
 **The server is dangerous on purpose.** `/api/assign` spawns real Claude Code sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
@@ -173,7 +345,8 @@ is not deterministic.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a boat out at once and often, instead of one outing every few minutes).
+Debug query params: `?nointro`, `?hour=21`, `?stats`. (`?sail` is gone with the browser's
+own boating — outings are the sea's, and `eager` is a flag on `createBoating` there.)
 
 ## Layout of the source
 
@@ -181,8 +354,11 @@ Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sail` (settlers take a b
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
-| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes — Node and browser both |
-| `web/js/` | `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure) and `boating.js` (settlers taking one of those boats out), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `settlers.js`, `walk.js`; `*-mesh.js` are baked output — never hand-edit |
+| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
+| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (a re-export of
+`shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
+drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
+any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
@@ -202,4 +378,5 @@ files set a high bar for that; match it rather than stripping it back.
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,
-`CLAUDE_EXE`, `GH_EXE`, `BLENDER`.
+`CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
+`SEA_KEY`.

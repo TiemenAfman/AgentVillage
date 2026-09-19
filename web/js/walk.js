@@ -10,6 +10,7 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
+import { modelUrl } from './assets.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -62,7 +63,7 @@ const HEAD = WALK_CLEARANCE;
 // The keys the feet use. Lifted out of onKeyDown because a board being worked hands
 // every other key to the page and keeps only these.
 const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
-const KENNEY_CHARACTER = '/models/kenney/character-male-a.glb';
+const KENNEY_CHARACTER = modelUrl('kenney/character-male-a.glb');
 const KENNEY_HEIGHT = 0.54;
 
 // A field on a board takes its letters. In here w is a w, not a step, so the feet keep

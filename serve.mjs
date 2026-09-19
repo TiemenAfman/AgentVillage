@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, setSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -24,17 +24,13 @@ import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
 import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
-import { createWsServer } from './lib/ws.mjs';
-import { createRoster } from './lib/players.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
-import { buildBundle, parseBundle } from './lib/islandbundle.mjs';
-import { createGuests, MAX_BERTH_BYTES } from './lib/guests.mjs';
+import { buildBundle, parseBundle, packParcel, beaconId } from './lib/islandbundle.mjs';
+import { createSea } from './lib/sea.mjs';
+import { createSeaClient, mintToken } from './lib/seaclient.mjs';
+import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
-import { berthOf } from './shared/regions.mjs';
-import { mooringFor, planksOf } from './shared/quay.mjs';
-import { createJournal, JOURNAL_OPS } from './lib/journal.mjs';
-import { createVisit, hostIdFor } from './lib/visits.mjs';
 import os from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -124,7 +120,8 @@ function checkVendor() {
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
 function shutdown(why) {
-  try { ws && ws.close(); } catch { /* the sockets go with the process anyway */ }
+  try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
+  try { ownSea && ownSea.close(); } catch { /* and so does the sea, if it was ours */ }
   try { neighbours && neighbours.stop(); } catch { /* the beacon dies with us regardless */ }
   const stopped = stopAllAgents();
   const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
@@ -206,32 +203,6 @@ function readBody(req, limit = 64 * 1024) {
     req.on('error', reject);
   });
 }
-
-// The same shape as readBody - and the same promise that the request is destroyed the
-// moment the limit is passed, rather than read to the end and thrown away - with two
-// differences that matter at two megabytes rather than at sixty-four kilobytes.
-//
-// It counts bytes. readBody concatenates chunks onto a string and measures that, so its
-// limit is in UTF-16 units and a body of four-byte characters can be four times the
-// number it was given. Here the ceiling is also a disk ceiling, so it has to be honest.
-//
-// It decodes once, at the end. Appending a Buffer to a string decodes each chunk on its
-// own, and a multi-byte character split across two chunks comes out as U+FFFD - which in
-// a body this size is not hypothetical.
-function readRawBody(req, limit = 2 * 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let bytes = 0;
-    req.on('data', (c) => {
-      bytes += c.length;
-      if (bytes > limit) { reject(new Error('body too large')); req.destroy(); return; }
-      chunks.push(c);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
-}
-
 // Does this folder carry a project skill by that name? It is what decides whether an
 // agent sent there is told to follow the workflow or to be told it in full.
 //
@@ -331,6 +302,11 @@ async function rescan(reason) {
   await scanning;
   scanning = null;
   if (pending) { pending = false; return rescan('coalesced'); }
+  // And tell the world, if the island actually changed. publish() compares what it last
+  // sent, so a scan that found nothing costs nothing - and a scan that found a house puts
+  // it on everybody else's horizon within the minute rather than whenever they next
+  // reload. This is the whole of "live, also between scans" for the shape of an island.
+  if (seaClient) seaClient.publish().catch(() => {});
   return null;
 }
 
@@ -347,133 +323,14 @@ const server = http.createServer((req, res) => {
 // checks that decide this lives in lib/access.mjs.
 const access = createAccess({ port: PORT, config });
 
-// Where a visitor's own island is parked while they are here. Made at start-up, which is
-// also when it sweeps whatever was left in data/guests/ - see lib/guests.mjs for why a
-// berth is not allowed to survive a restart.
-const guests = createGuests({ log });
-
-// Everyone who opens the page gets a body to walk around in. The upgrade event is a
-// second front door - handle() below never sees it - so the same classification has to
-// be made again here, by hand, or the socket would be the way around the whole gate.
-// The roster is also where the boards on the island are remembered now, and it needs to
-// know which face each one carries to know what it will accept. Read from the props on
-// every message rather than cached: a board can go up while people are standing there.
-const panelFaces = () => {
-  const out = new Map();
-  for (const prop of listProps()) if (prop.kind === 'panel') out.set(prop.id, prop.face || 'notice');
-  return out;
-};
-// Where every island's boat starts. Derived and not stored, from the same shared/quay.mjs
-// the browsers use, so an untouched boat is in the same place on every screen without a
-// message being sent about it - which is the whole reason that module exists.
-//
-// Recomputed rather than cached: an island arrives in the harbour or sails home while the
-// server runs, and a fleet that still has a mooring for an island that has gone would hold
-// a boat in open water. The work is a terrain per island, which is why it is done when the
-// harbour changes and not per message.
-function mooringsNow() {
-  const out = [];
-  const village = readJson(VILLAGE_FILE, null);
-  if (village && village.island) {
-    const t = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
-    const m = mooringFor('home', t, village.island.landing, [0, 0], planksOf(village));
-    if (m) out.push(m);
-  }
-  // The guests, at the berths the browsers will put them at. The same berthOf and the same
-  // order, so the two sides agree; a berth that cannot be worked out is simply left without
-  // a boat rather than guessed at.
-  const own = village && village.grid ? village.grid.size / 2 : 32;
-  let i = 0;
-  for (const berth of guests.list()) {
-    const bundle = guests.read(berth.id);
-    if (!bundle || !bundle.island || !bundle.island.landing) { i++; continue; }
-    const size = bundle.grid ? bundle.grid.size : bundle.island.gridSize;
-    const t = makeTerrain(bundle.island.seed, { size, polders: bundle.polders || [] });
-    const m = mooringFor(berth.id, t, bundle.island.landing, berthOf(i, own, size / 2), planksOf(bundle));
-    if (m) out.push(m);
-    i++;
-  }
-  return out;
-}
-
-// Telling every open socket about one boat. The roster broadcasts its own messages; this
-// is for the two places outside it that change the fleet - an island mooring or unmooring.
-const broadcast2 = (b) => { if (ws) ws.broadcast(JSON.stringify({ t: 'boat', ...b })); };
-
-// One journal per berth, made the first time somebody changes something on that island.
-// It lives in the berth's own directory, so evicting the berth takes the journal with it -
-// which is right: a record of what was done to an island that has sailed home is of no use
-// to anybody, and the guest has either collected it or decided not to.
-const journals = new Map();
-function journalFor(id) {
-  if (!journals.has(id)) journals.set(id, createJournal({ dir: path.join(guests.dir, id) }));
-  return journals.get(id);
-}
-
-// The hostId a guest works out for us, derived the same way on both sides: the hostname it
-// dialled and the port we answer on. lib/visits.mjs refuses a journal whose hostId is not
-// the one it set out for, which is what stops two visits at once from applying each
-// other's lines.
-function hostIdAsSeenBy(req) {
-  const asked = String((req.headers && req.headers.host) || '').replace(/:\d+$/, '');
-  return asked ? hostIdFor(asked, PORT) : null;
-}
-
-// The visit this island is on, if any: the loop that pulls its own changes home. One at a
-// time, because a settler is in one place.
-let visit = null;
-
-const roster = createRoster({
-  maxPlayers: config.multiplayer.maxPlayers, panelFaces, log,
-  moorings: mooringsNow(),
-});
-// A board taken off the island takes what it said with it, rather than waiting for a
-// restart to be forgotten.
-const forgetGonePanels = () => roster.panels.forget([...panelFaces().keys()]);
+// Who a request is. It used to be needed twice - once here and once for the WebSocket
+// upgrade, which handle() never sees - and now there is only one door: the world's socket
+// belongs to the sea, and this server answers nothing but its own machine.
 const whoFor = (req) => {
   try { return access.classify(req, new URL(req.url, `http://localhost:${PORT}`)); } catch { return { role: 'refused' }; }
 };
-const ws = config.multiplayer.enabled ? createWsServer(server, {
-  path: '/ws',
-  maxSockets: Math.max(8, Number(config.multiplayer.maxPlayers || 16) * 2),
-  isAllowed: (req) => whoFor(req).role !== 'refused',
-  onOpen: (conn, req) => roster.attach(conn, { keeper: whoFor(req).role === 'islander' }),
-  onMessage: (conn, text) => roster.message(conn, text),
-  onClose: (conn) => { roster.detach(conn); sawSomebodyLeave(conn); },
-  log,
-}) : null;
 
-// A berth is keyed by an island and an address; a player is a connection. The two do not
-// line up on their own, so "the visit is over" has to be worked out: when the last socket
-// from the address that parked an island has gone, and stayed gone for the grace, the
-// island goes with it.
-//
-// The grace matters more than it looks. A page reload drops every socket for a second or
-// two, and evicting on that would make refreshing the page throw your island out of the
-// harbour - which is exactly the sort of thing that is discovered by somebody else, later.
-// Without this the only thing that ever cleared a berth was the sweep at start-up, so an
-// island stayed moored for as long as the server ran.
-const GRACE = Math.max(5000, Number(config.visitorGraceMs) || 1800000);
-function stillHere(address) {
-  let found = false;
-  if (ws) ws.each((c) => { if (!found && c.socket && c.socket.remoteAddress === address) found = true; });
-  return found;
-}
-function sawSomebodyLeave(conn) {
-  const address = conn && conn.socket && conn.socket.remoteAddress;
-  if (!address) return;
-  setTimeout(() => {
-    if (stillHere(address)) return;
-    for (const berth of guests.list()) {
-      if (guests.parkedFrom(berth.id) !== address) continue;
-      guests.evict(berth.id);
-      log(`the island ${berth.name || berth.id} has sailed home`);
-      for (const b of roster.boats.moor(mooringsNow())) broadcast2(b);
-      broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
-    }
-  }, GRACE).unref?.();
-}
-if (ws) setInterval(() => roster.tick(), Math.max(33, Number(config.multiplayer.tickMs) || 66)).unref?.();
+
 
 // Who else is out there. Only the keeper is told: a list of the other machines on your
 // network is not a visitor's to read, so the event goes to local listeners only.
@@ -507,6 +364,14 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   seed: config.seed,
   gridSize: config.gridSize,
   announcing: access.open,
+  // Only a sea anybody else can actually reach. Single player's sea is on loopback, so
+  // shouting about it across the network would put an address in everybody's server list
+  // that resolves, on their machine, to their own browser.
+  sea: () => {
+    if (!ownSea || (config.multiplayer.sea || {}).mode !== 'host') return null;
+    const addr = ownSea.address();
+    return addr ? { sea: addr.port, seaName: (config.multiplayer.sea || {}).name || `${config.islandName}'s sea` } : null;
+  },
   settlers: () => {
     const v = readJson(VILLAGE_FILE, null);
     return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
@@ -515,6 +380,19 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   log,
   onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
 }) : null;
+
+// Why a sea did not answer, in words a row in the menu can say. Node's own message for
+// everything under the HTTP layer is the bare "fetch failed", which tells a reader nothing
+// about whether the address is wrong or the machine is simply off - the code that does say
+// it is one level down, in `cause`.
+function whyNot(e) {
+  if (e && e.name === 'TimeoutError') return 'no answer';
+  const code = (e && e.cause && e.cause.code) || (e && e.code) || '';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'no such address';
+  if (code === 'ECONNREFUSED') return 'nothing listening';
+  if (code === 'ECONNRESET' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'could not be reached';
+  return 'no answer';
+}
 
 async function handle(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -549,6 +427,28 @@ async function handle(req, res) {
       // keeper's panel that shows it; a visitor gets the yes or no and nothing else.
       signs: nameplatesVisibleTo(config.display.nameplates, who.role),
       display: who.role === 'islander' ? { nameplates: config.display.nameplates } : null,
+      // Where the world is, and who this island is in it. The url is what web/js/api.js
+      // points sea() and the socket at; absent, the page talks to this server for the
+      // world too, which is exactly what it did before there were seas.
+      //
+      // The token is the keeper's alone. It is what holds this island's claim in the sea,
+      // so it goes only to a page on this machine - a visitor who had it could publish
+      // over the island from anywhere.
+      islandId: ISLAND_ID,
+      sea: seaUrlFor(req),
+      token: who.role === 'islander' ? ISLAND_TOKEN : null,
+      // The key to the sea, for the keeper's own page only.
+      //
+      // A sea with a key refuses a handshake without one - that is the point of it - and
+      // until now only lib/seaclient.mjs had it, so the moment a sea got a key it locked
+      // out the browser of the very island publishing to it. A visitor does not get it:
+      // with the key they could park an island and wear a name in that world, which is
+      // exactly what the key is there to stop.
+      //
+      // It is not a secret the way ISLAND_TOKEN is - everybody in a world shares it - but
+      // it is not public either, and a page on this machine is the only one that has any
+      // business having it from here.
+      seaKey: who.role === 'islander' ? (config.multiplayer.sea && config.multiplayer.sea.key) || null : null,
     });
   }
 
@@ -800,225 +700,101 @@ async function handle(req, res) {
 
   if (p === '/api/agents') return json(res, 200, { agents: liveAgents() });
 
+  // Which seas there are to join. Three sources, one list:
+  //
+  //   the network   islands on this LAN that say they are hosting one (the beacon above)
+  //   the known one a fixed address in the config, for the sea that is always up
+  //   your own      whatever you have typed in before and kept
+  //
+  // Each is asked /health, so the list says whether anybody is home before you pick rather
+  // than after. A sea that does not answer stays in the list with the reason on it: "gone"
+  // and "still looking" are different things and a picker that conflates them is a picker
+  // that looks broken every time the wifi hiccups.
+  // The renderer telling the island where it actually put things.
+  //
+  // A building's position is not its plot: housePlacement and yardNudge move it by up to
+  // half a cell, and both of them measure the built geometry, which exists nowhere but in
+  // a browser. A settler stands outside its own door, so a sea working from the surveyed
+  // cell centre would stand apprentices inside their own sheds - measured at a median of
+  // 0.35 units off, against a shed's door reach of 0.46.
+  //
+  // Keeper-only, and not because the numbers are secret: they are scenery, and they go
+  // out in every bundle. It is because this is a write, and the API here is deny-by-default
+  // for writes. A visitor's browser drew the same island and has nothing to add.
+  if (p === '/api/placements' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let saved;
+    try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
+    // Worth republishing at once rather than waiting for the next scan: until this arrives
+    // the sea has everybody standing a third of a cell out of place.
+    if (seaClient) seaClient.publish().catch(() => {});
+    return json(res, 200, { ok: true, buildings: Object.keys(saved.at).length, decks: Object.keys(saved.decks).length });
+  }
+
+  // Who the sea's roster means, in this island's own names. Not on PUBLIC_API: it is the
+  // inverse of the redaction (see crowdIds above), so it never leaves this machine.
+  //
+  // Rebuilt rather than served from the last publish, because a page may ask before this
+  // island has ever sailed - at boot, with the sea still connecting - and an empty map
+  // reads to the page as "nobody lives here" rather than as "ask again".
+  if (p === '/api/crowd-ids' && req.method === 'GET') {
+    if (!Object.keys(crowdIds).length) islandBundle();
+    return json(res, 200, { ids: crowdIds });
+  }
+
+  if (p === '/api/seas') {
+    const cfg = config.multiplayer.sea || {};
+    const candidates = new Map();
+    const offer = (o) => { if (o && o.url && !candidates.has(o.url)) candidates.set(o.url, o); };
+
+    if (ownSea) {
+      const addr = ownSea.address();
+      const mode = cfg.mode === 'host' ? 'host' : 'single';
+      if (addr) offer({ url: seaUrlFor(req), name: cfg.name || `${config.islandName}'s sea`, from: mode, mine: true });
+    }
+    for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
+    for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
+    if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });
+
+    const asked = await Promise.all([...candidates.values()].map(async (o) => {
+      try {
+        const r = await fetch(new URL('health', o.url).href, { signal: AbortSignal.timeout(2000) });
+        if (!r.ok) return { ...o, up: false, why: `answered ${r.status}` };
+        const h = await r.json();
+        return { ...o, up: true, name: o.name || h.sea || null, islands: h.islands ?? 0, players: h.players ?? 0, v: h.v, keyed: !!h.keyed };
+      } catch (e) {
+        return { ...o, up: false, why: whyNot(e) };
+      }
+    }));
+    return json(res, 200, { mode: cfg.mode || 'single', current: cfg.url || null, seas: asked });
+  }
+
+  // Move this island to another world. Keeper-only, like every other setting: it writes
+  // config.json and then actually does it - closes whatever sea we were in and joins the
+  // new one - rather than leaving a file that only takes effect on the next restart.
+  //
+  // The page reconnects on its own: web/js/net.js has been retrying since the moment the
+  // old socket dropped, and the new welcome carries the new fleet.
+  if (p === '/api/sea' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let sea;
+    try { sea = setSea(body || {}); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    config.multiplayer.sea = sea;
+    if (seaClient) { seaClient.close(); seaClient = null; }
+    if (ownSea) { await ownSea.close().catch(() => {}); ownSea = null; }
+    await putToSea();
+    if (seaClient) seaClient.publish({ force: true }).catch(() => {});
+    log(`this island is now ${sea.mode === 'join' ? `in ${sea.url}` : sea.mode === 'host' ? 'hosting a sea' : 'on its own'}`);
+    // Everyone's page is told where to look now, including a visitor's.
+    broadcast(() => ({ sea: sea.mode === 'join' ? sea.url : null, mode: sea.mode }), 'sea');
+    return json(res, 200, { ok: true, sea: { mode: sea.mode, url: sea.url } });
+  }
+
   if (p === '/api/neighbours') {
     return json(res, 200, { me: neighbours ? neighbours.me() : null, neighbours: neighbours ? neighbours.list() : [] });
   }
-
-  // ---- sailing your island over to somebody else's ------------------------------
-  // Three routes, and the split between them is the access story.
-  //
-  // This first one is the guest's own machine packing its own island up, so it is
-  // islander-only: it is not on PUBLIC_API, which is deny-by-default, so nobody but this
-  // computer can ask this island to hand itself over in one piece. The redaction still
-  // runs inside buildBundle - it is not this route's job to be the only thing between a
-  // session title and the network.
-  if (p === '/api/visit-bundle') {
-    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
-    const village = readJson(VILLAGE_FILE, null);
-    if (!village) return json(res, 503, { error: 'this island has not been scanned yet' });
-    try {
-      return json(res, 200, buildBundle({
-        config,
-        village,
-        props: listProps(),
-        crops: cropsView(),
-        // The live beacon id, so the island in somebody's harbour and the island on their
-        // horizon are recognisably the same one. Without discovery there is no beacon and
-        // buildBundle works it out from the config.
-        id: neighbours ? neighbours.me() : null,
-        keeper: islanderName,
-      }));
-    } catch (e) {
-      return json(res, 500, { error: String(e.message || e) });
-    }
-  }
-
-  // Sending this island somewhere. Islander-only, and it is the server that makes the
-  // journey rather than the page: the bundle is built here anyway, the redaction runs on
-  // the same side as the secrets, and the browser never holds an unredacted copy it then
-  // forwards. All the page does is name a neighbour.
-  if (p === '/api/visit') {
-    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
-    // readBody already parses, and hands back {} for an empty body.
-    let asked;
-    try { asked = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    const host = String(asked && asked.host || '').trim();
-    const port = Number(asked && asked.port);
-    if (!/^[a-zA-Z0-9.\-:\[\]]{1,64}$/.test(host) || !(port >= 1 && port <= 65535)) {
-      return json(res, 400, { error: 'that is not a neighbour' });
-    }
-    const village = readJson(VILLAGE_FILE, null);
-    if (!village) return json(res, 503, { error: 'this island has not been scanned yet' });
-    try {
-      const bundle = buildBundle({
-        config, village, props: listProps(), crops: cropsView(),
-        id: neighbours ? neighbours.me() : null, keeper: islanderName,
-      });
-      const r = await fetch(`http://${host}:${port}/api/island`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(bundle),
-      });
-      const answer = await r.json().catch(() => ({}));
-      if (!r.ok) return json(res, 502, { error: answer.error || `they answered ${r.status}`, status: r.status });
-      log(`sent this island to ${host}:${port}`);
-      // And the way home. From here on this island pulls its own changes back: whatever is
-      // done to it over there lands in that host's journal, and this loop collects it and
-      // runs it through the same props and garden this island uses itself. A pull and not a
-      // push, so the write happens on the machine that owns the file, through code that
-      // already validates it, under its own limits - and nothing over there ever needs a
-      // way to reach in here.
-      if (visit) visit.stop();
-      visit = createVisit({ host, port, islandId: bundle.island.id, log });
-      visit.start();
-      return json(res, 200, { ok: true, berth: answer.berth, id: bundle.island.id, comingHome: true });
-    } catch (e) {
-      return json(res, 502, { error: String(e.message || e) });
-    }
-  }
-
-  // And this one is the host taking delivery: reachable by a visitor, which makes it the
-  // first write route on the public list. The reasoning is written down above PUBLIC_API
-  // in lib/access.mjs, where somebody adding the second one will read it.
-  if (p === '/api/island') {
-    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
-    const addr = req.socket && req.socket.remoteAddress;
-    // Before the body, not after: refusing two megabytes once it has already been read is
-    // a rate limit that costs exactly what it was meant to save.
-    if (!guests.take(addr)) return json(res, 429, { error: 'one island at a time; try again in a moment' });
-
-    let raw;
-    try {
-      raw = await readRawBody(req, MAX_BERTH_BYTES);
-    } catch (e) {
-      // The socket is already destroyed when the limit was the reason, so this answer is
-      // as likely to be read as any other; the status still has to tell the two apart.
-      const tooBig = /too large/.test(String(e.message || ''));
-      return json(res, tooBig ? 413 : 400, { error: String(e.message || e) });
-    }
-    let sent;
-    try { sent = JSON.parse(raw); } catch { return json(res, 400, { error: 'that is not JSON' }); }
-
-    let bundle;
-    try { bundle = parseBundle(sent); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-
-    try {
-      const berth = guests.park({ id: bundle.island.id, address: addr, bundle });
-      // Not localOnly: an island appearing in the harbour is the whole point, and
-      // everybody standing on this island should see it arrive.
-      // The fleet learns about the new island: a berth without a mooring is an island you
-      // cannot leave, and one that has gone would hold a boat in open water.
-      for (const b of roster.boats.moor(mooringsNow())) broadcast2(b);
-      broadcast({ at: Date.now(), islands: guests.list() }, 'guests');
-      return json(res, 201, { ok: true, berth });
-    } catch (e) {
-      return json(res, e.status || 400, { error: String(e.message || e) });
-    }
-  }
-
-  // Changing something on an island that is moored here. One route and not seven: the
-  // allowlist of what may be done lives in lib/journal.mjs and is checked in one place, and
-  // seven near-identical handlers would be seven places to forget a check. Reachable by a
-  // visitor, for the same reason and under the same rules as /api/island - it is their own
-  // island they are changing, parked in our harbour.
-  //
-  // Nothing here touches this island. The berth has its own props and its own garden, fed
-  // the island's seed and grid so that "may a bed go here" is answered against THEIR
-  // coastline and not ours - a berth has no layout.json of its own and never will, because
-  // a layout deliberately does not travel.
-  if (p === '/api/island-do') {
-    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
-    const addr = req.socket && req.socket.remoteAddress;
-    if (!guests.take(addr)) return json(res, 429, { error: 'one at a time; try again in a moment' });
-    let asked;
-    try { asked = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    const island = String(asked && asked.island || '');
-    const op = String(asked && asked.op || '');
-    const payload = (asked && asked.payload) || {};
-    if (!JOURNAL_OPS.includes(op)) return json(res, 400, { error: `${op} is not something that can be done` });
-    const bundle = guests.read(island);
-    if (!bundle) return json(res, 404, { error: 'no island is moored there' });
-
-    const dir = path.join(guests.dir, island);
-    const opts = {
-      file: path.join(dir, 'props.json'),
-      gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
-    };
-    // The garden needs the whole island to answer "is this ground": its seed, its size and
-    // the polders it has drained. See lib/garden.mjs, which grew these arguments for
-    // exactly this caller.
-    const garden = {
-      file: path.join(dir, 'garden.json'),
-      seed: bundle.island.seed,
-      gridSize: opts.gridSize,
-      polders: bundle.polders || [],
-    };
-
-    let done;
-    try {
-      if (op === 'build') done = addProp(payload, opts);
-      else if (op === 'unbuild') done = removeProp(String(payload.id || ''), { file: opts.file });
-      else if (op === 'sow') done = plantBed(payload, garden);
-      else if (op === 'harvest') done = harvestBed(String(payload.id || ''), garden);
-      else if (op === 'dig') done = digUpBed(String(payload.id || ''), garden);
-      else if (op === 'buy') done = buySeed(String(payload.kind || ''), Number(payload.count) || 1, garden);
-      else if (op === 'sell') done = sellCrop(String(payload.kind || ''), payload.count ?? 'all', garden);
-    } catch (e) {
-      return json(res, 400, { error: String(e.message || e) });
-    }
-    if (!done) return json(res, 409, { error: 'that could not be done here' });
-
-    // The minted id goes in the journal, not the one that was asked for. addProp and
-    // plantBed make their own, and the guest's copy at home will make a different one - so
-    // the line has to carry what it became or the `unbuild` that follows it a minute later
-    // would find nothing at home and leave the bench standing for ever.
-    const entry = journalFor(island).append({
-      op, by: addr, payload: { ...payload, id: (done && done.id) || payload.id || null },
-    });
-    return json(res, 200, { ok: true, entry, done });
-  }
-
-  // Coming home. Stops the pull and answers with what it collected, so the page can say
-  // what came back rather than leaving it to the log.
-  if (p === '/api/visit-end') {
-    if (req.method !== 'POST') return json(res, 405, { error: 'only POST' });
-    if (!visit) return json(res, 200, { ok: true, wasAway: false });
-    let last = null;
-    try { last = await visit.pull(); } catch (e) { log(`the last of the journal did not come home: ${e.message}`); }
-    visit.stop();
-    visit = null;
-    return json(res, 200, { ok: true, wasAway: true, last });
-  }
-
-  // The record of what has been done to an island moored here, for that island to come and
-  // collect. Answering with the hostId we are, so a guest can tell a journal from this
-  // island apart from one from somebody else's - see lib/visits.mjs.
-  if (p === '/api/island-journal') {
-    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
-    const island = url.searchParams.get('island') || '';
-    if (!guests.read(island)) return json(res, 404, { error: 'no island is moored there' });
-    const since = Math.max(0, Math.floor(Number(url.searchParams.get('since')) || 0));
-    return json(res, 200, {
-      hostId: hostIdAsSeenBy(req),
-      island,
-      since,
-      entries: journalFor(island).since(since),
-    });
-  }
-
-  // What is moored here. Without `id` it is the list the page draws the horizon from -
-  // a name, a seed and a size each, a few hundred bytes. With one it is that island
-  // whole, which is two megabytes and is not something to push down every open SSE
-  // stream, so the event above carries the list and the page comes back for the island.
-  if (p === '/api/islands') {
-    if (req.method !== 'GET') return json(res, 405, { error: 'only GET' });
-    const id = url.searchParams.get('id');
-    if (!id) return json(res, 200, { islands: guests.list() });
-    const bundle = guests.read(id);
-    if (!bundle) return json(res, 404, { error: 'no island is moored there' });
-    return json(res, 200, bundle);
-  }
-
   // Hands a card to a settler and starts the agent that works it.
   if (p === '/api/assign' && req.method === 'POST') {
     let body;
@@ -1212,6 +988,7 @@ async function handle(req, res) {
       const prop = addProp(body);
       log(`built ${prop.kind} at ${prop.x}, ${prop.z}${prop.unknown ? ' (nothing draws that yet, so it stands as a cairn)' : ''}`);
       broadcast({ at: Date.now(), id: prop.id, kind: prop.kind }, 'props');
+      tellTheSea();
       return json(res, 201, { ok: true, prop });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
@@ -1225,14 +1002,14 @@ async function handle(req, res) {
       const cleared = clearProps();
       log(`cleared ${cleared} built thing(s) off the island`);
       broadcast({ at: Date.now(), cleared }, 'props');
-      forgetGonePanels();
+      tellTheSea();
       return json(res, 200, { ok: true, cleared });
     }
     const removed = removeProp(String(body.id || ''));
     if (removed) {
       log(`took away the ${removed.kind} at ${removed.x}, ${removed.z}`);
       broadcast({ at: Date.now(), id: removed.id }, 'props');
-      forgetGonePanels();
+      tellTheSea();
     }
     return json(res, 200, { ok: true, removed });
   }
@@ -1278,7 +1055,7 @@ async function handle(req, res) {
         return json(res, 400, { error: 'op is one of buy, hold, plant, harvest, dig, sell, sellAll' });
       }
       // Only the beds are anybody else's business, and only they change the picture.
-      if (['plant', 'harvest', 'dig'].includes(op)) broadcast({ at: Date.now(), op }, 'garden');
+      if (['plant', 'harvest', 'dig'].includes(op)) { broadcast({ at: Date.now(), op }, 'garden'); tellTheSea(); }
       return json(res, 200, { ok: true, ...done, garden: gardenView() });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
@@ -1413,6 +1190,159 @@ if (access.open) {
   server.requestTimeout = 30000;
   server.maxConnections = 128;
 }
+// ---- which world this island lives in --------------------------------------------
+//
+// One code path for all three answers. Single player starts a sea in this very process,
+// bound to loopback, and joins it with one island in it; hosting is that same sea bound to
+// the network; joining is somebody else's address. The page cannot tell the three apart and
+// does not have to - the difference is how many rows come back in the fleet.
+//
+// The alternative was an offline mode beside a multiplayer one, and that is two drawing
+// paths, two sets of bugs and a "works alone, breaks together" class of failure that only
+// ever shows up in front of somebody else.
+// Read through config rather than captured, so /api/sea changing it is enough.
+const SEA = () => config.multiplayer.sea || {};
+const ISLAND_ID = beaconId(PORT);
+const ISLAND_TOKEN = mintToken();
+let ownSea = null;
+let seaClient = null;
+
+// What this island looks like to the world. Built here, on the machine that holds the
+// secrets, because that is where the redaction has to run.
+// The last bundle's `renamed id -> real id`, for this island's own page.
+//
+// The sea walks our crowd out of the bundle we published, so the roster it sends back
+// names everybody by their redacted id - and this page drew its houses under the real
+// ones. Something has to join the two, and it has to be the machine that did the
+// renaming: the shed ids in particular cannot be reconstructed from the outside, which
+// is the whole point of redacting them.
+//
+// Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
+// visitor would undo every bit of it in one request.
+let crowdIds = {};
+
+// What is standing on this island, out to everybody watching it.
+//
+// Through the parcel door rather than a republish: nothing about the village has changed,
+// and a republish would cost two hundred kilobytes and send every settler on this island
+// back to their own front door, for one tree. Fire and forget - the next scan carries the
+// same tree in the bundle anyway, so a patch that does not arrive is a minute of somebody
+// else not seeing it rather than something to recover from.
+function tellTheSea() {
+  if (!seaClient) return;
+  // Packed here, with the forgiving context, exactly as buildBundle packs the same two
+  // lists. A prop in props.json carries only what whoever built it gave it - `scale` is
+  // usually not among them - and the sea's side of this door is strict, so raw props are
+  // refused whole and the tree never appears on anybody else's island.
+  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: config.gridSize });
+  seaClient.patch(parcel).catch(() => {});
+}
+
+function islandBundle() {
+  const village = readJson(VILLAGE_FILE, null);
+  if (!village) return null;
+  const named = {};
+  try {
+    const bundle = buildBundle({
+      config,
+      village,
+      props: listProps(),
+      crops: cropsView(),
+      // Where the buildings really stand, which only a renderer knows - see the header of
+      // lib/placements.mjs. Empty until a browser has drawn this island once.
+      placements: loadPlacements(),
+      id: ISLAND_ID,
+      keeper: islanderName,
+    }, named);
+    crowdIds = named.ids || {};
+    return bundle;
+  } catch {
+    // An island that has never been scanned has no terrain hash, and buildBundle says so
+    // rather than sending something the other end is obliged to reject. Nothing to
+    // publish yet is a perfectly ordinary state a minute after first run.
+    return null;
+  }
+}
+
+// Where this page should look for the world.
+//
+// A joined sea is one absolute address and everybody uses it. A sea of our own is on this
+// same machine, one port over - and the address has to be built from the Host the page
+// actually arrived on, not from localhost. A phone at http://192.168.2.8:4747/ that was
+// handed "localhost" would spend the rest of the evening trying to reach its own browser.
+function seaUrlFor(req) {
+  const mode = SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single';
+  if (mode === 'join') return SEA().url || null;
+  if (!ownSea) return null;
+  const port = (ownSea.address() || {}).port;
+  if (!port) return null;
+  const host = String(req.headers.host || '').trim();
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0];
+  return `http://${name || 'localhost'}:${port}/`;
+}
+
+async function putToSea() {
+  if (!config.multiplayer.enabled) return;
+  const cfg = SEA();
+  const mode = cfg.mode === 'host' || cfg.mode === 'join' ? cfg.mode : 'single';
+  let url = cfg.url;
+
+  if (mode !== 'join') {
+    const host = mode === 'host' ? '0.0.0.0' : '127.0.0.1';
+    const wanted = Number(cfg.port) || 4750;
+    // The configured port first, and any free one if it is taken.
+    //
+    // Two islands on one machine is the ordinary case here, not an edge: .claude/launch.json
+    // has island-worktree on an auto-port precisely so a branch can be previewed beside the
+    // island already running. Their seas collided on 4750, the second one threw
+    // EADDRINUSE into the uncaughtException handler, and that island then served perfectly
+    // while having no world at all - no fleet, no settlers, no socket for the page to join.
+    // It logged one line and looked fine, which is the worst way for this to fail.
+    //
+    // The fixed port is still tried first, because it is the address somebody types to join
+    // a host. A fallback only costs the one who was second.
+    const open = async (port) => {
+      const sea = createSea({
+        port,
+        host,
+        name: cfg.name || `${config.islandName}'s sea`,
+        key: cfg.key || null,
+        tickMs: config.multiplayer.tickMs,
+        maxPlayers: config.multiplayer.maxPlayers,
+        log: (m) => log(`sea: ${m}`),
+      });
+      const addr = await sea.listen();
+      return { sea, addr };
+    };
+    let opened;
+    try {
+      opened = await open(wanted);
+    } catch (e) {
+      if (e && e.code !== 'EADDRINUSE') throw e;
+      log(`sea: port ${wanted} is taken - another island on this machine has it. Taking any free port instead.`);
+      opened = await open(0);
+    }
+    ownSea = opened.sea;
+    const addr = opened.addr;
+    url = `http://127.0.0.1:${addr.port}/`;
+    if (mode === 'host') {
+      log(`hosting a sea on port ${addr.port}. Others join it at:`);
+      for (const a of access.addresses()) log(`    http://${a.includes(':') ? `[${a}]` : a}:${addr.port}/`);
+    }
+  }
+
+  if (!url) { log('no sea to join: set multiplayer.sea.url, or switch the mode back to single'); return; }
+  seaClient = createSeaClient({
+    url,
+    islandId: ISLAND_ID,
+    token: ISLAND_TOKEN,
+    key: cfg.key || null,
+    name: islanderName,
+    bundle: islandBundle,
+    log: (m) => log(`sea: ${m}`),
+  });
+}
+
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
   checkVendor();
@@ -1438,6 +1368,9 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
     if (r && !r.note && r.fetchedAt && r.fetchedAt !== before) rescan('issues');
   };
   readIssues();
+  // Join the world once the first scan has produced an island worth showing.
+  await putToSea();
+  if (seaClient) seaClient.publish({ force: true }).catch(() => {});
   if (RESCAN) setInterval(() => { readIssues(); rescan('timer'); }, RESCAN).unref?.();
   if (OPEN) openBrowser(`http://localhost:${PORT}/`);
 });

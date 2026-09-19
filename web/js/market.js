@@ -5,6 +5,7 @@
 // for a vegetable is a day at a time and drifts a quarter either way, which is what
 // makes carrying a full basket over to tomorrow a decision rather than a formality.
 import { CROPS, CROP_KINDS, priceMood } from 'shared/crops.mjs';
+import { mine } from './api.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -69,7 +70,7 @@ export function createMarket(root, { onChange, onClose }) {
 
   async function load() {
     try {
-      garden = await answerOf(await fetch('/api/garden', { cache: 'no-store' }));
+      garden = await answerOf(await mine('/api/garden', { cache: 'no-store' }));
     } catch (e) {
       el.innerHTML = `<div class="handover-panel wide"><button class="x" id="mk-close">✕</button>
         <p class="ho-warn">The stall could not be reached: ${esc(e.message)}</p></div>`;
@@ -86,7 +87,7 @@ export function createMarket(root, { onChange, onClose }) {
     if (busy) return;
     busy = true;
     try {
-      const answer = await answerOf(await fetch('/api/garden', {
+      const answer = await answerOf(await mine('/api/garden', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

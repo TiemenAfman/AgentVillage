@@ -26,8 +26,13 @@ const FLAG_AIRBORNE = 8;
 const UI_MS = 160;
 const UI_PER_BEAT = 2;
 
-export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
-  onBoat = () => {}, name = null } = {}) {
+// `url` is where the world is. It used to be worked out from location.host, which was
+// right for as long as the page and the world came off the same server - and is the one
+// line that made a page unable to look at a sea running anywhere else. The caller knows
+// the answer (web/js/api.js does), so it passes it in and this file stops reading
+// location at all.
+export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
+  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -69,12 +74,17 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
 
   function open() {
     if (closed) return;
-    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
     try { sock = new WebSocket(url); } catch { schedule(); return; }
 
     sock.addEventListener('open', () => {
       retry = RETRY_MIN;
       onStatus('on');
+      // The handshake. A sea answers nothing else until it has had one - it has to know
+      // which world you meant and which coast your body belongs over - and it is sent
+      // here rather than by the caller so a reconnect repeats it without anybody
+      // remembering to. An island with no sea ignores it, which is what makes this safe
+      // to send either way.
+      if (join) send({ t: 'join', ...join });
       if (name) send({ t: 'hello', name });
       send({ t: 'w', on: walking });
       last.f = -1;                      // force the first pose through
@@ -84,7 +94,16 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
       let m;
       try { m = JSON.parse(e.data); } catch { return; }
       switch (m.t) {
+        // Turned away: a version, a key, or an island somebody else is still holding.
+        // None of those fix themselves, so the page is told and the retry loop is left to
+        // its own devices rather than hammering a door that has been answered.
+        case 'refused': onRefused(m); break;
         case 'welcome':
+          // The fleet, when the far end is a sea. An island on its own says nothing here
+          // and the page draws what it always drew. The clock rides along: which moment it
+          // is and whose afternoon that is, so two players in different time zones do not
+          // see two different skies over the same water.
+          if (m.world) onWorld(m.world, null, { now: m.now, tz: m.tz });
           selfId = m.id;
           peers.setSelf(m.id);
           for (const p of m.players || []) peers.join(p);
@@ -101,6 +120,14 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
         case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
+        // The fleet changing: an island arriving, going quiet, or going home.
+        case 'island': onWorld(null, m); break;
+        // Somebody else's settlers. `fr` says who the numbers mean and comes once per
+        // island; `f` is where they have got to and comes on the beat. Passed through as
+        // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and
+        // the page decodes it against the island's own half.
+        case 'fr': onCrowd({ kind: 'roster', island: m.i, ids: m.ids || [] }); break;
+        case 'f': onCrowd({ kind: 'where', island: m.i, a: m.a, k: m.k, b: m.b }); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a
@@ -247,6 +274,12 @@ export function createNet({ peers, walk, onStatus = () => {}, onPanels = () => {
     movedBoat(id, x, z, yaw) {
       hull.id = id; hull.x = x; hull.z = z; hull.yaw = yaw; hull.live = true;
     },
+    // Standing in front of a settler, and walking off again. The sea walks the crowd, so
+    // this is what makes them turn round and wait - and what makes everybody else watch
+    // them do it, instead of only the person they are talking to. World coordinates, like
+    // every other position on this line; the sea takes the island's origin off.
+    attend(id, x, z) { send({ t: 'attend', b: id, x, z }); },
+    unattend(id) { send({ t: 'attend', b: id, on: false }); },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
     // One sentence out loud, to everybody on the island. Sent at once rather than on a
     // beat: a sixth of a second of waiting is nothing on a board, but on a conversation

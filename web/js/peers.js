@@ -229,10 +229,25 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     for (const list of byRoom.values()) list.length = 0;
   }
 
+  // Whether anybody is drawn at all. Off while the chronicle is scrubbed back: the other
+  // people are here, now, and the island on the screen is the island in May. Letting them
+  // wander through a village that has not been built yet is worse than an empty street.
+  //
+  // The poses keep arriving and keep being interpolated - only the meshes go - so coming
+  // back to Live puts everybody where they actually are rather than where they were when
+  // you left it.
+  let showing = true;
+  function setVisible(on) { showing = !!on; }
+
   function update(dt) {
     const now = performance.now();
     const render = now - LAG_MS;
     for (const list of byRoom.values()) list.length = 0;
+
+    if (!showing) {
+      for (const p of peers.values()) p.mesh.visible = false;
+      return;
+    }
 
     for (const p of [...peers.values()]) {
       if (p.leaving) {
@@ -302,6 +317,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     roster,
     snapshot,
     update,
+    setVisible,
     clear,
     place,
     blockers: (name = null) => blockersIn(name),

@@ -4,6 +4,8 @@
 //
 // Inviting is not the same as sending someone away. A settler you release keeps their
 // house records and can be invited back; the register is the list, not the village.
+import { mine } from './api.js';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const STYLE_LABEL = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', unknown: 'Model unknown' };
@@ -55,7 +57,7 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
 
   async function load() {
     try {
-      const r = await fetch('/api/sessions', { cache: 'no-store' });
+      const r = await mine('/api/sessions', { cache: 'no-store' });
       sessions = (await r.json()).sessions || [];
     } catch (e) {
       el.innerHTML = `<div class="handover-panel wide"><p class="ho-warn">The register could not be read: ${esc(e.message)}</p></div>`;
@@ -147,7 +149,7 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
     const out = el.querySelector('#th-out');
     out.textContent = remove ? 'Releasing…' : 'Inviting…';
     try {
-      const r = await fetch('/api/adopt', {
+      const r = await mine('/api/adopt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, remove: !!remove }),

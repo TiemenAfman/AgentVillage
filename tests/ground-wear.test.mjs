@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groundWearField, riverBankField } from '../web/js/ground-wear.js';
+// ground-wear.js reaches shared/rng.mjs through the import map now, like every other
+// module under web/js. It used to climb out with ../../, which needed no loader here and
+// also quietly loaded rng.mjs a second time in the browser - see tests/api-base.test.mjs.
+import { register } from 'node:module';
+register('./support/shared-loader.mjs', import.meta.url);
+
+const { groundWearField, riverBankField } = await import('../web/js/ground-wear.js');
 const sample=(f,x,z,size=16)=>f.data[Math.floor((x+size/2)*f.resolution/size)+Math.floor((z+size/2)*f.resolution/size)*f.resolution];
 const lane={points:[[-4,0],[4,0]]};
 test('sand has a solid walking centre, a graded verge and untouched meadow',()=>{

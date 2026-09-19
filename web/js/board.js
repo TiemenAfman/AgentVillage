@@ -8,6 +8,7 @@
 // where the cards come from, how they are grouped and which workflow an agent is sent
 // off with - not in anything you do with them, so it is one board with two sources.
 import { padKey } from './input.js';
+import { mine } from './api.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -409,7 +410,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     box.innerHTML = '<p class="muted">Looking for project folders…</p>';
     let folders = [];
     try {
-      const r = await fetch('/api/folders', { cache: 'no-store' });
+      const r = await mine('/api/folders', { cache: 'no-store' });
       folders = (await r.json()).folders || [];
       // The server lists the Jira repositories first; this board wants its own kind at
       // the top. The sort is stable, so everything else keeps the order it came in.
@@ -506,7 +507,7 @@ export function createBoard(root, { onDispatch, onClose, getSettlers }) {
     const out = handover.querySelector('#ho-out');
     out.textContent = payload.dryRun ? 'Preparing…' : 'Waking the settler…';
     try {
-      const r = await fetch('/api/assign', {
+      const r = await mine('/api/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

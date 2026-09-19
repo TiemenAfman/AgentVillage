@@ -25,3 +25,6 @@ data/mail.json
 # somebody else's island, parked here while they visit. Swept at every start anyway, so a
 # copy in the history would outlive the visit itself.
 data/guests/
+# Written by the keeper's own page: where the renderer actually put each building.
+# Generated, safe to delete, rebuilt the next time anybody looks at the island.
+data/placements.json
