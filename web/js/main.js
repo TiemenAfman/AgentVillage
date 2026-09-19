@@ -367,11 +367,20 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  state.settlers.attend(id, [w.pos.x, w.pos.z]);
+  // Both, for as long as there are two crowds. The sea is what makes everybody else see
+  // them turn round; the local walk is what makes it happen in this frame rather than in
+  // two beats' time, and it is still the one drawing our own island. When that second
+  // half goes - when we draw ourselves out of crowd-view.js like any other island - only
+  // the line below it has to be deleted, and being looked at goes on working.
+  if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
+  if (state.settlers.attend) state.settlers.attend(id, [w.pos.x, w.pos.z]);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => state.settlers.unattend(id),
+    onLetGo: () => {
+      if (state.net) state.net.unattend(id);
+      if (state.settlers.unattend) state.settlers.unattend(id);
+    },
   });
 }
 

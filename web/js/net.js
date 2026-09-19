@@ -222,6 +222,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // one more message on the same bucket and no new ceiling to reason about. Only while
     // it has actually moved, which is what the pose beat already decides.
     movedBoat(id, x, z, yaw) { send({ t: 'boat', a: 'moved', id, x, z, yaw }); },
+    // Standing in front of a settler, and walking off again. The sea walks the crowd, so
+    // this is what makes them turn round and wait - and what makes everybody else watch
+    // them do it, instead of only the person they are talking to. World coordinates, like
+    // every other position on this line; the sea takes the island's origin off.
+    attend(id, x, z) { send({ t: 'attend', b: id, x, z }); },
+    unattend(id) { send({ t: 'attend', b: id, on: false }); },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
     // One sentence out loud, to everybody on the island. Sent at once rather than on a
     // beat: a sixth of a second of waiting is nothing on a board, but on a conversation
