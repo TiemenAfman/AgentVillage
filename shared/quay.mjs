@@ -100,10 +100,24 @@ export function quaySite(terrain, landing) {
 // the wrong one the moment there is a quay - it put a second pier on the far side of this
 // island, moored the boat at that one, and left the kade a decoration you could not walk
 // on. Three commits moved the kade to the sea; this is what makes the move mean something.
+// The district with planks, rather than the district called the quay - and that is not
+// carelessness, it is the only thing that survives the crossing.
+//
+// lib/guestview.mjs redacts a bundle by replacing every occurrence of a district's id with
+// a placeholder, values and keys alike, deliberately blunt so that no id can slip through
+// somewhere it was not expected. The quay district's id is the literal string "quay"
+// (lib/layout.mjs), so `kind: "quay"` is rewritten too - it arrives as "p:d0", fails
+// islandbundle's slug check and lands as null. Measured on this island: the pier and the
+// shore came across intact and the kind did not, so a neighbour's boat was moored at the
+// derived quay while their own page had it at the kade.
+//
+// Only a quay district is ever given a pier, so "has planks" is what the name was standing
+// in for anyway. Reading it this way is what makes the answer the same on both sides of
+// the channel, which is the whole job of this file.
 export function planksOf(village) {
   const list = (village && village.districts) || [];
   for (const d of list) {
-    if (d && d.kind === 'quay' && d.pier && d.pier.length) return { pier: d.pier, shore: d.shore || null };
+    if (d && d.pier && d.pier.length) return { pier: d.pier, shore: d.shore || null };
   }
   return null;
 }

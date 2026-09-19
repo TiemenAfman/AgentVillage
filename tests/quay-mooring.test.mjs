@@ -102,6 +102,26 @@ test('planks the ground no longer agrees with are refused, not moored over', () 
   assert.deepEqual(quayFor(terrain, [terrain.half, terrain.half], good).cells, good.pier);
 });
 
+test('a neighbour redacted their quay to pieces and it is still their quay', () => {
+  const seed = 1337;
+  const layout = emptyLayout(seed, SIZE);
+  const { terrain } = placeAll(layout, coworkVillage(), { seed, size: SIZE });
+  const ours = shipped(layout);
+
+  // What lib/guestview.mjs does to a bundle on its way across the channel. It swaps every
+  // occurrence of a district's id for a placeholder, values and keys alike, and the quay
+  // district's id is the literal string "quay" - so `kind: "quay"` goes with it, fails
+  // islandbundle's slug check and arrives as null. This is that bundle.
+  const theirs = { districts: [{ id: 'p:d0', kind: null, pier: ours.districts[0].pier, shore: ours.districts[0].shore }] };
+
+  assert.deepEqual(planksOf(theirs), planksOf(ours), 'the planks survive being anonymised');
+  assert.deepEqual(
+    quayFor(terrain, [terrain.half, terrain.half], planksOf(theirs)).cells,
+    layout.districts.quay.pier,
+    'so a visitor moors at their kade and not at the quay their landing would have picked',
+  );
+});
+
 test('a single plank needs its shore cell, and is trusted once it has one', () => {
   const seed = 1337;
   const layout = emptyLayout(seed, SIZE);
