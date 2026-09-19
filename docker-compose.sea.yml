@@ -16,6 +16,13 @@ services:
       context: .
       dockerfile: Dockerfile.sea
     image: promptholm-sea
+    # LOCALLY built - never pulled from a registry. Without this Portainer runs
+    # `docker compose pull` before a webhook redeploy, that fails with "pull access denied
+    # for promptholm-sea" because the image exists in no registry, and the deploy is
+    # abandoned with the old container still running. GitHub sees a 204, so it is silent.
+    # The three other self-building stacks on that box carry the same line for the same
+    # reason - it is that server's recorded experience, not a guess.
+    pull_policy: build
     container_name: promptholm-sea
     restart: unless-stopped
     ports:
