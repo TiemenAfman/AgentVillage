@@ -279,6 +279,14 @@ file in it is inside something the Dockerfile copies. `--open` in the `CMD` is n
 inside a container, loopback is nobody, and what keeps the sea shut is the network it is
 published on plus `SEA_KEY`. No volumes, deliberately.
 
+A sea says *that* it wants a key in `/health` (`keyed`), never which one — without that the
+picker cannot tell a sea that will have you from one that will turn you away, and the only
+way to find out is to move the island and watch it be refused. A refusal is also said
+**once per reason, not once per attempt**: `net.js` keeps retrying, which is right, but none
+of these reasons fix themselves, so the loop turned one problem into a toast every few
+seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
+is wrong and tells whoever has to fix it nothing.
+
 `SEA_KEY` is shared by everybody in a world. Each islander keeps it in
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that

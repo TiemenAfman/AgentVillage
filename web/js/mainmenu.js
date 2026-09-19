@@ -62,6 +62,16 @@ export function createMainMenu({
   let list = null;                   // what /api/seas last said, or null while asking
   let busy = null;                   // the mode being set out for
   let onKey = null;
+  // What has been typed into the key field, kept across the redraws that opening a row or
+  // failing a join cause. Held here and not read off the input at the last moment, because
+  // the input is destroyed and rebuilt by every one of them.
+  let typedKey = '';
+
+  // Whether to offer the field at all. Only when something out there says it wants one -
+  // an empty box on every sea is a question most people cannot answer, and the one sea
+  // that needs it is the one that would otherwise refuse you three times a second with a
+  // word from the protocol.
+  const wantsKey = () => !!(list && (list.seas || []).some((o) => o.keyed)) || !!typedKey;
 
   // A page with nothing to start has one real choice, so it is not offered three.
   const modes = hasIslander ? MODES : MODES.filter((m) => m.key === 'join');
@@ -69,7 +79,7 @@ export function createMainMenu({
   function seaRow(o) {
     const here = list && list.mode === 'join' && o.url === list.current;
     const said = o.up
-      ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'}, ${o.players ?? 0} aboard`
+      ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'}, ${o.players ?? 0} aboard${o.keyed ? ', needs a key' : ''}`
       : esc(o.why || 'no answer');
     const from = o.from === 'network' ? 'on this network'
       : o.from === 'known' ? 'always on'
@@ -111,6 +121,12 @@ export function createMainMenu({
             <input id="menu-url" class="field" placeholder="http://address:4750/" autocomplete="off">
             <button class="chip" id="menu-add">Sail there</button>
           </div>
+          ${wantsKey() ? `<div class="menu-add">
+            <input id="menu-key" class="field" type="password" placeholder="key" autocomplete="off"
+              value="${esc(typedKey)}">
+            <span class="menu-note">A sea out there wants one. It is a door key everybody in that
+              world shares, not a password.</span>
+          </div>` : ''}
         </div>` : ''}
         ${list && list.error ? `<p class="menu-note menu-bad">${esc(list.error)}</p>` : ''}
       </div>`;
@@ -139,9 +155,12 @@ export function createMainMenu({
     }));
     const add = root.querySelector('#menu-add');
     const field = root.querySelector('#menu-url');
+    const keyField = root.querySelector('#menu-key');
+    if (keyField) keyField.addEventListener('input', () => { typedKey = keyField.value; });
     const typed = () => { if (field && field.value.trim()) go('join', field.value.trim()); };
     if (add) add.addEventListener('click', typed);
     if (field) field.addEventListener('keydown', (e) => { if (e.key === 'Enter') typed(); });
+    if (keyField) keyField.addEventListener('keydown', (e) => { if (e.key === 'Enter') typed(); });
   }
 
   async function refresh() {
@@ -153,7 +172,11 @@ export function createMainMenu({
     if (busy) return;
     busy = mode;
     draw();
-    const r = await choose({ mode, url }).catch(() => ({ ok: false, error: 'the island did not answer' }));
+    // The key goes with every join, typed or picked from the list. Left out when it is
+    // empty rather than sent as '': the islander keeps whatever key it already had unless
+    // it is given a new one, and a blank one would wipe a working key off a saved sea.
+    const r = await choose({ mode, url, key: typedKey.trim() || undefined })
+      .catch(() => ({ ok: false, error: 'the island did not answer' }));
     busy = null;
     if (r && r.ok) { close(); return; }
     list = list || { seas: [] };

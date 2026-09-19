@@ -900,6 +900,28 @@ function peerName(id) {
 const scopePanel = (id) => scopeBoard(state.islandId, id);
 const ourPanel = (id) => ourBoard(state.islandId, id);
 
+// Turned away at the sea's door.
+//
+// Once per reason, and not once per attempt. net.js keeps retrying - which is right, a
+// refusal can stop being true the moment somebody fixes a config - but none of these
+// reasons fix *themselves*, so the retry loop turned one problem into a toast every few
+// seconds. What made it unreadable is that the message was also the bare word the wire
+// uses: three lines of "The sea would not have us: key." says what is wrong to whoever
+// wrote the protocol and nothing at all to whoever has to fix it.
+const REFUSALS = {
+  key: 'This sea wants a key. Put it in <b>multiplayer.sea.key</b> in config.json, or type it in the world picker.',
+  version: 'This sea speaks a different version of the protocol. One of the two machines needs its code updating.',
+  claimed: 'Another islander is already moored here under this island’s name.',
+  full: 'This sea is full.',
+};
+let lastRefusal = null;
+function onRefusedBySea(m) {
+  const why = String((m && m.why) || 'no reason given');
+  if (why === lastRefusal) return;
+  lastRefusal = why;
+  state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
+}
+
 function applyPanelMessage(m) {
   if (!state.panels) return;
   if (m.kind === 'all') {
@@ -1795,7 +1817,8 @@ function onFleetNews(world, one, clock) {
     state.seaSkewMs = clock.now - Date.now();
     if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
   }
-  if (world) { state.fleet = world.islands || []; syncFleet(state.fleet); return; }
+  // In at last - so the next refusal is news again rather than a repeat.
+  if (world) { lastRefusal = null; state.fleet = world.islands || []; syncFleet(state.fleet); return; }
   if (!one) return;
   // A tree planted, a jetty put up, a bed sown on somebody else's island. Their coastline
   // is what it was, so this is not a fleet change and must not go anywhere near syncFleet:
@@ -3955,7 +3978,7 @@ async function boot() {
     join: { v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null },
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
-    onRefused: (m) => state.ui.toast(`The sea would not have us: ${escapeHtml(String(m.why || 'no reason given'))}.`),
+    onRefused: onRefusedBySea,
     name: playerName(),
     onStatus: () => {},
     onPanels: (m) => applyPanelMessage(m),

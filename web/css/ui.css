@@ -714,8 +714,12 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .menu-sea-name { font-size: 12.5px; font-weight: 600; }
 .menu-sea-said { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
 
-.menu-add { display: flex; gap: 6px; margin-top: 2px; }
+.menu-add { display: flex; gap: 6px; margin-top: 2px; align-items: center; }
 .menu-add .field { flex: 1; }
+/* The key row: a narrower box than the address, with the explanation beside it rather than
+   under it, so the two rows read as one thing to fill in and not as a second question. */
+.menu-add #menu-key { flex: 0 0 150px; }
+.menu-add .menu-note { flex: 1; margin: 0; }
 .menu-note { font-size: 11.5px; color: var(--ink-dim); margin: 6px 2px; }
 .menu-bad { color: #e08a6a; }
 

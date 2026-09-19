@@ -762,7 +762,7 @@ async function handle(req, res) {
         const r = await fetch(new URL('health', o.url).href, { signal: AbortSignal.timeout(2000) });
         if (!r.ok) return { ...o, up: false, why: `answered ${r.status}` };
         const h = await r.json();
-        return { ...o, up: true, name: o.name || h.sea || null, islands: h.islands ?? 0, players: h.players ?? 0, v: h.v };
+        return { ...o, up: true, name: o.name || h.sea || null, islands: h.islands ?? 0, players: h.players ?? 0, v: h.v, keyed: !!h.keyed };
       } catch (e) {
         return { ...o, up: false, why: whyNot(e) };
       }
