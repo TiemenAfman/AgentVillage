@@ -14,92 +14,15 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
-import { createSea, SEA_V } from '../lib/sea.mjs';
-import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
-import { makeTerrain } from '../shared/terrain.mjs';
-import { decodeCrowd } from '../shared/settlerwire.mjs';
-
-const SIZE = 64;
-const SEED = 1337;
-
-// A village with people in it, which the join test's fixture deliberately has not got.
-function island({ port = 4747, name = 'Promptholm' } = {}) {
-  const terrain = makeTerrain(SEED, { size: SIZE });
-  const mid = Math.round(terrain.half);
-  const lane = [];
-  for (let gx = 8; gx < SIZE - 8; gx++) if (terrain.isLand(gx, mid)) lane.push([gx, mid]);
-  const buildings = lane.slice(0, 6).map(([gx, gz], i) => ({
-    id: `house:${String(i).padStart(4, '0')}`,
-    kind: 'house', name: `House ${i}`, style: 'opus', sessionId: `s${i}`,
-    plot: { gx, gz: gz + 1, w: 1, d: 1, rot: 0 },
-  }));
-  const id = beaconId(port, `host-${port}`);
-  const village = {
-    generatedAt: '2026-09-18T10:00:00.000Z',
-    island: {
-      name, seed: SEED, gridSize: SIZE, terrainHash: terrain.hash,
-      foundedAt: '2026-09-16T10:22:44.431Z',
-      landing: null, town: { gx: 32, gz: 32, r: 8, paved: lane.slice(0, 4) }, lattice: null,
-    },
-    grid: { size: SIZE },
-    districts: [], buildings, paths: [{ id: 'lane', cells: lane }], bridges: [],
-    cleared: [], polders: [], milestones: [], active: [], assignments: [], stats: {},
-  };
-  return { id, bundle: buildBundle({ config: { islandName: name, seed: SEED, port, gridSize: SIZE }, village, id, keeper: 'Martijn' }) };
-}
-
-const post = (base, id, body) => fetch(`${base}/island/${id}`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-});
-
-function talk(url) {
-  const ws = new WebSocket(url);
-  const queue = [];
-  const waiting = [];
-  ws.addEventListener('message', (e) => {
-    const m = JSON.parse(e.data);
-    if (waiting.length) waiting.shift()(m);
-    else queue.push(m);
-  });
-  const next = () => (queue.length ? Promise.resolve(queue.shift()) : new Promise((res) => waiting.push(res)));
-  return {
-    ready: new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); }),
-    say: (o) => ws.send(JSON.stringify(o)),
-    until: async (pred, tries = 24) => {
-      for (let i = 0; i < tries; i++) { const m = await next(); if (pred(m)) return m; }
-      throw new Error('the sea never said it');
-    },
-    close: () => ws.close(),
-    closed: new Promise((res) => ws.addEventListener('close', res)),
-  };
-}
-
-// Conditions rather than sleeps: the sea's own beat runs while a test does.
-async function until(pred, what, tries = 200) {
-  for (let i = 0; i < tries; i++) {
-    if (pred()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`gave up waiting: ${what}`);
-}
-
-async function afloat(fn) {
-  const sea = createSea({ port: 0, name: 'test sea' });
-  const addr = await sea.listen();
-  const base = `http://127.0.0.1:${addr.port}`;
-  try {
-    return await fn({ sea, base, wsUrl: `ws://127.0.0.1:${addr.port}/ws` });
-  } finally {
-    await sea.close();
-  }
-}
+const { SEA_V, afloat, island, post, talk, until } = await import('./support/sea.mjs');
+const { decodeCrowd } = await import('../shared/settlerwire.mjs');
 
 test('an attend lands in the island’s own frame, wherever the island is moored', async () => {
   await afloat(async ({ sea, base, wsUrl }) => {
     const a = island({ port: 4747, name: 'Promptholm' });
     const b = island({ port: 4748, name: 'Buurholm' });
-    await post(base, a.id, a.bundle);
-    const moored = await (await post(base, b.id, b.bundle)).json();
+    await post(base, `/island/${a.id}`, a.bundle);
+    const moored = await (await post(base, `/island/${b.id}`, b.bundle)).json();
     const [ox, oz] = moored.origin;
     assert.ok(ox !== 0 || oz !== 0, 'the second island moored at the origin; this test proves nothing');
 
@@ -131,7 +54,7 @@ test('an attend lands in the island’s own frame, wherever the island is moored
 test('a wanderer with no island of their own cannot hold anybody', async () => {
   await afloat(async ({ sea, base, wsUrl }) => {
     const a = island();
-    await post(base, a.id, a.bundle);
+    await post(base, `/island/${a.id}`, a.bundle);
 
     const me = talk(wsUrl);
     await me.ready;
@@ -155,7 +78,7 @@ test('somebody who has just joined is handed the whole village at once', async (
   // a body has been placed once it is not drawn at all.
   await afloat(async ({ sea, base, wsUrl }) => {
     const a = island();
-    await post(base, a.id, a.bundle);
+    await post(base, `/island/${a.id}`, a.bundle);
     const lives = sea.crowds.get(a.id).figures.size;
     assert.ok(lives > 1, 'the fixture village is too small to tell a slice from a crowd');
 

@@ -150,6 +150,23 @@ map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of
 including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
 proxy in front and load the island at a subpath: everything must come from under it.
 
+**A tree does not cost a coastline.** A bundle is a snapshot and live is a stream, and the
+two do not combine for free: a republish is 206 kB, makes every viewer drop a region and
+build its ground and buildings again, and — since the sea walks the crowd — sends every
+settler on that island back to their own front door. So what is *standing* on an island
+goes through a door of its own, `POST /island/:id/parcel`, which updates the bundle and
+broadcasts `{t:'island', a:'parcel'}` and **deliberately does not move `rev`**. `rev` means
+"their island is not what we drew"; moving it is what triggers the rebuild. The cost of not
+moving it is that a viewer disconnected across a patch misses the tree until the next scan
+republishes — a minute at most.
+
+Both halves are needed and they are not symmetrical: `packParcel` (forgiving, `context(false)`,
+fills a missing `scale` in) on the sender, `parseParcel` (strict, refuses) on the sea. Props
+in `props.json` carry only what whoever built them gave them, so raw props sent down that
+door come back as "a measurement arrived as something that is not a number" and the tree
+silently never appears anywhere else. It is the same asymmetry `buildBundle`/`parseBundle`
+have always had; it only became possible to get wrong when a second door was cut beside them.
+
 **A crowd is rebuilt on every publish, and the difference between two of them is the only
 thing that knows who is new.** `createCrowd(island, { known })` is handed the ids the crowd
 before it had; anybody not in that set walks up from the landing beach. `known` is null for

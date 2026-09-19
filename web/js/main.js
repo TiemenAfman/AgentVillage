@@ -1773,6 +1773,21 @@ function onFleetNews(world, one, clock) {
   }
   if (world) { state.fleet = world.islands || []; syncFleet(state.fleet); return; }
   if (!one) return;
+  // A tree planted, a jetty put up, a bed sown on somebody else's island. Their coastline
+  // is what it was, so this is not a fleet change and must not go anywhere near syncFleet:
+  // that compares `rev`, and the whole point of a parcel is that `rev` did not move.
+  //
+  // The region's own copy is updated as well as the drawing, because raiseGuestIslands
+  // builds from `region.village` and would otherwise put the old garden back the next time
+  // that island is raised.
+  if (one.a === 'parcel') {
+    const g = state.guests.find((x) => x.region.id === one.i);
+    if (!g) return;
+    if (g.region.village) { g.region.village.props = one.props || []; g.region.village.crops = one.crops || []; }
+    if (g.props) g.props.apply(one.props || [], { animate: true });
+    if (g.crops) g.crops.apply(one.crops || [], { animate: true });
+    return;
+  }
   const { t, a, ...row } = one;
   const rows = (state.fleet || []).filter((r) => r.id !== one.id);
   // Sorted by id rather than by arrival, so "the fleet" is the same list on every machine

@@ -26,7 +26,7 @@ import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
-import { buildBundle, parseBundle, beaconId } from './lib/islandbundle.mjs';
+import { buildBundle, parseBundle, packParcel, beaconId } from './lib/islandbundle.mjs';
 import { createSea } from './lib/sea.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
@@ -976,6 +976,7 @@ async function handle(req, res) {
       const prop = addProp(body);
       log(`built ${prop.kind} at ${prop.x}, ${prop.z}${prop.unknown ? ' (nothing draws that yet, so it stands as a cairn)' : ''}`);
       broadcast({ at: Date.now(), id: prop.id, kind: prop.kind }, 'props');
+      tellTheSea();
       return json(res, 201, { ok: true, prop });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
@@ -989,12 +990,14 @@ async function handle(req, res) {
       const cleared = clearProps();
       log(`cleared ${cleared} built thing(s) off the island`);
       broadcast({ at: Date.now(), cleared }, 'props');
+      tellTheSea();
       return json(res, 200, { ok: true, cleared });
     }
     const removed = removeProp(String(body.id || ''));
     if (removed) {
       log(`took away the ${removed.kind} at ${removed.x}, ${removed.z}`);
       broadcast({ at: Date.now(), id: removed.id }, 'props');
+      tellTheSea();
     }
     return json(res, 200, { ok: true, removed });
   }
@@ -1040,7 +1043,7 @@ async function handle(req, res) {
         return json(res, 400, { error: 'op is one of buy, hold, plant, harvest, dig, sell, sellAll' });
       }
       // Only the beds are anybody else's business, and only they change the picture.
-      if (['plant', 'harvest', 'dig'].includes(op)) broadcast({ at: Date.now(), op }, 'garden');
+      if (['plant', 'harvest', 'dig'].includes(op)) { broadcast({ at: Date.now(), op }, 'garden'); tellTheSea(); }
       return json(res, 200, { ok: true, ...done, garden: gardenView() });
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
@@ -1205,6 +1208,23 @@ let seaClient = null;
 // Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
 // visitor would undo every bit of it in one request.
 let crowdIds = {};
+
+// What is standing on this island, out to everybody watching it.
+//
+// Through the parcel door rather than a republish: nothing about the village has changed,
+// and a republish would cost two hundred kilobytes and send every settler on this island
+// back to their own front door, for one tree. Fire and forget - the next scan carries the
+// same tree in the bundle anyway, so a patch that does not arrive is a minute of somebody
+// else not seeing it rather than something to recover from.
+function tellTheSea() {
+  if (!seaClient) return;
+  // Packed here, with the forgiving context, exactly as buildBundle packs the same two
+  // lists. A prop in props.json carries only what whoever built it gave it - `scale` is
+  // usually not among them - and the sea's side of this door is strict, so raw props are
+  // refused whole and the tree never appears on anybody else's island.
+  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: config.gridSize });
+  seaClient.patch(parcel).catch(() => {});
+}
 
 function islandBundle() {
   const village = readJson(VILLAGE_FILE, null);
