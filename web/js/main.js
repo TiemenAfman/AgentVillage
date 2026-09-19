@@ -36,6 +36,7 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
+import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
 import { createCrops } from './crops.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
@@ -584,8 +585,10 @@ async function refreshProps({ animate = true } = {}) {
     state.props.apply(body.props || [], { animate });
     const after = state.props.count();
     // The same list, read a second time for its panels: props.js draws the woodwork and
-    // panels.js hangs the page in front of it.
-    if (state.panels) state.panels.apply(body.props || []);
+    // panels.js hangs the page in front of it. Kept, because the boards on the neighbours'
+    // islands go in the same list and arrive at a different moment.
+    state.ownProps = body.props || [];
+    syncBoards();
     handOutDecks();                                   // a bridge that has just gone up
     if (state.mode === 'walk') {
       state.walk.setBlockers(walkableBlockers());
@@ -892,15 +895,31 @@ function peerName(id) {
 
 // What the island says the boards say. Everything that changes a panel comes through
 // here - our own presses included, which went out as a request and come back as fact.
+// A board's name on the wire, and the same board's name here. Both halves live in
+// shared/panels.mjs, with the reasoning and the server's half of the contract.
+const scopePanel = (id) => scopeBoard(state.islandId, id);
+const ourPanel = (id) => ourBoard(state.islandId, id);
+
 function applyPanelMessage(m) {
   if (!state.panels) return;
-  if (m.kind === 'all') { state.panels.all(m.boards); return; }
-  if (m.kind === 'ui') { state.panels.field(m.id, m.action, m.value); return; }
+  if (m.kind === 'all') {
+    state.panels.all((m.boards || [])
+      .map((b) => ({ ...b, id: ourPanel(b.id) }))
+      .filter((b) => b.id));
+    return;
+  }
+  if (m.kind === 'ui') {
+    const id = ourPanel(m.id);
+    if (id) state.panels.field(id, m.action, m.value);
+    return;
+  }
   if (m.kind === 'drove') {
     // The roster is where an id becomes a name, so the name is put on here rather than
     // in the panel layer, which has never heard of players.
-    if (m.driver) state.panels.drivenBy(m.id, peerName(m.driver));
-    const taken = state.panels.driven(m.id, m.driver);
+    const id = ourPanel(m.id);
+    if (!id) return;
+    if (m.driver) state.panels.drivenBy(id, peerName(m.driver));
+    const taken = state.panels.driven(id, m.driver);
     if (taken) {
       state.walk.setWorking(null);
       state.ui.toast(`<b>${escapeHtml(peerName(taken))}</b> is working that board. You can read over their shoulder.`);
@@ -1758,6 +1777,7 @@ function dropRegion(id) {
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
+    syncBoards();
     state.guests.splice(i, 1);
   }
 }
@@ -1786,6 +1806,7 @@ function onFleetNews(world, one, clock) {
     if (g.region.village) { g.region.village.props = one.props || []; g.region.village.crops = one.crops || []; }
     if (g.props) g.props.apply(one.props || [], { animate: true });
     if (g.crops) g.crops.apply(one.crops || [], { animate: true });
+    syncBoards();
     return;
   }
   const { t, a, ...row } = one;
@@ -1794,6 +1815,36 @@ function onFleetNews(world, one, clock) {
   // and in every order the messages happen to turn up in.
   state.fleet = (one.a === 'gone' ? rows : [...rows, row]).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
   syncFleet(state.fleet);
+}
+
+// Every board the page can see, ours and the neighbours', in one list.
+//
+// One panels layer and not one per island: it is a CSS3D renderer over the whole canvas,
+// and a second of those is a second full-screen pass every frame for a board you cannot
+// touch. What a foreign board needs instead is two things it can carry itself - world
+// coordinates, and the ground under it, because this layer was handed our terrain when it
+// was built and a neighbour's board does not stand on it.
+//
+// Their boards render blank with a sentence saying whose machine reads them. That is not
+// a fallback: what a board says comes out of one islander's Jira token, GitHub token and
+// git checkout, and none of those are going on the sea. An empty board with no explanation
+// reads as broken, though, and the first thing anybody does with a broken board is report
+// it - so it says so.
+function syncBoards() {
+  if (!state.panels) return;
+  const list = [...(state.ownProps || [])];
+  for (const g of state.guests) {
+    const v = g.region.village;
+    if (!v) continue;
+    const [ox, oz] = g.region.origin;
+    const keeper = (v.island && v.island.keeper) || true;
+    for (const p of v.props || []) {
+      if (p.kind !== 'panel') continue;
+      const x = p.x + ox, z = p.z + oz;
+      list.push({ ...p, id: `${g.region.id}:${p.id}`, x, z, y: g.region.worldHeight(x, z), away: keeper });
+    }
+  }
+  state.panels.apply(list);
 }
 
 function raiseGuestIslands() {
@@ -1835,6 +1886,7 @@ function raiseGuestIslands() {
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
       + `, ${g.triangles} triangles of ground and ${g.buildingCount} buildings`);
+    syncBoards();
   }
   // A region that has gone takes its ground with it.
   for (let i = state.guests.length - 1; i >= 0; i--) {
@@ -1846,6 +1898,7 @@ function raiseGuestIslands() {
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
+    syncBoards();
     state.guests.splice(i, 1);
   }
 }
@@ -3858,7 +3911,14 @@ async function boot() {
     scene, material: buildingMat, terrain: state.terrain, ground: state.sea,
     // Somebody else's hand on a board. It rides in with their pose, so it arrives here
     // rather than as a message of its own - see web/js/net.js.
-    onCursor: (who, at) => { if (state.panels) state.panels.peerCursor(who, at); },
+    // A hand on a board, scoped the same way take and drop are - and unscoped again on
+    // the way in, so a hand on a neighbour's notice board is nobody's hand here rather
+    // than a hand on whichever of ours happens to share its eight hex digits.
+    onCursor: (who, at) => {
+      if (!state.panels) return;
+      const board = at ? ourPanel(at.board) : null;
+      state.panels.peerCursor(who, board ? { ...at, board } : null);
+    },
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
@@ -3919,10 +3979,10 @@ async function boot() {
     },
     // Nothing a board says is decided here. A press asks the island, the island answers
     // every copy at once, and applyPanelMessage below is where the answer lands.
-    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(id, action, value); },
-    onTake: (id) => { if (state.net) state.net.takePanel(id); },
-    onDrop: (id) => { if (state.net) state.net.dropPanel(id); },
-    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at); },
+    onAction: (id, action, value) => { if (state.net) state.net.setPanelField(scopePanel(id), action, value); },
+    onTake: (id) => { if (state.net) state.net.takePanel(scopePanel(id)); },
+    onDrop: (id) => { if (state.net) state.net.dropPanel(scopePanel(id)); },
+    onCursor: (at) => { if (state.net) state.net.setPanelCursor(at ? { ...at, id: scopePanel(at.id) } : null); },
     self: () => (state.net ? state.net.id() : null),
   });
   refreshProps({ animate: false });

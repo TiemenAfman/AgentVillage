@@ -150,6 +150,19 @@ map, never by climbing out with `../../`. `tests/api-base.test.mjs` holds all of
 including a scan that fails on a bare `fetch('/`. To check it by hand, put any reverse
 proxy in front and load the island at a subpath: everything must come from under it.
 
+**A board says which island it is on, and a neighbour's board says whose it is.**
+`lib/players.mjs` has accepted `<islandId>:prop:<uuid>` since the boards moved to the sea
+and for a long time nothing sent one, which is plumbing with no button; `scopePanel` /
+`ourPanel` in `shared/panels.mjs` are the button, and they must stay exact inverses —
+`panels.all()` replaces the whole set, so one of somebody else's leaking in would empty
+ours rather than merely clutter it. There is **one** panels layer, not one per island: it
+is a CSS3D renderer over the whole canvas. A foreign board therefore carries what that
+layer cannot work out for it — world coordinates and its own `y`, because the layer was
+handed our terrain — and renders blank with a sentence naming whose machine reads it.
+That sentence is the feature: what a board says comes out of one islander's Jira token,
+GitHub token and git checkout, none of which go on the sea, and an unexplained empty board
+gets reported as broken.
+
 **A tree does not cost a coastline.** A bundle is a snapshot and live is a stream, and the
 two do not combine for free: a republish is 206 kB, makes every viewer drop a region and
 build its ground and buildings again, and — since the sea walks the crowd — sends every

@@ -91,3 +91,32 @@ export function applyUi(face, state, action, value) {
   }
   return null;
 }
+
+// ---- which island's board -----------------------------------------------------------
+//
+// lib/players.mjs has accepted `<islandId>:prop:<uuid>` since the boards moved to the sea,
+// and for a long time nothing sent one: with a single island in a world there was nothing
+// to collide with. There is now. A prop id is eight hex digits drawn per island, so two
+// islands sharing one is unlikely rather than impossible - and what it would mean is two
+// villages quietly writing over each other's notice board, which is the sort of fault that
+// gets blamed on whoever typed last.
+//
+// Here rather than in web/js/main.js because it is half of a contract the server holds the
+// other half of (PANEL_ID there), and because a pair of functions that have to be exact
+// inverses is worth being able to test without a browser.
+
+// Our own board, said so it cannot be mistaken for anybody else's.
+export function scopePanel(islandId, id) {
+  const s = String(id || '');
+  return islandId && !s.includes(':prop:') ? `${islandId}:${s}` : s;
+}
+
+// And back: the bare id when the board is ours, or null when it is not. An id with no
+// island in it at all is taken as ours - that is an older sea, and an older sea has only
+// us in it.
+export function ourPanel(islandId, id) {
+  const s = String(id || '');
+  const at = s.indexOf(':prop:');
+  if (at < 0) return s.startsWith('prop:') ? s : null;
+  return s.slice(0, at) === islandId ? s.slice(at + 1) : null;
+}
