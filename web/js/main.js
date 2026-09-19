@@ -1302,6 +1302,9 @@ function joinIsland({ id, rev = 0, seed, gridSize, polders = [], terrainHash = n
     // them is running older code. The server refuses the upload outright for the same
     // reason; by the time it reaches the page it is worth drawing and worth saying.
     console.warn(`island: ${id} hashes ${terrain.hash} here and ${terrainHash} there`);
+    // And where somebody will see it. A console warning is where this used to stop, which
+    // meant a neighbour drawn in the wrong shape was found by somebody sailing into it.
+    if (state.ui) state.ui.setSkew(id, name || id);
   }
   // The sea decides where an island lies, and every client is told the same answer - that
   // is what makes two people looking at the same water see the same thing. freeBerth is
@@ -1767,6 +1770,7 @@ function onCrowdMessage(m) {
 // sweep below and the rebuild above both need it, and doing it in two places is how one of
 // them ends up leaking a hundred meshes.
 function dropRegion(id) {
+  if (state.ui) state.ui.setSkew(id, null);
   state.sea.remove(id);
   for (let i = state.guests.length - 1; i >= 0; i--) {
     if (state.guests[i].region.id !== id) continue;
@@ -2247,6 +2251,9 @@ function buildScene(village) {
   const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
+    // Our own island, against our own scanner: the page is newer or older than the server
+    // that packed village.json. Same banner, because it has the same consequence.
+    if (state.ui) state.ui.setSkew('home', 'This island’s own scanner');
   }
   state.terrain = terrain;
   // This island becomes the first region, at the origin, so everything that asks the
@@ -3853,6 +3860,7 @@ async function boot() {
     useSea(hello.sea);
     state.islandId = hello.islandId || null;
     state.islandToken = hello.token || null;
+    state.seaKey = hello.seaKey || null;
     await learnTheWorld();
     state.guest = hello.role !== 'islander';
     state.signs = hello.signs !== false;
@@ -3942,7 +3950,9 @@ async function boot() {
     // Which world, and whose coast this body belongs over. A page with no islander of its
     // own sends no island and is a wanderer: it gets the world and a body, and nothing it
     // does can reach anybody's disk.
-    join: { v: 1, as: 'client', island: state.islandId || null },
+    // `key` is whatever the islander was given for this sea; a sea without one ignores it,
+    // and a sea with one refuses everybody who cannot say it.
+    join: { v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null },
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
     onRefused: (m) => state.ui.toast(`The sea would not have us: ${escapeHtml(String(m.why || 'no reason given'))}.`),

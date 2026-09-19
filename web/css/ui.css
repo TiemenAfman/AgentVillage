@@ -726,3 +726,31 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   .menu-sea { flex-direction: column; gap: 2px; }
   .menu-sea-said { white-space: normal; }
 }
+
+/* --- somebody in this world is running different code ------------------------------
+   Not a toast. Three machines make a world, and when their shared/terrain.mjs disagree an
+   island is drawn in the wrong shape - houses in the sea, a coast where a field was -
+   with nothing crashing and nothing logged where anybody looks. So it stays up until it
+   is fixed, and it names who rather than saying that somebody. */
+.skew {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(70, 30, 18, .94);
+  border: 1px solid rgba(233, 160, 90, .5);
+  color: #f2ddc8;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.skew b { color: #ffc98a; }
+
+@media (max-width: 520px) {
+  .skew { bottom: 120px; font-size: 12px; }
+}

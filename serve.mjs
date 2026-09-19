@@ -437,6 +437,18 @@ async function handle(req, res) {
       islandId: ISLAND_ID,
       sea: seaUrlFor(req),
       token: who.role === 'islander' ? ISLAND_TOKEN : null,
+      // The key to the sea, for the keeper's own page only.
+      //
+      // A sea with a key refuses a handshake without one - that is the point of it - and
+      // until now only lib/seaclient.mjs had it, so the moment a sea got a key it locked
+      // out the browser of the very island publishing to it. A visitor does not get it:
+      // with the key they could park an island and wear a name in that world, which is
+      // exactly what the key is there to stop.
+      //
+      // It is not a secret the way ISLAND_TOKEN is - everybody in a world shares it - but
+      // it is not public either, and a page on this machine is the only one that has any
+      // business having it from here.
+      seaKey: who.role === 'islander' ? (config.multiplayer.sea && config.multiplayer.sea.key) || null : null,
     });
   }
 

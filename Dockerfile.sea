@@ -1,0 +1,42 @@
+# The sea, in a box.
+#
+# Only the sea. This image cannot run an island and is not meant to: an islander reads
+# ~/.claude, spawns Claude Code sessions with full permissions and owns a data/ directory,
+# and none of that belongs on a machine that is reachable from the internet. What is here
+# holds a world in memory and writes nothing down - tests/sea-join.test.mjs walks the whole
+# import graph and asserts it can only reach node:http, node:crypto and node:os.
+#
+# No npm install. The island's one dependency is three.js, it is a devDependency, and it is
+# vendored into web/ for the browser - so the sea's twenty files need nothing but Node.
+#
+#   docker build -f Dockerfile.sea -t promptholm-sea .
+#   docker run -p 4750:4750 -e SEA_NAME="De Waddenzee" promptholm-sea
+FROM node:22-alpine
+
+# Nothing here runs as root. It has no files to own and no reason to.
+USER node
+WORKDIR /app
+
+# Exactly what sea.mjs imports, and nothing else. Copying the whole tree would put the
+# scanner, the mail server and the agent dispatcher in an image that is on the internet,
+# and the first rule of this thing is that it holds nothing worth taking.
+COPY --chown=node:node sea.mjs ./
+COPY --chown=node:node lib/ ./lib/
+COPY --chown=node:node shared/ ./shared/
+
+ENV SEA_PORT=4750
+EXPOSE 4750
+
+# --open, because inside a container loopback is nobody. What keeps it shut is the network
+# it is published on and the key below, not the bind address.
+#
+# SEA_KEY is worth setting the moment this is reachable from outside a trusted network.
+# Without one, anybody who can open the port can park an island, wear a name and shout in
+# the world. They cannot read a file, spawn anything or reach a transcript - there is none
+# of that here - but "no files to lose" is not the same as "no reason to close the door".
+CMD ["node", "sea.mjs", "--open"]
+
+# A liveness probe that means something: /health answers with the fleet and the player
+# count, so a sea that has wedged its tick still fails this.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.SEA_PORT||4750)+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

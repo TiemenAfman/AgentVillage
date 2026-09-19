@@ -270,6 +270,30 @@ The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reache
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
 route open to anybody — so an inbound half would be a change of posture, not a convenience.
 
+**The sea can go in a box; the islander never can.** `Dockerfile.sea` copies `sea.mjs`,
+`lib/` and `shared/` **by name** and not the tree, because the tree holds the scanner, the
+mail server and the agent dispatcher. That naming is also the failure mode — an import into
+a fourth folder works here and produces a container that dies on its first line, on a box
+nobody watches — so `tests/sea-image.test.mjs` walks the real import graph and checks every
+file in it is inside something the Dockerfile copies. `--open` in the `CMD` is not optional:
+inside a container, loopback is nobody, and what keeps the sea shut is the network it is
+published on plus `SEA_KEY`. No volumes, deliberately.
+
+`SEA_KEY` is shared by everybody in a world. Each islander keeps it in
+`multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
+never a visitor, who could otherwise park an island and wear a name there. Without that
+hand-off a sea that gets a key locks out the browser of the very island publishing to it.
+
+Behind Nginx Proxy Manager, two settings or the island connects and then sits in silence:
+**Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
+(`proxy_read_timeout 300s`). Everything after the handshake goes over that socket.
+
+**Somebody running different code is a banner, not a console warning.** Three machines make
+a world — this page, the islander that packed a bundle, whichever islander packed somebody
+else's — and when their `shared/terrain.mjs` disagree an island is drawn in the wrong shape
+with nothing crashing and nothing logged where anybody looks. `ui.setSkew(id, name)` keeps
+it on screen and names who.
+
 **The server is dangerous on purpose.** `/api/assign` spawns real Claude Code sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
 loopback socket, a known `Host` and a matching `Origin`, and never reads
@@ -344,4 +368,5 @@ files set a high bar for that; match it rather than stripping it back.
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,
-`CLAUDE_EXE`, `GH_EXE`, `BLENDER`.
+`CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
+`SEA_KEY`.

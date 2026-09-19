@@ -474,6 +474,30 @@ export function createUI(handlers) {
     while (kids.length > 4) kids[0].remove();
   }
 
+  // Somebody in this world is running different code.
+  //
+  // A toast is wrong for this and a console warning is worse. Three machines make a world
+  // now - this page, the islander that packed a bundle, and whichever islander packed
+  // somebody else's - and when their shared/terrain.mjs disagree, an island is drawn in
+  // the wrong shape: houses in the sea, a coast where a field was. Nothing crashes and
+  // nothing is logged where anybody looks, so it gets reported as "the island looks
+  // strange" weeks later.
+  //
+  // So it stays on screen, and it names who is out of step rather than saying that
+  // somebody is. One line per island, because two out of date is a different conversation
+  // from one.
+  const skewed = new Map();
+  function setSkew(id, name) {
+    if (name) skewed.set(id, name); else skewed.delete(id);
+    const box = el('skew');
+    if (!skewed.size) { box.hidden = true; box.innerHTML = ''; return; }
+    const who = [...skewed.values()];
+    box.hidden = false;
+    box.innerHTML = `<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
+      + 'running a different version of the island, so their land is drawn from numbers this '
+      + 'page disagrees with. Pull and restart on both sides.';
+  }
+
   // The two-step confirmation shown while walking, before anyone is sent away.
   function setConfirm(item) {
     const p = el('walk-confirm');
@@ -635,7 +659,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper,
-    setHover, toast, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
+    setHover, toast, setSkew, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas,
