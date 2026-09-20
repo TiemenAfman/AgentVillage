@@ -8,6 +8,8 @@
 import * as THREE from 'three';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { hash32 } from 'shared/rng.mjs';
+import { BEACON_RISE } from './buildings.js';
+import { SWEEP } from './beacon.js';
 
 // How far out a neighbour lies, measured from the water between the two islands rather
 // than written down flat. It used to be a fixed 150 to 190 units, which was fine when
@@ -32,9 +34,13 @@ const SAND = new THREE.Color(0xd8c9a2);
 const GRASS = new THREE.Color(0x6f8a4e);
 const ROCK = new THREE.Color(0x8a8577);
 
-function islandGeometry(seed, size) {
-  const terrain = makeTerrain(seed, { size });
-  const half = size / 2;
+// Built from a terrain the caller already has, rather than from a seed: a lighthouse out
+// here has to stand on the same ground the silhouette is made of, and two makeTerrain()
+// calls for one island is a second heightfield to keep in step for no reason. On a
+// 512-cell neighbour it is also a quarter of a million cells of arithmetic nobody needs.
+function islandGeometry(terrain) {
+  const size = terrain.size;
+  const half = terrain.half;
   const n = Math.floor(size / STEP) + 1;
   const pos = new Float32Array(n * n * 3);
   const col = new Float32Array(n * n * 3);
@@ -89,6 +95,28 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
   // A lit window in the dark, so you can tell somebody is home at night.
   const lampMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, fog: false, transparent: true, opacity: 0 });
   const lampGeo = new THREE.SphereGeometry(0.9, 8, 6);
+  // And a lighthouse, for the islands whose manifest row says they have one.
+  //
+  // A point of light, not the beam. web/js/beacon.js draws 144 triangles of additive air
+  // 52 units long, which is right for the four islands whose tower you can actually make
+  // out and wrong for the rest: out here an island is a couple of dozen pixels tall, a
+  // beam that long would be a wedge across a third of the sky, and it would cost a draw
+  // call on every island in the world rather than on the ones you are looking at. What a
+  // lighthouse *is* from this distance is a light that flashes, so that is what this is.
+  //
+  // Measured with seven islands in the water - ours, four alongside, two out here - at
+  // ?hour=21 with the whole sea in frame: 233 calls, 229 with every beam and every one of
+  // these taken out. One call each, and a lit one is a couple of pixels across; a beam out
+  // here would be one call each as well, which is the same arithmetic until MAX_ISLANDS
+  // (16) makes it twelve wedges of glowing air over a sea you are trying to look at.
+  //
+  // Its own material and not a share of the lamp's, because it beats: it flashes on the
+  // very same SWEEP the tower turns at - imported, not copied, so an island that has
+  // drifted out of the near set keeps the time it was keeping a moment ago - and on a
+  // phase hashed off its id, so no two neighbours blink together.
+  const beaconGeo = new THREE.SphereGeometry(1.2, 8, 6);
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0, fog: false, transparent: true, opacity: 0 });
+  let beat = 0;
 
   const islands = new Map();   // id -> { group, mesh, lamp, info, x, z, top }
   // Islands that are not out on the ring but at a real berth: an island somebody has
@@ -117,7 +145,8 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     group.position.set(x, 0, z);
     if (!pinned) group.rotation.y = ((h >>> 8) % 360) * Math.PI / 180;   // not all facing the same way
 
-    const geo = islandGeometry(info.seed, info.gridSize);
+    const terrain = makeTerrain(info.seed, { size: info.gridSize });
+    const geo = islandGeometry(terrain);
     const mesh = new THREE.Mesh(geo, material);
     mesh.userData.id = `neighbour:${info.id}`;              // so the existing picking finds it
     group.add(mesh);
@@ -128,10 +157,36 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     lamp.position.set(0, top + 0.6, 0);
     group.add(lamp);
 
+    // Their lighthouses, if the sea said they have any. `info.beacons` is LOCAL x,z out of
+    // the manifest row (lib/fleet.mjs) and the height is asked of the ground we have just
+    // drawn them on, which is the arrangement the whole horizon runs on: the sea sends the
+    // little that cannot be derived and this file derives the rest. An island announcing
+    // itself over the network beacon carries no such list and gets no light - it is in no
+    // sea of ours, and nothing here is invented.
+    //
+    // Inside the group on purpose, so that an unpinned island's hashed turn takes its
+    // lighthouse round with it. A light left in the island's unturned frame would stand
+    // out in the water beside a coast that had rotated away from under it.
+    const beacons = [];
+    for (const at of info.beacons || []) {
+      const b = new THREE.Mesh(beaconGeo, beaconMat.clone());
+      b.position.set(at[0], terrain.worldHeight(at[0], at[1]) + BEACON_RISE, at[1]);
+      // Dark until `update` has had a look at the sky. Born visible it is a draw call with
+      // nothing in it - the material starts at zero opacity - on every frame between the
+      // island arriving and the next tick, which on a daylit horizon is every frame there is.
+      b.visible = false;
+      group.add(b);
+      beacons.push(b);
+    }
+
     scene.add(group);
     pickables.push(mesh);
     const dist = Math.sqrt(x * x + z * z);
-    islands.set(info.id, { group, mesh, lamp, info, x, z, top, dist, radius: theirs, pinned: !!pinned });
+    // The flash's own offset, so that two islands in the same water are never in time with
+    // each other. Its own draw from the id's hash rather than a slice of `h` above, which
+    // is already spent on a bearing and a rotation.
+    const phase = (hash32(`${info.id}:beacon`) / 4294967296) * Math.PI * 2;
+    islands.set(info.id, { group, mesh, lamp, beacons, phase, info, x, z, top, dist, radius: theirs, pinned: !!pinned });
   }
 
   // Put an island at a berth instead of out on the ring, or take the pin away again. Safe
@@ -174,6 +229,7 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     scene.remove(it.group);
     it.mesh.geometry.dispose();
     it.lamp.material.dispose();
+    for (const b of it.beacons) b.material.dispose();   // the clones; the geometry is shared
     islands.delete(id);
   }
 
@@ -184,7 +240,13 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     for (const info of list || []) {
       wanted.add(info.id);
       if (islands.has(info.id)) {
-        islands.get(info.id).info = info;   // a rename costs nothing
+        const it = islands.get(info.id);
+        const had = it.beacons.length;
+        it.info = info;                     // a rename costs nothing
+        // A lighthouse going up does. The light is a mesh inside the island's group, so
+        // there is nowhere to add one without rebuilding - the same trade `pin` makes, and
+        // it happens about as often: once, at fifty settlers, on one island in the sea.
+        if (had !== (info.beacons || []).length) { remove(info.id); place(info); }
       } else {
         place(info);
         arrived.push(info);
@@ -195,8 +257,28 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     return arrived;
   }
 
-  function update(_dt, night = 0) {
-    for (const it of islands.values()) it.lamp.material.opacity = night * 0.9;
+  function update(dt, night = 0) {
+    beat += dt || 0;
+    for (const it of islands.values()) {
+      it.lamp.material.opacity = night * 0.9;
+      if (!it.beacons.length) continue;
+      // A sweep seen end-on from far away is a flash, and this is the cheapest honest
+      // shape for one: the cosine raised high enough that the lamp is bright for a short
+      // part of each turn and low for the rest. The floor is not decoration - a light that
+      // went out completely between flashes read as a rendering fault rather than as a
+      // lighthouse, because at this distance there is nothing else on screen to tell you
+      // it is still there.
+      const c = Math.cos(beat * SWEEP + it.phase);
+      const flash = c > 0 ? Math.pow(c, 8) : 0;
+      const on = night * (0.22 + 0.78 * flash);
+      for (const b of it.beacons) {
+        b.material.opacity = on;
+        // Nothing at all by day. An invisible mesh is skipped before it becomes a draw
+        // call, where a transparent one is still sorted and still drawn, so a daylit
+        // horizon of twelve islands costs exactly what it cost before this was added.
+        b.visible = on > 0.01;
+      }
+    }
   }
 
   // What the labels need: where each island sits and how high its name should float.
@@ -235,6 +317,8 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
       material.dispose();
       lampGeo.dispose();
       lampMat.dispose();
+      beaconGeo.dispose();
+      beaconMat.dispose();
     },
   };
 }

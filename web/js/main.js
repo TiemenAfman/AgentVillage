@@ -40,6 +40,7 @@ import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mj
 import { createCrops } from './crops.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
@@ -1619,7 +1620,11 @@ function syncHorizon() {
   for (const row of state.farFleet || []) {
     if (here.has(row.id)) continue;
     state.horizon.pin(row.id, row.origin);
-    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0 });
+    // `beacons` is the one thing out here that is not derivable from a seed: where that
+    // island's lighthouses stand on it. It rides the manifest row and nothing else does -
+    // an island announcing itself over the network beacon has no such list and gets no
+    // light, which is the same rule the rest of this file keeps: nothing is invented.
+    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0, beacons: row.beacons || [] });
   }
   for (const n of [...(state.neighbours || []), ...debugJoins]) {
     if (here.has(n.id) || shown.has(n.id)) continue;
@@ -2199,15 +2204,11 @@ function attachExtras(rec, { mail = true, signs = true } = {}) {
     group.add(m);
     rec.blades = m;
   }
-  if (built.animated && built.animated.beacon) {
-    const light = new THREE.SpotLight(0xfff2b0, 0, 60, 0.3, 0.6, 1.2);
-    light.position.set(...built.animated.beacon.at);
-    const target = new THREE.Object3D();
-    target.position.set(14, -1, 0);
-    group.add(light, target);
-    light.target = target;
-    rec.beacon = { light, target, a: 0 };
-  }
+  // The lamp, its sweep and the bar of air it stands in - see web/js/beacon.js. It is a
+  // module of its own because /demo builds the same tower without a village to hang it on,
+  // and because a guest island's records come through this very call: a neighbour's
+  // lighthouse lights up for the price of one line.
+  if (built.animated && built.animated.beacon) rec.beacon = attachBeacon(group, built.animated.beacon.at);
   if (built.animated && built.animated.clock) {
     rec.clock = attachClock(group, built.animated.clock.at, buildingMat);
   }
@@ -4156,11 +4157,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.clock) updateClock(rec.clock, hour);
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
-  if (rec.beacon) {
-    rec.beacon.a += dt * 0.85;
-    rec.beacon.target.position.set(Math.cos(rec.beacon.a) * 16, -2, Math.sin(rec.beacon.a) * 16);
-    rec.beacon.light.intensity = 55 * nightAmt;
-  }
+  if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
     const s = 1 + 0.16 * Math.sin(nowMs / 1000 * 17 + rec.id.length);
     rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
