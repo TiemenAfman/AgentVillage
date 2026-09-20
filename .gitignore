@@ -10,6 +10,7 @@ assets/**/renders/
 
 # per-machine settings; config.example.json is the template
 config.json
+config.json.bak*
 
 # never publish credentials or local traces
 .env
