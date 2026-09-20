@@ -22,6 +22,7 @@ import {
 } from './buildings.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
+import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
@@ -320,7 +321,7 @@ const state = {
   crops: null, market: null, garden: null,
   // What the postbox on the town hall pavement knows: one unread count per account, as the
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
-  mailbox: null, mailCounts: [], mailAt: 0, borrel: null,
+  mailbox: null, mailCounts: [], mailAt: 0, borrel: null, sound: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -3605,6 +3606,10 @@ function frame(nowMs) {
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
   if (state.panels) state.panels.render();
+  // And last of all, what the island sounds like. After the camera has settled, because
+  // the listener rides on it; one line, because everything sound needs it asks for itself
+  // through the snapshot handed to createSound.
+  if (state.sound) state.sound.update(dt);
 }
 
 function updateLabels() {
@@ -3821,7 +3826,14 @@ async function boot() {
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
     onBuild: () => openBuild(),
+    onSound: () => state.ui.setSound(state.sound.toggle()),
   });
+
+  // What the island sounds like. Made here and completely silent: web/js/sound.js builds
+  // no AudioContext until the switch is thrown - which is both what a browser demands of
+  // anything that wants to make a noise and what keeps the boot path clear of it.
+  state.sound = createSound({ camera, scene, island: soundSnapshot });
+  state.ui.setSound(state.sound.on, state.sound.possible);
 
   state.buildMenu = createBuildMenu(document.body, {
     onPick: (spec) => { if (state.ghost) state.ghost.take(spec); },
@@ -4178,6 +4190,31 @@ function connect() {
 function debounce(fn, msv) {
   let t;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), msv); };
+}
+
+// Everything web/js/sound.js is ever told about the island, taken six times a second. One
+// function rather than a dozen setters, because what sound wants is a picture of the place
+// and this is the only file that has one - and because it keeps the whole of sound's reach
+// into main.js on one screen, where it can be read.
+function soundSnapshot() {
+  return {
+    night: state.world ? state.world.state.night : 0,
+    indoors: !!state.inside,
+    // The archipelago rather than our own terrain, so the channel between two islands
+    // answers "sea" instead of the height of the nearer coast - the OPEN_SEA rule in
+    // shared/regions.mjs, which is exactly the question the bed is asking.
+    depthAt: (x, z) => state.sea.height(x, z),
+    // Ours and every visiting island's, because a hammer carries across the water the same
+    // way a mill turns over there. sound picks the nearest few out of this with the same
+    // nearestFirst() the fleet is ordered by.
+    crowds: [state.settlers, ...state.guests.map((g) => g.crowd)]
+      .filter(Boolean).map((c) => c.figures()),
+    quays: state.docks.map((d) => d.head),
+    // Only ours: a foreign record set would have to be walked separately and a hum does
+    // not cross sixty units of open water anyway.
+    records: state.byId,
+    tables: state.borrel ? state.borrel.out : 0,
+  };
 }
 
 // a handle for poking at the island from the console

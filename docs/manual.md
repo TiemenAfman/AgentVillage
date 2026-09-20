@@ -6,7 +6,7 @@ you are looking at. This is the rest.
 
 | | |
 |---|---|
-| Living in it | [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) |
+| Living in it | [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) · [Sound](#what-the-island-sounds-like) |
 | Putting it to work | [The sprint board](#the-sprint-board) · [The island's own board](#the-islands-own-board) · [The office](#the-office) · [Telling an agent how your team works](#telling-an-agent-how-your-team-works) |
 | Who is on it | [Starting a session](#starting-a-new-session-from-the-island) · [Inviting one](#inviting-a-session-that-already-exists) · [Sending one away](#sending-a-settler-away) · [Visitors and neighbours](#visitors-and-neighbours) |
 | How it is built | [How the village grows](#how-the-village-grows) · [Where the data comes from](#where-the-data-comes-from) · [The model sheet](#the-model-sheet) · [The workbench](#the-workbench) · [Layout](#layout) |
@@ -732,7 +732,9 @@ with no shallows to reclaim.
 | Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
 The day and night follow the real clock; the season follows the month. Windows light up
-after dark, campfires flicker, the lighthouse sweeps the water and fireflies come out.
+after dark, campfires flicker, fireflies come out, and the lighthouse throws a beam you can
+watch turn — including somebody else's, sweeping across the water from their island to
+yours, or flashing at the edge of sight from one too far away to make out.
 
 The weather belongs to the sea rather than to the island, so everybody in one world is
 standing in the same afternoon: clear, overcast, rain or fog, turning every ten minutes or
@@ -742,6 +744,23 @@ islands out on the water. A sea that restarts starts the weather again — it ke
 on disk, the sky included — and an island with no sea to ask has clear skies. `?sky=rain`
 holds one of the four for as long as the page is open, which is the only way to look at
 them all without waiting out somebody else's afternoon.
+
+## What the island sounds like
+
+**Sound** in the row of chips at the top right, beside Legend. It starts off, and whichever
+way you leave it is how that browser finds it next time — it is a setting of your speakers
+rather than of the island, so it is not in Settings and a visitor gets it too. Nothing makes
+a noise before you click something: browsers will not start audio on their own, and neither
+will this.
+
+Switched on you get the sea where there is sea and the wind where there is not — walk inland
+and one fades into the other — with everything quieter and duller after dark. Over it: a
+settler whose session is running hammers at their own door, gulls over the quay in daylight,
+and a murmur out of the tavern when there is anybody at the tables. Only the nearest few of
+anything are ever heard, so a village of three hundred costs the same as a village of three.
+
+It is all made up out of noise and arithmetic when you turn it on — there is not a single
+sound file on this island, and there is not meant to be one.
 
 ## When the browser will not draw
 
