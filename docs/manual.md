@@ -624,9 +624,17 @@ faces is the one thing the island seed decides, so two islands reclaim different
 
 Reclamation only ever takes cells that are **under water**, never a cell that is already
 land, which is what lets it happen to a village that is already standing: no house moves,
-no parcel moves, and the town keeps every stone. The dike and the causeway are road
-rather than building land - raised ground you may walk but not settle - so a hamlet
-cannot put a house on top of its own sea wall.
+no parcel moves, and the town keeps every stone. A wall drawn round whole super-cells
+leaves wedges of sea between it and the old shore that the tide can no longer reach, and
+those are filled to the height of the polder too - so the new coast is dry rather than
+puddled, and an earlier polder is simply more shore to the next one.
+
+The dike and the causeway are raised ground you may walk but not settle, and they are not
+marked alike. The causeway is road, written into `layout.paths` like any other stretch,
+because it is the one way onto the new land. The sea wall is not: nothing builds on it and
+no road crosses it either. Leaving the wall cheap to walk is what once tempted a hamlet's
+road up onto it for fifteen cells that were recorded nowhere, and left three houses on the
+polder with no way home. The one thing allowed to stand on a dike is the polder mill.
 
 The trigger is the settler count and nothing else. `ensureParcel` does know when it could
 not seat a district - that is what `rec.guest` means - but that answer only exists after
