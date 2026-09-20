@@ -70,6 +70,12 @@ export function createUI(handlers) {
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
+  // Beside Legend rather than inside Settings, and it is the one chip that is not there
+  // twice by accident: the Settings panel writes config.json on the machine the island
+  // runs on and is hidden from everybody but the keeper (see setKeeper below), while how
+  // loud somebody's own speakers are is theirs alone. So this is a chip, and what it
+  // remembers lives in that browser's localStorage next to the avatar and the chat mode.
+  el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
@@ -341,6 +347,22 @@ export function createUI(handlers) {
   let signMode = null;
 
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; }
+
+  // The Sound chip. `on` is what the person asked for, which is not the same as whether a
+  // note is playing: a browser will not start an AudioContext until the page has been
+  // touched, so somebody who left it on last time sees a lit chip a moment before they
+  // hear anything. Drawing the intent rather than the graph is what stops the first click
+  // on the chip from meaning "off" to a page that had already restored it.
+  function setSound(on, possible = true) {
+    const b = el('sound-btn');
+    if (!b) return;
+    b.hidden = !possible;
+    b.classList.toggle('on', !!on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = on
+      ? 'The sea, the wind and the village — click to silence'
+      : 'The sea, the wind and the village — off';
+  }
 
   // The server owns this setting, so the panel never decides for itself what is on:
   // it draws whatever came back, and a click only asks.
@@ -658,7 +680,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper,
+    setSigns, setKeeper, setSound,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
