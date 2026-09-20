@@ -291,9 +291,32 @@ Walk out along the planks and press **E**, and there is a boat alongside: one pe
 pressing it twice does not leave a raft of hulls tied up together. Aboard, **W** and **S**
 are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
 there is shore to step onto. She is quicker than running and takes a couple of seconds to
-find it, a hard turn spends the way you had on, and a hull that runs up a beach stops dead
-and has to be backed off. Press her at a coast and she will not climb it — the water's
-edge is the only place you can get in or out of a boat at all.
+find it, and a hard turn spends the way you had on. Press her at a coast and she will not
+climb it — the water's edge is the only place you can get in or out of a boat at all.
+
+Touching the bottom comes in two kinds, and the difference is the height of what the bow
+found. A **shoal** — sand, a bar, the bank of a stream — is a bump: she shoulders along it,
+loses most of her way in the moment, and carries on if you steer off. Lean on it with the
+throttle open and she stops anyway, inside a second, because a boat that could grind along
+a beach at walking pace would end up magnetised to the coast. Anything higher than sand is
+a **wall**: she stops dead there and has to be backed off, the way she always did.
+
+**Up the river.** Where a village has a river that reaches the sea, it dredges the mouth
+once it is 25 settlers strong. `riverCourse` stops the water where the beach begins and
+lets the tide do the rest, which is a good trade for the coast and leaves a bar across the
+entrance — on Promptholm, ground sitting between 0.00 and 0.06, deep enough to float on
+paper and a sandbank in practice. The dredger cuts a lane five cells wide from deep water
+through that bar and a little way up the river behind it, and then it is marked: red cans
+to port and green cones to starboard, entering from seaward, so the channel can be found
+from out on the bay where it is invisible under the surface. The stakes are the point of
+it — a fairway is a hole in a bar and looks exactly like the bar.
+
+Behind the entrance the river is its own reward: on Promptholm it is a hundred and forty
+cells of water between one and a half and three wide, with fifty-six bends, and it ends
+fifteen units from the town square. It is dug once and written into `data/layout.json`,
+like a polder and for the same reason: nothing that stands in the water may move. A river
+that ends in a landlocked pool is left alone — cutting to it would be a canal through the
+island, which is a much larger idea.
 
 **Settlers go out on the water too.** Every now and then somebody who has nothing on walks
 down the lane, out along the planks, and takes a little boat round the bay for the pleasure
@@ -655,6 +678,7 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | A post-and-rail fence, a paling fence, a hedge or a dry-stone wall | The edge of a hamlet's land, closed all the way round; it opens only where a road crosses it |
 | How stout that edge is | The houses inside it: a rail round tents, palings round huts and cottages, a hedge round houses, dry stone round manors and keeps - and the grander the houses the thicker the stone |
 | A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the boundary steps back and the water does the job |
+| Red and green stakes standing in the water at a river mouth | The betonning of the dredged fairway. Red cans to port and green cones to starboard entering from seaward; follow them in and the river is yours as far as the town |
 | A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
 | Houses around the town square with no boundary | The commons: whoever the island had no room for elsewhere |

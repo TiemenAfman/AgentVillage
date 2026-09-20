@@ -19,6 +19,7 @@
 // in the keyboard rather than in the sign.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
+import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
 import { buildBoatGeometry, mesh } from './buildings.js';
 import * as models from './models.js';
@@ -66,6 +67,37 @@ export const BOW = hullReach();
 // place you can get into or out of a boat at all - so this number is the gangplank, not
 // an incidental threshold.
 export const BOAT_FLOAT = 0.06;
+
+// Where the hull stops floating and where it stops *moving* are two different questions,
+// and for a long time this file only had the one answer. A grounding threw the way away
+// and left you reversing, which is right on a coast you should have stood off from and
+// wrong everywhere the water is narrow: the island's own river is a channel between 1.6
+// and 3.0 units wide with fifty-six bends in it, and a hull whose bow is tested 0.66 ahead
+// of its middle touches a bank on most of them. Fifty-six dead stops is not a voyage.
+//
+// So a *shoal* - sand, the bank of a stream, the lip of a bar, anything the island itself
+// would call beach - is now something the bow shoulders aside: the step is taken one axis
+// at a time, the way walk.js:693 slides a settler along a wall, and the way is bled off
+// hard while it lasts. Real ground above BEACH_MAX is still the wall it always was, which
+// is what keeps the rejected version of this out: a boat that follows *any* shoreline it
+// is pressed against reads as magnetised to the beach, and the thing that stopped it being
+// that is the ceiling, not the drag.
+//
+// BEACH_MAX rather than a number of its own, because the island already decides there what
+// is sand and what is land, and a second threshold a tenth away from it would be two
+// truths about one waterline.
+export const BOAT_SCRAPE = BEACH_MAX;
+
+// What a scrape costs, per second of it, and the one number here that is not a matter of
+// taste. It has to beat the throttle: BOAT_ACCEL against this settles at
+// 5.0 / (30 + BOAT_DRAG) = 0.16 u/s, which is under CREEP, so a hull held against a bank
+// snaps to a stop inside a tenth of a second and `aground` comes true after all. Anything
+// gentler and full ahead into the sand is a sustainable speed - you would grind along the
+// whole coast at a walking pace, which is the magnetised boat the paragraph above exists
+// to refuse, and tests/circumnavigate.test.mjs would stop being able to find the bar off
+// the quay at all. What survives is the glance: half the way per frame of contact, so
+// clipping a bend costs you speed and a moment, not the trip.
+const SCRAPE_DRAG = 30.0;
 
 // How much way the rudder needs to have its full say. Below this the blade is barely
 // biting and you are turning on the oar instead, which is what BOAT_TURN_MIN is.
@@ -169,17 +201,38 @@ export function stepBoat(b, { throttle = 0, turn = 0 } = {}, dt, heightAt) {
   // the hull would be, not where it is, so the bow stops at the water's edge rather than
   // one frame inside it.
   const lead = b.v >= 0 ? BOW : -BOW;
-  if (heightAt(nx + fx * lead, nz + fz * lead) < BOAT_FLOAT) {
+  // Where the bow would be if the hull stood at (x, z). The heading does not change below
+  // this line, so the offset is fixed and the whole of the test is this one point.
+  const bow = (x, z) => heightAt(x + fx * lead, z + fz * lead);
+  const touched = bow(nx, nz);
+  if (touched < BOAT_FLOAT) {
     b.x = nx;
     b.z = nz;
     b.aground = false;
+    b.scraping = false;
+  } else if (touched < BOAT_SCRAPE) {
+    // A shoal. Take what is left of the step one axis at a time, so the hull shoulders
+    // along the bank instead of stopping on it - and test each half at the bow as well,
+    // or the slide is a licence to walk the boat up a beach sideways. Diagonally is
+    // deliberately not tried again: if neither axis is clear the bow is in a corner, and
+    // a corner is a stop.
+    if (bow(nx, b.z) < BOAT_FLOAT) b.x = nx;
+    else if (bow(b.x, nz) < BOAT_FLOAT) b.z = nz;
+    // The way goes whether the hull moved or not. Scraping is expensive by the second and
+    // not by the metre: sitting in the sand with the throttle open is the same crawl as
+    // grinding along it, which is what makes "back off and come round again" the quick way
+    // out of both.
+    b.v -= b.v * SCRAPE_DRAG * step;
+    if (Math.abs(b.v) < CREEP) b.v = 0;
+    b.aground = b.v === 0;
+    b.scraping = true;
   } else {
-    // Soft, and the way is thrown away with it: a grounding is somewhere you back out of.
-    // Sliding along the coast the way walk.js:622 slides along a wall was the first thing
-    // tried here, and a boat that follows a shoreline it is pressed against reads as
-    // magnetised to the beach rather than stuck on it.
+    // Land. Hard, and the way is thrown away with it: a grounding is somewhere you back
+    // out of. This is the wall the shoal above is deliberately not, and the two are told
+    // apart by the height of what the bow found and nothing else.
     b.v = 0;
     b.aground = true;
+    b.scraping = false;
   }
   return b;
 }

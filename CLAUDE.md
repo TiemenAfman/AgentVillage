@@ -80,6 +80,23 @@ for the smallest one that does the job. [docs/branches.md](docs/branches.md) lis
 assert after a layout change, and the trap: **stop the server before measuring**
 (`stop-island.cmd`), or its own rescan interleaves with yours and every plot looks moved.
 
+**A polder and a fairway are the same mechanism pointed two ways.** A polder takes water
+off the island, a dredged fairway takes ground off the sea, and both are a list of cells in
+`layout.json` handed to `makeTerrain` — so both are as sticky as a house and both change
+the terrain hash. `layout.fairway` is dug once, at `FAIRWAY_AT` settlers, and never planned
+again; `planFairway` refuses every cell anything stands on, and `polderCandidate` refuses
+every cell the channel holds, because a fairway is shallow water and reads to a polder like
+perfect ground to wall in. The ordering that makes all of this survive is the polders' own
+and is load-bearing: `makeTerrain` is called *with* the fairway before the hash check, so an
+island that has never dredged still recognises itself, and `layout.terrainHash` is recorded
+*after* the digging, or the next scan finds a mismatch it caused itself and wipes the town.
+A `null` fairway means nobody has asked; `{ cells: [] }` means we asked and there was
+nothing to dig, and the difference is what stops the search running on every scan for ever.
+Everything that builds ground has to be handed it — `lib/layout.mjs`, `lib/garden.mjs`,
+`lib/fleet.mjs`, `lib/islandbundle.mjs`, three calls in `web/js/main.js` — and the one that
+deliberately is not is `horizon.js`, which ignores the polders too because a silhouette at
+that range is every other cell.
+
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
 `cos` or `pow`, which can differ in the last bit between runtimes. The viewer hashes the

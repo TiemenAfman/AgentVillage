@@ -1315,10 +1315,14 @@ function freeBerth(theirHalf) {
 //
 // `polders` matters more than it looks. A polder is stamped into the heightfield rather than
 // drawn on top of it, so an island that has drained one is a different shape - and leaving
-// them out would put their coast in the wrong place and their houses in the water.
-function joinIsland({ id, rev = 0, seed, gridSize, polders = [], terrainHash = null, name = null, village = null, origin = null }) {
+// them out would put their coast in the wrong place and their houses in the water. The
+// dredged `fairway` is the same thing pointed the other way, and has to travel with them
+// for the same reason: leave it out and a neighbour's river mouth silts back up on our
+// screen, which the terrain hash on the next line reports as two machines running
+// different code.
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -1683,6 +1687,7 @@ async function doSyncFleet() {
       seed: bundle.island.seed,
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
+      fairway: bundle.fairway || null,
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
@@ -2306,7 +2311,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
     // Our own island, against our own scanner: the page is newer or older than the server
@@ -2370,6 +2375,7 @@ function buildScene(village) {
   // every page load re-lays the whole landscape it has this moment finished laying.
   shownKey = 'live';
   shownPolders = (village.polders || []).length;
+  shownFairway = village.fairway || null;
   state.shot = village;
   frameIsland();
 }
@@ -2758,14 +2764,18 @@ function visibleAt(spec, t) {
 // so the projection's key says what would actually be drawn and the work is throttled -
 // with a trailing pass, so the last position the slider stops at is always the one drawn.
 const LANDSCAPE_MS = 120;
-let shownKey = null, shownPolders = null, landscapePending = null, landscapeRan = 0;
+let shownKey = null, shownPolders = null, shownFairway = null, landscapePending = null, landscapeRan = 0;
 
 function layLandscape(shot) {
   const w = state.world;
-  if (shot.polders !== shownPolders) {
+  // The channel is a second reason to rebuild the ground, and it is compared by identity
+  // rather than by depth: `fairwayAt` hands back the village's own object or null, so the
+  // two only differ on the scrub across the day it was dug.
+  if (shot.polders !== shownPolders || (shot.fairway || null) !== shownFairway) {
     shownPolders = shot.polders;
+    shownFairway = shot.fairway || null;
     const v = state.village;
-    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders) });
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), fairway: shownFairway });
     state.terrain = next;
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
