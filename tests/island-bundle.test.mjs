@@ -256,6 +256,28 @@ test('a terrain that does not match is fatal, not a warning', () => {
   assert.throws(() => parseBundle(mutated((w) => { w.island.terrainHash = '00000000'; })), /not running the same terrain/);
 });
 
+test('a drained polder sails with every list that raised its ground', () => {
+  // Which is all three of them. A dike corners off pockets of sea the tide can no longer
+  // reach, `reclaim` fills those to the height of the polder, and `makeTerrain` therefore
+  // reads `pools` alongside `cells` and `dike` - so they are part of the hash. Leave them
+  // out of the whitelist and the bundle still declares the pooled hash while the ground it
+  // carries builds the un-pooled one: the island is refused on arrival, in the words
+  // reserved for two machines running different code. Twenty-eight of forty seeds grow a
+  // pooled polder somewhere up the ladder, so this is the ordinary case, not a corner.
+  const drained = { cells: [[20, 20], [21, 20]], pools: [[19, 20], [19, 21]], dike: [[22, 20]], road: [[23, 20]] };
+  const without = { ...drained, pools: [] };
+  const hash = makeTerrain(SEED, { size: SIZE, polders: [drained] }).hash;
+  assert.notEqual(hash, makeTerrain(SEED, { size: SIZE, polders: [without] }).hash,
+    'the pools have to move the coast, or this test proves nothing');
+
+  const v = village();
+  v.island.terrainHash = hash;
+  v.polders = [{ ...drained, supers: [[1, 1]], seed: [1, 1], at: 150, unlockedAt: '2026-09-17T09:00:00.000Z' }];
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.polders[0].pools, drained.pools, 'the pools were dropped on the way out');
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+});
+
 test('parseBundle refuses a size it cannot draw', () => {
   for (const bad of [0, 1e9, '64', 64.5, null, NaN]) {
     assert.throws(() => parseBundle(mutated((w) => { w.island.gridSize = bad; })), Error, `gridSize ${String(bad)} was accepted`);
