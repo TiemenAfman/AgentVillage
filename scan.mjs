@@ -12,7 +12,7 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
@@ -382,6 +382,12 @@ function assemble({ config, model, layout, terrain, size, all }) {
       const at = POLDER_AT + k * POLDER_EVERY;
       return { ...p, at, unlockedAt: iso(model.arrivals[at - 1] || null) };
     }),
+    // The dredged river mouth, on the same terms as a polder: the cells decide the ground
+    // and the date is worked out here rather than in the layout, because the layout stores
+    // decisions and not the ladder that earned them.
+    fairway: layout.fairway
+      ? { ...layout.fairway, at: FAIRWAY_AT, unlockedAt: iso(model.arrivals[FAIRWAY_AT - 1] || null) }
+      : null,
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),

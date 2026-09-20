@@ -16,6 +16,18 @@ export const BUILD_HEIGHT_MAX = 4.2;
 export const POLDER_H = 96 / 256;
 export const DIKE_H = 224 / 256;
 
+// The dredged fairway. The other thing people do to a coast: a polder takes water off the
+// island, a fairway takes ground off the sea, and the two are the same mechanism pointed
+// in opposite directions - a list of cells in the layout, handed to `makeTerrain`, sticky
+// for ever.
+//
+// The depth is the river's own bed rather than a number of its own, quantised the way the
+// carve is quantised (`Math.round(RIVER_BED * 256)`), so the estuary's floor is the floor
+// the river already had and there is no step at the mouth where the dredger stopped. It is
+// applied with `min`, never `max`: a dredge digs, so deep water stays deep and only the bar
+// is taken away.
+export const CHANNEL_H = -141 / 256;
+
 // ---- rivers -----------------------------------------------------------------
 // One or two watercourses, from the flank of the hill down the gradient to the sea. A
 // river has to be genuinely below SEA_LEVEL for `isWater` to call it water, so what is
@@ -163,6 +175,7 @@ export function hashHeights(H) {
 export function makeTerrain(seed, opts) {
   const size = (opts && opts.size) || 64;
   const polders = (opts && opts.polders) || [];
+  const fairway = (opts && opts.fairway) || null;
   const N = size + 1, half = size / 2;
   let H = new Float64Array(N * N);
   const nShape = makeSimplex2D(hash32(seed + ':shape'));
@@ -239,6 +252,26 @@ export function makeTerrain(seed, opts) {
     H[gx + (gz + 1) * N] = v;
     H[gx + 1 + (gz + 1) * N] = v;
   };
+
+  // ---- the fairway ----------------------------------------------------------
+  // Dug before the polders, and for the same reason the rivers are: where a sea wall and a
+  // channel want the same cell the wall has to win, or a polder gets a hole in it that
+  // nothing on the island would ever fill. In practice they never meet - `planFairway`
+  // refuses every cell a polder already holds - but the ordering is what makes that a
+  // belt and not the only brace.
+  //
+  // `min` on each of the four corners rather than `setCell`'s flat assignment: a dredger
+  // that *raised* the bottom of the deep water it crosses would build the bar it was sent
+  // to remove, and a cell is four corners shared with its neighbours, so lowering the
+  // whole cell is what leaves a channel with sides instead of a row of pits.
+  const dig = (gx, gz) => {
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) return;
+    for (const k of [gx + gz * N, gx + 1 + gz * N, gx + (gz + 1) * N, gx + 1 + (gz + 1) * N]) {
+      if (H[k] > CHANNEL_H) H[k] = CHANNEL_H;
+    }
+  };
+  if (fairway) for (const c of fairway.cells || []) dig(c[0], c[1]);
+
   for (const p of polders) {
     for (const c of p.cells || []) setCell(c[0], c[1], POLDER_H);
     // Water the works cornered. A dike drawn round whole super-cells leaves wedges of
@@ -341,6 +374,7 @@ export function makeTerrain(seed, opts) {
     heightAt, slope, isLand, isWater, isBeach, isBuildable, worldHeight, cellWorld, inGrid, corner,
     landCells, beachCells, coastCells,
     rivers: courses, riverCells, riverBankCells, isRiver,
+    fairway,
     hash: hashHeights(H),
   };
 }

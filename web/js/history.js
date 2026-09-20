@@ -93,13 +93,22 @@ export function poldersAt(village, t) {
   return n;
 }
 
+// The dredged channel, or null on a day before it was dug. One thing rather than a count,
+// unlike the polders: there is only ever the one, and it is cut in a single season.
+export function fairwayAt(village, t) {
+  const f = village.fairway;
+  if (!f || !f.cells || !f.cells.length) return null;
+  if (f.unlockedAt && +new Date(f.unlockedAt) > t) return null;
+  return f;
+}
+
 // The projection, plus a short key saying what of the landscape it would draw - so the
 // caller can skip a rebuild when dragging the slider by a few minutes changes nothing
 // anyone could see.
 export function projectVillage(village, t) {
   const lat = village.island && village.island.lattice;
   if (!Number.isFinite(t) || !lat) {
-    return { key: 'live', polders: (village.polders || []).length, village };
+    return { key: 'live', polders: (village.polders || []).length, fairway: village.fairway || null, village };
   }
 
   // Who had arrived, per project.
@@ -171,6 +180,7 @@ export function projectVillage(village, t) {
 
   const buildings = (village.buildings || []).filter((b) => +new Date(b.startedAt) <= t);
   const nP = poldersAt(village, t);
+  const chan = fairwayAt(village, t);
 
 
   // The countryside's ploughed strips and orchards are planned from the terrain seed on
@@ -182,10 +192,12 @@ export function projectVillage(village, t) {
   const farmShare = townShare;
 
   return {
-    key: `${nP}|${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
+    key: `${nP}|${chan ? 'd' : '-'}|${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
     polders: nP,
+    fairway: chan,
     village: {
       ...village,
+      fairway: chan,
       buildings,
       districts,
       paths,

@@ -1198,6 +1198,102 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
   }
 
+  // ---- the betonning --------------------------------------------------------
+  // Withies down both sides of the dredged channel. A fairway is a hole in a bar and looks
+  // from the water exactly like the bar it was cut through - the whole of it is under the
+  // surface - so an unmarked one is a channel nobody can find, which is the problem it was
+  // dug to solve wearing a different hat.
+  //
+  // Read off `terrain.fairway` and not the village, so a guest island's channel marks
+  // itself from the same ground everyone agrees on, and so this survives a `reshape`: the
+  // chronicle rebuilds the terrain as it was on the day being looked at, and on a day
+  // before the dredging there is no channel and therefore no stakes.
+  //
+  // IALA region A, which is the sea this island is in: entering from seaward, red cans to
+  // port and green cones to starboard. The direction is the centreline's own - `planFairway`
+  // lays it down from the sea inwards precisely so that "port" has a meaning here - and
+  // the handedness is walk.js's: with forward (fx, fz), starboard is (-fz, fx).
+  // A ground cell is four metres, so these are smaller than they look written down: a
+  // stake stands 2.2 m out of the water with a topmark half a metre across, which is a
+  // withy and not a lighthouse. The first cut of this was 1.15 and 0.22, and from the
+  // water they were the size of trees - the scale error you only see by standing in it.
+  const BEACON_EVERY = 3;       // cells between pairs: close enough to read as a lane
+  const BEACON_OUT = 2.0;       // how far off the middle, which is FAIRWAY_HALF in cells
+  const BEACON_RISE = 0.55;     // stake above the water; a wave hides anything shorter
+  let beaconMesh = null;
+
+  function buildBeacons() {
+    const f = terrain.fairway;
+    if (!f || !f.line || f.line.length < 2) return null;
+    const pos = [], col = [], idx = [];
+    let v = 0;
+    const quad = (a, b, c, d, hex) => {
+      tmpColor.setHex(hex);
+      for (const p of [a, b, c, d]) { pos.push(p[0], p[1], p[2]); col.push(tmpColor.r, tmpColor.g, tmpColor.b); }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+      v += 4;
+    };
+    // A stake is a square post and a topmark, both drawn as four upright quads - no cones
+    // and no cylinders, because at this size the silhouette is the whole of it and a
+    // twelve-sided anything is triangles spent on nothing anybody can see from a boat.
+    const stake = (x, z, hex, cone) => {
+      const bed = terrain.worldHeight(x, z);
+      const top = BEACON_RISE, r = 0.035;
+      const corners = [[-r, -r], [r, -r], [r, r], [-r, r]];
+      for (let k = 0; k < 4; k++) {
+        const [ax, az] = corners[k], [bx, bz] = corners[(k + 1) % 4];
+        quad([x + ax, bed, z + az], [x + bx, bed, z + bz], [x + bx, top, z + bz], [x + ax, top, z + az], 0x6b4a2f);
+      }
+      // The topmark. A cone stands on its base and a can is a drum, which is the one
+      // difference a helmsman actually reads at a distance.
+      const w = 0.11, hgt = 0.2;
+      for (let k = 0; k < 4; k++) {
+        const [ax, az] = corners[k].map((c) => (c / r) * w);
+        const [bx, bz] = corners[(k + 1) % 4].map((c) => (c / r) * w);
+        const tipW = cone ? 0 : 1;
+        quad(
+          [x + ax, top, z + az], [x + bx, top, z + bz],
+          [x + bx * tipW, top + hgt, z + bz * tipW], [x + ax * tipW, top + hgt, z + az * tipW], hex,
+        );
+      }
+    };
+    for (let s = 0; s < f.line.length; s += BEACON_EVERY) {
+      const a = f.line[Math.max(0, s - 1)], b = f.line[Math.min(f.line.length - 1, s + 1)];
+      let fx = b[0] - a[0], fz = b[1] - a[1];
+      const L = Math.hypot(fx, fz);
+      if (!L) continue;
+      fx /= L; fz /= L;
+      const [cx, cz] = terrain.cellWorld(f.line[s][0], f.line[s][1]);
+      // Out to where the channel actually ends rather than to a number: the cut is
+      // narrower where it passed a headland, and a stake on dry sand is worse than none.
+      for (const [side, hex, cone] of [[1, 0x3f8f4f, true], [-1, 0xb03a2e, false]]) {
+        const ox = -fz * side, oz = fx * side;
+        let at = 0;
+        for (let d = BEACON_OUT; d >= 1.0; d -= 0.2) {
+          if (terrain.worldHeight(cx + ox * d, cz + oz * d) < 0) { at = d; break; }
+        }
+        if (at) stake(cx + ox * at, cz + oz * at, hex, cone);
+      }
+    }
+    if (!pos.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  }
+
+  function dressBeacons() {
+    if (beaconMesh) { group.remove(beaconMesh); beaconMesh.geometry.dispose(); beaconMesh = null; }
+    const bg = buildBeacons();
+    if (!bg) return;
+    beaconMesh = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
+    beaconMesh.castShadow = true;
+    group.add(beaconMesh);
+  }
+  dressBeacons();
+
   // ---- boundaries and fields -----------------------------------------------
   let borderMesh = null, fieldMesh = null;
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
@@ -1528,6 +1624,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // during a chronicle replay takes the shallows with it wherever it is - and so that
     // there is one place, not two, that knows what the water over a region looks like.
     resampleWater();
+    // And the withies go with the channel they mark. Cheap enough to rebuild outright -
+    // a dozen stakes - and the alternative is a buoyed fairway on a day before it was dug.
+    dressBeacons();
   }
 
   return {
