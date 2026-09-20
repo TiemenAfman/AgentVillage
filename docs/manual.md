@@ -635,6 +635,20 @@ reclaiming on the *next* scan, and then a second scan of an unchanged island wou
 `data/layout.json`, which is the one thing that must never happen. A settler count is a
 pure function of the model, so a rescan reclaims exactly the same land.
 
+The polder mill used to be the last thing the village ever built. At **165 settlers** it
+puts up a **harbour crane** as well, on the quay's own waterfront with its jib out over
+the water - looking at the berth rather than back at the town, which no other civic on the
+island does. It wants the cell beside the ramp onto the planks, and by the time it is
+earned that cell is usually somebody's front garden: a settled quay is harbour houses
+shoulder to shoulder. So it walks along the water's edge instead of inland, and stands on
+the nearest open ground to the berth, never further from it than the planks are long.
+
+The number sits in the window between the first polder and the second, because every dike
+after the first is stone and timber that has to come ashore and the crane wants to be
+standing before it is asked to land it. An island that has never run a Cowork task has no
+quay and no planks, so the crane waits, exactly as the polder mill waits for a village
+with no shallows to reclaim.
+
 ## What you are looking at
 
 | On the island | In the data |
@@ -678,7 +692,8 @@ pure function of the model, so a rescan reclaims exactly the same land.
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, tavern, clock tower, tables, windmill, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 40, 45, 50, 70 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 70 and 100 settlers |
+| A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
 | A pale row that glows after dark | Moonleeks, ready to pull |
 | The school | 25 apprentices: it is where they are taught |
