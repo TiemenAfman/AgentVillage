@@ -52,11 +52,16 @@ import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
+import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange } from './api.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
+// ?sky=rain - hold this island in one sky whatever the sea says afterwards. The weather is
+// a shared thing kept by the sea and turning over a quarter of an hour at a time, so
+// without this the only way to look at three of the four is to sit and wait for them.
+if (params.has('sky')) forceSky(params.get('sky'));
 const statsReadout = params.has('stats') ? document.createElement('output') : null;
 if (statsReadout) {
   statsReadout.style.cssText = 'position:fixed;left:12px;bottom:8px;z-index:10000;padding:5px 9px;background:#14221ee8;color:#f4e8cd;font:12px monospace;pointer-events:none';
@@ -298,6 +303,9 @@ const state = {
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
   hover: null, selected: null, intro: null, tween: null, live: 'live',
   queue: [], running: false, flags: null, particles: null,
+  // The weather over the whole world, as this island draws it. The sea keeps the word; see
+  // web/js/weather.js for what the four of them look like.
+  sky: null,
   walk: null, board: null, chat: null, pad: null, input: null, padSeen: false, mode: 'orbit',
   // The room you are standing in, if any. Walking and being indoors are not two modes:
   // you are still on foot, the room simply owns the camera and the keyboard while you
@@ -1257,8 +1265,7 @@ function applyFogRange() {
     if (r === state.region) continue;
     out = Math.max(out, Math.hypot(r.origin[0], r.origin[1]) + r.half);
   }
-  scene.fog.near = half * 1.1;
-  if (out <= 0) { scene.fog.far = half * 3.4; return; }
+  if (out <= 0) { setFogRange(half, 0, half * 3.4); return; }
 
   // How far the eye actually is from the furthest coast it could be looking at. Without
   // this the haze is a fixed ring round the origin, and an archipelago cannot be framed:
@@ -1275,7 +1282,19 @@ function applyFogRange() {
     const dx = camera.position.x - r.origin[0], dz = camera.position.z - r.origin[1];
     reach = Math.max(reach, Math.sqrt(dx * dx + dz * dz + camera.position.y * camera.position.y) + r.half);
   }
-  scene.fog.far = Math.max(half * 3.4, out + 110, reach + 40);
+  setFogRange(half, out, Math.max(half * 3.4, out + 110, reach + 40));
+}
+
+// And the last word on it, which is the weather's. The sky the sea is keeping closes the
+// haze in - a downpour is a smaller world than a clear afternoon - but it only ever
+// multiplies what the paragraphs above decided, and hazeRange (web/js/weather.js) holds the
+// floor that keeps the neighbours on this side of it. Clear weather is a multiplier of one
+// and both floors are below what is passed in, so an island in the sunshine gets the two
+// numbers it has always had, to the decimal.
+function setFogRange(half, out, far) {
+  const h = hazeRange({ near: half * 1.1, far, half, out, thick: haze() });
+  scene.fog.near = h.near;
+  scene.fog.far = h.far;
 }
 
 // Islands that are not on the beacon: an island conjured by `?join=` so that the whole
@@ -2342,6 +2361,11 @@ function buildScene(village) {
     // So the water is laid over everything there is, not over this island alone.
     sea: state.sea,
   });
+  // The sky over the whole world, before the haze is measured: applyFogRange asks it what
+  // it is doing. Built here rather than at boot because it borrows world.js's clouds, dome
+  // and lights instead of drawing a second set, and thrown away with the scene on a reseed.
+  if (state.sky) state.sky.dispose();
+  state.sky = createWeather({ scene, world: state.world, camera, onHaze: applyFogRange });
   // The fog object arrives with the world; the distances are ours, and they are set here
   // rather than on the first neighbour sync so that no frame is ever drawn without them.
   applyFogRange();
@@ -3454,6 +3478,10 @@ function frame(nowMs) {
   const month = new Date(timeNow()).getMonth();
   if (state.world) {
     state.world.update(dt, hour, month);
+    // Straight after it, and never before: the weather multiplies what the hour has just
+    // set - the lights, the dome, the haze's colour - and world.js writes all of those
+    // fresh every frame, which is exactly what stops a multiplier compounding.
+    if (state.sky) state.sky.update(dt, month);
     // The island keeps its clock while you are indoors - it is the same afternoon when
     // you come back out - but a room with its shutters closed does not brighten at noon.
     buildingMat.userData.uniforms.uNight.value = state.inside ? INDOOR_GLOW : state.world.state.night;
@@ -4033,6 +4061,10 @@ async function boot() {
     join: { v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null },
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
+    // The sky, straight through: it is one word for the whole world and nothing on this
+    // side has an opinion about it. web/js/weather.js holds it whether or not the scene
+    // has been built yet, which it has not when the welcome lands on a slow boot.
+    onWeather: setSky,
     onRefused: onRefusedBySea,
     name: playerName(),
     onStatus: () => {},

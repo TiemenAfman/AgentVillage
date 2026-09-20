@@ -32,7 +32,8 @@ const UI_PER_BEAT = 2;
 // the answer (web/js/api.js does), so it passes it in and this file stops reading
 // location at all.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
-  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, name = null } = {}) {
+  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {},
+  name = null } = {}) {
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -104,6 +105,11 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           // is and whose afternoon that is, so two players in different time zones do not
           // see two different skies over the same water.
           if (m.world) onWorld(m.world, null, { now: m.now, tz: m.tz });
+          // And what the sky over that world is doing. Silence here is clear weather and
+          // nothing else: an island on its own says nothing, and so does a sea older than
+          // the weather. Neither is a version mismatch and neither is worth a word to
+          // anybody - see the note on `weather` in lib/sea.mjs's welcome.
+          if (m.weather) onWeather(m.weather);
           selfId = m.id;
           peers.setSelf(m.id);
           for (const p of m.players || []) peers.join(p);
@@ -122,6 +128,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
         // The fleet changing: an island arriving, going quiet, or going home.
         case 'island': onWorld(null, m); break;
+        // The sky turning. One word every ten minutes or so, for the whole world at once.
+        // Passed through as it arrived, exactly as the welcome's copy is, so there is one
+        // shape for the page to understand rather than two.
+        case 'weather': onWeather(m); break;
         // Somebody else's settlers. `fr` says who the numbers mean and comes once per
         // island; `f` is where they have got to and comes on the beat. Passed through as
         // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and

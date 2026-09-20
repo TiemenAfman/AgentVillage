@@ -734,6 +734,15 @@ with no shallows to reclaim.
 The day and night follow the real clock; the season follows the month. Windows light up
 after dark, campfires flicker, the lighthouse sweeps the water and fireflies come out.
 
+The weather belongs to the sea rather than to the island, so everybody in one world is
+standing in the same afternoon: clear, overcast, rain or fog, turning every ten minutes or
+so. Overcast brings the clouds down and takes the sun out of the day; rain falls as snow
+once the season is winter; fog closes the haze in, though never so far that it swallows the
+islands out on the water. A sea that restarts starts the weather again — it keeps nothing
+on disk, the sky included — and an island with no sea to ask has clear skies. `?sky=rain`
+holds one of the four for as long as the page is open, which is the only way to look at
+them all without waiting out somebody else's afternoon.
+
 ## When the browser will not draw
 
 The island needs WebGL. If the browser's graphics process falls over, which shows up in

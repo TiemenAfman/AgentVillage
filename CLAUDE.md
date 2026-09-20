@@ -315,6 +315,23 @@ Behind Nginx Proxy Manager, two settings or the island connects and then sits in
 **Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
 (`proxy_read_timeout 300s`). Everything after the handshake goes over that socket.
 
+**The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
+(`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
+minutes or so on the sea's own clock and riding out on the welcome and on one broadcast. It
+is in memory like everything else the sea holds, so a restart is a new sky and that is the
+whole migration story. On the page, `web/js/weather.js` draws it by *multiplying* what
+`world.js` has already set from the hour — the nine clouds, the dome's two colours, the
+three lights, the haze — which is why it runs immediately after `world.update` in the frame
+and never before it: world.js writes all of those fresh every frame, and that is what stops
+a multiplier compounding. Clear is a multiplier of one everywhere, so a world with no
+weather in it is not a degraded island, it is the island. Nothing about a sky ever reaches
+`ui.setSkew` or the terrain hash: an unrecognised word and an absent field are both clear,
+and the vocabulary is written out twice on purpose (the sea may not import `web/`, the page
+may not import `lib/`) with `tests/weather.test.mjs` holding the two copies together. The
+haze is still decided in exactly one place: `applyFogRange` hands `hazeRange` a multiplier,
+and the floor in there is what keeps the furthest coast in the world on this side of the
+murk — the price being that thick fog is milder the wider the world is.
+
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
 else's — and when their `shared/terrain.mjs` disagree an island is drawn in the wrong shape
@@ -362,8 +379,9 @@ is not deterministic.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`. (`?sail` is gone with the browser's
-own boating — outings are the sea's, and `eager` is a flag on `createBoating` there.)
+Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`. (`?sail` is gone with the
+browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
+there.)
 
 ## Layout of the source
 
