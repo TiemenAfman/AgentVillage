@@ -2635,6 +2635,18 @@ function openMainMenu() {
     islandName: (state.village && state.village.island && state.village.island.name) || 'this island',
     hasIslander: islanderHere() && !state.guest,
     seas: async () => (await mine('/api/seas')).json(),
+    // Off the saved list. Its own route rather than a field on /api/sea: that one moves the
+    // island, and one route that both goes somewhere and forgets somewhere is a route where
+    // a missing field means the wrong thing happened.
+    forget: async (url) => {
+      const r = await mine('/api/sea/forget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!r.ok) return { ok: false, error: (await r.json().catch(() => ({}))).error || 'that address would not go' };
+      return { ok: true };
+    },
     choose: async (what) => {
       const r = await mine('/api/sea', {
         method: 'POST',

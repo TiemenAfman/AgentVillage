@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, setSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -768,6 +768,20 @@ async function handle(req, res) {
       }
     }));
     return json(res, 200, { mode: cfg.mode || 'single', current: cfg.url || null, seas: asked });
+  }
+
+  // Take an address off the saved list. Keeper-only, like every other setting.
+  //
+  // Not part of /api/sea: that one moves the island, and a route that both goes somewhere
+  // and forgets somewhere is a route where a missing field means the wrong one happened.
+  if (p === '/api/sea/forget' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let sea;
+    try { sea = forgetSea((body || {}).url); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    config.multiplayer.sea = sea;
+    log(`forgot the sea at ${(body || {}).url}`);
+    return json(res, 200, { ok: true, known: sea.known });
   }
 
   // Move this island to another world. Keeper-only, like every other setting: it writes

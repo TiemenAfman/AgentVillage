@@ -53,6 +53,7 @@ export function createMainMenu({
   hasIslander = true,
   seas = async () => null,
   choose = async () => ({ ok: false }),
+  forget = async () => ({ ok: false }),
   onDone = () => {},
 } = {}) {
   const root = document.getElementById('mainmenu');
@@ -84,10 +85,18 @@ export function createMainMenu({
     const from = o.from === 'network' ? 'on this network'
       : o.from === 'known' ? 'always on'
         : o.mine ? 'yours' : 'saved';
-    return `<button class="menu-sea${here ? ' on' : ''}" data-url="${esc(o.url)}"${o.up ? '' : ' disabled'}>
-      <span class="menu-sea-name">${esc(o.name || o.url)}</span>
-      <span class="menu-sea-said">${from} · ${said}</span>
-    </button>`;
+    // Only the saved ones can be forgotten. One found on the network is not ours to
+    // forget - it will be back the next time it is announced - and the sea we are in is
+    // left by picking another world, which is what the three cards are for.
+    const droppable = o.from === 'known' && !o.mine && !here;
+    return `<div class="menu-sea-row">
+      <button class="menu-sea${here ? ' on' : ''}" data-url="${esc(o.url)}"${o.up ? '' : ' disabled'}>
+        <span class="menu-sea-name">${esc(o.name || o.url)}</span>
+        <span class="menu-sea-said">${from} · ${said}</span>
+      </button>
+      ${droppable ? `<button class="menu-forget" data-forget="${esc(o.url)}"
+        title="Forget ${esc(o.url)}" aria-label="Forget ${esc(o.url)}">\u00d7</button>` : ''}
+    </div>`;
   }
 
   function modeCard(m) {
@@ -153,6 +162,22 @@ export function createMainMenu({
       if (list && list.mode === 'join' && b.dataset.url === list.current) { close(); return; }
       go('join', b.dataset.url);
     }));
+    root.querySelectorAll('[data-forget]').forEach((b) => b.addEventListener('click', async () => {
+      if (busy) return;
+      const url = b.dataset.forget;
+      b.disabled = true;
+      const r = await forget(url).catch(() => ({ ok: false, error: 'the island did not answer' }));
+      if (r && r.ok) {
+        // Struck from the list we already have rather than asked for again: re-probing half
+        // a dozen addresses to learn that one of them is gone is a second of nothing
+        // happening after a click that should feel instant.
+        list = { ...list, seas: (list.seas || []).filter((o) => o.url !== url) };
+      } else {
+        list = { ...list, error: (r && r.error) || 'that address would not go' };
+      }
+      draw();
+    }));
+
     const add = root.querySelector('#menu-add');
     const field = root.querySelector('#menu-url');
     const keyField = root.querySelector('#menu-key');
