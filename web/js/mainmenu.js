@@ -67,6 +67,11 @@ export function createMainMenu({
   // failing a join cause. Held here and not read off the input at the last moment, because
   // the input is destroyed and rebuilt by every one of them.
   let typedKey = '';
+  // And the same for the address. That field suffers worse than the key ever did:
+  // refresh() is fired by open() itself, so the first address anybody types is being
+  // typed while the probe is still out - and the list coming back is what empties the
+  // box under them. Held here for the same reason: the input does not survive a draw().
+  let typedUrl = '';
 
   // Whether to offer the field at all. Only when something out there says it wants one -
   // an empty box on every sea is a question most people cannot answer, and the one sea
@@ -127,7 +132,8 @@ export function createMainMenu({
     : (list.seas || []).length ? (list.seas || []).map(seaRow).join('')
       : '<p class="menu-note">Nothing out there yet. Type an address.</p>'}
           <div class="menu-add">
-            <input id="menu-url" class="field" placeholder="http://address:4750/" autocomplete="off">
+            <input id="menu-url" class="field" placeholder="http://address:4750/" autocomplete="off"
+              value="${esc(typedUrl)}">
             <button class="chip" id="menu-add">Sail there</button>
           </div>
           ${wantsKey() ? `<div class="menu-add">
@@ -182,7 +188,8 @@ export function createMainMenu({
     const field = root.querySelector('#menu-url');
     const keyField = root.querySelector('#menu-key');
     if (keyField) keyField.addEventListener('input', () => { typedKey = keyField.value; });
-    const typed = () => { if (field && field.value.trim()) go('join', field.value.trim()); };
+    if (field) field.addEventListener('input', () => { typedUrl = field.value; });
+    const typed = () => { if (typedUrl.trim()) go('join', typedUrl.trim()); };
     if (add) add.addEventListener('click', typed);
     if (field) field.addEventListener('keydown', (e) => { if (e.key === 'Enter') typed(); });
     if (keyField) keyField.addEventListener('keydown', (e) => { if (e.key === 'Enter') typed(); });
