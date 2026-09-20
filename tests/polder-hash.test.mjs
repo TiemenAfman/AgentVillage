@@ -6,6 +6,11 @@
 // rivers it was written for - and ruinous for a polder, because draining one changes the
 // heightfield *on purpose*, every time the village crosses another POLDER_EVERY.
 //
+// The polder was the first thing to do that and the dredged channel is the second, so the
+// rule below is not a polder's eccentricity: `planFairway` deepens the ground at
+// FAIRWAY_AT exactly as `reclaim` raises it at POLDER_AT, and both stand behind the one
+// line that records the hash.
+//
 // So `layout.terrainHash` has to be recorded after reclaiming, not before. Recorded
 // before, the stored hash is the coast without the new polder: the next scan finds a
 // mismatch it caused itself, wipes the town, reclaims, mismatches again - and every house
@@ -22,6 +27,19 @@ import { makeTerrain } from '../shared/terrain.mjs';
 
 const SEED = 1337;
 const SIZE = 64;
+
+// The ground the layout says it made. This mirrors the `makeTerrain` call in `placeAll`
+// (lib/layout.mjs:1553) and has to keep mirroring it: every list that feeds the heightfield
+// belongs here, or the expectation below is computed from a different island than the one
+// `placeAll` measured.
+//
+// It is a helper rather than four literal calls because the polder is no longer the only
+// thing that moves the coast on purpose. The dredged channel is the second - dug at
+// FAIRWAY_AT, which is twenty-five settlers and so already in the ground long before the
+// first polder - and it is what turned "the bare island" from a fact into a moment. There
+// is no reason to think it is the last, and a test that spells the list out does not fail
+// when a third arrives: it goes on passing, against an island nobody is planning.
+const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway }).hash;
 
 // A village of `settlers` spread over twelve projects, which past POLDER_AT is more land
 // than a 64-grid has - the shortage polders exist for. Only the fields `placeAll` reads
@@ -48,11 +66,14 @@ const stands = (l) => Object.fromEntries(Object.entries(l.plots).map(([id, p]) =
 const movedBetween = (a, b) => Object.keys(a).filter((id) => a[id] !== b[id]);
 
 test('the hash on record is the coast after the polder, not before it', () => {
-  // A village too small to reclaim anything, so the hash it records is the bare island.
+  // A village too small to reclaim anything, so the hash it records is the island before
+  // any polder - but not an untouched one: at a hundred settlers the channel has been
+  // dredged for seventy-five of them, and that is already in the ground and in the hash.
   const layout = emptyLayout(SEED, SIZE);
   placeAll(layout, village(POLDER_AT - 50), { seed: SEED, size: SIZE });
-  const bare = makeTerrain(SEED, { size: SIZE, polders: [] }).hash;
+  const bare = groundOf(layout);
   assert.equal(layout.polders.length, 0, 'nothing is reclaimed below POLDER_AT');
+  assert.ok(layout.fairway, 'and the channel is dug by now, which is what `bare` includes');
   assert.equal(layout.terrainHash, bare);
   const before = stands(layout);
 
@@ -60,7 +81,7 @@ test('the hash on record is the coast after the polder, not before it', () => {
   placeAll(layout, village(POLDER_AT + 10), { seed: SEED, size: SIZE });
   assert.equal(layout.polders.length, poldersWanted(POLDER_AT + 10));
 
-  const drained = makeTerrain(SEED, { size: SIZE, polders: layout.polders }).hash;
+  const drained = groundOf(layout);
   // Without this the assertion below would pass on an island that reclaimed nothing.
   assert.notEqual(drained, bare, 'draining a polder is supposed to move the coast');
   assert.equal(layout.terrainHash, drained, 'the hash on record is the drained coast');
@@ -103,7 +124,10 @@ test('the hash the wrong ordering would write re-plans the island', () => {
   const settled = stands(layout);
 
   const wrong = clone(layout);
-  wrong.terrainHash = makeTerrain(SEED, { size: SIZE, polders: [] }).hash;   // the coast before the polder
+  // The coast before the polder - and *with* the channel, because the wrong ordering would
+  // still have dredged before it took the hash. Anything else makes the control wrong in
+  // two ways and proves the weaker of them.
+  wrong.terrainHash = makeTerrain(SEED, { size: SIZE, polders: [], fairway: layout.fairway }).hash;
   placeAll(wrong, village(POLDER_AT + 10), { seed: SEED, size: SIZE });
 
   const moved = movedBetween(settled, stands(wrong));

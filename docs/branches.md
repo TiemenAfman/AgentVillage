@@ -40,12 +40,20 @@ If a change edits the terrain, two more, both from `layout.polders` and
 of whole buildable four-by-four blocks only ever went up.
 
 And one that is not computable from the files, because it is about the order two lines run
-in: `layout.terrainHash` is recorded **after** `reclaim`, never before. The guard reads a
-changed heightfield as a changed seed and re-plans the island from nothing, which is right
-for a tuned generator and ruinous for a polder, because draining one changes the
-heightfield on purpose. Recorded before, the stored hash is the coast without the new
-polder and every house moves on every scan - assertions 1 and 4 above, both failing, with
-nothing in the diff to say why. `tests/polder-hash.test.mjs` measures it.
+in: `layout.terrainHash` is recorded **after** everything that moves the ground on purpose,
+never before. The guard reads a changed heightfield as a changed seed and re-plans the
+island from nothing, which is right for a tuned generator and ruinous here, because
+`reclaim` raising a polder at `POLDER_AT` and `planFairway` deepening a channel at
+`FAIRWAY_AT` both change the heightfield deliberately. Recorded before either of them, the
+stored hash is a coast the island no longer has, and every house moves on every scan -
+assertions 1 and 4 above, both failing, with nothing in the diff to say why.
+`tests/polder-hash.test.mjs` measures it.
+
+Write a third such feature and it goes behind the same line, and into `groundOf` at the top
+of that test - which exists precisely so the expectation is built from what the layout says
+it dug and drained, rather than from a list of terrain features kept in step by hand. A
+test that names them one by one does not fail when a new one arrives; it keeps passing,
+against an island nobody is planning.
 
 ## Stop the server before you measure
 
