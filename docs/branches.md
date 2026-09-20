@@ -39,6 +39,14 @@ If a change edits the terrain, two more, both from `layout.polders` and
 `shared/terrain.mjs`: that no cell which was solid land got rewritten, and that the count
 of whole buildable four-by-four blocks only ever went up.
 
+And one that is not computable from the files, because it is about the order two lines run
+in: `layout.terrainHash` is recorded **after** `reclaim`, never before. The guard reads a
+changed heightfield as a changed seed and re-plans the island from nothing, which is right
+for a tuned generator and ruinous for a polder, because draining one changes the
+heightfield on purpose. Recorded before, the stored hash is the coast without the new
+polder and every house moves on every scan - assertions 1 and 4 above, both failing, with
+nothing in the diff to say why. `tests/polder-hash.test.mjs` measures it.
+
 ## Stop the server before you measure
 
 **The island server rescans on a timer** - every sixty seconds by default. So a

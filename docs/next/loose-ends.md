@@ -1,7 +1,17 @@
 # Loose ends
 
-Three things that are known, understood and not done. Each is written down with what
+Two things that are known, understood and not done. Each is written down with what
 makes it awkward, so the next person does not have to rediscover that part.
+
+This page had a third, "The polder code is not in `main`", and it was out of date: the
+whole of `develop_martijn` has since been merged, `main` is a hundred and ninety-five
+commits past it, and the reclaiming has been carried further here than it ever was there.
+`docs/next/polders.md` went with it, into the manual under
+[When the island runs out of land](../manual.md#when-the-island-runs-out-of-land). The one
+thing that page was right to single out - that the terrain hash must be recorded *after*
+reclaiming, or the guard treats a drained polder as a reseeded island and re-plans every
+house - is now `tests/polder-hash.test.mjs`, which measures it rather than asserting it
+was thought about.
 
 ## The forest does not grow back
 
@@ -46,20 +56,3 @@ The fallback is not wrong: the head of the road is a reasonable place for a sign
 only that a gate is worth hunting for where a road actually crosses a boundary, and for
 those six it never does. Anyone wanting them properly gated would have to decide what a
 gate means when the boundary is a river or is crossed twice.
-
-## The polder code is not in `main`
-
-Land reclamation - the fix to `POLDER_H`, the reclaiming itself, the dike, the causeway
-and the polder mill - lives on `develop_martijn` and has never been merged into `main`.
-`docs/next/polders.md`, which describes the work as still to be done, is therefore only
-half true: it is done, it is verified, and it is somewhere else.
-
-What is in `main` is the *chronicle* side of it, which is written so that it does not
-need the polders: the coast follows the cursor only if there are polders on the wire to
-follow, and there are none here.
-
-Merging it is not a plain cherry-pick. `main` has moved a long way in `lib/layout.mjs`
-since that branch was cut, and the two collide in the terrain-hash guard the rivers work
-added: draining a polder changes the heightfield on purpose, so the hash has to be
-recorded *after* reclaiming or the guard treats the island as reseeded and re-plans every
-house. That resolution is already worked out in the merge commit on `develop_martijn`.
