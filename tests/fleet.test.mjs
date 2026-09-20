@@ -15,7 +15,7 @@ import { clearOf } from '../shared/regions.mjs';
 
 // The smallest island that is still a real one: a seed, a grid, a true terrain hash and
 // one house, packed by the same buildBundle an islander would use.
-function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', polders = [] } = {}) {
+function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', polders = [], buildings = [], placements = null } = {}) {
   const terrain = makeTerrain(seed, { size, polders });
   const id = beaconId(port, `host-${port}`);
   const village = {
@@ -26,10 +26,10 @@ function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', pold
       landing: [40, 50], town: { gx: 32, gz: 32, r: 8, paved: [] }, lattice: null,
     },
     grid: { size },
-    districts: [], buildings: [], paths: [], bridges: [], cleared: [], polders,
+    districts: [], buildings, paths: [], bridges: [], cleared: [], polders,
     milestones: [], active: [], assignments: [], stats: {},
   };
-  const bundle = buildBundle({ config: { islandName: name, seed, port, gridSize: size }, village, id, keeper: 'Martijn' });
+  const bundle = buildBundle({ config: { islandName: name, seed, port, gridSize: size }, village, id, keeper: 'Martijn', placements });
   return { id, bundle: JSON.parse(JSON.stringify(bundle)), terrain };
 }
 
@@ -145,6 +145,40 @@ test('every island brings one boat, and no two share a mooring', () => {
   assert.equal(new Set(m.map((b) => b.id)).size, 3, 'one boat per island, named after it');
   assert.equal(new Set(m.map((b) => `${Math.round(b.x)},${Math.round(b.z)}`)).size, 3,
     'and each lies off its own coast, not on top of the next island\'s');
+});
+
+// The horizon draws a neighbour out of a seed and a grid size and invents nothing, so a
+// lighthouse is the one thing on a far island it cannot work out for itself. It comes off
+// the manifest row - derived here from the bundle, which has carried the building and its
+// plot since bundles existed, so there was nothing to add at either end of
+// lib/islandbundle.mjs and no forgiving/strict pair to get out of step.
+test('a lighthouse rides the manifest so a far island can be seen to have one', () => {
+  const f = createFleet();
+  const lit = island({
+    port: 4747,
+    buildings: [{ id: 'civic:lighthouse', kind: 'civic', civicType: 'lighthouse', plot: { gx: 52, gz: 9, w: 1, d: 1, rot: 2 } }],
+  });
+  const dark = island({ port: 4748, seed: 99, name: 'Tiemenholm' });
+  f.publish(lit.id, lit.bundle, { token: 'a' });
+  f.publish(dark.id, dark.bundle, { token: 'b' });
+  const [ra, rb] = f.manifest().islands;
+  // LOCAL coordinates, the island's own -half..+half, like every other position a bundle
+  // carries: 52 + 0.5 - 32 and 9 + 0.5 - 32 on a 64-cell island.
+  assert.deepEqual(ra.beacons, [[20.5, -22.5]]);
+  assert.deepEqual(rb.beacons, [], 'an island without one says so rather than saying nothing');
+});
+
+test('a lighthouse stands where the keeper own page put it, once a page has looked', () => {
+  const f = createFleet();
+  const a = island({
+    buildings: [{ id: 'civic:lighthouse', kind: 'civic', civicType: 'lighthouse', plot: { gx: 52, gz: 9, w: 1, d: 1, rot: 2 } }],
+    // What reportPlacements sends back: where the renderer actually put it. It agrees with
+    // the surveyed centre for this one building, so the test nudges it to prove which of
+    // the two is being read.
+    placements: { at: { 'civic:lighthouse': [20.75, -22.25] } },
+  });
+  f.publish(a.id, a.bundle, { token: 'a' });
+  assert.deepEqual(f.manifest().islands[0].beacons, [[20.75, -22.25]]);
 });
 
 test('the manifest is small enough to ride a socket message', () => {

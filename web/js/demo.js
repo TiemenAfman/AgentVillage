@@ -22,6 +22,7 @@ import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { attachBeacon, updateBeacon } from './beacon.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -153,6 +154,7 @@ const tags = [];      // { el, world }
 const spinners = [];  // things with turning blades
 const clocks = [];    // things with hands, which on this page keep the wall's time
 const fountains = []; // separate water meshes, animated just as they are on the island
+const beacons = [];   // the lighthouse's lamp, which is the one thing here the slider lights
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -194,6 +196,13 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.fountain) {
     const at = built.animated.fountain.at;
     fountains.push(attachFountain(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  // The lighthouse. Hung straight on the scene rather than on a group of its own, which is
+  // how this page places every other moving part - the field has no plots and nothing on it
+  // is turned, so a building's own frame and the field's are the same frame.
+  if (built.animated && built.animated.beacon) {
+    const at = built.animated.beacon.at;
+    beacons.push(attachBeacon(scene, [x + at[0], at[1], z + at[2]]));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -994,6 +1003,8 @@ function frame(now) {
   const wall = new Date();
   for (const c of clocks) updateClock(c, wall.getHours() + wall.getMinutes() / 60);
   for (const f of fountains) updateFountain(f, dt);
+  // The lamp sweeps on the night slider, which is the only clock this page has for it.
+  for (const b of beacons) updateBeacon(b, dt, uniforms.uNight.value);
 
   if (inside) {
     const w = inside.update(dt);

@@ -43,6 +43,15 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
+// The lighthouse's lamp: how many painted bands the tower is built of, and how high the
+// lamp therefore stands over its own foot. Hoisted out of the `lighthouse` case below,
+// where it is still the only arithmetic that decides it, because web/js/horizon.js has to
+// put a light on a tower it never builds - a silhouette has no mesh to read an anchor off.
+// A second, hand-copied 2.4 somewhere else is how a far island's lamp ends up buried in
+// its own lantern room the first time the tower gains a band.
+export const BEACON_BANDS = 4;
+export const BEACON_RISE = BEACON_BANDS * 0.55 + 0.2;
+
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
 // them, so here they are again: fetch a sheet, wrap it, and if it never arrives say so
@@ -1430,7 +1439,7 @@ function civic(parts, spec, rng) {
       animated.blades = { at: [0, 1.62, 0.56], r: 0.6 };
       return { anchors, animated, height: 2.1 };
     case 'lighthouse': {
-      const bands = 4;
+      const bands = BEACON_BANDS;
       for (let i = 0; i < bands; i++) {
         parts.push(cylinder(0.24 - i * 0.02, 0.3 - i * 0.02, 0.55, 16, i % 2 ? C.white : C.red, { y: i * 0.55, sheet: 'wall' }));
       }
@@ -1438,7 +1447,7 @@ function civic(parts, spec, rng) {
       parts.push(cylinder(0.3, 0.3, 0.06, 12, C.iron, { y: top }));
       parts.push(cylinder(0.19, 0.19, 0.3, 8, 0xfff2b0, { y: top + 0.06, emissive: 1 }));
       parts.push(cone(0.26, 0.28, 8, C.red, { y: top + 0.36 }));
-      animated.beacon = { at: [0, top + 0.2, 0] };
+      animated.beacon = { at: [0, BEACON_RISE, 0] };   // = top + 0.2, and the only copy of it
       return { anchors, animated, height: top + 0.7 };
     }
     case 'castle': {
