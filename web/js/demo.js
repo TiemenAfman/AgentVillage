@@ -44,6 +44,7 @@ const CIVIC = [
   ['statue', 'Statue', '70'],
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
+  ['crane', 'Harbour crane', '165'],
 ];
 
 const FURNITURE = [

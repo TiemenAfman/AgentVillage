@@ -1498,6 +1498,67 @@ function civic(parts, spec, rng) {
       parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));
       animated.blades = { at: [0, 1.3, 0.38], r: 0.5 };
       return { anchors, animated, height: 1.8 };
+    case 'crane': {
+      // The harbour crane on the quayside, reaching out over the water. Every civic on
+      // this island faces the town; this one faces the sea, which lib/layout.mjs arranges
+      // by handing the plot the water beside it to look at instead of the town centre -
+      // so here the jib simply reaches out along +z, the way every model on the island is
+      // drawn facing, and the crate is over water wherever the plot ended up.
+      //
+      // A timber derrick rather than the treadwheel crane it would have been in life: a
+      // wheelhouse is a building, and this stands on a single cell of quayside with the
+      // planks alongside it. What has to read at fifty metres is a mast, an arm out over
+      // the water and something hanging off it, so those are what it is made of and the
+      // rest is the rigging that explains them.
+      //
+      // Everything here lies in the crane's own yz-plane, so one rotation about x places
+      // a timber between two points - which is what `spar` is, and why it needs no second
+      // angle. atan2 is safe in this file (it is not under shared/); the arithmetic is
+      // the endpoints rather than the angles because the endpoints are what a drawing of
+      // a crane is about, and an angle written out as a literal is a number nobody can
+      // check against the shape.
+      const spar = (a, b, t, hex, o = {}) => {
+        const dy = b[1] - a[1], dz = b[2] - a[2];
+        return box(t, Math.hypot(dy, dz), t, hex, { ...o, x: a[0], y: a[1], z: a[2], rx: Math.atan2(dz, dy) });
+      };
+      const HEAD = 1.78;                  // the top of the mast
+      const TIP = [0, 1.30, 1.04];        // and the end of the jib, out over the water
+
+      parts.push(box(0.56, 0.09, 0.56, C.stone, { sheet: 'stone' }));                 // the pad
+      parts.push(cylinder(0.26, 0.30, 0.13, 8, C.darkWood, { y: 0.09, sheet: 'plank' }));  // the ring it turns on
+      parts.push(cylinder(0.055, 0.085, HEAD - 0.22, 8, C.wood, { y: 0.22, sheet: 'plank' }));
+      // A collar under the cap. Without it the eight-sided cone sits straight on the
+      // eight-sided mast and the two read as one tapered spike a storey and a half tall -
+      // a spear stuck in the quay rather than a mast with a hat on. The break is what
+      // says where the timber stops.
+      parts.push(cylinder(0.115, 0.115, 0.045, 8, C.iron, { y: HEAD - 0.045 }));
+      parts.push(cone(0.145, 0.12, 8, C.darkWood, { y: HEAD, sheet: 'roof' }));       // a hat, so the end grain stays dry
+      parts.push(spar([0, 0.48, 0.05], TIP, 0.08, C.darkWood, { sheet: 'plank' }));   // the jib
+      parts.push(spar([0, HEAD - 0.04, 0], TIP, 0.032, C.iron));                      // the chain that holds it up
+      parts.push(spar([0, HEAD - 0.10, -0.02], [0, 0.11, -0.24], 0.055, C.darkWood, { sheet: 'plank' }));  // and the strut that holds it back
+      parts.push(box(0.17, 0.10, 0.11, C.iron, { y: 0.44, z: 0.05 }));                // the jib's shoe
+
+      // The winch across the foot of the mast, with a crank on the near end. It is below
+      // WALK_CLEARANCE, so it is part of what stops you walking into the crane - which is
+      // right: it is the part of it that is in your way.
+      group('winch', () => {
+        parts.push(cylinder(0.075, 0.075, 0.32, 8, C.wood, { x: -0.16, y: 0.40, z: -0.06, rz: -Math.PI / 2, sheet: 'plank' }));
+        parts.push(box(0.05, 0.15, 0.05, C.iron, { x: 0.20, y: 0.39, z: -0.06 }));
+        parts.push(box(0.05, 0.05, 0.13, C.darkWood, { x: 0.20, y: 0.51, z: -0.06 }));
+      });
+
+      // The load, on a rope off the jib. It hangs clear of the planks it is being swung
+      // over rather than resting on them: a crane with its crate on the deck is a crate
+      // beside a mast, and the whole point of the shape is the thing in the air.
+      group('load', () => {
+        parts.push(cylinder(0.014, 0.014, TIP[1] - 0.90, 4, C.darkWood, { y: 0.90, z: TIP[2] }));
+        parts.push(box(0.08, 0.08, 0.08, C.iron, { y: 0.83, z: TIP[2] }));
+        parts.push(box(0.26, 0.24, 0.26, C.wood, { y: 0.59, z: TIP[2], sheet: 'plank' }));
+        parts.push(box(0.28, 0.035, 0.28, C.darkWood, { y: 0.68, z: TIP[2] }));
+        parts.push(box(0.28, 0.035, 0.28, C.darkWood, { y: 0.62, z: TIP[2] }));
+      });
+      return { anchors, animated, height: HEAD + 0.12 };
+    }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
       return { anchors, animated, height: 0.5 };
