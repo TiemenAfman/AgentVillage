@@ -32,6 +32,7 @@ import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
+import { executeCommand } from './lib/commands.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -663,6 +664,37 @@ async function handle(req, res) {
     res.end(body);
     return;
   }
+  
+// ---- commands -------------------------------------
+if (req.url === '/api/command' && req.method === 'POST') {
+  try {
+    const body = await readBody(req);
+
+    log(`[command] request body: ${JSON.stringify(body)}`);
+
+    const input = typeof body === 'string'
+      ? body
+      : body?.command ?? body?.text ?? '';
+
+    log(`[command] executing: ${input}`);
+
+    const result = executeCommand(input, {
+      req,
+    });
+
+    log(`[command] result: ${JSON.stringify(result)}`);
+
+    return json(res, 200, result);
+  } catch (err) {
+    log(`[command] ERROR: ${err?.stack || err}`);
+
+    return json(res, 400, {
+      ok: false,
+      message: String(err?.message || err),
+    });
+  }
+}
+
 
   // ---- the sprint board ----------------------------------------------------
   if (p === '/api/sprint') {

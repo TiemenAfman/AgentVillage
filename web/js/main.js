@@ -12,6 +12,7 @@ import { drawnSignature } from './islandsig.js';
 import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
@@ -2476,6 +2477,51 @@ function buildScene(village) {
     // So the water is laid over everything there is, not over this island alone.
     sea: state.sea,
   });
+
+
+  //roaddebug is a debug mesh that shows the road network, for development and testing.
+  state.roadDebug = createRoadDebug({
+    scene,
+    terrain,
+    village,
+  });
+
+  window.addEventListener('island-command', (event) => {
+  const { action, data } = event.detail || {};
+
+  switch (action) {
+    case 'roads_wireframe':
+      state.roadDebug?.setWireframe(true);
+      break;
+
+    case 'roads_hide':
+      state.roadDebug?.setWireframe(false);
+      break;
+
+    case 'roads_show':
+      state.roadDebug?.setWireframe(true);
+      break;
+
+    case 'roads_status':
+      console.log('[roads]', {
+        wireframe: state.roadDebug?.wireframeEnabled ?? false,
+      });
+      break;
+
+    default:
+      console.log('[command] unhandled action:', action, data);
+      break;
+  }
+});
+
+
+
+
+
+
+
+
+
   // The sky over the whole world, before the haze is measured: applyFogRange asks it what
   // it is doing. Built here rather than at boot because it borrows world.js's clouds, dome
   // and lights instead of drawing a second set, and thrown away with the scene on a reseed.

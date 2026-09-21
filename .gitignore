@@ -29,3 +29,4 @@ data/guests/
 # Written by the keeper's own page: where the renderer actually put each building.
 # Generated, safe to delete, rebuilt the next time anybody looks at the island.
 data/placements.json
+/.vs/
