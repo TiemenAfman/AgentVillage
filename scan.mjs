@@ -12,7 +12,7 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
@@ -372,7 +372,14 @@ function assemble({ config, model, layout, terrain, size, all }) {
     districtsRev: hash32(JSON.stringify(districts.map((d) => [d.id, d.tier, d.hue, d.lobes]))),
     buildings: all2,
     paths: layout.paths,
-    bridges: layout.bridges || [],
+    // A crossing is built, so it is dated, the same as a polder and for the same reason:
+    // the chronicle draws the land as it was, and a bridge standing over the river on the
+    // founding day is a road the village had not built yet. `markRoad` names a bridge
+    // after whatever laid it, so the name is the date - the milestone rung for the one
+    // the village put up on purpose, and the district's own arrival for one a hamlet road
+    // threw up on its way to town. An undated bridge is one whose road has since gone,
+    // and it stands from the first day, which is what every bridge did before this.
+    bridges: (layout.bridges || []).map((b) => ({ ...b, ...bridgeDate(b, model) })),
     cleared: layout.cleared,
     // Each polder carries the moment it was drained, the way a milestone carries
     // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +
@@ -393,6 +400,18 @@ function assemble({ config, model, layout, terrain, size, all }) {
     assignments: assignments.slice(0, 60),
     stats: { ...model.stats, nextMilestone: nextMilestone(model.stats) },
   };
+}
+
+// When a crossing was built, worked out from the name it is recorded under. Here rather
+// than in the layout for the same reason a polder's date is: the layout stores decisions,
+// not the ladder that earned them.
+function bridgeDate(b, model) {
+  if (b.id === 'civic:bridge') {
+    return { at: BRIDGE_AT, unlockedAt: iso(model.arrivals[BRIDGE_AT - 1] || null) };
+  }
+  const road = /^road:(.+):\d+$/.exec(String(b.id));
+  const district = road && model.districts.find((d) => d.id === road[1]);
+  return district ? { unlockedAt: iso(district.firstSeenAt) } : {};
 }
 
 // Can this settler's project work a ticket the house way? The skills live in the repo:

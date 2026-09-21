@@ -629,6 +629,55 @@ empty and grows from the founding session onward. `npm run scan:all` shows what 
 island would look like with the entire history on it, written to separate files so it
 never disturbs the real village.
 
+### When the village crosses the river
+
+At **90 settlers** the village builds a bridge. It is the one rung on the ladder that is
+not a building, and the one thing on the island the roads are told to do rather than
+priced into doing.
+
+A road may cross water whenever it wants to: `routePath` sells a cell of deck for about
+eight cells of walking, and a hamlet road takes that bargain where the way round is
+longer. On some islands it does. On this one it never has and never will, because a river
+never quite severs an island - you can always walk round its head - and all fourteen
+projects here live on the town's own bank. There is no road that wants the far side, so
+there is no route to bend, and making a deck cheaper changes nothing: cut the price to
+almost nought and the island still builds none. So ninety settlers is where the village
+stops waiting and lays one itself.
+
+Ninety is the town square's own number. The plaza stops widening there (`SQUARE_STEPS`),
+which is the scan on which the centre stops growing outward - and what the village does
+next is reach across the water instead of paving more of its own bank.
+
+Where it goes is decided by what the crossing is worth, in cells of walking saved. Every
+straight reach of river no wider than five cells with ground a road may use on both banks
+is a candidate; the one that takes the most off the walk to the town square wins, and a
+bank no road can reach at all beats any saving, because a bridge there is not a short cut
+but the only way. A reach that does not save at least the eight cells per cell of deck
+that `routePath` charges is refused - a monument the village walks round is worse than no
+monument - and the fairway is refused outright, because a deck over the dredged channel is
+a bridge that closes the river it crosses.
+
+Two things it will not do. It will not build where the roads have already crossed: a
+bridge is built once and every later road comes over it, so on an island whose hamlet
+roads got there first the rung is *that* crossing, and only the marker stone is new.
+And it will not build at all where there is no reach to carry a deck - the rung then
+waits, the way the polder mill waits for shallows and the harbour crane waits for a quay.
+Measured over thirty islands: ten build a crossing, eleven adopt one, nine go without.
+
+The deck goes up after the hamlet roads and not with the other milestones, because a
+bridge is a road: laid any earlier there would be no lane on the island for it to join.
+Along with it come a road from the far bank onto the planks and a road from the near head
+to the first paving it meets. From then on those cells cost the next road almost nothing,
+which is the whole argument - a route from the far bank that had to walk round the head of
+the river, or could not get there by road at all, now comes over the planks for nothing.
+
+The **bridge stone** is what the rung is recorded as. A deck has no plot - it stands over
+water, with no footprint, no door and no yard - and a milestone with no plot has no
+dossier, no date standing on the island and nothing for the legend to point at. So the
+crossing is what was built and the squared stone beside its head is what says so, the way
+a polder is the work and the mill on its dike is the rung. It stands *beside* the head and
+never on it: that cell is the road onto the planks.
+
 ### When the island runs out of land
 
 It does run out. The terrain holds 475 fully buildable 4x4 blocks; the hamlets and the
@@ -693,7 +742,8 @@ with no shallows to reclaim.
 | How stout that edge is | The houses inside it: a rail round tents, palings round huts and cottages, a hedge round houses, dry stone round manors and keeps - and the grander the houses the thicker the stone |
 | A river, with shingle and reeds along it | The other kind of boundary: where one runs along a hamlet's edge the boundary steps back and the water does the job |
 | Red and green stakes standing in the water at a river mouth | The betonning of the dredged fairway. Red cans to port and green cones to starboard entering from seaward; follow them in and the river is yours as far as the town |
-| A plank bridge | Where a hamlet's road to town had to cross a river. Built once, and every later road comes over it rather than build a second |
+| A plank bridge | A crossing of the river. Built once, and every later road comes over it rather than build a second - either because a hamlet's road to town had to cross and paid for it, or because the village built one on purpose at 90 settlers |
+| A squared stone with a bronze plate, at the head of a bridge | The bridge stone: the milestone at 90 settlers. The crossing is the monument, and this is where it is written down - see [When the village crosses the river](#when-the-village-crosses-the-river) |
 | A lone farmhouse with a field, out in the country | A project with one or two sessions: too small for a hamlet yet |
 | Houses around the town square with no boundary | The commons: whoever the island had no room for elsewhere |
 | Flat green land behind an earth wall, out in a cove | A polder: land reclaimed once the island ran out, from 150 settlers on |
@@ -725,6 +775,7 @@ with no shallows to reclaim.
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
 | Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 70 and 100 settlers |
+| The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
 | A pale row that glows after dark | Moonleeks, ready to pull |

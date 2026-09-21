@@ -2420,6 +2420,18 @@ function syncBridges(village) {
   const terrain = state.terrain;
   const list = village.bridges || [];
   decks = new Map();
+  // Which crossings this village has, so the ones it does not can go. A bridge is built
+  // once and never rebuilt, which was the whole of this function until the chronicle
+  // learned to date one: scrub back past the day a crossing went up and the list shrinks,
+  // and a deck that is only ever added would stand over the founding day's river for as
+  // long as the page is open.
+  const want = new Set(list.map((b, i) => `${b.id}#${i}`));
+  for (const [key, mesh] of bridgeMeshes) {
+    if (want.has(key)) continue;
+    bridgeGroup.remove(mesh);
+    mesh.geometry.dispose();
+    bridgeMeshes.delete(key);
+  }
   for (const [i, b] of list.entries()) {
     const key = `${b.id}#${i}`;
     for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis)) {
@@ -2812,6 +2824,11 @@ function layLandscape(shot) {
   state.shot = shot.village;
   w.setOwnership(shot.village);
   w.buildPaths(shot.village.paths, w.squareCells(shot.village));
+  // The crossings go with the roads. They are dated on the wire now, so a scrub back past
+  // the one the village built at ninety takes the planks away as well as the road over
+  // them - and puts back the riverbed under anybody walking there, because `syncBridges`
+  // hands out the deck heights on its way through.
+  syncBridges(shot.village);
   // The square goes along with the roads, the same as it does on the line above and at
   // the two other callers. It used to be left out here and that cost nothing, because
   // `setRoads` only folded the square into the road network - but the Friday borrel

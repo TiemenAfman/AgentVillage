@@ -1502,6 +1502,28 @@ function civic(parts, spec, rng) {
       anchors.smoke = [0.2, 0.78, -0.12];
       return { anchors, animated, height: 0.82 };
     }
+    case 'bridge': {
+      // The stone at the head of the plank bridge, and the only civic on the island whose
+      // building is somewhere else: the crossing itself is drawn from `layout.bridges` by
+      // `buildBridgeGeometry` further down this file, because a deck stands over water and
+      // has no plot to be drawn on. What stands here is the record of it - a squared
+      // waymarker on the bank where the road meets the planks, which is what a milestone
+      // needs in order to have a dossier, a date and somewhere to send the camera.
+      //
+      // Deliberately small and deliberately not a building. A shelter, a toll house or a
+      // keeper's hut would all read as something the village staffed, and nobody staffs
+      // this; a waymarker reads as what it is, which is a date carved where you cross.
+      let y = 0;
+      parts.push(box(0.34, 0.06, 0.34, C.foundation, { y })); y += 0.06;
+      parts.push(box(0.24, 0.50, 0.24, C.stone, { y, sheet: 'stone' })); y += 0.50;
+      // The bronze plate faces +z, which is the front of every model on the island, and
+      // lib/layout.mjs turns the stone to look at the bridge head - so the plate is
+      // towards whoever is about to cross rather than out into the field behind it.
+      parts.push(box(0.15, 0.18, 0.018, 0x9c7a3c, { y: y - 0.34, z: 0.129 }));
+      parts.push(box(0.30, 0.05, 0.30, C.stone, { y, sheet: 'stone' })); y += 0.05;
+      parts.push(pyramidRoof(0.30, 0.30, 0.09, C.stone, { y, sheet: 'stone' }));
+      return { anchors, animated, height: y + 0.09 };
+    }
     case 'poldermill':
       parts.push(cylinder(0.3, 0.42, 1.2, 14, 0xd9b98c, { sheet: 'wall' }));
       parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));
@@ -1731,7 +1753,10 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   'mailbox',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
-  'watertower']);
+  'watertower',
+  // The bridge stone has a footing course of its own and stands on the bank beside a
+  // country road. A paved step round it would be a doorstep to a stone.
+  'bridge']);
 function wantsPorch(spec) {
   if (spec.harbour) return false;                 // it stands on its own stilts, over water
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);

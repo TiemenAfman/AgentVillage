@@ -181,6 +181,12 @@ export function projectVillage(village, t) {
   const buildings = (village.buildings || []).filter((b) => +new Date(b.startedAt) <= t);
   const nP = poldersAt(village, t);
   const chan = fairwayAt(village, t);
+  // The crossings, dated by scan.mjs from the name each is recorded under. A bridge is
+  // built rather than found, so scrubbing back past the day it went up has to take the
+  // deck away with it - otherwise the founding day shows a plank bridge over a river the
+  // village would not cross for another ninety settlers. One with no date is older than
+  // the record and stands from the start, which is what all of them did before.
+  const bridges = (village.bridges || []).filter((b) => !b.unlockedAt || +new Date(b.unlockedAt) <= t);
 
 
   // The countryside's ploughed strips and orchards are planned from the terrain seed on
@@ -192,7 +198,7 @@ export function projectVillage(village, t) {
   const farmShare = townShare;
 
   return {
-    key: `${nP}|${chan ? 'd' : '-'}|${size}|${paths.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
+    key: `${nP}|${chan ? 'd' : '-'}|${size}|${paths.length}|${bridges.length}|${Math.round(farmShare * 50)}|${parts.join(',')}`,
     polders: nP,
     fairway: chan,
     village: {
@@ -201,6 +207,7 @@ export function projectVillage(village, t) {
       buildings,
       districts,
       paths,
+      bridges,
       farmShare,
       island: { ...village.island, town: { ...town, paved, parcel: townParcel } },
     },

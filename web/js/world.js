@@ -1072,8 +1072,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // A single coverage texture joins every sandy surface. It uses the terrain's
   // own normals, lighting and shadows: no raised strips and no colour-matched
   // skirts that turn into visible borders when the grass texture arrives.
+  // The bridge stone is on the list for the same reason the statue is: it is a marker
+  // rather than a door, so nobody wears a patch of grass bare walking up to it.
   const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
-    'statue', 'well', 'fountain', 'watertower']);
+    'statue', 'well', 'fountain', 'watertower', 'bridge']);
   let wearVillage = village, wearGraph = null;
   let frontages = new Map(), frontageKey = '';
   function setHouseFrontages(records) {

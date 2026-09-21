@@ -43,6 +43,9 @@ const CIVIC = [
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
   ['statue', 'Statue', '70'],
+  // The stone, not the crossing: the deck is drawn from the layout's own cells and there
+  // is no river on the model sheet to stand it in.
+  ['bridge', 'Bridge stone', '90'],
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
