@@ -1745,10 +1745,36 @@ async function doSyncFleet() {
   }
 }
 
+// The island has been moved to another world; bring the page with it.
+//
+// This used to be a comment saying the page need do nothing, because net.js retries on its
+// own and the new welcome carries the new fleet. That is true only while the world stays
+// at the same address. `useSea` is called once at boot from /api/hello, so after a change
+// the retry dialled the sea we had just left and the whole of that fleet came back on the
+// next welcome - every region dropped here and then handed straight back. Going "on our
+// own" was the plainest case: you end up alone in config.json and in a harbour full of
+// other people's islands on screen.
+//
+// Asked of the islander rather than worked out from what was chosen: hosting and being
+// alone are both "a sea of our own", and only the server knows which port it actually got
+// - `putToSea` falls back to any free one when 4750 is taken by another island on this
+// machine. The key comes back with it, because the sea being joined may want a different
+// one, or none.
+async function followSea() {
+  const hello = await mine('/api/hello').then((r) => r.json()).catch(() => null);
+  if (hello) {
+    useSea(hello.sea);
+    state.islandId = hello.islandId || null;
+    state.seaKey = hello.seaKey || null;
+  }
+  // And dial again. Everything in net.js is already written to survive the line dropping,
+  // so this is a close and a retry rather than a second socket.
+  if (state.net) state.net.reconnect();
+}
+
 // Move this island to another world. The islander writes it down and actually does it -
-// closes the sea it was in and joins the new one - and the page needs to do nothing about
-// its own socket: net.js has been retrying since the old one dropped, and the new welcome
-// carries the new fleet.
+// closes the sea it was in and joins the new one - and then followSea() points this page
+// at wherever that turned out to be.
 async function changeSea(what) {
   try {
     const r = await mine('/api/sea', {
@@ -1764,6 +1790,7 @@ async function changeSea(what) {
     }
     state.fleet = [];
     syncFleet([]);
+    await followSea();
     state.ui.toast(what.mode === 'join' ? 'Setting out for another sea…' : what.mode === 'host' ? 'Hosting a sea. Others can join it now.' : 'On our own again.');
     setTimeout(() => state.ui.setSeas(null), 0);
     const fresh = await mine('/api/seas').then((x) => x.json()).catch(() => null);
@@ -2740,6 +2767,7 @@ function openMainMenu() {
       }
       state.fleet = [];
       syncFleet([]);
+      await followSea();
       return { ok: true };
     },
     // Whatever was chosen, the opening sweep happens afterwards rather than under it.
@@ -4096,13 +4124,16 @@ async function boot() {
     onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,
-    url: seaSocket(),
+    // Functions, not values. This island can be moved to another world while the page is
+    // open, and a captured address is the address of the world it booted into - see
+    // followSea() and the note above createNet.
+    url: () => seaSocket(),
     // Which world, and whose coast this body belongs over. A page with no islander of its
     // own sends no island and is a wanderer: it gets the world and a body, and nothing it
     // does can reach anybody's disk.
     // `key` is whatever the islander was given for this sea; a sea without one ignores it,
     // and a sea with one refuses everybody who cannot say it.
-    join: { v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null },
+    join: () => ({ v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null }),
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
     // The sky, straight through: it is one word for the whole world and nothing on this

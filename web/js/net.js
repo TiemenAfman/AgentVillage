@@ -31,9 +31,19 @@ const UI_PER_BEAT = 2;
 // line that made a page unable to look at a sea running anywhere else. The caller knows
 // the answer (web/js/api.js does), so it passes it in and this file stops reading
 // location at all.
+//
+// `url` and `join` may each be a function, and main.js passes functions for both. A value
+// captured here is the address of the world this page booted into, and an island can be
+// moved to another one while the page is open - so a reconnect that reopened the captured
+// address sailed straight back into the sea we had just left. "On our own" was the worst
+// of it: every region was dropped, the socket came back up on the old sea, and the whole
+// foreign fleet arrived again on the next welcome. The key travels the same way, because
+// the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {},
   name = null } = {}) {
+  const addressOf = typeof url === 'function' ? url : () => url;
+  const joinWith = typeof join === 'function' ? join : () => join;
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -75,7 +85,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
 
   function open() {
     if (closed) return;
-    try { sock = new WebSocket(url); } catch { schedule(); return; }
+    try { sock = new WebSocket(addressOf()); } catch { schedule(); return; }
 
     sock.addEventListener('open', () => {
       retry = RETRY_MIN;
@@ -85,7 +95,8 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       // here rather than by the caller so a reconnect repeats it without anybody
       // remembering to. An island with no sea ignores it, which is what makes this safe
       // to send either way.
-      if (join) send({ t: 'join', ...join });
+      const hand = joinWith();
+      if (hand) send({ t: 'join', ...hand });
       if (name) send({ t: 'hello', name });
       send({ t: 'w', on: walking });
       last.f = -1;                      // force the first pose through
@@ -304,6 +315,16 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         || Math.abs(cursor.u - had.u) > 0.004 || Math.abs(cursor.v - had.v) > 0.004))) stirPose();
     },
     id: () => selfId,
+    // Drop the line and take it up again, at whatever address `url` now hands back. For
+    // moving this island to another world: everything else here is written to survive a
+    // socket going away, so the cheapest correct way to change seas is to make this one go
+    // away on purpose. The retry is reset so it happens now rather than up to fifteen
+    // seconds from now - this is somebody pressing a button, not a laptop lid.
+    reconnect() {
+      if (closed) return;
+      retry = RETRY_MIN;
+      try { sock && sock.close(); } catch { /* already gone; the close handler still fires */ }
+    },
     dispose() {
       closed = true;
       clearInterval(beat);
