@@ -13,3 +13,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   herstart zet hem terug") — zonder dit kan het enige bootje van een eiland voorgoed aan de
   overkant blijven liggen door iemand die wegliep en niet terugkwam. Alleen een boot zonder
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
+
+## Plannen
+
+- [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
+  eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
+  vertalen in plaats van haar eigen eiland te verplaatsen. Nog niet gebouwd.

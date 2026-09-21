@@ -88,7 +88,10 @@ test('an island published over HTTP turns up in the world', () => afloat(async (
   const world = await (await fetch(`${base}/world`)).json();
   assert.equal(world.islands.length, 1);
   assert.equal(world.islands[0].name, 'Promptholm');
-  assert.equal(world.islands[0].live, true);
+  // Published over HTTP with nobody on the socket for it, so it is in the world but not
+  // live: it comes alive when its islander joins and claims it, and is swept after the
+  // grace if nobody does. tests/sea-key.test.mjs has the why.
+  assert.equal(world.islands[0].live, false);
 
   // And the island itself is fetched separately, which is the whole reason the manifest
   // is small: 200 kB of island does not belong in a message everybody gets.
