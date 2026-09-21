@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -360,7 +360,10 @@ function workLabel(branch) {
 const neighbours = config.multiplayer.discovery ? createNeighbours({
   port: PORT,
   name: islanderName,
-  islandName: config.islandName,
+  // A function, like sea() below and for the same reason: hosting renames this island
+  // (see islandNameOf), /api/sea can start hosting at any moment, and a beacon that
+  // captured the name at construction would shout the old one for the rest of the run.
+  islandName: () => islandNameOf(config),
   seed: config.seed,
   gridSize: config.gridSize,
   announcing: access.open,
@@ -370,7 +373,7 @@ const neighbours = config.multiplayer.discovery ? createNeighbours({
   sea: () => {
     if (!ownSea || (config.multiplayer.sea || {}).mode !== 'host') return null;
     const addr = ownSea.address();
-    return addr ? { sea: addr.port, seaName: (config.multiplayer.sea || {}).name || `${config.islandName}'s sea` } : null;
+    return addr ? { sea: addr.port, seaName: seaNameOf(config) } : null;
   },
   settlers: () => {
     const v = readJson(VILLAGE_FILE, null);
@@ -416,7 +419,7 @@ async function handle(req, res) {
   if (p === '/api/hello') {
     return json(res, 200, {
       role: who.role,
-      islandName: config.islandName,
+      islandName: islandNameOf(config),
       multiplayer: {
         enabled: !!config.multiplayer.enabled,
         maxPlayers: config.multiplayer.maxPlayers,
@@ -751,7 +754,7 @@ async function handle(req, res) {
     if (ownSea) {
       const addr = ownSea.address();
       const mode = cfg.mode === 'host' ? 'host' : 'single';
-      if (addr) offer({ url: seaUrlFor(req), name: cfg.name || `${config.islandName}'s sea`, from: mode, mine: true });
+      if (addr) offer({ url: seaUrlFor(req), name: seaNameOf(config), from: mode, mine: true });
     }
     for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
     for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
@@ -798,6 +801,11 @@ async function handle(req, res) {
     config.multiplayer.sea = sea;
     if (seaClient) { seaClient.close(); seaClient = null; }
     if (ownSea) { await ownSea.close().catch(() => {}); ownSea = null; }
+    // Before the publish, not after: hosting renames the island (islandNameOf), the name
+    // lives in village.json's island block, and buildBundle reads it from there. A scan
+    // here is cheap - it reads only the bytes that are new - and without it the bundle
+    // one line down sails under the name of the world this island has just left.
+    await rescan('sea');
     await putToSea();
     if (seaClient) seaClient.publish({ force: true }).catch(() => {});
     log(`this island is now ${sea.mode === 'join' ? `in ${sea.url}` : sea.mode === 'host' ? 'hosting a sea' : 'on its own'}`);
@@ -1319,7 +1327,7 @@ async function putToSea() {
       const sea = createSea({
         port,
         host,
-        name: cfg.name || `${config.islandName}'s sea`,
+        name: seaNameOf(config),
         key: cfg.key || null,
         tickMs: config.multiplayer.tickMs,
         maxPlayers: config.multiplayer.maxPlayers,
@@ -1358,7 +1366,7 @@ async function putToSea() {
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
-  process.stderr.write(`[settlers] ${config.islandName} is at http://localhost:${PORT}/\n`);
+  process.stderr.write(`[settlers] ${islandNameOf(config)} is at http://localhost:${PORT}/\n`);
   checkVendor();
   if (access.open) {
     log(`the island is OPEN. Visitors can reach it at:`);

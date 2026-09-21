@@ -3,7 +3,7 @@
 // the single file the island viewer consumes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ROOT, ensureData, loadConfig, writeJsonAtomic, iso } from './lib/paths.mjs';
+import { DATA, ROOT, ensureData, loadConfig, islandNameOf, writeJsonAtomic, iso } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
@@ -181,7 +181,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
   if (townPlot) {
     civics.push({
       id: 'civic:townhall', kind: 'civic', civicType: 'townhall', district: model.districts[0] ? model.districts[0].id : null,
-      plot: townPlot, door: doorOf(townPlot), name: `${config.islandName} Town Hall`,
+      plot: townPlot, door: doorOf(townPlot), name: `${islandNameOf(config)} Town Hall`,
       title: `Founded ${new Date(config.foundedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
       label: 'Town Hall', startedAt: iso(new Date(config.foundedAt).getTime()), lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
@@ -345,7 +345,7 @@ function assemble({ config, model, layout, terrain, size, all }) {
     generatedAt: new Date().toISOString(),
     all: !!all,
     island: {
-      name: config.islandName,
+      name: islandNameOf(config),
       seed: config.seed,
       foundedAt: config.foundedAt,
       terrainHash: terrain.hash,
