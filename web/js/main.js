@@ -8,6 +8,7 @@ import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } fro
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
+import { drawnSignature } from './islandsig.js';
 import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
@@ -1381,6 +1382,7 @@ function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null,
   // draw something of theirs - buildings now, paths and piers next - finds the region first.
   region.village = village;
   region.rev = rev;
+  region.drawn = drawnSignature(village);
   console.info(`island: ${name || id} joined at [${at}] (rev ${rev})`);
   return region;
 }
@@ -1710,12 +1712,21 @@ async function doSyncFleet() {
     // founded - and it is fetched again and rebuilt. `rev` is the sea's own counter and
     // moves on every publish, so this is exactly "their island is not what we drew".
     if (standing && standing.rev === row.rev) continue;
-    if (standing) dropRegion(row.id);
     let bundle;
     try {
       bundle = await sea(`/island/${encodeURIComponent(row.id)}`).then((r) => r.json());
     } catch { continue; }
     if (!bundle || !bundle.island) continue;
+    // Their bundle moved on; did their island? Almost always not - see drawnSignature. The
+    // cheap path keeps the ground, the wood and the houses exactly where they are and only
+    // takes the new village on board, which is what the boards and the props read.
+    if (standing && standing.drawn === drawnSignature(bundle)) {
+      standing.village = bundle;
+      standing.rev = row.rev;
+      syncBoards();
+      continue;
+    }
+    if (standing) dropRegion(row.id);
     const region = joinIsland({
       id: row.id,
       rev: row.rev,
