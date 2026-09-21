@@ -9,6 +9,13 @@ on this machine is a settler with a house. `scan.mjs` reads the session records 
 disk, `serve.mjs` serves the island and pushes updates, `web/` draws it. Windows, Node 22+,
 no runtime dependency other than three.js.
 
+## Plans
+
+Grotere ontwerpen, vóór ze code worden, gaan in `Plans/` — write down the why and the
+decisions there before touching code on anything bigger than a small fix, and keep it there
+rather than in a throwaway chat. It is shared with Tiemen, so it is also how he sees what is
+still in progress; `Plans/ik-wil-graag-mutliplayer-splendid-nest.md` is the current one.
+
 ## Commands
 
 ```bash
