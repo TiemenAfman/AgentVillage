@@ -64,6 +64,28 @@ const fresh = path.join(work, 'fresh.json');
 await scanOnce(fresh, path.join(work, 'fresh-village.json'));
 const F = readJson(fresh);
 
+test('the quay is one connected deck and every harbour house stands on it', () => {
+  const quay = village.districts.find((d) => d.kind === 'quay');
+  if (!quay) return;
+  const cells = [...(quay.deck || []), ...(quay.pier || [])];
+  assert.ok(cells.length, 'the quay has a deck');
+  const all = new Set(cells.map((c) => `${c[0]},${c[1]}`));
+  const seen = new Set(), q = [cells[0]];
+  while (q.length) {
+    const [x, z] = q.shift(), key = `${x},${z}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const n = `${x + dx},${z + dz}`;
+      if (all.has(n) && !seen.has(n)) q.push([x + dx, z + dz]);
+    }
+  }
+  assert.equal(seen.size, all.size, 'the pier, streets and front decks touch');
+  for (const b of village.buildings.filter((b) => b.harbour)) {
+    assert.equal(b.plot.quay, true, `${b.id} is marked as standing over quay water`);
+  }
+});
+
 const config = loadConfig();
 const terrain = makeTerrain(config.seed, { size: layout2.size, polders: layout2.polders || [] });
 const L = layout2;

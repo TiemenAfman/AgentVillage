@@ -77,13 +77,14 @@ export function riverBankField(size, seed, cells, resolution = Math.min(2048, si
   return { data, resolution };
 }
 
-export function dressGroundWear(material, texture, size, THREE, plazaTexture, river = null) {
+export function dressGroundWear(material, texture, size, THREE, plazaTexture, river = null, quayMask = null) {
   const uniforms = {
     uPlaza: { value: plazaTexture }, uWear: { value: texture }, uWearSize: { value: size },
     uEarth: { value: new THREE.Color(0xcbb58b) },
     uRiverBank: { value: river?.texture || plazaTexture },
     uRiverSheet: river?.sheet || { value: plazaTexture },
     uShingle: { value: new THREE.Color(0x9a8a6a) },
+    uQuayMask: { value: quayMask || plazaTexture },
   };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -95,6 +96,7 @@ uniform sampler2D uWear;
 uniform sampler2D uPlaza;
 uniform sampler2D uRiverBank;
 uniform sampler2D uRiverSheet;
+uniform sampler2D uQuayMask;
 uniform float uWearSize;
 uniform vec3 uEarth, uShingle;
 float wearHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -104,6 +106,9 @@ float wearNoise(vec2 p) {
     mix(wearHash(i+vec2(0,1)),wearHash(i+vec2(1,1)),f.x),f.y);
 }
 ` + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+if(texture2D(uQuayMask,vWearXZ/uWearSize+0.5).r>.5) discard;
+#include <color_fragment>`);
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 float wear = texture2D(uWear, vWearXZ/uWearSize+0.5).r;
 float fleck = wearNoise(vWearXZ*42.0);
@@ -140,5 +145,5 @@ if(plaza>.02) {
 }
 `);
   };
-  material.customProgramCacheKey = () => 'ground-wear-plaza-river-v3';
+  material.customProgramCacheKey = () => 'ground-wear-plaza-river-quay-v4';
 }

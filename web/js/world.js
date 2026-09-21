@@ -8,6 +8,18 @@ import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
 
+// The Quay owns a basin, not meadow. Ownership is already the exact source used for its
+// boundary, so turning just those cells into a one-byte mask makes "inside the fence" mean
+// the same thing to the land register and to the ground shader.
+export function quayWaterField(village, size) {
+  const { owner } = decodeOwnership(village, size);
+  const quay = new Set((village.districts || [])
+    .map((d, k) => d.kind === 'quay' ? k : -1).filter((k) => k >= 0));
+  const data = new Uint8Array(size * size);
+  for (let k = 0; k < owner.length; k++) if (quay.has(owner[k])) data[k] = 255;
+  return data;
+}
+
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
 
@@ -350,6 +362,12 @@ export function createLandscape({
   const plazaTexture = wearTexture.clone();
   plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
   plazaTexture.needsUpdate = true;
+  // One byte a cell and NearestFilter, because this decides whether a fragment is drawn at
+  // all: anything that reads between two cells softens the edge of the basin into a fringe
+  // of half-ground, and the boundary fence stands on the hard line.
+  const quayWaterTexture = new THREE.DataTexture(quayWaterField(village, size), size, size, THREE.RedFormat);
+  quayWaterTexture.magFilter = quayWaterTexture.minFilter = THREE.NearestFilter;
+  quayWaterTexture.needsUpdate = true;
   const bank = riverBankField(size, terrain.seed, terrain.riverBankCells, wearResolution);
   const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
   bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
@@ -357,7 +375,8 @@ export function createLandscape({
   const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   blankRiverSheet.needsUpdate = true;
   const riverSheet = { value: blankRiverSheet };
-  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture, { texture: bankTexture, sheet: riverSheet });
+  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture,
+    { texture: bankTexture, sheet: riverSheet }, quayWaterTexture);
   sheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
   ground.name = groundName;
@@ -418,6 +437,7 @@ export function createLandscape({
   const roadSet = (v) => {
     const out = new Set();
     for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
+    for (const d of v.districts || []) for (const c of d.deck || []) out.add(c[0] + c[1] * size);
     for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
     return out;
   };
@@ -448,6 +468,13 @@ export function createLandscape({
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
+  const clearQuay = (v, owner, into) => {
+    const quay = new Set((v.districts || [])
+      .map((d, k) => d.kind === 'quay' ? k : -1).filter((k) => k >= 0));
+    for (let k = 0; k < owner.length; k++) if (quay.has(owner[k])) into.add(k);
+  };
+  clearQuay(village, own.owner, clearedBase);
+  clearQuay(village, own.owner, cleared);
   // Before the fields are planned, not after: clearedBase is what planFields reads to
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
@@ -1132,6 +1159,10 @@ export function createLandscape({
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
+    clearQuay(v, own.owner, clearedBase);
+    clearQuay(v, own.owner, cleared);
+    quayWaterTexture.image.data = quayWaterField(v, size);
+    quayWaterTexture.needsUpdate = true;
     wallVerge(own.owner, clearedBase);
     roads = roadSet(v);
     settled = settledDistance(terrain, own.owner, roads);

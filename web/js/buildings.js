@@ -27,6 +27,13 @@ import { textureUrl } from './assets.js';
 // painted with, so a gable off `roof_gable_a` and a `prismRoof` fallback are the same
 // colour on the same street.
 
+// How high a harbour house's own deck rides inside its model, measured from the model's
+// origin the way the dock set measures DOCK_DECK from its piles' feet. The island drops
+// the whole house by `QUAY_DECK - HARBOUR_DECK` (main.js), which is the same trick and for
+// the same reason: one waterline for the planks, the front decks and the boardwalk between
+// them, so there is no step where two independently-built pieces of decking meet.
+export const HARBOUR_DECK = 0.62;
+
 export const C = {
   foundation: 0x8d8577, wood: 0x8b5e3c, darkWood: 0x5a3c28, canvas: 0xe9d8b4,
   stripe: 0xc86b4a, anvil: 0x3a3a3f, copper: 0xb87333, stone: 0xa8a59e,
@@ -1898,12 +1905,17 @@ export function buildBuilding(spec, ctx = {}) {
     const r = shed(parts, spec, pal);
     anchors = r.anchors; height = r.height; w = 0.55;
   } else if (spec.harbour) {
-    // a house on stilts over the shoreline
-    const deck = 0.62;
-    for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
-      parts.push(cylinder(0.05, 0.055, deck + 0.7, 6, C.darkWood, { x, y: -0.7, z }));
+    // A house on stilts, with a real front deck rather than a square just large enough to
+    // hide beneath its walls. A plot is three cells across and the house stands in the
+    // middle of it, so a one-cell deck left the two rings of boardwalk around it floating
+    // free of the building they belong to. The tongue points towards local +z, the same
+    // direction as the door; main.js turns the whole loaf to meet the district boardwalk.
+    const deck = HARBOUR_DECK;
+    for (const [x, z] of [[-0.9, -0.9], [0, -0.9], [0.9, -0.9], [-0.9, 0], [0.9, 0], [-0.9, 0.9], [0, 0.9], [0.9, 0.9]]) {
+      parts.push(cylinder(0.05, 0.06, deck + 0.8, 6, C.darkWood, { x, y: -0.8, z }));
     }
-    parts.push(box(1.0, 0.08, 1.0, C.plank, { y: deck - 0.08 }));
+    parts.push(box(2.2, 0.08, 2.2, C.plank, { y: deck - 0.08 }));
+    parts.push(box(0.72, 0.08, 0.7, C.plank, { y: deck - 0.08, z: 1.45 }));
     const inner = [];
     const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
     for (const g of inner) parts.push(lift(g, deck));
@@ -2178,6 +2190,52 @@ function drawnPier(cells, terrain, from) {
     parts.push(box(0.62, 0.07, 0.62, C.plank, { x: x - from[0], y: QUAY_DECK, z: z - from[1] }));
     parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] - 0.24, y: QUAY_DECK - 0.71, z: z - from[1] - 0.24 }));
     parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] + 0.24, y: QUAY_DECK - 0.71, z: z - from[1] + 0.24 }));
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// The quay's boardwalk: the streets of the district, drawn as planks over its basin.
+//
+// This is not the pier and deliberately does not go through the dock set. A pier is a
+// straight run out from one shore cell along one of the four axes, which is what lets
+// buildPierGeometry rotate a modelled bay and lay it down; a boardwalk is whatever shape
+// the street plan came out as - a fork, a corner, a cul-de-sac at somebody's front door -
+// and there is no bay that tiles all of those. Boxes take any shape for nothing, and at
+// this distance the seam between a plank floor and a modelled bay is one line on the water.
+//
+// `cells` may hold a cell twice: the layout records the deck as the union of path cells,
+// doorsteps and the walk out to the pier, and a doorstep on a street is in two of those.
+// Dropping the duplicates matters because they are not free - each one is a slab and two
+// posts in the same place, z-fighting with itself.
+//
+// The half-slab between orthogonal neighbours is what makes the run continuous. A cell is
+// 1 across and the slab is 0.76, so without the joins the boardwalk is a row of stepping
+// stones with the sea showing between them.
+export function buildDeckGeometry(cells, terrain, from) {
+  const unique = new Map((cells || []).map((c) => [`${c[0]},${c[1]}`, c]));
+  const parts = [];
+  for (const [gx, gz] of unique.values()) {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const lx = x - from[0], lz = z - from[1];
+    // `y` on these primitives is the BASE, not the middle (box and cylinder both translate
+    // the geometry up by h/2), so a slab whose top is the walking surface is floored one
+    // thickness below QUAY_DECK and a post that reaches it stands h under it.
+    parts.push(box(0.76, 0.08, 0.76, C.plank, { x: lx, y: QUAY_DECK - 0.08, z: lz }));
+    // Only +x and +z, so the pair of cells either side of a join agrees which of them
+    // draws it and the plank is not built twice.
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      if (!unique.has(`${gx + dx},${gz + dz}`)) continue;
+      parts.push(box(dx ? 0.32 : 0.76, 0.08, dz ? 0.32 : 0.76, C.plank, {
+        x: lx + dx * 0.5, y: QUAY_DECK - 0.08, z: lz + dz * 0.5,
+      }));
+    }
+    // Two posts on the diagonal rather than four at the corners: half the triangles, and
+    // from any angle that is not straight down there is a post under every span anyway.
+    for (const [ox, oz] of [[-0.28, -0.28], [0.28, 0.28]]) {
+      parts.push(cylinder(0.04, 0.045, QUAY_DECK + 0.8, 5, C.darkWood, {
+        x: lx + ox, y: -0.8, z: lz + oz,
+      }));
+    }
   }
   return parts.length ? merge(parts) : null;
 }

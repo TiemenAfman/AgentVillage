@@ -135,7 +135,7 @@ async function runScan(o) {
 function assemble({ config, model, layout, terrain, size, all }) {
   const plot = (id) => {
     const p = layout.plots[id];
-    return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot } : null;
+    return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
   };
   const doorOf = (p) => {
     if (!p || p.w !== 3) return null;
@@ -323,7 +323,14 @@ function assemble({ config, model, layout, terrain, size, all }) {
     }));
     return {
       id: d.id, kind: d.kind, name: d.name, root: d.root, hue: d.hue,
-      center: (l && l.centre) || null, square: (l && l.square) || null, pier: (l && l.pier) || [],
+      center: (l && l.centre) || null, square: (l && l.square) || null,
+      pier: (l && l.pier) || [],
+      // The quay's boardwalk: its streets, its front decks and the walk out to the pier, as
+      // one set of cells. Derived on every scan rather than recorded once, because a run of
+      // boards is not land in the register and grows when the parcel or its paths do - see
+      // the note in lib/layout.mjs. Sending it is what makes the browser, the walking graph
+      // and the drawing consume the exact same cells.
+      deck: (l && l.deck) || [],
       // The cell the ramp stands on, which is behind the first plank and is not in `pier`.
       // shared/quay.mjs can work it out from a run of two or more, and cannot from a run of
       // one - and the layout has known it all along, so it may as well say so.
