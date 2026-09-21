@@ -66,21 +66,36 @@ const unquant = (q, half) => q / GRID - half;
 // of everybody else whose turn it is. A settler is never in both: somebody walking is not
 // also pinned, so a beat that is not carrying walkers simply leaves them out and the far
 // end keeps drawing them from where they were last put.
-export function encodeCrowd(crowd, { half, slice = 0, slices = 1, movers = true }) {
+//
+// `walking`, when the caller keeps one, is the set of indices this crowd has sent as
+// walkers and not yet said otherwise about. It is what lets the step *off* the road be
+// told at once: without it the last word about a walker was a position on the lane with
+// 'walk' written on it, and the word that they had stopped came round with their slice - up
+// to KEYFRAME_S later. The far end, quite reasonably, carried them on along the lane for
+// its guess and then stood them there, treading in a walking gait a stride short of their
+// own door, for the rest of those ten seconds. So the first beat on which somebody who was
+// walking is not walking carries their row in `pinned`, whichever slice it is, and takes
+// them out of the set. A settler who steps aboard or out of sight is taken out silently:
+// the rides say where the one is, and there is nothing to say about the other.
+export function encodeCrowd(crowd, { half, slice = 0, slices = 1, movers = true, walking = null }) {
   const walkers = [];
   const pinned = [];
   let idx = -1;
   for (const f of crowd.figures.values()) {
     idx++;
-    if (!f.visible) continue;
+    if (!f.visible) { if (walking) walking.delete(idx); continue; }
     // Somebody in a boat is left out of both lists: encodeRides below says where they
     // are, how high and which way round, all of it every beat, and a second and slower
     // account of the same body would only argue with it. They come back into the crowd on
     // the beat they step ashore.
-    if (f.aboard) continue;
+    if (f.aboard) { if (walking) walking.delete(idx); continue; }
     const row = [idx, quant(f.pos[0], half), quant(f.pos[1], half), ANIM_OF.get(f.anim) ?? 0];
-    if (f.anim === 'walk') { if (movers) walkers.push(row); }
-    else if (slices <= 1 || idx % slices === slice) pinned.push(row);
+    if (f.anim === 'walk') {
+      if (movers) { walkers.push(row); if (walking) walking.add(idx); }
+    } else if (walking && walking.has(idx)) {
+      walking.delete(idx);
+      pinned.push(row);
+    } else if (slices <= 1 || idx % slices === slice) pinned.push(row);
   }
   return { a: walkers.flat(), k: pinned.flat() };
 }

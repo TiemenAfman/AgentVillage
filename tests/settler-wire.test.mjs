@@ -79,6 +79,55 @@ test('a walker is never also pinned', () => {
   }
 });
 
+// The step off the road. A walker's last word was a position on the lane with 'walk' on
+// it, and without this the word that they had stopped came round with their slice - up to
+// ten seconds later, during which the far end stood them a stride short of their own door
+// treading in a walking gait. So the first beat on which somebody the sea has sent as a
+// walker is no longer walking carries their row, whichever slice it is - and only that
+// beat, or the saving on the slow rotation is spent again.
+test('the step off the road is said on the beat it happens, and said once', () => {
+  const c = crowd(120);
+  c.walk.advance(600, 0);
+  const slices = sliceCount(66);
+  const every = walkerEvery(66);
+  const figs = [...c.figures.values()];
+  const walking = new Set();
+  const sent = new Set();             // whom we have heard called a walker, and not yet heard stop
+  let stops = 0, late = 0;
+  for (let beat = 0; beat < 1500; beat++) {
+    c.walk.advance(1, 0);
+    const { a, k } = encodeCrowd(c, { half: HALF, slice: beat % slices, slices, movers: beat % every === 0, walking });
+    const inA = new Set(), inK = new Set();
+    for (let i = 0; i < a.length; i += 4) inA.add(a[i]);
+    for (let i = 0; i < k.length; i += 4) inK.add(k[i]);
+    for (const idx of sent) {
+      const f = figs[idx];
+      if (f.anim === 'walk' || f.aboard || !f.visible) continue;
+      stops++;
+      if (!inK.has(idx)) late++;
+      sent.delete(idx);
+    }
+    // Nobody is pinned out of turn unless they had just been walking.
+    for (const idx of inK) {
+      if (idx % slices !== beat % slices) assert.ok(figs[idx].anim !== 'walk', `${idx} pinned out of turn while still walking`);
+    }
+    for (const idx of inA) sent.add(idx);
+  }
+  assert.ok(stops > 3, `only ${stops} errands ended in a hundred seconds; the village never got going`);
+  assert.equal(late, 0, `${late} of ${stops} stops waited for their slice to come round`);
+});
+
+test('without a set to keep, the encoder says nothing out of turn', () => {
+  const c = crowd(120);
+  c.walk.advance(600, 0);
+  const slices = sliceCount(66);
+  for (let beat = 0; beat < 300; beat++) {
+    c.walk.advance(1, 0);
+    const { k } = encodeCrowd(c, { half: HALF, slice: beat % slices, slices, movers: beat % 3 === 0 });
+    for (let i = 0; i < k.length; i += 4) assert.equal(k[i] % slices, beat % slices, `${k[i]} was pinned outside its slice`);
+  }
+});
+
 test('a beat that carries no walkers leaves them out entirely', () => {
   const c = crowd(120);
   c.walk.advance(600, 0);

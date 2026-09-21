@@ -1,14 +1,32 @@
-// Somebody else's settlers, drawn from what the sea says.
+// Everybody's settlers, ours included, drawn from what the sea says.
 //
-// Our own island still walks its crowd here in the page - the same shared/settlerwalk.mjs
-// the sea runs, through web/js/settlers.js - because it is ours and it is free. Every other
-// island's people arrive as positions on a wire, and this draws them.
+// Nobody is simulated in the page any more: the sea walks every crowd off the same
+// shared/settlerwalk.mjs and sends where they got to, and this draws it. Our own island is
+// on that wire like any other - see the note where main.js makes the view for it.
 //
 // It reuses the drawing half exactly as it is. createFigures() wants figure objects with a
 // position, a heading and one word saying which animation to play; it does not care whether
 // a walk wrote those or a socket did. That is the whole payoff of the split: no second
 // renderer, no second set of meshes, and a guest island's crowd costs the same eleven draw
 // calls ours does however many people are on it.
+//
+// What a socket cannot do is write a position sixty times a second, so the work of this
+// file is turning five words a second into somebody walking. The rule is the one every
+// networked game ends up at: a body sets off from where it is *drawn* towards the newest
+// word and gets there in about the time the next word takes to arrive, so it is always one
+// message behind the sea and never stands still between two. The first version of this
+// file added the lag to the clock instead of accepting it, which put every walker a whole
+// message *ahead* of the sea, overshooting on every word and creeping back before the next -
+// a step forward and a shuffle back five times a second, with the head snapping round each
+// time. tests/crowd-view.test.mjs walks a straight line through it now.
+//
+// Plans/ik-wil-graag-mutliplayer-splendid-nest.md asked for web/js/peers.js's rule here -
+// draw LAG_MS behind and interpolate between the last two words - and this is that rule
+// with one change: the near end is where the body is drawn, not the word before. A player's
+// words come ten a second at one rate; a settler's come at two, five a second while walking
+// and once every KEYFRAME_S standing, and a fixed lag that always has a pair to interpolate
+// between at the slow rate is a ten-second glide. Setting off from the drawn position needs
+// no lag at all and cannot snap back when a word is late.
 //
 // Two things are deliberately not here. No nameplates - CLAUDE.md records what 41 of them
 // cost on one guest island, and a crowd is not 41 but 274. And no faces on the wire: the
@@ -18,13 +36,35 @@ import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 
-// How far behind the sea we draw. The same reasoning and the same number as web/js/peers.js:
-// far enough back that the next message has almost always arrived, close enough that
-// nobody is watching the past. Walkers come at 5 Hz, so this is one message of slack.
-const LAG_MS = 220;
-// And how long we will guess for when one does not arrive. Past this a body holds still
-// rather than sliding off across the water on a stale heading.
-const MAX_GUESS_MS = 400;
+// How long a body may take to reach the newest word about it. It is normally the time
+// since the word before - a walker's 200 ms - so that it arrives as the next one lands.
+// The two ceilings are for the gaps that are not that: a walker's first word after a long
+// stand, or after a stall on the wire, is capped near its own rate so the body sets off at
+// once rather than spending the whole of the measured gap barely moving; and a keyframe -
+// the other two hundred, placed once every KEYFRAME_S - is capped at about what an idle
+// step takes on the sea's own clock, so it reads as the step it stands for rather than as
+// a ten-second glide.
+const WALK_TOOK_MS = 300;
+const STAND_TOOK_MS = 600;
+const MIN_TOOK_MS = 40;
+// How long we carry on along the last direction when the next word is late. Past this a
+// body holds still rather than sliding off on a stale heading; and it only applies to
+// somebody who was *walking* when last heard from. A body the sea said was standing is
+// not going anywhere, and guessing that it might put every errand a hand's width past its
+// own front door until the next keyframe fetched it back.
+const MAX_GUESS_MS = 150;
+// Further than anybody can walk between two words. A body that turns up this far from
+// where it was drawn did not walk there: the sea rebuilt its crowd and stood everybody at
+// their own door again, or a newcomer was put down on the landing beach. Either way it is
+// the first word about a body all over again, and it snaps rather than streaking across
+// the island. The fastest legitimate mover - a newcomer coming up from the beach, at
+// path.length / 7.5 units a second - covers about three units a message on a big island.
+const SNAP_U = 6;
+// Slower than this and a body is standing, whatever word came with its position. The
+// gliding keyframes move at a few centimetres a second and the extrapolation clamp holds a
+// late walker dead still, and a body treading air in a walking gait is what both of those
+// look like without it.
+const STANDING_U_S = 0.05;
 
 export function createCrowdView({ scene, material, region, buildings = [] }) {
   const view = createFigures(scene, material);
@@ -63,8 +103,9 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
         // What the renderer reads. The walk would have written these; a socket does now.
         pos: [ox, oz], y: 0, yaw: 0, anim: 'still', mode: 'idle', speed: 0.42,
         face: null, turn: 0.12, faceAngle: null, visible: true,
-        // Where it is coming from and going to, and when. See `draw`.
-        from: null, to: null, at: 0, took: 1,
+        // Where it is coming from and going to, and when, and what the sea said it was
+        // doing when it got there. See `apply` and `draw`.
+        from: null, to: null, at: 0, took: 1, said: 'still', came: 'still',
       };
       if (!view.enrol(f, look, kind)) return;  // the crowd is full; better a gap than a lie
       figures.set(idx, f);
@@ -109,16 +150,25 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // after a reseed, and for the whole village at once whenever a roster came back
       // under different names (see ourRoster in main.js). A hundred settlers gliding off
       // the square in formation, once a minute.
-      if (!f.to) { f.pos[0] = x; f.pos[1] = z; }
+      //
+      // And so is any word that puts a body further away than it could have walked - see
+      // SNAP_U. The sea rebuilding a crowd is the everyday case: everybody is back at their
+      // own door, and a walker who was twenty units out would otherwise streak home.
+      const dx = x - f.pos[0], dz = z - f.pos[1];
+      if (!f.to || dx * dx + dz * dz > SNAP_U * SNAP_U) { f.pos[0] = x; f.pos[1] = z; }
       // Where it was when the last message landed becomes where it is coming from. Taking
       // the *drawn* position rather than the last message's keeps a body that was still
       // interpolating from jumping back to catch up.
       f.from = [f.pos[0], f.pos[1]];
       f.to = [x, z];
-      f.took = Math.max(40, now - f.at);
+      const cap = at.anim === 'walk' ? WALK_TOOK_MS : STAND_TOOK_MS;
+      f.took = Math.min(cap, Math.max(MIN_TOOK_MS, now - f.at));
       f.at = now;
-      f.anim = at.anim;
-      f.mode = at.anim === 'walk' ? 'walk' : at.anim === 'hammer' ? 'hammer' : 'idle';
+      // What the sea said the body was doing, and what it said the time before. draw()
+      // decides what is *shown* from these and from whether the body is actually moving on
+      // this screen - see there.
+      f.came = f.said;
+      f.said = at.anim;
     }
   }
 
@@ -135,19 +185,29 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       hull.dispose();
       hulls.delete(idx);
       // Ashore again, and the crowd's own interpolation takes over on the next message.
-      // Its clock is restarted here: `apply` measures how long the last step took from
-      // `at`, and a voyage's worth of staleness would make the first step ashore crawl.
+      // Until it lands they stand where the hull left them: this used to clear `to`, which
+      // is the "never heard of" state, and draw() hides a body in that state - so somebody
+      // stepping off a boat vanished for up to a keyframe. The clock is restarted here
+      // because `apply` measures how long the last step took from `at`.
       const f = figures.get(idx);
-      if (f) { f.from = null; f.to = null; f.at = now; f.faceAngle = null; }
+      if (f) {
+        f.from = [f.pos[0], f.pos[1]];
+        f.to = [f.pos[0], f.pos[1]];
+        f.at = now;
+        f.faceAngle = null;
+        f.said = 'still';
+        f.came = 'still';
+      }
     }
     rides.clear();
     for (const [idx, r] of rows) rides.set(idx, r);
   }
 
-  // Draw everybody where they have got to. Positions are interpolated from the last two
-  // messages and then extrapolated a little; the heading comes out of the movement, which
-  // is exactly what the renderer already does for our own settlers - it is handed a
-  // direction rather than an angle either way.
+  // Draw everybody where they have got to. A body glides from where it was drawn when the
+  // last word landed to where that word put it, over about the time the word before took
+  // to arrive, and then a little further along the same line if the next one is late; the
+  // heading comes out of the movement, which is exactly what the walk did - the renderer
+  // is handed a direction rather than an angle either way.
   // `now` is the caller's clock, and it has to be the same one `apply` was given: the two
   // are subtracted from each other. Handing draw() an accumulated dt while apply() stamped
   // performance.now() is a bug that reads as every body standing perfectly still - the
@@ -198,16 +258,47 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // with them standing on the square and vanishing.
       if (!f.to) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
       if (!f.visible) f.visible = true;
+      // Where along the glide we are: 0 is where the body was drawn when the word landed,
+      // 1 is the word itself, reached as the next one is due. Never below 0 - a frame's
+      // timestamp is taken before the frame's tasks run, so a word that landed just ahead
+      // of this frame can be a hair *younger* than `now` and would otherwise nudge the
+      // body backwards for one frame. And never past the guess, which is nothing at all
+      // for a body the sea said was standing.
       const age = now - f.at;
-      const t = Math.min((age + LAG_MS) / f.took, 1 + MAX_GUESS_MS / f.took);
-      const nx = f.from[0] + (f.to[0] - f.from[0]) * t;
-      const nz = f.from[1] + (f.to[1] - f.from[1]) * t;
-      const dx = nx - f.pos[0], dz = nz - f.pos[1];
+      const guess = f.said === 'walk' ? MAX_GUESS_MS : 0;
+      const tMax = 1 + guess / f.took;
+      const t = Math.max(0, Math.min(age / f.took, tMax));
+      const gx = f.to[0] - f.from[0], gz = f.to[1] - f.from[1];
+      const nx = f.from[0] + gx * t;
+      const nz = f.from[1] + gz * t;
       f.pos[0] = nx;
       f.pos[1] = nz;
+      // What is shown is what the sea said, corrected by what this screen can see. A body
+      // the sea called a walker that is not going anywhere on this screen - held at the
+      // end of its guess, or a keyframe that put it back a centimetre from where it stood -
+      // stands, or it would tread the air in a walking gait. A hammer is the one thing
+      // that is not about moving, so it is taken at its word. And the glide towards the
+      // word that somebody has *stopped* is the last stride of the walk they were on, so it
+      // keeps the walking gait: `came` is what the word before this one said.
+      //
+      // The speed is the glide's own - how far this word is from where the body set off,
+      // over how long it has to get there - and not this frame's displacement. A frame's
+      // worth can be nothing at all with the body in full stride: a word stamped a hair
+      // after the frame's own timestamp clamps `t` to 0 for that one frame, and a body
+      // drawn 'still' for one frame drops its bob and its arms for that frame, which is a
+      // hitch on every message that happens to land between the two.
+      const speed = t >= tMax ? 0 : Math.sqrt(gx * gx + gz * gz) / (f.took / 1000);
+      const moving = speed > STANDING_U_S;
+      const gait = f.said === 'walk' || f.came === 'walk' ? 'walk' : 'step';
+      f.anim = f.said === 'hammer' ? 'hammer' : !moving ? 'still' : gait;
+      f.mode = f.anim === 'walk' ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
       // Only turn when actually going somewhere: a body nudged a centimetre by a late
-      // message should not spin to face it.
-      if (dx * dx + dz * dz > 1e-6) f.face = [dx, dz];
+      // message should not spin to face it. Towards the word rather than along this
+      // frame's step, as briskly as the walk turned - it took its corners at 0.2 and its
+      // idle steps at 0.12 - and the renderer picks a longer stride for anybody moving
+      // faster than a stroll, which is how a newcomer's dash up from the beach has always
+      // been drawn.
+      if (moving) { f.face = [gx, gz]; f.turn = f.anim === 'walk' ? 0.2 : 0.12; f.speed = speed; }
       f.y = groundAt ? groundAt(nx, nz) : 0;
     }
     view.draw(figures, dt);

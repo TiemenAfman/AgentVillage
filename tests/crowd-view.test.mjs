@@ -181,11 +181,127 @@ test('every position after the first is still interpolated', () => {
   crowd.apply(new Map([[idx, { x: 2, z: 0, anim: 'walk' }]]), 1200);
   assert.deepEqual(f.from, [region.origin[0], region.origin[1]], 'it should set off from where it stood');
   assert.deepEqual(f.to, [region.origin[0] + 2, region.origin[1]]);
-  // Partway along the step, which is the whole point of the glide. Deliberately not
-  // capped at `to`: draw() guesses up to MAX_GUESS_MS past the last word rather than let a
-  // body stop dead between messages, so overshoot here is the feature and not a miss.
+  // Halfway along the step, which is the whole point of the glide: the word took 200 ms
+  // to arrive, so the body takes 200 ms to get there and is at the middle after 100.
   crowd.draw(0.016, ground, 1300);
   assert.ok(f.pos[0] > region.origin[0], 'a walking body should have set off');
-  const guessed = 2 * (1 + 400 / 200);   // MAX_GUESS_MS over the 200 ms this step took
-  assert.ok(f.pos[0] <= region.origin[0] + guessed + 0.001, 'it ran past its own dead reckoning');
+  assert.ok(f.pos[0] < region.origin[0] + 2, 'it should not have arrived yet');
+  assert.ok(Math.abs(f.pos[0] - (region.origin[0] + 1)) < 0.01, `${f.pos[0] - region.origin[0]} along a two-unit step at half time`);
+});
+
+// ---- a stream of words into somebody walking -------------------------------------------
+//
+// The bug these guard against was not subtle once seen and was invisible in any single
+// frame: every word about a walker put them a whole message *ahead* of the sea, so they
+// jumped forward when it landed and crept back until the next one, five times a second,
+// turning their head to face the creep each time. A straight line at a steady pace is
+// the plainest way to see it, and the plainest thing to hold.
+
+const indexOf = (crowd, f) => [...crowd.figures().entries()].find(([, g]) => g === f)[0];
+
+test('a walker on a straight line never steps back, never jumps and never turns round', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox] = region.origin;
+  const SPEED = 0.5;             // units a second: a settler out on an errand
+  const SAMPLE = 198;            // ms between a walker's words: three beats of 66
+  const FRAME = 1000 / 60;
+  let now = 5000, next = now, lastX = null;
+  let reversals = 0, jump = 0, ahead = 0, turned = 0, gaits = 0;
+  for (let i = 0; i < 300; i++) {
+    while (next <= now) {
+      crowd.apply(new Map([[idx, { x: SPEED * (next - 5000) / 1000, z: 0, anim: 'walk' }]]), next);
+      next += SAMPLE;
+    }
+    crowd.draw(FRAME / 1000, ground, now, true);
+    const truth = ox + SPEED * (now - 5000) / 1000;
+    if (lastX != null && i > 30) {          // once the second word has landed
+      const dx = f.pos[0] - lastX;
+      if (dx < -1e-6) reversals++;
+      jump = Math.max(jump, dx);
+      if (f.pos[0] > truth + 1e-6) ahead++;
+      if (!f.face || f.face[0] <= 0) turned++;
+      if (f.anim !== 'walk') gaits++;
+    }
+    lastX = f.pos[0];
+    now += FRAME;
+  }
+  assert.equal(reversals, 0, `${reversals} frames walked backwards`);
+  assert.ok(jump <= SPEED * FRAME / 1000 * 1.5 + 1e-6, `a step of ${jump.toFixed(4)} in one frame, at ${(SPEED * FRAME / 1000).toFixed(4)} a frame`);
+  assert.equal(ahead, 0, `${ahead} frames ahead of the sea`);
+  assert.equal(turned, 0, `${turned} frames facing anywhere but forward`);
+  assert.equal(gaits, 0, `${gaits} frames in something other than a walking gait`);
+  // One message behind the sea, more or less, and no more: that is the price of the glide.
+  const behind = ox + SPEED * (now - FRAME - 5000) / 1000 - f.pos[0];
+  assert.ok(behind > 0 && behind < SPEED * SAMPLE / 1000 * 1.6, `${behind.toFixed(3)} units behind, and a message is ${SPEED * SAMPLE / 1000}`);
+});
+
+test('a body the sea said had stopped stops there, in the gait it arrived in', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox, oz] = region.origin;
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'walk' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  crowd.apply(new Map([[idx, { x: 0.1, z: 0, anim: 'walk' }]]), 1200);
+  crowd.draw(0.016, ground, 1216);
+  // The step off the road: the sea says they have stopped, a stride further on.
+  crowd.apply(new Map([[idx, { x: 0.15, z: 0, anim: 'still' }]]), 1300);
+  crowd.draw(0.016, ground, 1316);
+  assert.equal(f.anim, 'walk', 'the last stride of an errand should still be walked');
+  for (let t = 1332; t < 4000; t += 16) crowd.draw(0.016, ground, t);
+  assert.ok(Math.abs(f.pos[0] - (ox + 0.15)) < 1e-6 && Math.abs(f.pos[1] - oz) < 1e-6,
+    `stood at ${f.pos[0] - ox}, not at the door at 0.15: a body told it had stopped must not be guessed onward`);
+  assert.equal(f.anim, 'still');
+});
+
+test('a walker whose next word is late carries on a little, then stands rather than treads', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox] = region.origin;
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'walk' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  crowd.apply(new Map([[idx, { x: 0.1, z: 0, anim: 'walk' }]]), 1200);
+  let t = 1216;
+  for (; t <= 1400; t += 16) crowd.draw(0.016, ground, t);
+  assert.ok(Math.abs(f.pos[0] - (ox + 0.1)) < 0.01, 'should have arrived at the word as the next one fell due');
+  // And nothing arrives. A little dead reckoning, then a halt - and a halt is drawn as a
+  // halt, whatever the last word called them.
+  for (; t <= 3000; t += 16) crowd.draw(0.016, ground, t);
+  assert.ok(f.pos[0] > ox + 0.1, 'a late word should have been guessed at a little');
+  assert.ok(f.pos[0] < ox + 0.2, `guessed ${f.pos[0] - ox - 0.1} past the last word, which is more than one message`);
+  assert.equal(f.anim, 'still', 'a body held still was drawn walking on the spot');
+});
+
+test('a word from further than anybody can walk is a snap, not a streak across the island', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox, oz] = region.origin;
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'walk' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  // The sea rebuilt its crowd and this one is back at their own door, twenty units off.
+  crowd.apply(new Map([[idx, { x: 20, z: 5, anim: 'still' }]]), 1200);
+  assert.deepEqual(f.from, [ox + 20, oz + 5], 'should have snapped rather than set off');
+  crowd.draw(0.016, ground, 1200);
+  assert.deepEqual(f.pos, [ox + 20, oz + 5]);
+  assert.equal(f.anim, 'still');
+});
+
+test('stepping off a boat leaves the body standing on the quay, not out of sight', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox, oz] = region.origin;
+  crowd.applyRides(new Map([[idx, { x: 1, z: 2, yaw: 0, rx: 1, rz: 2, ry: 0.05, ryaw: 0 }]]), 1000);
+  crowd.draw(0.016, ground, 1000, true);
+  assert.equal(f.visible, true);
+  // The outing is over: the beat with no row for them takes the hull away.
+  crowd.applyRides(new Map(), 1200);
+  crowd.draw(0.016, ground, 1200, true);
+  assert.equal(f.visible, true, 'vanished on the quay until the next word about them');
+  assert.deepEqual(f.pos, [ox + 1, oz + 2]);
+  assert.equal(f.anim, 'still');
 });
