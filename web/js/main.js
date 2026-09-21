@@ -3683,7 +3683,12 @@ function updateLabels() {
       projected.set(m.x, m.y, m.z).project(camera);
       if (projected.z > 1) continue;
       const x = (projected.x + 1) / 2 * innerWidth, y = (1 - projected.y) / 2 * innerHeight;
-      const sub = `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'} · click to sail over`;
+      // No "click to sail over" any more. It went with cross(): an island on the horizon
+      // is one in a sea you have not joined, and joining is a choice in Settings rather
+      // than something a click on the water can do. The click itself was already ignored
+      // (see the `neighbour:` guard where a hit is selected), so the line was an offer
+      // nothing on this page was still able to keep.
+      const sub = `${m.island} · ${m.settlers} settler${m.settlers === 1 ? '' : 's'}`;
       if (hoverId === `neighbour:${m.id}`) {
         hoverItem = { name: m.name, sub: m.dev ? `${m.dev} · ${sub}` : sub, x, y };
       } else {
