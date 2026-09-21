@@ -40,11 +40,32 @@ test('a sea with a key lets nobody else press the button', async () => {
   }, { key: 'k' });
 });
 
-test('a sea without a key still will not invent a way to restart itself', async () => {
+test('a sea without a key will not restart itself for anybody', async () => {
+  // Who before what: 403 and not 501, because answering "no hook here" first would tell a
+  // stranger something about how this sea is deployed.
   await afloat(async ({ base }) => {
     const r = await fetch(`${base}/update`, { method: 'POST' });
-    assert.equal(r.status, 501);
+    assert.equal(r.status, 403);
   });
+});
+
+test('a hook without a key is a lock nobody fitted', async () => {
+  // The sharp edge of the check: `if (key) …` reads as the protection and is not one when
+  // there is no key. On a public address that is a redeploy button for anybody.
+  const http = await import('node:http');
+  const asked = [];
+  const hook = http.createServer((req, res) => { asked.push(req.method); res.writeHead(200); res.end('{}'); });
+  await new Promise((r) => hook.listen(0, '127.0.0.1', r));
+  try {
+    await afloat(async ({ base }) => {
+      const r = await fetch(`${base}/update`, { method: 'POST' });
+      assert.equal(r.status, 403);
+      assert.match((await r.json()).error, /no key/);
+      assert.deepEqual(asked, [], 'the hook was asked anyway');
+    }, { updateHook: `http://127.0.0.1:${hook.address().port}/hook` });
+  } finally {
+    await new Promise((r) => hook.close(r));
+  }
 });
 
 test('the button asks the hook, and only on a POST', async () => {
@@ -58,10 +79,10 @@ test('the button asks the hook, and only on a POST', async () => {
     await afloat(async ({ base }) => {
       assert.equal((await fetch(`${base}/update`, { method: 'GET' })).status, 404, 'a GET pressed the button');
       assert.deepEqual(asked, []);
-      const r = await fetch(`${base}/update`, { method: 'POST' });
+      const r = await fetch(`${base}/update`, { method: 'POST', headers: { 'X-Sea-Key': 'k' } });
       assert.equal(r.status, 200);
       assert.deepEqual(asked, ['POST']);
-    }, { updateHook: url });
+    }, { updateHook: url, key: 'k' });
   } finally {
     await new Promise((r) => hook.close(r));
   }
