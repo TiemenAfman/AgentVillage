@@ -164,11 +164,49 @@ export function waterPatchSpan(half, gridBounds, modest = false) {
   };
 }
 
-export function createWorld(scene, terrain, village, opts = {}) {
+
+// Everything an island is made of that stands still: its ground, the colour of that
+// ground, the wood on it, the fields, the walls between them, the paving worn into it and
+// the withies down its channel.
+//
+// Split out of createWorld, and the seam is where it is for one reason: **a neighbour's
+// island is a place, and a place is all of this.** web/js/guest-island.js drew a
+// heightfield and a set of buildings and nothing else, so an island across the water was a
+// bare green hill with houses on it - no wood, no hedges, no ploughing, no district
+// colour. Everything needed to draw it properly was already in the bundle it sent
+// (`cleared`, `paths`, `bridges`, `districts` with their lobes and hues, `lattice`,
+// `polders`, `fairway`): the data had been arriving for as long as there have been two
+// islands, and there was simply no code on this side that read it.
+//
+// What stayed behind in createWorld is everything there is exactly one of however many
+// islands are in the water: the sky, the sea, the three lights, the clouds, the fireflies
+// and the passage of the day. That is the honest line between the two, and it is not the
+// line guest-island.js's own header draws - that one is about *state*, about the chronicle
+// and the dossier and the filters, and it still holds. This is about pixels, and pixels
+// were never the reason to keep the two apart.
+//
+// Drawn in the island's OWN coordinates, inside a group the caller has positioned. That is
+// the rule from shared/regions.mjs: a module that builds its positions out of `half` wants
+// the raw local terrain and an offset group, not the world facade. Handed the facade,
+// every tree and every furrow would sink by the height of somebody else's coast.
+export function createLandscape({
+  parent, terrain: initialTerrain, village, season,
+  modest = false,
+  // A guest island does not draw its own seabed. Ours gets away with drawing the lot
+  // because the water plane reaches further than it does - and a berth is inside that same
+  // plane, so the trick would work there too. It is just not a trick worth a quarter of a
+  // million triangles per neighbour. See guest-island.js, which has always done this.
+  skipSeabed = false,
+  // What the raycast finds, and what it calls this. Both islands have a `civic:board`, so
+  // a guest's ids are namespaced by whoever raised it - an id that is not would quietly
+  // open our own town hall's dossier when somebody clicks theirs.
+  groundName = 'ground', pickId = null,
+} = {}) {
+  let terrain = initialTerrain;
   const size = terrain.size, half = terrain.half, N = terrain.N;
-  const season = seasonOf(opts.month ?? new Date().getMonth());
+  let currentSeason = season;
   const group = new THREE.Group();
-  scene.add(group);
+  parent.add(group);
 
   // ---- ground -------------------------------------------------------------
   const geo = new THREE.BufferGeometry();
@@ -194,6 +232,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
       const a = i + j * N, b = a + 1, c = a + N, d = c + 1;
+      // A quad with all four corners under water is seabed. Ours is drawn anyway and
+      // hidden under a water plane that reaches further than the island does; a guest
+      // island is inside that same plane, so the same trick would work - and it would
+      // cost a quarter of a million triangles per neighbour to hide something nobody can
+      // see. Without this a berth arrives as a raft: a flat sheet of sand out to the
+      // corners of its own map.
+      if (skipSeabed && terrain.H[a] < 0 && terrain.H[b] < 0 && terrain.H[c] < 0 && terrain.H[d] < 0) continue;
       idx[p++] = a; idx[p++] = c; idx[p++] = b;
       idx[p++] = b; idx[p++] = c; idx[p++] = d;
     }
@@ -201,7 +246,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.setIndex(new THREE.BufferAttribute(p === idx.length ? idx : idx.slice(0, p), 1));
 
   // Whose land a ground vertex stands on, and how far inside it. A vertex touches up to
   // four cells, and `inset` already ramps over three of them, so the tint feathers over
@@ -315,270 +360,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
   dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture, { texture: bankTexture, sheet: riverSheet });
   sheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
-  ground.name = 'ground';
+  ground.name = groundName;
+  // So the existing raycast finds it and hovering says whose island this is.
+  if (pickId) ground.userData.id = pickId;
   group.add(ground);
   // The bands, the season, the district tint and the meadow noise are all already in the
   // vertex colours. The sheet is brightness only, so it grains the ground without having
   // an opinion about any of them.
   sheet('grass', (tex) => { ground.material.map = tex; ground.material.needsUpdate = true; });
-
-  // ---- sea, the lake and the rivers ---------------------------------------
-  // One surface for all the water there is: everything below SEA_LEVEL is under this
-  // plane and the ground mesh hides it everywhere else, which is how the lake has always
-  // been drawn and is now how the rivers are drawn too. A river is only about two cells
-  // across, though, and the old two-unit grid put barely a vertex in the channel - the
-  // depth it shaded by came from the bank. Hence a vertex per unit here.
-  //
-  // 260 was a fixed number that happened to fit a grid of 140 with room to spare. A grid
-  // can be 512, and then the detailed patch stopped at 130 while the coast ran on to 256:
-  // half the island's own water had no rivers shaded into it. It follows the island now,
-  // with the same margin - which on a small island is less to draw than before, not more.
-  //
-  // And now it follows the whole archipelago, as ONE surface rather than one per island.
-  // Three reasons, in the order they bite:
-  //
-  //   - A second island at a berth is 112 out with its coast at 144, and a patch that
-  //     stopped at 130 left most of its water on the open-ocean disc: no shallows, no
-  //     surf, no depth colour, a hard line where its beach met the deep.
-  //   - Two patches would overlap in the channel between the islands - two transparent
-  //     depthWrite:false planes at y=0 - and blend twice and flicker.
-  //   - The wave is `sin(p.x * 1.3 + uTime)` on the LOCAL position, while vWorld comes off
-  //     the modelMatrix. A patch translated to a berth therefore carries a wave that is out
-  //     of phase with ours, and the swell would visibly jump at the seam. One surface has
-  //     one wave clock, which is the same reason the ocean disc shares these uniforms.
-  //
-  // A rectangle over the union of the grids rather than a square over its longest side: on
-  // two 64-grids side by side that is 372x260 instead of 372x372, which is a third of the
-  // triangles saved for water nobody can see. The margin is what it always was for an
-  // island of this size - 130 out from a 64-grid, 60 for the largest - so an island on its
-  // own gets exactly the patch it had.
-  //
-  // This lives in `group`, which is the only createWorld that draws the decor and is always
-  // the one at the origin; a region at a berth is drawn by a world that makes no water.
-  // Depth in world coordinates, from the archipelago: inside a region it is that island's
-  // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
-  // every caller that has not been given one - it is this island and the old flat -2.5
-  // past its edge, exactly as before.
-  const depthAt = opts.sea
-    ? (x, z) => opts.sea.height(x, z)
-    : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
-
-  // Built in a function rather than inline because the span is no longer settled once and
-  // for all: an island that joins after the page has booted makes the archipelago wider,
-  // and a patch that still reaches only as far as our own coast leaves the newcomer sitting
-  // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
-  // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
-  // that holds a reference to the mesh has to know.
-  let ws = null, waterGeo = null, wp = null;
-  function buildWaterGeometry() {
-    ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(ws.cx, 0, ws.cz);
-    const p = geo.attributes.position;
-    const d = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) d[i] = depthAt(p.getX(i), p.getZ(i));
-    geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
-    waterGeo = geo;
-    wp = p;
-    return geo;
-  }
-  buildWaterGeometry();
-
-  const waterMat = new THREE.ShaderMaterial({
-    fog: true,
-    transparent: true,
-    depthWrite: false,
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.fog,
-      {
-        uTime: { value: 0 },
-        uDeep: { value: new THREE.Color(0x215e78) },
-        uShallow: { value: new THREE.Color(0x65c4b5) },
-        uFoam: { value: new THREE.Color(0xeaf6f8) },
-        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uSunColor: { value: new THREE.Color(0xffffff) },
-        uNight: { value: 0 },
-      },
-    ]),
-    vertexShader: `
-      #include <fog_pars_vertex>
-      attribute float aDepth;
-      uniform float uTime;
-      varying float vDepth;
-      varying vec3 vWorld;
-      varying vec3 vWave;
-      void main() {
-        vDepth = aDepth;
-        vec3 p = position;
-        float w1 = sin(p.x * 1.3 + uTime * 1.1);
-        float w2 = sin(p.z * 1.7 - uTime * 0.9);
-        p.y += 0.05 * w1 + 0.04 * w2;
-        vWave = vec3(-0.065 * cos(p.x * 1.3 + uTime * 1.1), 1.0, -0.068 * cos(p.z * 1.7 - uTime * 0.9));
-        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-        vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: `
-      #include <fog_pars_fragment>
-      uniform vec3 uDeep, uShallow, uFoam, uSunColor;
-      uniform vec3 uSunDir;
-      uniform float uTime, uNight;
-      varying float vDepth;
-      varying vec3 vWorld;
-      varying vec3 vWave;
-      void main() {
-        float shallow = smoothstep(-2.0, -0.1, vDepth);
-        vec3 col = mix(uDeep, uShallow, shallow);
-        // The surf. It used to fade in over three tenths of a unit of depth, which on
-        // this island's shelf is barely two cells across: a white hairline drawn round
-        // the coast rather than water breaking on a beach. Two terms now. A broad band
-        // of foaming shallow water, squared so that widening its reach does not simply
-        // wash the whole bay pale - the far half of the band stays water that happens to
-        // be light. And the line where the sea actually runs up the sand, which is the
-        // part the eye reads as surf and which the broad band on its own smeared away.
-        // The swell is slower across the band as well: sixteen cycles over three times
-        // the depth range, so it reads as two or three rows of breakers instead of a
-        // fine corduroy.
-        float shore = smoothstep(-0.65, 0.02, vDepth);
-        float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
-        float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
-        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
-        vec3 n = normalize(vWave);
-        vec3 v = normalize(cameraPosition - vWorld);
-        float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-        col = mix(col, uShallow, fresnel * 0.18);
-        vec3 r = reflect(-normalize(uSunDir), n);
-        float spec = pow(max(dot(r, v), 0.0), 60.0);
-        col += uSunColor * spec * 0.55 * (1.0 - uNight * 0.8);
-        col *= mix(1.0, 0.34, uNight);
-        gl_FragColor = vec4(col, 0.88);
-        #include <fog_fragment>
-      }
-    `,
-  });
-  const water = new THREE.Mesh(waterGeo, waterMat);
-  water.position.y = 0;
-  water.renderOrder = 1;
-  group.add(water);
-
-  // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
-  // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
-  // and an island of the largest grid reaches 256 further again, so the far water is
-  // something you look at rather than past. It is the same shader now, sharing the same
-  // uniforms so there is one clock and one sun over the whole sea, and it runs out to
-  // 1200 - inside the camera's far plane, with the sky grown to stay outside it.
-  //
-  // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
-  // gives everything past its own edge, so the colour is constant and there is nothing to
-  // interpolate; the waves are 5 cm on a surface a kilometre across.
-  //
-  // Opaque, unlike the patch, because there is nothing underneath it to show through.
-  const OCEAN_R = 1200;
-  const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
-  oceanGeo.rotateX(-Math.PI / 2);
-  const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
-  oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
-  const oceanMat = waterMat.clone();
-  oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
-  oceanMat.transparent = false;
-  oceanMat.depthWrite = true;
-  const ocean = new THREE.Mesh(oceanGeo, oceanMat);
-  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
-  // disc carries the same wave, but with a vertex only at its centre and its rim it is
-  // flat where the patch is not, so the two do not dip together.
-  ocean.position.y = -0.2;
-  ocean.renderOrder = 0;
-  group.add(ocean);
-
-  // ---- sky ----------------------------------------------------------------
-  const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    uniforms: {
-      uTop: { value: new THREE.Color(0x5ea6e6) },
-      uHor: { value: new THREE.Color(0xdcefff) },
-      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uSunColor: { value: new THREE.Color(0xffffff) },
-      uStars: { value: 0 },
-    },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `
-      uniform vec3 uTop, uHor, uSunColor; uniform vec3 uSunDir; uniform float uStars;
-      varying vec3 vDir;
-      float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
-      void main(){
-        vec3 d = normalize(vDir);
-        vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.45, d.y));
-        float halo = pow(max(dot(d, normalize(uSunDir)), 0.0), 48.0);
-        col += uSunColor * halo * 0.5;
-        if (uStars > 0.01 && d.y > 0.0) {
-          vec2 g = floor(d.xz * 260.0 + d.y * 40.0);
-          float s = step(0.9975, hash(g));
-          col += vec3(s) * uStars * (0.6 + 0.4 * hash(g + 3.0)) * smoothstep(0.0, 0.35, d.y);
-        }
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-  });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea, inside the camera's far plane
-  sky.frustumCulled = false;
-  group.add(sky);
-
-  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(11, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }));
-  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
-  group.add(sunDisc, moonDisc);
-
-  // Where the backdrop is parked. The sky, the open sea and the sun are the horizon, and a
-  // horizon is a direction rather than a place - so all four ride with the camera and none
-  // of them is anchored to this island.
-  //
-  // Not cosmetic. The sky sphere is r1340 and the ocean disc r1200, both centred here, and
-  // the camera's far plane is 1400 (main.js:261). Stand a hundred and seventy units east -
-  // which is where a neighbour's island is - look away from home, and the far side of the
-  // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
-  // cuts a straight line through the horizon. Invisible until somebody is over there, and
-  // then unmistakable. Raising the far plane and the radii instead would buy the same thing
-  // with depth precision, which is a real cost for no gain.
-  //
-  // `recentre` only stores it; `update` is what puts the sun and moon in their places, so
-  // it adds this to their direction rather than being overwritten by it every frame. The
-  // clouds are deliberately NOT in here: they cast shadows, and a cloud shadow that slides
-  // as you pan is worse than a sky with no cloud over the far island. They drift in a fixed
-  // box for now and want widening to the archipelago, not parking on the camera.
-  const horizonAt = new THREE.Vector3();
-  const recentre = (x, z) => {
-    horizonAt.set(x, 0, z);
-    sky.position.x = x; sky.position.z = z;
-    ocean.position.x = x; ocean.position.z = z;
-  };
-
-  // The haze exists here because every material has to compile knowing there is fog, but
-  // the two distances are set from main.js and nowhere else. They used to be set in both
-  // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
-  // sync there - and the fixed pair always won. Colour still follows the sky, below.
-  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
-
-  // ---- lights --------------------------------------------------------------
-  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
-  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-  const key = new THREE.DirectionalLight(0xfff8ea, 3.0);
-  key.castShadow = true;
-  key.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
-  // Half-width of the shadow frustum. `followShadow` moves it with the zoom, so this is
-  // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
-  key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
-  key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
-  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
-  key.shadow.bias = -0.0004;
-  key.shadow.normalBias = 0.03;
-  // One step softer, now that the sun is low enough for a shadow to run the length of a
-  // lane: a hard edge that far from its caster reads as a painted stripe. PCFSoft only,
-  // so `modest` (PCFShadowMap, which ignores the radius) is untouched.
-  key.shadow.radius = 4;
-  scene.add(hemi, ambient, key, key.target);
 
   // ---- vegetation ----------------------------------------------------------
   // Two sets, and the difference matters. `clearedBase` is ground that buildings, roads
@@ -748,7 +537,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // lobe instead of two - asked for by name rather than through variants(), which would
   // offer it as a third kind of pine for the rng to pick.
   function plant(name, slots, fallback) {
-    const want = opts.modest && models.hasAsset(`${name}_lo`) ? `${name}_lo` : name;
+    const want = modest && models.hasAsset(`${name}_lo`) ? `${name}_lo` : name;
     if (models.hasAsset(want)) {
       const geo = models.grouped(want, slots);
       if (geo) return { geo, mats: slots.map((s) => SLOT_MAT[s]) };
@@ -810,7 +599,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // that is the bill `?stats` cannot show you, because three resets renderer.info after
   // the shadow pass and before the colour one.
   const CLOSED = 20, DEEP = 36;
-  const TREE_CAP = opts.modest ? 9000 : 25000;
+  const TREE_CAP = modest ? 9000 : 25000;
 
   // How many stems this cell wants. Noise and distance only - not one random number in
   // it - which is what makes the counting pass below affordable.
@@ -857,7 +646,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // How much undergrowth there may be. Four thousand bushes is forty triangles apiece
   // either side of the shadow pass, which is the same order as a thousand extra trees -
   // so it gets a ceiling of its own rather than riding on the forest's.
-  const BUSH_CAP = opts.modest ? 1500 : 4000;
+  const BUSH_CAP = modest ? 1500 : 4000;
   // The band of canopy noise that is too thin for a wood and too green for bare heath:
   // the shoulder under the 0.12 a tree needs. Read off the same noise the trees are, so
   // a bush stands where the wood peters out rather than in a ring of its own.
@@ -1361,6 +1150,387 @@ export function createWorld(scene, terrain, village, opts = {}) {
     buildGroundWear();
   }
 
+
+  const falling = [];
+  function fellTrees(cells, animate = true) {
+    const out = [];
+    for (const [gx, gz] of cells) {
+      const list = treeCells.get(gx + gz * size);
+      if (!list) continue;
+      for (const it of list) {
+        if (it.felled) continue;
+        it.felled = true;
+        out.push([it.x, it.z]);
+        if (animate) falling.push({ it, t: 0 });
+        else {
+          tmpObj.position.set(0, -999, 0); tmpObj.scale.setScalar(0.0001); tmpObj.rotation.set(0, 0, 0); tmpObj.updateMatrix();
+          it.mesh.setMatrixAt(it.index, tmpObj.matrix);
+          it.mesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+      treeCells.delete(gx + gz * size);
+    }
+    return out;
+  }
+  // anything already cleared at load time is simply not planted, so nothing to do here
+
+  // One call a frame for everything on the ground that changes by itself: the season it is
+  // drawn in, and whatever is falling over. Taken whole out of createWorld's update so that
+  // a neighbour's wood turns with ours and a tree felled over there falls rather than
+  // vanishing between two frames.
+  function update(dt, month) {
+    const s = seasonOf(month);
+    if (s !== currentSeason) {
+      currentSeason = s;
+      paintGround(s);
+      placeTrees(pines, pineMesh, s);
+      placeTrees(oaks, oakMesh, s);
+      placeBushes(s);
+      placeOrchard(orchardTrees(fieldPlan, terrain), s);
+      buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
+      buildGroundWear();                    // and the feather round a yard follows the meadow
+    }
+    // felling animation
+    for (let i = falling.length - 1; i >= 0; i--) {
+      const f = falling[i];
+      f.t += dt;
+      const k = clamp(f.t / 0.7, 0, 1);
+      tmpObj.position.set(f.it.x, terrain.worldHeight(f.it.x, f.it.z) - 0.05, f.it.z);
+      tmpObj.rotation.set(k * 1.4, f.it.rot, 0);
+      tmpObj.scale.setScalar(f.it.s * (1 - k));
+      tmpObj.updateMatrix();
+      f.it.mesh.setMatrixAt(f.it.index, tmpObj.matrix);
+      f.it.mesh.instanceMatrix.needsUpdate = true;
+      if (k >= 1) falling.splice(i, 1);
+    }
+  }
+
+  // The coast of another moment. Polders are stamped into the heightfield rather than
+  // drawn on top of it, so replaying the island's history means moving the ground
+  // itself - there is no visibility flag that can put the sea back. Everything else is
+  // already incremental: the colour attribute is written in place by `paintGround`, and
+  // the scatter never touches a polder or its dike, so nothing is left hanging in the
+  // air when the water returns.
+  function reshape(next) {
+    terrain = next;
+    const pa = geo.attributes.position;
+    for (let k = 0; k < N * N; k++) pa.array[k * 3 + 1] = terrain.H[k];
+    pa.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    paintGround(currentSeason);
+    // The decals stand on the heightfield, so a coast that has moved takes them with it.
+    buildGroundWear();
+    // And the withies go with the channel they mark. Cheap enough to rebuild outright -
+    // a dozen stakes - and the alternative is a buoyed fairway on a day before it was dug.
+    dressBeacons();
+  }
+
+  // Everything this landscape put on the GPU, given back. Ours never needed it - our
+  // island lasts as long as the page does - but a berth empties when a neighbour leaves,
+  // and a region that came and went four times leaving its woods behind is four forests
+  // of buffers nobody can reach.
+  function dispose() {
+    parent.remove(group);
+    group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) m.dispose();
+    });
+  }
+
+  return {
+    group, ground, update, reshape, fellTrees, dispose, triangles: p / 3,
+    // The flora stream, handed out rather than kept, and this is load-bearing. The clouds
+    // and the fireflies in createWorld have always drawn from it *after* the forest had
+    // taken its draws, and their own comments say so: "the random draws happen in the same
+    // order as before, so the clouds look the same and the fireflies further down still
+    // land where they did". Splitting this file in two would have given them a stream
+    // rewound to the start and moved every cloud and every firefly on every island.
+    //
+    // A fork of their own would be tidier and is not free: it is a visible change to a
+    // sky nobody asked to have redrawn. If it is ever worth making, make it deliberately.
+    rng,
+    buildPaths, squareCells, setOwnership, setHouseFrontages,
+    ownership: () => own, season: () => currentSeason,
+  };
+}
+
+
+export function createWorld(scene, terrain, village, opts = {}) {
+  const size = terrain.size, half = terrain.half, N = terrain.N;
+  const season = seasonOf(opts.month ?? new Date().getMonth());
+  const group = new THREE.Group();
+  scene.add(group);
+
+
+  // The island itself - ground, wood, fields, walls, paving, withies - in a group of its
+  // own under this one. Ours and a neighbour's are built by the same call now; see the
+  // header of createLandscape for where the seam is and why it is there.
+  const land = createLandscape({ parent: group, terrain, village, season, modest: opts.modest });
+  const ground = land.ground;
+
+  // ---- sea, the lake and the rivers ---------------------------------------
+  // One surface for all the water there is: everything below SEA_LEVEL is under this
+  // plane and the ground mesh hides it everywhere else, which is how the lake has always
+  // been drawn and is now how the rivers are drawn too. A river is only about two cells
+  // across, though, and the old two-unit grid put barely a vertex in the channel - the
+  // depth it shaded by came from the bank. Hence a vertex per unit here.
+  //
+  // 260 was a fixed number that happened to fit a grid of 140 with room to spare. A grid
+  // can be 512, and then the detailed patch stopped at 130 while the coast ran on to 256:
+  // half the island's own water had no rivers shaded into it. It follows the island now,
+  // with the same margin - which on a small island is less to draw than before, not more.
+  //
+  // And now it follows the whole archipelago, as ONE surface rather than one per island.
+  // Three reasons, in the order they bite:
+  //
+  //   - A second island at a berth is 112 out with its coast at 144, and a patch that
+  //     stopped at 130 left most of its water on the open-ocean disc: no shallows, no
+  //     surf, no depth colour, a hard line where its beach met the deep.
+  //   - Two patches would overlap in the channel between the islands - two transparent
+  //     depthWrite:false planes at y=0 - and blend twice and flicker.
+  //   - The wave is `sin(p.x * 1.3 + uTime)` on the LOCAL position, while vWorld comes off
+  //     the modelMatrix. A patch translated to a berth therefore carries a wave that is out
+  //     of phase with ours, and the swell would visibly jump at the seam. One surface has
+  //     one wave clock, which is the same reason the ocean disc shares these uniforms.
+  //
+  // A rectangle over the union of the grids rather than a square over its longest side: on
+  // two 64-grids side by side that is 372x260 instead of 372x372, which is a third of the
+  // triangles saved for water nobody can see. The margin is what it always was for an
+  // island of this size - 130 out from a 64-grid, 60 for the largest - so an island on its
+  // own gets exactly the patch it had.
+  //
+  // This lives in `group`, which is the only createWorld that draws the decor and is always
+  // the one at the origin; a region at a berth is drawn by a world that makes no water.
+  // Depth in world coordinates, from the archipelago: inside a region it is that island's
+  // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
+  // every caller that has not been given one - it is this island and the old flat -2.5
+  // past its edge, exactly as before.
+  const depthAt = opts.sea
+    ? (x, z) => opts.sea.height(x, z)
+    : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
+
+  // Built in a function rather than inline because the span is no longer settled once and
+  // for all: an island that joins after the page has booted makes the archipelago wider,
+  // and a patch that still reaches only as far as our own coast leaves the newcomer sitting
+  // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
+  // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
+  // that holds a reference to the mesh has to know.
+  let ws = null, waterGeo = null, wp = null;
+  function buildWaterGeometry() {
+    ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
+    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(ws.cx, 0, ws.cz);
+    const p = geo.attributes.position;
+    const d = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) d[i] = depthAt(p.getX(i), p.getZ(i));
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
+    waterGeo = geo;
+    wp = p;
+    return geo;
+  }
+  buildWaterGeometry();
+
+  const waterMat = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uTime: { value: 0 },
+        uDeep: { value: new THREE.Color(0x215e78) },
+        uShallow: { value: new THREE.Color(0x65c4b5) },
+        uFoam: { value: new THREE.Color(0xeaf6f8) },
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uSunColor: { value: new THREE.Color(0xffffff) },
+        uNight: { value: 0 },
+      },
+    ]),
+    vertexShader: `
+      #include <fog_pars_vertex>
+      attribute float aDepth;
+      uniform float uTime;
+      varying float vDepth;
+      varying vec3 vWorld;
+      varying vec3 vWave;
+      void main() {
+        vDepth = aDepth;
+        vec3 p = position;
+        float w1 = sin(p.x * 1.3 + uTime * 1.1);
+        float w2 = sin(p.z * 1.7 - uTime * 0.9);
+        p.y += 0.05 * w1 + 0.04 * w2;
+        vWave = vec3(-0.065 * cos(p.x * 1.3 + uTime * 1.1), 1.0, -0.068 * cos(p.z * 1.7 - uTime * 0.9));
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+        vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: `
+      #include <fog_pars_fragment>
+      uniform vec3 uDeep, uShallow, uFoam, uSunColor;
+      uniform vec3 uSunDir;
+      uniform float uTime, uNight;
+      varying float vDepth;
+      varying vec3 vWorld;
+      varying vec3 vWave;
+      void main() {
+        float shallow = smoothstep(-2.0, -0.1, vDepth);
+        vec3 col = mix(uDeep, uShallow, shallow);
+        // The surf. It used to fade in over three tenths of a unit of depth, which on
+        // this island's shelf is barely two cells across: a white hairline drawn round
+        // the coast rather than water breaking on a beach. Two terms now. A broad band
+        // of foaming shallow water, squared so that widening its reach does not simply
+        // wash the whole bay pale - the far half of the band stays water that happens to
+        // be light. And the line where the sea actually runs up the sand, which is the
+        // part the eye reads as surf and which the broad band on its own smeared away.
+        // The swell is slower across the band as well: sixteen cycles over three times
+        // the depth range, so it reads as two or three rows of breakers instead of a
+        // fine corduroy.
+        float shore = smoothstep(-0.65, 0.02, vDepth);
+        float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
+        float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
+        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
+        vec3 n = normalize(vWave);
+        vec3 v = normalize(cameraPosition - vWorld);
+        float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        col = mix(col, uShallow, fresnel * 0.18);
+        vec3 r = reflect(-normalize(uSunDir), n);
+        float spec = pow(max(dot(r, v), 0.0), 60.0);
+        col += uSunColor * spec * 0.55 * (1.0 - uNight * 0.8);
+        col *= mix(1.0, 0.34, uNight);
+        gl_FragColor = vec4(col, 0.88);
+        #include <fog_fragment>
+      }
+    `,
+  });
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.position.y = 0;
+  water.renderOrder = 1;
+  group.add(water);
+
+  // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
+  // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
+  // and an island of the largest grid reaches 256 further again, so the far water is
+  // something you look at rather than past. It is the same shader now, sharing the same
+  // uniforms so there is one clock and one sun over the whole sea, and it runs out to
+  // 1200 - inside the camera's far plane, with the sky grown to stay outside it.
+  //
+  // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
+  // gives everything past its own edge, so the colour is constant and there is nothing to
+  // interpolate; the waves are 5 cm on a surface a kilometre across.
+  //
+  // Opaque, unlike the patch, because there is nothing underneath it to show through.
+  const OCEAN_R = 1200;
+  const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
+  oceanGeo.rotateX(-Math.PI / 2);
+  const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
+  oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
+  const oceanMat = waterMat.clone();
+  oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
+  oceanMat.transparent = false;
+  oceanMat.depthWrite = true;
+  const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
+  // disc carries the same wave, but with a vertex only at its centre and its rim it is
+  // flat where the patch is not, so the two do not dip together.
+  ocean.position.y = -0.2;
+  ocean.renderOrder = 0;
+  group.add(ocean);
+
+  // ---- sky ----------------------------------------------------------------
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      uTop: { value: new THREE.Color(0x5ea6e6) },
+      uHor: { value: new THREE.Color(0xdcefff) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunColor: { value: new THREE.Color(0xffffff) },
+      uStars: { value: 0 },
+    },
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 uTop, uHor, uSunColor; uniform vec3 uSunDir; uniform float uStars;
+      varying vec3 vDir;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+      void main(){
+        vec3 d = normalize(vDir);
+        vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.45, d.y));
+        float halo = pow(max(dot(d, normalize(uSunDir)), 0.0), 48.0);
+        col += uSunColor * halo * 0.5;
+        if (uStars > 0.01 && d.y > 0.0) {
+          vec2 g = floor(d.xz * 260.0 + d.y * 40.0);
+          float s = step(0.9975, hash(g));
+          col += vec3(s) * uStars * (0.6 + 0.4 * hash(g + 3.0)) * smoothstep(0.0, 0.35, d.y);
+        }
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea, inside the camera's far plane
+  sky.frustumCulled = false;
+  group.add(sky);
+
+  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(11, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }));
+  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
+  group.add(sunDisc, moonDisc);
+
+  // Where the backdrop is parked. The sky, the open sea and the sun are the horizon, and a
+  // horizon is a direction rather than a place - so all four ride with the camera and none
+  // of them is anchored to this island.
+  //
+  // Not cosmetic. The sky sphere is r1340 and the ocean disc r1200, both centred here, and
+  // the camera's far plane is 1400 (main.js:261). Stand a hundred and seventy units east -
+  // which is where a neighbour's island is - look away from home, and the far side of the
+  // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
+  // cuts a straight line through the horizon. Invisible until somebody is over there, and
+  // then unmistakable. Raising the far plane and the radii instead would buy the same thing
+  // with depth precision, which is a real cost for no gain.
+  //
+  // `recentre` only stores it; `update` is what puts the sun and moon in their places, so
+  // it adds this to their direction rather than being overwritten by it every frame. The
+  // clouds are deliberately NOT in here: they cast shadows, and a cloud shadow that slides
+  // as you pan is worse than a sky with no cloud over the far island. They drift in a fixed
+  // box for now and want widening to the archipelago, not parking on the camera.
+  const horizonAt = new THREE.Vector3();
+  const recentre = (x, z) => {
+    horizonAt.set(x, 0, z);
+    sky.position.x = x; sky.position.z = z;
+    ocean.position.x = x; ocean.position.z = z;
+  };
+
+  // The haze exists here because every material has to compile knowing there is fog, but
+  // the two distances are set from main.js and nowhere else. They used to be set in both
+  // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
+  // sync there - and the fixed pair always won. Colour still follows the sky, below.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
+
+  // ---- lights --------------------------------------------------------------
+  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+  const key = new THREE.DirectionalLight(0xfff8ea, 3.0);
+  key.castShadow = true;
+  key.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
+  // Half-width of the shadow frustum. `followShadow` moves it with the zoom, so this is
+  // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
+  key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
+  key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
+  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.03;
+  // One step softer, now that the sun is low enough for a shadow to run the length of a
+  // lane: a hard edge that far from its caster reads as a painted stripe. PCFSoft only,
+  // so `modest` (PCFShadowMap, which ignores the radius) is untouched.
+  key.shadow.radius = 4;
+  scene.add(hemi, ambient, key, key.target);
+
+  // The forest's stream, exactly where it had got to - see the note on `rng` in
+  // createLandscape. Everything below this line draws from it in the order it always did.
+  const rng = land.rng;
+
   // ---- clouds --------------------------------------------------------------
   // Nine clouds, each a handful of squashed icosahedra. They used to be some 34 separate
   // meshes, and every one cost a draw call in the colour pass and another in the shadow
@@ -1442,7 +1612,6 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // ---- update --------------------------------------------------------------
   let time = 0;
-  let currentSeason = season;
   const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
   // The shadow frustum follows what you are looking at, and now also how far away you are
   // standing: anchored and fixed it covered 84 units of a 234-unit island, so from the
@@ -1532,61 +1701,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
       ffGeo.attributes.color.needsUpdate = true;
     }
 
-    const s = seasonOf(month);
-    if (s !== currentSeason) {
-      currentSeason = s;
-      paintGround(s);
-      placeTrees(pines, pineMesh, s);
-      placeTrees(oaks, oakMesh, s);
-      placeBushes(s);
-      placeOrchard(orchardTrees(fieldPlan, terrain), s);
-      buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
-      buildGroundWear();                    // and the feather round a yard follows the meadow
-    }
-    // felling animation
-    for (let i = falling.length - 1; i >= 0; i--) {
-      const f = falling[i];
-      f.t += dt;
-      const k = clamp(f.t / 0.7, 0, 1);
-      tmpObj.position.set(f.it.x, terrain.worldHeight(f.it.x, f.it.z) - 0.05, f.it.z);
-      tmpObj.rotation.set(k * 1.4, f.it.rot, 0);
-      tmpObj.scale.setScalar(f.it.s * (1 - k));
-      tmpObj.updateMatrix();
-      f.it.mesh.setMatrixAt(f.it.index, tmpObj.matrix);
-      f.it.mesh.instanceMatrix.needsUpdate = true;
-      if (k >= 1) falling.splice(i, 1);
-    }
+
+    // The ground and everything standing on it: the season it is drawn in, and the tree
+    // somebody is felling. It keeps its own clock for both - see createLandscape.
+    land.update(dt, month);
   }
 
-  const falling = [];
-  function fellTrees(cells, animate = true) {
-    const out = [];
-    for (const [gx, gz] of cells) {
-      const list = treeCells.get(gx + gz * size);
-      if (!list) continue;
-      for (const it of list) {
-        if (it.felled) continue;
-        it.felled = true;
-        out.push([it.x, it.z]);
-        if (animate) falling.push({ it, t: 0 });
-        else {
-          tmpObj.position.set(0, -999, 0); tmpObj.scale.setScalar(0.0001); tmpObj.rotation.set(0, 0, 0); tmpObj.updateMatrix();
-          it.mesh.setMatrixAt(it.index, tmpObj.matrix);
-          it.mesh.instanceMatrix.needsUpdate = true;
-        }
-      }
-      treeCells.delete(gx + gz * size);
-    }
-    return out;
-  }
-  // anything already cleared at load time is simply not planted, so nothing to do here
-
-  // The coast of another moment. Polders are stamped into the heightfield rather than
-  // drawn on top of it, so replaying the island's history means moving the ground
-  // itself - there is no visibility flag that can put the sea back. Everything else is
-  // already incremental: the colour attribute is written in place by `paintGround`, and
-  // the scatter never touches a polder or its dike, so nothing is left hanging in the
-  // air when the water returns.
   // The depths only. Cheap - one pass over the attribute already allocated - and right
   // whenever the coasts have moved but the archipelago has not grown.
   function resampleWater() {
@@ -1614,31 +1734,25 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   function reshape(next) {
     terrain = next;
-    const pa = geo.attributes.position;
-    for (let k = 0; k < N * N; k++) pa.array[k * 3 + 1] = terrain.H[k];
-    pa.needsUpdate = true;
-    geo.computeVertexNormals();
-    geo.computeBoundingSphere();
-    paintGround(currentSeason);
-    // The decals stand on the heightfield, so a coast that has moved takes them with it.
-    buildGroundWear();
+    land.reshape(next);
     // Resampled through the same function the patch was built with, so a coast that moves
     // during a chronicle replay takes the shallows with it wherever it is - and so that
     // there is one place, not two, that knows what the water over a region looks like.
     resampleWater();
-    // And the withies go with the channel they mark. Cheap enough to rebuild outright -
-    // a dozen stakes - and the alternative is a buoyed fairway on a day before it was dug.
-    dressBeacons();
   }
 
   return {
-    group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update, fellTrees,
-    buildPaths, squareCells, setOwnership, setHouseFrontages, followShadow, recentre,
-    reshapeWater,
-    ownership: () => own, state,
-    season: () => currentSeason, reshape,
+    group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update,
+    // The landscape's own, forwarded rather than wrapped: main.js has always called these
+    // on the world and there is no reason for it to learn a second object.
+    fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells,
+    setOwnership: land.setOwnership, setHouseFrontages: land.setHouseFrontages,
+    ownership: land.ownership, season: land.season,
+    followShadow, recentre, reshapeWater, state, reshape,
   };
 }
+
+
 
 // ---- the road, as a graph --------------------------------------------------
 // Which cells of paving are a junction and which are a stretch of lane between two of

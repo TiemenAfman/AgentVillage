@@ -9,20 +9,22 @@
 // the build menu and the chronicle to draw a coastline. So this module composes the
 // existing pieces and stops at ground you can stand on.
 //
-// What it therefore does NOT draw, and what that costs: no forest, no fields, no ground
-// wear, no hamlet dressing, no buildings, no settlers. Their coast, their hills, their lake
-// and their rivers are all real, because all of that is in the heightfield their seed makes
-// - and the heightfield is the whole reason their island can be drawn at all without asking
-// them for anything (see lib/neighbours.mjs:5-8).
+// That line is about *state*, and it still holds. It is not a line about pixels, and for
+// a long time it was read as one: this module drew a heightfield and a set of buildings and
+// stopped, so an island across the water was a bare green hill with houses on it. No wood,
+// no hedges, no ploughing, no district colour, no paving worn into the grass.
 //
-// The ground is painted by world.js's own `bandColour`, imported rather than copied: two
-// islands in one frame that disagree about where sand becomes meadow is a seam you cannot
-// unsee.
+// Everything needed to draw it properly had been arriving all along. A bundle carries
+// `cleared`, `paths`, `bridges`, `districts` with their lobes and hues, `lattice`,
+// `polders` with their dikes and causeways, and `fairway`; there was simply no code on
+// this side that read any of it. So the ground and everything standing on it now comes
+// from `createLandscape`, which is the same call our own island is built with - see its
+// header in world.js for where that seam is. A neighbour's island is drawn by our renderer
+// out of their data, and the only thing that makes it a guest is the offset it stands at.
 import * as THREE from 'three';
-import { bandColour, seasonOf, SEASON, SHORE, SHORE_SAND } from './world.js';
+import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding } from './buildings.js';
 import { housePlacement } from './house-placement.js';
-import { smoothstep } from 'shared/rng.mjs';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -30,15 +32,21 @@ import { smoothstep } from 'shared/rng.mjs';
 // that got it written down.
 const HARBOUR_WATERLINE = 0.35;
 
-// A vertex per grid corner, like our own ground - not the every-other-one the horizon draws
-// a silhouette with (horizon.js:29). Once you can walk on it, half resolution is a cliff
-// every other cell and a hill you slide off.
+// An island with nothing on it. A region is built with its bundle already in hand, so in
+// practice this is never what gets drawn - but main.js guards every read of
+// `region.village` with a `&&`, and the landscape needs the lists rather than the guard.
+// Rather than teach it to take null, hand it an island where nobody has built anything:
+// the heightfield alone still gives a coast, hills, a lake and rivers.
+const EMPTY_VILLAGE = {
+  island: { town: null, lattice: null },
+  districts: [], buildings: [], paths: [], bridges: [], cleared: [], polders: [],
+};
+
 export function createGuestIsland({
   scene, region, buildings = [], material = null, modest = false,
   month = new Date().getMonth(),
 }) {
   const terrain = region.terrain;
-  const size = terrain.size, N = terrain.N, half = terrain.half;
   const season = seasonOf(month);
 
   // Drawn in the island's OWN coordinates inside a group at its origin. This is the rule
@@ -50,68 +58,33 @@ export function createGuestIsland({
   group.position.set(region.origin[0], 0, region.origin[1]);
   scene.add(group);
 
-  const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(N * N * 3);
-  const col = new Float32Array(N * N * 3);
-  const tmp = new THREE.Color();
-  const tint = new THREE.Color();
-  for (let j = 0; j < N; j++) {
-    for (let i = 0; i < N; i++) {
-      const k = i + j * N;
-      const h = terrain.H[k];
-      pos[k * 3] = i - half;
-      pos[k * 3 + 1] = h;
-      pos[k * 3 + 2] = j - half;
-      // The shore crossfaded rather than stepped, the same way paintGround does it: the
-      // rule at 0.35 is terrain.mjs's and is untouched, but the *painting* blends across
-      // SHORE, which on these gradients is two to six cells of dune grass rather than a
-      // contour line running round the island like a coastline on a map.
-      if (h > SHORE[0] && h < SHORE[1]) {
-        tmp.setHex(SHORE_SAND).lerp(tint.setHex(SEASON[season].meadow), smoothstep(SHORE[0], SHORE[1], h));
-      } else {
-        tmp.setHex(bandColour(h, season));
-      }
-      col[k * 3] = tmp.r; col[k * 3 + 1] = tmp.g; col[k * 3 + 2] = tmp.b;
-    }
-  }
-
-  // Only the quads that touch land, exactly as horizon.js:64-72 already has to: without it
-  // the whole square grid is drawn and the island arrives as a raft - a flat sheet of sand
-  // out to the corners of its own map. Ours gets away with drawing the lot because its
-  // seabed is hidden under a water plane that reaches further than it does; a guest island
-  // at a berth is inside that same plane, so the same trick would work - but drawing a
-  // quarter of a million triangles of seabed to hide them under water is not a trick worth
-  // keeping.
-  const idx = [];
-  for (let j = 0; j < N - 1; j++) {
-    for (let i = 0; i < N - 1; i++) {
-      const a = i + j * N, b = a + 1, c = a + N, d = c + 1;
-      if (terrain.H[a] < 0 && terrain.H[b] < 0 && terrain.H[c] < 0 && terrain.H[d] < 0) continue;
-      idx.push(a, c, b, b, c, d);
-    }
-  }
-
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-
-  // Its own material rather than a share of the building material: this is vertex-coloured
-  // ground, and the building material carries a texture-sheet attribute every vertex has to
-  // have. One draw call either way.
-  const groundMat = new THREE.MeshStandardMaterial({
-    vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0,
+  // Their island, by the same call ours is built with. A hundred and fifty lines of ground
+  // used to stand here - a heightfield, the shore crossfade, the meadow mottling - all of
+  // it a second copy of what world.js already did, and all of it stopping short of the
+  // wood and the fields because those were locked inside createWorld. Now there is one
+  // copy, and a neighbour gets the lot: district colour, ploughing, walls, hedges, the
+  // paving worn into the grass, the reeds, the withies down their channel.
+  //
+  // The `||` is main.js's own guard carried through - see EMPTY_VILLAGE above.
+  const land = createLandscape({
+    parent: group,
+    terrain,
+    village: region.village || EMPTY_VILLAGE,
+    season,
+    modest,
+    // See createLandscape: a berth is inside the same water plane our own island hides its
+    // seabed under, and drawing a quarter of a million triangles to hide them is not worth
+    // it. Without this an island arrives as a raft.
+    skipSeabed: true,
+    groundName: `ground:${region.id}`,
+    // Namespaced the way every guest id has to be: both islands have a `civic:board`, and
+    // an id that is not namespaced quietly opens our own town hall's dossier when you
+    // click theirs.
+    pickId: `guest:${region.id}`,
   });
-  const ground = new THREE.Mesh(geo, groundMat);
-  ground.receiveShadow = true;
-  ground.castShadow = false;          // a heightfield casting on itself buys nothing here
-  ground.name = `ground:${region.id}`;
-  // So the existing raycast finds it and hovering says whose island this is. Namespaced the
-  // way every guest id has to be: both islands have a `civic:board`, and an id that is not
-  // namespaced quietly opens our own town hall's dossier when you click theirs.
-  ground.userData.id = `guest:${region.id}`;
-  group.add(ground);
+  const ground = land.ground;
+
+
 
   // ---- their village -------------------------------------------------------
   // Placed exactly the way makeRecord places ours - same buildBuilding, same
@@ -214,12 +187,14 @@ export function createGuestIsland({
     region,
     records,
     blockers,
-    triangles: idx.length / 3,
+    // Their season turns with ours and a tree felled over there falls rather than
+    // vanishing. One call a frame; main.js walks the guests for the mills anyway.
+    update: (dt, month2) => land.update(dt, month2),
+    triangles: land.triangles,
     buildingCount: records.length,
     dispose: () => {
+      land.dispose();
       scene.remove(group);
-      geo.dispose();
-      groundMat.dispose();
       for (const rec of records) rec.built.geometry.dispose();
     },
   };

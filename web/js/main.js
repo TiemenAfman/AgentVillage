@@ -3607,6 +3607,11 @@ function frame(nowMs) {
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
     for (const rec of g.records) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    // And their ground: the season their wood is drawn in, and anything falling over on
+    // it. Their island is built by the same createLandscape ours is, so it wants the same
+    // one call a frame - without it a neighbour's forest would still be in the season it
+    // was raised in while ours turned around it.
+    if (g.update) g.update(dt, month);
     // Their people, drawn where the sea last said they were and interpolated between. The
     // ground they stand on is their own region's, which is what puts a body on a quay's
     // planks rather than in the water beside them.
