@@ -800,7 +800,21 @@ async function handle(req, res) {
     try { sea = setSea(body || {}); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     config.multiplayer.sea = sea;
     if (seaClient) { seaClient.close(); seaClient = null; }
-    if (ownSea) { await ownSea.close().catch(() => {}); ownSea = null; }
+    // Raced, as a backstop, and deliberately kept even though the cause is fixed twice
+    // over above and below. This await was measured holding the route for 62 seconds, and
+    // the shape of that failure is the reason for the belt: the island ends up in no world
+    // at all, the page cannot reconnect because the listener is already gone, and there is
+    // no line in the log to say what happened. Three seconds of a port that may not be
+    // quite free yet is the cheaper mistake - putToSea already falls back to any free port
+    // when the wanted one is taken.
+    if (ownSea) {
+      const sea = ownSea;
+      ownSea = null;
+      await Promise.race([
+        sea.close().catch(() => {}),
+        new Promise((done) => setTimeout(done, 3000).unref?.()),
+      ]);
+    }
     // Before the publish, not after: hosting renames the island (islandNameOf), the name
     // lives in village.json's island block, and buildBundle reads it from there. A scan
     // here is cheap - it reads only the bytes that are new - and without it the bundle
