@@ -40,6 +40,11 @@ services:
       # its own page is handed it over loopback (/api/hello). It is a door key, not a
       # secret - do not reuse anything.
       SEA_KEY: ${SEA_KEY:-}
+      # The redeploy hook behind the button on the harbour page (GET /). Portainer's own
+      # stack webhook does nicely. Leave it out and the button answers 501 instead of
+      # pretending: a sea started by hand has nothing to ask. Whoever has this URL can
+      # replace this container, so it belongs here and not in the repo.
+      SEA_UPDATE_HOOK: ${SEA_UPDATE_HOOK:-}
     # No volumes, deliberately. There is nothing to persist, and a volume here would be an
     # invitation to start persisting something.
 

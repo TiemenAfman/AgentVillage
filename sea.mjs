@@ -21,6 +21,9 @@ const port = Number(value('port', process.env.SEA_PORT || 4750));
 const open = flag('open');
 const name = value('name', process.env.SEA_NAME || 'an open sea');
 const key = value('key', process.env.SEA_KEY || null);
+// Where to ask for a redeploy, for the button on the harbour page. Whoever has this can
+// replace the container, so it stays in the environment and is never sent to a browser.
+const updateHook = value('update-hook', process.env.SEA_UPDATE_HOOK || null);
 
 const stamp = () => new Date().toISOString();
 const log = (m) => console.log(`${stamp()} ${m}`);
@@ -30,6 +33,7 @@ const sea = createSea({
   host: open ? '0.0.0.0' : '127.0.0.1',
   name,
   key,
+  updateHook,
   log,
 });
 
