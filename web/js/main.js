@@ -1842,8 +1842,21 @@ async function ourRoster(ids) {
   const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
   if (unknown) {
     namingIds = mine('/api/crowd-ids').then((r) => r.json()).then((x) => x.ids || {}).catch(() => null);
-    ourIds = await namingIds;
+    const got = await namingIds;
     namingIds = null;
+    // Kept only when it arrived. This used to assign the failure too, and the cost of that
+    // was out of all proportion: with no map the roster falls back to the sea's redacted
+    // names, every id differs from the one its figure was enrolled under, and crowd-view's
+    // `ids[idx] !== f.id` retires and re-enrols the entire village - which then walks in
+    // from the middle of the island (see apply() there). The next roster fetches the map
+    // again, succeeds, and does the whole thing a second time in reverse. One missed
+    // request, two hundred settlers marching out of the town square.
+    //
+    // An islander that is restarting is exactly when this request fails, and exactly when
+    // somebody is watching. Holding on to the last good map costs nothing: it is the
+    // inverse of a redaction that only changes when a house is built, and a name that has
+    // gone stale costs that one settler their face until the next roster.
+    if (got) ourIds = got;
   }
   // Untranslated ids are left as they are rather than dropped: an island whose islander
   // cannot be reached still has a crowd worth drawing, and a name nobody recognises only

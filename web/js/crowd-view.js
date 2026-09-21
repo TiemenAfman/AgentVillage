@@ -99,6 +99,17 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       const f = figures.get(idx);
       if (!f) continue;
       const x = at.x + ox, z = at.z + oz;
+      // The first word about a body is where it *is*, and not where it is going.
+      //
+      // A figure enrolled by a roster sits at `pos = [ox, oz]` - the island's own middle,
+      // because that is all a roster knows - so interpolating from there to its first real
+      // position walked it out of the town square in a dead straight line to its own front
+      // door. The `!f.to` guard in draw() kept it from being *seen* standing in the middle;
+      // it could not keep it from setting off from there. Every enrolment did it: at boot,
+      // after a reseed, and for the whole village at once whenever a roster came back
+      // under different names (see ourRoster in main.js). A hundred settlers gliding off
+      // the square in formation, once a minute.
+      if (!f.to) { f.pos[0] = x; f.pos[1] = z; }
       // Where it was when the last message landed becomes where it is coming from. Taking
       // the *drawn* position rather than the last message's keeps a body that was still
       // interpolating from jumping back to catch up.

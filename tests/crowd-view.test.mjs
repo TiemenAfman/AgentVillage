@@ -142,3 +142,50 @@ test('a crowd that is thrown away takes its meshes with it', () => {
   crowd.dispose();
   assert.equal(keep.scene.children.length, 0, `${keep.scene.children.length} meshes left behind`);
 });
+
+// Where a body is the first time it is heard of.
+//
+// A figure enrolled by a roster sits at the island's own middle, because that is all a
+// roster knows. `draw` already refused to show one before the sea had said where it was -
+// but the refusal only covered standing there. The first position still became the far end
+// of an interpolation whose near end was the middle, so every settler set off from the
+// town square and walked a dead straight line to their own front door. Once at boot, once
+// after a reseed, and for the whole village at once whenever a roster came back under
+// different names - which is what a restarting islander does to /api/crowd-ids.
+//
+// The fix is one line in apply(); these are the two halves of what it has to keep true.
+test('a body appears where it is, not walking out of the middle of the island', () => {
+  const crowd = view();
+  const [ox, oz] = region.origin;
+  const f = crowd.figure('house:b');
+  assert.deepEqual(f.pos, [ox, oz], 'a fresh figure starts at the island middle');
+
+  // Well away from the middle, so a glide from it would be unmistakable.
+  const idx = [...crowd.figures().entries()].find(([, g]) => g === f)[0];
+  crowd.apply(new Map([[idx, { x: 20, z: -14, anim: 'walk' }]]), 1000);
+  assert.deepEqual(f.from, [ox + 20, oz - 14], 'the first position must be a snap, not a glide');
+  assert.deepEqual(f.to, [ox + 20, oz - 14]);
+
+  // And drawn there straight away rather than somewhere along the way in from the square.
+  crowd.draw(0.016, ground, 1000);
+  assert.deepEqual(f.pos, [ox + 20, oz - 14]);
+});
+
+test('every position after the first is still interpolated', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = [...crowd.figures().entries()].find(([, g]) => g === f)[0];
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'walk' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  // A second word, two units on. This one must come from where the body actually is.
+  crowd.apply(new Map([[idx, { x: 2, z: 0, anim: 'walk' }]]), 1200);
+  assert.deepEqual(f.from, [region.origin[0], region.origin[1]], 'it should set off from where it stood');
+  assert.deepEqual(f.to, [region.origin[0] + 2, region.origin[1]]);
+  // Partway along the step, which is the whole point of the glide. Deliberately not
+  // capped at `to`: draw() guesses up to MAX_GUESS_MS past the last word rather than let a
+  // body stop dead between messages, so overshoot here is the feature and not a miss.
+  crowd.draw(0.016, ground, 1300);
+  assert.ok(f.pos[0] > region.origin[0], 'a walking body should have set off');
+  const guessed = 2 * (1 + 400 / 200);   // MAX_GUESS_MS over the 200 ms this step took
+  assert.ok(f.pos[0] <= region.origin[0] + guessed + 0.001, 'it ran past its own dead reckoning');
+});
