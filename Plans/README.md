@@ -18,4 +18,4 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 - [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
-  vertalen in plaats van haar eigen eiland te verplaatsen. Nog niet gebouwd.
+  vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.

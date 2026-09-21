@@ -1,5 +1,7 @@
 // The line to the island: one WebSocket, our own pose going up, everybody else's coming
 // down. It reconnects on its own, because a laptop lid closing should not end the visit.
+import { worldToScene, sceneToWorld } from 'shared/regions.mjs';
+
 const RETRY_MIN = 1000;
 const RETRY_MAX = 15000;
 const POSE_MS = 100;
@@ -41,9 +43,27 @@ const UI_PER_BEAT = 2;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {},
-  name = null } = {}) {
+  name = null, frame = () => [0, 0] } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
+  // Where the sea says our island lies, in the sea's own frame. The page draws its own
+  // island at the scene origin whatever berth it was given - see homeOrigin in main.js and
+  // worldToScene in shared/regions.mjs - so this socket is the one place the two frames
+  // meet: every position that goes out gains the berth, every position that comes in loses
+  // it. Only positions: a heading is the same in both frames, a room name has none, and the
+  // crowd travels island-local and is placed by the region, which has already been moved.
+  // A function rather than a value because the berth changes when the island changes seas,
+  // and the pose beat below notices the change and reports our body where it now is.
+  const homeAt = () => { const h = frame(); return Array.isArray(h) ? h : [0, 0]; };
+  const outgoing = (x, z) => sceneToWorld([x, z], homeAt());
+  const incoming = (x, z) => worldToScene([x, z], homeAt());
+  // A boat's row, if it carries a position. `moved` does, and so does every boat in a
+  // welcome; `take` and `drop` may or may not, so it is the fields that decide.
+  const boatIn = (b) => {
+    if (typeof b.x !== 'number' || typeof b.z !== 'number') return onBoat(b);
+    const [x, z] = incoming(b.x, b.z);
+    return onBoat({ ...b, x, z });
+  };
   let sock = null;
   let retry = RETRY_MIN;
   let closed = false;
@@ -128,12 +148,19 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           onPanels({ kind: 'all', boards: m.panels || [] });
           // Wherever the boats have got to. An untouched one is not in here: both
           // sides derive its mooring from the island (shared/quay.mjs).
-          for (const b of m.boats || []) onBoat(b);
+          for (const b of m.boats || []) boatIn(b);
           break;
         case 'join': peers.join(m.p); break;
         case 'leave': peers.leave(m.id); break;
         case 'roster': peers.roster(m.players); break;
-        case 's': peers.snapshot(m.a); break;
+        case 's': {
+          // Rows are [id, x, y, z, yaw, ...] in the sea's frame - lib/players.mjs - and x
+          // and z come into ours here, before anything draws them.
+          const [hx, hz] = homeAt();
+          if (hx || hz) for (const row of m.a || []) { row[1] -= hx; row[3] -= hz; }
+          peers.snapshot(m.a);
+          break;
+        }
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
         case 'ui': onPanels({ kind: 'ui', id: m.id, action: m.a, value: m.v }); break;
         case 'drove': onPanels({ kind: 'drove', id: m.id, driver: m.driver }); break;
@@ -155,7 +182,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // message that repeated it would have the page re-deciding whose hand it is on
         // every beat. So "no pilot named" and "nobody at the tiller" are different things
         // and the page has to be able to tell them apart.
-        case 'boat': onBoat(m); break;
+        case 'boat': boatIn(m); break;
         // Somebody talking. The server sends this to everybody including us, so our own
         // line comes back down this same wire and the page can show the conversation in
         // the order the island saw it instead of the order we typed it.
@@ -197,12 +224,16 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // she carried before stopping still has to reach the server.
   function sendHull() {
     if (!hull.live) return;
+    const [hx, hz] = homeAt();
     if (hull.id === hullSent.id
       && Math.abs(hull.x - hullSent.x) < MOVED
       && Math.abs(hull.z - hullSent.z) < MOVED
-      && Math.abs(hull.yaw - hullSent.yaw) < TURNED) return;
-    if (!send({ t: 'boat', a: 'moved', id: hull.id, x: hull.x, z: hull.z, yaw: hull.yaw })) return;
+      && Math.abs(hull.yaw - hullSent.yaw) < TURNED
+      && hx === hullSent.hx && hz === hullSent.hz) return;
+    const [wx, wz] = outgoing(hull.x, hull.z);
+    if (!send({ t: 'boat', a: 'moved', id: hull.id, x: wx, z: wz, yaw: hull.yaw })) return;
     hullSent.id = hull.id; hullSent.x = hull.x; hullSent.z = hull.z; hullSent.yaw = hull.yaw;
+    hullSent.hx = hx; hullSent.hz = hz;
   }
 
   const beat = setInterval(() => {
@@ -214,17 +245,23 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.moving && !s.swimming && s.running ? FLAG_RUNNING : 0)
       | (s.grounded ? 0 : FLAG_AIRBORNE);
     const now = Date.now();
+    // A berth that moved is a body that moved, as far as the sea is concerned: our feet
+    // did not stir but their world position did, so it goes out on this beat.
+    const [hx, hz] = homeAt();
     const still = Math.abs(s.pos.x - last.x) < MOVED
       && Math.abs(s.pos.z - last.z) < MOVED
       && Math.abs(s.pos.y - last.y) < MOVED
       && Math.abs(s.yaw - last.yaw) < TURNED
       && f === last.f
-      && room === last.r;
+      && room === last.r
+      && hx === last.hx && hz === last.hz;
     if (still && now - last.at < KEEPALIVE_MS) return;
-    const pose = { t: 'p', x: s.pos.x, y: s.pos.y, z: s.pos.z, yaw: s.yaw, f, r: room || undefined };
+    const [wx, wz] = outgoing(s.pos.x, s.pos.z);
+    const pose = { t: 'p', x: wx, y: s.pos.y, z: wz, yaw: s.yaw, f, r: room || undefined };
     if (cursor) { pose.b = cursor.id; pose.u = cursor.u; pose.v = cursor.v; }
     if (!send(pose)) return;
     last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.r = room; last.at = now;
+    last.hx = hx; last.hz = hz;
   }, POSE_MS);
 
   // A standing player sends nothing but the slow keepalive, and a hand moving over a
@@ -299,7 +336,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // this is what makes them turn round and wait - and what makes everybody else watch
     // them do it, instead of only the person they are talking to. World coordinates, like
     // every other position on this line; the sea takes the island's origin off.
-    attend(id, x, z) { send({ t: 'attend', b: id, x, z }); },
+    // Where we are standing goes in the sea's frame: lib/sea.mjs takes that island's
+    // origin off it to find the spot in the crowd's own coordinates.
+    attend(id, x, z) { const [wx, wz] = outgoing(x, z); send({ t: 'attend', b: id, x: wx, z: wz }); },
     unattend(id) { send({ t: 'attend', b: id, on: false }); },
     dropPanel(id) { send({ t: 'drop', id }); cursor = null; stirPose(); },
     // One sentence out loud, to everybody on the island. Sent at once rather than on a

@@ -233,3 +233,24 @@ test('shoreWithin sees land across a region boundary', () => {
   assert.ok(near.d > 0);
   assert.ok(sea.height(near.x, near.z) >= 0, 'washing ashore must land you on land');
 });
+
+// ---- the page's frame against the sea's -------------------------------------------------
+//
+// A joiner is berthed somewhere other than [0, 0], and the page still draws its own island
+// at the scene origin. Everything from the sea is therefore translated by the berth on the
+// way in and back on the way out, and the two have to be exact inverses: a body that goes
+// out and comes back a hair off drifts a hair per beat, for ever.
+test('worldToScene and sceneToWorld are exact inverses, and the identity for a host', async () => {
+  const { worldToScene, sceneToWorld } = await import('../shared/regions.mjs');
+  const home = [304, -48];
+  for (const p of [[0, 0], [304, -48], [-17.25, 99.5], [1e6, -1e6]]) {
+    assert.deepEqual(sceneToWorld(worldToScene(p, home), home), p);
+    assert.deepEqual(worldToScene(sceneToWorld(p, home), home), p);
+  }
+  // The host's own island is at the sea's origin, so its page translates by nothing at
+  // all - which is what kept every single-player island exactly where it was.
+  assert.deepEqual(worldToScene([12, 34], [0, 0]), [12, 34]);
+  assert.deepEqual(worldToScene([12, 34]), [12, 34]);
+  // And the host, seen from a joiner berthed at [304, 0], lies 304 to the west of home.
+  assert.deepEqual(worldToScene([0, 0], [304, 0]), [-304, 0]);
+});

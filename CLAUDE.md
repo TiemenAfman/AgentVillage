@@ -286,11 +286,21 @@ other people.
 Two rules that hold the world together. **An island never moves once it has an origin** —
 `nextOrigin()` in `shared/regions.mjs` is the policy and `clearOf()` is the invariant, and
 a newcomer that shifted the fleet would slide the world under the feet of everybody
-standing on it. And **our own island stands where the sea says it does**, not at `[0,0]`:
-poses travel in world coordinates, so a client that quietly kept itself at the origin would
-see every other body in the wrong place and be seen in the wrong place itself. The local
-terrain is still origin-centred and `layout.json` is still local; only the region's offset
-changes.
+standing on it. And **the page draws its own island at the scene origin whatever berth the
+sea gave it, and translates the world instead.** There is no offset group for home — the
+ground, the houses, the hamlets and the quay hang straight in `scene` on local
+coordinates — so `state.homeOrigin` is the berth in the *sea's* frame and nothing more than
+a translation: applied at the socket in `web/js/net.js` (poses, boats and `attend` gain it
+going out and lose it coming in) and wherever a fleet row's origin becomes a region
+(`joinIsland`, `syncHorizon`). `worldToScene` / `sceneToWorld` in `shared/regions.mjs` are
+the two lines. It is read off the fleet every time the fleet is news (`rehomeFrom` →
+`rehome`, which takes every guest region down to be raised again), never only at boot: a
+joiner's page is connected before its own islander has published, so its berth arrives a
+moment after the welcome. Placing home *at* `homeOrigin` was tried first and is the wrong
+half: the region moved and nothing drawn moved with it, and the host — at the sea's origin,
+which was also the page's — was refused as overlapping home and shown as mist. For a host
+the berth is `[0,0]` and all of this is the identity. Poses still travel in world
+coordinates; the local terrain is still origin-centred and `layout.json` is still local.
 
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no

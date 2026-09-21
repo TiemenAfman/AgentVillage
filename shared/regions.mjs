@@ -132,6 +132,23 @@ export function nextOrigin(placed, half, gap = SEA_GAP) {
 // whichever socket message had arrived last - so the near set swapped members between two
 // equally close islands, and every swap tore down a coast and built it again. It showed
 // itself as the same island being welcomed twice, a few seconds apart, for ever.
+// The two frames a page lives between, and the whole of the translation.
+//
+// The sea has one world frame: every island has an origin in it, poses travel in it, the
+// crowd's positions are island-local plus that origin. The page draws its OWN island at
+// the scene origin whatever berth the sea gave it - world.js, the houses, the hamlets and
+// the quay of home all hang straight in `scene` on local coordinates, and moving the lot
+// would touch every place main.js adds something to the scene. So the page keeps home at
+// [0, 0] and translates everything else by its berth: a position from the sea loses the
+// berth on the way in, a position for the sea gains it on the way out. `home` is that
+// berth, in the sea's frame. For the first island into a world it is [0, 0] and both of
+// these are the identity, which is why nothing about a host changed when they arrived.
+//
+// Two lines, here rather than in the page, so the two directions live next to each other
+// and a test can hold them to being exact inverses.
+export function worldToScene(p, home = [0, 0]) { return [p[0] - home[0], p[1] - home[1]]; }
+export function sceneToWorld(p, home = [0, 0]) { return [p[0] + home[0], p[1] + home[1]]; }
+
 export function nearestFirst(rows, home = [0, 0]) {
   const d = (r) => {
     const o = r.origin || [0, 0];

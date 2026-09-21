@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
@@ -1366,10 +1366,12 @@ function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null,
     if (state.ui) state.ui.setSkew(id, name || id);
   }
   // The sea decides where an island lies, and every client is told the same answer - that
-  // is what makes two people looking at the same water see the same thing. freeBerth is
-  // the fallback for the one case with no sea in it: the ?join= debug parameter, which
-  // conjures an island out of a seed with nobody to ask.
-  const at = Array.isArray(origin) ? origin : freeBerth(terrain.half);
+  // is what makes two people looking at the same water see the same thing. What it says
+  // is in the sea's frame, and this page draws in its own: home at the scene origin and
+  // everything else moved by our berth - see `rehome`. freeBerth is the fallback for the
+  // one case with no sea in it: the ?join= debug parameter, which conjures an island out
+  // of a seed with nobody to ask, and answers in the scene's frame already.
+  const at = Array.isArray(origin) ? worldToScene(origin, state.homeOrigin || [0, 0]) : freeBerth(terrain.half);
   if (!at) { console.warn(`island: no berth free for ${id}`); return null; }
   let region;
   try {
@@ -1651,7 +1653,8 @@ function syncHorizon() {
   const shown = new Map();
   for (const row of state.farFleet || []) {
     if (here.has(row.id)) continue;
-    state.horizon.pin(row.id, row.origin);
+    // A manifest row's origin is the sea's; the silhouette stands in our frame.
+    state.horizon.pin(row.id, worldToScene(row.origin, state.homeOrigin || [0, 0]));
     // `beacons` is the one thing out here that is not derivable from a seed: where that
     // island's lighthouses stand on it. It rides the manifest row and nothing else does -
     // an island announcing itself over the network beacon has no such list and gets no
@@ -1676,6 +1679,8 @@ function syncHorizon() {
 // which is not a symptom anybody would trace back to a race.
 let syncing = null;
 let syncAgain = false;
+// Said once per wait, not once per sync - see `berthed` in doSyncFleet.
+let waitingForBerth = false;
 function syncFleet(rows) {
   if (rows) state.fleet = rows;
   if (syncing) { syncAgain = true; return syncing; }
@@ -1693,9 +1698,19 @@ async function doSyncFleet() {
   // in the running: we are standing on it. The ordering lives in shared/regions.mjs with
   // the rest of the coordinate contract, and its tiebreak is load-bearing - see there.
   const others = nearestFirst(moored.filter((r) => r.id !== state.islandId), state.homeOrigin || [0, 0]);
-  const near = others.slice(0, DETAILED);
+  // Nobody is raised before the sea has said where WE are. Every other island is placed
+  // relative to our berth (see rehome), and a joiner's welcome usually arrives before its
+  // own islander has published - so for a moment the fleet has everybody but us. Raising
+  // the others against a berth we do not know yet put the host on top of home and had it
+  // refused as overlapping, five warnings a join, and that warning is the very one that
+  // sent an afternoon's debugging the wrong way. A page with no islander (islandId null)
+  // has no berth to wait for and draws the world as it is.
+  const berthed = !state.islandId || moored.some((r) => r.id === state.islandId);
+  if (!berthed && !waitingForBerth) console.info('island: waiting for the sea to berth this island before raising the others');
+  waitingForBerth = !berthed;
+  const near = berthed ? others.slice(0, DETAILED) : [];
   const nearIds = new Set(near.map((r) => r.id));
-  state.farFleet = others.slice(DETAILED);
+  state.farFleet = berthed ? others.slice(DETAILED) : [];
 
   // An island that has drifted out of the near set gives its ground back and becomes a
   // silhouette again. Done before the fetches below, so the budget is free by the time
@@ -1944,7 +1959,7 @@ function onFleetNews(world, one, clock) {
     if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
   }
   // In at last - so the next refusal is news again rather than a repeat.
-  if (world) { lastRefusal = null; state.fleet = world.islands || []; syncFleet(state.fleet); return; }
+  if (world) { lastRefusal = null; state.fleet = world.islands || []; rehomeFrom(state.fleet); syncFleet(state.fleet); return; }
   if (!one) return;
   // A tree planted, a jetty put up, a bed sown on somebody else's island. Their coastline
   // is what it was, so this is not a fleet change and must not go anywhere near syncFleet:
@@ -1967,7 +1982,39 @@ function onFleetNews(world, one, clock) {
   // Sorted by id rather than by arrival, so "the fleet" is the same list on every machine
   // and in every order the messages happen to turn up in.
   state.fleet = (one.a === 'gone' ? rows : [...rows, row]).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  rehomeFrom(state.fleet);
   syncFleet(state.fleet);
+}
+
+// Where the sea says we lie, read off the fleet every time the fleet is news - not once at
+// boot. A joiner's page is usually connected before its own islander has published, so
+// the welcome has no row for us and the berth only turns up in an `island joined` a moment
+// later; a sea that restarts may berth us somewhere else; and changing seas is a new berth
+// by definition. learnTheWorld() used to be the only reader, at boot, and for a joiner
+// that left home at [0, 0] - where the host also was - for the life of the page.
+function rehomeFrom(rows) {
+  const me = state.islandId ? (rows || []).find((r) => r.id === state.islandId) : null;
+  if (me && Array.isArray(me.origin) && me.origin.length === 2) rehome(me.origin);
+}
+
+// Move the world, not the island. Home stays at the scene origin (see buildScene); what
+// changes is the translation every position from the sea goes through, so every region
+// that was placed against the old berth is taken down here and raised again by the fleet
+// sync that follows, where it now belongs. The other players' last two poses are in the
+// old frame as well; they are cleared rather than slid across the water, and the sea's
+// next roster - five seconds at most - puts them back where they are. Our own pose goes
+// out in the new frame on the next beat: net.js reads the berth on every send.
+function rehome(origin) {
+  const home = state.homeOrigin || [0, 0];
+  if (origin[0] === home[0] && origin[1] === home[1]) return false;
+  state.homeOrigin = [origin[0], origin[1]];
+  for (const region of state.sea.regions()) {
+    if (region === state.region || region.id.startsWith('debug-')) continue;
+    dropRegion(region.id);
+  }
+  if (state.peers) state.peers.clear();
+  console.info(`island: home is berthed at [${state.homeOrigin}]; the world is drawn from there`);
+  return true;
 }
 
 // Every board the page can see, ours and the neighbours', in one list.
@@ -2405,16 +2452,22 @@ function buildScene(village) {
   // archipelago a question gets the same answer it used to get from the terrain directly.
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
-  // Where the sea put us. It is [0, 0] for the first island into a world, which is every
-  // single-player island and every host - but a joiner is placed somewhere else, and it
-  // has to agree with everybody else about where that is. Poses travel in world
-  // coordinates (lib/players.mjs), so a client that quietly kept itself at the origin
-  // would see every other body in the wrong place and be seen in the wrong place itself.
+  // Home is at the scene origin, always - whatever berth the sea gave us. The ground, the
+  // houses, the hamlets and the quay of this island all hang straight in `scene` on local
+  // coordinates, and there is no offset group to move them by; so instead of moving home
+  // the page moves the world. `state.homeOrigin` is the berth the sea gave us, in the
+  // sea's frame, and it is applied as a translation at the socket (web/js/net.js) and
+  // wherever a fleet row's origin is turned into a region (joinIsland, syncHorizon). For
+  // the first island into a world - every single-player island and every host - it is
+  // [0, 0] and the translation is the identity, which is how nothing here changed for
+  // them. shared/regions.mjs has the two lines and the argument.
   //
-  // The local terrain is still origin-centred and layout.json is still local: only the
-  // region's offset changes, which is exactly the asymmetry shared/regions.mjs was built
-  // around, so a house still never moves.
-  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: state.homeOrigin || [0, 0] }));
+  // It used to be `origin: state.homeOrigin` here, on the theory that only the region's
+  // offset needed to move. It did move, and nothing drawn moved with it: a joiner's own
+  // settlers walked a berth's width east of their houses, and the host's island - at the
+  // sea's origin, which was also this page's - was refused as overlapping home and shown
+  // as the beacon's silhouette in the haze. Plans/wie-joint-ziet-de-host-als-mist.md.
+  state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
@@ -2880,7 +2933,7 @@ function layLandscape(shot) {
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
     // shallows stay where the polder used to be while the ground under them has gone.
-    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: state.homeOrigin || [0, 0] }));
+    state.region = state.sea.replace('home', placeIsland(next, { id: 'home', origin: [0, 0] }));
     w.reshape(next);
   }
   state.shot = shot.village;
@@ -4153,6 +4206,9 @@ async function boot() {
     onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,
+    // Our berth in the sea's frame, read on every message: the socket is where the sea's
+    // coordinates and this page's meet. See rehome() and shared/regions.mjs.
+    frame: () => state.homeOrigin || [0, 0],
     // Functions, not values. This island can be moved to another world while the page is
     // open, and a captured address is the address of the world it booted into - see
     // followSea() and the note above createNet.
