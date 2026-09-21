@@ -275,6 +275,16 @@ if (modest) console.info('island: integrated graphics detected, running lighter'
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
+// No browser menu over the island, in any mode.
+//
+// OrbitControls suppresses it for itself, because it uses the right button to pan - so from
+// the sky the island has never had one, and in walk mode it did: right-click turned into a
+// page menu over the view you were steering. Right-click is the island's own button now
+// (ghost.js already takes it for cancelling a placement), and a menu is never the answer
+// on the canvas. Only on the canvas: a menu on a text field or a board is somebody's own
+// copy-and-paste and none of our business.
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
 const controls = new OrbitControls(camera, renderer.domElement);
 Object.assign(controls, {
   enableDamping: true, dampingFactor: 0.075, screenSpacePanning: false,
