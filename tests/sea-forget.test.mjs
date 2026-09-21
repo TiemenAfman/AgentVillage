@@ -63,6 +63,15 @@ test('an address that is not on the list says so', () => {
   assert.deepEqual(read(file).multiplayer.sea.known, [A, B]);
 });
 
+test('a capital in a hostname does not make a row that cannot be removed', () => {
+  // The real one: the default list ships this with capitals, new URL() lowercases a
+  // hostname, and the comparison was against the raw string - so the row somebody would
+  // most want rid of was the one row that refused to go, while being shown to them.
+  const DEFAULT = 'http://AgentVillage.freeddns.org:4750/';
+  const file = config({ known: [DEFAULT, B] });
+  assert.deepEqual(forgetSea(DEFAULT, { file }).known, [B]);
+});
+
 test('the same address written two ways is one address', () => {
   // A url goes through URL() on the way in and on the way out, so the trailing slash a
   // person does or does not type cannot make a row that is impossible to remove.
