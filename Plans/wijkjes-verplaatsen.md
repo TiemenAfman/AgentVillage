@@ -6,11 +6,14 @@
 > het centrum veranderen." — en daarna: "Nee, de huizen verhuizen nooit, daarom wil ik een
 > editor om wijkjes te selecteren en wél te verhuizen."
 
-**Status:** fase 1 (zones + wijkjes verplaatsen, server én planner-modus in de browser) gebouwd op
-22 september 2026 op branch `planner-wijkjes`; dry runs op het echte eiland nagekeken, nog geen echte
-Apply gedaan. Fase 2a (handmatige polder met toegangsweg, en `unpolder` om land terug te geven) gebouwd op 22 september 2026;
-wijkjes verplaatsen en polderen op het echte eiland door Martijn zelf nagekeken; parcel bijverven en fase 3
-(geen reload meer nodig) staan open. De bijlage
+**Status:** fase 1, 2 en 3 gebouwd op 22 september 2026. Fase 1: zones, wijkjes verplaatsen en de
+planner-modus. Fase 2: handmatige polder met toegangsweg, `unpolder` om land terug te geven, `parcel`
+(Land-tool, 5) om een wijkje grond bij te geven of af te nemen, en een bundel-test dat de zee een
+handmatige polder accepteert. Fase 3: geen reload meer na Apply. De pagina bouwt een verplaatst
+gebouw opnieuw, tekent wegen opnieuw als hun inhoud verandert en bouwt het terrein opnieuw bij een
+ander poldersaldo. Wat live niet kan: bos terug laten groeien op vrijgekomen grond, want
+`createLandscape` strooit het bos eenmalig per paginalading. Verplaatsen en polderen zijn op het
+echte eiland door Martijn zelf nagekeken. De bijlage
 "Verkenning" onderaan is de gemeten stand van de code op die dag — regelnummers, timingen en
 wat er breekt — zodat dat niet opnieuw hoeft.
 

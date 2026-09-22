@@ -2632,6 +2632,12 @@ function buildScene(village) {
       state.roadDebug?.refresh();
       break;
 
+    // `/roads edit` had a command and no handler; the planner is what editing the roads
+    // turned out to be - they are laid again around whatever the keeper moves.
+    case 'roads_edit':
+      enterPlan();
+      break;
+
     case 'roads_status':
       console.log('[roads]', {
         wireframe: state.roadDebug?.wireframeEnabled ?? false,
@@ -3185,6 +3191,10 @@ function layLandscape(shot) {
   syncHamlets(shot.village);
 }
 
+// What the heightfield is made of, as one string: the polders' three lists and the channel.
+// Compared between two villages to know whether the ground has to be built again.
+const groundSig = (v) => JSON.stringify([(v.polders || []).map((p) => [p.cells, p.pools, p.dike]), v.fairway ? v.fairway.cells : null]);
+
 function applyLandscape(force = false) {
   if (!state.world || !state.village) return;
   const shot = projectVillage(state.village, state.chronicle.t ?? NaN);
@@ -3377,7 +3387,10 @@ function applyVillage(next, { animate }) {
     const before = new Set(prev.cleared.map((c) => c.join(',')));
     const fresh = next.cleared.filter((c) => !before.has(c.join(',')));
     if (fresh.length) state.world.fellTrees(fresh, true);
-    if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
+    // By content, not by count: a hamlet the keeper moved (lib/plan.mjs) is roaded again
+    // with as many paths as it had, in other cells, and a length check left the old
+    // roads drawn under the houses' new doors until the page was reloaded.
+    if (JSON.stringify(next.paths) !== JSON.stringify(prev.paths) || JSON.stringify(next.bridges || []) !== JSON.stringify(prev.bridges || [])) {
       syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
       // The road network just changed - a house that gained (or lost) its way to the
@@ -3401,6 +3414,16 @@ function applyVillage(next, { animate }) {
     // shared/quay.mjs.
     if (prev) buildDocks(next);
   }
+  // The ground itself, when the polders or the channel changed under it - a polder the
+  // keeper dug or gave back. Before the buildings below, because a house set down on new
+  // land is built at the height of the terrain it finds. `shownPolders` is a count and a
+  // plan can give one polder back and dig another in the same Apply, so it is forgotten
+  // rather than trusted.
+  if (prev && groundSig(prev) !== groundSig(next) && state.chronicle.t == null) {
+    shownPolders = null;
+    shownKey = null;
+    applyLandscape(true);
+  }
   syncSquareBed(next);
   syncBorrelTables(next);
 
@@ -3414,6 +3437,19 @@ function applyVillage(next, { animate }) {
       continue;
     }
     const before = rec.spec;
+    // A plot that moved is the keeper's planner at work (POST /api/plan): a building never
+    // moves by itself. Built again where it now stands rather than slid there, because its
+    // placement - the loosened building line, a shed's nudge to the edge of its yard - is
+    // measured against its neighbours, and they may have moved with it. After the loop the
+    // frontages are redone once for everybody and `reportPlacements` tells the sea.
+    const p0 = before.plot, p1 = spec.plot;
+    if (p0 && (p0.gx !== p1.gx || p0.gz !== p1.gz || p0.rot !== p1.rot || p0.w !== p1.w || p0.d !== p1.d)) {
+      const shown = rec.group.visible;
+      disposeRecord(rec);
+      state.byId.delete(id);
+      makeRecord(spec).group.visible = shown;
+      continue;
+    }
     rec.spec = spec;
     const tierChanged = before.tier !== spec.tier || before.style !== spec.style
       || before.kind !== spec.kind || (before.ornaments || []).join() !== (spec.ornaments || []).join()
@@ -3445,6 +3481,8 @@ function applyVillage(next, { animate }) {
 
   assignFlags();
   state.world.setHouseFrontages(state.byId.values());
+  // A record built while planning comes with its nameplate up; the planner keeps them down.
+  if (state.mode === 'plan') for (const rec of state.byId.values()) if (rec.nameplate) rec.nameplate.group.visible = false;
   // The key is computed from the village, so a new one from the server invalidates it;
   // without this a changed island would keep the landscape drawn for the old one.
   shownKey = null;

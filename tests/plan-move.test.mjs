@@ -183,6 +183,50 @@ test('a refusal leaves the layout exactly as it was, and says why in the island\
   assert.match(kinds, /belt of/, `nothing was refused for the belt: ${kinds}`);
 });
 
+test('a hamlet is given land and has some taken away, and the scan after keeps it that way', () => {
+  const { model, layout } = settled();
+  const district = 'proj:4';
+  const lobe = layout.districts[district].lobes[0];
+  const before = clone(layout);
+  const wasStanding = stands(layout);
+  // Something to add: the first edge neighbour the dry run accepts.
+  const own = new Set(lobe.cells.map(key));
+  let add = null;
+  for (const [i, j] of lobe.cells) {
+    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const c = [i + a, j + b];
+      if (own.has(key(c)) || add) continue;
+      const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'parcel', district, add: [c] }] }), { ...opts, dryRun: true });
+      if (r.ok) add = c;
+    }
+  }
+  assert.ok(add, 'no neighbouring super-cell could be given to the hamlet');
+  assert.equal(JSON.stringify(layout), JSON.stringify(before), 'a dry run changed the layout');
+  const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'parcel', district, add: [add] }] }), opts);
+  assert.ok(r.ok, r.error);
+  assert.ok(layout.districts[district].lobes[0].cells.some((c) => key(c) === key(add)), 'the land was not given');
+  assert.deepEqual(movedBetween(wasStanding, stands(layout)), [], 'giving land moved something');
+  const written = JSON.stringify(layout);
+  placeAll(layout, model, opts);
+  assert.equal(JSON.stringify(layout), written, 'the scan after the parcel rewrote the layout');
+  // And taken back again.
+  const back = runPlan(layout, model, parsePlan({ ops: [{ op: 'parcel', district, remove: [add] }] }), opts);
+  assert.ok(back.ok, back.error);
+  assert.ok(!layout.districts[district].lobes[0].cells.some((c) => key(c) === key(add)));
+  // Refusals, in the island's words.
+  const no = (op, re) => {
+    const x = runPlan(layout, model, parsePlan({ ops: [op] }), { ...opts, dryRun: true });
+    assert.equal(x.ok, false);
+    assert.match(x.verdicts[0].reason, re);
+  };
+  no({ op: 'parcel', district, remove: [lobe.seed] }, /where P4 was founded/);
+  const built = layout.districts[district].lobes[0].cells.find(([i, j]) => Object.values(layout.plots).some((p) => p.cell && p.cell[0] === i && p.cell[1] === j) && (i !== lobe.seed[0] || j !== lobe.seed[1]));
+  if (built) no({ op: 'parcel', district, remove: [built] }, /stands on/);
+  const other = layout.districts['proj:5'].lobes[0].seed;
+  no({ op: 'parcel', district, add: [other] }, /P5's land|not wholly/);
+  assert.throws(() => parsePlan({ ops: [{ op: 'parcel', district }] }), /changes nothing/);
+});
+
 test('a plan with a refused step still judges the steps after it, against the island the good ones made', () => {
   const { model, layout } = settled();
   const found = findMove(layout, model, [{ district: 'proj:0', lobe: 0 }]);

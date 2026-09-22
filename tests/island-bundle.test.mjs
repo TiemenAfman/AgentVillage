@@ -276,6 +276,17 @@ test('a drained polder sails with every list that raised its ground', () => {
   const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
   assert.deepEqual(packed.polders[0].pools, drained.pools, 'the pools were dropped on the way out');
   assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+
+  // A polder the keeper drained by hand (lib/plan.mjs) carries three fields the ladder's do
+  // not - `manual`, `at` as a settler count, `dugAt` - and none of them moves a height. They
+  // stay home: the bundle is the ground and the date, and it has to agree with its own hash
+  // exactly as a planned one does.
+  const w = village();
+  w.island.terrainHash = hash;
+  w.polders = [{ ...drained, supers: [[1, 1]], seed: [1, 1], manual: true, at: 134, dugAt: '2026-09-22T18:28:24.632Z', unlockedAt: '2026-09-22T18:28:24.632Z' }];
+  const hand = buildBundle({ config, village: w, keeper: 'Martijn' });
+  for (const f of ['manual', 'dugAt', 'supers', 'seed']) assert.equal(f in hand.polders[0], false, `${f} went to sea`);
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(hand))), hand);
 });
 
 test('parseBundle refuses a size it cannot draw', () => {

@@ -52,7 +52,13 @@ anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at impo
 Copy that preamble when adding a test that touches `web/js/`.
 
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
-worktree without colliding with the island already running on 4747.
+worktree without colliding with the island already running on 4747. Pitfall: the preview
+tool reads `launch.json` from the directory the session was *launched* in and starts the
+server there, so from a worktree made by hand (`git worktree add`) it runs the main
+checkout's code on the main checkout's `data/` — the live island's own `layout.json`, and a
+`POST /api/plan` against it is a real move. To try server code from such a worktree, run
+`node serve.mjs --port <free> --no-rescan --no-open` from inside it: `ROOT` is resolved from
+`import.meta.url`, so that process uses the worktree's own `data/` and `config.json`.
 
 A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
 process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
@@ -91,7 +97,9 @@ irreplaceable file under `data/`; `village.json` and `cache.json` rebuild themse
 scanner never moves a plot; the keeper may, deliberately, through one door — `POST /api/plan`
 (`lib/plan.mjs`, applied in the same slot in `scan.mjs` as `clearRoads`, under the scan
 queue), which moves **whole hamlets** (lobes, with every house, shed and the land itself, by
-a super-cell delta) and paints `layout.zones` (no-build super-cells, countryside only,
+a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
+what is added, never below the hamlet's population or `ensureParcel` grows it straight
+back), and paints `layout.zones` (no-build super-cells, countryside only,
 enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). A plan is tried on a
 copy first, all or nothing; `diff.plots.otherMoved` must be empty and no house may be newly
 left without a way to the square (`stranded` in `lib/plan.mjs` — `placeAll` roads a hamlet
@@ -117,8 +125,12 @@ is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene thr
 ghosts (`plan-overlay.js`: the real meshes' geometry under ghost.js's green/red) while the
 real groups stay put — `reportPlacements` reads their positions after every scan, and a drag
 across the 60 s rescan would have published a village standing in the wrong place. The
-server is the authority: a dry run after every change, the real thing on Apply, then a
-`reload` broadcast (the page's incremental `applyVillage` does not follow a changed `plot`).
+server is the authority: a dry run after every change, the real thing on Apply, and then
+every open page follows through its ordinary `applyVillage`: a record whose `plot` changed
+is built again, roads are redrawn when their *content* changes (not their count), and the
+ground is rebuilt when the polders do (`groundSig`). The one thing it cannot do live is
+regrow the forest on ground given back — `createLandscape` scatters it once per page load —
+so an old hamlet site is meadow until the next reload.
 What plan mode switches off — and `leftPlan` switches back on — is the CSS3D boards, the
 clouds, the hamlet arches, the nameplates and the haze; the frame loop's camera and label
 branches are `=== 'orbit'`, not `!== 'walk'`, for the same reason. The drag's colour comes

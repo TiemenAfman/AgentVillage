@@ -845,8 +845,9 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // The one door through which the layout is changed by hand. Keeper-only like every
   // other /api/ route, and a write: it moves hamlets. A dry run answers with verdicts and a
   // diff and writes nothing at all; an apply goes through the scan queue like any scan,
-  // snapshots layout.json first, publishes once, and asks every open page to reload - the
-  // page's own incremental update does not follow a plot that moved (see Plans/).
+  // snapshots layout.json first and publishes once. No reload: the scan rewrites
+  // village.json, `watchData` tells every open page, and `applyVillage` follows a moved
+  // plot, new roads and new ground on its own (Plans/wijkjes-verplaatsen.md, fase 3).
   if (p === '/api/plan' && req.method === 'GET') {
     const files = filesFor({ all: ALL });
     const layout = readJson(files.layout, null);
@@ -882,7 +883,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
       log(`plan applied: ${plan.ops.length} op(s), ${out.diff.plots.moved.length} plot(s) moved, snapshot ${out.snapshot}`);
       broadcast({ at: Date.now(), ops: plan.ops.length, snapshot: out.snapshot }, 'plan');
       if (seaClient) seaClient.publish().catch(() => {});
-      broadcast({ at: Date.now() }, 'reload');
     }
     return json(res, 200, out);
   }
@@ -917,7 +917,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
     if (!r.scanned || r.scanned.skipped) return json(res, 423, { ok: false, error: 'scanning' });
     log(`plan undone: ${name} restored, ${r.replaced.length} plot(s) placed again`);
     if (seaClient) seaClient.publish().catch(() => {});
-    broadcast({ at: Date.now() }, 'reload');
     return json(res, 200, { ok: true, restored: name, replaced: r.replaced });
   }
 

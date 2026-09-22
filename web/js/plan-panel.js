@@ -16,6 +16,7 @@ export const TOOLS = [
   ['move', 'Move', '2', 'Drag the selected hamlets. Snaps to the super-grid.'],
   ['zone', 'Zone', '3', 'Paint ground nothing may be built on. Right-drag releases it.'],
   ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Click a standing polder and press Delete to give it back.'],
+  ['land', 'Land', '5', 'Give the selected hamlet more land, painted onto its edge. Right-drag takes land away.'],
 ];
 
 export function createPlanPanel(handlers) {
@@ -87,7 +88,7 @@ export function createPlanPanel(handlers) {
     const v = el('plan-verdict');
     v.className = `plan-verdict ${state}`;
     v.textContent = state === 'checking' ? 'Asking the island…'
-      : state === 'ok' ? 'The island agrees. Apply moves it for real and reloads every open page.'
+      : state === 'ok' ? 'The island agrees. Apply makes it so.'
         : state === 'refused' ? (error || 'The island refused a step.')
           : state === 'unreachable' ? 'The island did not answer.'
             : '';

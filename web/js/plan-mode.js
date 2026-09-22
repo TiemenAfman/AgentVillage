@@ -12,7 +12,8 @@
 // after every scan and a drag that straddled the sixty-second rescan would have posted a
 // village standing in the wrong place to the sea. The draft is a list of ops; the server
 // (`POST /api/plan`, lib/plan.mjs) is the authority on every one of them, asked for a dry
-// run after each change and for the real thing on Apply, after which the page reloads.
+// run after each change and for the real thing on Apply; the page then follows the new
+// village through its ordinary update, as every other open page does.
 // What the page judges for itself - the green or red of a drag - comes from the survey
 // the server bakes (`GET /api/plan/survey`), so it never carries a second copy of the rules.
 //
@@ -48,6 +49,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   let islandZones = new Set();     // 'i,j' zoned on the island today
   let polderAt = new Map();        // 'i,j' -> index into village.polders, for the ones standing
   let selPolder = null;            // a standing polder picked with the Polder tool
+  let groundSeen = null;           // the terrain the overlay was last laid on
   let survey = null;
   let snapshots = 0;
   const sel = new Set();           // lobe keys
@@ -147,7 +149,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (selPolder !== null && !(v.polders || [])[selPolder]) selPolder = null;
     // A draft may name a hamlet the island no longer has.
     const before = ops.length;
-    ops = ops.filter((o) => o.op !== 'move' || o.lobes.every((l) => lobes.has(lkey(l))));
+    ops = ops.filter((o) => (o.op !== 'move' || o.lobes.every((l) => lobes.has(lkey(l))))
+      && (o.op !== 'parcel' || lobes.has(lkey(o))));
     for (const k of [...sel]) if (!lobes.has(k)) sel.delete(k);
     if (ops.length !== before) toast('A hamlet in your draft has left the island; that step was dropped.');
   }
@@ -158,15 +161,31 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     for (const o of ops) if (o.op === 'move' && o.lobes.some((l) => lkey(l) === k)) { di += o.di; dj += o.dj; }
     return [di, dj];
   }
+  // A lobe's land once the draft is applied, walked op by op in the order the server will
+  // apply them: a move shifts it, a parcel op adds and takes away. In order, and not as one
+  // summed delta, because land given and then moved is not the same land as land moved and
+  // then given - the second is painted where the hamlet will be, the first where it was.
+  function supersOf(k, list = ops) {
+    const rec = lobes.get(k);
+    if (!rec) return [];
+    let cells = rec.supers.map(([i, j]) => [i, j]);
+    for (const o of list) {
+      if (o.op === 'move' && o.lobes.some((l) => lkey(l) === k)) cells = cells.map(([i, j]) => [i + o.di, j + o.dj]);
+      else if (o.op === 'parcel' && lkey(o) === k) {
+        const gone = new Set(o.remove.map(([i, j]) => key(i, j)));
+        const have = new Set(cells.map(([i, j]) => key(i, j)));
+        cells = cells.filter(([i, j]) => !gone.has(key(i, j)));
+        for (const [i, j] of o.add) if (!have.has(key(i, j))) cells.push([i, j]);
+      }
+    }
+    return cells;
+  }
   // Who owns (i, j) once the draft is applied: the moved lobes at their new place, the
   // rest where they are. A lobe's old ground is nobody's the moment it has been moved.
   let projAt = new Map();
-  function project() {
+  function project(list = ops) {
     projAt = new Map();
-    for (const rec of lobes.values()) {
-      const [di, dj] = deltaOf(lkey(rec));
-      for (const [i, j] of rec.supers) projAt.set(key(i + di, j + dj), rec);
-    }
+    for (const rec of lobes.values()) for (const [i, j] of supersOf(lkey(rec), list)) projAt.set(key(i, j), rec);
   }
   const ownerAt = (i, j) => (townAt.has(key(i, j)) ? TOWN : projAt.has(key(i, j)) ? projAt.get(key(i, j)).k : NONE);
   function zoneSets() {
@@ -199,10 +218,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const ownKeys = new Set(lobeKeys);
     let ok = true, why = null;
     for (const k of lobeKeys) {
-      const rec = lobes.get(k);
-      const [pi, pj] = deltaOf(k);
-      for (const [i0, j0] of rec.supers) {
-        const i = i0 + pi + di, j = j0 + pj + dj;
+      for (const [i0, j0] of supersOf(k)) {
+        const i = i0 + di, j = j0 + dj;
         let good = true;
         if (!superComplete(lat, t.size, i, j)) { good = false; why = why || 'off the island'; }
         else if (!usable(i, j)) { good = false; why = why || 'not ground to build on'; }
@@ -232,11 +249,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     project();
     const { add, remove } = zoneSets();
     const selSupers = new Set();
-    for (const k of sel) {
-      const rec = lobes.get(k);
-      const [di, dj] = deltaOf(k);
-      for (const [i, j] of rec.supers) selSupers.add(key(i + di, j + dj));
-    }
+    for (const k of sel) for (const [i, j] of supersOf(k)) selSupers.add(key(i, j));
     const back = ops.find((o) => o.op === 'unpolder');
     overlay.paint({
       owner: ownerAt,
@@ -271,10 +284,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       }
     }
     overlay.setGhosts(ghosts);
-    overlay.setMarks({ rects, lines, outlines: [...sel].map((k) => {
-      const rec = lobes.get(k); const [di, dj] = deltaOf(k);
-      return { supers: rec.supers.map(([i, j]) => [i + di, j + dj]), color: new THREE.Color(0xe8b45c) };
-    }) });
+    overlay.setMarks({ rects, lines, outlines: [...sel].map((k) => ({ supers: supersOf(k), color: new THREE.Color(0xe8b45c) })) });
     panel.setSelection({ count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder });
     ledger();
   }
@@ -288,6 +298,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (o.op === 'move') return `Move ${o.lobes.map((l) => (lobes.get(lkey(l)) || { name: l.district }).name).join(', ')} by [${o.di}, ${o.dj}]`;
     if (o.op === 'polder') return `Polder: ${o.supers.length} super-cell${o.supers.length === 1 ? '' : 's'} off the sea`;
     if (o.op === 'unpolder') return `Give polder ${o.index + 1} back to the sea`;
+    if (o.op === 'parcel') return `Land for ${(lobes.get(lkey(o)) || { name: o.district }).name}: ${[o.add.length ? `+${o.add.length}` : '', o.remove.length ? `−${o.remove.length}` : ''].filter(Boolean).join(' / ')}`;
     return `Zone: ${o.add.length ? `+${o.add.length}` : ''}${o.add.length && o.remove.length ? ' / ' : ''}${o.remove.length ? `−${o.remove.length}` : ''} super-cell${o.add.length + o.remove.length === 1 ? '' : 's'}`;
   }
   function ledger() {
@@ -324,6 +335,18 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       cur.remove = [...remove].map((k) => k.split(',').map(Number));
       if (!z && (cur.add.length || cur.remove.length)) ops.push(cur);
       if (z && !cur.add.length && !cur.remove.length) ops = ops.filter((x) => x !== z);
+    } else if (o.op === 'parcel') {
+      // Merged into the op before it only when that is the same hamlet's land: a parcel op
+      // that sits in front of a move is in the coordinates the hamlet had before it moved,
+      // and a stroke painted since is in the ones it has now.
+      if (last && last.op === 'parcel' && lkey(last) === lkey(o)) {
+        const add = new Set(last.add.map(([i, j]) => key(i, j))), remove = new Set(last.remove.map(([i, j]) => key(i, j)));
+        for (const [i, j] of o.add) { const k = key(i, j); if (remove.has(k)) remove.delete(k); else add.add(k); }
+        for (const [i, j] of o.remove) { const k = key(i, j); if (add.has(k)) add.delete(k); else remove.add(k); }
+        last.add = [...add].map((k) => k.split(',').map(Number));
+        last.remove = [...remove].map((k) => k.split(',').map(Number));
+        if (!last.add.length && !last.remove.length) ops.pop();
+      } else ops.push(o);
     } else if (o.op === 'unpolder') {
       // One per plan (the server says so too: the list is indexed); asking again for the
       // same one is a no-op, for another one it replaces the first.
@@ -414,7 +437,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         toast(esc(dry.error));
         return;
       }
-      toast(`Applied: ${body.diff.plots.moved.length} building(s) moved. The island is being redrawn.`);
+      toast(`Applied: ${body.diff.plots.moved.length} building(s) moved.`);
     } catch { ops = draft; saveDraft(); dry.state = 'unreachable'; redraw(); toast('The island did not answer.'); }
   }
   async function restorePrevious() {
@@ -425,7 +448,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const r = await mine('/api/plan/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ snapshot: name }) });
       const body = await r.json().catch(() => ({}));
       if (!r.ok || !body.ok) { toast(esc(body.error || `The island said no (${r.status}).`)); return; }
-      toast(`Restored ${esc(name)}. The island is being redrawn.`);
+      toast(`Restored ${esc(name)}.`);
     } catch { toast('The island did not answer.'); }
   }
   async function fetchIsland() {
@@ -455,14 +478,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (!active) return;
     dom.setPointerCapture(e.pointerId);
     ptr = { x: e.clientX, y: e.clientY };
-    const painting = tool === 'zone' || tool === 'polder';
+    const painting = tool === 'zone' || tool === 'polder' || tool === 'land';
     if (e.button === 1 || (e.button === 2 && !painting)) { pan = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz }; return; }
     if (tool === 'polder' && e.button === 0) {
       const s = superAt(e.clientX, e.clientY);
       if (s && polderAt.has(key(s[0], s[1]))) { press = { x: e.clientX, y: e.clientY, polder: polderAt.get(key(s[0], s[1])) }; return; }
     }
+    if (tool === 'land' && sel.size !== 1) { toast('Land goes to one hamlet at a time: select it first (1), then paint.'); return; }
     if (painting && (e.button === 0 || e.button === 2)) {
-      paint = { kind: tool, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
+      paint = { kind: tool === 'land' ? 'parcel' : tool, lobe: tool === 'land' ? [...sel][0] : null, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
       paintStroke(e.clientX, e.clientY);
       return;
     }
@@ -504,8 +528,30 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       else if (!paint.remove.has(k)) { paint.remove.add(k); paintPreview(); }
       return;
     }
+    if (paint.kind === 'parcel') {
+      // Land grows from the hamlet's edge, the way a scan grows it: ground nobody else holds,
+      // good to build on, four-connected to what it has. Taking away is only its own.
+      const have = new Set(supersOf(paint.lobe).map(([i, j]) => key(i, j)));
+      for (const a of paint.add) have.add(a);
+      for (const r of paint.remove) have.delete(r);
+      if (paint.mode === 'add') {
+        if (have.has(k) || townAt.has(k) || !usable(s[0], s[1])) return;
+        const at = projAt.get(k);
+        if (at && lkey(at) !== paint.lobe) return;
+        if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => have.has(key(s[0] + a, s[1] + b)))) return;
+        paint.remove.delete(k); paint.add.add(k); paintPreview();
+      } else if (have.has(k)) {
+        paint.add.delete(k); paint.remove.add(k); paintPreview();
+      }
+      return;
+    }
     if (paint.mode === 'add') { if (!islandZones.has(k) && !paint.add.has(k)) { paint.add.add(k); paintPreview(); } }
     else if (!paint.remove.has(k)) { paint.remove.add(k); paintPreview(); }
+  }
+  // The stroke so far as a parcel op, for the preview and for pushOp.
+  function strokeOp() {
+    const rec = lobes.get(paint.lobe);
+    return { op: 'parcel', district: rec.district, lobe: rec.lobe, add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [...paint.remove].map((k) => k.split(',').map(Number)) };
   }
   // The stroke so far, drawn as if it were already in the draft.
   function paintPreview() {
@@ -518,10 +564,18 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       for (const k of paint.add) add.add(k);
       for (const k of paint.remove) { if (add.has(k)) add.delete(k); else remove.add(k); }
     }
+    let selected = () => false;
+    if (paint.kind === 'parcel') {
+      const list = [...ops, strokeOp()];
+      project(list);
+      const mine = new Set(supersOf(paint.lobe, list).map(([i, j]) => key(i, j)));
+      selected = (i, j) => mine.has(key(i, j));
+    }
     overlay.paint({
       owner: ownerAt, hueOf: (k) => ((village().districts[k] || {}).hue || 0),
-      zones: islandZones, zoneAdd: add, zoneRemove: remove, polder, selected: () => false, moving: () => null,
+      zones: islandZones, zoneAdd: add, zoneRemove: remove, polder, selected, moving: () => null,
     });
+    if (paint.kind === 'parcel') project();
   }
   function onMove(e) {
     if (!active) return;
@@ -559,7 +613,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     try { dom.releasePointerCapture(e.pointerId); } catch { /* never captured */ }
     if (pan) { pan = null; return; }
     if (paint) {
-      const o = { op: paint.kind, kind: 'no-build', add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [...paint.remove].map((k) => k.split(',').map(Number)) };
+      const o = paint.kind === 'parcel' ? strokeOp()
+        : { op: paint.kind, kind: 'no-build', add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [...paint.remove].map((k) => k.split(',').map(Number)) };
       paint = null;
       if (o.add.length || o.remove.length) pushOp(o); else redraw();
       return;
@@ -652,6 +707,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (e.key === '2') { take(); setTool('move'); return; }
     if (e.key === '3') { take(); setTool('zone'); return; }
     if (e.key === '4') { take(); setTool('polder'); return; }
+    if (e.key === '5') { take(); setTool('land'); return; }
     if (PAN_KEYS[e.code]) { take(); keys.add(e.code); }
   }
   function setTool(t) { tool = t; panel.setTool(t); cancelGesture(); }
@@ -659,7 +715,12 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   // ------------------------------------------------------------------ every frame
   function update(dt) {
     if (!active) return;
-    if (village() !== indexed) { index(); changed(); }
+    // A new village - a scan, or the one an Apply just wrote - is indexed again, and the
+    // survey and the snapshot list with it: both describe the island as it was. A new
+    // terrain (a polder dug or given back) needs the overlay's ground laid again, because
+    // its vertices sit on the corners of the heightfield it was built from.
+    if (village() !== indexed) { index(); changed(); fetchIsland(); }
+    if (terrain() !== groundSeen) { groundSeen = terrain(); overlay.rebuildGround(); redraw(); }
     let mx = 0, mz = 0;
     for (const k of keys) { const d = PAN_KEYS[k]; if (d) { mx += d[0]; mz += d[1]; } }
     if (mx || mz) { view.cx += mx * view.hh * 1.5 * dt; view.cz += mz * view.hh * 1.5 * dt; applyView(); }
@@ -671,6 +732,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const tip = tool === 'select' ? 'click a hamlet or drag a box; <kbd>Shift</kbd> adds; drag a selected hamlet to carry it'
       : tool === 'move' ? 'drag to carry the selected hamlets; snaps to the super-grid'
         : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
+          : tool === 'land' ? (sel.size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : 'select one hamlet first (1), then paint its land')
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
     if (drag) where = `<span class="${drag.ok ? 'ok' : 'why'}">[${drag.di}, ${drag.dj}] ${drag.ok ? 'fits' : esc(drag.why || 'no')}</span>`;
@@ -692,6 +754,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     index();
     if (!lat) { active = false; toast('The island has no lattice yet; scan first.'); return; }
     overlay.rebuildGround();
+    groundSeen = terrain();
     overlay.setVisible(true);
     if (!loadView()) frameIsland(); else applyView();
     loadDraft();
