@@ -30,6 +30,7 @@ import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
+import { createMinimap } from './minimap.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -891,6 +892,10 @@ function walkCallbacks() {
     onBuild: () => openBuild(),
     onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
+    onToggleMinimap: () => {
+      minimapOn = !minimapOn;
+      state.minimap.setVisible(minimapOn);
+    },
   };
 }
 
@@ -1040,6 +1045,38 @@ function leaveInterior() {
 // `spot` is where to be put down and what to face when you get there, for the times
 // something has a place in mind - walking over to somebody you asked to talk to. Without
 // one you arrive on the town square, which is where the island starts everybody.
+// Where the minimap's town-centre marker belongs: the same fallback chain enterWalk uses to
+// pick a starting spot (the board, then the town hall once one exists, then the bare square),
+// just returning a position instead of somewhere to stand.
+function townCentreScenePos() {
+  const board = state.byId.get('civic:board');
+  if (board) return [board.group.position.x, board.group.position.z];
+  const hall = state.byId.get('civic:townhall');
+  if (hall) return [hall.group.position.x, hall.group.position.z];
+  const town = state.village.island.town;
+  if (town && town.centre && state.terrain) return state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return null;
+}
+
+// Everything the radar draws, read straight off state that is already kept live for other
+// reasons - see the minimap section of the AgentVillage plan for why none of this needs new
+// plumbing. `state.walk.state` rather than `state.walk.update(dt)`'s return value: that
+// return is only `{ near, pos, distance }`, no yaw.
+function minimapData() {
+  const w = state.walk.state;
+  return {
+    pos: w.pos, yaw: w.yaw,
+    // The facade, not the raw terrain: it already turns "outside the grid" into open sea
+    // and blends the last few cells into it (shared/regions.mjs), which is exactly what a
+    // radar sampling well past the coast wants and the raw heightfield does not do.
+    home: state.region,
+    boats: state.boats,
+    near: state.sea.regions().filter((r) => r !== state.region).map((r) => ({ x: r.origin[0], z: r.origin[1] })),
+    far: state.horizon ? state.horizon.marks() : [],
+    town: townCentreScenePos(),
+  };
+}
+
 function enterWalk(spot = null) {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
@@ -1184,6 +1221,7 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
+  state.minimap.setVisible(false);   // M's own state (minimapOn) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
   faceToFace.cancel();
@@ -1536,6 +1574,9 @@ function launchBoats() {
 
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
+// Whether the player has asked for the radar, kept across a trip in and out of a building -
+// off by default, like ?stats.
+let minimapOn = false;
 
 // One boat per island, at the mooring shared/quay.mjs derives - the same arithmetic the
 // server does for lib/boats.mjs and the same every other browser does, so an untouched
@@ -3660,11 +3701,13 @@ function frame(nowMs) {
     const w = state.inside.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
+    state.minimap.setVisible(false);      // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
+    if (minimapOn) state.minimap.update(minimapData());
   }
   // A conversation borrows the camera, and this is where it writes it: after the feet,
   // because while it is running walk mode is paused and this is the only hand on it.
@@ -4282,6 +4325,7 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
+  state.minimap = createMinimap();
   if (!state.guest) refreshNeighbours();
   syncFleet();        // whatever was already in the water when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js

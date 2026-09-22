@@ -351,6 +351,8 @@ export function createWalkMode({
     // The catalogue. Like a thought, it is about wherever you happen to be standing, so
     // it needs nothing within reach.
     if (k === 'b') { e.preventDefault(); state.onBuild && state.onBuild(); }
+    // The radar, like ?stats: off until asked for.
+    if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -518,7 +520,7 @@ export function createWalkMode({
   }
 
   function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
-    onNextSeed, onPrevSeed, onBuild, onExit, onRelease }) {
+    onNextSeed, onPrevSeed, onBuild, onExit, onRelease, onToggleMinimap }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.working = null;
@@ -530,6 +532,7 @@ export function createWalkMode({
     state.onPrevSeed = onPrevSeed;
     state.onBuild = onBuild;
     state.onExit = onExit;
+    state.onToggleMinimap = onToggleMinimap;
     let [x, z] = at;
     // step back until we are standing somewhere legal
     for (let i = 0; i < 40 && blocked(x, z); i++) { x += 0.4; z += 0.25; }
