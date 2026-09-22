@@ -23,7 +23,8 @@
 // deliberate. Some have a reach worth a crossing and build one. Some are already crossed
 // by a road that got there first, and the rung is that crossing - a bridge is built once
 // and every later road comes over it. And some have no reach at all and go without, the
-// way the polder mill goes without shallows.
+// way the polder mill goes without shallows - which is also the answer where the only
+// crossing there is stands on the quay's road, because the crossing never joins the quay.
 //
 // No coordinate is written down: every seed puts its river somewhere else. The village is
 // synthetic and `placeAll` is called directly, the way tests/harbour-crane.test.mjs does,
@@ -49,7 +50,11 @@ delete globalThis.document;
 // seeds at three sizes, two or three of each answer, so that a change which quietly turns
 // one answer into another fails here rather than on somebody's island.
 const BUILDS = [{ seed: 314, size: 128 }, { seed: 8888, size: 192 }, { seed: 1337, size: 256 }, { seed: 90210, size: 256 }];
-const ADOPTS = [{ seed: 7, size: 128 }, { seed: 42, size: 128 }, { seed: 7, size: 256 }];
+const ADOPTS = [{ seed: 7, size: 128 }, { seed: 7, size: 256 }];
+// Seed 42 at 128 used to be an adopter, and the crossing it adopted is the one on the
+// quay's own road into town. The rung may not take that (it would be the quay's bridge,
+// not the town's) nor build beside it (two decks side by side), so it goes without.
+const QUAY_ONLY = [{ seed: 42, size: 128 }];
 // Seed 1337 at 128 is a different island from seed 1337 at 256 - `size` is the generator's
 // own argument - and neither it nor 5150 has a reach with usable ground on both banks.
 const BARREN = [{ seed: 1337, size: 128 }, { seed: 5150, size: 128 }];
@@ -285,6 +290,86 @@ test('a second placement of the same island changes nothing', () => {
     placeAll(layout, bigVillage(), { seed, size });
     const after = JSON.stringify([layout.bridges, layout.plots[ID], layout.paths.find((p) => p.id === `path:${ID}`)]);
     assert.equal(after, before, `seed ${seed}/${size} rewrote its crossing on the second scan`);
+  }
+});
+
+// Every cell the quay holds, worked out from the layout the way a reader of layout.json
+// would - its parcel's blocks on the lattice, its pier, its planks, its road into town and
+// its houses - rather than borrowed from lib/layout.mjs, for the same reason `landings` is
+// written out again.
+function quayCells(layout) {
+  const out = new Set();
+  const rec = layout.districts.quay;
+  const lat = layout.lattice;
+  for (const lobe of (rec && rec.lobes) || []) {
+    for (const [i, j] of lobe.cells || []) {
+      const gx = lat.anchor[0] + lat.pitch * i, gz = lat.anchor[1] + lat.pitch * j;
+      for (let z = 0; z < lat.pitch; z++) for (let x = 0; x < lat.pitch; x++) out.add(key([gx + x, gz + z]));
+    }
+  }
+  for (const c of (rec && rec.pier) || []) out.add(key(c));
+  for (const c of (rec && rec.deck) || []) out.add(key(c));
+  for (const p of layout.paths) if (p.id.startsWith('road:quay:')) for (const c of p.cells) out.add(key(c));
+  for (const p of Object.values(layout.plots)) {
+    if (!p.quay) continue;
+    for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) out.add(key([p.gx + x, p.gz + z]));
+  }
+  return out;
+}
+
+// The crossing's own cells that are on the quay or beside it.
+function atQuay(layout) {
+  const quay = quayCells(layout);
+  const stone = layout.plots[ID];
+  const cells = [
+    ...(stone ? [[stone.gx, stone.gz]] : []),
+    ...layout.bridges.filter((b) => b.id === ID).flatMap((b) => b.cells),
+    ...((layout.paths.find((p) => p.id === `path:${ID}`) || {}).cells || []),
+  ];
+  return cells.filter(([x, z]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
+    .some(([dx, dz]) => quay.has(key([x + dx, z + dz])))).map(key);
+}
+
+// The village's bridge is the town reaching over the river; the quay is where a boat comes
+// in. On Promptholm the first version laid the town-side road along the waterfront to the
+// quay's own street, and the second try met the quay's road two cells short of the planks
+// instead - so the road into town counts as the quay too.
+test('the crossing never joins the quay: not its deck, not its road, not its stone', () => {
+  for (const { seed, size, layout } of [...builders, ...adopters]) {
+    assert.ok(quayCells(layout).size, `seed ${seed}/${size} was meant to have a quay to keep away from`);
+    assert.deepEqual(atQuay(layout), [], `seed ${seed}/${size} laid its crossing onto the quay`);
+  }
+});
+
+// And an island that already has one laid onto the quay - Promptholm had, for an hour -
+// takes it up on its next scan and lays it again away from the planks, rather than
+// keeping it for good because a road, once laid, is as sticky as a building.
+test('a crossing already laid onto the quay is laid again away from it', () => {
+  const { seed, size } = BUILDS[0];
+  const { layout } = lay(BUILDS[0]);
+  const road = layout.paths.find((p) => p.id === `path:${ID}`);
+  const quay = [...quayCells(layout)].map((s) => s.split(',').map(Number));
+  // The old bug in miniature: the crossing's road ends on the quay's own planks.
+  road.cells.push(quay[0]);
+  assert.notDeepEqual(atQuay(layout), [], 'the test failed to put the crossing on the quay');
+  placeAll(layout, bigVillage(), { seed, size });
+  assert.deepEqual(atQuay(layout), [], `seed ${seed}/${size} kept a crossing laid onto the quay`);
+  assert.ok(layout.plots[ID], `seed ${seed}/${size} took the crossing up and did not lay it again`);
+  const before = JSON.stringify([layout.bridges, layout.plots[ID], layout.paths.find((p) => p.id === `path:${ID}`)]);
+  placeAll(layout, bigVillage(), { seed, size });
+  const after = JSON.stringify([layout.bridges, layout.plots[ID], layout.paths.find((p) => p.id === `path:${ID}`)]);
+  assert.equal(after, before, `seed ${seed}/${size} keeps re-laying its crossing once it has moved it`);
+});
+
+test('an island whose only crossing is the quay\'s goes without, rather than take it or build beside it', () => {
+  for (const island of QUAY_ONLY) {
+    const { seed, size, layout, unplaced } = lay(island);
+    assert.ok(layout.bridges.some((b) => b.id.startsWith('road:quay:')),
+      `seed ${seed}/${size} was meant to have a crossing on the quay's road`);
+    assert.deepEqual(layout.bridges.filter((b) => b.id === ID), [],
+      `seed ${seed}/${size} built a deck of its own beside the quay's crossing`);
+    assert.equal(layout.plots[ID], undefined, `seed ${seed}/${size} put the stone on the quay's crossing`);
+    assert.ok(unplaced.includes(ID), `seed ${seed}/${size} went without and did not report it as unplaced`);
   }
 });
 
