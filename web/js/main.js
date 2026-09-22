@@ -4455,6 +4455,12 @@ async function boot() {
     blocked: () => !!openPanel(),
   });
   state.net = createNet({
+    onEvicted: (m) => {
+      exitWalk();
+      state.walk.setPaused(false);
+      enterWalk({ at: [m.x, m.z] });
+      state.ui.toast(`The people of ${m.island || 'that island'} sent you home.`);
+    },
     onBoat: onBoatFromServer,
     peers: state.peers,
     walk: state.walk,

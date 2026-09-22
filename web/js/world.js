@@ -151,6 +151,16 @@ function sheet(name, onLoad) {
 // the vertex. A rectangle rather than a square over the longest side: two 64-grids a berth
 // apart come out 372x260 instead of 372x372, which is a third of the triangles saved on
 // water nobody can see.
+// The heightfield ends on a square, often while its seabed is still shallow.
+// Let the optical depth reach open sea before that boundary without moving the
+// actual seabed (which boats, terrain hashes and saved plots depend on).
+export function waterColourDepth(height, x, z, half) {
+  const edge = half - Math.max(Math.abs(x), Math.abs(z));
+  const offshore = (1 - smoothstep(0, Math.min(24, half * 0.3), edge))
+    * (1 - smoothstep(-0.25, -0.02, height));
+  return height + (Math.min(height, -2.5) - height) * offshore;
+}
+
 export function waterPatchSpan(half, gridBounds, modest = false) {
   const margin = Math.max(60, 130 - half);
   const gb = gridBounds || { minX: -half, maxX: half, minZ: -half, maxZ: half };
@@ -1365,7 +1375,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const t = r?.terrain || terrain;
     const local = r ? r.toLocal(x, z) : [x, z];
     const basin = quayBasin(r?.village || village, t);
-    return basin?.contains(...local) ? basin.height(...local) : naturalDepthAt(x, z);
+    const height = basin?.contains(...local) ? basin.height(...local) : naturalDepthAt(x, z);
+    return waterColourDepth(height, local[0], local[1], t.half);
   };
 
   // Built in a function rather than inline because the span is no longer settled once and
@@ -1382,8 +1393,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
     geo.translate(ws.cx, 0, ws.cz);
     const p = geo.attributes.position;
     const d = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) d[i] = depthAt(p.getX(i), p.getZ(i));
+    const blend = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      d[i] = depthAt(x, z);
+      // The patch always extends at least sixty units past every island grid.
+      // Fade within that spare water, never across a beach or a river.
+      const edge = Math.min(x - ws.minX, ws.maxX - x, z - ws.minZ, ws.maxZ - z);
+      blend[i] = smoothstep(0, 40, edge);
+    }
     geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
+    geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
     waterGeo = geo;
     wp = p;
     return geo;
@@ -1409,17 +1429,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
     vertexShader: `
       #include <fog_pars_vertex>
       attribute float aDepth;
+      attribute float aBlend;
       uniform float uTime;
       varying float vDepth;
       varying vec3 vWorld;
-      varying vec3 vWave;
+      varying float vBlend;
       void main() {
         vDepth = aDepth;
+        vBlend = aBlend;
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
         p.y += 0.05 * w1 + 0.04 * w2;
-        vWave = vec3(-0.065 * cos(p.x * 1.3 + uTime * 1.1), 1.0, -0.068 * cos(p.z * 1.7 - uTime * 0.9));
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
         vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -1433,7 +1454,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uniform float uTime, uNight;
       varying float vDepth;
       varying vec3 vWorld;
-      varying vec3 vWave;
+      varying float vBlend;
       void main() {
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
@@ -1451,7 +1472,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
         float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
         float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
         col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
-        vec3 n = normalize(vWave);
+        // Evaluate the normal here, in world coordinates: interpolating it from
+        // the ocean disc's handful of vertices painted giant wedges of light,
+        // while the dense coastal mesh shimmered right up to its hard edge.
+        vec3 n = normalize(vec3(
+          -0.065 * cos(vWorld.x * 1.3 + uTime * 1.1), 1.0,
+          -0.068 * cos(vWorld.z * 1.7 - uTime * 0.9)));
         vec3 v = normalize(cameraPosition - vWorld);
         float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
         col = mix(col, uShallow, fresnel * 0.18);
@@ -1459,7 +1485,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
         float spec = pow(max(dot(r, v), 0.0), 60.0);
         col += uSunColor * spec * 0.55 * (1.0 - uNight * 0.8);
         col *= mix(1.0, 0.34, uNight);
-        gl_FragColor = vec4(col, 0.88);
+        // Only the shallows reveal the seabed. At depth its rectangular mesh
+        // boundary must disappear beneath the water, not tint an entire tile.
+        float opacity = mix(1.0, 0.88, smoothstep(-1.8, -0.35, vDepth));
+        gl_FragColor = vec4(col, opacity * vBlend);
         #include <fog_fragment>
       }
     `,
@@ -1486,6 +1515,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   oceanGeo.rotateX(-Math.PI / 2);
   const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
   oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
+  oceanGeo.setAttribute('aBlend', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
   const oceanMat = waterMat.clone();
   oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
   oceanMat.transparent = false;
