@@ -35,10 +35,11 @@ export const DEFAULT_AVATAR = {
   equip: { backpack: true, leftHandItem: null, rightHandItem: null },
 };
 
-// What a hand can hold. 'parasol' is the only one so far - see Plans/
-// uitrusting-en-vasthouden.md for why the beach parasol was the first thing tried, and
-// classic-avatar.js's parasolGeometry() for where its shape comes from.
-export const HAND_ITEMS = [{ id: 'parasol', name: 'Parasol' }];
+// What a hand can hold. 'parasol' was the first thing tried (Plans/
+// uitrusting-en-vasthouden.md); 'hammer' is the tool that used to be welded to the model's
+// hip as a core part and is now the same kind of held state everything else here is - see
+// classic-avatar.js's parasolGeometry() and hammerGeometry() for where the shapes come from.
+export const HAND_ITEMS = [{ id: 'parasol', name: 'Parasol' }, { id: 'hammer', name: 'Hammer' }];
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;

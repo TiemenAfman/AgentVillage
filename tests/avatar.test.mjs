@@ -11,7 +11,7 @@ import { Color, MeshBasicMaterial } from 'three';
 // starts a TextureLoader at import time - the same reason villagers.test.mjs stubs this.
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
+const { avatarPlayerGeometry, avatarFigureGeometry, avatarPlayerComponentGeometry, HAT_SHAPES,
   DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } = await import('../web/js/avatar.js');
 const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
 if (previousDocument === undefined) delete globalThis.document;
@@ -78,7 +78,11 @@ test('the original avatar keeps every triangle while its limbs animate independe
   const animated = createClassicAvatar(spec, material);
   let vertices = 0;
   animated.object.traverse((part) => { if (part.isMesh) vertices += part.geometry.attributes.position.count; });
-  assert.equal(vertices, merged.attributes.position.count);
+  // The baked hammer is the one part of the merged mesh the animated rig does not carry:
+  // it moved to a hand-held item (classic-avatar.js's hammerGeometry()) built fresh only
+  // when equipped, so DEFAULT_AVATAR's empty hands leave those triangles out on purpose.
+  const hammer = avatarPlayerComponentGeometry(spec, ['Hammer handle', 'Hammer head']);
+  assert.equal(vertices, merged.attributes.position.count - hammer.attributes.position.count);
   animated.update({ moving: true, running: false, grounded: true, crouching: false,
     sitting: false, lying: false, phase: Math.PI / 2 }, 1);
   const rotations = animated.object.children.slice(1).map((part) => part.rotation.x);

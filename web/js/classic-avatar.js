@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_PARTS } from './settler-mesh.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
-import { cylinder, cone, sphere } from './buildings.js';
+import { box, cylinder, cone, sphere } from './buildings.js';
 
 const LIMBS = {
   leftLeg: ['Left boot', 'Left trousers', 'Left stocking cuff'],
@@ -14,14 +14,20 @@ const LIMBS = {
   rightArm: ['Right sleeve', 'Right cuff', 'Right hand'],
 };
 const MOVING = new Set(Object.values(LIMBS).flat());
-// Every gear-variant part except the hammer (still core, unequippable for now - Plans/
-// uitrusting-en-vasthouden.md leaves "what is the first held item" open). Its own piece
-// so equip.backpack can hide it without touching the torso it used to be merged into.
+// Every gear-variant part. Its own piece so equip.backpack can hide it without touching
+// the torso it used to be merged into.
 const BACKPACK = [
   'Shoulder strap', 'Strap over shoulder', 'Shoulder strap.001', 'Strap over shoulder.001',
   'Canvas backpack', 'Backpack flap', 'Pack clasp', 'Bedroll', 'Bedroll tie', 'Bedroll tie.001',
 ];
-const EQUIPPABLE = new Set(BACKPACK);
+// The baked "Hammer handle"/"Hammer head" (Plans/uitrusting-en-vasthouden.md) used to be
+// core - always drawn, parked by the hip whether or not it made sense - which is not where
+// a tool that is picked up and put down belongs. Dropped from every geometry group below
+// (neither CORE nor BACKPACK) in favour of hammerGeometry(), a hand-held item built the
+// same way the parasol is: its own procedural shape with the grip at the local origin, so
+// it parents onto handAttach the same as anything else a hand can hold.
+const HAMMER = ['Hammer handle', 'Hammer head'];
+const EQUIPPABLE = new Set([...BACKPACK, ...HAMMER]);
 const CORE = SETTLER_PARTS.map(({ name }) => name).filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name));
 const PIVOTS = {
   leftLeg: [-0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
@@ -81,6 +87,23 @@ function parasolGeometry() {
   return geometry;
 }
 
+// The second held item. Same shape and colours as the working hammer settler-figures.js
+// swings for a building crew, since it is the same tool - only the origin differs, moved
+// from that file's instanced-mesh centre to a grip at the local origin the way every held
+// item here works, with the head above the fist and a short butt below it.
+const HAMMER_HANDLE = 0x8b5e3c, HAMMER_HEAD = 0x3a3a3f;
+function hammerGeometry() {
+  const parts = [
+    box(0.022, 0.2, 0.022, HAMMER_HANDLE, { y: -0.05 }),
+    box(0.075, 0.05, 0.05, HAMMER_HEAD, { y: 0.14 }),
+  ];
+  const geometry = mergeGeometries(parts, false);
+  const n = geometry.attributes.position.count;
+  geometry.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(n), 1));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function createClassicAvatar(spec, material) {
   const object = new THREE.Group();
   const pieces = {};
@@ -120,6 +143,11 @@ export function createClassicAvatar(spec, material) {
     holding[side] = !!item;
     if (item === 'parasol') {
       const mesh = new THREE.Mesh(parasolGeometry(), material);
+      mesh.castShadow = true;
+      handAttach[side].add(mesh);
+      heldMesh[side] = mesh;
+    } else if (item === 'hammer') {
+      const mesh = new THREE.Mesh(hammerGeometry(), material);
       mesh.castShadow = true;
       handAttach[side].add(mesh);
       heldMesh[side] = mesh;
