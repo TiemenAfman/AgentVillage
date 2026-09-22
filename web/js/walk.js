@@ -336,7 +336,13 @@ export function createWalkMode({
     }
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') { e.preventDefault(); jump(); }
-    if (k === 'c') { e.preventDefault(); crouchToggle(); }
+    // Not on a repeat: crouchToggle() is a toggle, and the OS keeps sending keydown for
+    // 'c' the whole time it is held. Without this, holding C past LIE_AFTER_MS meant the
+    // very next repeat found the settler just lain down and stood them straight back up
+    // (crouchToggle's own "press it again to get up"), and the repeat after that started
+    // the crouch over - an infinite loop that never spent a rendered frame lying down,
+    // reachable only by physically releasing and re-pressing the key.
+    if (k === 'c' && !e.repeat) { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // Sowing is the same kind of thing: it happens where the feet are, not at a door.
