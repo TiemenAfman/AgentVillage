@@ -524,7 +524,12 @@ Chrome. **Nothing under `web/` is bundled** — the scaffold's Vite route (`web/
 would work `mine()` out from the wrong origin, `lib/access.mjs` refuses an Origin that is not
 the Host on every route, and the import map for `three`/`shared/` is the no-build-step
 contract. [Plans/eiland-als-desktop-app.md](Plans/eiland-als-desktop-app.md) has the full
-argument. What the shell adds is what a browser cannot: `src-tauri/src/island.rs` probes the
+argument. Which means a `web/js/` change (like a minimap.js/classic-avatar.js edit) or a
+server-side one (`lib/`, `serve.mjs`) never needs `npm run app:build` — the window only ever
+fetches the running islander live, the same page a browser tab would get, and a reload of
+the window (or the same server restart a server-side change already needs) is all it takes.
+Only a change under `src-tauri/` itself - the splash, the port probing, window behaviour,
+the icon - needs a rebuild. What the shell adds is what a browser cannot: `src-tauri/src/island.rs` probes the
 port and, if nothing answers, starts `node serve.mjs --no-open` — no console
 (`CREATE_NO_WINDOW`), output appended to `data/server.log`, the same as
 `start-island-hidden.vbs`. **The islander outlives the window, and there is never more than

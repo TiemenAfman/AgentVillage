@@ -34,6 +34,7 @@ import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createMinimap } from './minimap.js';
+import { decodeOwnership } from './hamlets.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -1069,6 +1070,21 @@ function townCentreScenePos() {
   return null;
 }
 
+// Which hamlet owns which ground cell, for the radar's district wash (minimap.js's
+// districtColor - the same picture the planner paints, see Plans). decodeOwnership walks
+// every cell of the grid, so it is built once per village rather than per frame; `state.
+// terrain` rather than the region facade because the owner array is indexed in raw local
+// grid coordinates, same as `own.owner` in world.js's own createLandscape.
+let minimapOwnFor = null, minimapOwn = null;
+function minimapDistrict() {
+  if (!state.terrain || !state.village || !state.village.island) return null;
+  if (state.village !== minimapOwnFor) {
+    minimapOwn = decodeOwnership(state.village, state.terrain.size);
+    minimapOwnFor = state.village;
+  }
+  return { owner: minimapOwn.owner, size: state.terrain.size, hues: state.village.districts.map((d) => d.hue || 0) };
+}
+
 // Everything the radar draws, read straight off state that is already kept live for other
 // reasons - see the minimap section of the AgentVillage plan for why none of this needs new
 // plumbing. `state.walk.state` rather than `state.walk.update(dt)`'s return value: that
@@ -1085,6 +1101,7 @@ function minimapData() {
     near: state.sea.regions().filter((r) => r !== state.region).map((r) => ({ x: r.origin[0], z: r.origin[1] })),
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
+    district: minimapDistrict(),
   };
 }
 

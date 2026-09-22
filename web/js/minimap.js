@@ -37,12 +37,56 @@ const GRASS = [111, 138, 78];
 const ROCK = [138, 133, 119];
 const lerp3 = (a, b, t) => [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * t));
 
+export function terrainRGB(h) {
+  if (h < 0) return lerp3(WATER_SHALLOW, WATER_DEEP, Math.min(1, -h / 2));
+  if (h < 0.35) return SAND;
+  if (h > 3.4) return ROCK;
+  return lerp3(GRASS, ROCK, Math.min(1, (h - 0.35) / 5));
+}
+
 export function terrainColor(h) {
-  let c;
-  if (h < 0) c = lerp3(WATER_SHALLOW, WATER_DEEP, Math.min(1, -h / 2));
-  else if (h < 0.35) c = SAND;
-  else if (h > 3.4) c = ROCK;
-  else c = lerp3(GRASS, ROCK, Math.min(1, (h - 0.35) / 5));
+  const c = terrainRGB(h);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+// The same district-hue wash the planner paints super-cells with (plan-overlay.js's
+// `paint()`, HSL at .55/.5), mixed over the terrain colour instead of the bare ground -
+// so a hamlet reads on the radar the same colour it reads on the planner's map. Town
+// paving gets the planner's own neutral grey. Kept a plain HSL->RGB rather than pulling
+// in THREE.Color, because this file stays importable with no THREE and no `document` at
+// module load (see the header comment) - the district lookup itself is built in main.js,
+// which already has both.
+const TOWN_TINT = [184, 178, 164];       // plan-overlay.js's C.town (0xb8b2a4)
+const DISTRICT_ALPHA = 0.45, TOWN_ALPHA = 0.32;
+const NONE_OWNER = -1, TOWN_OWNER = -2;
+
+function hslToRgb(hueDeg, s, l) {
+  const h = (((hueDeg % 360) + 360) % 360) / 360;
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    Math.round(hue2rgb(p, q, h) * 255),
+    Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  ];
+}
+
+// `owner` is a district index, TOWN (-2) or NONE (-1) - hamlets.js's decodeOwnership(),
+// read by main.js off the same village every other ownership picture on the island comes
+// from. `hues` is village.districts[].hue, by index.
+export function districtColor(h, owner, hues) {
+  const base = terrainRGB(h);
+  if (owner == null || owner === NONE_OWNER) return `rgb(${base[0]},${base[1]},${base[2]})`;
+  const tint = owner === TOWN_OWNER ? TOWN_TINT : hslToRgb((hues && hues[owner]) || 0, 0.55, 0.5);
+  const c = lerp3(base, tint, owner === TOWN_OWNER ? TOWN_ALPHA : DISTRICT_ALPHA);
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
@@ -112,16 +156,23 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 4 
   // The ground under the player: sampled on a coarse grid (not per canvas pixel - a couple
   // of thousand terrain lookups a frame is plenty of resolution for a 168px circle and far
   // cheaper than one per pixel) and painted in blocks the size of that grid.
-  function drawTerrain(home, pos) {
+  function drawTerrain(home, pos, district) {
     if (!home) return;
     const scale = pixelRadius / worldRadius;
     const half = home.half;
+    const owner = district && district.owner, size = district && district.size, hues = district && district.hues;
     for (let py = -pixelRadius; py <= pixelRadius; py += terrainStep) {
       for (let px = -pixelRadius; px <= pixelRadius; px += terrainStep) {
         if (Math.hypot(px, py) > pixelRadius) continue;
         const wx = pos.x + px / scale, wz = pos.z + py / scale;
-        const hgt = (Math.abs(wx) > half || Math.abs(wz) > half) ? -2.5 : home.worldHeight(wx, wz);
-        ctx.fillStyle = terrainColor(hgt);
+        const outside = Math.abs(wx) > half || Math.abs(wz) > half;
+        const hgt = outside ? -2.5 : home.worldHeight(wx, wz);
+        let who = null;
+        if (owner && !outside) {
+          const gx = Math.floor(wx + half), gz = Math.floor(wz + half);
+          if (gx >= 0 && gz >= 0 && gx < size && gz < size) who = owner[gx + gz * size];
+        }
+        ctx.fillStyle = who == null ? terrainColor(hgt) : districtColor(hgt, who, hues);
         ctx.fillRect(cx + px, cy + py, terrainStep + 1, terrainStep + 1);
       }
     }
@@ -137,7 +188,7 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 4 
     ctx.arc(cx, cy, pixelRadius, 0, Math.PI * 2);
     ctx.clip();
 
-    drawTerrain(data.home, data.pos);
+    drawTerrain(data.home, data.pos, data.district);
 
     for (const it of data.boats || []) {
       if (!it || it.x == null) continue;

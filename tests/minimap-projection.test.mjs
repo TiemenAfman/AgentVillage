@@ -4,7 +4,7 @@
 // suite use.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectToRadar, terrainColor } from '../web/js/minimap.js';
+import { projectToRadar, terrainColor, districtColor } from '../web/js/minimap.js';
 
 test('a point inside the world radius scales proportionally and does not clamp', () => {
   const p = projectToRadar(10, 0, 100, 80);   // 10 units east, world radius 100, canvas radius 80
@@ -46,4 +46,21 @@ test('terrainColor shades water darker the deeper it goes, never crossing into l
   const deep = terrainColor(-2.5);
   assert.equal(justUnderwater, 'rgb(101,196,181)', 'just under the waterline is the shallow shade');
   assert.equal(deep, 'rgb(33,94,120)', 'clamps to the deep shade rather than going past it');
+});
+
+test('districtColor leaves ground nobody owns exactly as terrainColor draws it', () => {
+  assert.equal(districtColor(0.2, -1, [0]), terrainColor(0.2));
+  assert.equal(districtColor(0.2, null, [0]), terrainColor(0.2));
+});
+
+test('districtColor washes the town square a neutral grey, not a hamlet hue', () => {
+  assert.equal(districtColor(0.2, -2, [0]), 'rgb(206,194,163)');
+});
+
+test('districtColor tints owned ground toward the hamlet hue, and two different hues differ', () => {
+  const grass = terrainColor(0.5);
+  const a = districtColor(0.5, 0, [0, 180]);   // district 0, hue 0 (red)
+  const b = districtColor(0.5, 1, [0, 180]);   // district 1, hue 180 (cyan)
+  assert.notEqual(a, grass, 'an owned cell should differ from the bare terrain colour');
+  assert.notEqual(a, b, 'two districts on opposite hues should not read the same');
 });

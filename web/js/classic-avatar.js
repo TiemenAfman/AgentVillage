@@ -262,7 +262,7 @@ export function createClassicAvatar(spec, material) {
   // in over the recovery. A block is a held pose, so it goes through the same targets and
   // damping as everything else: the shield arm comes up in front, and the shield turns from
   // its resting yaw to a quarter turn so its face points forward.
-  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer']);
+  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol']);
   let swing = null;   // { side, t, from } while an attack is playing
   const ease = (u) => u * u * (3 - 2 * u);
   // The hand that swings: a weapon if there is one (right first), otherwise a free fist,
@@ -286,7 +286,7 @@ export function createClassicAvatar(spec, material) {
   // arm would be doing had it not swung, which is where the recovery lands.
   function swingPose(s, rest) {
     const u = Math.min(1, s.t / SWING_S);
-    if (u < 0.3) { const w = ease(u / 0.3); return { x: THREE.MathUtils.lerp(s.from, -2.4, w), w }; }
+    if (u < 0.3) { return { x: THREE.MathUtils.lerp(s.from, -2.4, ease(u / 0.3)), w: 1 }; }
     if (u < 0.55) return { x: THREE.MathUtils.lerp(-2.4, -0.35, ease((u - 0.3) / 0.25)), w: 1 };
     const r = ease((u - 0.55) / 0.45);
     return { x: THREE.MathUtils.lerp(-0.35, rest, r), w: 1 - r };
