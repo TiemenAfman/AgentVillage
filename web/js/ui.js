@@ -79,6 +79,26 @@ export function createUI(handlers) {
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+
+  // Tucks the menu away - New settler through Overview - leaving the clock and the
+  // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
+  // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
+  const NAV_KEY = 'promptholm.nav.collapsed';
+  let navCollapsed = false;
+  try { navCollapsed = localStorage.getItem(NAV_KEY) === '1'; } catch { /* no storage */ }
+  function applyNavCollapsed() {
+    el('nav-chips').hidden = navCollapsed;
+    // The glyph itself stays '‹' - collapsed flips it 180deg in CSS rather than swapping
+    // characters, so it keeps pointing at the menu it would bring back.
+    el('nav-collapse-btn').classList.toggle('collapsed', navCollapsed);
+    el('nav-collapse-btn').title = navCollapsed ? 'Show the menu' : 'Hide the menu';
+  }
+  applyNavCollapsed();
+  el('nav-collapse-btn').addEventListener('click', () => {
+    navCollapsed = !navCollapsed;
+    try { localStorage.setItem(NAV_KEY, navCollapsed ? '1' : '0'); } catch { /* fine, just not remembered */ }
+    applyNavCollapsed();
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { close('dossier'); close('legend'); close('settings'); }
     // Space belongs to the player on foot, where it jumps. Restarting the history from
@@ -560,10 +580,11 @@ export function createUI(handlers) {
         + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
-      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
+      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look, double-click to lock the mouse</span>`
+        + `<span><kbd>LMB</kbd> attack</span><span><kbd>RMB</kbd> hold to block</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
-        + `<span class="lit"><kbd>B</kbd> build</span>`
+        + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
         + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {

@@ -254,9 +254,19 @@ test('and can walk from that door to the town square', () => {
   });
   assert.deepEqual(cut.map(([id]) => id), [], 'houses that cannot walk to the town square');
 
-  // And no orphaned paving. A stretch of road that reaches nothing is either a lane that
-  // lost its junction or, as on the polder, a road that was never joined to the island.
-  assert.equal(open.size, paved.size, `${paved.size - open.size} paved cells are cut off from the square`);
+  // And no orphaned paving - except a bridge standing with nothing built on either end yet,
+  // which lib/layout.mjs's own comment on `layout.bridges` calls "a bridge in the
+  // countryside, not a bug": bridges are sticky and laid ahead of the houses that will one
+  // day reach them. So only paths and town paving are required to be in the reached set; a
+  // stretch of road that lost its junction, or the original polder bug this test was built
+  // to catch, still fails exactly as before. Bridges stay in `paved` and are still usable
+  // as stepping stones by the flood fill above - it is only being unconnected in isolation
+  // that stops counting as a fault.
+  const required = new Set();
+  for (const p of L.paths) for (const c of p.cells) required.add(key(c));
+  for (const c of (L.town.paved || [])) required.add(key(c));
+  const orphaned = [...required].filter((k) => !open.has(k));
+  assert.deepEqual(orphaned, [], `${orphaned.length} paved cells are cut off from the square`);
 });
 
 test('every civic lot keeps its road', () => {

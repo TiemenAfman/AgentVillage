@@ -36,10 +36,6 @@ quote it and let Node expand it:
 node --test "tests/*.test.mjs"
 ```
 
-Two of `tests/layout-measure.test.mjs`'s assertions fail against the live `data/layout.json`
-on this machine and have nothing to do with your change — check against a clean tree before
-chasing one.
-
 ```bash
 node --test tests/models.test.mjs
 ```
@@ -55,6 +51,18 @@ Copy that preamble when adding a test that touches `web/js/`.
 
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747.
+
+A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
+process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
+tabs to refetch `web/js/`, it does not touch the server process. `npm run watch` is
+`watch-island.mjs`: it runs the island, watches those same files, and asks in its own
+console (`[watch-island] ... restart the island? [Y/n]`) before restarting on a change -
+never silently, since the island already running may have somebody's session or an open
+panel worth not interrupting without warning. During a session working alongside a person,
+Claude may run `stop-island.cmd` + `start-island.cmd` (or `start-island-app.cmd`, which also
+opens the Chrome app window) itself after a server-side change without a formal
+confirmation step first - a quick heads-up in the conversation is enough, matching the
+console's own Y/n rather than a blocking question.
 
 ## The pipeline
 
@@ -213,6 +221,16 @@ the first crowd an island ever has — and after a sea restart — so a whole vi
 comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
 arrival, so nobody walks. No flag in the bundle and no timestamp to trust.
 
+The idle sweep that retires a quiet connection (`lib/players.mjs`) only ever retires
+somebody who is *walking* — an islander's own socket presence is its join
+(`lib/seaclient.mjs`), and a watching page has no walker either, so before this a minute of
+quiet closed those sockets too: forced republish, three rev bumps a minute, and every
+settler walking back to their own door, on every screen, every sixty seconds.
+
+An unattended boat does not stay marooned either: after five quiet minutes the sea's own
+beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
+has could be left on the far shore for good, recoverable only by restarting the whole sea.
+
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing
 it there put a stranger on the town square until its slice came round. And a joining client
@@ -221,6 +239,12 @@ because the beat's rotation takes `KEYFRAME_S` to get round everybody and watchi
 fill up over ten seconds is not a first impression worth having. The client holds that one
 message while it translates the roster — see below — or it would be dropped in full, which
 is exactly the ten seconds back again.
+
+On the drawing side `rev` only decides whether to refetch, never whether to rebuild:
+`web/js/islandsig.js` compares a `drawnSignature()` of what is already standing against the
+new bundle, because a neighbour's landscape costs the same ~550 ms to build as our own
+(trees, fields, hamlets, through the same `createLandscape`), and rebuilding it on every
+publish from an active neighbour stalled the frame — `dt` included — three times a minute.
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
@@ -315,6 +339,17 @@ file in it is inside something the Dockerfile copies. `--open` in the `CMD` is n
 inside a container, loopback is nobody, and what keeps the sea shut is the network it is
 published on plus `SEA_KEY`. No volumes, deliberately.
 
+The sea also serves its own front page — no file on disk (the disk rule above forbids
+that), an inline string in `lib/sea.mjs` that fetches its own `/health` and `/world`. Its
+one button is a restart, wired to `POST /update`, which asks for a Portainer/webhook URL in
+`updateHook` — but the key check runs *before* the hook check, on purpose: checked the other
+way round, an unkeyed sea's 501 ("no hook configured") would tell an attacker it has no lock
+on the door at all. And closing the sea now walks every open connection
+(`closeIdleConnections()`/`closeAllConnections()`) instead of waiting for the websocket ping
+to notice — a sea holds nothing on disk to flush, so there is nothing a graceful wait
+protects, and a browser left attached had been stalling a restart up to 62 s (25 s ping ×
+2.5) before this.
+
 A sea says *that* it wants a key in `/health` (`keyed`), never which one — without that the
 picker cannot tell a sea that will have you from one that will turn you away, and the only
 way to find out is to move the island and watch it be refused. A refusal is also said
@@ -327,6 +362,15 @@ is wrong and tells whoever has to fix it nothing.
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that
 hand-off a sea that gets a key locks out the browser of the very island publishing to it.
+The same key also guards `/island/:id` and `/island/:id/parcel`, not only the socket join —
+`seaClient` posts over HTTP regardless of whether its own socket was accepted, so before
+this an islander refused at the handshake still parked its bundle over HTTP under a token
+that outlived the refusal, for good.
+
+The browser side of the line home reads the same way: `web/js/net.js` asks the islander
+which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
+from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
+forever to the world it had just left.
 
 Behind Nginx Proxy Manager, two settings or the island connects and then sits in silence:
 **Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
@@ -360,6 +404,26 @@ unattended with full permissions in any folder, so `lib/access.mjs` demands all 
 loopback socket, a known `Host` and a matching `Origin`, and never reads
 `X-Forwarded-For`. The ceiling is `SETTLERS_MAX_AGENTS` (4). Put any new write route behind
 the same check.
+
+**A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
+context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
+evicting the oldest, which after enough visits to a panel is the island's own. The inventory
+(`web/js/studio.js`) opens two per visit, the alcove and the slot icons, and closes both that
+way; anything else that makes a renderer for a moment must too. Its slot table is
+`web/js/inventory.js`, kept DOM-free so `tests/inventory.test.mjs` can hold every equip key to
+one slot and every swatch to one dye button; its popover (`web/js/popover.js`) lives in `body`
+at `position: fixed` and catches Escape in the capture phase on `window`, so the first Escape
+closes the popover and only the second closes the panel - the studio's own Escape handler and
+`walk.js` both listen later in that same keydown.
+
+**The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels the ctrl shortcuts a
+page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboard Lock
+(`navigator.keyboard.lock`) on the letters and digits the browser pairs with ctrl. The lock only
+takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
+ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
+locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
+blocks while held, the left one attacks on a click that did not become a drag, or on the press
+under a pointer lock (double-click on the canvas) - so drag-to-look keeps its button.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -407,7 +471,7 @@ there.)
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
 | `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
-| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (a re-export of
+| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
 any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |

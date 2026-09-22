@@ -2,7 +2,6 @@
 // WASD, terrain underfoot, buildings you cannot walk through, and a prompt when you
 // come close to something you can interact with.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -10,7 +9,6 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
-import { modelUrl } from './assets.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -63,8 +61,10 @@ const HEAD = WALK_CLEARANCE;
 // The keys the feet use. Lifted out of onKeyDown because a board being worked hands
 // every other key to the page and keeps only these.
 const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
-const KENNEY_CHARACTER = modelUrl('kenney/character-male-a.glb');
-const KENNEY_HEIGHT = 0.54;
+// The letters and digits the browser pairs with ctrl (save, print, find, bookmark, view
+// source, open, history, downloads, address bar, reload, bold; new tab/window, close, tab
+// <n>). Cancelled on foot - see onKeyDown - and locked in fullscreen - see lockKeys().
+const BROWSER_KEYS = new Set([...'sptfduohjklegrbwn123456789', 'tab']);
 
 // A field on a board takes its letters. In here w is a w, not a step, so the feet keep
 // out of it entirely - which is the whole of "type quit and you plant a tree".
@@ -155,12 +155,11 @@ export function createWalkMode({
   const cellKey = ground
     ? (x, z) => ground.levelKey(x, z)
     : (x, z) => Math.round(x + terrain.half - 0.5) + Math.round(z + terrain.half - 0.5) * terrain.size;
-  // Both figures live below one parent so movement, collisions and the camera do not care
-  // which look is selected. The original figure gets four lightweight pivots; Kenney uses
-  // the animation clips in its GLB.
+  // Used to hold this and the rigged Kenney character below one parent, whichever was
+  // selected; only the original figure remains, but movement, collisions and the camera
+  // still address it through this same group.
   const avatar = new THREE.Group();
   let avatarLook = avatarSpec || loadAvatar();
-  let character = avatarLook.character || 'kenney';
   const classicAvatar = createClassicAvatar(avatarLook, material);
   avatar.add(classicAvatar.object);
   // Yaw first, then the swimmer's pitch about its own axis. The default XYZ order would
@@ -170,58 +169,6 @@ export function createWalkMode({
   avatar.castShadow = true;
   avatar.visible = false;
   scene.add(avatar);
-
-  let kenneyModel = null;
-  let kenneyMixer = null;
-  let kenneyAction = null;
-  let kenneyClip = '';
-  let disposed = false;
-  new GLTFLoader().load(KENNEY_CHARACTER, (gltf) => {
-    if (disposed) return;
-    kenneyModel = gltf.scene;
-    kenneyModel.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(kenneyModel);
-    const size = bounds.getSize(new THREE.Vector3());
-    const scale = size.y > 0 ? KENNEY_HEIGHT / size.y : 1;
-    kenneyModel.scale.setScalar(scale);
-    // Centre the authored model over walk mode's feet and keep its soles on y=0.
-    kenneyModel.position.set(
-      -(bounds.min.x + bounds.max.x) * 0.5 * scale,
-      -bounds.min.y * scale,
-      -(bounds.min.z + bounds.max.z) * 0.5 * scale,
-    );
-    // The kit and AgentVillage both use +Z as the character's forward direction.
-    kenneyModel.traverse((part) => {
-      if (!part.isMesh) return;
-      part.castShadow = true;
-      part.receiveShadow = true;
-    });
-    avatar.add(kenneyModel);
-    kenneyMixer = new THREE.AnimationMixer(kenneyModel);
-    kenneyModel.userData.clips = new Map(gltf.animations.map((clip) => [clip.name, clip]));
-    playKenney('idle', 0);
-    showCharacter();
-  }, undefined, (error) => {
-    console.warn(`Could not load ${KENNEY_CHARACTER}; using the built-in avatar instead.`, error);
-  });
-
-  function playKenney(name, fade = 0.14) {
-    if (!kenneyMixer || name === kenneyClip) return;
-    const clip = kenneyModel.userData.clips.get(name) || kenneyModel.userData.clips.get('idle');
-    if (!clip) return;
-    const next = kenneyMixer.clipAction(clip);
-    next.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    if (kenneyAction && fade > 0) kenneyAction.crossFadeTo(next, fade, true);
-    else if (kenneyAction) kenneyAction.stop();
-    kenneyAction = next;
-    kenneyClip = name;
-  }
-
-  function showCharacter() {
-    classicAvatar.object.visible = character === 'classic' || !kenneyModel;
-    if (kenneyModel) kenneyModel.visible = character === 'kenney';
-  }
-  showCharacter();
 
   const lounge = new THREE.Mesh(loungeGeometry(), material);
   lounge.castShadow = true;
@@ -263,6 +210,7 @@ export function createWalkMode({
     onNextSeed: null,
     onPrevSeed: null,
     onBuild: null,
+    onAvatar: null,
     onExit: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
@@ -271,6 +219,7 @@ export function createWalkMode({
     onRelease: null,
     moving: false,
     running: false,
+    blocking: false, // the right mouse button is down: the shield arm is up
     paused: false,   // true while an overlay owns the input
   };
 
@@ -317,11 +266,17 @@ export function createWalkMode({
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
     const k = e.key.toLowerCase();
-    // A key with ctrl, meta or alt on it belongs to the browser, and the island does not
-    // get a say: ctrl+W closes the tab and Chrome will not let a page cancel it. Nothing
-    // here is meant to be pressed with a modifier, so they all go straight through -
-    // which also covers AltGr on a Dutch layout, where it arrives as ctrl+alt.
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // A key with ctrl, meta or alt on it is not a game key - which also covers AltGr on a
+    // Dutch layout, where it arrives as ctrl+alt. But on foot the browser's own shortcuts
+    // are a hazard (ctrl+S next to the walking keys, ctrl+P beside the sowing one), so the
+    // ones a page is allowed to cancel are cancelled here, unless somebody is typing into
+    // a field. Chrome reserves ctrl+W, ctrl+T, ctrl+N and ctrl+<digit> and ignores
+    // preventDefault on them: those only come to the page under the keyboard lock that
+    // lockKeys() asks for, and only in fullscreen.
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(k)) e.preventDefault();
+      return;
+    }
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
     // inside a field, where those keys are letters somebody is typing.
@@ -336,7 +291,13 @@ export function createWalkMode({
     }
     // Only from the ground, so holding space does not climb the sky.
     if (k === ' ') { e.preventDefault(); jump(); }
-    if (k === 'c') { e.preventDefault(); crouchToggle(); }
+    // Not on a repeat: crouchToggle() is a toggle, and the OS keeps sending keydown for
+    // 'c' the whole time it is held. Without this, holding C past LIE_AFTER_MS meant the
+    // very next repeat found the settler just lain down and stood them straight back up
+    // (crouchToggle's own "press it again to get up"), and the repeat after that started
+    // the crouch over - an infinite loop that never spent a rendered frame lying down,
+    // reachable only by physically releasing and re-pressing the key.
+    if (k === 'c' && !e.repeat) { e.preventDefault(); crouchToggle(); }
     if (k === 'e' && state.near) { e.preventDefault(); state.onInteract && state.onInteract(state.near); }
     if (k === 'x' && state.near) { e.preventDefault(); state.onSendAway && state.onSendAway(state.near); }
     // Sowing is the same kind of thing: it happens where the feet are, not at a door.
@@ -345,6 +306,11 @@ export function createWalkMode({
     // The catalogue. Like a thought, it is about wherever you happen to be standing, so
     // it needs nothing within reach.
     if (k === 'b') { e.preventDefault(); state.onBuild && state.onBuild(); }
+    // The wardrobe, same door the Avatar chip opens. Like Build, whoever is standing here
+    // rather than something with the keyboard.
+    if (k === 'i') { e.preventDefault(); state.onAvatar && state.onAvatar(); }
+    // The radar, like ?stats: off until asked for.
+    if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };
   const onKeyUp = (e) => {
@@ -360,15 +326,35 @@ export function createWalkMode({
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
 
-  // Mouse look: drag anywhere on the canvas, or take a pointer lock on double click.
-  let dragging = false, lastX = 0, lastY = 0;
-  const onDown = (e) => { if (!state.active) return; dragging = true; lastX = e.clientX; lastY = e.clientY; };
-  const onUp = () => { dragging = false; };
+  // Mouse look: drag anywhere on the canvas, or take a pointer lock on double click. The
+  // buttons themselves fight (Plans/aanvallen-en-blokkeren.md): the right one blocks for
+  // as long as it is held and never looks; the left one attacks - on the press under a
+  // pointer lock, where the mouse already looks without a button, and otherwise on a click
+  // that did not turn into a drag, so drag-to-look keeps the same button it always had.
+  let dragging = false, lastX = 0, lastY = 0, pressX = 0, pressY = 0, pressMoved = false;
+  const CLICK_PX = 6;
+  // Not with the arms already busy: swimming, lying down or sitting.
+  const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting;
+  const onDown = (e) => {
+    if (!state.active) return;
+    if (e.button === 2) { if (canFight()) state.blocking = true; return; }
+    if (e.button !== 0) return;
+    if (document.pointerLockElement === dom) { if (canFight()) classicAvatar.attack(); return; }
+    dragging = true; pressMoved = false;
+    lastX = pressX = e.clientX; lastY = pressY = e.clientY;
+  };
+  const onUp = (e) => {
+    if (e.button === 2) { state.blocking = false; return; }
+    if (e.button !== 0) return;
+    if (dragging && !pressMoved && canFight()) classicAvatar.attack();
+    dragging = false;
+  };
   const onMove = (e) => {
     if (!state.active) return;
     const locked = document.pointerLockElement === dom;
     let dx = 0, dy = 0;
     if (locked) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    if (dragging && !pressMoved && Math.hypot(e.clientX - pressX, e.clientY - pressY) > CLICK_PX) pressMoved = true;
     if (!dx && !dy) return;
     state.camYaw -= dx * 0.0042;
     state.camPitch = clamp(state.camPitch + dy * 0.0032, -0.25, 0.95);
@@ -389,7 +375,24 @@ export function createWalkMode({
   addEventListener('pointermove', onMove);
   // Not while a board is held: pointer lock turns off DOM events entirely, so taking it
   // back would kill every click on the page hanging in front of you.
-  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.(); });
+  // requestPointerLock() returns a promise in current Chrome and rejects where a lock is not
+  // allowed (an embedded webview, a page without the permission); nothing to do about that
+  // but not to log it as an uncaught error.
+  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.()?.catch?.(() => {}); });
+
+  // Under a keyboard lock the browser hands the page even the shortcuts it otherwise keeps
+  // for itself (ctrl+W closes the tab whatever a page says) - but only in fullscreen, which
+  // is what makes the Fullscreen button the place where the island stops losing tabs. Asked
+  // for on entering walk mode and given back on leaving it; the browser applies it whenever
+  // the page is fullscreen in between. Escape is deliberately not in the list: locking it
+  // turns leaving fullscreen into press-and-hold, and Escape already has a job here.
+  const LOCKED_CODES = [...'WTNRSPFDUOHJKLEGB'].map((c) => 'Key' + c)
+    .concat('Tab', ...Array.from({ length: 9 }, (_, i) => 'Digit' + (i + 1)));
+  function lockKeys(on) {
+    const kb = navigator.keyboard;
+    if (!kb || !kb.lock) return;
+    if (on) kb.lock(LOCKED_CODES).catch(() => {}); else kb.unlock();
+  }
 
   // A cell can have more than one surface to stand on: the ground, and above it a bridge
   // deck, a floor, a roof, the lid of a tunnel. `levels` holds what is above the terrain,
@@ -512,7 +515,7 @@ export function createWalkMode({
   }
 
   function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
-    onNextSeed, onPrevSeed, onBuild, onExit, onRelease }) {
+    onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.working = null;
@@ -523,7 +526,9 @@ export function createWalkMode({
     state.onNextSeed = onNextSeed;
     state.onPrevSeed = onPrevSeed;
     state.onBuild = onBuild;
+    state.onAvatar = onAvatar;
     state.onExit = onExit;
+    state.onToggleMinimap = onToggleMinimap;
     let [x, z] = at;
     // step back until we are standing somewhere legal
     for (let i = 0; i < 40 && blocked(x, z); i++) { x += 0.4; z += 0.25; }
@@ -538,6 +543,7 @@ export function createWalkMode({
     state.active = true;
     avatar.visible = true;
     keys.clear();
+    lockKeys(true);
   }
 
   function exit() {
@@ -545,6 +551,8 @@ export function createWalkMode({
     back = camBack;
     release();
     state.active = false;
+    state.blocking = false;
+    lockKeys(false);
     avatar.visible = false;
     lounge.visible = false;
     standUp();
@@ -562,9 +570,7 @@ export function createWalkMode({
   // the instant you pick it, even mid-stride.
   function setAvatar(spec) {
     avatarLook = spec;
-    character = spec.character || 'kenney';
     classicAvatar.set(spec);
-    showCharacter();
   }
 
   const forward = new THREE.Vector3();
@@ -758,7 +764,7 @@ export function createWalkMode({
       lounge.position.set(state.pos.x, state.pos.y + 0.01, state.pos.z);
       lounge.rotation.set(0, state.yaw, 0);
     } else if (state.sitting) {
-      // Both character rigs provide their own seated pose.
+      // The rig provides its own seated pose.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(0, state.yaw, 0);
     } else if (state.swimming) {
@@ -774,25 +780,14 @@ export function createWalkMode({
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(0, state.yaw, 0);
-      if (state.crouching && classicAvatar.object.visible) avatar.scale.set(1, 0.82, 1);
+      if (state.crouching) avatar.scale.set(1, 0.82, 1);
     }
 
-    if (classicAvatar.object.visible) {
-      classicAvatar.update({
-        moving: state.moving, running: state.running, grounded: state.grounded,
-        crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
-        phase: state.bob,
-      }, dt);
-    }
-    if (kenneyMixer && kenneyModel.visible) {
-      const clip = state.lying || state.sitting ? 'sit'
-        : !state.grounded ? 'fall'
-          : state.crouching ? 'crouch'
-            : state.running ? 'sprint'
-              : state.moving ? 'walk' : 'idle';
-      playKenney(clip);
-      kenneyMixer.update(dt);
-    }
+    classicAvatar.update({
+      moving: state.moving, running: state.running, grounded: state.grounded,
+      crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
+      blocking: state.blocking, phase: state.bob,
+    }, dt);
 
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
@@ -829,7 +824,6 @@ export function createWalkMode({
   }
 
   function dispose() {
-    disposed = true;
     removeEventListener('keydown', onKeyDown);
     removeEventListener('keyup', onKeyUp);
     removeEventListener('blur', onBlur);
@@ -839,16 +833,6 @@ export function createWalkMode({
     dom.removeEventListener('wheel', onWheel);
     scene.remove(avatar);
     classicAvatar.dispose();
-    if (kenneyModel) kenneyModel.traverse((part) => {
-      if (!part.isMesh) return;
-      part.geometry?.dispose();
-      const materials = Array.isArray(part.material) ? part.material : [part.material];
-      for (const mat of materials) {
-        if (!mat) continue;
-        for (const value of Object.values(mat)) if (value?.isTexture) value.dispose();
-        mat.dispose();
-      }
-    });
   }
 
   // What stands above the terrain, per cell, lowest first. main.js merges the layout's

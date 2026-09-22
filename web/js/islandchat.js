@@ -8,6 +8,7 @@
 //
 // T opens it, Enter sends, Escape closes. T because walk.js has spoken for most of the
 // alphabet, and that one just came free.
+import { mine } from './api.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -23,6 +24,59 @@ function typingElsewhere() {
   if (!a || !a.tagName) return false;
   return a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable;
 }
+
+
+
+
+function isCommand(text) {
+  return /^\/[a-zA-Z0-9_-]+(?:\s|$)/.test(
+    String(text || '').trim()
+  );
+}
+
+async function command(text) {
+  console.log('[command] sending:', text);
+
+  try {
+    const res = await mine('/api/command', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        command: text,
+      }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+
+    console.log('[command] result:', body);
+
+    if (!res.ok || !body.ok) {
+      console.warn('[command] failed:', body);
+      return;
+    }
+
+    // Command is geen chatbericht.
+    // Alleen de game ontvangt het resultaat.
+    if (body.action) {
+      window.dispatchEvent(new CustomEvent('island-command', {
+        detail: {
+          action: body.action,
+          data: body.data ?? null,
+        },
+      }));
+    }
+
+  } catch (err) {
+    console.error('[command] error:', err);
+  }
+}
+
+
+
+
+
 
 export function createIslandChat(root, { say, blocked = () => false } = {}) {
   const el = document.createElement('div');
@@ -92,8 +146,24 @@ export function createIslandChat(root, { say, blocked = () => false } = {}) {
     if (!text) { close(); return; }
     // Our own line comes back down the socket with everybody else's, so it is not added
     // here: that would show it twice, and in the wrong order whenever the line is slow.
-    if (!say(text)) push({ note: true, text: 'That did not go out - the line to the island is down.' });
+
+    if (isCommand(text)) {
+      command(text);
+      return;
+    }
+
+    if (!say(text)) {
+      push({
+        note: true,
+        text: 'That did not go out - the line to the island is down.',
+      });
+    }
+
   }
+
+
+
+
 
   // Everything typed into the box stays in the box. walk.js listens on the window and
   // would read a w as a step; it has a guard of its own for a focused field, and this is

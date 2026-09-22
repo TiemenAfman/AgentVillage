@@ -52,6 +52,8 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 /* --- top right -------------------------------------------------------- */
 .topright { position: fixed; top: 14px; right: 14px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
 .chips { display: flex; gap: 6px; }
+/* The nav chips and the clock share a row - the clock sits beside the menu, not below it. */
+.chips-row { display: flex; align-items: center; gap: 7px; }
 /* A row of chips inside a panel has 288px to work with, not a screen. */
 .chips.wrap { flex-wrap: wrap; }
 .chip {
@@ -62,6 +64,8 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 .chip:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
 .chip.on { color: #1c1814; background: var(--accent); border-color: transparent; font-weight: 600; }
 #clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+#nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
+#nav-collapse-btn.collapsed { transform: rotate(180deg); }
 
 /* --- now building ----------------------------------------------------- */
 .building-now { position: fixed; right: 14px; top: 108px; width: 232px; padding: 11px 13px; z-index: 9; max-height: 34vh; overflow: auto; }
@@ -199,6 +203,19 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .walk-prompt b { color: var(--accent); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* --- the walk-mode minimap ---------------------------------------------- */
+.minimap {
+  /* Measured against .topright's own bottom edge (chips + nav buttons), which runs
+     deeper than the 108px other right-column panels clear by - those are narrower
+     (232-316px) and sit further from the edge, so they miss .topright's wide chip
+     row on the right; a full-width-adjacent circle at 14px does not. */
+  position: fixed; top: 152px; right: 14px; z-index: 10;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: var(--panel); border: 1px solid rgba(232,180,92,.35); box-shadow: var(--shadow);
+  pointer-events: none;   /* a HUD, not a click target, same as .walk-hud */
+}
+.minimap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
 .pad-dot { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
 .pad-dot i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 
@@ -458,26 +475,150 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .walk-keys .lit { color: var(--accent-2); }
 .walk-keys .lit kbd { background: rgba(127,199,217,.17); border-color: rgba(127,199,217,.4); }
 
-/* --- the avatar studio ------------------------------------------------- */
-.av-panel { width: min(680px, calc(100vw - 32px)); }
-.av-body { display: flex; gap: 18px; margin-top: 6px; align-items: stretch; }
-.av-stage { flex: 0 0 210px; border: 1px solid var(--edge); border-radius: 12px; overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 18%, rgba(127,199,217,.12), rgba(13,20,32,.5) 70%); min-height: 280px; }
-.av-stage canvas { display: block; width: 100%; height: 100%; }
-.av-controls { flex: 1; min-width: 0; }
-.av-controls h4 { margin: 12px 0 7px; }
-.av-controls h4:first-child { margin-top: 2px; }
-.av-swatches { display: flex; flex-wrap: wrap; gap: 7px; }
-.av-sw { width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: pointer;
-  background: var(--sw); border: 2px solid rgba(255,255,255,.14); box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .08s ease; }
-.av-sw:hover { transform: scale(1.12); }
-.av-sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,180,92,.35); }
-.av-hats { display: flex; flex-wrap: wrap; gap: 6px; }
-.av-hat { cursor: pointer; }
+/* --- the inventory ------------------------------------------------------ */
+/* The one settler you steer, dressed from a screen laid out the way an RPG lays out what a
+   character wears: a bronze-framed stone panel, the figure in a dark alcove in the middle,
+   four slots down each pillar, two dye flasks at its feet. Deliberately darker stone than the
+   HUD's evergreen, meeting it only in the brass (--accent) wherever something is chosen.
+   Every ornament is CSS or an inline SVG - no image of its own, nothing fetched at boot; the
+   one bitmap is the island's own stone tile, as veining on the pillars. The popover shares
+   the palette because it floats in body, outside the frame these variables would cascade from. */
+.inv-frame, .inv-popover {
+  --inv-stone: #26252a; --inv-well: #0c0b0e; --inv-bronze: #c99a4e; --inv-bronze-dark: #23160a;
+  --inv-rim: #5a4326; --inv-label: #a89468;
+}
+.inv-frame {
+  position: relative; width: min(760px, calc(100vw - 20px)); max-height: calc(100vh - 20px);
+  display: flex; flex-direction: column; color: var(--ink); user-select: none;
+  background: var(--inv-stone);
+  /* A gradient border-image squares the corners off, which is what a stone frame wants; the
+     inset hairlines are the bevel where bronze meets stone. */
+  border: 10px solid transparent;
+  border-image: linear-gradient(160deg, #f0d28a, #8a6a34 28%, #d9b46a 50%, #5a3d1c 76%, #c9a75c) 1;
+  box-shadow: inset 0 0 0 1px #2a1a0c, inset 0 0 0 2px rgba(255,230,170,.35), inset 0 0 0 3px #3a2410,
+              0 0 0 1px #1a1008, 0 30px 70px rgba(0,0,0,.65);
+}
+.inv-scroll { overflow: auto; min-height: 0; padding: 26px 18px 16px; }
+.inv-frame > .x { position: absolute; top: 4px; right: 6px; z-index: 2; color: #d9c08a; }
+.inv-frame > .x:hover { color: #fff; background: rgba(255,255,255,.08); }
 
-@media (max-width: 560px) {
-  .av-body { flex-direction: column; }
-  .av-stage { flex: 0 0 240px; }
+/* One bronze flourish, flipped into each corner. */
+.inv-corner { position: absolute; width: 48px; height: 48px; pointer-events: none; z-index: 1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M6 46V15q0-9 9-9h31' fill='none' stroke='%233a2410' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M6 46V15q0-9 9-9h31' fill='none' stroke='%23d9b46a' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M13 41V20q0-7 7-7h21' fill='none' stroke='%23f6e2a8' stroke-width='1.3' opacity='.7'/%3E%3Cpath d='M13 29c5-2 8 2 6 7M29 13c-2 5 2 8 7 6' fill='none' stroke='%23f6e2a8' stroke-width='1.3'/%3E%3Ccircle cx='13' cy='13' r='3.2' fill='%23f0d28a'/%3E%3Ccircle cx='13' cy='13' r='1.4' fill='%233a2410'/%3E%3C/svg%3E") no-repeat; }
+.inv-corner.tl { top: -11px; left: -11px; }
+.inv-corner.tr { top: -11px; right: -11px; transform: scaleX(-1); }
+.inv-corner.bl { bottom: -11px; left: -11px; transform: scaleY(-1); }
+.inv-corner.br { bottom: -11px; right: -11px; transform: scale(-1); }
+
+/* A brass plate over the top edge with the title engraved into it: dark lettering with a
+   light lower edge and a dark upper one is what an engraving looks like lit from above.
+   Two rivets hold it on. */
+.inv-title {
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
+  padding: 9px 40px; font: 600 13px/1 var(--font); letter-spacing: .32em; text-transform: uppercase; color: #2a1a0c; white-space: nowrap;
+  background: linear-gradient(180deg, #ecca82, #a67c3b 55%, #d4ae64);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%);
+  text-shadow: 0 1px 0 rgba(255,240,200,.55), 0 -1px 0 rgba(0,0,0,.55);
+  box-shadow: inset 0 1px 0 rgba(255,245,210,.6), inset 0 -1px 0 rgba(0,0,0,.4);
+}
+.inv-title::before, .inv-title::after { content: ""; position: absolute; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff2c8, #6b4a1e 70%); box-shadow: 0 1px 1px rgba(0,0,0,.5); }
+.inv-title::before { left: 20px; }
+.inv-title::after { right: 20px; }
+
+.inv-body { display: grid; grid-template-columns: 100px minmax(0, 1fr) 100px; grid-template-areas: "left stage right"; }
+.inv-col.left { grid-area: left; }
+.inv-stage { grid-area: stage; }
+.inv-col.right { grid-area: right; }
+
+/* The pillars: fluting from a repeating gradient, a capital and a base as darker bands, and
+   the island's own stone tile multiplied in faintly as veining - on a pseudo-element, because
+   a background layer has no opacity of its own. The url() resolves against css/, so it holds
+   under a subpath the same way the module bases do. */
+.inv-col { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; padding: 22px 10px;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 2px, transparent 2px 13px),
+              linear-gradient(90deg, #17161a, #4a484e 16%, #35343a 50%, #4a484e 84%, #17161a);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), inset 0 8px 0 rgba(0,0,0,.35), inset 0 -8px 0 rgba(0,0,0,.35); }
+.inv-col::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: url(../textures/stone-stacked.png) 0 0 / 160px 160px; opacity: .16; mix-blend-mode: multiply; }
+.inv-col > * { position: relative; }
+
+/* A slot is a well sunk into the pillar with a bronze rim, lit gold when the piece is worn. A
+   piece not worn still shows, dimmed, so the well says what would go there. Both states are
+   static properties, never animations: harbour.css switches animation off under
+   prefers-reduced-motion, and what is worn may not depend on one. */
+.inv-slotwrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.inv-slot { display: block; width: 66px; height: 66px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
+  background: radial-gradient(circle at 50% 40%, #1d1c22, var(--inv-well) 85%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.9), inset 0 -1px 0 rgba(255,255,255,.05),
+              0 0 0 1px var(--inv-rim), 0 0 0 2px var(--inv-bronze-dark), 0 1px 0 2px rgba(255,255,255,.04);
+  transition: box-shadow .15s; }
+.inv-slot:hover { box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-bronze), 0 0 0 2px var(--inv-bronze-dark); }
+.inv-slot.on { box-shadow: inset 0 0 14px rgba(232,193,124,.2), inset 0 3px 9px rgba(0,0,0,.8),
+              0 0 0 1px var(--accent), 0 0 0 2px var(--inv-bronze-dark), 0 0 16px rgba(232,193,124,.45); }
+.inv-slot:focus-visible { outline-offset: 2px; }
+.inv-icon { display: block; width: 100%; height: 100%; pointer-events: none; border-radius: inherit; }
+.inv-slot:not(.on) .inv-icon { opacity: .32; filter: grayscale(.7) brightness(.85); }
+.inv-label { font: 600 9.5px var(--ui); letter-spacing: .14em; text-transform: uppercase; color: var(--inv-label); }
+
+/* The dye button: a ring of every hue around the colour currently worn. On a slot it hangs
+   off the bottom-right corner of the well; the two flasks at the foot of the alcove are the
+   same button, larger and standing on their own. */
+.inv-dye { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  background: radial-gradient(circle, var(--dye, #888) 0 50%, transparent 55%),
+              conic-gradient(#e33, #ea3, #dd3, #4c4, #3cc, #36e, #a3e, #e33);
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px rgba(255,220,150,.35), 0 2px 4px rgba(0,0,0,.6); transition: transform .12s; }
+.inv-dye:hover { transform: scale(1.12); }
+.inv-slotwrap > .inv-dye { position: absolute; right: -6px; top: 50px; }
+.inv-flask { position: absolute; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 5px; z-index: 1; }
+.inv-flask.left { left: 14px; }
+.inv-flask.right { right: 14px; }
+.inv-flask .inv-dye { width: 38px; height: 38px;
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 3px rgba(255,220,150,.3), 0 0 0 4px var(--inv-bronze-dark), 0 4px 10px rgba(0,0,0,.7); }
+
+/* The alcove: a vignette behind the figure and a pool of shadow under its feet. The preview
+   renderer is alpha: true, so all of this shows through the canvas. */
+.inv-stage { position: relative; min-height: 430px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 22%, #2d3346, #0a0c11 74%);
+  box-shadow: inset 0 0 0 1px var(--inv-rim), inset 0 0 70px 12px rgba(0,0,0,.8); }
+.inv-stage::before { content: ""; position: absolute; left: 26%; right: 26%; bottom: 7%; height: 7%; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0,0,0,.75), transparent 70%); }
+.inv-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+.inv-note { margin: 12px 0 10px; text-align: center; font-size: 12px; font-style: italic; color: var(--inv-label); }
+.inv-actions { justify-content: center; }
+
+/* The popover: pickers and palettes float in body at position: fixed, one layer above the
+   .handover scrim (31), because the panel they belong to scrolls and would clip them. Own
+   tile class rather than .chip/.btn, which harbour.css restyles. */
+.popover { position: fixed; z-index: 32; padding: 10px; background: #1a191d; border: 1px solid #6b4a2a;
+  box-shadow: inset 0 0 0 1px rgba(255,225,160,.18), 0 18px 40px rgba(0,0,0,.65); max-width: min(320px, calc(100vw - 16px)); }
+.inv-pop { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.inv-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; padding: 4px 2px; border: 0; cursor: pointer;
+  background: rgba(255,255,255,.03); color: var(--inv-label); font: 600 8.5px var(--ui); letter-spacing: .08em; text-transform: uppercase; touch-action: manipulation; }
+.inv-tile .inv-icon { width: 52px; height: 52px; }
+.inv-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-tile:hover, .inv-tile.on { background: rgba(232,193,124,.12); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); }
+.inv-tile.dye { width: 30px; height: 30px; padding: 0; border-radius: 50%; background: var(--sw);
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px rgba(255,255,255,.14); }
+.inv-tile.dye:hover { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px var(--inv-bronze); }
+.inv-tile.dye.on { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 3px var(--accent); }
+
+/* Narrow: the alcove on top, the two pillars laid flat beneath it, side by side. */
+@media (max-width: 720px) {
+  .inv-body { grid-template-columns: 1fr 1fr; grid-template-areas: "stage stage" "left right"; }
+  .inv-stage { min-height: 300px; }
+  .inv-col { flex-direction: row; flex-wrap: wrap; gap: 10px 12px; padding: 14px 8px; }
+  .inv-slot { width: 56px; height: 56px; }
+  .inv-slotwrap > .inv-dye { top: 42px; }
+}
+@media (max-width: 420px) {
+  .inv-frame { width: calc(100vw - 8px); max-height: calc(100vh - 8px); border-width: 6px; }
+  .inv-scroll { padding: 22px 8px 12px; }
+  .inv-slot { width: 48px; height: 48px; }
+  .inv-slotwrap > .inv-dye { top: 34px; }
+  .inv-title { padding: 7px 24px; font-size: 11px; letter-spacing: .2em; }
+  .inv-corner { display: none; }
 }
 
 /* --- who is waiting on you ---------------------------------------------- */

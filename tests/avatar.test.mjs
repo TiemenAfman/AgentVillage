@@ -7,9 +7,15 @@ register('./support/shared-loader.mjs', import.meta.url);
 import { Color, MeshBasicMaterial } from 'three';
 // Imported dynamically, and it has to be: a static import is hoisted above the register()
 // call and would resolve 'shared/…' before the loader that knows what that means exists.
-const { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
+// classic-avatar.js now reaches web/js/buildings.js for the held-item primitives, which
+// starts a TextureLoader at import time - the same reason villagers.test.mjs stubs this.
+const previousDocument = globalThis.document;
+globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
+const { avatarPlayerGeometry, avatarFigureGeometry, avatarPlayerComponentGeometry, HAT_SHAPES,
   DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } = await import('../web/js/avatar.js');
 const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
+if (previousDocument === undefined) delete globalThis.document;
+else globalThis.document = previousDocument;
 
 test('every Blender hat fits walking clearance and produces one complete material mesh', () => {
   for (const { id } of HAT_SHAPES) {
@@ -57,8 +63,6 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
     saveAvatar(spec);
     assert.deepEqual(JSON.parse(values.get('promptholm.avatar')), spec);
     assert.deepEqual(loadAvatar(), spec);
-    assert.equal(saveAvatar({ ...spec, character: 'classic' }).character, 'classic');
-    assert.equal(saveAvatar({ ...spec, character: 'unknown' }).character, DEFAULT_AVATAR.character);
     values.set('promptholm.avatar', '{broken');
     assert.deepEqual(loadAvatar(), DEFAULT_AVATAR);
   } finally {
@@ -68,13 +72,35 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
 });
 
 test('the original avatar keeps every triangle while its limbs animate independently', () => {
-  const spec = { ...DEFAULT_AVATAR, character: 'classic' };
+  const spec = { ...DEFAULT_AVATAR };
   const merged = avatarPlayerGeometry(spec);
   const material = new MeshBasicMaterial({ vertexColors: true });
   const animated = createClassicAvatar(spec, material);
-  let vertices = 0;
-  animated.object.traverse((part) => { if (part.isMesh) vertices += part.geometry.attributes.position.count; });
-  assert.equal(vertices, merged.attributes.position.count);
+  // Only what is actually shown: toggleable armour hangs off a pivot whose own .visible is
+  // false by default (the same pattern the backpack already used), not the mesh's own flag,
+  // so a flat traverse that only checks each mesh would still count a hidden piece - three.js
+  // itself skips a whole subtree under an invisible parent when it renders, and this walk
+  // has to match that or it is testing something the screen does not show.
+  function countVisible(obj) {
+    if (!obj.visible) return 0;
+    let n = obj.isMesh ? obj.geometry.attributes.position.count : 0;
+    for (const child of obj.children) n += countVisible(child);
+    return n;
+  }
+  const vertices = countVisible(animated.object);
+  // Everything the merged mesh carries that DEFAULT_AVATAR's own equip state leaves out:
+  // the hammer (now a hand-held item, built fresh only when equipped) and the whole armour
+  // set (Plans/uitrusting-en-vasthouden.md) - all baked 'gear'-variant parts, which
+  // avatarPlayerGeometry always includes and the animated rig only shows once switched on.
+  const hidden = avatarPlayerComponentGeometry(spec, [
+    'Hammer handle', 'Hammer head',
+    'Chestplate body', 'Chestplate trim', 'Left chestplate pauldron', 'Right chestplate pauldron',
+    'Left legging', 'Left knee cop', 'Right legging', 'Right knee cop',
+    'Left sabaton', 'Left sabaton trim', 'Right sabaton', 'Right sabaton trim',
+    'Sword pommel', 'Sword grip', 'Sword crossguard', 'Sword blade',
+    'Shield face', 'Shield rim top', 'Shield rim bottom', 'Shield boss', 'Shield grip',
+  ]);
+  assert.equal(vertices, merged.attributes.position.count - hidden.attributes.position.count);
   animated.update({ moving: true, running: false, grounded: true, crouching: false,
     sitting: false, lying: false, phase: Math.PI / 2 }, 1);
   const rotations = animated.object.children.slice(1).map((part) => part.rotation.x);
@@ -83,4 +109,44 @@ test('the original avatar keeps every triangle while its limbs animate independe
   animated.dispose();
   material.dispose();
   merged.dispose();
+});
+
+// The arm pivots are reached through the hand attach points, which are their children -
+// the rig hands those out for held items and exposes nothing else of its skeleton.
+test('a swing takes the weapon arm up behind the shoulder and back, a block turns the shield to the front', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const spec = { ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'sword', leftHandItem: 'shield' } };
+  const rig = createClassicAvatar(spec, material);
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const rightArm = rig.handAttach.rightArm.parent, leftArm = rig.handAttach.leftArm.parent;
+  const sword = rig.handAttach.rightArm.children[0], shield = rig.handAttach.leftArm.children[0];
+  rig.update(still, 1);
+  // At rest the sword arm is held out and the sword stands upright against it; the shield
+  // arm hangs, its face turned a little forward (mirrored for the left hand: positive).
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.02, 'sword held out');
+  assert.ok(Math.abs(sword.rotation.x + rightArm.rotation.x) < 1e-9, 'sword upright');
+  assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm down');
+  assert.ok(Math.abs(shield.rotation.y - 0.6) < 0.02, 'shield a little forward');
+  assert.equal(shield.scale.x, -1, 'left-hand item mirrored');
+
+  rig.attack();
+  rig.update(still, 0.12);   // winding up
+  assert.ok(rightArm.rotation.x < -2.0, 'wound up behind the shoulder: ' + rightArm.rotation.x);
+  assert.ok(Math.abs(sword.rotation.x) < 0.3, 'the sword goes with the arm, not upright');
+  rig.update(still, 0.12);   // striking
+  assert.ok(rightArm.rotation.x > -2.0 && rightArm.rotation.x < -0.3, 'mid-strike: ' + rightArm.rotation.x);
+  rig.update(still, 0.3);    // over
+  rig.update(still, 1);
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.05, 'back to holding it out');
+  assert.ok(Math.abs(sword.rotation.x + rightArm.rotation.x) < 0.05, 'sword upright again');
+
+  rig.update({ ...still, blocking: true }, 1);
+  rig.update({ ...still, blocking: true }, 1);
+  assert.ok(Math.abs(leftArm.rotation.x + 1.25) < 0.02, 'shield arm up in front');
+  assert.ok(Math.abs(shield.rotation.y - Math.PI / 2) < 0.02, 'shield facing forward');
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.02, 'the sword arm is not the one blocking');
+  rig.update(still, 1);
+  rig.update(still, 1);
+  assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm back down');
+  rig.dispose();
 });

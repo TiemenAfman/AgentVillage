@@ -293,6 +293,10 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
       x: it.x,
       z: it.z,
       y: it.top + 2.5,
+      // A real berth in our own sea versus a hashed, decorative bearing - see `place()`
+      // above. The minimap draws these two differently rather than pretending both are a
+      // direction worth trusting.
+      pinned: it.pinned,
     }));
   }
 

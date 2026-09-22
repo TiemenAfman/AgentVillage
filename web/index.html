@@ -107,21 +107,24 @@
 </header>
 
 <div class="topright" id="topright" hidden>
-  <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
+  <div class="chips-row">
+    <div class="chips" id="nav-chips">
+      <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
+      <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
+      <button class="chip" id="build-btn" title="Put something on the island">Build</button>
+      <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
+      <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
+      <button class="chip" id="legend-btn">Legend</button>
+      <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
+      <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
+    </div>
+    <button class="chip" id="nav-collapse-btn" title="Hide the menu">‹</button>
+    <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
+  </div>
   <div class="chips">
     <button class="chip on" data-filter="code">Code</button>
     <button class="chip on" data-filter="cowork">Cowork</button>
     <button class="chip on" data-filter="apprentices">Apprentices</button>
-  </div>
-  <div class="chips">
-    <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
-    <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
-    <button class="chip" id="build-btn" title="Put something on the island">Build</button>
-    <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
-    <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
-    <button class="chip" id="legend-btn">Legend</button>
-    <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
-    <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
   </div>
 </div>
 
@@ -171,6 +174,13 @@
   <div class="card walk-confirm" id="walk-confirm" hidden></div>
   <div class="card walk-pouch" id="walk-pouch" hidden></div>
   <div class="walk-keys" id="walk-keys"></div>
+</div>
+
+<!-- Boats, neighbours and the town square while you're on foot - toggled with M, off by
+     default like ?stats. A sibling of the walk HUD, not nested in it: that strip is a
+     centred bottom bar and this is a fixed corner radar. -->
+<div class="minimap" id="minimap" hidden>
+  <canvas id="minimap-canvas" width="180" height="180"></canvas>
 </div>
 
 <!-- What is in your hand while building. Outside the walk HUD on purpose: that strip is

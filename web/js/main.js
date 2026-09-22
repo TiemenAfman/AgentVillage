@@ -12,6 +12,7 @@ import { drawnSignature } from './islandsig.js';
 import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
+import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
@@ -30,6 +31,7 @@ import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
+import { createMinimap } from './minimap.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -889,8 +891,13 @@ function walkCallbacks() {
     onNextSeed: () => cycleSeed(1),
     onPrevSeed: () => cycleSeed(-1),
     onBuild: () => openBuild(),
+    onAvatar: () => openStudio(),
     onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
+    onToggleMinimap: () => {
+      minimapOn = !minimapOn;
+      state.minimap.setVisible(minimapOn);
+    },
   };
 }
 
@@ -1040,6 +1047,38 @@ function leaveInterior() {
 // `spot` is where to be put down and what to face when you get there, for the times
 // something has a place in mind - walking over to somebody you asked to talk to. Without
 // one you arrive on the town square, which is where the island starts everybody.
+// Where the minimap's town-centre marker belongs: the same fallback chain enterWalk uses to
+// pick a starting spot (the board, then the town hall once one exists, then the bare square),
+// just returning a position instead of somewhere to stand.
+function townCentreScenePos() {
+  const board = state.byId.get('civic:board');
+  if (board) return [board.group.position.x, board.group.position.z];
+  const hall = state.byId.get('civic:townhall');
+  if (hall) return [hall.group.position.x, hall.group.position.z];
+  const town = state.village.island.town;
+  if (town && town.centre && state.terrain) return state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return null;
+}
+
+// Everything the radar draws, read straight off state that is already kept live for other
+// reasons - see the minimap section of the AgentVillage plan for why none of this needs new
+// plumbing. `state.walk.state` rather than `state.walk.update(dt)`'s return value: that
+// return is only `{ near, pos, distance }`, no yaw.
+function minimapData() {
+  const w = state.walk.state;
+  return {
+    pos: w.pos, yaw: w.yaw,
+    // The facade, not the raw terrain: it already turns "outside the grid" into open sea
+    // and blends the last few cells into it (shared/regions.mjs), which is exactly what a
+    // radar sampling well past the coast wants and the raw heightfield does not do.
+    home: state.region,
+    boats: state.boats,
+    near: state.sea.regions().filter((r) => r !== state.region).map((r) => ({ x: r.origin[0], z: r.origin[1] })),
+    far: state.horizon ? state.horizon.marks() : [],
+    town: townCentreScenePos(),
+  };
+}
+
 function enterWalk(spot = null) {
   if (state.mode === 'walk') return;
   const board = state.byId.get('civic:board');
@@ -1184,6 +1223,7 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
+  state.minimap.setVisible(false);   // M's own state (minimapOn) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
   faceToFace.cancel();
@@ -1536,6 +1576,9 @@ function launchBoats() {
 
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
+// Whether the player has asked for the radar, kept across a trip in and out of a building -
+// off by default, like ?stats.
+let minimapOn = false;
 
 // One boat per island, at the mooring shared/quay.mjs derives - the same arithmetic the
 // server does for lib/boats.mjs and the same every other browser does, so an untouched
@@ -1592,16 +1635,6 @@ function onBoatFromServer(m) {
   }
 }
 
-// What is moored in the harbour, and putting it in the water.
-//
-// This is where the two halves meet. `/api/island` takes delivery of a bundle and parks it
-// (lib/guests.mjs); `joinIsland` can place a region and `raiseGuestIslands` can draw one.
-// Until now nothing joined them up, and the only island that ever appeared beside ours came
-// from the `?join=` debug parameter.
-//
-// Two requests rather than one on purpose: the list is a name, a seed and a size each and
-// costs a few hundred bytes, and the island whole is up to two megabytes. The SSE `guests`
-// event carries the list, and the page comes back for the ones it has not got.
 // Where the sea says this island lies, before anything is drawn with it. Also the first
 // look at the fleet, so a page that boots into a busy world raises every coast in one go
 // rather than watching them pop in one socket message at a time.
@@ -2468,6 +2501,101 @@ function buildScene(village) {
     // So the water is laid over everything there is, not over this island alone.
     sea: state.sea,
   });
+
+
+  //roaddebug is a debug mesh that shows the road network, for development and testing.
+  state.roadDebug = createRoadDebug({
+    scene,
+    terrain,
+    // A getter, not the snapshot: state.village is swapped for a new object on every
+    // scan (applyVillage), and this closure has to see that or /roads redraw draws
+    // nothing but the island as it stood at boot.
+    village: () => state.village,
+  });
+
+  window.addEventListener('island-command', async (event) => {
+  const { action, data } = event.detail || {};
+
+  switch (action) {
+    case 'roads_wireframe_toggle':
+      state.roadDebug?.setWireframe(!state.roadDebug?.wireframeEnabled);
+      break;
+
+    case 'roads_hide':
+      state.roadDebug?.setWireframe(false);
+      break;
+
+    case 'roads_show':
+      state.roadDebug?.setWireframe(true);
+      break;
+
+    case 'roads_connections_toggle':
+      state.roadDebug?.setConnections(!state.roadDebug?.connectionsEnabled);
+      break;
+
+    case 'roads_redraw':
+      // The /api/command response comes back as soon as the server's rescan has
+      // finished, but this page's own state.village is only refreshed by the SSE
+      // `update` listener, which is debounced 250ms behind it - rebuilding straight
+      // off state.village here redrew whatever was already on screen before the
+      // rescan, not the rescan that just ran. Fetching directly is what a redraw
+      // actually promised.
+      try {
+        const next = await fetchVillage();
+        if (next && (!state.village || next.generatedAt > state.village.generatedAt)) {
+          // animate: true, not false - state.world.buildPaths (the worn-path texture, not
+          // just the debug wireframe) only runs inside applyVillage's `animate` guard
+          // (see the comment on it there). A silent `false` here left the ground exactly
+          // as it was: setOwnership and the districts refreshed, the dirt paths did not.
+          applyVillage(next, { animate: true });
+        }
+      } catch (e) { console.warn('[roads] redraw could not refetch the village', e); }
+      // setWireframe(true) always rebuilds (buildWireframe clears the group first), so
+      // this both shows the debug view and forces it to pick up whatever the village
+      // looks like right now. refresh() alongside it, not instead: redraw only forces
+      // the wireframe on, and a connections view already showing deserves the same fresh
+      // data rather than being left to draw from whatever was true before the rescan.
+      state.roadDebug?.setWireframe(true);
+      state.roadDebug?.refresh();
+      break;
+
+    case 'roads_delete':
+      // No setWireframe(true) here on purpose, unlike redraw/reroute above: delete does
+      // not ask to be shown, only to be seen if a debug layer is already on. refresh()
+      // respects whichever of wireframe/connections is currently enabled and rebuilds
+      // only that - if connections is on, every house just lost its road and every one
+      // gets its marker; if nothing is on, this is a quiet change until /roads status
+      // or a debug view is switched on to look.
+      try {
+        const next = await fetchVillage();
+        if (next && (!state.village || next.generatedAt > state.village.generatedAt)) {
+          applyVillage(next, { animate: true });
+        }
+      } catch (e) { console.warn('[roads] delete could not refetch the village', e); }
+      state.roadDebug?.refresh();
+      break;
+
+    case 'roads_status':
+      console.log('[roads]', {
+        wireframe: state.roadDebug?.wireframeEnabled ?? false,
+        connections: state.roadDebug?.connectionsEnabled ?? false,
+      });
+      break;
+
+    default:
+      console.log('[command] unhandled action:', action, data);
+      break;
+  }
+});
+
+
+
+
+
+
+
+
+
   // The sky over the whole world, before the haze is measured: applyFogRange asks it what
   // it is doing. Built here rather than at boot because it borrows world.js's clouds, dome
   // and lights instead of drawing a second set, and thrown away with the scene on a reseed.
@@ -3177,6 +3305,10 @@ function applyVillage(next, { animate }) {
     if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
       syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
+      // The road network just changed - a house that gained (or lost) its way to the
+      // square deserves its mark updated in the same update, not left stale until the
+      // next explicit /roads command.
+      state.roadDebug?.refresh();
     }
   }
 
@@ -3600,11 +3732,13 @@ function frame(nowMs) {
     const w = state.inside.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
+    state.minimap.setVisible(false);      // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
+    if (minimapOn) state.minimap.update(minimapData());
   }
   // A conversation borrows the camera, and this is where it writes it: after the feet,
   // because while it is running walk mode is paused and this is the only hand on it.
@@ -4222,6 +4356,7 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
+  state.minimap = createMinimap();
   if (!state.guest) refreshNeighbours();
   syncFleet();        // whatever was already in the water when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js

@@ -28,21 +28,55 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 
 // The wide-brimmed, straw-hatted settler the player has always been.
 export const DEFAULT_AVATAR = {
-  character: 'kenney',
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
+  // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
+  // derived from the rest of the look. The backpack defaults on, so nobody's look changes
+  // until they open the Equipment section themselves; every other piece defaults off.
+  equip: {
+    backpack: true, chestplate: false, leggings: false, boots: false,
+    leftHandItem: null, rightHandItem: null,
+  },
 };
+
+// What a hand can hold. 'parasol' was the first thing tried (Plans/
+// uitrusting-en-vasthouden.md); 'hammer' is the tool that used to be welded to the model's
+// hip as a core part and is now the same kind of held state everything else here is; 'sword'
+// and 'shield' are the first purely cosmetic pair, added the same way - see classic-
+// avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from.
+export const HAND_ITEMS = [
+  { id: 'parasol', name: 'Parasol', icon: '⛱️' },
+  { id: 'hammer', name: 'Hammer', icon: '🔨' },
+  { id: 'sword', name: 'Sword', icon: '⚔️' },
+  { id: 'shield', name: 'Shield', icon: '🛡️' },
+];
+
+// The seven hat shapes plus the one the player alone can wear. A helmet replaces a hat
+// rather than sitting alongside one - the same hatShape slot, one at a time - but it is
+// not baked into a Blender variant the way the other seven are (see classic-avatar.js's
+// helmetGeometry()), and HAT_SHAPES itself feeds CIVILIAN_HATS in shared/palette.mjs,
+// which is how NPCs get a hat at all: adding 'helmet' there would hand some villager a
+// hatShape no baked mesh answers to. So it stays a player-only addition on top, used only
+// for the studio's picker and for validating spec.hatShape below.
+export const PLAYER_HAT_SHAPES = [...HAT_SHAPES, { id: 'helmet', name: 'Helmet' }];
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
-  const shape = HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
+  const shape = PLAYER_HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
   return {
-    character: spec.character === 'classic' ? 'classic' : d.character,
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
     trim: num(spec.trim, d.trim),
     hat: num(spec.hat, d.hat),
     hatShape: shape,
+    equip: {
+      backpack: spec.equip?.backpack !== false,
+      chestplate: !!spec.equip?.chestplate,
+      leggings: !!spec.equip?.leggings,
+      boots: !!spec.equip?.boots,
+      leftHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.leftHandItem) ? spec.equip.leftHandItem : null,
+      rightHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.rightHandItem) ? spec.equip.rightHandItem : null,
+    },
   };
 }
 
@@ -51,7 +85,11 @@ export function loadAvatar() {
     const raw = localStorage.getItem(KEY);
     if (raw) return normalizeAvatar(JSON.parse(raw));
   } catch { /* no storage, or nonsense in it: fall back to the default look */ }
-  return { ...DEFAULT_AVATAR };
+  // normalizeAvatar({}), not a spread of DEFAULT_AVATAR: a shallow spread would hand back
+  // DEFAULT_AVATAR's own equip object, and the studio's equip toggles mutate that object
+  // rather than replacing it - a settler with no saved look yet would edit the shared
+  // default for every settler after them.
+  return normalizeAvatar({});
 }
 
 export function saveAvatar(spec) {
