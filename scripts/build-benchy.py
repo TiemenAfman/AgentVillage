@@ -48,9 +48,9 @@ SRC = ROOT / 'assets' / 'benchy' / '3dbenchy.stl'
 PITCH = 0.7
 TRIANGLES = 2400
 
-# What has to fit inside. web/js/walk.js draws the settler at KENNEY_HEIGHT, and a head a
-# whisker under a beam reads as a bug even when it is not - so the cabin is scaled to hold
-# the figure plus a hand's width of air.
+# What has to fit inside. The settler walk mode steers stands 0.54 units tall (see the EYE
+# comment in web/js/walk.js), and a head a whisker under a beam reads as a bug even when it
+# is not - so the cabin is scaled to hold the figure plus a hand's width of air.
 SETTLER_HEIGHT = 0.54
 HEADROOM = 0.08
 

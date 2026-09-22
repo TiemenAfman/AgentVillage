@@ -28,7 +28,6 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 
 // The wide-brimmed, straw-hatted settler the player has always been.
 export const DEFAULT_AVATAR = {
-  character: 'kenney',
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
   // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
   // derived from the rest of the look. The backpack defaults on, so nobody's look changes
@@ -46,7 +45,6 @@ export function normalizeAvatar(spec = {}) {
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
   const shape = HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
   return {
-    character: spec.character === 'classic' ? 'classic' : d.character,
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
     trim: num(spec.trim, d.trim),

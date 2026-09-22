@@ -2,13 +2,11 @@
 // exactly the figure you will walk as; the swatches on the right change it as you pick.
 // Nothing is committed until you wear it - "Never mind" puts back what you had on.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   SWATCHES, HAT_SHAPES, HAND_ITEMS, DEFAULT_AVATAR,
   loadAvatar, saveAvatar, normalizeAvatar,
 } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
-import { modelUrl } from './assets.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 
@@ -64,10 +62,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <div class="av-body">
           <div class="av-stage"><canvas id="av-canvas"></canvas></div>
           <div class="av-controls">
-            <h4>Character</h4><div class="av-hats">
-              <button class="av-model chip" data-character="kenney">Kenney</button>
-              <button class="av-model chip" data-character="classic">Original</button>
-            </div>
             <h4>Skin</h4><div class="av-swatches" data-row="skin">${swatchRow('skin')}</div>
             <h4>Tunic</h4><div class="av-swatches" data-row="tunic">${swatchRow('tunic')}</div>
             <h4>Leather &amp; trim</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
@@ -100,9 +94,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     el.querySelectorAll('.av-hat').forEach((b) => b.addEventListener('click', () => {
       spec.hatShape = b.dataset.shape; sync(); apply();
     }));
-    el.querySelectorAll('.av-model').forEach((b) => b.addEventListener('click', () => {
-      spec.character = b.dataset.character; sync(); apply();
-    }));
     // A fresh object every time, not a mutation of spec.equip in place: spec can still be
     // the DEFAULT_AVATAR-derived one from Reset, and mutating that would leak into every
     // settler's default look instead of just this session's.
@@ -122,7 +113,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   function sync() {
     el.querySelectorAll('.av-sw').forEach((b) => b.classList.toggle('on', Number(b.dataset.hex) === spec[b.dataset.part]));
     el.querySelectorAll('.av-hat').forEach((b) => b.classList.toggle('on', b.dataset.shape === spec.hatShape));
-    el.querySelectorAll('.av-model').forEach((b) => b.classList.toggle('on', b.dataset.character === spec.character));
     el.querySelectorAll('.av-equip').forEach((b) => b.classList.toggle('on', !!spec.equip?.[b.dataset.equip]));
     el.querySelectorAll('.av-hand').forEach((b) => b.classList.toggle('on', (spec.equip?.[b.dataset.side] || '') === b.dataset.item));
   }
@@ -173,33 +163,6 @@ function makePreview(canvas) {
   pivot.add(classic.object);
   scene.add(pivot);
 
-  let character = DEFAULT_AVATAR.character;
-  let kenney = null, mixer = null;
-  new GLTFLoader().load(modelUrl('kenney/character-male-a.glb'), (gltf) => {
-    kenney = gltf.scene;
-    kenney.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(kenney);
-    const scale = 0.54 / bounds.getSize(new THREE.Vector3()).y;
-    kenney.scale.setScalar(scale);
-    kenney.position.set(
-      -(bounds.min.x + bounds.max.x) * 0.5 * scale,
-      -bounds.min.y * scale,
-      -(bounds.min.z + bounds.max.z) * 0.5 * scale,
-    );
-    kenney.traverse((part) => { if (part.isMesh) part.castShadow = true; });
-    pivot.add(kenney);
-    mixer = new THREE.AnimationMixer(kenney);
-    const walk = gltf.animations.find((clip) => clip.name === 'walk');
-    if (walk) mixer.clipAction(walk).play();
-    syncCharacter();
-  });
-
-  function syncCharacter() {
-    classic.object.visible = character === 'classic' || !kenney;
-    if (kenney) kenney.visible = character === 'kenney';
-  }
-  syncCharacter();
-
   function resize() {
     const w = canvas.clientWidth || 220, h = canvas.clientHeight || 300;
     renderer.setSize(w, h, false);
@@ -217,32 +180,19 @@ function makePreview(canvas) {
     pivot.rotation.y += dt * 0.7;
     classic.update({ moving: true, running: false, grounded: true, crouching: false,
       sitting: false, lying: false, phase: now * 0.009 }, dt);
-    if (mixer && kenney.visible) mixer.update(dt);
     renderer.render(scene, cam);
   }
   raf = requestAnimationFrame(tick);
 
   return {
     set(spec) {
-      character = spec.character;
       classic.set(spec);
-      syncCharacter();
     },
     dispose() {
       alive = false;
       cancelAnimationFrame(raf);
       removeEventListener('resize', resize);
       classic.dispose();
-      if (kenney) kenney.traverse((part) => {
-        if (!part.isMesh) return;
-        part.geometry?.dispose();
-        const materials = Array.isArray(part.material) ? part.material : [part.material];
-        for (const kenneyMat of materials) {
-          if (!kenneyMat) continue;
-          for (const value of Object.values(kenneyMat)) if (value?.isTexture) value.dispose();
-          kenneyMat.dispose();
-        }
-      });
       mat.dispose();
       renderer.dispose();
     },

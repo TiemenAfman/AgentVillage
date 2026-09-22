@@ -11,10 +11,12 @@ bedroll and hammer. Created in Blender 5.2; no game assets or textures are used.
 
 The studio preview remains a vertex-coloured model with `aEmissive = 0` and
 `aSheet = 0`, compatible with the island material. In walk mode the same named Blender
-parts are split into a core and four limb groups by `classic-avatar.js`. This lightweight
-procedural rig adds idle, walk, sprint, jump, crouch and sit poses without changing the
-source mesh, wardrobe colours or saved avatar format. The Avatar panel switches between
-this **Original** character and the rigged Kenney character.
+parts are split into a core, four limb groups and a backpack group by `classic-avatar.js`.
+This lightweight procedural rig adds idle, walk, sprint, jump, crouch and sit poses without
+changing the source mesh, wardrobe colours or saved avatar format. It is the only character
+the Avatar panel offers - a second, rigged Kenney GLB used to be selectable alongside it and
+was removed outright, `character` field and all, rather than kept as a second, unused code
+path nothing built against any more.
 NPC settlers use their own Blender resident model described below.
 
 The browser's `promptholm.avatar` schema and seven hat choices are unchanged. Skin,

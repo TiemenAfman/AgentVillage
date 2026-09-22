@@ -63,8 +63,6 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
     saveAvatar(spec);
     assert.deepEqual(JSON.parse(values.get('promptholm.avatar')), spec);
     assert.deepEqual(loadAvatar(), spec);
-    assert.equal(saveAvatar({ ...spec, character: 'classic' }).character, 'classic');
-    assert.equal(saveAvatar({ ...spec, character: 'unknown' }).character, DEFAULT_AVATAR.character);
     values.set('promptholm.avatar', '{broken');
     assert.deepEqual(loadAvatar(), DEFAULT_AVATAR);
   } finally {
@@ -74,7 +72,7 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
 });
 
 test('the original avatar keeps every triangle while its limbs animate independently', () => {
-  const spec = { ...DEFAULT_AVATAR, character: 'classic' };
+  const spec = { ...DEFAULT_AVATAR };
   const merged = avatarPlayerGeometry(spec);
   const material = new MeshBasicMaterial({ vertexColors: true });
   const animated = createClassicAvatar(spec, material);
