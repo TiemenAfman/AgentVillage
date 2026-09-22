@@ -107,21 +107,24 @@
 </header>
 
 <div class="topright" id="topright" hidden>
-  <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
+  <div class="chips-row">
+    <div class="chips" id="nav-chips">
+      <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
+      <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
+      <button class="chip" id="build-btn" title="Put something on the island">Build</button>
+      <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
+      <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
+      <button class="chip" id="legend-btn">Legend</button>
+      <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
+      <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
+    </div>
+    <button class="chip" id="nav-collapse-btn" title="Hide the menu">‹</button>
+    <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
+  </div>
   <div class="chips">
     <button class="chip on" data-filter="code">Code</button>
     <button class="chip on" data-filter="cowork">Cowork</button>
     <button class="chip on" data-filter="apprentices">Apprentices</button>
-  </div>
-  <div class="chips">
-    <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
-    <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
-    <button class="chip" id="build-btn" title="Put something on the island">Build</button>
-    <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
-    <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
-    <button class="chip" id="legend-btn">Legend</button>
-    <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
-    <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
   </div>
 </div>
 

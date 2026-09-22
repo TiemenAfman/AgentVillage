@@ -81,6 +81,7 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .titlecard::before { font-size: 8px; letter-spacing: .16em; }
   .topright { max-width: calc(100vw - 225px); }
   .topright .chips { flex-wrap: wrap; justify-content: flex-end; }
+  .chips-row { flex-wrap: wrap; justify-content: flex-end; }
   .topright .chip { padding: 6px 8px; }
   .right-column, .panel { top: 230px; }
 }

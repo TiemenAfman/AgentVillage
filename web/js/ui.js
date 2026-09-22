@@ -79,6 +79,26 @@ export function createUI(handlers) {
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+
+  // Tucks the menu away - New settler through Overview - leaving the clock and the
+  // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
+  // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
+  const NAV_KEY = 'promptholm.nav.collapsed';
+  let navCollapsed = false;
+  try { navCollapsed = localStorage.getItem(NAV_KEY) === '1'; } catch { /* no storage */ }
+  function applyNavCollapsed() {
+    el('nav-chips').hidden = navCollapsed;
+    // The glyph itself stays '‹' - collapsed flips it 180deg in CSS rather than swapping
+    // characters, so it keeps pointing at the menu it would bring back.
+    el('nav-collapse-btn').classList.toggle('collapsed', navCollapsed);
+    el('nav-collapse-btn').title = navCollapsed ? 'Show the menu' : 'Hide the menu';
+  }
+  applyNavCollapsed();
+  el('nav-collapse-btn').addEventListener('click', () => {
+    navCollapsed = !navCollapsed;
+    try { localStorage.setItem(NAV_KEY, navCollapsed ? '1' : '0'); } catch { /* fine, just not remembered */ }
+    applyNavCollapsed();
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { close('dossier'); close('legend'); close('settings'); }
     // Space belongs to the player on foot, where it jumps. Restarting the history from
