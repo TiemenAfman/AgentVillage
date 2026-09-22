@@ -3,7 +3,7 @@
 // the single file the island viewer consumes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ROOT, ensureData, loadConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
+import { DATA, ROOT, ensureData, loadConfig, fillConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
@@ -485,6 +485,14 @@ function nextMilestone(stats) {
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(path.join(ROOT, 'scan.mjs'));
 if (invokedDirectly) {
+  // Same check serve.mjs does, and only when the scanner is the process rather than a
+  // rescan inside a running island: that one comes round every 60 s, and there is nothing
+  // to fill in the second time.
+  const filledIn = fillConfig();
+  if (filledIn.added.length) {
+    const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
+    process.stderr.write(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}\n`);
+  }
   const o = parseArgs(process.argv.slice(2));
   scan(o).then((r) => {
     if (r && r.skipped) process.stderr.write(`[settlers] skipped: ${r.reason}\n`);

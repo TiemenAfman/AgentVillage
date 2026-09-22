@@ -933,6 +933,12 @@ terrain on load and warns in the console if the two ever disagree.
 
 - **First run**: copy `config.example.json` to `config.json`. Leave `foundedAt` empty to
   start the village from now, or set it to an ISO date to include earlier sessions.
+- **After an update**: nothing. The island checks `config.json` when it starts and writes
+  in any setting that has been added since, at its default, naming them on the console —
+  so a file from an older island keeps every value you chose and still shows you what
+  there is to change. It only ever adds: a setting it does not recognise is left alone,
+  and one you set to `null` stays `null`. `config.example.json` is a dump of those
+  defaults, held to them by `tests/config-file.test.mjs`.
 - **Rename the island** or move the founding date: edit `config.json`.
 - **Start over**: delete `data/` and rescan. Houses will be placed afresh.
 - **The garden** is in `data/garden.json`, which the scanner never touches — but it is

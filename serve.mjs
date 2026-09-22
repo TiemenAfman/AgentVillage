@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -37,6 +37,16 @@ import { executeCommand } from './lib/commands.mjs';
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
 const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
+
+// Before anything reads it: an island that has been updated a few times has a config.json
+// older than the settings the code now has, and loadConfig hides that by filling the gaps
+// in memory - so the file quietly stops mentioning half of what you can change. Adds the
+// missing keys at their defaults and says which, and is silent when there is nothing to do.
+const filledIn = fillConfig();
+if (filledIn.added.length) {
+  const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
+  console.log(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}`);
+}
 
 const config = loadConfig();
 // The flags win over the file, so you can open an island for an afternoon, or run a

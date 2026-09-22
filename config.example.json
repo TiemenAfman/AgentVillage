@@ -4,7 +4,7 @@
   "founders": [],
   "seed": 1337,
   "port": 4747,
-  "gridSize": 128,
+  "gridSize": 64,
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
   "network": {
@@ -18,7 +18,17 @@
     "tickMs": 66,
     "guestView": "redacted",
     "name": null,
-    "discovery": true
+    "discovery": true,
+    "sea": {
+      "mode": "single",
+      "url": null,
+      "key": null,
+      "port": 4750,
+      "name": null,
+      "known": [
+        "http://AgentVillage.freeddns.org:4750/"
+      ]
+    }
   },
   "display": {
     "nameplates": "keeper"
@@ -26,13 +36,16 @@
   "dispatch": {
     "opening": "Pick up {key}",
     "skill": null,
-    "language": "en"
+    "language": "en",
+    "where": "Jira"
   },
   "github": {
     "repo": null,
     "dispatch": {
       "opening": "Pick up issue #{number}",
-      "skill": "issue-oppakken"
+      "skill": "issue-oppakken",
+      "where": "GitHub",
+      "plain": "Read it with `gh issue view {number}`, branch from origin/main as <type>/{number}-<slug>, say on the issue that you have picked it up, and when the work is done push the branch and close the issue as completed, naming the branch in the closing comment."
     }
   }
 }
