@@ -134,7 +134,14 @@ export function createChat(root, { onClose, onBusyChange, onSendAway }) {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    say(input.value);
+    const t = input.value;
+    if (isCommand(t)) {
+      input.value = '';
+      input.style.height = 'auto';
+      command(t);
+      return;
+    }
+    say(t);
   });
 
   function onKey(e) {
@@ -255,6 +262,59 @@ export function createChat(root, { onClose, onBusyChange, onSendAway }) {
   }
 
 
+
+  async function say(text) {
+    const t = String(text || '').trim();
+    if (!t || busy || !settler) return;
+    input.value = '';
+    input.style.height = 'auto';
+    messages.push({ role: 'user', text: t });
+    const pendingMsg = { role: 'assistant', text: '', tools: [] };
+    messages.push(pendingMsg);
+    draw(messages, { note: 'Thinking…' });
+    setBusy(true);
+
+    controller = new AbortController();
+    try {
+      const res = await mine('/api/say', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: settler.sessionId, cwd: settler.cwd, text: t, mode }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `the server said ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let carry = '';
+      let sawAnything = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        carry += dec.decode(value, { stream: true });
+        const lines = carry.split('\n');
+        carry = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let ev;
+          try { ev = JSON.parse(line); } catch { continue; }
+          sawAnything = handleEvent(ev, pendingMsg) || sawAnything;
+          draw(messages, { note: busy ? 'Working…' : null });
+        }
+      }
+      if (!sawAnything && !pendingMsg.text) pendingMsg.text = '(they said nothing)';
+    } catch (e) {
+      if (e.name === 'AbortError') pendingMsg.text += (pendingMsg.text ? '\n\n' : '') + '(you stopped them)';
+      else messages.push({ role: 'note', text: `That did not work: ${e.message}` });
+    } finally {
+      setBusy(false);
+      controller = null;
+      draw(messages);
+      input.focus();
+    }
+  }
 
   // Commands are deliberately separate from the conversation.
   // The server is the authority on which commands actually exist.
