@@ -560,7 +560,15 @@ under your feet, so one of its worktrees is the quieter choice.
 A session hook is installed in `~/.claude/settings.json`. It fires on `SessionStart` and
 `SessionEnd`, records the arrival, and rescans. The hook writes nothing to stdout and
 always exits 0, so it can never disturb a session. The server also rescans every 60
-seconds, which is how Cowork tasks are noticed (their sandbox may not run user hooks).
+seconds, which is how Cowork tasks were noticed (their sandbox may not run user hooks).
+
+Since August 2026 the desktop app runs a Cowork task as a remote session: it leaves no
+record in `local-agent-mode-sessions` and no transcript on this machine, only an id
+(`cse_…`) in the app's own IndexedDB cache. So the quay is history - the houses on it stay,
+because a house never moves, and no new ones are built. The scanner still reads the folder,
+so a local Cowork task would come ashore again without a change here. Fetching the remote
+sessions would mean the islander asking claude.ai with the user's token, which breaks the
+rule that the island reads only what is already on disk, and was decided against.
 
 ### Hamlets and git
 
@@ -754,7 +762,7 @@ with no shallows to reclaim.
 | The Outlands | Sessions whose folder is not a project: System32, a downloads folder, a shelf full of other repos |
 | The town square, growing 3 -> 5 -> 7 cells across | 1, 30 and 90 settlers |
 | An outpost | A session in a git worktree, whether `.claude/worktrees` or `git worktree add` |
-| A house on stilts at the quay | A Cowork task; its settler arrives by boat |
+| A house on stilts at the quay | A Cowork task from before August 2026, when they still ran on this machine; its settler arrived by boat. No new ones come (see [How the village grows](#how-the-village-grows)) |
 | A plank dock out over the water, with mooring posts | The quay: where a Cowork task's settler comes ashore, and where the island's boat lies. Stand on it and **E** gives you the boat — see [Visitors and neighbours](#visitors-and-neighbours). On the open sea, never on the lake or a river — a settler arriving by boat has to be able to get there |
 | One dock and no more, on every island | The quay district's planks where there is a quay district, and a dock at the landing where there is not |
 | A boat out on the bay with a settler in it | Somebody's afternoon off — they will bring her back to the quay |
@@ -834,7 +842,7 @@ a lower pixel ratio.
 | Subagent transcripts | `…/<session>/subagents/agent-<id>.jsonl` |
 | Running sessions | `~/.claude/sessions/<pid>.json` |
 | Session titles and models | `%APPDATA%\Claude\claude-code-sessions\…` |
-| Cowork tasks | `%APPDATA%\Claude\local-agent-mode-sessions\…` |
+| Cowork tasks (local ones only; remote tasks leave nothing here) | `%APPDATA%\Claude\local-agent-mode-sessions\…` |
 | The sprint on the cork board | Jira REST v2, cached in `data/sprint.json` |
 | The issues on the island board | `gh issue list`, cached in `data/issues.json` |
 
