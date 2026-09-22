@@ -15,6 +15,7 @@ import { COTTAGE } from '../web/js/cottage-mesh.js';
 import { HOUSE } from '../web/js/house-mesh.js';
 import { MANOR } from '../web/js/manor-mesh.js';
 import { HUT } from '../web/js/hut-mesh.js';
+import { WINDMILL } from '../web/js/windmill-mesh.js';
 import { SCHOOL } from '../web/js/school-mesh.js';
 import { TOWNHALL } from '../web/js/townhall-mesh.js';
 import { PROPS } from '../web/js/props-mesh.js';
@@ -31,7 +32,7 @@ import { BENCHY } from '../web/js/benchy-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
+const BAKED = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.

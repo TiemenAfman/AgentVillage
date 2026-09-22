@@ -1429,23 +1429,10 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
-      parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
-      // The door has to stand proud of a tower that tapers. The wall is 0.48 out at the
-      // foot and the door was a five-centimetre board centred at 0.44, so the brickwork
-      // came through it and what you saw was a tower with a dark smear on it. Centred at
-      // 0.48 and thicker, its face clears the widest course and its back stays buried.
-      parts.push(box(0.22, 0.36, 0.07, C.darkWood, { y: 0, z: 0.48 }));
-      parts.push(cylinder(0.4, 0.4, 0.05, 9, C.plank, { y: 1.12 }));
-      parts.push(dome(0.38, 0x5a3c28, { y: 1.5 }));
-      // The windshaft, and it has to be a real length rather than a stub. The sails turn
-      // in the one plane their hub sits in, and at z 0.42 that plane cut the tower: the
-      // tower is 0.48 across at the foot and 0.34 at the head, so anything below about
-      // two thirds of its height is wider than the sails were standing off, and every
-      // turn swept the descending sail through the brickwork. At 0.56 the plane clears
-      // the widest course there is, which is also why a real mill's shaft sticks out.
-      parts.push(box(0.09, 0.09, 0.44, C.darkWood, { y: 1.575, z: 0.34 }));
-      animated.blades = { at: [0, 1.62, 0.56], r: 0.6 };
-      return { anchors, animated, height: 2.1 };
+      parts.push(...meshAsset('civic_windmill'));
+      // The entire sail disc stands ahead of the widest course of brickwork.
+      animated.blades = { at: [0, 1.61, 0.64], r: 0.5 };
+      return { anchors, animated, height: models.heightOf('civic_windmill') };
     case 'lighthouse': {
       const bands = BEACON_BANDS;
       for (let i = 0; i < bands; i++) {
@@ -2071,21 +2058,8 @@ export function buildFlameGeometry() {
 }
 
 export function buildBladesGeometry() {
-  const parts = [];
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    // box() stands a shape on o.y rather than centring it there, so `y: 0.52` put the
-    // foot of each arm half its own length out from the hub: four spars orbiting a gap,
-    // with nothing joining them to the mill. They start at the hub and run outward.
-    const arm = box(0.07, 1.05, 0.02, 0xd9c7a3, { y: 0 });
-    arm.rotateZ(a);
-    parts.push(arm);
-    const spar = box(0.02, 1.05, 0.03, C.darkWood, { y: 0 });
-    spar.rotateZ(a);
-    parts.push(spar);
-  }
-  parts.push(cylinder(0.06, 0.06, 0.1, 8, C.darkWood, { rx: Math.PI / 2, y: 0 }));
-  return merge(parts);
+  // Blender assets stand on the floor; the moving geometry turns around its hub.
+  return merge(meshAsset('civic_windmill_sails', 0xffffff, { y: -1.05 }));
 }
 
 // ---------------------------------------------------------------- the quay
