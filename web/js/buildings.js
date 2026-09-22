@@ -2,6 +2,7 @@
 // vertex-coloured primitives and merged into a single geometry, so 300 houses cost
 // 300 draw calls rather than 6000. Windows glow at night through a per-vertex
 // emissive mask on the one shared material.
+import { BASIN_DECK } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
@@ -2102,7 +2103,7 @@ export function buildBladesGeometry() {
 // alongside rather than as planks lying on the surface. The pier that was here before rode
 // at 0.16, under the 0.09 its own waves reach: at any hour of the day the crests washed
 // straight through the deck.
-export const QUAY_DECK = SEA_LEVEL + 0.44;
+export const QUAY_DECK = BASIN_DECK;
 const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
 const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
 const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway

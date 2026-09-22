@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash32 } from 'shared/rng.mjs';
-import { TIER_INDEX, QUAY_DECK } from './buildings.js';
+import { TIER_INDEX } from './buildings.js';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
 
@@ -311,14 +311,15 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
       // fence around it reads as a boundary between nothing and nothing - clearest on an
       // early island, where it was one long line across empty grass.
       if (k === NONE || k === TOWN) continue;
-      // The quay's fence stands on its boardwalk, not on the ground that is no longer
-      // drawn under it. Its own basin is the one place a boundary has a height of its own.
-      const level = village.districts[k]?.kind === 'quay' ? QUAY_DECK : null;
+      // The harbour's sloping water edge is its boundary; it needs no fence.
+      if (village.districts[k]?.kind === 'quay') continue;
+      const level = null;
       for (const [dx, dz] of N4) {
         const nx = gx + dx, nz = gz + dz;
         if (ownerAt(nx, nz) === k) continue;
         // Two owners meeting would draw the boundary twice; the lower index draws it.
         const no = ownerAt(nx, nz);
+        if (village.districts[no]?.kind === 'quay') continue;
         // The lower index draws a shared edge - but the town draws nothing now, so a
         // hamlet meeting the commons has to put up its own side or the run breaks there.
         if (no !== NONE && no !== TOWN && no < k) continue;

@@ -20,7 +20,7 @@ globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeE
 const { roadGraph, smoothLane, offCurve, quayWaterField } = await import('../web/js/world.js');
 delete globalThis.document;
 
-test('the quay water mask follows its parcel and no neighbouring land', () => {
+test('the quay water mask leaves one cell of shoreline clearance around its parcel', () => {
   const size = 8;
   const village = {
     island: { lattice: { anchor: [0, 0], pitch: 2 }, town: null },
@@ -34,7 +34,7 @@ test('the quay water mask follows its parcel and no neighbouring land', () => {
   for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
     if (mask[x + z * size]) wet.push([x, z]);
   }
-  assert.deepEqual(wet, [[2, 2], [3, 2], [2, 3], [3, 3]]);
+  assert.deepEqual(wet, Array.from({ length: 4 }, (_, z) => Array.from({ length: 4 }, (_, x) => [x + 1, z + 1])).flat());
 });
 
 // The number world.js draws with. Written out here rather than exported, so that raising

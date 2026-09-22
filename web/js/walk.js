@@ -1,6 +1,7 @@
 // Walking the island on foot. A third-person camera behind a settler you steer with
 // WASD, terrain underfoot, buildings you cannot walk through, and a prompt when you
 // come close to something you can interact with.
+import { quayBasin } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
 import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
@@ -430,7 +431,12 @@ export function createWalkMode({
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
   function groundAt(x, z, from = Infinity) {
-    let best = heightUnder(x, z);
+    const region = ground?.regionAt?.(x, z);
+    const basin = region && quayBasin(region.village, region.terrain);
+    const local = region?.toLocal(x, z);
+    const ramp = basin && basin.rampHeight(...local);
+    if (ramp != null) return ramp;
+    let best = basin?.contains(...local) ? basin.height(...local) : heightUnder(x, z);
     const above = levelsIn(x, z);
     if (!above) return best;
     const reach = from + STEP_UP;

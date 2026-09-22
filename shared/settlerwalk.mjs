@@ -33,6 +33,7 @@
 // One figure object is still shared between this file and the renderer rather than split
 // in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
+import { quayBasin } from './quay-basin.mjs';
 import { makeRng, hash32, clamp } from './rng.mjs';
 import { GATE_REACH } from './roads.mjs';
 
@@ -113,7 +114,8 @@ export function lerpAngle(a, b, t) {
   return a + d * clamp(t, 0, 1);
 }
 
-export function createWalk(terrain) {
+export function createWalk(terrain, village = null) {
+  const basin = quayBasin(village, terrain);
   const figures = new Map();   // buildingId -> figure
 
   // `look` is the drawing half's business, and the one number out of it this half needs is
@@ -229,6 +231,8 @@ export function createWalk(terrain) {
   function setDecks(map) { deckAt = map || new Map(); }
   const groundOrDeck = (x, z) => {
     const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
+    const ramp = basin?.rampHeight(x, z);
+    if (ramp != null) return ramp;
     const d = deckAt.get(gx + gz * terrain.size);
     return d != null ? d : terrain.worldHeight(x, z);
   };

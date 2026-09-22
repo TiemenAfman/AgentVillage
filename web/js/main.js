@@ -2493,6 +2493,7 @@ function buildScene(village) {
   // sea's origin, which was also this page's - was refused as overlapping home and shown
   // as the beacon's silhouette in the haze. Plans/wie-joint-ziet-de-host-als-mist.md.
   state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
+  state.region.village = village;
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
@@ -3095,6 +3096,7 @@ function layLandscape(shot) {
     w.reshape(next);
   }
   state.shot = shot.village;
+  state.region.village = shot.village;
   w.setOwnership(shot.village);
   w.buildPaths(shot.village.paths, w.squareCells(shot.village));
   // The crossings go with the roads. They are dated on the wire now, so a scrub back past
@@ -3294,6 +3296,7 @@ function specById(village) {
 function applyVillage(next, { animate }) {
   const prev = state.village;
   state.village = next;
+  if (state.region) state.region.village = next;
   for (const d of next.districts) state.districts.set(d.id, d);
   const nextSpecs = specById(next);
 
