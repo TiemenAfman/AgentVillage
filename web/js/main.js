@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
+import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -2683,19 +2684,7 @@ function syncBridges(village) {
     bridgeGroup.add(m);
     bridgeMeshes.set(key, m);
   }
-  for (const d of village.districts || []) {
-    if (d.kind !== 'quay') continue;
-    for (const [gx, gz] of [...(d.deck || []), ...(d.pier || [])]) {
-      decks.set(gx + gz * terrain.size, QUAY_DECK);
-    }
-  }
-  for (const b of village.buildings || []) {
-    if (!b.harbour || !b.plot?.quay) continue;
-    const p = b.plot;
-    for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) {
-      decks.set((p.gx + x) + (p.gz + z) * terrain.size, QUAY_DECK);
-    }
-  }
+  for (const [cell, y] of quayDeckHeights(village, terrain.size)) decks.set(cell, y);
   handOutDecks();
 }
 

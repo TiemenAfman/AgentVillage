@@ -8,6 +8,24 @@ export const BASIN_DECK = 0.44;
 export const BANK_WIDTH = 2.8;
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+// The sea must know the permanent decks even before a browser has measured them.
+// Shared with the page so an old placements snapshot cannot put feet underground.
+export function quayDeckHeights(village, size) {
+  const heights = new Map();
+  for (const d of village?.districts || []) {
+    if (d.kind !== 'quay') continue;
+    for (const [gx, gz] of [...(d.deck || []), ...(d.pier || [])]) heights.set(gx + gz * size, BASIN_DECK);
+  }
+  for (const b of village?.buildings || []) {
+    if (!b.harbour || !b.plot?.quay) continue;
+    const p = b.plot;
+    for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) {
+      heights.set((p.gx + x) + (p.gz + z) * size, BASIN_DECK);
+    }
+  }
+  return heights;
+}
+
 function parcelWaterField(village, size) {
   const mask = new Uint8Array(size * size);
   const lat = village?.island?.lattice;
@@ -49,6 +67,18 @@ export function createQuayBasin(village, terrain) {
   const originalMask = parcelWaterField(village, size);
   const deck = new Set((village?.districts || []).filter(d => d.kind === 'quay')
     .flatMap(d => d.deck || []).map(([x, z]) => x + z * size));
+  // Only a road crossing the bank is an entrance; a doorstep beside it is not.
+  const entrances = new Set();
+  for (const path of village?.paths || []) {
+    const cells = path.cells || [];
+    for (let i = 1; i < cells.length; i++) {
+      let [a, b] = [cells[i - 1], cells[i]];
+      if (wet(...a) === wet(...b)) continue;
+      if (!wet(...a)) [a, b] = [b, a];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      if (Math.abs(dx) + Math.abs(dz) === 1) entrances.add(`${a[0]},${a[1]}:${dx},${dz}`);
+    }
+  }
   // Extend each landward entrance over the new cell; its ramp is both geometry
   // and a shared walking surface, so the added strip cannot strand the boardwalk.
   for (const key of [...deck]) {
@@ -68,8 +98,9 @@ export function createQuayBasin(village, terrain) {
       const x = gx - half + .5 + dx * .5, z = gz - half + .5 + dz * .5;
       const edge = { x, z, dx, dz };
       edges.push(edge);
-      if (deck.has(gx + gz * size) && terrain.worldHeight(x + dx * .5, z + dz * .5) > .05) {
-        const y = terrain.worldHeight(x, z) + .025;
+      if (entrances.has(`${gx},${gz}:${dx},${dz}`) && deck.has(gx + gz * size)
+        && terrain.worldHeight(x + dx * .5, z + dz * .5) > .05) {
+        const y = terrain.worldHeight(x, z);
         let run = 1;
         // Use the straight approach already laid, never a house plot beside it.
         while (run < 5 && deck.has((gx - dx * run) + (gz - dz * run) * size)
@@ -77,7 +108,7 @@ export function createQuayBasin(village, terrain) {
         // Stop at that last board's centre, not its far bank: on a narrow inlet
         // the far edge is land again and cannot be the low end of this ramp.
         const length = Math.min(4, Math.max(1.5, Math.ceil(Math.abs(y - BASIN_DECK) / .45)), run - .5);
-        ramps.push({ ...edge, y, length });
+        ramps.push({ ...edge, y, length, steps: Math.max(1, Math.ceil(Math.abs(y - BASIN_DECK) / .15)) });
       }
     }
   }
@@ -87,7 +118,7 @@ export function createQuayBasin(village, terrain) {
       const along = (x - r.x) * r.dx + (z - r.z) * r.dz;
       const across = (x - r.x) * r.dz - (z - r.z) * r.dx;
       if (along >= -r.length && along <= 0 && Math.abs(across) <= .38) {
-        return BASIN_DECK + (r.y - BASIN_DECK) * (along / r.length + 1);
+        return stairHeight(r, along);
       }
     }
     return null;
@@ -121,15 +152,15 @@ export function createQuayBasin(village, terrain) {
     const blend = t * t * (3 - 2 * t);
     const bed = Math.min(BASIN_FLOOR, original);
     let y = original + (bed - original) * blend;
-    // An access plank can cross the rounded lip before the bank has fallen away.
-    // Grade that narrow approach beneath it, feathering sideways into the bank.
+    // Fill beneath the stairs up to the uncut landing, rather than carving a
+    // hollow slot behind the top tread. Feather sideways into the bank.
     for (const r of ramps) {
       const along = (x - r.x) * r.dx + (z - r.z) * r.dz;
       const across = Math.abs((x - r.x) * r.dz - (z - r.z) * r.dx);
       if (along < -r.length || along > 0 || across > .85) continue;
       const plank = BASIN_DECK + (r.y - BASIN_DECK) * (along / r.length + 1);
       const feather = Math.max(0, (across - .38) / .47);
-      const cut = Math.min(y, plank - .025);
+      const cut = plank;
       y = cut + (y - cut) * feather * feather * (3 - 2 * feather);
     }
     // The bank can curl around an existing house, but never rise through its
@@ -138,12 +169,20 @@ export function createQuayBasin(village, terrain) {
       const dx = Math.max(p.x - x, 0, x - p.x - p.w);
       const dz = Math.max(p.z - z, 0, z - p.z - p.d);
       const t = Math.min(1, Math.sqrt(dx * dx + dz * dz) / .7);
-      const cut = Math.min(y, -.15);
+      // A platform near the edge must not leave a hole at the dry-land seam.
+      const seam = Math.min(1, bankDistance(x, z) / .7);
+      const cut = y + (Math.min(y, -.15) - y) * seam * seam * (3 - 2 * seam);
       y = cut + (y - cut) * t * t * (3 - 2 * t);
     }
     return y;
   };
   return { mask, edges, ramps, contains, rampHeight, bankDistance, bankCoverage, height };
+}
+
+// The sea, player and drawing use identical treads, rising at most .15 each.
+export function stairHeight(r, along) {
+  const step = Math.min(r.steps, Math.max(0, 1 + Math.floor((along / r.length + 1) * r.steps + 1e-9)));
+  return BASIN_DECK + (r.y - BASIN_DECK) * step / r.steps;
 }
 
 const cache = new WeakMap();

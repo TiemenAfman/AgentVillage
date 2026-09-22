@@ -33,7 +33,7 @@
 // One figure object is still shared between this file and the renderer rather than split
 // in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
-import { quayBasin } from './quay-basin.mjs';
+import { quayBasin, quayDeckHeights } from './quay-basin.mjs';
 import { makeRng, hash32, clamp } from './rng.mjs';
 import { GATE_REACH } from './roads.mjs';
 
@@ -184,6 +184,7 @@ export function createWalk(terrain, village = null) {
     f.pause = rng.range(0, 3);
     f.strollIn = rng.range(4, 150);
     f.speed = 0.34 * f.stride;
+    f.y = groundOrDeck(f.pos[0], f.pos[1]);
     figures.set(id, f);
     return f;
   }
@@ -227,8 +228,9 @@ export function createWalk(terrain, village = null) {
   // Up here rather than beside it because setRoads has to empty it when the streets move.
   const roadNear = new Map();
   // Where a bridge carries the road over a river, and how high its deck is there.
-  let deckAt = new Map();
-  function setDecks(map) { deckAt = map || new Map(); }
+  const quayDecks = quayDeckHeights(village, terrain.size);
+  let deckAt = new Map(quayDecks);
+  function setDecks(map) { deckAt = new Map([...(map || []), ...quayDecks]); }
   const groundOrDeck = (x, z) => {
     const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
     const ramp = basin?.rampHeight(x, z);

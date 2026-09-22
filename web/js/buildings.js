@@ -1912,11 +1912,9 @@ export function buildBuilding(spec, ctx = {}) {
     // free of the building they belong to. The tongue points towards local +z, the same
     // direction as the door; main.js turns the whole loaf to meet the district boardwalk.
     const deck = HARBOUR_DECK;
-    for (const [x, z] of [[-0.9, -0.9], [0, -0.9], [0.9, -0.9], [-0.9, 0], [0.9, 0], [-0.9, 0.9], [0, 0.9], [0.9, 0.9]]) {
-      parts.push(cylinder(0.05, 0.06, deck + 0.8, 6, C.darkWood, { x, y: -0.8, z }));
-    }
-    parts.push(box(2.2, 0.08, 2.2, C.plank, { y: deck - 0.08 }));
-    parts.push(box(0.72, 0.08, 0.7, C.plank, { y: deck - 0.08, z: 1.45 }));
+    parts.push(...meshAsset('civic_quay_platform', 0xffffff, {
+      y: deck - models.heightOf('civic_quay_platform'),
+    }));
     const inner = [];
     const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
     for (const g of inner) parts.push(lift(g, deck));
@@ -2195,46 +2193,24 @@ function drawnPier(cells, terrain, from) {
   return parts.length ? merge(parts) : null;
 }
 
-// The quay's boardwalk: the streets of the district, drawn as planks over its basin.
-//
-// This is not the pier and deliberately does not go through the dock set. A pier is a
-// straight run out from one shore cell along one of the four axes, which is what lets
-// buildPierGeometry rotate a modelled bay and lay it down; a boardwalk is whatever shape
-// the street plan came out as - a fork, a corner, a cul-de-sac at somebody's front door -
-// and there is no bay that tiles all of those. Boxes take any shape for nothing, and at
-// this distance the seam between a plank floor and a modelled bay is one line on the water.
-//
-// `cells` may hold a cell twice: the layout records the deck as the union of path cells,
-// doorsteps and the walk out to the pier, and a doorstep on a street is in two of those.
-// Dropping the duplicates matters because they are not free - each one is a slab and two
-// posts in the same place, z-fighting with itself.
-//
-// The half-slab between orthogonal neighbours is what makes the run continuous. A cell is
-// 1 across and the slab is 0.76, so without the joins the boardwalk is a row of stepping
-// stones with the sea showing between them.
+// The quay's branching boardwalk uses a Blender bay and an infill on each
+// shared edge. Separate x/z infills keep the plank grain aligned through corners
+// and crossings. Every piece still merges into one material and one draw call.
 export function buildDeckGeometry(cells, terrain, from) {
   const unique = new Map((cells || []).map((c) => [`${c[0]},${c[1]}`, c]));
   const parts = [];
   for (const [gx, gz] of unique.values()) {
     const [x, z] = terrain.cellWorld(gx, gz);
     const lx = x - from[0], lz = z - from[1];
-    // `y` on these primitives is the BASE, not the middle (box and cylinder both translate
-    // the geometry up by h/2), so a slab whose top is the walking surface is floored one
-    // thickness below QUAY_DECK and a post that reaches it stands h under it.
-    parts.push(box(0.76, 0.08, 0.76, C.plank, { x: lx, y: QUAY_DECK - 0.08, z: lz }));
-    // Only +x and +z, so the pair of cells either side of a join agrees which of them
-    // draws it and the plank is not built twice.
+    parts.push(...meshAsset((gx + gz) % 2 ? 'prop_boardwalk_b' : 'prop_boardwalk_a', 0xffffff, {
+      x: lx, y: QUAY_DECK - models.heightOf('prop_boardwalk_a'), z: lz,
+    }));
+    // Each shared edge is owned once; duplicated door/street cells must not
+    // build two coincident floors. Infill bases are at zero, their tops at .15.
     for (const [dx, dz] of [[1, 0], [0, 1]]) {
       if (!unique.has(`${gx + dx},${gz + dz}`)) continue;
-      parts.push(box(dx ? 0.32 : 0.76, 0.08, dz ? 0.32 : 0.76, C.plank, {
-        x: lx + dx * 0.5, y: QUAY_DECK - 0.08, z: lz + dz * 0.5,
-      }));
-    }
-    // Two posts on the diagonal rather than four at the corners: half the triangles, and
-    // from any angle that is not straight down there is a post under every span anyway.
-    for (const [ox, oz] of [[-0.28, -0.28], [0.28, 0.28]]) {
-      parts.push(cylinder(0.04, 0.045, QUAY_DECK + 0.8, 5, C.darkWood, {
-        x: lx + ox, y: -0.8, z: lz + oz,
+      parts.push(...meshAsset(dx ? 'prop_boardwalk_join_x' : 'prop_boardwalk_join_z', 0xffffff, {
+        x: lx + dx * .5, y: QUAY_DECK - .15, z: lz + dz * .5,
       }));
     }
   }

@@ -79,23 +79,50 @@ test('the bank stays below the harbour platforms, without moving their plots', (
   assert.equal(JSON.stringify(v), before);
 });
 
-test('every landing joins the planks to the bank with continuous walking heights', () => {
+test('only the road entrance gets stairs, with matching treads and a filled landing', () => {
   const entrance = structuredClone(village);
   entrance.districts[0].lobes[0].parcel = { i0: 2, j0: 1, w: 5, h: 6, rows: Array(6).fill('11111') };
   entrance.districts[0].deck = [[2, 4], [3, 4], [4, 4]];
+  entrance.paths = [{ cells: [[0, 4], [1, 4], [2, 4], [3, 4], [4, 4]] }];
   const basin = createQuayBasin(entrance, terrain);
+  assert.equal(basin.ramps.length, 1, 'other boardwalk ends are not entrances');
   const r = basin.ramps.find(r => r.dx === -1);
   assert.equal(r.length, 3, 'use the straight approach, stopping before the opposite bank');
   for (let i = 0; i <= 100; i++) {
     const t = i / 100;
     const along = (t - 1) * r.length;
     const y = basin.rampHeight(r.x + r.dx * along, r.z + r.dz * along);
-    assert.ok(Math.abs(y - (BASIN_DECK + (r.y - BASIN_DECK) * t)) < 1e-9);
-    assert.ok(basin.height(r.x + r.dx * along, r.z + r.dz * along) <= y - .024,
-      'the rounded bank never pokes through the access planks');
+    assert.ok(Math.abs(y - (BASIN_DECK + (r.y - BASIN_DECK) * Math.min(r.steps, 1 + Math.floor(t * r.steps + 1e-9)) / r.steps)) < 1e-9);
+    assert.ok(basin.height(r.x + r.dx * along, r.z + r.dz * along) <= y + 1e-9,
+      'the bank never pokes through the stairs');
   }
-  assert.equal(r.y, terrain.worldHeight(r.x, r.z) + .025);
+  assert.equal(r.y, terrain.worldHeight(r.x, r.z));
+  assert.equal(basin.height(r.x, r.z), r.y, 'no gap behind the upper landing');
+  assert.ok(Math.abs(r.y - BASIN_DECK) / r.steps <= .15);
   assert.equal(basin.rampHeight(r.x + r.dx * .01, r.z + r.dz * .01), null);
+  const group = buildQuayBasin(basin, terrain);
+  group.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
+  for (let i = 0; i < r.steps; i++) {
+    const along = -r.length + (i + .5) * r.length / r.steps;
+    const x = r.x + r.dx * along, z = r.z + r.dz * along;
+    ray.set(new THREE.Vector3(x, 10, z), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObject(group.children[1])[0];
+    assert.ok(hit, 'each Blender tread is present');
+    assert.ok(Math.abs(hit.point.y - basin.rampHeight(x, z)) < 1e-5, 'feet agree with the baked tread');
+    for (const side of [-.56, -.38, 0, .38, .56]) {
+      ray.set(new THREE.Vector3(x + r.dz * side, 10, z - r.dx * side), new THREE.Vector3(0, -1, 0));
+      assert.ok(ray.intersectObject(group.children[0]).length, 'the bed stays closed beside AND underneath the stairs');
+    }
+  }
+});
+
+test('a platform near the outside edge cannot tear a hole in the bedding seam', () => {
+  const v = structuredClone(village);
+  v.buildings = [{ harbour: true, plot: { quay: true, gx: 1, gz: 2, w: 3, d: 3 } }];
+  const basin = createQuayBasin(v, terrain);
+  assert.equal(basin.height(-3, -1), terrain.worldHeight(-3, -1));
+  assert.ok(Math.abs(basin.height(-3 + 1e-6, -1) - terrain.worldHeight(-3, -1)) < 1e-6);
 });
 
 test('the harbour mouth has no landward ramps when the surrounding coast is water', () => {
