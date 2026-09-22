@@ -8,17 +8,9 @@ import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
 
-// The Quay owns a basin, not meadow. Ownership is already the exact source used for its
-// boundary, so turning just those cells into a one-byte mask makes "inside the fence" mean
-// the same thing to the land register and to the ground shader.
-export function quayWaterField(village, size) {
-  const { owner } = decodeOwnership(village, size);
-  const quay = new Set((village.districts || [])
-    .map((d, k) => d.kind === 'quay' ? k : -1).filter((k) => k >= 0));
-  const data = new Uint8Array(size * size);
-  for (let k = 0; k < owner.length; k++) if (quay.has(owner[k])) data[k] = 255;
-  return data;
-}
+import { quayBasin, quayWaterField } from 'shared/quay-basin.mjs';
+import { buildQuayBasin } from './quay-basin.js';
+export { quayWaterField } from 'shared/quay-basin.mjs';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -362,9 +354,7 @@ export function createLandscape({
   const plazaTexture = wearTexture.clone();
   plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
   plazaTexture.needsUpdate = true;
-  // One byte a cell and NearestFilter, because this decides whether a fragment is drawn at
-  // all: anything that reads between two cells softens the edge of the basin into a fringe
-  // of half-ground, and the boundary fence stands on the hard line.
+  // The cut follows whole cells; the sloping bed meets the terrain at its edge.
   const quayWaterTexture = new THREE.DataTexture(quayWaterField(village, size), size, size, THREE.RedFormat);
   quayWaterTexture.magFilter = quayWaterTexture.minFilter = THREE.NearestFilter;
   quayWaterTexture.needsUpdate = true;
@@ -383,10 +373,34 @@ export function createLandscape({
   // So the existing raycast finds it and hovering says whose island this is.
   if (pickId) ground.userData.id = pickId;
   group.add(ground);
+  let basinMesh = null;
+  let basinVillage = village;
+  function dressBasin(v) {
+    basinVillage = v;
+    if (basinMesh) {
+      group.remove(basinMesh);
+      basinMesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+    }
+    basinMesh = buildQuayBasin(quayBasin(v, terrain), terrain, {
+      groundGeometry: geo,
+      makeMaterial: () => {
+        const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, map: ground.material.map });
+        dressGroundWear(material, wearTexture, size, THREE, plazaTexture,
+          { texture: bankTexture, sheet: riverSheet }, null, true);
+        return material;
+      },
+    });
+    group.add(basinMesh);
+  }
+
   // The bands, the season, the district tint and the meadow noise are all already in the
   // vertex colours. The sheet is brightness only, so it grains the ground without having
   // an opinion about any of them.
-  sheet('grass', (tex) => { ground.material.map = tex; ground.material.needsUpdate = true; });
+  sheet('grass', (tex) => {
+    ground.material.map = tex; ground.material.needsUpdate = true;
+    const bankMaterial = basinMesh?.children[0]?.material;
+    if (bankMaterial) { bankMaterial.map = tex; bankMaterial.needsUpdate = true; }
+  });
 
   // ---- vegetation ----------------------------------------------------------
   // Two sets, and the difference matters. `clearedBase` is ground that buildings, roads
@@ -468,13 +482,12 @@ export function createLandscape({
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
-  const clearQuay = (v, owner, into) => {
-    const quay = new Set((v.districts || [])
-      .map((d, k) => d.kind === 'quay' ? k : -1).filter((k) => k >= 0));
-    for (let k = 0; k < owner.length; k++) if (quay.has(owner[k])) into.add(k);
+  const clearQuay = (v, into) => {
+    const mask = quayWaterField(v, size);
+    for (let k = 0; k < mask.length; k++) if (mask[k]) into.add(k);
   };
-  clearQuay(village, own.owner, clearedBase);
-  clearQuay(village, own.owner, cleared);
+  clearQuay(village, clearedBase);
+  clearQuay(village, cleared);
   // Before the fields are planned, not after: clearedBase is what planFields reads to
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
@@ -484,6 +497,7 @@ export function createLandscape({
   let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled, paved: roads });
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
+  dressBasin(village);
   // Tilled ground is cleared ground: without this the forest is scattered straight on
   // top of the fields.
   for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
@@ -1159,10 +1173,11 @@ export function createLandscape({
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
-    clearQuay(v, own.owner, clearedBase);
-    clearQuay(v, own.owner, cleared);
+    clearQuay(v, clearedBase);
+    clearQuay(v, cleared);
     quayWaterTexture.image.data = quayWaterField(v, size);
     quayWaterTexture.needsUpdate = true;
+
     wallVerge(own.owner, clearedBase);
     roads = roadSet(v);
     settled = settledDistance(terrain, own.owner, roads);
@@ -1173,6 +1188,7 @@ export function createLandscape({
     wallVerge(own.owner, cleared);
     computeTint(own.owner, own.inset, hues);
     paintGround(seasonName);
+    dressBasin(v);
     placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);
     buildHamletDressing(v, seasonName);
     // A new house has a new yard, and every yard's feather is the colour of the ground
@@ -1214,6 +1230,7 @@ export function createLandscape({
     if (s !== currentSeason) {
       currentSeason = s;
       paintGround(s);
+      dressBasin(basinVillage);
       placeTrees(pines, pineMesh, s);
       placeTrees(oaks, oakMesh, s);
       placeBushes(s);
@@ -1250,6 +1267,7 @@ export function createLandscape({
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
     paintGround(currentSeason);
+    dressBasin(basinVillage);
     // The decals stand on the heightfield, so a coast that has moved takes them with it.
     buildGroundWear();
     // And the withies go with the channel they mark. Cheap enough to rebuild outright -
@@ -1337,9 +1355,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
   // every caller that has not been given one - it is this island and the old flat -2.5
   // past its edge, exactly as before.
-  const depthAt = opts.sea
+  const naturalDepthAt = opts.sea
     ? (x, z) => opts.sea.height(x, z)
     : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
+
+  const depthAt = (x, z) => {
+    const r = opts.sea?.regionAt(x, z);
+    if (opts.sea && !r) return naturalDepthAt(x, z);
+    const t = r?.terrain || terrain;
+    const local = r ? r.toLocal(x, z) : [x, z];
+    const basin = quayBasin(r?.village || village, t);
+    return basin?.contains(...local) ? basin.height(...local) : naturalDepthAt(x, z);
+  };
 
   // Built in a function rather than inline because the span is no longer settled once and
   // for all: an island that joins after the page has booted makes the archipelago wider,
@@ -1777,7 +1804,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells,
-    setOwnership: land.setOwnership, setHouseFrontages: land.setHouseFrontages,
+    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
     followShadow, recentre, reshapeWater, state, reshape,
   };
