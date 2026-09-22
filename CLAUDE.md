@@ -405,6 +405,17 @@ loopback socket, a known `Host` and a matching `Origin`, and never reads
 `X-Forwarded-For`. The ceiling is `SETTLERS_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
+**A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
+context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
+evicting the oldest, which after enough visits to a panel is the island's own. The inventory
+(`web/js/studio.js`) opens two per visit, the alcove and the slot icons, and closes both that
+way; anything else that makes a renderer for a moment must too. Its slot table is
+`web/js/inventory.js`, kept DOM-free so `tests/inventory.test.mjs` can hold every equip key to
+one slot and every swatch to one dye button; its popover (`web/js/popover.js`) lives in `body`
+at `position: fixed` and catches Escape in the capture phase on `window`, so the first Escape
+closes the popover and only the second closes the panel - the studio's own Escape handler and
+`walk.js` both listen later in that same keydown.
+
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
@@ -451,7 +462,7 @@ there.)
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
 | `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
-| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the settlers are in three files — `settler-walk.js` (a re-export of
+| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
 any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |

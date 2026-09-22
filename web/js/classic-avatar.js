@@ -43,6 +43,16 @@ const LEFT_SABATON = ['Left sabaton', 'Left sabaton trim'];
 const RIGHT_SABATON = ['Right sabaton', 'Right sabaton trim'];
 const SWORD = ['Sword pommel', 'Sword grip', 'Sword crossguard', 'Sword blade'];
 const SHIELD = ['Shield face', 'Shield rim top', 'Shield rim bottom', 'Shield boss', 'Shield grip'];
+// Which baked parts each equip toggle owns, keyed the way spec.equip is. Exported for the
+// inventory screen (inventory.js), which draws a slot's icon from the very geometry the rig
+// wears rather than from a glyph - and works out from these lists which recolour makes an
+// icon stale, since every part carries the colour slot it reads.
+export const PIECE_PARTS = {
+  backpack: BACKPACK,
+  chestplate: CHESTPLATE,
+  leggings: [...LEFT_LEGGING, ...RIGHT_LEGGING],
+  boots: [...LEFT_SABATON, ...RIGHT_SABATON],
+};
 const EQUIPPABLE = new Set([
   ...BACKPACK, ...HAMMER, ...CHESTPLATE, ...LEFT_LEGGING, ...RIGHT_LEGGING,
   ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD,
@@ -138,11 +148,12 @@ function heldPartGeometry(spec, names) {
 
 // What HAND_ITEMS (avatar.js) can resolve to. The procedural pair are cheap enough (under
 // a dozen primitives) that nothing here is worth caching; the baked pair go through
-// heldPartGeometry() instead, which needs the current spec to pick up a recolour.
+// heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
+// exported for the inventory's slot icons, which show the item on its own.
 const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry };
-const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD };
+export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD };
 
-function heldItemGeometry(item, spec) {
+export function heldItemGeometry(item, spec) {
   if (HELD_ITEM_PROCEDURAL[item]) return HELD_ITEM_PROCEDURAL[item]();
   if (HELD_ITEM_PARTS[item]) return heldPartGeometry(spec, HELD_ITEM_PARTS[item]);
   return null;
