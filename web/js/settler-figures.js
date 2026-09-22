@@ -22,6 +22,10 @@ import { makeRng, hash32 } from 'shared/rng.mjs';
 // The heading is ours. The walk names a direction to turn towards and how briskly; turning
 // that into an angle needs atan2, and shared/ may not have one - see the header there.
 import { lerpAngle } from 'shared/settlerwalk.mjs';
+// The sword and the torch are the player's own baked parts (build-settler.py), not a
+// second model of them: an armed resident carries exactly what the player can pick up.
+import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
+import { HELD_ITEM_PARTS } from './classic-avatar.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -33,6 +37,9 @@ const posedMat = new THREE.Matrix4();
 const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
+// Out of sight: the same parking spot hide() puts a whole figure in.
+const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
+  new THREE.Vector3(0.0001, 0.0001, 0.0001));
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
 export const CAPACITY = 640;
@@ -105,6 +112,30 @@ export function figureGeometry(style, { sailor = false, look = null } = {}) {
   return mergeParts([...bodyParts, ...headParts]);
 }
 
+// Where each item sits in a resident's hand. The player's grip is its raw "Right hand"
+// (classic-avatar.js's GRIP, before PLAYER_SCALE); the resident's is the middle of its own
+// "Right hand" in villager-mesh.js (0.090..0.136, 0.167..0.229, -0.011..0.041). A resident
+// stands 0.430 against the player's 0.451, so the item shrinks by that and no more.
+const PLAYER_GRIP = [0.131, 0.19, 0.018];
+const RESIDENT_GRIP = [0.113, 0.19, 0.015];
+const RESIDENT_TO_PLAYER = 0.430 / 0.451;
+// The torch is not mirrored into the left hand, only moved there: a mirrored geometry flips
+// its winding, which an InstancedMesh cannot correct per instance the way classic-avatar.js's
+// scale.x = -1 does, and a torch is round enough that nobody can tell.
+function heldGeometry(names, grip) {
+  const g = avatarPlayerComponentGeometry({}, names);
+  g.scale(1 / PLAYER_SCALE, 1 / PLAYER_SCALE, 1 / PLAYER_SCALE);
+  g.translate(-PLAYER_GRIP[0], -PLAYER_GRIP[1], -PLAYER_GRIP[2]);
+  g.scale(RESIDENT_TO_PLAYER, RESIDENT_TO_PLAYER, RESIDENT_TO_PLAYER);
+  g.translate(grip[0], grip[1], grip[2]);
+  g.computeBoundingSphere();
+  return g;
+}
+// How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
+// Enough that the sword and the torch are held out rather than hanging against the leg,
+// and the stride is halved on top of it so the blade does not windmill on a walk.
+const ARMED_ARM = { right: -0.45, left: -0.35 };
+
 function paintGeo(g, hex) {
   g.deleteAttribute('uv');
   g.deleteAttribute('normal');
@@ -118,7 +149,14 @@ function paintGeo(g, hex) {
   return flat;
 }
 
-export function createFigures(scene, material) {
+// `armed` gives every resident a sword in the right hand and a torch in the left: two more
+// instanced meshes for the whole crowd, not two per settler, so a hostile island costs 13
+// draw calls where a friendly one costs 11. No light of its own per torch, unlike the
+// player's (classic-avatar.js): a PointLight per resident would be hundreds of lights, and
+// three.js recompiles every material whenever that number changes. The flame glows after
+// dark through the same per-vertex night mask the player's does, which is what reads from
+// across the water anyway.
+export function createFigures(scene, material, { armed = false } = {}) {
   function makeMesh(geo) {
     const m = new THREE.InstancedMesh(geo, material, CAPACITY);
     m.castShadow = true;
@@ -147,7 +185,13 @@ export function createFigures(scene, material) {
   const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
   const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
-  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
+  // Untinted: the baked parts carry their own brass, steel and flame in the vertex colours,
+  // and setColorAt is never called on these two, so there is no instance colour to multiply.
+  const swords = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.sword, RESIDENT_GRIP)) : null;
+  const torches = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.torch,
+    [-RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]])) : null;
+  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details,
+    ...(armed ? [swords, torches] : [])];
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
 
@@ -278,16 +322,24 @@ export function createFigures(scene, material) {
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
-      const leftArmAngle = walking ? -stride * 0.9 : idle;
+      const swing = armed ? 0.45 : 0.9;
+      const leftArmAngle = (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
       const rightArmAngle = hammering
         ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
-        : walking ? stride * 0.9 : -idle;
+        : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, stride);
       setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle);
       setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+      if (armed) {
+        // A settler at work puts the sword away for the hammer rather than holding both in
+        // one fist; the torch stays lit in the other hand.
+        if (hammering) swords.setMatrixAt(f.slot, HIDDEN);
+        else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+        setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+      }
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);

@@ -67,7 +67,11 @@ const SNAP_U = 6;
 const STANDING_U_S = 0.05;
 
 export function createCrowdView({ scene, material, region, buildings = [] }) {
-  const view = createFigures(scene, material);
+  // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
+  // this is only what makes it look like they mean it). Read off the bundle the region
+  // was raised from, the same flag the sea reads - there is no second copy of it.
+  const armed = region.village?.island?.hostile === true;
+  const view = createFigures(scene, material, { armed });
   // index -> the figure the renderer draws, plus where it is coming from and going to.
   const figures = new Map();
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
