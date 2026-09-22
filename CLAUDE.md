@@ -36,10 +36,6 @@ quote it and let Node expand it:
 node --test "tests/*.test.mjs"
 ```
 
-Two of `tests/layout-measure.test.mjs`'s assertions fail against the live `data/layout.json`
-on this machine and have nothing to do with your change — check against a clean tree before
-chasing one.
-
 ```bash
 node --test tests/models.test.mjs
 ```
