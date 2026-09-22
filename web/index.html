@@ -173,6 +173,13 @@
   <div class="walk-keys" id="walk-keys"></div>
 </div>
 
+<!-- Boats, neighbours and the town square while you're on foot - toggled with M, off by
+     default like ?stats. A sibling of the walk HUD, not nested in it: that strip is a
+     centred bottom bar and this is a fixed corner radar. -->
+<div class="minimap" id="minimap" hidden>
+  <canvas id="minimap-canvas" width="180" height="180"></canvas>
+</div>
+
 <!-- What is in your hand while building. Outside the walk HUD on purpose: that strip is
      hidden whenever you are not on foot, and a ghost can be aimed from the sky too. -->
 <div class="card build-hud" id="build-hud" hidden></div>

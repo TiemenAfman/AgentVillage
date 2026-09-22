@@ -199,6 +199,19 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .walk-prompt b { color: var(--accent); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* --- the walk-mode minimap ---------------------------------------------- */
+.minimap {
+  /* Measured against .topright's own bottom edge (chips + nav buttons), which runs
+     deeper than the 108px other right-column panels clear by - those are narrower
+     (232-316px) and sit further from the edge, so they miss .topright's wide chip
+     row on the right; a full-width-adjacent circle at 14px does not. */
+  position: fixed; top: 152px; right: 14px; z-index: 10;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: var(--panel); border: 1px solid rgba(232,180,92,.35); box-shadow: var(--shadow);
+  pointer-events: none;   /* a HUD, not a click target, same as .walk-hud */
+}
+.minimap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
 .pad-dot { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
 .pad-dot i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 
