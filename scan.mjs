@@ -3,7 +3,7 @@
 // the single file the island viewer consumes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ROOT, ensureData, loadConfig, islandNameOf, writeJsonAtomic, iso } from './lib/paths.mjs';
+import { DATA, ROOT, ensureData, loadConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
@@ -12,7 +12,7 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
@@ -44,6 +44,37 @@ export function filesFor(opts) {
 export async function scan(opts = {}) {
   const o = { all: false, quiet: true, persistLayout: true, ...opts };
   return withScanLock(() => runScan(o));
+}
+
+// A real deletion, unlike scan({ clearRoads: true }): this never calls placeAll, so
+// nothing heals what it removes - it writes layout.json and village.json straight to
+// disk and stops. It lasts exactly until the next scan, whether that is the timer or
+// /roads redraw/reroute, because placeAll never leaves a house without a road; that is
+// not a bug this works around, it is what makes /roads delete mean something different
+// from /roads reroute for however long it lasts.
+export async function deleteRoads(opts = {}) {
+  const o = { all: false, ...opts };
+  return withScanLock(() => runDeleteRoads(o));
+}
+
+async function runDeleteRoads(o) {
+  ensureData();
+  const config = loadConfig();
+  const files = filesFor(o);
+  const size = config.gridSize || 64;
+
+  const layout = loadLayout(files.layout, config.seed, size);
+  clearRoads(layout);
+  saveLayout(files.layout, layout);
+
+  const village = readJson(files.village, null);
+  if (village) {
+    village.paths = [];
+    village.generatedAt = new Date().toISOString();
+    writeJsonAtomic(files.village, village);
+  }
+
+  return { ok: true, paths: 0 };
 }
 
 async function runScan(o) {
@@ -80,6 +111,9 @@ async function runScan(o) {
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
   const layout = loadLayout(files.layout, config.seed, size);
+  // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
+  // than gated behind the version number. placeAll below lays everything fresh from it.
+  if (o.clearRoads) clearRoads(layout);
   // An empty plot is land again: give it back so the next settler can use it.
   for (const id of banished.keys()) delete layout.plots[id];
 

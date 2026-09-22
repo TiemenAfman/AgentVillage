@@ -34,3 +34,63 @@ export function squareCells(village) {
   for (const d of (village && village.districts) || []) for (const c of d.paved || []) out.push(c);
   return out;
 }
+
+// How far from a road a door may stand and still count as connected to it - the search
+// shape shared/settlerwalk.mjs's gateOf uses (every direction, nearest cell wins). Exported
+// so both keep one number: a door found reachable here and not there, or the other way
+// round, is a settler stranded outside a house that draws as perfectly connected.
+export const GATE_REACH = 3;
+
+function walkableCells(village, size) {
+  const cells = new Set();
+  const inside = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  for (const p of roadCells(village)) for (const [gx, gz] of p.cells || []) if (inside(gx, gz)) cells.add(gx + gz * size);
+  for (const [gx, gz] of squareCells(village)) if (inside(gx, gz)) cells.add(gx + gz * size);
+  return cells;
+}
+
+// Every walkable cell reachable from the town square without leaving the road network -
+// flood fill over exactly the graph shared/settlerwalk.mjs's setRoads would build a settler
+// (lib/crowd.mjs is its only caller, and hands it these same two functions), seeded from
+// the same square cells a Friday borrel gathers at. A debug check built on anything else
+// could disagree with whether a settler could actually walk there.
+export function reachableFromSquare(village, size) {
+  const cells = walkableCells(village, size);
+  const seen = new Set();
+  const queue = [];
+  const push = (gx, gz) => {
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) return;
+    const k = gx + gz * size;
+    if (!cells.has(k) || seen.has(k)) return;
+    seen.add(k);
+    queue.push(k);
+  };
+  for (const [gx, gz] of squareCells(village)) push(gx, gz);
+  for (let i = 0; i < queue.length; i++) {
+    const k = queue[i];
+    const gx = k % size, gz = (k - gx) / size;
+    push(gx + 1, gz); push(gx - 1, gz); push(gx, gz + 1); push(gx, gz - 1);
+  }
+  return seen;
+}
+
+// The road cell a door would step out onto, or null if none is within GATE_REACH - the same
+// answer shared/settlerwalk.mjs's gateOf gives a settler standing at that door, so a house
+// this calls disconnected is a house nobody living in it could walk out of either.
+export function houseGate(village, size, door) {
+  if (!door) return null;
+  const cells = walkableCells(village, size);
+  const [hx, hz] = door;
+  let best = null, bd = Infinity;
+  for (let dz = -GATE_REACH; dz <= GATE_REACH; dz++) {
+    for (let dx = -GATE_REACH; dx <= GATE_REACH; dx++) {
+      const gx = hx + dx, gz = hz + dz;
+      if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+      const k = gx + gz * size;
+      if (!cells.has(k)) continue;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = k; }
+    }
+  }
+  return best;
+}

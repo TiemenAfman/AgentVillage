@@ -34,6 +34,7 @@
 // in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
 import { makeRng, hash32, clamp } from './rng.mjs';
+import { GATE_REACH } from './roads.mjs';
 
 export const MAX_STROLL = 36;      // settlers out on an errand at the same time
 
@@ -291,7 +292,10 @@ export function createWalk(terrain) {
     walkRoute(f, out, { kind: 'gather-out', route: out, home: [f.home[0], f.home[1]] });
   }
 
-  // The road cell a figure steps out onto, cached: its front path by construction.
+  // The road cell a figure steps out onto, cached: its front path by construction. The
+  // same search, cell-for-cell, is shared/roads.mjs's houseGate - built for a door rather
+  // than a spawned figure's home position, for a debug check that can never disagree with
+  // this one about whether a house has a way out.
   function gateOf(f) {
     if (f.gate !== undefined) return f.gate;
     f.gate = null;
@@ -299,8 +303,8 @@ export function createWalk(terrain) {
       const hx = Math.round(f.home[0] + terrain.half - 0.5);
       const hz = Math.round(f.home[1] + terrain.half - 0.5);
       let best = null, bd = Infinity;
-      for (let dz = -3; dz <= 3; dz++) {
-        for (let dx = -3; dx <= 3; dx++) {
+      for (let dz = -GATE_REACH; dz <= GATE_REACH; dz++) {
+        for (let dx = -GATE_REACH; dx <= GATE_REACH; dx++) {
           const k = (hx + dx) + (hz + dz) * terrain.size;
           if (!roads.cells.has(k)) continue;
           const d = dx * dx + dz * dz;

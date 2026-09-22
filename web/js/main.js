@@ -1592,16 +1592,6 @@ function onBoatFromServer(m) {
   }
 }
 
-// What is moored in the harbour, and putting it in the water.
-//
-// This is where the two halves meet. `/api/island` takes delivery of a bundle and parks it
-// (lib/guests.mjs); `joinIsland` can place a region and `raiseGuestIslands` can draw one.
-// Until now nothing joined them up, and the only island that ever appeared beside ours came
-// from the `?join=` debug parameter.
-//
-// Two requests rather than one on purpose: the list is a name, a seed and a size each and
-// costs a few hundred bytes, and the island whole is up to two megabytes. The SSE `guests`
-// event carries the list, and the page comes back for the ones it has not got.
 // Where the sea says this island lies, before anything is drawn with it. Also the first
 // look at the fleet, so a page that boots into a busy world raises every coast in one go
 // rather than watching them pop in one socket message at a time.
@@ -2483,15 +2473,18 @@ function buildScene(village) {
   state.roadDebug = createRoadDebug({
     scene,
     terrain,
-    village,
+    // A getter, not the snapshot: state.village is swapped for a new object on every
+    // scan (applyVillage), and this closure has to see that or /roads redraw draws
+    // nothing but the island as it stood at boot.
+    village: () => state.village,
   });
 
-  window.addEventListener('island-command', (event) => {
+  window.addEventListener('island-command', async (event) => {
   const { action, data } = event.detail || {};
 
   switch (action) {
-    case 'roads_wireframe':
-      state.roadDebug?.setWireframe(true);
+    case 'roads_wireframe_toggle':
+      state.roadDebug?.setWireframe(!state.roadDebug?.wireframeEnabled);
       break;
 
     case 'roads_hide':
@@ -2502,9 +2495,56 @@ function buildScene(village) {
       state.roadDebug?.setWireframe(true);
       break;
 
+    case 'roads_connections_toggle':
+      state.roadDebug?.setConnections(!state.roadDebug?.connectionsEnabled);
+      break;
+
+    case 'roads_redraw':
+      // The /api/command response comes back as soon as the server's rescan has
+      // finished, but this page's own state.village is only refreshed by the SSE
+      // `update` listener, which is debounced 250ms behind it - rebuilding straight
+      // off state.village here redrew whatever was already on screen before the
+      // rescan, not the rescan that just ran. Fetching directly is what a redraw
+      // actually promised.
+      try {
+        const next = await fetchVillage();
+        if (next && (!state.village || next.generatedAt > state.village.generatedAt)) {
+          // animate: true, not false - state.world.buildPaths (the worn-path texture, not
+          // just the debug wireframe) only runs inside applyVillage's `animate` guard
+          // (see the comment on it there). A silent `false` here left the ground exactly
+          // as it was: setOwnership and the districts refreshed, the dirt paths did not.
+          applyVillage(next, { animate: true });
+        }
+      } catch (e) { console.warn('[roads] redraw could not refetch the village', e); }
+      // setWireframe(true) always rebuilds (buildWireframe clears the group first), so
+      // this both shows the debug view and forces it to pick up whatever the village
+      // looks like right now. refresh() alongside it, not instead: redraw only forces
+      // the wireframe on, and a connections view already showing deserves the same fresh
+      // data rather than being left to draw from whatever was true before the rescan.
+      state.roadDebug?.setWireframe(true);
+      state.roadDebug?.refresh();
+      break;
+
+    case 'roads_delete':
+      // No setWireframe(true) here on purpose, unlike redraw/reroute above: delete does
+      // not ask to be shown, only to be seen if a debug layer is already on. refresh()
+      // respects whichever of wireframe/connections is currently enabled and rebuilds
+      // only that - if connections is on, every house just lost its road and every one
+      // gets its marker; if nothing is on, this is a quiet change until /roads status
+      // or a debug view is switched on to look.
+      try {
+        const next = await fetchVillage();
+        if (next && (!state.village || next.generatedAt > state.village.generatedAt)) {
+          applyVillage(next, { animate: true });
+        }
+      } catch (e) { console.warn('[roads] delete could not refetch the village', e); }
+      state.roadDebug?.refresh();
+      break;
+
     case 'roads_status':
       console.log('[roads]', {
         wireframe: state.roadDebug?.wireframeEnabled ?? false,
+        connections: state.roadDebug?.connectionsEnabled ?? false,
       });
       break;
 
@@ -3193,6 +3233,10 @@ function applyVillage(next, { animate }) {
     if (next.paths.length !== prev.paths.length || (next.bridges || []).length !== (prev.bridges || []).length) {
       syncBridges(next);
       state.world.buildPaths(next.paths, state.world.squareCells(next));
+      // The road network just changed - a house that gained (or lost) its way to the
+      // square deserves its mark updated in the same update, not left stale until the
+      // next explicit /roads command.
+      state.roadDebug?.refresh();
     }
   }
 

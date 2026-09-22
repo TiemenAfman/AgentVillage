@@ -7,7 +7,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { ROOT, DATA, WEB, SHARED, loadConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
-import { scan, filesFor } from './scan.mjs';
+import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
@@ -293,10 +293,15 @@ function guestIsland() {
 
 let scanning = null;
 let pending = false;
-async function rescan(reason) {
+// opts only reaches the scan that actually runs: a caller who arrives while one is already
+// in flight gets coalesced into it (below) without its own opts, so a `clearRoads` request
+// that lands mid-scan is silently absorbed rather than applied. Rare enough in practice -
+// this is only ever an explicit command, not the timer - that asking again is an acceptable
+// answer to it.
+async function rescan(reason, opts = {}) {
   if (scanning) { pending = true; return scanning; }
   scanning = (async () => {
-    try { await scan({ all: ALL, quiet: true }); } catch (e) {
+    try { await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
       process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
     }
   })();
@@ -678,8 +683,14 @@ if (req.url === '/api/command' && req.method === 'POST') {
 
     log(`[command] executing: ${input}`);
 
-    const result = executeCommand(input, {
+    const result = await executeCommand(input, {
       req,
+      rescan: (opts) => rescan('command', opts),
+      // Deliberately not routed through rescan(): a real delete must not run placeAll,
+      // and it skips the seaClient.publish() rescan() does on success too - the deletion
+      // is visible over the watchData() file-watch same as any other write to
+      // village.json, and the next real scan will publish the healed island as usual.
+      deleteRoads: () => deleteRoads({ all: ALL }),
     });
 
     log(`[command] result: ${JSON.stringify(result)}`);
