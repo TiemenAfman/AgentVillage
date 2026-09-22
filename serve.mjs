@@ -35,6 +35,7 @@ import { buildSurvey } from './lib/survey.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { executeCommand } from './lib/commands.mjs';
 
 const argv = process.argv.slice(2);
@@ -152,6 +153,7 @@ process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack :
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
 function shutdown(why) {
   try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
+  try { codexClient && codexClient.close(); } catch { /* same process, separate island */ }
   try { ownSea && ownSea.close(); } catch { /* and so does the sea, if it was ours */ }
   try { neighbours && neighbours.stop(); } catch { /* the beacon dies with us regardless */ }
   const stopped = stopAllAgents();
@@ -343,10 +345,17 @@ function exclusive(fn) {
 }
 async function rescan(reason, opts = {}) {
   const job = async () => {
-    try { return await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
+    let r = null;
+    try { r = await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
       process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
-      return null;
     }
+    // The Codex neighbour rides in the same queue slot: its own layout and lock, so it
+    // never touches ours, but a scan per job keeps the two islands a minute apart at most.
+    if (config.codexIsland.enabled) {
+      try { await scan({ codex: true, quiet: true }); }
+      catch (e) { log(`Codex island scan failed: ${e.message}`); }
+    }
+    return r;
   };
   let run;
   if (Object.keys(opts).length) {
@@ -363,6 +372,7 @@ async function rescan(reason, opts = {}) {
   // it on everybody else's horizon within the minute rather than whenever they next
   // reload. This is the whole of "live, also between scans" for the shape of an island.
   if (seaClient) seaClient.publish().catch(() => {});
+  if (codexClient) codexClient.publish().catch(() => {});
   return r;
 }
 
@@ -985,6 +995,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
     try { sea = setSea(body || {}); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     config.multiplayer.sea = sea;
     if (seaClient) { seaClient.close(); seaClient = null; }
+    if (codexClient) { codexClient.close(); codexClient = null; }
     // Raced, as a backstop, and deliberately kept even though the cause is fixed twice
     // over above and below. This await was measured holding the route for 62 seconds, and
     // the shape of that failure is the reason for the belt: the island ends up in no world
@@ -1427,6 +1438,15 @@ const ISLAND_ID = beaconId(PORT);
 const ISLAND_TOKEN = mintToken();
 let ownSea = null;
 let seaClient = null;
+let codexClient = null;
+const CODEX_ISLAND_ID = createHash('sha256').update(`${ISLAND_ID}:codex`).digest('hex').slice(0, 16);
+
+function codexBundle() {
+  const village = readJson(filesFor({ codex: true }).village, null);
+  if (!village) return null;
+  village.island.hostile = true;
+  return buildBundle({ config, village, id: CODEX_ISLAND_ID, keeper: islanderName });
+}
 
 // What this island looks like to the world. Built here, on the machine that holds the
 // secrets, because that is where the redaction has to run.
@@ -1562,6 +1582,17 @@ async function putToSea() {
     bundle: islandBundle,
     log: (m) => log(`sea: ${m}`),
   });
+  // A second ordinary publisher lets the sea assign a permanent neighbouring berth.
+  // It carries only a redacted bundle; the sea never gets access to Codex's home.
+  if (config.codexIsland.enabled) {
+    // Let home claim its berth first, including when the sea starts empty.
+    await seaClient.publish();
+    codexClient = createSeaClient({
+      url, islandId: CODEX_ISLAND_ID, key: cfg.key || null,
+      name: islanderName, bundle: codexBundle,
+      log: (m) => log(`Codex sea: ${m}`),
+    });
+  }
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {

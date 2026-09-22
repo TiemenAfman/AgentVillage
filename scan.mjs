@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA, ROOT, ensureData, loadConfig, fillConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
+import { discoverCodex, foldCodex } from './lib/codex-sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
 import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
@@ -23,6 +24,7 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--all') o.all = true;
+    else if (a === '--codex') o.codex = true;
     else if (a === '--quiet') o.quiet = true;
     else if (a === '--no-layout-persist') o.persistLayout = false;
     else if (a === '--out') o.out = argv[++i];
@@ -33,6 +35,12 @@ export function parseArgs(argv) {
 }
 
 export function filesFor(opts) {
+  if (opts.codex) return {
+    village: opts.out || path.join(DATA, 'codex', 'village.json'),
+    layout: opts.layoutFile || path.join(DATA, 'codex', 'layout.json'),
+    cache: opts.cacheFile || path.join(DATA, 'codex', 'cache.json'),
+    arrivals: path.join(DATA, 'codex', 'arrivals.jsonl'),
+  };
   const suffix = opts.all ? '.all' : '';
   return {
     village: opts.out || path.join(DATA, `village${suffix}.json`),
@@ -47,7 +55,7 @@ export function filesFor(opts) {
 
 export async function scan(opts = {}) {
   const o = { all: false, quiet: true, persistLayout: true, ...opts };
-  return withScanLock(() => runScan(o));
+  return withScanLock(() => runScan(o), o.codex ? { file: path.join(DATA, 'codex', 'scan.lock') } : undefined);
 }
 
 // A real deletion, unlike scan({ clearRoads: true }): this never calls placeAll, so
@@ -84,11 +92,16 @@ async function runDeleteRoads(o) {
 async function runScan(o) {
   const t0 = Date.now();
   ensureData();
-  const config = loadConfig();
+  const base = loadConfig();
+  const config = o.codex ? {
+    ...base, islandName: base.codexIsland.name, seed: base.codexIsland.seed,
+    foundedAt: null, founders: [],
+    multiplayer: { ...base.multiplayer, sea: { ...base.multiplayer.sea, mode: 'single' } },
+  } : base;
   const files = filesFor(o);
   const size = config.gridSize || 64;
 
-  const sources = discover();
+  const sources = o.codex ? discoverCodex(o.codexHome) : discover();
   const cache = loadCache(files.cache);
 
   const jobs = [
@@ -100,7 +113,7 @@ async function runScan(o) {
   await mapPool(jobs, 4, async (j) => {
     const key = fileKey(j.file);
     seen.add(key);
-    const { entry, changed } = await parseIncremental(j.file, j.sessionId, cache.files[key]);
+    const { entry, changed } = await parseIncremental(j.file, j.sessionId, cache.files[key], o.codex ? foldCodex : undefined);
     if (entry) cache.files[key] = entry;
     if (changed) changedFiles++;
   });
@@ -109,9 +122,15 @@ async function runScan(o) {
     if (!seen.has(key)) cache.files[key].missing = true;
   }
 
-  const arrivals = readArrivals(files.arrivals);
-  const banished = readBanished();
-  const dispatched = new Set(readAssignments().filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
+  if (o.codex) {
+    for (const t of sources.transcripts) {
+      const a = cache.files[fileKey(t.file)]?.agg;
+      if (a?.codexRunning && Date.now() - a.lastTs < 10 * 60 * 1000) sources.locks.push({ sessionId: t.sessionId, alive: true });
+    }
+  }
+  const arrivals = o.codex ? [] : readArrivals(files.arrivals);
+  const banished = o.codex ? new Map() : readBanished();
+  const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
   const layout = loadLayout(files.layout, config.seed, size);

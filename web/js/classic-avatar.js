@@ -102,6 +102,19 @@ const holdX = (item) => HOLD_ARM_X[item] ?? HOLD_ARM_X.default;
 // forward keeps its face readable from in front instead of edge-on.
 const ITEM_YAW = { shield: 0.6 };
 
+// A torch lights what is around it, not only itself: a warm point light at the middle of the
+// flame (build-settler.py's 'Torch flame', .350-.420, measured from GRIP's .190), the same
+// colour and falloff as a camp's fire in main.js but a little weaker and shorter, since it is
+// one burning stick rather than a stacked fire. Its strength follows uNight on the shared
+// material - the same number that makes the windows (and the flame's own vertices) glow - so
+// by day it is present and dark. It stays in the scene at zero rather than being hidden,
+// because three.js recompiles every material when the number of lights changes; that is
+// paid once when the torch is picked up, never at dusk. A material without that uniform
+// (the inventory's own alcove) gets no light at all: that scene is lit on purpose.
+const TORCH_LIGHT = { color: 0xffa050, intensity: 1.8, distance: 3.5, y: (0.385 - 0.19) * PLAYER_SCALE };
+
+const nightOf = (material) => material?.userData?.uniforms?.uNight?.value ?? 0;
+
 function damp(from, to, speed, dt) {
   return THREE.MathUtils.lerp(from, to, 1 - Math.exp(-speed * dt));
 }
@@ -229,6 +242,12 @@ export function createClassicAvatar(spec, material) {
     const left = side === 'leftArm';
     if (left) mesh.scale.x = -1;
     mesh.rotation.y = (left ? 1 : -1) * (ITEM_YAW[item] || 0);
+    if (item === 'torch') {
+      const light = new THREE.PointLight(TORCH_LIGHT.color, 0, TORCH_LIGHT.distance, 2);
+      light.position.y = TORCH_LIGHT.y;
+      mesh.add(light);
+      mesh.userData.light = light;
+    }
     handAttach[side].add(mesh);
     heldMesh[side] = mesh;
   }
@@ -316,6 +335,13 @@ export function createClassicAvatar(spec, material) {
       // the same mirrored sign setHeldItem gave it, so left and right both turn inward.
       const yaw = block === side && holding[side] === 'shield' ? Math.PI / 2 : (ITEM_YAW[holding[side]] || 0);
       mesh.rotation.y = damp(mesh.rotation.y, (side === 'leftArm' ? 1 : -1) * yaw, 12, dt);
+      if (mesh.userData.light) {
+        // Two sines at unrelated rates, so the flicker never settles into a visible beat;
+        // the two hands are offset so a pair of torches does not pulse in unison.
+        const t = time + (side === 'leftArm' ? 1.7 : 0);
+        const flicker = 0.85 + 0.1 * Math.sin(t * 23) + 0.05 * Math.sin(t * 7.3);
+        mesh.userData.light.intensity = TORCH_LIGHT.intensity * nightOf(material) * flicker;
+      }
     }
   }
 

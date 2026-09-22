@@ -19,7 +19,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // world.js reaches buildings.js for the tier table, and buildings.js asks for its texture
 // sheets the moment it loads. The same stub the tavern and paths tests use.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { waterPatchSpan } = await import('../web/js/world.js');
+const { waterPatchSpan, waterColourDepth } = await import('../web/js/world.js');
 delete globalThis.document;
 
 const { makeTerrain } = await import('../shared/terrain.mjs');
@@ -28,6 +28,21 @@ const { berthOf, placeIsland, createArchipelago, OPEN_SEA } = await import('../s
 // A PlaneGeometry of s segments has s+1 vertices along that side, and two triangles a cell.
 const verts = (s) => (s.segX + 1) * (s.segZ + 1);
 const tris = (s) => s.segX * s.segZ * 2;
+
+test('shallow seabed loses its square boundary before meeting open water', () => {
+  for (const half of [32, 128, 256]) {
+    for (const [x, z] of [[half, 0], [-half, 0], [0, half], [0, -half], [half, half]]) {
+      assert.equal(waterColourDepth(-0.8, x, z, half), OPEN_SEA);
+      assert.equal(waterColourDepth(0, x, z, half), 0, 'the shoreline keeps its surf');
+      assert.equal(waterColourDepth(1, x, z, half), 1, 'dry land is unchanged');
+    }
+    const width = Math.min(24, half * 0.3);
+    assert.equal(waterColourDepth(-0.8, half - width, 0, half), -0.8);
+    const middle = waterColourDepth(-0.8, half - width / 2, 0, half);
+    assert.ok(middle < -0.8 && middle > OPEN_SEA, 'the intervening water blends gradually');
+    assert.equal(waterColourDepth(-4, half, 0, half), -4, 'deep water is never raised');
+  }
+});
 
 test('an island on its own gets exactly the patch it always had', () => {
   // The old formula: a square of max(260, size + 120) on the origin, a vertex per unit.

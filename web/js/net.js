@@ -42,7 +42,7 @@ const UI_PER_BEAT = 2;
 // foreign fleet arrived again on the next welcome. The key travels the same way, because
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
-  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {},
+  onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
   name = null, frame = () => [0, 0] } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
@@ -183,6 +183,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // every beat. So "no pilot named" and "nobody at the tiller" are different things
         // and the page has to be able to tell them apart.
         case 'boat': boatIn(m); break;
+        case 'evicted': {
+          if (![m.x, m.y, m.z].every(Number.isFinite)) break;
+          const [ox, oz] = frame();
+          onEvicted({ ...m, x: m.x - ox, z: m.z - oz });
+          break;
+        }
         // Somebody talking. The server sends this to everybody including us, so our own
         // line comes back down this same wire and the page can show the conversation in
         // the order the island saw it instead of the order we typed it.
