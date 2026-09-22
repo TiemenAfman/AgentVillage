@@ -252,8 +252,7 @@ test('the register spans every set and answers by part name alone', () => {
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
-    // and unlike every other set here its source is an STL rather than a .blend; see
-    // scripts/build-benchy.py for why that is, and why it is still baked the same way.
+    // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
     'civic_chapel', 'civic_fountain', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
