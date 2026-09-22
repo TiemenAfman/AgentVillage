@@ -252,13 +252,15 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'boardwalk', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'quaysteps', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'boardwalk', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'quaysteps', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
     // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
     'civic_chapel', 'civic_fountain', 'civic_quay_platform', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
+    // The mill is two assets, because its sails turn and the tower does not.
+    'civic_windmill', 'civic_windmill_sails',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
