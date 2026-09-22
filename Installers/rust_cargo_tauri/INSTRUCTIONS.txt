@@ -1,46 +1,31 @@
-1) install rustup and cargo
+Het eiland als desktop-app (Tauri) — wat er eenmalig op een machine moet staan.
+Het ontwerp en de keuzes staan in Plans/eiland-als-desktop-app.md.
 
-2)
-	cargo install tauri-cli
-	
-	rustc --version
-	cargo --version
-	cargo tauri --version
+1) Rust installeren (rustup + cargo), via rustup-init.exe (link staat hiernaast).
+   Daarna in een nieuwe terminal controleren:
+        rustc --version
+        cargo --version
 
+2) De Tauri-CLI. Twee smaken, één is genoeg:
+        cargo install tauri-cli          -> `cargo tauri ...`
+   of via npm (staat al in package.json als devDependency):
+        npm install                      -> `npm run tauri ...`
 
-3) one time for project (al gedaan)
-	npm create tauri-app@latest desktop
-	
-	Bij de keuzes zou ik iets in deze richting nemen:
+3) WebView2 zit in Windows 11 (en in Windows 10 met Edge). Niets te doen.
 
-		Project name: desktop
-		Frontend: Vanilla
-		Language: JavaScript
-		Package manager: npm
-		
-				
-		keuzes die ik heb gedaan 
-   
-					✔ Identifier · com.agentvillage.island
-					✔ Choose which language to use for your frontend · TypeScript / JavaScript - (pnpm, yarn, npm, deno, bun)
-					✔ Choose your package manager · npm
-					✔ Choose your UI template · Vanilla
-					✔ Choose your UI flavor · TypeScript
-							
-		
-		
-		dit geeft 
-			desktop/
-			├── src/
-			├── src-tauri/
-			├── package.json
-			└── ...
-			
-			
-4. Eerst de standaard Tauri-app testen
-Ga naar
-	cd desktop
-		npm install
-		npm run tauri dev
-		
-		
+4) Draaien, vanuit de repo-root (D:\git\Martijn\AgentVillage):
+        npm run app                      -> `tauri dev`: bouwt src-tauri/ en opent het venster
+        npm run app:build                -> `tauri build`: exe + NSIS-installer in
+                                            src-tauri/target/release/bundle/
+
+   De app is een schil: het venster opent http://localhost:4747/ en start `node serve.mjs`
+   zelf als daar nog niets luistert (zonder console, uitvoer in data\server.log). De
+   service blijft draaien als het venster dichtgaat — stoppen blijft stop-island.cmd.
+
+   Handig:
+        agentvillage.exe --port 4748               een eiland op een andere poort
+        agentvillage.exe --url http://msi:4747/    verbinden met een eiland elders (start niets)
+        set SETTLERS_ROOT=D:\pad\naar\checkout     als een losse exe de repo niet kan vinden
+
+   Er is géén Vite en géén bundel van web/: de viewer wordt niet gekopieerd maar geladen,
+   net als in Chrome. Het oude `npm create tauri-app`-sjabloon (AgentVillage_APP/) is weg.

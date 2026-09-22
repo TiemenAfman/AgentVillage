@@ -29,3 +29,8 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
   (`settler-figures.js`). Nog niet gebouwd: eerste stap is de rugzak losmaken van de
   speler-merge, dan hetzelfde patroon als de hoed-buckets voor de settlers.
+- [eiland-als-desktop-app.md](eiland-als-desktop-app.md) — het eiland als eigen venster (Tauri,
+  `npm run app`): waarom de viewer geladen wordt van `localhost:4747` en níet gebundeld met Vite
+  (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de
+  service starten als die er niet is en hem laten draaien als het venster dichtgaat. Gebouwd op
+  22 september 2026.

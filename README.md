@@ -48,14 +48,16 @@ the page updates itself as sessions come and go.
 Best as its own window rather than a browser tab: double-click `start-island-app.cmd`, or
 open the page once and use Chrome's **Install page as app**. The island then gets a taskbar
 icon and a window with no tab strip or address bar, which is what you want for something
-you keep open beside your work. `stop-island.cmd` shuts it down again, and a Windows
-scheduled task can start it every morning — see
-[Every morning at 07:30](docs/manual.md#every-morning-at-0730).
+you keep open beside your work. With Rust installed, `npm run app` gives it a window of its
+own (Tauri) that starts the server if it is not running and shows the same page from it.
+`stop-island.cmd` shuts the server down again, and a Windows scheduled task can start it
+every morning — see [Every morning at 07:30](docs/manual.md#every-morning-at-0730).
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Serve the island and open it |
 | `npm run serve` | Serve without opening a browser |
+| `npm run app` | Open the island as its own desktop window, starting the server if needed |
 | `npm run scan` | Rebuild `data/village.json` once |
 | `npm run scan:all` | Rebuild ignoring the founding date, using every session ever recorded |
 | `npm run models` | Re-bake the Blender model sets and check them against the rules |

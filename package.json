@@ -15,18 +15,17 @@
     "serve": "node serve.mjs",
     "dev": "node serve.mjs --open",
     "watch": "node watch-island.mjs --open",
+    "app": "tauri dev",
+    "app:build": "tauri build",
+    "tauri": "tauri",
     "models": "node scripts/models.mjs",
     "models:preview": "node scripts/models.mjs --preview",
     "vendor": "node scripts/vendor.mjs",
-    "postinstall": "node scripts/vendor.mjs",
-    "dev": "vite",
-    "build": "vite build",
-    "tauri": "tauri"
+    "postinstall": "node scripts/vendor.mjs"
   },
   "devDependencies": {
-    "three": "0.170.0",
     "@tauri-apps/cli": "^2",
-    "vite": "^8.0.16"
+    "three": "0.170.0"
   },
   "repository": {
     "type": "git",

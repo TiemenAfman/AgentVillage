@@ -27,6 +27,8 @@ npm run scan:all                   # ignore foundedAt, use every session ever; w
 npm run models                     # bake every Blender set and check it (needs Blender)
 npm run models -- props            # bake one set
 npm run models:preview             # render assets/<set>/renders/<asset>.png
+npm run app                        # the island as its own window (Tauri; needs Rust)
+npm run app:build                  # exe + NSIS installer in src-tauri/target/release/bundle/
 ```
 
 Tests are `node:test` with no npm script. On Windows the shell does not expand the glob, so
@@ -463,6 +465,38 @@ is not deterministic.
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`. (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
+
+## The desktop window
+
+`src-tauri/` is a Tauri 2 shell around the islander, not a second viewer: the window is a
+WebView2 pointed at `http://localhost:4747/`, exactly what `start-island-app.cmd` does with
+Chrome. **Nothing under `web/` is bundled** — the scaffold's Vite route (`web/` → `dist/` →
+`http://tauri.localhost`) was removed because it broke three invariants at once: `api.js`
+would work `mine()` out from the wrong origin, `lib/access.mjs` refuses an Origin that is not
+the Host on every route, and the import map for `three`/`shared/` is the no-build-step
+contract. [Plans/eiland-als-desktop-app.md](Plans/eiland-als-desktop-app.md) has the full
+argument. What the shell adds is what a browser cannot: `src-tauri/src/island.rs` probes the
+port and, if nothing answers, starts `node serve.mjs --no-open` — no console
+(`CREATE_NO_WINDOW`), output appended to `data/server.log`, the same as
+`start-island-hidden.vbs`. **The islander outlives the window, and there is never more than
+one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
+Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
+window starts node through a second copy of its own exe (`--spawn-island`) that exits at
+once — node's parent is a dead pid before anybody walks the tree. Never more than one because
+the app only starts one when the port is silent and `serve.mjs` itself exits on
+`EADDRINUSE`, so two launchers racing still leave a single islander. Stopping is still
+`stop-island.cmd`. The window opens on `src-tauri/splash/index.html` and is navigated
+to the island once the port is up; the splash asks Rust to begin (`start_island`) so no
+event is emitted before anybody listens. Links to other sites (`on_new_window`,
+`on_navigation`) go to the system browser, so a Jira ticket cannot replace the island with
+no back button. Port order is `--port` → `PORT` → `config.json` → 4747, the same as
+`serve.mjs`; `--url` attaches to an island elsewhere and starts nothing; `SETTLERS_ROOT`
+tells a stray exe where the checkout is. The window is built in Rust, not declared in
+`tauri.conf.json`, because `additional_browser_args` (which *replaces* Tauri's default
+`--disable-features=…`, so that has to be repeated) and the two navigation hooks only exist on
+the builder. Pitfall: a `cargo build` that fails reading permissions from a path that no
+longer exists is a stale build-script cache — `cargo clean -p tauri -p tauri-build -p
+agentvillage` in `src-tauri/`, not a full clean.
 
 ## Layout of the source
 
