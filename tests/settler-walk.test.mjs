@@ -258,3 +258,28 @@ test('an errand with nowhere to walk fails loudly instead of hanging', () => {
   assert.equal(walk.sendOut(who.id, [], (arrived) => said.push(arrived)), false);
   assert.deepEqual(said, [false]);
 });
+
+test('quay residents use the permanent deck before browser measurements arrive', () => {
+  const terrain = makeTerrain(SEED, { size: SIZE });
+  const spec = { id: 'house:quay', kind: 'house', harbour: true,
+    plot: { gx: 33, gz: 31, w: 3, d: 3, rot: 0, quay: true } };
+  const v = { buildings: [spec], districts: [{ kind: 'quay',
+    deck: [[30, 30], [31, 30]], pier: [[29, 30]] }] };
+  const walk = createWalk(terrain, v);
+  const home = [2.5, 0, .5];
+  const f = walk.spawn(spec.id, spec, home);
+  assert.equal(f.y, .44, 'even the first position starts on the house deck');
+  // A stale browser snapshot may still describe the old ground, or no quay at all.
+  walk.setDecks(new Map([[30 + 30 * SIZE, 2.8], [20 + 20 * SIZE, 1.2]]));
+  for (const cell of [[29, 30], [30, 30], [31, 30], [33, 31], [34, 32]]) {
+    f.pos = terrain.cellWorld(...cell);
+    f.attend = [...f.pos];
+    walk.advance(1, 0);
+    assert.equal(f.y, .44, 'pier, boardwalk and house deck all carry the settler');
+  }
+  assert.equal(walk.groundOrDeck(...terrain.cellWorld(20, 20)), 1.2, 'bridge measurements still apply');
+  walk.setDecks(null);
+  assert.equal(walk.groundOrDeck(...terrain.cellWorld(30, 30)), .44, 'clearing measurements keeps the permanent quay');
+  const land = terrain.cellWorld(10, 10);
+  assert.equal(walk.groundOrDeck(...land), terrain.worldHeight(...land), 'ordinary ground keeps its own height');
+});

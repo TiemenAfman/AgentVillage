@@ -77,24 +77,26 @@ export function riverBankField(size, seed, cells, resolution = Math.min(2048, si
   return { data, resolution };
 }
 
-export function dressGroundWear(material, texture, size, THREE, plazaTexture, river = null) {
+export function dressGroundWear(material, texture, size, THREE, plazaTexture, river = null, quayMask = null, quayBank = false) {
   const uniforms = {
     uPlaza: { value: plazaTexture }, uWear: { value: texture }, uWearSize: { value: size },
     uEarth: { value: new THREE.Color(0xcbb58b) },
     uRiverBank: { value: river?.texture || plazaTexture },
     uRiverSheet: river?.sheet || { value: plazaTexture },
     uShingle: { value: new THREE.Color(0x9a8a6a) },
+    uQuayMask: { value: quayMask || plazaTexture },
   };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = 'varying vec2 vWearXZ;\n' + shader.vertexShader;
+    shader.vertexShader = (quayBank ? 'attribute float bankCoverage;\nvarying float vBankCoverage;\n' : '') + 'varying vec2 vWearXZ;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\nvWearXZ = position.xz;');
-    shader.fragmentShader = `varying vec2 vWearXZ;
+      '#include <begin_vertex>\nvWearXZ = position.xz;' + (quayBank ? '\nvBankCoverage = bankCoverage;' : ''));
+    shader.fragmentShader = (quayBank ? 'varying float vBankCoverage;\n' : '') + `varying vec2 vWearXZ;
 uniform sampler2D uWear;
 uniform sampler2D uPlaza;
 uniform sampler2D uRiverBank;
 uniform sampler2D uRiverSheet;
+uniform sampler2D uQuayMask;
 uniform float uWearSize;
 uniform vec3 uEarth, uShingle;
 float wearHash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -104,6 +106,9 @@ float wearNoise(vec2 p) {
     mix(wearHash(i+vec2(0,1)),wearHash(i+vec2(1,1)),f.x),f.y);
 }
 ` + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+if(texture2D(uQuayMask,vWearXZ/uWearSize+0.5).r>.5) discard;
+#include <color_fragment>`);
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
 float wear = texture2D(uWear, vWearXZ/uWearSize+0.5).r;
 float fleck = wearNoise(vWearXZ*42.0);
@@ -114,7 +119,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb,earth,coverage);
 // The shingle is part of the ground, so it inherits the terrain normals and never exposes
 // the large triangles that a raised, vertex-coloured bank mesh used to show. Its mask is
 // one continuous field and its detail sheet only changes brightness, like the field sheet.
-float riverBank = texture2D(uRiverBank, vWearXZ/uWearSize+0.5).r;
+float riverBank = ${quayBank ? 'max(vBankCoverage, texture2D(uRiverBank, vWearXZ/uWearSize+0.5).r)' : 'texture2D(uRiverBank, vWearXZ/uWearSize+0.5).r'};
 float riverEdge = clamp(riverBank + (wearNoise(vWearXZ*18.0)-.5)*.13*4.0*riverBank*(1.0-riverBank),0.0,1.0);
 vec3 shingleDetail = texture2D(uRiverSheet, vWearXZ*.72).rgb * 1.27;
 vec3 shingle = uShingle * shingleDetail * mix(.94,1.06,wearNoise(vWearXZ*5.0));
@@ -140,5 +145,5 @@ if(plaza>.02) {
 }
 `);
   };
-  material.customProgramCacheKey = () => 'ground-wear-plaza-river-v3';
+  material.customProgramCacheKey = () => `ground-wear-plaza-river-quay-v5-${!!quayMask}-${quayBank}`;
 }

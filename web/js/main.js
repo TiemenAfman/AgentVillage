@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
+import { quayDeckHeights } from 'shared/quay-basin.mjs';
+import { createStandHeight } from 'shared/settlerwalk.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -20,7 +22,8 @@ import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, QUAY_DECK, PALETTE, TIER_INDEX,
+  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
+  QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createNameplate } from './nameplate.js';
 import { createUI } from './ui.js';
@@ -2346,20 +2349,9 @@ function currentHour() {
   return (((mins % 1440) + 1440) % 1440) / 60;
 }
 
-// Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from
-// shared/terrain.mjs, which is the same line the terrain itself uses to decide where the
-// sand stops, so a house is treated as standing in the water by exactly the rule that
-// draws the water.
-const HARBOUR_WATERLINE = 0.35;
 // Eight ways to look for a beach from a hull that has come alongside one.
 const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
   [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
-
-// Whose settler stands on a deck rather than on the ground. `deckY` pins a figure to one
-// height wherever it walks, which is right for a house built out over the water - there
-// is nothing under it to stand on - and wrong for one on dry land, where it left the
-// settlers of The Quay hanging in the air beside their own front doors. A house on land
-// has ground under it like anyone else, so its settler uses the ground.
 
 // --------------------------------------------------------------- records
 function makeRecord(spec) {
@@ -2373,15 +2365,17 @@ function makeRecord(spec) {
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
   let y = groundAt(x, z);
-  // A harbour house stands on stilts, and this pins its deck just above the waterline.
-  // That is right for one built out over the water at the end of a pier, and ruinous for
-  // one whose plot turned out to be dry land: The Quay's ground runs from 1.65 to 1.99
-  // and all nineteen of its harbour houses were pinned at 0.05, which buried the house,
-  // the stilts and everything but the ridge of the roof. From the air a district of them
-  // reads as green wedges lying in the grass. So the clamp only applies where there is
-  // actually water to stand in - anything above the beach line stands on the ground like
-  // any other building, stilts and all, which is what a house on a quayside does anyway.
-  if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
+  // The quay's ground is cut away by world.js, so its houses share the waterline instead
+  // of sampling the former meadow that is deliberately no longer drawn. A harbour house
+  // that overflowed onto the town commons keeps the ordinary ground under it.
+  //
+  // Dropped by the difference between the two decks rather than set to zero, the same way
+  // buildPierGeometry drops the whole dock set by `QUAY_DECK - DOCK_DECK`: the model
+  // carries its own floor at HARBOUR_DECK, and what has to line up is that floor and the
+  // boardwalk outside the door, not the two origins. Getting this wrong is not subtle -
+  // it is a step at every front door on the quay, in a district built out of nothing but
+  // places where two pieces of decking meet.
+  if (spec.harbour && spec.plot?.quay) y = QUAY_DECK - HARBOUR_DECK;
   group.position.set(x, y, z);
   // The layout's convention, shared by scan.mjs's doorOf and settlers.js's DOOR_DIR, is
   // that rot 0 faces -z, 1 faces +x, 2 faces +z, 3 faces -x. Turning by rot * 90 degrees
@@ -2555,6 +2549,7 @@ function buildScene(village) {
   // sea's origin, which was also this page's - was refused as overlapping home and shown
   // as the beacon's silhouette in the haze. Plans/wie-joint-ziet-de-host-als-mist.md.
   state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
+  state.region.village = village;
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: new Date().getMonth(),
@@ -2744,6 +2739,7 @@ function syncBridges(village) {
     bridgeGroup.add(m);
     bridgeMeshes.set(key, m);
   }
+  for (const [cell, y] of quayDeckHeights(village, terrain.size)) decks.set(cell, y);
   handOutDecks();
 }
 
@@ -2772,6 +2768,29 @@ function deckMapForHome() {
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
   return flat;
+}
+
+// How high a settler stands anywhere on this island, for whoever draws them. Rebuilt in
+// handOutDecks below rather than per frame: it walks the district list to find the quay's
+// boardwalk, and handOutDecks is already where every change to what can be stood on
+// arrives - a bridge going up, a prop being placed, a village being applied.
+let homeStand = null;
+// And one per neighbour, keyed by their region. Their decks travel in their bundle; ours
+// are worked out here, which is the whole of why these are two lines and not one.
+const guestStands = new WeakMap();
+function standHeightFor(region) {
+  const village = region && region.village;
+  if (!village) return (x, z) => region.worldHeight(x, z);
+  let have = guestStands.get(region);
+  if (!have || have.village !== village) {
+    const decking = new Map(Object.entries(village.decks || {}).map(([cell, y]) => [Number(cell), y]));
+    const local = createStandHeight(region.terrain, village, decking);
+    // Their crowd arrives in world coordinates and their terrain is origin-centred like
+    // every other, so the berth comes off here - shared/regions.mjs, `toLocal`.
+    have = { village, fn: (x, z) => local(...region.toLocal(x, z)) };
+    guestStands.set(region, have);
+  }
+  return have.fn;
 }
 
 function handOutDecks() {
@@ -2808,6 +2827,11 @@ function handOutDecks() {
     }
   }
   if (state.walk) state.walk.setLevels(stacked);
+  // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
+  // the same keying createStandHeight wants - and it is built above for walk mode anyway.
+  homeStand = state.terrain && state.region && state.region.village
+    ? createStandHeight(state.terrain, state.region.village, flat)
+    : null;
 }
 
 // A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
@@ -2915,10 +2939,35 @@ function syncHamlets(village) {
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
-    // The quay's planks used to be drawn here, as scenery belonging to the district. They
-    // are a dock now and buildDocks draws them, because they are the same planks the boat
-    // moors at and walk mode floors - and two meshes over one run of water is a seam you
-    // can see from the air.
+    // The quay's PIER used to be drawn here, as scenery belonging to the district. It is a
+    // dock now and buildDocks draws it, because those are the same planks the boat moors at
+    // and walk mode floors - and two meshes over one run of water is a seam you can see
+    // from the air.
+    //
+    // The boardwalk is the other half and does belong here: it is the district's streets,
+    // not its harbour, and it goes nowhere near the water the boat lies in. It is rebuilt
+    // when its cells change rather than once, because unlike the pier the deck is derived
+    // on every scan and grows with the parcel - see lib/layout.mjs. Comparing the cells
+    // rather than trusting a rebuild flag is what keeps a scan that changed nothing from
+    // throwing away a mesh and building the same one again.
+    if (d.deck && d.deck.length && d.center) {
+      const key = `deck:${d.id}`;
+      live.add(key);
+      const sig = d.deck.map((c) => `${c[0]},${c[1]}`).join(';');
+      const have = hamletSigns.get(key);
+      if (have?.sig !== sig) {
+        if (have) { hamletGroup.remove(have.group); have.dispose(); hamletSigns.delete(key); }
+        const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
+        const g = buildDeckGeometry(d.deck, terrain, [px, pz]);
+        if (g) {
+          const pm = new THREE.Mesh(g, buildingMat);
+          pm.position.set(px, 0, pz);
+          pm.receiveShadow = true;
+          hamletGroup.add(pm);
+          hamletSigns.set(key, { group: pm, sig, dispose: () => pm.geometry.dispose() });
+        }
+      }
+    }
     if (!d.center || d.tier === 'farmstead') continue;
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
@@ -2933,7 +2982,7 @@ function syncHamlets(village) {
       const along = gate ? Math.abs(gate.next[0] - gate.at[0]) > Math.abs(gate.next[1] - gate.at[1]) : false;
       const have = hamletSigns.get(key);
       if (have && have.text === d.name && have.along === along) {
-        have.group.position.set(sx, groundAt(sx, sz), sz);
+        have.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
         continue;
       }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
@@ -2942,7 +2991,7 @@ function syncHamlets(village) {
       });
       // The arch straddles the road: its posts sit either side of the way through.
       sign.group.rotation.y = along ? Math.PI / 2 : 0;
-      sign.group.position.set(sx, groundAt(sx, sz), sz);
+      sign.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
       hamletSigns.set(key, { ...sign, text: d.name, along, popped: !have });
@@ -3119,6 +3168,7 @@ function layLandscape(shot) {
     w.reshape(next);
   }
   state.shot = shot.village;
+  state.region.village = shot.village;
   w.setOwnership(shot.village);
   w.buildPaths(shot.village.paths, w.squareCells(shot.village));
   // The crossings go with the roads. They are dated on the wire now, so a scrub back past
@@ -3318,6 +3368,7 @@ function specById(village) {
 function applyVillage(next, { animate }) {
   const prev = state.village;
   state.village = next;
+  if (state.region) state.region.village = next;
   for (const d of next.districts) state.districts.set(d.id, d);
   const nextSpecs = specById(next);
 
@@ -3822,10 +3873,11 @@ function frame(nowMs) {
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
-    // And our own people, off the wire like any other island's. The ground is this island's
-    // own, which is what stands somebody on a quay's planks rather than in the water beside
-    // them.
-    state.settlers.draw(dt, (x, z) => state.region.worldHeight(x, z), nowMs, live);
+    // And our own people, off the wire like any other island's. The height is the one the
+    // sea walked them to - decks, stair treads and all - which is what stands somebody on a
+    // quay's planks rather than in the water beside them. It used to be plain terrain here,
+    // and the quay is the one place on the island where those two differ by a whole metre.
+    state.settlers.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.particles) state.particles.update(dt);
@@ -3880,10 +3932,10 @@ function frame(nowMs) {
     // one call a frame - without it a neighbour's forest would still be in the season it
     // was raised in while ours turned around it.
     if (g.update) g.update(dt, month);
-    // Their people, drawn where the sea last said they were and interpolated between. The
-    // ground they stand on is their own region's, which is what puts a body on a quay's
-    // planks rather than in the water beside them.
-    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs, live);
+    // Their people, drawn where the sea last said they were and interpolated between, at
+    // the height their own island's decks and steps put them - which is what puts a body on
+    // a quay's planks rather than in the water beside them.
+    if (g.crowd) g.crowd.draw(dt, standHeightFor(g.region), nowMs, live);
   }
 
 

@@ -43,6 +43,7 @@ const LEFT_SABATON = ['Left sabaton', 'Left sabaton trim'];
 const RIGHT_SABATON = ['Right sabaton', 'Right sabaton trim'];
 const SWORD = ['Sword pommel', 'Sword grip', 'Sword crossguard', 'Sword blade'];
 const SHIELD = ['Shield face', 'Shield rim top', 'Shield rim bottom', 'Shield boss', 'Shield grip'];
+const TORCH = ['Torch stave', 'Torch band', 'Torch wrap', 'Torch flame', 'Torch flame core'];
 // Which baked parts each equip toggle owns, keyed the way spec.equip is. Exported for the
 // inventory screen (inventory.js), which draws a slot's icon from the very geometry the rig
 // wears rather than from a glyph - and works out from these lists which recolour makes an
@@ -55,7 +56,7 @@ export const PIECE_PARTS = {
 };
 const EQUIPPABLE = new Set([
   ...BACKPACK, ...HAMMER, ...CHESTPLATE, ...LEFT_LEGGING, ...RIGHT_LEGGING,
-  ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD,
+  ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD, ...TORCH,
 ]);
 const CORE = SETTLER_PARTS.map(({ name }) => name).filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name));
 const PIVOTS = {
@@ -158,7 +159,7 @@ function heldPartGeometry(spec, names) {
 // heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
 // exported for the inventory's slot icons, which show the item on its own.
 const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry };
-export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD };
+export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD, torch: TORCH };
 
 export function heldItemGeometry(item, spec) {
   if (HELD_ITEM_PROCEDURAL[item]) return HELD_ITEM_PROCEDURAL[item]();

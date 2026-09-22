@@ -2,6 +2,7 @@
 // vertex-coloured primitives and merged into a single geometry, so 300 houses cost
 // 300 draw calls rather than 6000. Windows glow at night through a per-vertex
 // emissive mask on the one shared material.
+import { BASIN_DECK } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, hash32 } from 'shared/rng.mjs';
@@ -26,6 +27,13 @@ import { textureUrl } from './assets.js';
 // darkest, sonnet brightest, haiku palest. They are also what the Blender roofs are
 // painted with, so a gable off `roof_gable_a` and a `prismRoof` fallback are the same
 // colour on the same street.
+
+// How high a harbour house's own deck rides inside its model, measured from the model's
+// origin the way the dock set measures DOCK_DECK from its piles' feet. The island drops
+// the whole house by `QUAY_DECK - HARBOUR_DECK` (main.js), which is the same trick and for
+// the same reason: one waterline for the planks, the front decks and the boardwalk between
+// them, so there is no step where two independently-built pieces of decking meet.
+export const HARBOUR_DECK = 0.62;
 
 export const C = {
   foundation: 0x8d8577, wood: 0x8b5e3c, darkWood: 0x5a3c28, canvas: 0xe9d8b4,
@@ -1421,23 +1429,10 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
-      parts.push(cylinder(0.34, 0.48, 1.5, 14, 0xd9b98c, { sheet: 'wall' }));
-      // The door has to stand proud of a tower that tapers. The wall is 0.48 out at the
-      // foot and the door was a five-centimetre board centred at 0.44, so the brickwork
-      // came through it and what you saw was a tower with a dark smear on it. Centred at
-      // 0.48 and thicker, its face clears the widest course and its back stays buried.
-      parts.push(box(0.22, 0.36, 0.07, C.darkWood, { y: 0, z: 0.48 }));
-      parts.push(cylinder(0.4, 0.4, 0.05, 9, C.plank, { y: 1.12 }));
-      parts.push(dome(0.38, 0x5a3c28, { y: 1.5 }));
-      // The windshaft, and it has to be a real length rather than a stub. The sails turn
-      // in the one plane their hub sits in, and at z 0.42 that plane cut the tower: the
-      // tower is 0.48 across at the foot and 0.34 at the head, so anything below about
-      // two thirds of its height is wider than the sails were standing off, and every
-      // turn swept the descending sail through the brickwork. At 0.56 the plane clears
-      // the widest course there is, which is also why a real mill's shaft sticks out.
-      parts.push(box(0.09, 0.09, 0.44, C.darkWood, { y: 1.575, z: 0.34 }));
-      animated.blades = { at: [0, 1.62, 0.56], r: 0.6 };
-      return { anchors, animated, height: 2.1 };
+      parts.push(...meshAsset('civic_windmill'));
+      // The entire sail disc stands ahead of the widest course of brickwork.
+      animated.blades = { at: [0, 1.61, 0.64], r: 0.5 };
+      return { anchors, animated, height: models.heightOf('civic_windmill') };
     case 'lighthouse': {
       const bands = BEACON_BANDS;
       for (let i = 0; i < bands; i++) {
@@ -1898,12 +1893,15 @@ export function buildBuilding(spec, ctx = {}) {
     const r = shed(parts, spec, pal);
     anchors = r.anchors; height = r.height; w = 0.55;
   } else if (spec.harbour) {
-    // a house on stilts over the shoreline
-    const deck = 0.62;
-    for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
-      parts.push(cylinder(0.05, 0.055, deck + 0.7, 6, C.darkWood, { x, y: -0.7, z }));
-    }
-    parts.push(box(1.0, 0.08, 1.0, C.plank, { y: deck - 0.08 }));
+    // A house on stilts, with a real front deck rather than a square just large enough to
+    // hide beneath its walls. A plot is three cells across and the house stands in the
+    // middle of it, so a one-cell deck left the two rings of boardwalk around it floating
+    // free of the building they belong to. The tongue points towards local +z, the same
+    // direction as the door; main.js turns the whole loaf to meet the district boardwalk.
+    const deck = HARBOUR_DECK;
+    parts.push(...meshAsset('civic_quay_platform', 0xffffff, {
+      y: deck - models.heightOf('civic_quay_platform'),
+    }));
     const inner = [];
     const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
     for (const g of inner) parts.push(lift(g, deck));
@@ -2060,21 +2058,8 @@ export function buildFlameGeometry() {
 }
 
 export function buildBladesGeometry() {
-  const parts = [];
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    // box() stands a shape on o.y rather than centring it there, so `y: 0.52` put the
-    // foot of each arm half its own length out from the hub: four spars orbiting a gap,
-    // with nothing joining them to the mill. They start at the hub and run outward.
-    const arm = box(0.07, 1.05, 0.02, 0xd9c7a3, { y: 0 });
-    arm.rotateZ(a);
-    parts.push(arm);
-    const spar = box(0.02, 1.05, 0.03, C.darkWood, { y: 0 });
-    spar.rotateZ(a);
-    parts.push(spar);
-  }
-  parts.push(cylinder(0.06, 0.06, 0.1, 8, C.darkWood, { rx: Math.PI / 2, y: 0 }));
-  return merge(parts);
+  // Blender assets stand on the floor; the moving geometry turns around its hub.
+  return merge(meshAsset('civic_windmill_sails', 0xffffff, { y: -1.05 }));
 }
 
 // ---------------------------------------------------------------- the quay
@@ -2090,7 +2075,7 @@ export function buildBladesGeometry() {
 // alongside rather than as planks lying on the surface. The pier that was here before rode
 // at 0.16, under the 0.09 its own waves reach: at any hour of the day the crests washed
 // straight through the deck.
-export const QUAY_DECK = SEA_LEVEL + 0.44;
+export const QUAY_DECK = BASIN_DECK;
 const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
 const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
 const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway
@@ -2178,6 +2163,30 @@ function drawnPier(cells, terrain, from) {
     parts.push(box(0.62, 0.07, 0.62, C.plank, { x: x - from[0], y: QUAY_DECK, z: z - from[1] }));
     parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] - 0.24, y: QUAY_DECK - 0.71, z: z - from[1] - 0.24 }));
     parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] + 0.24, y: QUAY_DECK - 0.71, z: z - from[1] + 0.24 }));
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// The quay's branching boardwalk uses a Blender bay and an infill on each
+// shared edge. Separate x/z infills keep the plank grain aligned through corners
+// and crossings. Every piece still merges into one material and one draw call.
+export function buildDeckGeometry(cells, terrain, from) {
+  const unique = new Map((cells || []).map((c) => [`${c[0]},${c[1]}`, c]));
+  const parts = [];
+  for (const [gx, gz] of unique.values()) {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const lx = x - from[0], lz = z - from[1];
+    parts.push(...meshAsset((gx + gz) % 2 ? 'prop_boardwalk_b' : 'prop_boardwalk_a', 0xffffff, {
+      x: lx, y: QUAY_DECK - models.heightOf('prop_boardwalk_a'), z: lz,
+    }));
+    // Each shared edge is owned once; duplicated door/street cells must not
+    // build two coincident floors. Infill bases are at zero, their tops at .15.
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      if (!unique.has(`${gx + dx},${gz + dz}`)) continue;
+      parts.push(...meshAsset(dx ? 'prop_boardwalk_join_x' : 'prop_boardwalk_join_z', 0xffffff, {
+        x: lx + dx * .5, y: QUAY_DECK - .15, z: lz + dz * .5,
+      }));
+    }
   }
   return parts.length ? merge(parts) : null;
 }

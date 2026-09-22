@@ -3,7 +3,7 @@
 // the single file the island viewer consumes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ROOT, ensureData, loadConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
+import { DATA, ROOT, ensureData, loadConfig, fillConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
@@ -194,7 +194,7 @@ async function runScan(o) {
 function assemble({ config, model, layout, terrain, size, all }) {
   const plot = (id) => {
     const p = layout.plots[id];
-    return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot } : null;
+    return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
   };
   const doorOf = (p) => {
     if (!p || p.w !== 3) return null;
@@ -382,7 +382,14 @@ function assemble({ config, model, layout, terrain, size, all }) {
     }));
     return {
       id: d.id, kind: d.kind, name: d.name, root: d.root, hue: d.hue,
-      center: (l && l.centre) || null, square: (l && l.square) || null, pier: (l && l.pier) || [],
+      center: (l && l.centre) || null, square: (l && l.square) || null,
+      pier: (l && l.pier) || [],
+      // The quay's boardwalk: its streets, its front decks and the walk out to the pier, as
+      // one set of cells. Derived on every scan rather than recorded once, because a run of
+      // boards is not land in the register and grows when the parcel or its paths do - see
+      // the note in lib/layout.mjs. Sending it is what makes the browser, the walking graph
+      // and the drawing consume the exact same cells.
+      deck: (l && l.deck) || [],
       // The cell the ramp stands on, which is behind the first plank and is not in `pier`.
       // shared/quay.mjs can work it out from a run of two or more, and cannot from a run of
       // one - and the layout has known it all along, so it may as well say so.
@@ -516,6 +523,14 @@ function nextMilestone(stats) {
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(path.join(ROOT, 'scan.mjs'));
 if (invokedDirectly) {
+  // Same check serve.mjs does, and only when the scanner is the process rather than a
+  // rescan inside a running island: that one comes round every 60 s, and there is nothing
+  // to fill in the second time.
+  const filledIn = fillConfig();
+  if (filledIn.added.length) {
+    const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
+    process.stderr.write(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}\n`);
+  }
   const o = parseArgs(process.argv.slice(2));
   scan(o).then((r) => {
     if (r && r.skipped) process.stderr.write(`[settlers] skipped: ${r.reason}\n`);

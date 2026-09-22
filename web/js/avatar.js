@@ -42,12 +42,14 @@ export const DEFAULT_AVATAR = {
 // uitrusting-en-vasthouden.md); 'hammer' is the tool that used to be welded to the model's
 // hip as a core part and is now the same kind of held state everything else here is; 'sword'
 // and 'shield' are the first purely cosmetic pair, added the same way - see classic-
-// avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from.
+// avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from. 'torch' is the first one
+// that does something after dark: its flame glows (GLOWING below).
 export const HAND_ITEMS = [
   { id: 'parasol', name: 'Parasol', icon: '⛱️' },
   { id: 'hammer', name: 'Hammer', icon: '🔨' },
   { id: 'sword', name: 'Sword', icon: '⚔️' },
   { id: 'shield', name: 'Shield', icon: '🛡️' },
+  { id: 'torch', name: 'Torch', icon: '🔥' },
 ];
 
 // The seven hat shapes plus the one the player alone can wear. A helmet replaces a hat
@@ -98,12 +100,17 @@ export function saveAvatar(spec) {
   return s;
 }
 
+// The colour slots that light up at night - the torch's two flame cones, and nothing else.
+const GLOWING = new Set(['flame', 'ember']);
+
 // Blender meshes carry wardrobe slots instead of fixed materials. Recolouring merges
 // them into the same single vertex-coloured mesh used by the studio and walk mode.
 function buildFigure(spec, gear, include = null) {
   const s = normalizeAvatar(spec);
   const parts = SETTLER_PARTS.filter((p) => p.variant === 'body'
-    || (gear && p.variant === 'gear') || p.variant === s.hatShape)
+    || (gear && p.variant === 'gear') || p.variant === s.hatShape
+    // 'held' parts (the torch) are never part of an outfit, only drawn when named.
+    || (include && p.variant === 'held'))
     .filter((part) => !include || include.has(part.name)).map((part) => {
     const g = new THREE.BufferGeometry();
     const position = new Float32Array(part.positions);
@@ -113,7 +120,9 @@ function buildFigure(spec, gear, include = null) {
     for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(count), 1));
+    // A torch's flame is the one part of a settler that lights up after dark, through the
+    // same per-vertex night mask a window uses (buildings.js) - no material of its own.
+    g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(count).fill(GLOWING.has(part.slot) ? 1 : 0), 1));
     g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(count), 1));
     return g;
   });

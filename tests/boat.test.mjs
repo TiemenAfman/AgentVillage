@@ -18,6 +18,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import { createBoats } from '../lib/boats.mjs';
+import * as THREE from 'three';
+import { DRAUGHT, CABIN_FLOOR } from '../shared/hull.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 // boat.js reaches buildings.js for the hull, and buildings.js asks for its texture sheets
@@ -186,6 +188,19 @@ test('rubbish from the tiller is hands off, not a NaN in the hull', () => {
 });
 
 // ---- the mesh -----------------------------------------------------------------------
+
+test('the rider stands on the baked cabin floor with room below its roof', () => {
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const made = createBoat({ scene: { add() {}, remove() {} }, material });
+  const origin = new THREE.Vector3(0, 0.5 - DRAUGHT, 0);
+  const floor = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0)).intersectObject(made.object)[0];
+  const roof = new THREE.Raycaster(origin, new THREE.Vector3(0, 1, 0)).intersectObject(made.object)[0];
+  assert.ok(floor && roof, 'the cabin must have a floor and roof');
+  assert.ok(Math.abs(floor.point.y + DRAUGHT - CABIN_FLOOR) < 0.002, 'rider feet must meet the floor');
+  assert.ok(roof.point.y - floor.point.y >= 0.54 + 0.05, 'the rider needs headroom');
+  made.dispose();
+  material.dispose();
+});
 
 test('BOW is the hull it was measured from, and the boat is one draw call', () => {
   globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };

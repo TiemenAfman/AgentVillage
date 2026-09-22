@@ -296,10 +296,10 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
     fixed: dx !== 0 ? gx + (dx > 0 ? 1 : 0) : gz + (dz > 0 ? 1 : 0),
     along: dx !== 0 ? gz : gx,
   });
-  const edge = (tag, v, hue, gx, gz, dx, dz) => {
+  const edge = (tag, v, hue, gx, gz, dx, dz, level = null) => {
     const e = edgeAt(gx, gz, dx, dz);
     const key = `${tag}|${e.axis}|${e.fixed}`;
-    if (!runs.has(key)) runs.set(key, { v, hue, axis: e.axis, fixed: e.fixed, at: [] });
+    if (!runs.has(key)) runs.set(key, { v, hue, axis: e.axis, fixed: e.fixed, at: [], level });
     runs.get(key).at.push(e.along);
   };
 
@@ -311,19 +311,23 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
       // fence around it reads as a boundary between nothing and nothing - clearest on an
       // early island, where it was one long line across empty grass.
       if (k === NONE || k === TOWN) continue;
+      // The harbour's sloping water edge is its boundary; it needs no fence.
+      if (village.districts[k]?.kind === 'quay') continue;
+      const level = null;
       for (const [dx, dz] of N4) {
         const nx = gx + dx, nz = gz + dz;
         if (ownerAt(nx, nz) === k) continue;
         // Two owners meeting would draw the boundary twice; the lower index draws it.
         const no = ownerAt(nx, nz);
+        if (village.districts[no]?.kind === 'quay') continue;
         // The lower index draws a shared edge - but the town draws nothing now, so a
         // hamlet meeting the commons has to put up its own side or the run breaks there.
         if (no !== NONE && no !== TOWN && no < k) continue;
         // The coast is its own boundary, and a boundary over water looks like a mistake.
         if (!terrain.isLand(nx, nz)) continue;
         // Where a road crosses, the boundary opens and leaves two gateposts behind.
-        if (isRoad(gx, gz) && isRoad(nx, nz)) { posts.push([gx, gz, dx, dz, variantFor(k)]); continue; }
-        edge(`h${k}`, variantFor(k), hueOf(k), gx, gz, dx, dz);
+        if (isRoad(gx, gz) && isRoad(nx, nz)) { posts.push([gx, gz, dx, dz, variantFor(k), level]); continue; }
+        edge(`h${k}`, variantFor(k), hueOf(k), gx, gz, dx, dz, level);
       }
     }
   }
@@ -386,12 +390,13 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
   }
 
   const parts = [];
+  const atLevel = (level) => level == null ? terrain : { ...terrain, worldHeight: () => level };
   for (const run of runs.values()) {
     run.at.sort((a, b) => a - b);
     let start = null, prev = null;
     const flush = () => {
       if (start === null) return;
-      const g = modelled(terrain, run.axis, run.fixed, start, prev + 1, run.v, run.hue);
+      const g = modelled(atLevel(run.level), run.axis, run.fixed, start, prev + 1, run.v, run.hue);
       if (g) parts.push(g);
     };
     for (const a of run.at) {
@@ -401,10 +406,10 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
     }
     flush();
   }
-  for (const [gx, gz, dx, dz, v] of posts) {
+  for (const [gx, gz, dx, dz, v, level] of posts) {
     const e = edgeAt(gx, gz, dx, dz);
     for (const end of [e.along, e.along + 1]) {
-      const g = gatepost(terrain, e.axis, e.fixed, end, v);
+      const g = gatepost(atLevel(level), e.axis, e.fixed, end, v);
       if (g) parts.push(g);
     }
   }

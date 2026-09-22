@@ -9,13 +9,23 @@
 //
 // Plain arithmetic and array walking, so shared/'s rule holds without effort.
 
-// Every road a settler may walk: the lanes, and the bridges.
+// Every road a settler may walk: the lanes, the bridges, and the quay's boardwalk.
 //
 // A bridge carries no road surface of its own - it is a deck over water, not a paved cell -
 // so leaving it out puts a hole in the graph at every crossing, and the hamlet on the far
 // bank becomes unreachable on foot while looking perfectly connected.
+//
+// The quay's deck is the same case pointed at a whole district. Most of it IS in `paths`
+// already - the boardwalk is laid over the street plan - but the doorsteps and the walk
+// out to the pier are not, and those are exactly the cells a settler needs to get off
+// their own front deck. Without them the quay is a street plan with the ground cut away
+// from under it: the boardwalk is drawn, and nobody can reach the far end of it.
 export function roadCells(village) {
-  return [...((village && village.paths) || []), ...((village && village.bridges) || [])];
+  const deck = [];
+  for (const d of (village && village.districts) || []) {
+    if (d && d.deck && d.deck.length) deck.push({ id: `deck:${d.id}`, cells: d.deck });
+  }
+  return [...((village && village.paths) || []), ...((village && village.bridges) || []), ...deck];
 }
 
 // The paving that counts as a square: the town's own, and every district's green. Kept

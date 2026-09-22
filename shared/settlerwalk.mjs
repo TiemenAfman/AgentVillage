@@ -33,6 +33,7 @@
 // One figure object is still shared between this file and the renderer rather than split
 // in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
+import { quayBasin, quayDeckHeights } from './quay-basin.mjs';
 import { makeRng, hash32, clamp } from './rng.mjs';
 import { GATE_REACH } from './roads.mjs';
 
@@ -113,7 +114,38 @@ export function lerpAngle(a, b, t) {
   return a + d * clamp(t, 0, 1);
 }
 
-export function createWalk(terrain) {
+// The height a body stands at: a stair tread if a staircase crosses this spot, else the
+// deck if something is built over the ground here, else the ground itself. Local
+// coordinates, like everything in shared/.
+//
+// Out here rather than inside createWalk because two machines need the same answer and only
+// one of them walks. The sea steps the crowd through createWalk and puts x and z on the
+// wire - no height, on purpose, because whoever draws it has the ground already - and the
+// page then drew them at plain `terrain.worldHeight`. Which is the ground *under* the
+// quay: the sea stood a settler on the boardwalk and the page drew them in the water
+// beside it, and the two comments at the draw sites in main.js promising planks rather
+// than water described what was meant rather than what happened.
+//
+// `decks` is bridges and props, keyed `gx + gz * size`. The quay's own boardwalk goes in
+// after it and therefore wins a cell they share, which is the order createWalk's setDecks
+// has always used: a plank floor laid over a crossing is the surface you walk on.
+export function createStandHeight(terrain, village, decks = null) {
+  const basin = quayBasin(village, terrain);
+  const at = new Map(decks || []);
+  for (const [cell, y] of quayDeckHeights(village, terrain.size)) at.set(cell, y);
+  return (x, z) => {
+    // The staircase first. It is the one surface that rises *within* a cell, so its tread
+    // has to beat whatever single flat height that cell is otherwise recorded at - and a
+    // quay's steps stand on deck cells by construction, since that is where they start.
+    const tread = basin?.rampHeight(x, z);
+    if (tread != null) return tread;
+    const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
+    const deck = at.get(gx + gz * terrain.size);
+    return deck != null ? deck : terrain.worldHeight(x, z);
+  };
+}
+
+export function createWalk(terrain, village = null) {
   const figures = new Map();   // buildingId -> figure
 
   // `look` is the drawing half's business, and the one number out of it this half needs is
@@ -182,6 +214,7 @@ export function createWalk(terrain) {
     f.pause = rng.range(0, 3);
     f.strollIn = rng.range(4, 150);
     f.speed = 0.34 * f.stride;
+    f.y = groundOrDeck(f.pos[0], f.pos[1]);
     figures.set(id, f);
     return f;
   }
@@ -224,14 +257,14 @@ export function createWalk(terrain) {
   // The nearest road cell to a destination off the network, cached - see nearestRoadCell.
   // Up here rather than beside it because setRoads has to empty it when the streets move.
   const roadNear = new Map();
-  // Where a bridge carries the road over a river, and how high its deck is there.
-  let deckAt = new Map();
-  function setDecks(map) { deckAt = map || new Map(); }
-  const groundOrDeck = (x, z) => {
-    const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
-    const d = deckAt.get(gx + gz * terrain.size);
-    return d != null ? d : terrain.worldHeight(x, z);
-  };
+  // Where a bridge carries the road over a river, and how high its deck is there. The
+  // lookup itself is createStandHeight above, which the page uses to draw these same
+  // people at the height this walked them to.
+  let stand = createStandHeight(terrain, village);
+  function setDecks(map) { stand = createStandHeight(terrain, village, map); }
+  // One function whatever setDecks does behind it: this is read from three places in here
+  // and handed out on the returned object, so it cannot be the thing that gets replaced.
+  const groundOrDeck = (x, z) => stand(x, z);
 
   // The square's own cells, kept apart from the general road network so the Friday
   // gathering has somewhere specific to aim for instead of "some road cell".

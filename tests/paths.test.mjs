@@ -17,8 +17,25 @@ register('./support/shared-loader.mjs', import.meta.url);
 // world.js reaches buildings.js for the tier table, and buildings.js asks for its texture
 // sheets the moment it loads. The same stub the tavern test uses, for the same reason.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { roadGraph, smoothLane, offCurve } = await import('../web/js/world.js');
+const { roadGraph, smoothLane, offCurve, quayWaterField } = await import('../web/js/world.js');
 delete globalThis.document;
+
+test('the quay water mask leaves one cell of shoreline clearance around its parcel', () => {
+  const size = 8;
+  const village = {
+    island: { lattice: { anchor: [0, 0], pitch: 2 }, town: null },
+    districts: [
+      { kind: 'quay', lobes: [{ parcel: { i0: 1, j0: 1, w: 1, h: 1, rows: ['1'] } }] },
+      { kind: 'hamlet', lobes: [{ parcel: { i0: 2, j0: 1, w: 1, h: 1, rows: ['1'] } }] },
+    ],
+  };
+  const mask = quayWaterField(village, size);
+  const wet = [];
+  for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
+    if (mask[x + z * size]) wet.push([x, z]);
+  }
+  assert.deepEqual(wet, Array.from({ length: 4 }, (_, z) => Array.from({ length: 4 }, (_, x) => [x + 1, z + 1])).flat());
+});
 
 // The number world.js draws with. Written out here rather than exported, so that raising
 // it over there has to be a deliberate change here too.

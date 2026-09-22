@@ -375,3 +375,20 @@ test('buildBundle will not sail a village that has never been scanned', () => {
   assert.throws(() => buildBundle({ config, village: v, props, crops }), /no terrain hash/);
   assert.throws(() => buildBundle({ config, village: null }), /no village/);
 });
+
+test('a harbour deck survives publication and carries the sea crowd without browser heights', async () => {
+  const v = village();
+  v.buildings[0].harbour = true;
+  v.buildings[0].plot.quay = true;
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  const bundle = parseBundle(JSON.parse(JSON.stringify(packed)));
+  const spec = bundle.buildings.find(b => b.harbour && b.plot?.quay);
+  assert.ok(spec, 'the whitelisted plot retains its deck marker');
+  const { createCrowd } = await import('../lib/crowd.mjs');
+  const terrain = makeTerrain(SEED, { size: SIZE });
+  const crowd = createCrowd({ id: 'quay-height', bundle, terrain });
+  const resident = crowd.figures.get(spec.id);
+  assert.equal(resident.y, .44, 'first wire position is on the deck');
+  crowd.advance(1, 0);
+  assert.equal(resident.y, .44, 'the sea keeps the resident on the deck');
+});

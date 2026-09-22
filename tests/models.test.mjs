@@ -15,6 +15,7 @@ import { COTTAGE } from '../web/js/cottage-mesh.js';
 import { HOUSE } from '../web/js/house-mesh.js';
 import { MANOR } from '../web/js/manor-mesh.js';
 import { HUT } from '../web/js/hut-mesh.js';
+import { WINDMILL } from '../web/js/windmill-mesh.js';
 import { SCHOOL } from '../web/js/school-mesh.js';
 import { TOWNHALL } from '../web/js/townhall-mesh.js';
 import { PROPS } from '../web/js/props-mesh.js';
@@ -25,11 +26,13 @@ import { FENCE } from '../web/js/fence-mesh.js';
 import { HEDGE } from '../web/js/hedge-mesh.js';
 import { WALL } from '../web/js/wall-mesh.js';
 import { DOCKS } from '../web/js/docks-mesh.js';
+import { BOARDWALK } from '../web/js/boardwalk-mesh.js';
+import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
 import { BENCHY } from '../web/js/benchy-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
+const BAKED = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -63,6 +66,7 @@ const BOUNDARY_ASSETS = [
 // them, not one of them - so they are listed here rather than expected to pass the
 // catalogue tests they would fail. What they have instead is tests/docks.test.mjs.
 const DOCK_ASSETS = [
+  'prop_boardwalk_a', 'prop_boardwalk_b', 'prop_boardwalk_join_x', 'prop_boardwalk_join_z',
   'prop_dock_deck_a', 'prop_dock_deck_b', 'prop_dock_head', 'prop_dock_ramp', 'prop_dock_post',
 ];
 
@@ -248,14 +252,15 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'boardwalk', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'quaysteps', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
-    'addon_chimney_a', 'addon_dormer_a', 'addon_turret_a',
+    'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
-    // and unlike every other set here its source is an STL rather than a .blend; see
-    // scripts/build-benchy.py for why that is, and why it is still baked the same way.
+    // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
-    'civic_chapel', 'civic_fountain', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
+    'civic_chapel', 'civic_fountain', 'civic_quay_platform', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
+    // The mill is two assets, because its sails turn and the tower does not.
+    'civic_windmill', 'civic_windmill_sails',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',

@@ -17,7 +17,7 @@ import { DOCKS } from '../web/js/docks-mesh.js';
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { buildPierGeometry, QUAY_DECK, DECK_MIN } = await import('../web/js/buildings.js');
+const { buildPierGeometry, buildDeckGeometry, meshAsset, QUAY_DECK, DECK_MIN } = await import('../web/js/buildings.js');
 const { propGeometry, propLift } = await import('../web/js/props.js');
 const models = await import('../web/js/models.js');
 delete globalThis.document;
@@ -232,4 +232,32 @@ test('a dock put down by hand is the quay\'s own dock, centred on where it was a
   assert.equal(propLift(spec, { worldHeight: () => 3 }), 0);
   assert.ok(level(b.max.y - LIFT, DOCKS.height), 'a hand-placed dock stands at the same height as the quay');
   g.dispose();
+});
+
+
+test('Blender boardwalk bays join flat through a crossing without duplicated cells', () => {
+  const ground = { cellWorld: (x, z) => [x, z] };
+  const cells = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
+  const g = buildDeckGeometry(cells, ground, [0, 0]);
+  const duplicate = buildDeckGeometry([...cells, [0, 0]], ground, [0, 0]);
+  assert.deepEqual(g.attributes.position.array, duplicate.attributes.position.array);
+  const tris = trianglesOf(g);
+  for (const [x, z] of [...cells, [.5, 0], [-.5, 0], [0, .5], [0, -.5]]) {
+    assert.ok(level(deckAt(tris, x, z)), 'every bay and both kinds of join meet the walking height');
+  }
+  assert.equal(g.groups.length, 0, 'all boards share one draw call');
+  assert.equal(buildDeckGeometry([], ground, [0, 0]), null);
+});
+
+
+test('the baked house platform meets the boardwalk without changing its footprint', () => {
+  const geometry = meshAsset('civic_quay_platform', 0xffffff, {
+    y: QUAY_DECK - models.heightOf('civic_quay_platform'),
+  });
+  const tris = geometry.flatMap(trianglesOf);
+  for (const [x, z] of [[-1, 0], [1, 0], [0, 1.45], [.3, 1.45]]) {
+    assert.ok(level(deckAt(tris, x, z)), 'house deck and front tongue are at the common deck height');
+  }
+  assert.equal(deckAt(tris, 1.2, 0), -Infinity, 'the platform stays inside its old width');
+  assert.equal(deckAt(tris, .5, 1.45), -Infinity, 'the tongue stays inside its old width');
 });
