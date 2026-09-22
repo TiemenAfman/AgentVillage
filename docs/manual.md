@@ -25,6 +25,17 @@ never start a second copy.
 | Change the time or the days | Task Scheduler, or `Set-ScheduledTrigger` on `Promptholm island` |
 | Turn the schedule off | `Unregister-ScheduledTask -TaskName "Promptholm island"` |
 
+### As a window of its own
+
+`start-island-app.cmd` opens the island in a Chrome window without tabs or an address bar,
+starting the server first if it is not up. `npm run app` does the same with a window that
+is the island's own (Tauri, WebView2; `npm run app:build` makes an installer). Both show the
+very same page from the very same server - nothing is copied or bundled - and both leave the
+server running when the window closes, since the scan, the mail and the agents live there
+and not in the window. If nothing is listening the app starts `serve.mjs` itself, with its
+output in `data/server.log` like the scheduled task, and shows what it is doing while it
+waits. Links to Jira, GitHub or a repository open in your browser rather than in the window.
+
 The server listens on 127.0.0.1 only and refuses requests whose Origin is not the island
  itself, because it can start unattended agents in any folder on this machine. Opening it
 to other people is possible and deliberate; [Visitors and neighbours](#visitors-and-neighbours)

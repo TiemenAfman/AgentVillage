@@ -25,6 +25,8 @@
 //               had by then. That is the order `growParcel` really claims in, which is
 //               what makes the guess a fair one.
 
+import { superOf } from 'shared/lattice.mjs';
+
 const nearFirst = (a, b, c) => {
   const da = (a[0] - c[0]) ** 2 + (a[1] - c[1]) ** 2;
   const db = (b[0] - c[0]) ** 2 + (b[1] - c[1]) ** 2;
@@ -59,10 +61,7 @@ function trimParcel(parcel, keep, near) {
   return { ...parcel, rows };
 }
 
-const superOf = (lat, gx, gz) => [
-  Math.floor((gx - lat.anchor[0]) / lat.pitch),
-  Math.floor((gz - lat.anchor[1]) / lat.pitch),
-];
+// superOf: see shared/lattice.mjs.
 
 // A path is named after what it serves - `path:house:<id>`, `path:civic:<type>`,
 // `path:p:<district>` - so whatever dates it is already in the village.

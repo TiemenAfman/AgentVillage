@@ -54,6 +54,9 @@ import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
+import { createPlanMode } from './plan-mode.js';
+import { createPlanOverlay } from './plan-overlay.js';
+import { createPlanPanel } from './plan-panel.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
@@ -334,6 +337,9 @@ const state = {
   // place; false until it does, because that is the answer that gives nothing away.
   signs: false, signMode: null,
   props: null, panels: null, buildMenu: null, ghost: null, islandchat: null,
+  // The planner (web/js/plan-mode.js): the island from above, with a hand on the hamlets.
+  // `mode` is 'plan' while it has the camera.
+  plan: null,
   crops: null, market: null, garden: null,
   // What the postbox on the town hall pavement knows: one unread count per account, as the
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
@@ -709,6 +715,7 @@ function sowHere() {
 // Pressing it again while something is already in hand puts that back, so the key is a
 // toggle rather than a way to open a menu on top of a ghost.
 function openBuild() {
+  if (state.mode === 'plan') exitPlan();
   if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
   if (keeperOnly('build on this island')) return;
   if (state.buildMenu.isOpen()) return;
@@ -1083,6 +1090,7 @@ function minimapData() {
 
 function enterWalk(spot = null) {
   if (state.mode === 'walk') return;
+  if (state.mode === 'plan') exitPlan();
   const board = state.byId.get('civic:board');
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
@@ -1138,6 +1146,51 @@ function openTownHall() {
 // --------------------------------------------------------------- sending someone away
 // Two steps, always: nobody leaves the island on a single keypress.
 let pendingExile = null;
+// The planner: the third mode. Everything that is switched off here is switched back on
+// in leftPlan, and the orbit camera and its controls are not among it - they are simply
+// not updated while the plan camera has the scene, so the sky is exactly where you left
+// it. What goes: the CSS3D boards (built for the perspective camera and drawn on their
+// own layer, so they would float over the map at the wrong place), the clouds (whose
+// shadows lie across the map), the hamlet arches (a bar across the road from above), the
+// nameplates (41 of them are 123 draw calls the map does not need), and the haze - the
+// plan camera is 300 up, which is deep in a fog whose far end is 3.4 half-widths.
+let planFog = null;
+function enterPlan() {
+  if (state.mode === 'plan' || !state.plan) return;
+  if (keeperOnly('plan the island')) return;
+  if (state.mode === 'walk') exitWalk();
+  if (state.chronicle.t != null) setLiveMode();
+  state.intro = null;
+  state.tween = null;
+  faceToFace.cancel();
+  if (state.ghost) state.ghost.drop();
+  state.ui.closeOverlays();
+  controls.enabled = false;
+  state.mode = 'plan';
+  state.ui.setPlanning(true);
+  if (state.panels && state.panels.setVisible) state.panels.setVisible(false);
+  if (state.world && state.world.clouds) state.world.clouds.visible = false;
+  hamletGroup.visible = false;
+  for (const rec of state.byId.values()) if (rec.nameplate) rec.nameplate.group.visible = false;
+  if (scene.fog) { planFog = [scene.fog.near, scene.fog.far]; scene.fog.near = 2000; scene.fog.far = 4000; }
+  state.plan.enter();
+  if (!state.plan.active()) leftPlan();     // it refused: an island with no lattice yet
+}
+function exitPlan() { if (state.mode === 'plan' && state.plan) state.plan.exit(); }
+function leftPlan() {
+  if (state.mode !== 'plan') return;
+  state.mode = 'orbit';
+  state.ui.setPlanning(false);
+  if (state.panels && state.panels.setVisible) state.panels.setVisible(true);
+  if (state.world && state.world.clouds) state.world.clouds.visible = true;
+  hamletGroup.visible = true;
+  for (const rec of state.byId.values()) if (rec.nameplate) rec.nameplate.group.visible = true;
+  if (scene.fog && planFog) { scene.fog.near = planFog[0]; scene.fog.far = planFog[1]; planFog = null; }
+  controls.enabled = true;
+  controls.update();
+  applyFogRange();
+}
+
 function askToSendAway(id) {
   if (keeperOnly('send a settler off the island')) return;
   const rec = state.byId.get(id);
@@ -1308,6 +1361,7 @@ function applyCameraRange() {
 // depth, which is the thing the reference picture has and a wide-open scene does not.
 function applyFogRange() {
   if (!scene.fog) return;
+  if (state.mode === 'plan') return;      // the planner holds the haze off; leftPlan puts it back
   const half = state.terrain ? state.terrain.half : 64;
   // How far away the furthest thing that is NOT our own island lies. Our own island is
   // already covered by half*3.4, and the +110 was only ever about holding the haze off
@@ -3622,6 +3676,7 @@ const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerScreen = { x: 0, y: 0 }, downAt = null, moved = 0;
 renderer.domElement.addEventListener('pointermove', (e) => {
+  if (state.mode === 'plan') return;       // the planner has the pointer (web/js/plan-mode.js)
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   pointerScreen = { x: e.clientX, y: e.clientY };
   if (downAt) moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
@@ -3632,6 +3687,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
 renderer.domElement.addEventListener('pointerup', (e) => {
+  if (state.mode === 'plan') { downAt = null; return; }
   // Aimed from the event rather than from the last move: a tap on a touch screen never
   // sends one, and a click that lands a finger's width off a button is worse than none.
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -3682,6 +3738,7 @@ let frameErrors = 0;
 // The controller from up in the sky: right stick orbits, left stick pans, triggers zoom.
 // A drops you onto the island, B clears whatever panel is hanging over it.
 function orbitPad(a, dt) {
+  if (state.mode !== 'orbit') return;
   if (a.hit('walk') || a.hit('walkAlt')) { enterWalk(); return; }
   if (a.hit('back')) state.ui.closeOverlays();
   const look = a.look, move = a.move;
@@ -3885,13 +3942,14 @@ function frame(nowMs) {
   // The sky and the open sea ride with the eye, wherever the eye is. Once a frame, before
   // either camera branch below, because both of them move the camera and neither of them
   // owns the horizon.
-  if (state.world) state.world.recentre(camera.position.x, camera.position.z);
+  const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
+  if (state.world) state.world.recentre(eye.position.x, eye.position.z);
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
   if (state.sea.count() > 1) applyFogRange();
 
-  if (!state.intro && state.mode !== 'walk') {
+  if (!state.intro && state.mode === 'orbit') {
     controls.update();
     // Whatever ground is under the camera, on whichever island - and out between them the
     // archipelago answers with open sea rather than with the nearest coast, so the camera
@@ -3905,6 +3963,9 @@ function frame(nowMs) {
     // Where the shadows have to reach, and how far: pulled back over the whole island the
     // frustum has to cover the whole island, and down among the houses it must not.
     if (state.world) state.world.followShadow(controls.target.x, controls.target.z, camera.position.distanceTo(controls.target));
+  } else if (state.mode === 'plan' && state.plan) {
+    state.plan.update(dt);
+    if (state.world) state.world.followShadow(state.plan.view.cx, state.plan.view.cz, state.plan.view.hh * 2);
   } else if (state.mode === 'walk' && state.world) {
     // On foot the shadows belong around your feet, at the tightest the frustum goes -
     // this is the one view where a shadow is a metre from the eye. It used to be left
@@ -3916,9 +3977,9 @@ function frame(nowMs) {
   // After the camera is settled, so the ray it casts is the one you are looking down.
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
-  if (state.mode !== 'walk' && !(state.ghost && state.ghost.holding())) updateLabels();
+  if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
-  renderer.render(state.inside ? state.inside.scene : scene, camera);
+  renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
     // Colour pass only: three.js resets renderer.info after the shadow pass, so the
     // shadow map's own calls and triangles are not in these numbers. Comparing two runs
@@ -3928,7 +3989,7 @@ function frame(nowMs) {
   }
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
-  if (state.panels) state.panels.render();
+  if (state.panels && state.mode !== 'plan') state.panels.render();
   // And last of all, what the island sounds like. After the camera has settled, because
   // the listener rides on it; one line, because everything sound needs it asks for itself
   // through the snapshot handed to createSound.
@@ -4128,7 +4189,10 @@ async function boot() {
     onJoinSea: (url) => changeSea({ mode: 'join', url }),
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
-    onOverview: () => { state.intro = null; state.tween = null; controls.enabled = true; frameIsland(); },
+    onOverview: () => {
+      if (state.mode === 'plan') { state.plan.frameIsland(); return; }
+      state.intro = null; state.tween = null; controls.enabled = true; frameIsland();
+    },
     onScrub: (frac) => {
       const { start, end } = chronicleBounds();
       state.chronicle.playing = false;
@@ -4148,6 +4212,7 @@ async function boot() {
       state.hourOverride = hours[(i + 1) % hours.length];
     },
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
+    onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
@@ -4452,6 +4517,22 @@ async function boot() {
     onCursor: (at) => { if (state.net) state.net.setPanelCursor(at ? { ...at, id: scopePanel(at.id) } : null); },
     self: () => (state.net ? state.net.id() : null),
   });
+  // The planner. After the world, so its overlay can measure the ground; after the
+  // panels, so it can hide them. Everything it reads is a getter, because the terrain and
+  // the village are both replaced under it by later scans.
+  state.plan = createPlanMode({
+    dom: renderer.domElement,
+    terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
+    pickables: () => state.pickables, bounds: () => state.bounds,
+    overlay: createPlanOverlay({ scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId }),
+    panel: createPlanPanel({
+      onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
+      onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
+      onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
+    }),
+    toast: (html) => state.ui.toast(html),
+    onExit: () => leftPlan(),
+  });
   refreshProps({ animate: false });
   state.crops = createCrops({ scene, terrain: state.terrain, material: buildingMat });
   refreshGarden({ animate: false });
@@ -4585,7 +4666,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange,
+  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange, enterPlan, exitPlan,
 };
 
 addEventListener('resize', () => {
@@ -4593,6 +4674,7 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
+  if (state.plan) state.plan.resize();
   if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
 });
 

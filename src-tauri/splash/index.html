@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Promptholm</title>
+<!--
+  The only page the desktop shell has of its own. It is what the window shows for the
+  second or so between opening and the island answering on its port - or for as long as it
+  takes to start the island when nothing is listening - and it is replaced by the island
+  itself the moment Rust navigates the webview there. Everything it says comes over two
+  events from src/lib.rs: island:status (a line of text) and island:failed ({message, log}).
+  It asks Rust to begin rather than Rust beginning on its own, so that no event can be sent
+  before this script is listening for it.
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center;
+    background: #0d1420; color: #e6ecf5;
+    font: 15px/1.5 system-ui, "Segoe UI", sans-serif;
+    user-select: none;
+  }
+  .card { text-align: center; max-width: 34rem; padding: 0 1.5rem; }
+  .isle { font-size: 64px; line-height: 1; margin-bottom: .75rem; filter: drop-shadow(0 8px 24px rgba(0,0,0,.5)); }
+  h1 { font-weight: 600; font-size: 1.5rem; margin: 0 0 .25rem; letter-spacing: .02em; }
+  #status { color: #9fb0c8; margin: 0; min-height: 1.5em; }
+  #status::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0% { content: '' } 25% { content: '.' } 50% { content: '..' } 75% { content: '...' } }
+  body.failed #status::after { animation: none; content: '.'; }
+  #fail {
+    display: none; margin-top: 1rem; padding: 1rem 1.25rem; text-align: left;
+    border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.04);
+  }
+  body.failed #fail { display: block; }
+  #fail p { margin: 0 0 .75rem; }
+  .muted { color: #9fb0c8; font-size: .9em; word-break: break-all; user-select: text; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: .45rem .9rem; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: inherit;
+  }
+  button:hover { background: rgba(255,255,255,.14); }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="isle">🏝️</div>
+  <h1>Promptholm</h1>
+  <p id="status">Looking for the island</p>
+  <div id="fail">
+    <p id="fail-msg"></p>
+    <p class="muted" id="fail-log" hidden></p>
+    <div class="row">
+      <button id="retry">Try again</button>
+      <button id="log" hidden>Open the log</button>
+    </div>
+  </div>
+</main>
+<script>
+(() => {
+  const T = window.__TAURI__;
+  const status = document.getElementById('status');
+  const msg = document.getElementById('fail-msg');
+  const logLine = document.getElementById('fail-log');
+  const logBtn = document.getElementById('log');
+
+  if (!T) {
+    // Opened in a plain browser, where there is nothing to ask. Say so instead of dotting
+    // for ever.
+    document.body.classList.add('failed');
+    status.textContent = 'This page is the desktop window’s splash';
+    msg.textContent = 'It only does something inside the Promptholm app.';
+    return;
+  }
+
+  T.event.listen('island:status', (e) => {
+    document.body.classList.remove('failed');
+    status.textContent = String(e.payload || '');
+  });
+  T.event.listen('island:failed', (e) => {
+    const p = e.payload || {};
+    document.body.classList.add('failed');
+    status.textContent = 'The island did not come up';
+    msg.textContent = String(p.message || '');
+    logLine.hidden = !p.log;
+    logBtn.hidden = !p.log;
+    if (p.log) logLine.textContent = p.log;
+  });
+
+  document.getElementById('retry').addEventListener('click', () => T.core.invoke('start_island'));
+  logBtn.addEventListener('click', () => T.core.invoke('open_log').catch(() => {}));
+
+  T.core.invoke('start_island');
+})();
+</script>
+</body>
+</html>

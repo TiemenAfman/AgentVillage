@@ -112,6 +112,7 @@
       <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
       <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
       <button class="chip" id="build-btn" title="Put something on the island">Build</button>
+      <button class="chip" id="plan-btn" title="The island from above: move hamlets, zone ground" hidden>Plan</button>
       <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
       <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
       <button class="chip" id="legend-btn">Legend</button>
@@ -155,6 +156,17 @@
   <div class="panel-body" id="dossier-body"></div>
 </aside>
 
+<!-- The planner (web/js/plan-mode.js): tools on the left, the draft on the right. Filled
+     by web/js/plan-panel.js; the ✕ on either one is Done. -->
+<aside class="panel left plan-tools" id="plan-tools" hidden>
+  <div class="panel-head"><h2>Plan</h2><button class="x" data-close="plan-tools">✕</button></div>
+  <div class="panel-body"></div>
+</aside>
+<aside class="panel plan-ledger" id="plan-ledger" hidden>
+  <div class="panel-head"><h2>Draft</h2><button class="x" data-close="plan-ledger">✕</button></div>
+  <div class="panel-body"></div>
+</aside>
+
 <footer class="card chronicle" id="chronicle" hidden>
   <button class="play" id="play-btn" title="Replay the growth of the village">▶</button>
   <input type="range" id="chronicle-range" min="0" max="1000" value="1000" step="1">
@@ -186,6 +198,8 @@
 <!-- What is in your hand while building. Outside the walk HUD on purpose: that strip is
      hidden whenever you are not on foot, and a ghost can be aimed from the sky too. -->
 <div class="card build-hud" id="build-hud" hidden></div>
+<div class="card build-hud plan-hud" id="plan-hud" hidden></div>
+<div class="plan-band" id="plan-band" hidden></div>
 
 <div id="veil"></div>
 

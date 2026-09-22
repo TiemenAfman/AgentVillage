@@ -7,9 +7,15 @@ broken the promise the whole thing rests on.
 
 ## The promise
 
-**A house never moves.** `data/layout.json` records where every building stands and is
-only ever added to. It is the only irreplaceable file in `data/` - `village.json` and
-`cache.json` both rebuild themselves - so copy it before a first scan on anything new.
+**A house never moves by itself.** `data/layout.json` records where every building stands
+and is only ever added to. It is the only irreplaceable file in `data/` - `village.json`
+and `cache.json` both rebuild themselves - so copy it before a first scan on anything new.
+
+The keeper may move a whole hamlet, through `POST /api/plan` (`lib/plan.mjs`), and that is
+the one exception: it is a hand, not a scan. Every check below still holds for it with one
+word added - *unless the plan named it* - and the plan route enforces that itself: the diff
+it computes has an `otherMoved` list, and a plan with anything in it is refused before a
+byte is written. Every apply writes `layout.before-plan-<ts>.json` beside the layout first.
 
 ```bash
 node scan.mjs        # rebuild data/village.json
@@ -25,15 +31,21 @@ stress test: it puts several hundred settlers on the island at once.
 
 Four things, all computable from `data/layout.json` and `data/village.json` alone:
 
-1. **No plot moved.** Every `house:*`, `shed:*` and `civic:*` entry keeps its `gx`, `gz`
-   and `rot`. This is the one that matters; everything else is a way of catching a
-   version gate that fired when it should not have.
+1. **No plot moved that the plan did not name.** Every `house:*`, `shed:*` and `civic:*`
+   entry keeps its `gx`, `gz` and `rot`. This is the one that matters; everything else is a
+   way of catching a version gate that fired when it should not have. After a plan, the
+   household of the moved hamlet has shifted by exactly the delta and its office stands at
+   the new gate; nothing else - `diff.plots.otherMoved` is this check at runtime.
 2. **The town is bit-identical** - `town.square`, `centre`, `lots`, `size`, `paved` and
    `commons`, and the lattice anchor.
 3. **Land already owned did not move.** Every district keeps every super-cell of every
    lobe.
 4. **A second scan changes nothing.** Two consecutive scans leave `data/layout.json`
    byte-identical.
+5. **After a plan is applied, a plain scan changes nothing either.** The apply runs
+   `placeAll` to a fixed point (at most three passes) and refuses if it does not settle, so
+   the scan after it is the same no-op as any other. `tests/plan-scan.test.mjs` measures
+   it on a copy of the live island; `tests/plan-move.test.mjs` on a synthetic one.
 
 If a change edits the terrain, two more, both from `layout.polders` and
 `shared/terrain.mjs`: that no cell which was solid land got rewritten, and that the count
