@@ -30,6 +30,11 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 export const DEFAULT_AVATAR = {
   character: 'kenney',
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
+  // Equipment: mechanism only for now (Plans/uitrusting-en-vasthouden.md) - a real on/off
+  // state, not something derived from the rest of the look, so nothing sets it false yet
+  // and the backpack keeps showing exactly as it always has. handItem is null by default
+  // for the same reason: nobody reaches into normalizeAvatar to hand a settler a parasol.
+  equip: { backpack: true, handItem: null },
 };
 
 export function normalizeAvatar(spec = {}) {
@@ -43,6 +48,10 @@ export function normalizeAvatar(spec = {}) {
     trim: num(spec.trim, d.trim),
     hat: num(spec.hat, d.hat),
     hatShape: shape,
+    equip: {
+      backpack: spec.equip?.backpack !== false,
+      handItem: spec.equip?.handItem === 'parasol' ? 'parasol' : null,
+    },
   };
 }
 

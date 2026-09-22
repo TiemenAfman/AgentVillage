@@ -7,9 +7,15 @@ register('./support/shared-loader.mjs', import.meta.url);
 import { Color, MeshBasicMaterial } from 'three';
 // Imported dynamically, and it has to be: a static import is hoisted above the register()
 // call and would resolve 'shared/…' before the loader that knows what that means exists.
+// classic-avatar.js now reaches web/js/buildings.js for the held-item primitives, which
+// starts a TextureLoader at import time - the same reason villagers.test.mjs stubs this.
+const previousDocument = globalThis.document;
+globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { avatarPlayerGeometry, avatarFigureGeometry, HAT_SHAPES,
   DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } = await import('../web/js/avatar.js');
 const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
+if (previousDocument === undefined) delete globalThis.document;
+else globalThis.document = previousDocument;
 
 test('every Blender hat fits walking clearance and produces one complete material mesh', () => {
   for (const { id } of HAT_SHAPES) {

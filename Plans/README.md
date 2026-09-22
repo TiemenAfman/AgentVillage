@@ -19,3 +19,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
   vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.
+- [uitrusting-en-vasthouden.md](uitrusting-en-vasthouden.md) — settlers die iets vasthouden en
+  een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
+  (`settler-figures.js`). Nog niet gebouwd: eerste stap is de rugzak losmaken van de
+  speler-merge, dan hetzelfde patroon als de hoed-buckets voor de settlers.
