@@ -890,6 +890,7 @@ function walkCallbacks() {
     onNextSeed: () => cycleSeed(1),
     onPrevSeed: () => cycleSeed(-1),
     onBuild: () => openBuild(),
+    onAvatar: () => openStudio(),
     onRelease: () => releasePanel(),
     onExit: () => exitWalk(),
     onToggleMinimap: () => {

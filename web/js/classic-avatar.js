@@ -33,12 +33,18 @@ const PIVOTS = {
 // carried through the same PLAYER_SCALE the pivots already are, minus the rightArm pivot's
 // own offset - the same translate makePiece already does to its mesh, done once here by
 // hand rather than by loading the part just to throw its geometry away. Not the item's own
-// origin, only where an attach point for one belongs; nothing hangs off it yet.
-const RIGHT_HAND_ATTACH = [
-  0.131 * PLAYER_SCALE - PIVOTS.rightArm[0],
-  0.19 * PLAYER_SCALE - PIVOTS.rightArm[1],
-  0.018 * PLAYER_SCALE - PIVOTS.rightArm[2],
-];
+// origin, only where an attach point for one belongs.
+const HAND_ATTACH = {
+  rightArm: [
+    0.131 * PLAYER_SCALE - PIVOTS.rightArm[0],
+    0.19 * PLAYER_SCALE - PIVOTS.rightArm[1],
+    0.018 * PLAYER_SCALE - PIVOTS.rightArm[2],
+  ],
+};
+// "Left hand" is the mirror of "Right hand" on X and nothing else (checked against the raw
+// model: -0.131, 0.19, 0.018) - the arms and their pivots are symmetric, so deriving it
+// keeps the two hands from drifting apart if the model ever changes.
+HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -54,7 +60,7 @@ function damp(from, to, speed, dt) {
 // The first held item (Plans/uitrusting-en-vasthouden.md's open "what comes first"
 // question) - the same lounge parasol from walk.js's loungeGeometry(), rebuilt at hand
 // scale with its handle at the local origin instead of planted in the ground, so it can
-// be parented straight onto rightHandAttach. Same colours, so it still reads as the same
+// be parented straight onto either hand's attach point. Same colours, so it still reads as the same
 // parasol when it moves from the beach towel to the hand.
 const PARASOL_POLE = 0x5a3c28, PARASOL_CANOPY = 0xd94f3d, PARASOL_UNDERSIDE = 0xf5efe0, PARASOL_FINIAL = 0xd9a33d;
 function parasolGeometry() {
@@ -97,26 +103,30 @@ export function createClassicAvatar(spec, material) {
   makePiece('backpack', BACKPACK);
   pieces.backpack.pivot.visible = spec.equip?.backpack !== false;
 
-  // An empty group, not a mesh: a held item parents onto this and follows the hand's
-  // position for free. Not its rotation, though - update() below counter-rotates the item
-  // itself, so it swings to wherever the hand is but stays upright the way something
-  // actually held in a hand would, instead of tipping over with the arm that carries it.
-  const rightHandAttach = new THREE.Group();
-  rightHandAttach.position.set(...RIGHT_HAND_ATTACH);
-  pieces.rightArm.pivot.add(rightHandAttach);
+  // An empty group per arm, not a mesh: a held item parents onto this and follows the
+  // hand's position for free. Not its rotation, though - update() below counter-rotates
+  // the item itself, so it swings to wherever the hand is but stays upright the way
+  // something actually held in a hand would, instead of tipping over with the arm.
+  const handAttach = {}, heldMesh = { leftArm: null, rightArm: null }, holding = { leftArm: false, rightArm: false };
+  for (const side of ['leftArm', 'rightArm']) {
+    const g = new THREE.Group();
+    g.position.set(...HAND_ATTACH[side]);
+    pieces[side].pivot.add(g);
+    handAttach[side] = g;
+  }
 
-  let heldMesh = null;
-  let holding = false;
-  function setHeldItem(item) {
-    if (heldMesh) { rightHandAttach.remove(heldMesh); heldMesh.geometry.dispose(); heldMesh = null; }
-    holding = !!item;
+  function setHeldItem(side, item) {
+    if (heldMesh[side]) { handAttach[side].remove(heldMesh[side]); heldMesh[side].geometry.dispose(); heldMesh[side] = null; }
+    holding[side] = !!item;
     if (item === 'parasol') {
-      heldMesh = new THREE.Mesh(parasolGeometry(), material);
-      heldMesh.castShadow = true;
-      rightHandAttach.add(heldMesh);
+      const mesh = new THREE.Mesh(parasolGeometry(), material);
+      mesh.castShadow = true;
+      handAttach[side].add(mesh);
+      heldMesh[side] = mesh;
     }
   }
-  setHeldItem(spec.equip?.handItem || null);
+  setHeldItem('leftArm', spec.equip?.leftHandItem || null);
+  setHeldItem('rightArm', spec.equip?.rightHandItem || null);
 
   let time = 0;
   function update(pose, dt) {
@@ -131,25 +141,25 @@ export function createClassicAvatar(spec, material) {
     const targets = {
       leftLeg: sit || (stride + airborne + crouch),
       rightLeg: sit || (-stride - airborne + crouch),
-      leftArm: moving ? -stride * 0.9 : idle,
-      // Held out in front rather than swinging with the stride - a parasol on a walking
-      // arm would windmill through the body otherwise, and there is no elbow to fold
-      // instead.
-      rightArm: holding ? HOLD_ARM_X : (moving ? stride * 0.9 : -idle),
+      // Held out in front rather than swinging with the stride - an item on a walking arm
+      // would windmill through the body otherwise, and there is no elbow to fold instead.
+      leftArm: holding.leftArm ? HOLD_ARM_X : (moving ? -stride * 0.9 : idle),
+      rightArm: holding.rightArm ? HOLD_ARM_X : (moving ? stride * 0.9 : -idle),
     };
     for (const [name, target] of Object.entries(targets)) {
       pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, 15, dt);
     }
-    pieces.leftArm.pivot.rotation.z = damp(pieces.leftArm.pivot.rotation.z, pose.running ? -0.12 : 0, 12, dt);
-    pieces.rightArm.pivot.rotation.z = damp(pieces.rightArm.pivot.rotation.z, holding ? 0 : (pose.running ? 0.12 : 0), 12, dt);
+    pieces.leftArm.pivot.rotation.z = damp(pieces.leftArm.pivot.rotation.z, holding.leftArm ? 0 : (pose.running ? -0.12 : 0), 12, dt);
+    pieces.rightArm.pivot.rotation.z = damp(pieces.rightArm.pivot.rotation.z, holding.rightArm ? 0 : (pose.running ? 0.12 : 0), 12, dt);
     pieces.core.pivot.position.y = Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
-    // Cancel the arm pivot's own rotation on the item itself: rightHandAttach carries the
-    // hand's position (correct - the grip moves with the arm), but a held item should not
-    // also inherit the arm's tilt, or it lies over at whatever angle the arm is held at
-    // instead of standing up the way something actually gripped in a hand would.
-    if (heldMesh) {
-      heldMesh.rotation.x = -pieces.rightArm.pivot.rotation.x;
-      heldMesh.rotation.z = -pieces.rightArm.pivot.rotation.z;
+    // Cancel each arm pivot's own rotation on the item it carries: the attach point gives
+    // the item the hand's position (correct - the grip moves with the arm), but a held
+    // item should not also inherit the arm's tilt, or it lies over at whatever angle the
+    // arm is held at instead of standing up the way something actually gripped would.
+    for (const side of ['leftArm', 'rightArm']) {
+      if (!heldMesh[side]) continue;
+      heldMesh[side].rotation.x = -pieces[side].pivot.rotation.x;
+      heldMesh[side].rotation.z = -pieces[side].pivot.rotation.z;
     }
   }
 
@@ -161,13 +171,14 @@ export function createClassicAvatar(spec, material) {
       piece.mesh.geometry = geometry;
     }
     pieces.backpack.pivot.visible = next.equip?.backpack !== false;
-    setHeldItem(next.equip?.handItem || null);
+    setHeldItem('leftArm', next.equip?.leftHandItem || null);
+    setHeldItem('rightArm', next.equip?.rightHandItem || null);
   }
 
   function dispose() {
     for (const piece of Object.values(pieces)) piece.mesh.geometry.dispose();
-    if (heldMesh) heldMesh.geometry.dispose();
+    for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
   }
 
-  return { object, update, set, dispose, rightHandAttach };
+  return { object, update, set, dispose, handAttach };
 }

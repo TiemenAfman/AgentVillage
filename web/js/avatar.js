@@ -30,12 +30,16 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 export const DEFAULT_AVATAR = {
   character: 'kenney',
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
-  // Equipment: mechanism only for now (Plans/uitrusting-en-vasthouden.md) - a real on/off
-  // state, not something derived from the rest of the look, so nothing sets it false yet
-  // and the backpack keeps showing exactly as it always has. handItem is null by default
-  // for the same reason: nobody reaches into normalizeAvatar to hand a settler a parasol.
-  equip: { backpack: true, handItem: null },
+  // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
+  // derived from the rest of the look. The backpack defaults on, so nobody's look changes
+  // until they open the Equipment section themselves; both hands default empty.
+  equip: { backpack: true, leftHandItem: null, rightHandItem: null },
 };
+
+// What a hand can hold. 'parasol' is the only one so far - see Plans/
+// uitrusting-en-vasthouden.md for why the beach parasol was the first thing tried, and
+// classic-avatar.js's parasolGeometry() for where its shape comes from.
+export const HAND_ITEMS = [{ id: 'parasol', name: 'Parasol' }];
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;
@@ -50,7 +54,8 @@ export function normalizeAvatar(spec = {}) {
     hatShape: shape,
     equip: {
       backpack: spec.equip?.backpack !== false,
-      handItem: spec.equip?.handItem === 'parasol' ? 'parasol' : null,
+      leftHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.leftHandItem) ? spec.equip.leftHandItem : null,
+      rightHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.rightHandItem) ? spec.equip.rightHandItem : null,
     },
   };
 }
@@ -60,7 +65,11 @@ export function loadAvatar() {
     const raw = localStorage.getItem(KEY);
     if (raw) return normalizeAvatar(JSON.parse(raw));
   } catch { /* no storage, or nonsense in it: fall back to the default look */ }
-  return { ...DEFAULT_AVATAR };
+  // normalizeAvatar({}), not a spread of DEFAULT_AVATAR: a shallow spread would hand back
+  // DEFAULT_AVATAR's own equip object, and the studio's equip toggles mutate that object
+  // rather than replacing it - a settler with no saved look yet would edit the shared
+  // default for every settler after them.
+  return normalizeAvatar({});
 }
 
 export function saveAvatar(spec) {

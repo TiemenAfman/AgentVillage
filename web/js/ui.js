@@ -583,7 +583,7 @@ export function createUI(handlers) {
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
-        + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>M</kbd> map</span>`
+        + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
         + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {

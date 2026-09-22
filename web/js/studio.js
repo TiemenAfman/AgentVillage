@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
-  SWATCHES, HAT_SHAPES, DEFAULT_AVATAR,
+  SWATCHES, HAT_SHAPES, HAND_ITEMS, DEFAULT_AVATAR,
   loadAvatar, saveAvatar, normalizeAvatar,
 } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
@@ -47,6 +47,9 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const hatRow = () => HAT_SHAPES
     .map((h) => `<button class="av-hat chip" data-shape="${h.id}">${h.name}</button>`)
     .join('');
+  const handRow = (side) => [{ id: '', name: 'None' }, ...HAND_ITEMS]
+    .map((h) => `<button class="av-hand chip" data-side="${side}" data-item="${h.id}">${h.name}</button>`)
+    .join('');
 
   function open() {
     spec = loadAvatar();
@@ -70,6 +73,11 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
             <h4>Leather &amp; trim</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
             <h4>Hat</h4><div class="av-hats">${hatRow()}</div>
             <h4>Hat colour</h4><div class="av-swatches" data-row="hat">${swatchRow('hat')}</div>
+            <h4>Equipment</h4><div class="av-hats">
+              <button class="av-equip chip" data-equip="backpack">Backpack</button>
+            </div>
+            <h4>Left hand</h4><div class="av-hats">${handRow('leftHandItem')}</div>
+            <h4>Right hand</h4><div class="av-hats">${handRow('rightHandItem')}</div>
           </div>
         </div>
         <div class="ho-buttons" style="margin-top:16px">
@@ -82,7 +90,10 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     el.querySelector('#av-close').addEventListener('click', cancel);
     el.querySelector('#av-cancel').addEventListener('click', cancel);
     el.querySelector('#av-save').addEventListener('click', save);
-    el.querySelector('#av-reset').addEventListener('click', () => { spec = { ...DEFAULT_AVATAR }; sync(); apply(); });
+    // normalizeAvatar(), not a spread of DEFAULT_AVATAR: a shallow spread would hand spec
+    // the very same equip object DEFAULT_AVATAR holds, and the first Backpack click above
+    // would then mutate the shared default for every settler reset after this one.
+    el.querySelector('#av-reset').addEventListener('click', () => { spec = normalizeAvatar({}); sync(); apply(); });
     el.querySelectorAll('.av-sw').forEach((b) => b.addEventListener('click', () => {
       spec[b.dataset.part] = Number(b.dataset.hex); sync(); apply();
     }));
@@ -91,6 +102,15 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     }));
     el.querySelectorAll('.av-model').forEach((b) => b.addEventListener('click', () => {
       spec.character = b.dataset.character; sync(); apply();
+    }));
+    // A fresh object every time, not a mutation of spec.equip in place: spec can still be
+    // the DEFAULT_AVATAR-derived one from Reset, and mutating that would leak into every
+    // settler's default look instead of just this session's.
+    el.querySelectorAll('.av-equip').forEach((b) => b.addEventListener('click', () => {
+      spec.equip = { ...spec.equip, [b.dataset.equip]: !spec.equip?.[b.dataset.equip] }; sync(); apply();
+    }));
+    el.querySelectorAll('.av-hand').forEach((b) => b.addEventListener('click', () => {
+      spec.equip = { ...spec.equip, [b.dataset.side]: b.dataset.item || null }; sync(); apply();
     }));
 
     preview = makePreview(el.querySelector('#av-canvas'));
@@ -103,6 +123,8 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     el.querySelectorAll('.av-sw').forEach((b) => b.classList.toggle('on', Number(b.dataset.hex) === spec[b.dataset.part]));
     el.querySelectorAll('.av-hat').forEach((b) => b.classList.toggle('on', b.dataset.shape === spec.hatShape));
     el.querySelectorAll('.av-model').forEach((b) => b.classList.toggle('on', b.dataset.character === spec.character));
+    el.querySelectorAll('.av-equip').forEach((b) => b.classList.toggle('on', !!spec.equip?.[b.dataset.equip]));
+    el.querySelectorAll('.av-hand').forEach((b) => b.classList.toggle('on', (spec.equip?.[b.dataset.side] || '') === b.dataset.item));
   }
 
   // Show the change on the turntable and on the character out on the island at once.

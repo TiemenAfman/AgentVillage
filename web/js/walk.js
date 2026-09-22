@@ -263,6 +263,7 @@ export function createWalkMode({
     onNextSeed: null,
     onPrevSeed: null,
     onBuild: null,
+    onAvatar: null,
     onExit: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
@@ -351,6 +352,9 @@ export function createWalkMode({
     // The catalogue. Like a thought, it is about wherever you happen to be standing, so
     // it needs nothing within reach.
     if (k === 'b') { e.preventDefault(); state.onBuild && state.onBuild(); }
+    // The wardrobe, same door the Avatar chip opens. Like Build, whoever is standing here
+    // rather than something with the keyboard.
+    if (k === 'i') { e.preventDefault(); state.onAvatar && state.onAvatar(); }
     // The radar, like ?stats: off until asked for.
     if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
@@ -520,7 +524,7 @@ export function createWalkMode({
   }
 
   function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
-    onNextSeed, onPrevSeed, onBuild, onExit, onRelease, onToggleMinimap }) {
+    onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
     state.working = null;
@@ -531,6 +535,7 @@ export function createWalkMode({
     state.onNextSeed = onNextSeed;
     state.onPrevSeed = onPrevSeed;
     state.onBuild = onBuild;
+    state.onAvatar = onAvatar;
     state.onExit = onExit;
     state.onToggleMinimap = onToggleMinimap;
     let [x, z] = at;
