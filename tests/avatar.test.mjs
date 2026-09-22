@@ -76,13 +76,31 @@ test('the original avatar keeps every triangle while its limbs animate independe
   const merged = avatarPlayerGeometry(spec);
   const material = new MeshBasicMaterial({ vertexColors: true });
   const animated = createClassicAvatar(spec, material);
-  let vertices = 0;
-  animated.object.traverse((part) => { if (part.isMesh) vertices += part.geometry.attributes.position.count; });
-  // The baked hammer is the one part of the merged mesh the animated rig does not carry:
-  // it moved to a hand-held item (classic-avatar.js's hammerGeometry()) built fresh only
-  // when equipped, so DEFAULT_AVATAR's empty hands leave those triangles out on purpose.
-  const hammer = avatarPlayerComponentGeometry(spec, ['Hammer handle', 'Hammer head']);
-  assert.equal(vertices, merged.attributes.position.count - hammer.attributes.position.count);
+  // Only what is actually shown: toggleable armour hangs off a pivot whose own .visible is
+  // false by default (the same pattern the backpack already used), not the mesh's own flag,
+  // so a flat traverse that only checks each mesh would still count a hidden piece - three.js
+  // itself skips a whole subtree under an invisible parent when it renders, and this walk
+  // has to match that or it is testing something the screen does not show.
+  function countVisible(obj) {
+    if (!obj.visible) return 0;
+    let n = obj.isMesh ? obj.geometry.attributes.position.count : 0;
+    for (const child of obj.children) n += countVisible(child);
+    return n;
+  }
+  const vertices = countVisible(animated.object);
+  // Everything the merged mesh carries that DEFAULT_AVATAR's own equip state leaves out:
+  // the hammer (now a hand-held item, built fresh only when equipped) and the whole armour
+  // set (Plans/uitrusting-en-vasthouden.md) - all baked 'gear'-variant parts, which
+  // avatarPlayerGeometry always includes and the animated rig only shows once switched on.
+  const hidden = avatarPlayerComponentGeometry(spec, [
+    'Hammer handle', 'Hammer head',
+    'Chestplate body', 'Chestplate trim', 'Left chestplate pauldron', 'Right chestplate pauldron',
+    'Left legging', 'Left knee cop', 'Right legging', 'Right knee cop',
+    'Left sabaton', 'Left sabaton trim', 'Right sabaton', 'Right sabaton trim',
+    'Sword pommel', 'Sword grip', 'Sword crossguard', 'Sword blade',
+    'Shield face', 'Shield rim top', 'Shield rim bottom', 'Shield boss', 'Shield grip',
+  ]);
+  assert.equal(vertices, merged.attributes.position.count - hidden.attributes.position.count);
   animated.update({ moving: true, running: false, grounded: true, crouching: false,
     sitting: false, lying: false, phase: Math.PI / 2 }, 1);
   const rotations = animated.object.children.slice(1).map((part) => part.rotation.x);

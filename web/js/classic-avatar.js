@@ -27,7 +27,26 @@ const BACKPACK = [
 // same way the parasol is: its own procedural shape with the grip at the local origin, so
 // it parents onto handAttach the same as anything else a hand can hold.
 const HAMMER = ['Hammer handle', 'Hammer head'];
-const EQUIPPABLE = new Set([...BACKPACK, ...HAMMER]);
+// The armour set below (Plans/uitrusting-en-vasthouden.md), all baked in Blender alongside
+// the rest of the settler in scripts/build-settler.py - two rounds of code-primitive gear
+// (plain boxes, then sharper cone-built shapes) both read wrong next to a model the rest
+// of the settler is built from, and neither one could reuse this file's own proportions
+// the way build-settler.py's own ball/box/rod calls already do. Chestplate, leggings and
+// boots are excluded from CORE below and get their own piece each, same as the backpack;
+// the sword and shield are held items, resolved through GRIP below; the helmet is the one
+// exception - it stays IN core, because a helmet is an eighth hatShape, not a toggle, and
+// buildFigure()'s own variant match already shows exactly one hat at a time.
+const CHESTPLATE = ['Chestplate body', 'Chestplate trim', 'Left chestplate pauldron', 'Right chestplate pauldron'];
+const LEFT_LEGGING = ['Left legging', 'Left knee cop'];
+const RIGHT_LEGGING = ['Right legging', 'Right knee cop'];
+const LEFT_SABATON = ['Left sabaton', 'Left sabaton trim'];
+const RIGHT_SABATON = ['Right sabaton', 'Right sabaton trim'];
+const SWORD = ['Sword pommel', 'Sword grip', 'Sword crossguard', 'Sword blade'];
+const SHIELD = ['Shield face', 'Shield rim top', 'Shield rim bottom', 'Shield boss', 'Shield grip'];
+const EQUIPPABLE = new Set([
+  ...BACKPACK, ...HAMMER, ...CHESTPLATE, ...LEFT_LEGGING, ...RIGHT_LEGGING,
+  ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD,
+]);
 const CORE = SETTLER_PARTS.map(({ name }) => name).filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name));
 const PIVOTS = {
   leftLeg: [-0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
@@ -52,6 +71,12 @@ const HAND_ATTACH = {
 // keeps the two hands from drifting apart if the model ever changes.
 HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
 
+// The sword and shield are modelled in build-settler.py with their grip at this same
+// point - "Right hand"'s own raw position - so re-centring their baked geometry here (not
+// modelling them at the origin the way the procedural parasol and hammer still are) is
+// what lets classic-avatar.js hand either one to either fist through the same handAttach.
+const GRIP = [0.131 * PLAYER_SCALE, 0.19 * PLAYER_SCALE, 0.018 * PLAYER_SCALE];
+
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
 // forward) - large enough to read as reaching out rather than a bigger stride, checked in
@@ -63,6 +88,18 @@ function damp(from, to, speed, dt) {
   return THREE.MathUtils.lerp(from, to, 1 - Math.exp(-speed * dt));
 }
 
+function withSheet(geometry) {
+  // buildFigure() gives every avatar part an aSheet attribute, even at zero (see
+  // avatar.js) - the material expects it on everything it draws, and these primitives
+  // only add one when asked (see finish() in buildings.js), which a plain-coloured item
+  // never does. Baked parts already carry one from buildFigure() itself, so this only
+  // ever runs on the two procedural items below.
+  const n = geometry.attributes.position.count;
+  geometry.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(n), 1));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 // The first held item (Plans/uitrusting-en-vasthouden.md's open "what comes first"
 // question) - the same lounge parasol from walk.js's loungeGeometry(), rebuilt at hand
 // scale with its handle at the local origin instead of planted in the ground, so it can
@@ -70,21 +107,12 @@ function damp(from, to, speed, dt) {
 // parasol when it moves from the beach towel to the hand.
 const PARASOL_POLE = 0x5a3c28, PARASOL_CANOPY = 0xd94f3d, PARASOL_UNDERSIDE = 0xf5efe0, PARASOL_FINIAL = 0xd9a33d;
 function parasolGeometry() {
-  const parts = [
+  return withSheet(mergeGeometries([
     cylinder(0.011, 0.013, 0.4, 6, PARASOL_POLE, { y: 0 }),
     cone(0.22, 0.1, 12, PARASOL_CANOPY, { y: 0.4 }),
     cone(0.17, 0.04, 12, PARASOL_UNDERSIDE, { y: 0.39 }),
     sphere(0.016, PARASOL_FINIAL, { y: 0.5 }),
-  ];
-  const geometry = mergeGeometries(parts, false);
-  // buildFigure() gives every avatar part an aSheet attribute, even at zero (see
-  // avatar.js) - the material expects it on everything it draws, and these primitives
-  // only add one when asked (see finish() in buildings.js), which a plain-coloured item
-  // never does.
-  const n = geometry.attributes.position.count;
-  geometry.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(n), 1));
-  geometry.computeVertexNormals();
-  return geometry;
+  ], false));
 }
 
 // The second held item. Same shape and colours as the working hammer settler-figures.js
@@ -93,38 +121,68 @@ function parasolGeometry() {
 // item here works, with the head above the fist and a short butt below it.
 const HAMMER_HANDLE = 0x8b5e3c, HAMMER_HEAD = 0x3a3a3f;
 function hammerGeometry() {
-  const parts = [
+  return withSheet(mergeGeometries([
     box(0.022, 0.2, 0.022, HAMMER_HANDLE, { y: -0.05 }),
     box(0.075, 0.05, 0.05, HAMMER_HEAD, { y: 0.14 }),
-  ];
-  const geometry = mergeGeometries(parts, false);
-  const n = geometry.attributes.position.count;
-  geometry.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(n), 1));
-  geometry.computeVertexNormals();
+  ], false));
+}
+
+// The sword and shield used to be built the same procedural way as the hammer above; both
+// are baked Blender parts now (see the header comment on EQUIPPABLE), re-centred on GRIP
+// the same way makePiece() re-centres a limb on its own pivot.
+function heldPartGeometry(spec, names) {
+  const geometry = avatarPlayerComponentGeometry(spec, names);
+  geometry.translate(-GRIP[0], -GRIP[1], -GRIP[2]);
   return geometry;
+}
+
+// What HAND_ITEMS (avatar.js) can resolve to. The procedural pair are cheap enough (under
+// a dozen primitives) that nothing here is worth caching; the baked pair go through
+// heldPartGeometry() instead, which needs the current spec to pick up a recolour.
+const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry };
+const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD };
+
+function heldItemGeometry(item, spec) {
+  if (HELD_ITEM_PROCEDURAL[item]) return HELD_ITEM_PROCEDURAL[item]();
+  if (HELD_ITEM_PARTS[item]) return heldPartGeometry(spec, HELD_ITEM_PARTS[item]);
+  return null;
 }
 
 export function createClassicAvatar(spec, material) {
   const object = new THREE.Group();
   const pieces = {};
 
-  function makePiece(name, names) {
+  // `parent` defaults to the top-level group and `groupAt`/`translateBy` to the piece's own
+  // named pivot (PIVOTS[name]) - which is what every original piece (core, the four limbs,
+  // the backpack) still wants. Chestplate, leggings and boots are the exception: they want
+  // to swing with a limb they are not the limb of, so they are parented straight onto that
+  // limb's own pivot with no group offset of their own (it is already inside one), while
+  // the geometry itself is still translated by that limb's pivot point - the same quantity,
+  // used two different ways, which is why the two are separate options instead of one.
+  function makePiece(name, names, { parent = object, groupAt = PIVOTS[name] || [0, 0, 0], translateBy = groupAt } = {}) {
     const pivot = new THREE.Group();
-    const at = PIVOTS[name] || [0, 0, 0];
-    pivot.position.set(...at);
+    pivot.position.set(...groupAt);
     const geometry = avatarPlayerComponentGeometry(spec, names);
-    geometry.translate(-at[0], -at[1], -at[2]);
+    geometry.translate(-translateBy[0], -translateBy[1], -translateBy[2]);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     pivot.add(mesh);
-    object.add(pivot);
-    pieces[name] = { pivot, mesh, names, at };
+    parent.add(pivot);
+    pieces[name] = { pivot, mesh, names, at: translateBy };
   }
 
   makePiece('core', CORE);
   for (const [name, names] of Object.entries(LIMBS)) makePiece(name, names);
   makePiece('backpack', BACKPACK);
+  makePiece('chestplate', CHESTPLATE);
+  makePiece('leftLegging', LEFT_LEGGING, { parent: pieces.leftLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.leftLeg });
+  makePiece('rightLegging', RIGHT_LEGGING, { parent: pieces.rightLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.rightLeg });
+  makePiece('leftBoot', LEFT_SABATON, { parent: pieces.leftLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.leftLeg });
+  makePiece('rightBoot', RIGHT_SABATON, { parent: pieces.rightLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.rightLeg });
   pieces.backpack.pivot.visible = spec.equip?.backpack !== false;
+  pieces.chestplate.pivot.visible = !!spec.equip?.chestplate;
+  pieces.leftLegging.pivot.visible = pieces.rightLegging.pivot.visible = !!spec.equip?.leggings;
+  pieces.leftBoot.pivot.visible = pieces.rightBoot.pivot.visible = !!spec.equip?.boots;
 
   // An empty group per arm, not a mesh: a held item parents onto this and follows the
   // hand's position for free. Not its rotation, though - update() below counter-rotates
@@ -138,23 +196,18 @@ export function createClassicAvatar(spec, material) {
     handAttach[side] = g;
   }
 
-  function setHeldItem(side, item) {
+  function setHeldItem(side, item, forSpec) {
     if (heldMesh[side]) { handAttach[side].remove(heldMesh[side]); heldMesh[side].geometry.dispose(); heldMesh[side] = null; }
     holding[side] = !!item;
-    if (item === 'parasol') {
-      const mesh = new THREE.Mesh(parasolGeometry(), material);
-      mesh.castShadow = true;
-      handAttach[side].add(mesh);
-      heldMesh[side] = mesh;
-    } else if (item === 'hammer') {
-      const mesh = new THREE.Mesh(hammerGeometry(), material);
-      mesh.castShadow = true;
-      handAttach[side].add(mesh);
-      heldMesh[side] = mesh;
-    }
+    const geometry = heldItemGeometry(item, forSpec);
+    if (!geometry) return;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    handAttach[side].add(mesh);
+    heldMesh[side] = mesh;
   }
-  setHeldItem('leftArm', spec.equip?.leftHandItem || null);
-  setHeldItem('rightArm', spec.equip?.rightHandItem || null);
+  setHeldItem('leftArm', spec.equip?.leftHandItem || null, spec);
+  setHeldItem('rightArm', spec.equip?.rightHandItem || null, spec);
 
   let time = 0;
   function update(pose, dt) {
@@ -199,8 +252,11 @@ export function createClassicAvatar(spec, material) {
       piece.mesh.geometry = geometry;
     }
     pieces.backpack.pivot.visible = next.equip?.backpack !== false;
-    setHeldItem('leftArm', next.equip?.leftHandItem || null);
-    setHeldItem('rightArm', next.equip?.rightHandItem || null);
+    pieces.chestplate.pivot.visible = !!next.equip?.chestplate;
+    pieces.leftLegging.pivot.visible = pieces.rightLegging.pivot.visible = !!next.equip?.leggings;
+    pieces.leftBoot.pivot.visible = pieces.rightBoot.pivot.visible = !!next.equip?.boots;
+    setHeldItem('leftArm', next.equip?.leftHandItem || null, next);
+    setHeldItem('rightArm', next.equip?.rightHandItem || null, next);
   }
 
   function dispose() {

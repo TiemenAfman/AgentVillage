@@ -16,7 +16,8 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 COLORS = dict(skin=0xf1c9a5, tunic=0xf0e2c8, trim=0x6b4a2f,
               hat=0xc9a75c, hair=0x543525, dark=0x302c30,
-              brass=0xd9a33d, pack=0x98633d, blanket=0x61877c, steel=0x87969e)
+              brass=0xd9a33d, pack=0x98633d, blanket=0x61877c, steel=0x87969e,
+              crimson=0xb22222)
 materials = {}
 for name, color in COLORS.items():
     mat = bpy.data.materials.new(name)
@@ -106,7 +107,47 @@ for x in [-.060,.060]:
 rod('Hammer handle', (.118,.126,-.073), (.118,.266,-.073), .010, 'pack')
 box('Hammer head', (.118,.269,-.073), (.066,.030,.035), 'steel', .004)
 
-for variant in ['wide','band','cap','sailor','dome','wizard']:
+# Steel-and-brass armour (Plans/uitrusting-en-vasthouden.md): a second attempt at held/worn
+# gear after two rounds of code-primitive shapes (flat boxes, then sharper cone-built ones)
+# both read wrong next to a Blender-modelled settler - this set uses the same ball/box/rod
+# vocabulary and bevel the rest of the settler is built from instead.
+#
+# Sword and shield are modelled with their grip at GRIP, the same point 'Right hand' sits
+# at above - classic-avatar.js re-centres the baked mesh on that point so it can hand
+# either one to either fist the way the procedural items already did.
+GRIP = (.131, .190, .018)
+ball('Sword pommel', (GRIP[0], .148, GRIP[2]), (.014, .014, .014), 'brass', 6, 4)
+rod('Sword grip', (GRIP[0], .163, GRIP[2]), (GRIP[0], .213, GRIP[2]), .010, 'trim', vertices=6)
+rod('Sword crossguard', (GRIP[0]-.045, .216, GRIP[2]), (GRIP[0]+.045, .216, GRIP[2]), .012, 'brass', .012, 4)
+rod('Sword blade', (GRIP[0], .220, GRIP[2]), (GRIP[0], .430, GRIP[2]-.008), .016, 'steel', .003, 4)
+
+# The face sits behind the grip in z (SHIELD_Z, mirrored in classic-avatar.js) so the fist
+# never breaks its surface, and two brass rods peeking past the crimson face read as a rim
+# without needing a second, larger copy of the face's own shape.
+shield_z = GRIP[2] - .06
+box('Shield face', (GRIP[0], .220, shield_z), (.110, .145, .014), 'crimson', .010)
+box('Shield rim top', (GRIP[0], .2925, shield_z-.004), (.125, .014, .018), 'brass', 0)
+box('Shield rim bottom', (GRIP[0], .1475, shield_z-.004), (.125, .014, .018), 'brass', 0)
+box('Shield boss', (GRIP[0], .220, shield_z+.010), (.028, .028, .014), 'brass', 0)
+rod('Shield grip', (GRIP[0]-.03, .190, GRIP[2]), (GRIP[0]+.03, .190, GRIP[2]), .009, 'trim', vertices=6)
+
+# The breastplate sits on 'Full tunic's own centre, slightly larger so it reads as worn
+# over the tunic rather than replacing it.
+ball('Chestplate body', (0,.204,.006), (.116,.102,.083), 'steel', 8, 6)
+rod('Chestplate trim', (0,.196,0), (0,.212,0), .114, 'brass', .114, 10)
+for sign, side in [(-1,'Left'), (1,'Right')]:
+    ball(side+' chestplate pauldron', (sign*.108,.258,0), (.052,.040,.053), 'steel', 6, 5)
+
+# Leggings and sabatons follow the same trousers/boot positions the settler's own legs use,
+# so they hang over the limb rather than needing their own guess at where the leg is.
+for sign, side in [(-1,'Left'), (1,'Right')]:
+    x = sign*.052
+    rod(side+' legging', (x,.048,0), (x,.140,0), .036, 'steel', .032, 10)
+    rod(side+' knee cop', (x,.128,.006), (x,.146,.016), .038, 'brass', .020, 8)
+    box(side+' sabaton', (x,.030,.025), (.090,.060,.135), 'steel', .010)
+    box(side+' sabaton trim', (x,.050,.080), (.070,.012,.020), 'brass', 0)
+
+for variant in ['wide','band','cap','sailor','dome','wizard','helmet']:
     if variant == 'wide':
         rod('Straw brim', (0,.426,0), (0,.439,0), .127, 'hat', vertices=12)
         rod('Straw crown', (0,.437,0), (0,.482,0), .074, 'hat', .057, 10)
@@ -120,9 +161,17 @@ for variant in ['wide','band','cap','sailor','dome','wizard']:
     elif variant == 'dome':
         ball('Wool cap', (0,.422,0), (.087,.052,.080), 'hat', 10, 6)
         rod('Wool rim', (0,.419,0), (0,.435,0), .088, 'hat', vertices=10)
-    else:
+    elif variant == 'wizard':
         rod('Pointed brim', (0,.425,0), (0,.437,0), .109, 'hat', vertices=10)
         rod('Pointed crown', (0,.435,0), (.021,.488,-.007), .078, 'hat', .005, 8)
+    else:
+        # A helmet replaces a hat rather than sitting beside one - same hatShape slot, one
+        # at a time - so it is built the same way the other six are and picked up by the
+        # exact same variant match in avatar.js's buildFigure(). 'Wool cap's own dome is the
+        # reference for size and clearance; only the material and the guard are new.
+        ball('Helmet dome', (0,.422,0), (.087,.058,.083), 'steel', 8, 5)
+        rod('Helmet rim', (0,.416,0), (0,.432,0), .090, 'brass', vertices=10)
+        box('Helmet nose guard', (0,.395,.082), (.012,.050,.014), 'steel', 0)
 
 # Export the same colour-slot data when building or later editing the .blend.
 import runpy

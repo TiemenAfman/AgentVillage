@@ -31,20 +31,38 @@ export const DEFAULT_AVATAR = {
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
   // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
   // derived from the rest of the look. The backpack defaults on, so nobody's look changes
-  // until they open the Equipment section themselves; both hands default empty.
-  equip: { backpack: true, leftHandItem: null, rightHandItem: null },
+  // until they open the Equipment section themselves; every other piece defaults off.
+  equip: {
+    backpack: true, chestplate: false, leggings: false, boots: false,
+    leftHandItem: null, rightHandItem: null,
+  },
 };
 
 // What a hand can hold. 'parasol' was the first thing tried (Plans/
 // uitrusting-en-vasthouden.md); 'hammer' is the tool that used to be welded to the model's
-// hip as a core part and is now the same kind of held state everything else here is - see
-// classic-avatar.js's parasolGeometry() and hammerGeometry() for where the shapes come from.
-export const HAND_ITEMS = [{ id: 'parasol', name: 'Parasol' }, { id: 'hammer', name: 'Hammer' }];
+// hip as a core part and is now the same kind of held state everything else here is; 'sword'
+// and 'shield' are the first purely cosmetic pair, added the same way - see classic-
+// avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from.
+export const HAND_ITEMS = [
+  { id: 'parasol', name: 'Parasol', icon: '⛱️' },
+  { id: 'hammer', name: 'Hammer', icon: '🔨' },
+  { id: 'sword', name: 'Sword', icon: '⚔️' },
+  { id: 'shield', name: 'Shield', icon: '🛡️' },
+];
+
+// The seven hat shapes plus the one the player alone can wear. A helmet replaces a hat
+// rather than sitting alongside one - the same hatShape slot, one at a time - but it is
+// not baked into a Blender variant the way the other seven are (see classic-avatar.js's
+// helmetGeometry()), and HAT_SHAPES itself feeds CIVILIAN_HATS in shared/palette.mjs,
+// which is how NPCs get a hat at all: adding 'helmet' there would hand some villager a
+// hatShape no baked mesh answers to. So it stays a player-only addition on top, used only
+// for the studio's picker and for validating spec.hatShape below.
+export const PLAYER_HAT_SHAPES = [...HAT_SHAPES, { id: 'helmet', name: 'Helmet' }];
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
-  const shape = HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
+  const shape = PLAYER_HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
   return {
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
@@ -53,6 +71,9 @@ export function normalizeAvatar(spec = {}) {
     hatShape: shape,
     equip: {
       backpack: spec.equip?.backpack !== false,
+      chestplate: !!spec.equip?.chestplate,
+      leggings: !!spec.equip?.leggings,
+      boots: !!spec.equip?.boots,
       leftHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.leftHandItem) ? spec.equip.leftHandItem : null,
       rightHandItem: HAND_ITEMS.some((h) => h.id === spec.equip?.rightHandItem) ? spec.equip.rightHandItem : null,
     },

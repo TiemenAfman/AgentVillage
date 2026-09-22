@@ -491,6 +491,17 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .av-sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,180,92,.35); }
 .av-hats { display: flex; flex-wrap: wrap; gap: 6px; }
 .av-hat { cursor: pointer; }
+/* A bordered square with one glyph in it, not a pill with a label - the shape a worn-
+   equipment slot reads as. Only the slots that carry real state get one; there is no
+   greyed-out helmet or ring square standing in for equipment that does not exist yet. */
+.av-slots { display: flex; flex-wrap: wrap; gap: 7px; }
+.av-slot {
+  width: 40px; height: 40px; padding: 0; font-size: 18px; line-height: 1; cursor: pointer;
+  color: var(--ink-dim); background: rgba(244,236,224,.05); border: 1px solid var(--edge);
+  border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: .16s;
+}
+.av-slot:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
+.av-slot.on { color: var(--ink); background: rgba(232,180,92,.16); border-color: var(--accent); box-shadow: 0 0 0 1px rgba(232,180,92,.35) inset; }
 
 @media (max-width: 560px) {
   .av-body { flex-direction: column; }

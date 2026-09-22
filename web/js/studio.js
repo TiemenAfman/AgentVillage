@@ -3,7 +3,7 @@
 // Nothing is committed until you wear it - "Never mind" puts back what you had on.
 import * as THREE from 'three';
 import {
-  SWATCHES, HAT_SHAPES, HAND_ITEMS, DEFAULT_AVATAR,
+  SWATCHES, PLAYER_HAT_SHAPES, HAND_ITEMS, DEFAULT_AVATAR,
   loadAvatar, saveAvatar, normalizeAvatar,
 } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
@@ -19,6 +19,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   let spec = loadAvatar();
   let snapshot = null;   // the look worn on open, restored if they back out
   let preview = null;    // the turntable, alive only while the panel is
+  let lastHat = 'wide';  // what the head slot's toggle puts back on after bare-headed
 
   function onKey(e) {
     if (el.hidden) return;
@@ -42,16 +43,21 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const swatchRow = (part) => SWATCHES[part]
     .map((s) => `<button class="av-sw" data-part="${part}" data-hex="${s.hex}" title="${s.name}" style="--sw:${hex(s.hex)}"></button>`)
     .join('');
-  const hatRow = () => HAT_SHAPES
+  const hatRow = () => PLAYER_HAT_SHAPES
     .map((h) => `<button class="av-hat chip" data-shape="${h.id}">${h.name}</button>`)
     .join('');
-  const handRow = (side) => [{ id: '', name: 'None' }, ...HAND_ITEMS]
-    .map((h) => `<button class="av-hand chip" data-side="${side}" data-item="${h.id}">${h.name}</button>`)
+  // Slot-shaped, icon-only buttons - a first step toward a worn-equipment panel (bordered
+  // squares, one glyph each) rather than a real inventory grid: there is still only ever
+  // one thing in a hand, picked from a short list, so a slot with an "empty" glyph for
+  // None is honest about that and does not pretend to be a drag target.
+  const handRow = (side) => [{ id: '', name: 'None', icon: '·' }, ...HAND_ITEMS]
+    .map((h) => `<button class="av-hand av-slot" data-side="${side}" data-item="${h.id}" title="${h.name}">${h.icon}</button>`)
     .join('');
 
   function open() {
     spec = loadAvatar();
     snapshot = { ...spec };
+    if (spec.hatShape !== 'none') lastHat = spec.hatShape;
     el.hidden = false;
     el.innerHTML = `
       <div class="handover-panel av-panel">
@@ -67,11 +73,15 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
             <h4>Leather &amp; trim</h4><div class="av-swatches" data-row="trim">${swatchRow('trim')}</div>
             <h4>Hat</h4><div class="av-hats">${hatRow()}</div>
             <h4>Hat colour</h4><div class="av-swatches" data-row="hat">${swatchRow('hat')}</div>
-            <h4>Equipment</h4><div class="av-hats">
-              <button class="av-equip chip" data-equip="backpack">Backpack</button>
+            <h4>Equipment</h4><div class="av-slots">
+              <button class="av-headslot av-slot" title="Hat">🎩</button>
+              <button class="av-equip av-slot" data-equip="chestplate" title="Chestplate">🦺</button>
+              <button class="av-equip av-slot" data-equip="backpack" title="Backpack">🎒</button>
+              <button class="av-equip av-slot" data-equip="leggings" title="Leggings">👖</button>
+              <button class="av-equip av-slot" data-equip="boots" title="Boots">🥾</button>
             </div>
-            <h4>Left hand</h4><div class="av-hats">${handRow('leftHandItem')}</div>
-            <h4>Right hand</h4><div class="av-hats">${handRow('rightHandItem')}</div>
+            <h4>Left hand</h4><div class="av-slots">${handRow('leftHandItem')}</div>
+            <h4>Right hand</h4><div class="av-slots">${handRow('rightHandItem')}</div>
           </div>
         </div>
         <div class="ho-buttons" style="margin-top:16px">
@@ -92,8 +102,17 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       spec[b.dataset.part] = Number(b.dataset.hex); sync(); apply();
     }));
     el.querySelectorAll('.av-hat').forEach((b) => b.addEventListener('click', () => {
-      spec.hatShape = b.dataset.shape; sync(); apply();
+      spec.hatShape = b.dataset.shape;
+      if (spec.hatShape !== 'none') lastHat = spec.hatShape;
+      sync(); apply();
     }));
+    // The head slot mirrors the Backpack toggle: on takes off whatever was last worn, off
+    // puts it back - the shape and its own colour still come from the pickers below, which
+    // stay the one place that decides which hat "on" means.
+    el.querySelector('.av-headslot').addEventListener('click', () => {
+      spec.hatShape = spec.hatShape === 'none' ? lastHat : 'none';
+      sync(); apply();
+    });
     // A fresh object every time, not a mutation of spec.equip in place: spec can still be
     // the DEFAULT_AVATAR-derived one from Reset, and mutating that would leak into every
     // settler's default look instead of just this session's.
@@ -115,6 +134,14 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     el.querySelectorAll('.av-hat').forEach((b) => b.classList.toggle('on', b.dataset.shape === spec.hatShape));
     el.querySelectorAll('.av-equip').forEach((b) => b.classList.toggle('on', !!spec.equip?.[b.dataset.equip]));
     el.querySelectorAll('.av-hand').forEach((b) => b.classList.toggle('on', (spec.equip?.[b.dataset.side] || '') === b.dataset.item));
+    // The one slot that is paintable rather than just on or off: tinted with the actual hat
+    // colour a picker below chose, not just lit up gold like the others, so the slot shows
+    // what is actually worn instead of only whether something is. A helmet has no colour
+    // picker of its own - it is fixed steel and trim, like the sword and shield - so it
+    // lights up the same way the other on/off slots do, untinted.
+    const headslot = el.querySelector('.av-headslot');
+    headslot.classList.toggle('on', spec.hatShape !== 'none');
+    headslot.style.color = spec.hatShape === 'none' || spec.hatShape === 'helmet' ? '' : hex(spec.hat);
   }
 
   // Show the change on the turntable and on the character out on the island at once.
@@ -142,9 +169,11 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   };
 }
 
-// A self-contained turntable: its own renderer, one light rig, one rotating figure. It
-// runs only while the panel is open and is torn down with it, so it never competes with
-// the island's own frame loop for long.
+// A self-contained preview: its own renderer, one light rig, one figure held at a fixed
+// three-quarter angle. It used to turn slowly on its own; turning it while you are trying
+// to look at one spot on it (a new helmet, say) made it harder to judge, not easier, so it
+// now just stands there. Runs only while the panel is open and is torn down with it, so it
+// never competes with the island's own frame loop for long.
 function makePreview(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
@@ -159,6 +188,7 @@ function makePreview(canvas) {
 
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0 });
   const pivot = new THREE.Group();
+  pivot.rotation.y = 0.5;   // a fixed three-quarter turn, not a spin
   const classic = createClassicAvatar(DEFAULT_AVATAR, mat);
   pivot.add(classic.object);
   scene.add(pivot);
@@ -177,7 +207,6 @@ function makePreview(canvas) {
     if (!alive) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    pivot.rotation.y += dt * 0.7;
     classic.update({ moving: true, running: false, grounded: true, crouching: false,
       sitting: false, lying: false, phase: now * 0.009 }, dt);
     renderer.render(scene, cam);
