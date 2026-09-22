@@ -7,10 +7,43 @@ register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js starts texture requests on import; geometry tests need no image IO.
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { figureGeometry, settlerLook, eyeHeight, createSettlers } = await import('../web/js/settlers.js');
+const { figureGeometry, settlerLook, eyeHeight } = await import('../web/js/settlers.js');
+const { createFigures, kindOf, styleOf } = await import('../web/js/settler-figures.js');
+const { createWalk } = await import('../web/js/settler-walk.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
 const { HAT_SHAPES } = await import('../web/js/avatar.js');
+
+// The glue web/js/settlers.js's createSettlers used to provide, before crowd-view.js took
+// over walking every figure off the wire and nothing local called it any more. Kept here,
+// not resurrected in production, because this test's job is still to catch a batching or
+// instancing regression in createWalk/createFigures working together.
+function createSettlers(scene, material, terrain) {
+  const walk = createWalk(terrain);
+  const view = createFigures(scene, material);
+  const figures = walk.figures;
+
+  function add(id, spec, worldPos, opts = {}) {
+    if (figures.has(id)) return figures.get(id);
+    const kind = kindOf(spec);
+    const look = settlerLook(id, styleOf(spec), kind);
+    const f = walk.spawn(id, spec, worldPos, opts, look.height);
+    if (!view.enrol(f, look, kind)) { figures.delete(id); return null; }
+    return f;
+  }
+
+  function remove(id) {
+    const f = walk.setVisible(id, false);
+    if (f) view.hide(f);
+  }
+
+  function update(dt, nightAmount) {
+    walk.step(dt, nightAmount);
+    view.draw(figures, dt);
+  }
+
+  return { add, remove, figures, update, pickables: view.pickables, figureAt: view.figureAt };
+}
 
 test('all resident hats render with finite normals and no expedition equipment', () => {
   for (const { id } of HAT_SHAPES) {
