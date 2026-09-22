@@ -16,6 +16,7 @@ import {
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
+import { runPlan } from './lib/plan.mjs';
 
 export function parseArgs(argv) {
   const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null };
@@ -38,6 +39,9 @@ export function filesFor(opts) {
     layout: opts.layoutFile || path.join(DATA, `layout${suffix}.json`),
     cache: opts.cacheFile || path.join(DATA, 'cache.json'),
     arrivals: path.join(DATA, 'arrivals.jsonl'),
+    // Beside the layout, wherever that is: the real island's is data/placements.json, and a
+    // test that scans a copy in a scratch directory must never forget the real island's.
+    placements: path.join(path.dirname(opts.layoutFile || path.join(DATA, `layout${suffix}.json`)), 'placements.json'),
   };
 }
 
@@ -144,7 +148,27 @@ async function runScan(o) {
       layout.paths = layout.paths.filter((p) => !String(p.id).startsWith(`road:${id}:`));
     }
   }
-  const { terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size });
+  // The keeper's plan, if this scan carries one (POST /api/plan in serve.mjs). Same slot as
+  // `clearRoads` and for the same reason: it wants the model built and the layout loaded,
+  // and it wants `placeAll` to run after it to lay whatever it left unlaid. `runPlan` tries
+  // the whole plan on a copy first and only touches `layout` when every step passed - so a
+  // refused plan, or a dry run, changes nothing on disk, not even the cache: the return
+  // below is the only thing that leaves this function. A layout with a plan applied is
+  // written by the ordinary lines further down, exactly as any other scan's is.
+  let plan = null, terrain, unplaced;
+  const tp = Date.now();
+  if (o.plan) {
+    plan = runPlan(layout, model, o.plan, {
+      seed: config.seed, size, dryRun: !!o.dryRun, layoutFile: files.layout, placementsFile: files.placements, now: o.now,
+    });
+    if (!plan.ok || o.dryRun) {
+      return { plan, settlers: model.stats.settlers, districts: model.stats.districts, files: jobs.length, changedFiles, ms: Date.now() - t0 };
+    }
+    ({ terrain, unplaced } = plan);
+  } else {
+    ({ terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size }));
+  }
+  const placeMs = Date.now() - tp;
 
   const village = assemble({ config, model, layout, terrain, size, all: o.all });
   writeJsonAtomic(files.village, village);
@@ -154,8 +178,9 @@ async function runScan(o) {
   const result = {
     settlers: model.stats.settlers, apprentices: model.stats.apprentices,
     districts: model.stats.districts, files: jobs.length, changedFiles,
-    unplaced: unplaced.length, ms: Date.now() - t0, out: files.village,
+    unplaced: unplaced.length, ms: Date.now() - t0, placeMs, out: files.village,
   };
+  if (plan) result.plan = { ...plan, terrain: undefined, unplaced: plan.unplaced };
   if (!o.quiet) {
     process.stderr.write(
       `[settlers] ${result.settlers} settlers, ${result.apprentices} apprentices, ${result.districts} districts` +
@@ -415,14 +440,27 @@ function assemble({ config, model, layout, terrain, size, all }) {
     // and it stands from the first day, which is what every bridge did before this.
     bridges: (layout.bridges || []).map((b) => ({ ...b, ...bridgeDate(b, model) })),
     cleared: layout.cleared,
+    // Ground the keeper has said no to, in super-cells (lib/plan.mjs). For the keeper's own
+    // page to draw; the island bundle does not carry it, so a zone costs no publish and no
+    // rebuild on anybody else's screen - it changes nothing a neighbour can see.
+    zones: layout.zones || [],
     // Each polder carries the moment it was drained, the way a milestone carries
     // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +
     // k * POLDER_EVERY settlers, so the index is the date - but the viewer should not
     // have to know the ladder to replay the coast, and the arithmetic belongs here.
-    polders: layout.polders.map((p, k) => {
-      const at = POLDER_AT + k * POLDER_EVERY;
-      return { ...p, at, unlockedAt: iso(model.arrivals[at - 1] || null) };
-    }),
+    //
+    // A polder the keeper drained by hand (lib/plan.mjs) is not on the ladder: it carries
+    // its own `at` and `dugAt`, and the planned ones are counted around it - otherwise the
+    // chronicle would show it standing from the founding day, and the first planned one
+    // would be dated a rung late.
+    polders: (() => {
+      let rung = 0;
+      return layout.polders.map((p) => {
+        if (p.manual) return { ...p, at: p.at || null, unlockedAt: p.dugAt || null };
+        const at = POLDER_AT + (rung++) * POLDER_EVERY;
+        return { ...p, at, unlockedAt: iso(model.arrivals[at - 1] || null) };
+      });
+    })(),
     // The dredged river mouth, on the same terms as a polder: the cells decide the ground
     // and the date is worked out here rather than in the layout, because the layout stores
     // decisions and not the ladder that earned them.

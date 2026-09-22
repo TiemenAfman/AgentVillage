@@ -6,7 +6,10 @@
 > het centrum veranderen." — en daarna: "Nee, de huizen verhuizen nooit, daarom wil ik een
 > editor om wijkjes te selecteren en wél te verhuizen."
 
-**Status:** in aanbouw, begonnen op 22 september 2026 (branch `planner-wijkjes`). De bijlage
+**Status:** fase 1 (zones + wijkjes verplaatsen, server én planner-modus in de browser) gebouwd op
+22 september 2026 op branch `planner-wijkjes`; dry runs op het echte eiland nagekeken, nog geen echte
+Apply gedaan. Fase 2a (handmatige polder, met toegangsweg) gebouwd op 22 september 2026; parcel bijverven en fase 3
+(geen reload meer nodig) staan open. De bijlage
 "Verkenning" onderaan is de gemeten stand van de code op die dag — regelnummers, timingen en
 wat er breekt — zodat dat niet opnieuw hoeft.
 

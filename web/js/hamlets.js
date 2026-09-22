@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash32 } from 'shared/rng.mjs';
+import { blockOf } from 'shared/lattice.mjs';
 import { TIER_INDEX } from './buildings.js';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
@@ -66,8 +67,7 @@ export function decodeOwnership(village, size) {
       const row = parcel.rows[r];
       for (let c = 0; c < parcel.w; c++) {
         if (row[c] !== '1') continue;
-        const gx0 = lat.anchor[0] + lat.pitch * (parcel.i0 + c);
-        const gz0 = lat.anchor[1] + lat.pitch * (parcel.j0 + r);
+        const [gx0, gz0] = blockOf(lat, parcel.i0 + c, parcel.j0 + r);
         for (let z = 0; z < lat.pitch; z++) {
           for (let x = 0; x < lat.pitch; x++) {
             const gx = gx0 + x, gz = gz0 + z;

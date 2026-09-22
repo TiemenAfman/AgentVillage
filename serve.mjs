@@ -30,6 +30,9 @@ import { buildBundle, parseBundle, packParcel, beaconId } from './lib/islandbund
 import { createSea } from './lib/sea.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
+import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
+import { buildSurvey } from './lib/survey.mjs';
+import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
@@ -116,6 +119,23 @@ function checkVendor() {
   log(`    the page will hang on its boot screen until this is fixed. Run: npm run vendor`);
 }
 
+
+// The planner's survey (lib/survey.mjs), baked once per scan: keyed on the village the
+// scan wrote and on the layout file's own clock, because a plan changes the layout on the
+// same scan that rewrites village.json and the two have to move together.
+let surveyCache = { key: null, body: null };
+function survey() {
+  const files = filesFor({ all: ALL });
+  let key = null;
+  try { key = `${fs.statSync(files.layout).mtimeMs}|${fs.statSync(files.village).mtimeMs}`; } catch { return null; }
+  if (surveyCache.key === key) return surveyCache.body;
+  const size = config.gridSize || 64;
+  const layout = loadLayout(files.layout, config.seed, size);
+  const village = readJson(files.village, null);
+  const body = buildSurvey({ layout, village, seed: config.seed, size });
+  surveyCache = { key, body };
+  return body;
+}
 
 // A bad request must never take the island down.
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
@@ -291,29 +311,62 @@ function guestIsland() {
   return guestCache.body;
 }
 
-let scanning = null;
-let pending = false;
-// opts only reaches the scan that actually runs: a caller who arrives while one is already
-// in flight gets coalesced into it (below) without its own opts, so a `clearRoads` request
-// that lands mid-scan is silently absorbed rather than applied. Rare enough in practice -
-// this is only ever an explicit command, not the timer - that asking again is an acceptable
-// answer to it.
+// One scan at a time, in the order they were asked for. `exclusive` is the queue: every
+// scan this process runs goes through it, so two never overlap and none is ever lost.
+//
+// It used to be a single-flight guard with one `pending` bit, and opts only reached the scan
+// that actually ran: a `clearRoads` request that landed mid-scan was coalesced into the
+// running one without its opts and silently absorbed. Tolerable for a command you can type
+// again; not for a plan (POST /api/plan) that the keeper has just pressed Apply on. So a
+// scan that carries opts is queued as its own job and always runs. Plain rescans - the
+// timer, a hook, an assignment - still coalesce: at most one is *waiting* at any moment, and
+// a request that arrives while that one has not started yet shares it, exactly the one
+// pending scan the old guard allowed.
+let chain = Promise.resolve();
+let busy = 0;
+let plainWaiting = null;
+function exclusive(fn) {
+  busy++;
+  const run = chain.then(fn, fn).finally(() => { busy--; });
+  chain = run.catch(() => {});
+  return run;
+}
 async function rescan(reason, opts = {}) {
-  if (scanning) { pending = true; return scanning; }
-  scanning = (async () => {
-    try { await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
+  const job = async () => {
+    try { return await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
       process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
+      return null;
     }
-  })();
-  await scanning;
-  scanning = null;
-  if (pending) { pending = false; return rescan('coalesced'); }
+  };
+  let run;
+  if (Object.keys(opts).length) {
+    run = exclusive(job);
+  } else {
+    if (plainWaiting) return plainWaiting;
+    const w = exclusive(() => { if (plainWaiting === w) plainWaiting = null; return job(); });
+    plainWaiting = w;
+    run = w;
+  }
+  const r = await run;
   // And tell the world, if the island actually changed. publish() compares what it last
   // sent, so a scan that found nothing costs nothing - and a scan that found a house puts
   // it on everybody else's horizon within the minute rather than whenever they next
   // reload. This is the whole of "live, also between scans" for the shape of an island.
   if (seaClient) seaClient.publish().catch(() => {});
-  return null;
+  return r;
+}
+
+// A scan with opts, run through the same queue, that comes back with its result rather
+// than swallowing it: the plan route needs the verdicts. Retries while another process -
+// the SessionStart hook - holds data/scan.lock, the way tests/layout-measure.test.mjs does.
+async function scanNow(opts) {
+  let r = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    r = await exclusive(() => scan({ all: ALL, quiet: true, ...opts }));
+    if (!r || !r.skipped) return r;
+    await new Promise((done) => setTimeout(done, 400));
+  }
+  return r;
 }
 
 const server = http.createServer((req, res) => {
@@ -651,7 +704,7 @@ async function handle(req, res) {
   }
 
   if (p === '/api/rescan' && req.method === 'POST') {
-    if (scanning) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"skipped":true}'); return; }
+    if (busy) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"skipped":true}'); return; }
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end('{"started":true}');
     rescan('api');
@@ -776,6 +829,86 @@ if (req.url === '/api/command' && req.method === 'POST') {
     // the sea has everybody standing a third of a cell out of place.
     if (seaClient) seaClient.publish().catch(() => {});
     return json(res, 200, { ok: true, buildings: Object.keys(saved.at).length, decks: Object.keys(saved.decks).length });
+  }
+
+  // ---- the planner (lib/plan.mjs) -------------------------------------------------
+  // The one door through which the layout is changed by hand. Keeper-only like every
+  // other /api/ route, and a write: it moves hamlets. A dry run answers with verdicts and a
+  // diff and writes nothing at all; an apply goes through the scan queue like any scan,
+  // snapshots layout.json first, publishes once, and asks every open page to reload - the
+  // page's own incremental update does not follow a plot that moved (see Plans/).
+  if (p === '/api/plan' && req.method === 'GET') {
+    const files = filesFor({ all: ALL });
+    const layout = readJson(files.layout, null);
+    return json(res, 200, {
+      zones: (layout && layout.zones) || [], lattice: (layout && layout.lattice) || null,
+      snapshots: listSnapshots(files.layout), busy: busy > 0,
+    });
+  }
+  if (p === '/api/plan/survey' && req.method === 'GET') {
+    const out = survey();
+    if (!out) return json(res, 503, { error: 'no island to survey yet' });
+    return json(res, 200, out);
+  }
+  if (p === '/api/plan' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { ok: false, error: String(e.message || e) }); }
+    let plan;
+    try { plan = parsePlan(body); } catch (e) { return json(res, 400, { ok: false, error: String(e.message || e) }); }
+    const dryRun = !!(body && body.dryRun);
+    let r;
+    try { r = await scanNow({ plan, dryRun }); } catch (e) {
+      log(`plan refused: ${e && e.message}`);
+      return json(res, 400, { ok: false, error: String(e.message || e) });
+    }
+    if (!r || r.skipped) return json(res, 423, { ok: false, error: 'scanning', detail: r && r.reason });
+    const out = r.plan;
+    if (!out) return json(res, 500, { ok: false, error: 'the scan ran but carried no plan' });
+    // A refused dry run is an answer, not an error: 200 with `ok: false`, so the browser
+    // console does not fill with 409s while somebody drags a hamlet around. An apply that
+    // is refused is a conflict and says so.
+    if (!out.ok) return json(res, dryRun ? 200 : 409, out);
+    if (!dryRun) {
+      log(`plan applied: ${plan.ops.length} op(s), ${out.diff.plots.moved.length} plot(s) moved, snapshot ${out.snapshot}`);
+      broadcast({ at: Date.now(), ops: plan.ops.length, snapshot: out.snapshot }, 'plan');
+      if (seaClient) seaClient.publish().catch(() => {});
+      broadcast({ at: Date.now() }, 'reload');
+    }
+    return json(res, 200, out);
+  }
+  if (p === '/api/plan/undo' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 4 * 1024); } catch (e) { return json(res, 400, { ok: false, error: String(e.message || e) }); }
+    const name = body && body.snapshot;
+    // The name is checked against the shape the server itself writes, never joined from
+    // anything else: this is the one route that copies a file the request named.
+    if (!isSnapshotName(name)) return json(res, 400, { ok: false, error: 'that is not a snapshot' });
+    const files = filesFor({ all: ALL });
+    const dir = path.dirname(files.layout);
+    const from = path.join(dir, name);
+    if (!fs.existsSync(from)) return json(res, 404, { ok: false, error: 'no such snapshot' });
+    let r;
+    try {
+      r = await exclusive(async () => {
+        const was = readJson(files.layout, null);
+        if (fs.existsSync(files.layout)) fs.copyFileSync(files.layout, path.join(dir, `layout.before-undo-${Date.now()}.json`));
+        fs.copyFileSync(from, files.layout);
+        const scanned = await scan({ all: ALL, quiet: true });
+        const now = readJson(files.layout, null);
+        // Whoever arrived after the snapshot was taken has been placed again by that scan,
+        // deterministically, somewhere free - and is named, because it is the one thing an
+        // undo cannot put back exactly.
+        const replaced = was && now
+          ? Object.keys(was.plots).filter((id) => now.plots[id] && (was.plots[id].gx !== now.plots[id].gx || was.plots[id].gz !== now.plots[id].gz))
+          : [];
+        return { scanned, replaced };
+      });
+    } catch (e) { return json(res, 500, { ok: false, error: String(e.message || e) }); }
+    if (!r.scanned || r.scanned.skipped) return json(res, 423, { ok: false, error: 'scanning' });
+    log(`plan undone: ${name} restored, ${r.replaced.length} plot(s) placed again`);
+    if (seaClient) seaClient.publish().catch(() => {});
+    broadcast({ at: Date.now() }, 'reload');
+    return json(res, 200, { ok: true, restored: name, replaced: r.replaced });
   }
 
   // Who the sea's roster means, in this island's own names. Not on PUBLIC_API: it is the

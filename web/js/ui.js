@@ -116,15 +116,16 @@ export function createUI(handlers) {
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
     const panelOpen = !el('dossier').hidden || !el('legend').hidden || !el('settings').hidden;
-    el('building-now').hidden = walking || panelOpen || !hasBuilders;
+    el('building-now').hidden = walking || planning || panelOpen || !hasBuilders;
     const w = el('waiting-now');
-    if (w) w.hidden = walking || panelOpen || !w.querySelector('li');
-    el('chronicle').hidden = walking;
+    if (w) w.hidden = walking || planning || panelOpen || !w.querySelector('li');
+    el('chronicle').hidden = walking || planning;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
     el('settings-btn').classList.toggle('on', !el('settings').hidden);
   }
   let hasBuilders = false;
   let walking = false;
+  let planning = false;
 
   // --- chronicle -----------------------------------------------------------
   const range = el('chronicle-range');
@@ -366,7 +367,8 @@ export function createUI(handlers) {
   ];
   let signMode = null;
 
-  function setKeeper(keeper) { el('settings-btn').hidden = !keeper; }
+  // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
+  function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
   // The Sound chip. `on` is what the person asked for, which is not the same as whether a
   // note is playing: a browser will not start an AudioContext until the page has been
@@ -603,6 +605,18 @@ export function createUI(handlers) {
     if (on) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; renderWalkKeys(); }
     syncSidebar();
   }
+  // From above, with a hand on the hamlets (web/js/plan-mode.js). Like walking, the right
+  // column empties and the labels go; unlike walking, the chips stay, because Done is one.
+  function setPlanning(on) {
+    planning = !!on;
+    el('labels').hidden = planning || walking;
+    el('hover-label').hidden = true;
+    el('plan-btn').classList.toggle('on', planning);
+    el('plan-btn').textContent = planning ? 'Done' : 'Plan';
+    if (planning) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; }
+    syncSidebar();
+  }
+
   // Both of these are called every frame while you walk, and both usually have nothing
   // new to say - a countdown changes once a minute, a purse only when you trade. So the
   // last thing written is kept and an unchanged line is not written again.
@@ -696,13 +710,14 @@ export function createUI(handlers) {
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
   el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
   el('build-btn').addEventListener('click', () => handlers.onBuild());
+  el('plan-btn').addEventListener('click', () => handlers.onTogglePlan && handlers.onTogglePlan());
 
   setupShell();
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setSound,
-    setHover, toast, setSkew, setChronicle, boot, setWalking, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
+    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas,
