@@ -56,6 +56,18 @@ Copy that preamble when adding a test that touches `web/js/`.
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747.
 
+A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
+process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
+tabs to refetch `web/js/`, it does not touch the server process. `npm run watch` is
+`watch-island.mjs`: it runs the island, watches those same files, and asks in its own
+console (`[watch-island] ... restart the island? [Y/n]`) before restarting on a change -
+never silently, since the island already running may have somebody's session or an open
+panel worth not interrupting without warning. During a session working alongside a person,
+Claude may run `stop-island.cmd` + `start-island.cmd` (or `start-island-app.cmd`, which also
+opens the Chrome app window) itself after a server-side change without a formal
+confirmation step first - a quick heads-up in the conversation is enough, matching the
+console's own Y/n rather than a blocking question.
+
 ## The pipeline
 
 ```
@@ -213,6 +225,16 @@ the first crowd an island ever has — and after a sea restart — so a whole vi
 comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
 arrival, so nobody walks. No flag in the bundle and no timestamp to trust.
 
+The idle sweep that retires a quiet connection (`lib/players.mjs`) only ever retires
+somebody who is *walking* — an islander's own socket presence is its join
+(`lib/seaclient.mjs`), and a watching page has no walker either, so before this a minute of
+quiet closed those sockets too: forced republish, three rev bumps a minute, and every
+settler walking back to their own door, on every screen, every sixty seconds.
+
+An unattended boat does not stay marooned either: after five quiet minutes the sea's own
+beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
+has could be left on the far shore for good, recoverable only by restarting the whole sea.
+
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing
 it there put a stranger on the town square until its slice came round. And a joining client
@@ -221,6 +243,12 @@ because the beat's rotation takes `KEYFRAME_S` to get round everybody and watchi
 fill up over ten seconds is not a first impression worth having. The client holds that one
 message while it translates the roster — see below — or it would be dropped in full, which
 is exactly the ten seconds back again.
+
+On the drawing side `rev` only decides whether to refetch, never whether to rebuild:
+`web/js/islandsig.js` compares a `drawnSignature()` of what is already standing against the
+new bundle, because a neighbour's landscape costs the same ~550 ms to build as our own
+(trees, fields, hamlets, through the same `createLandscape`), and rebuilding it on every
+publish from an active neighbour stalled the frame — `dt` included — three times a minute.
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
@@ -315,6 +343,17 @@ file in it is inside something the Dockerfile copies. `--open` in the `CMD` is n
 inside a container, loopback is nobody, and what keeps the sea shut is the network it is
 published on plus `SEA_KEY`. No volumes, deliberately.
 
+The sea also serves its own front page — no file on disk (the disk rule above forbids
+that), an inline string in `lib/sea.mjs` that fetches its own `/health` and `/world`. Its
+one button is a restart, wired to `POST /update`, which asks for a Portainer/webhook URL in
+`updateHook` — but the key check runs *before* the hook check, on purpose: checked the other
+way round, an unkeyed sea's 501 ("no hook configured") would tell an attacker it has no lock
+on the door at all. And closing the sea now walks every open connection
+(`closeIdleConnections()`/`closeAllConnections()`) instead of waiting for the websocket ping
+to notice — a sea holds nothing on disk to flush, so there is nothing a graceful wait
+protects, and a browser left attached had been stalling a restart up to 62 s (25 s ping ×
+2.5) before this.
+
 A sea says *that* it wants a key in `/health` (`keyed`), never which one — without that the
 picker cannot tell a sea that will have you from one that will turn you away, and the only
 way to find out is to move the island and watch it be refused. A refusal is also said
@@ -327,6 +366,15 @@ is wrong and tells whoever has to fix it nothing.
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that
 hand-off a sea that gets a key locks out the browser of the very island publishing to it.
+The same key also guards `/island/:id` and `/island/:id/parcel`, not only the socket join —
+`seaClient` posts over HTTP regardless of whether its own socket was accepted, so before
+this an islander refused at the handshake still parked its bundle over HTTP under a token
+that outlived the refusal, for good.
+
+The browser side of the line home reads the same way: `web/js/net.js` asks the islander
+which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
+from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
+forever to the world it had just left.
 
 Behind Nginx Proxy Manager, two settings or the island connects and then sits in silence:
 **Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
