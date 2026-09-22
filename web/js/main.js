@@ -5,6 +5,7 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
+import { createStandHeight } from 'shared/settlerwalk.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -2715,6 +2716,29 @@ function deckMapForHome() {
   return flat;
 }
 
+// How high a settler stands anywhere on this island, for whoever draws them. Rebuilt in
+// handOutDecks below rather than per frame: it walks the district list to find the quay's
+// boardwalk, and handOutDecks is already where every change to what can be stood on
+// arrives - a bridge going up, a prop being placed, a village being applied.
+let homeStand = null;
+// And one per neighbour, keyed by their region. Their decks travel in their bundle; ours
+// are worked out here, which is the whole of why these are two lines and not one.
+const guestStands = new WeakMap();
+function standHeightFor(region) {
+  const village = region && region.village;
+  if (!village) return (x, z) => region.worldHeight(x, z);
+  let have = guestStands.get(region);
+  if (!have || have.village !== village) {
+    const decking = new Map(Object.entries(village.decks || {}).map(([cell, y]) => [Number(cell), y]));
+    const local = createStandHeight(region.terrain, village, decking);
+    // Their crowd arrives in world coordinates and their terrain is origin-centred like
+    // every other, so the berth comes off here - shared/regions.mjs, `toLocal`.
+    have = { village, fn: (x, z) => local(...region.toLocal(x, z)) };
+    guestStands.set(region, have);
+  }
+  return have.fn;
+}
+
 function handOutDecks() {
   const flat = new Map(decks);
   if (state.props && state.terrain) {
@@ -2749,6 +2773,11 @@ function handOutDecks() {
     }
   }
   if (state.walk) state.walk.setLevels(stacked);
+  // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
+  // the same keying createStandHeight wants - and it is built above for walk mode anyway.
+  homeStand = state.terrain && state.region && state.region.village
+    ? createStandHeight(state.terrain, state.region.village, flat)
+    : null;
 }
 
 // A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
@@ -3787,10 +3816,11 @@ function frame(nowMs) {
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
-    // And our own people, off the wire like any other island's. The ground is this island's
-    // own, which is what stands somebody on a quay's planks rather than in the water beside
-    // them.
-    state.settlers.draw(dt, (x, z) => state.region.worldHeight(x, z), nowMs, live);
+    // And our own people, off the wire like any other island's. The height is the one the
+    // sea walked them to - decks, stair treads and all - which is what stands somebody on a
+    // quay's planks rather than in the water beside them. It used to be plain terrain here,
+    // and the quay is the one place on the island where those two differ by a whole metre.
+    state.settlers.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
   }
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.particles) state.particles.update(dt);
@@ -3845,10 +3875,10 @@ function frame(nowMs) {
     // one call a frame - without it a neighbour's forest would still be in the season it
     // was raised in while ours turned around it.
     if (g.update) g.update(dt, month);
-    // Their people, drawn where the sea last said they were and interpolated between. The
-    // ground they stand on is their own region's, which is what puts a body on a quay's
-    // planks rather than in the water beside them.
-    if (g.crowd) g.crowd.draw(dt, (x, z) => g.region.worldHeight(x, z), nowMs, live);
+    // Their people, drawn where the sea last said they were and interpolated between, at
+    // the height their own island's decks and steps put them - which is what puts a body on
+    // a quay's planks rather than in the water beside them.
+    if (g.crowd) g.crowd.draw(dt, standHeightFor(g.region), nowMs, live);
   }
 
 
