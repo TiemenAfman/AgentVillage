@@ -305,3 +305,28 @@ test('stepping off a boat leaves the body standing on the quay, not out of sight
   assert.deepEqual(f.pos, [ox + 1, oz + 2]);
   assert.equal(f.anim, 'still');
 });
+
+test('a hostile island arms its people with a sword and a torch, two meshes for the lot', () => {
+  const meshes = (hostile) => {
+    const keep = {};
+    const scene = new THREE.Scene();
+    const buildings = ['house:a', 'house:b'].map((id) => ({ id, kind: 'house', name: id, style: 'opus' }));
+    const r = { ...region, village: { island: { hostile } } };
+    const crowd = createCrowdView({ scene, material: new THREE.MeshBasicMaterial(), region: r, buildings });
+    crowd.roster(buildings.map((b) => b.id));
+    keep.inst = scene.children.filter((c) => c.isInstancedMesh);
+    return keep.inst;
+  };
+  const friendly = meshes(false), hostile = meshes(true);
+  assert.equal(hostile.length, friendly.length + 2);
+  // Every resident gets one of each: the two extra meshes count exactly as far as the torso.
+  // They come straight after the eleven body meshes, before the hats and the hammer.
+  const extra = hostile.slice(11, 13);
+  const torso = hostile[0];
+  for (const m of extra) assert.equal(m.count, torso.count);
+  assert.equal(torso.count, 2);
+  // The flame is the one part that glows after dark, and it came along with the torch.
+  const glow = extra[1].geometry.attributes.aEmissive.array;
+  assert.ok(glow.some((v) => v > 0), 'the torch has no flame');
+  assert.ok(!extra[0].geometry.attributes.aEmissive.array.some((v) => v > 0), 'the sword is glowing');
+});
