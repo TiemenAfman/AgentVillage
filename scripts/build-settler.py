@@ -17,7 +17,7 @@ bpy.ops.object.delete(use_global=False)
 COLORS = dict(skin=0xf1c9a5, tunic=0xf0e2c8, trim=0x6b4a2f,
               hat=0xc9a75c, hair=0x543525, dark=0x302c30,
               brass=0xd9a33d, pack=0x98633d, blanket=0x61877c, steel=0x87969e,
-              crimson=0xb22222)
+              crimson=0xb22222, flame=0xff8a1f, ember=0xffd45a)
 materials = {}
 for name, color in COLORS.items():
     mat = bpy.data.materials.new(name)
@@ -134,6 +134,22 @@ box('Shield rim top', (SHIELD_X+.004, .2625, GRIP[2]), (.018, .013, .102), 'bras
 box('Shield rim bottom', (SHIELD_X+.004, .1475, GRIP[2]), (.018, .013, .102), 'brass', 0)
 box('Shield boss', (SHIELD_X+.010, .205, GRIP[2]), (.014, .026, .026), 'brass', 0)
 rod('Shield grip', (GRIP[0], .190, GRIP[2]), (SHIELD_X-.006, .190, GRIP[2]), .009, 'trim', vertices=6)
+
+# The torch is held like the sword, grip at GRIP, and stands a little taller than the blade
+# so its flame clears the head when the arm is held out. A tapering stave, a brass band
+# where the fist would slip, a pitch-soaked wrap at the top and two nested flame cones -
+# orange outside, a yellow core peeking out above - because one cone alone reads as a party
+# hat. 'flame' and 'ember' are colour slots of their own so avatar.js can make them, and
+# only them, glow at night. It is baked under variant 'held' rather than 'gear': 'gear' is
+# the "full outfit" avatarPlayerGeometry merges for the character sheet, which already has
+# a sword in that fist and a triangle budget the torch would tip over.
+variant = 'held'
+rod('Torch stave', (GRIP[0], .140, GRIP[2]), (GRIP[0], .330, GRIP[2]), .009, 'pack', .012, 6)
+rod('Torch band', (GRIP[0], .228, GRIP[2]), (GRIP[0], .240, GRIP[2]), .0135, 'brass', vertices=6)
+rod('Torch wrap', (GRIP[0], .318, GRIP[2]), (GRIP[0], .352, GRIP[2]), .019, 'trim', .021, 8)
+rod('Torch flame', (GRIP[0], .350, GRIP[2]), (GRIP[0], .420, GRIP[2]), .024, 'flame', .002, 8)
+rod('Torch flame core', (GRIP[0], .352, GRIP[2]+.004), (GRIP[0]+.003, .432, GRIP[2]+.002), .013, 'ember', .001, 6)
+variant = 'gear'
 
 # The breastplate sits on 'Full tunic's own centre, slightly larger so it reads as worn
 # over the tunic rather than replacing it.
