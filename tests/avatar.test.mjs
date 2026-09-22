@@ -110,3 +110,43 @@ test('the original avatar keeps every triangle while its limbs animate independe
   material.dispose();
   merged.dispose();
 });
+
+// The arm pivots are reached through the hand attach points, which are their children -
+// the rig hands those out for held items and exposes nothing else of its skeleton.
+test('a swing takes the weapon arm up behind the shoulder and back, a block turns the shield to the front', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const spec = { ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'sword', leftHandItem: 'shield' } };
+  const rig = createClassicAvatar(spec, material);
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const rightArm = rig.handAttach.rightArm.parent, leftArm = rig.handAttach.leftArm.parent;
+  const sword = rig.handAttach.rightArm.children[0], shield = rig.handAttach.leftArm.children[0];
+  rig.update(still, 1);
+  // At rest the sword arm is held out and the sword stands upright against it; the shield
+  // arm hangs, its face turned a little forward (mirrored for the left hand: positive).
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.02, 'sword held out');
+  assert.ok(Math.abs(sword.rotation.x + rightArm.rotation.x) < 1e-9, 'sword upright');
+  assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm down');
+  assert.ok(Math.abs(shield.rotation.y - 0.6) < 0.02, 'shield a little forward');
+  assert.equal(shield.scale.x, -1, 'left-hand item mirrored');
+
+  rig.attack();
+  rig.update(still, 0.12);   // winding up
+  assert.ok(rightArm.rotation.x < -2.0, 'wound up behind the shoulder: ' + rightArm.rotation.x);
+  assert.ok(Math.abs(sword.rotation.x) < 0.3, 'the sword goes with the arm, not upright');
+  rig.update(still, 0.12);   // striking
+  assert.ok(rightArm.rotation.x > -2.0 && rightArm.rotation.x < -0.3, 'mid-strike: ' + rightArm.rotation.x);
+  rig.update(still, 0.3);    // over
+  rig.update(still, 1);
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.05, 'back to holding it out');
+  assert.ok(Math.abs(sword.rotation.x + rightArm.rotation.x) < 0.05, 'sword upright again');
+
+  rig.update({ ...still, blocking: true }, 1);
+  rig.update({ ...still, blocking: true }, 1);
+  assert.ok(Math.abs(leftArm.rotation.x + 1.25) < 0.02, 'shield arm up in front');
+  assert.ok(Math.abs(shield.rotation.y - Math.PI / 2) < 0.02, 'shield facing forward');
+  assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.02, 'the sword arm is not the one blocking');
+  rig.update(still, 1);
+  rig.update(still, 1);
+  assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm back down');
+  rig.dispose();
+});

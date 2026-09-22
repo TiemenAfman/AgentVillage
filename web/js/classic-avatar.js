@@ -91,8 +91,15 @@ const GRIP = [0.131 * PLAYER_SCALE, 0.19 * PLAYER_SCALE, 0.018 * PLAYER_SCALE];
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
 // forward) - large enough to read as reaching out rather than a bigger stride, checked in
 // the browser rather than derived, because there is no elbow here to make the geometry
-// answer the question on its own.
-const HOLD_ARM_X = -1.3;
+// answer the question on its own. A shield is carried rather than held out: its arm stays
+// down at the side, a little forward, so the plate covers the flank - held out, the fist
+// sits at shoulder height and the shield came up beside the head.
+const HOLD_ARM_X = { default: -1.3, shield: -0.35 };
+const holdX = (item) => HOLD_ARM_X[item] ?? HOLD_ARM_X.default;
+// A held item's turn about the arm, in radians, mirrored for the left hand. The shield is
+// modelled facing straight out from the fist (+X, build-settler.py); a third of a turn
+// forward keeps its face readable from in front instead of edge-on.
+const ITEM_YAW = { shield: 0.6 };
 
 function damp(from, to, speed, dt) {
   return THREE.MathUtils.lerp(from, to, 1 - Math.exp(-speed * dt));
@@ -199,7 +206,7 @@ export function createClassicAvatar(spec, material) {
   // hand's position for free. Not its rotation, though - update() below counter-rotates
   // the item itself, so it swings to wherever the hand is but stays upright the way
   // something actually held in a hand would, instead of tipping over with the arm.
-  const handAttach = {}, heldMesh = { leftArm: null, rightArm: null }, holding = { leftArm: false, rightArm: false };
+  const handAttach = {}, heldMesh = { leftArm: null, rightArm: null }, holding = { leftArm: null, rightArm: null };
   for (const side of ['leftArm', 'rightArm']) {
     const g = new THREE.Group();
     g.position.set(...HAND_ATTACH[side]);
@@ -209,16 +216,61 @@ export function createClassicAvatar(spec, material) {
 
   function setHeldItem(side, item, forSpec) {
     if (heldMesh[side]) { handAttach[side].remove(heldMesh[side]); heldMesh[side].geometry.dispose(); heldMesh[side] = null; }
-    holding[side] = !!item;
+    holding[side] = item || null;
     const geometry = heldItemGeometry(item, forSpec);
     if (!geometry) return;
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
+    // Every item is modelled for the right hand. The left gets the same mesh mirrored in X
+    // - three.js flips the winding for a negative determinant, so nothing turns inside out -
+    // which is what puts a shield's face on the outside of either arm; the symmetric items
+    // do not notice. The yaw is mirrored with it, so "a little forward" stays forward.
+    const left = side === 'leftArm';
+    if (left) mesh.scale.x = -1;
+    mesh.rotation.y = (left ? 1 : -1) * (ITEM_YAW[item] || 0);
     handAttach[side].add(mesh);
     heldMesh[side] = mesh;
   }
   setHeldItem('leftArm', spec.equip?.leftHandItem || null, spec);
   setHeldItem('rightArm', spec.equip?.rightHandItem || null, spec);
+
+  // Attacking and blocking (Plans/aanvallen-en-blokkeren.md). A swing is a short, timed
+  // profile on the weapon arm - wind up behind the shoulder, strike forward and down,
+  // recover to whatever the arm was doing - driven directly rather than through damp(),
+  // which at 15/s would smear a 0.45 s swing into a wave. The held item stops standing
+  // upright for the duration and slashes with the arm, and the counter-rotation fades back
+  // in over the recovery. A block is a held pose, so it goes through the same targets and
+  // damping as everything else: the shield arm comes up in front, and the shield turns from
+  // its resting yaw to a quarter turn so its face points forward.
+  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer']);
+  let swing = null;   // { side, t, from } while an attack is playing
+  const ease = (u) => u * u * (3 - 2 * u);
+  // The hand that swings: a weapon if there is one (right first), otherwise a free fist,
+  // otherwise whatever the right holds. The hand that blocks: the shield if there is one,
+  // otherwise the hand that would not be swinging.
+  const attackSide = () => (WEAPONS.has(holding.rightArm) ? 'rightArm' : WEAPONS.has(holding.leftArm) ? 'leftArm'
+    : holding.rightArm !== 'shield' ? 'rightArm' : 'leftArm');
+  const blockSide = () => (holding.leftArm === 'shield' ? 'leftArm' : holding.rightArm === 'shield' ? 'rightArm'
+    : attackSide() === 'rightArm' ? 'leftArm' : 'rightArm');
+
+  function attack() {
+    // A swing past its strike can be cut short by the next one; one still winding up or
+    // striking plays out, or mashing the button would jitter the arm at the top.
+    if (swing && swing.t / SWING_S < 0.6) return;
+    const side = attackSide();
+    swing = { side, t: 0, from: pieces[side].pivot.rotation.x };
+  }
+
+  // Where the swinging arm is, u of the way through, and how much of the item's upright
+  // counter-rotation is cancelled there (1: the item goes with the arm). `rest` is what the
+  // arm would be doing had it not swung, which is where the recovery lands.
+  function swingPose(s, rest) {
+    const u = Math.min(1, s.t / SWING_S);
+    if (u < 0.3) { const w = ease(u / 0.3); return { x: THREE.MathUtils.lerp(s.from, -2.4, w), w }; }
+    if (u < 0.55) return { x: THREE.MathUtils.lerp(-2.4, -0.35, ease((u - 0.3) / 0.25)), w: 1 };
+    const r = ease((u - 0.55) / 0.45);
+    return { x: THREE.MathUtils.lerp(-0.35, rest, r), w: 1 - r };
+  }
 
   let time = 0;
   function update(pose, dt) {
@@ -235,11 +287,16 @@ export function createClassicAvatar(spec, material) {
       rightLeg: sit || (-stride - airborne + crouch),
       // Held out in front rather than swinging with the stride - an item on a walking arm
       // would windmill through the body otherwise, and there is no elbow to fold instead.
-      leftArm: holding.leftArm ? HOLD_ARM_X : (moving ? -stride * 0.9 : idle),
-      rightArm: holding.rightArm ? HOLD_ARM_X : (moving ? stride * 0.9 : -idle),
+      leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
+      rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? stride * 0.9 : -idle),
     };
+    const block = pose.blocking ? blockSide() : null;
+    if (block) targets[block] = BLOCK_ARM_X;
+    if (swing && (swing.t += dt) >= SWING_S) swing = null;
+    const swung = swing ? swingPose(swing, targets[swing.side]) : null;
     for (const [name, target] of Object.entries(targets)) {
-      pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, 15, dt);
+      if (swung && name === swing.side) pieces[name].pivot.rotation.x = swung.x;
+      else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, 15, dt);
     }
     pieces.leftArm.pivot.rotation.z = damp(pieces.leftArm.pivot.rotation.z, holding.leftArm ? 0 : (pose.running ? -0.12 : 0), 12, dt);
     pieces.rightArm.pivot.rotation.z = damp(pieces.rightArm.pivot.rotation.z, holding.rightArm ? 0 : (pose.running ? 0.12 : 0), 12, dt);
@@ -249,9 +306,15 @@ export function createClassicAvatar(spec, material) {
     // item should not also inherit the arm's tilt, or it lies over at whatever angle the
     // arm is held at instead of standing up the way something actually gripped would.
     for (const side of ['leftArm', 'rightArm']) {
-      if (!heldMesh[side]) continue;
-      heldMesh[side].rotation.x = -pieces[side].pivot.rotation.x;
-      heldMesh[side].rotation.z = -pieces[side].pivot.rotation.z;
+      const mesh = heldMesh[side];
+      if (!mesh) continue;
+      const w = swung && side === swing.side ? swung.w : 0;
+      mesh.rotation.x = -pieces[side].pivot.rotation.x * (1 - w);
+      mesh.rotation.z = -pieces[side].pivot.rotation.z;
+      // A shield turns to face forward while it blocks and back out to the side after;
+      // the same mirrored sign setHeldItem gave it, so left and right both turn inward.
+      const yaw = block === side && holding[side] === 'shield' ? Math.PI / 2 : (ITEM_YAW[holding[side]] || 0);
+      mesh.rotation.y = damp(mesh.rotation.y, (side === 'leftArm' ? 1 : -1) * yaw, 12, dt);
     }
   }
 
@@ -275,5 +338,5 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
   }
 
-  return { object, update, set, dispose, handAttach };
+  return { object, update, set, dispose, handAttach, attack };
 }

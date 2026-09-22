@@ -121,15 +121,19 @@ rod('Sword grip', (GRIP[0], .163, GRIP[2]), (GRIP[0], .213, GRIP[2]), .010, 'tri
 rod('Sword crossguard', (GRIP[0]-.045, .216, GRIP[2]), (GRIP[0]+.045, .216, GRIP[2]), .012, 'brass', .012, 4)
 rod('Sword blade', (GRIP[0], .220, GRIP[2]), (GRIP[0], .430, GRIP[2]-.008), .016, 'steel', .003, 4)
 
-# The face sits behind the grip in z (SHIELD_Z, mirrored in classic-avatar.js) so the fist
-# never breaks its surface, and two brass rods peeking past the crimson face read as a rim
-# without needing a second, larger copy of the face's own shape.
-shield_z = GRIP[2] - .06
-box('Shield face', (GRIP[0], .220, shield_z), (.110, .145, .014), 'crimson', .010)
-box('Shield rim top', (GRIP[0], .2925, shield_z-.004), (.125, .014, .018), 'brass', 0)
-box('Shield rim bottom', (GRIP[0], .1475, shield_z-.004), (.125, .014, .018), 'brass', 0)
-box('Shield boss', (GRIP[0], .220, shield_z+.010), (.028, .028, .014), 'brass', 0)
-rod('Shield grip', (GRIP[0]-.03, .190, GRIP[2]), (GRIP[0]+.03, .190, GRIP[2]), .009, 'trim', vertices=6)
+# The shield hangs on the outside of the fist: its face is a plate in the YZ plane just
+# clear of the hand's outer side, pointing away from the body (+X for the right hand;
+# classic-avatar.js mirrors the mesh for the left and turns it a little forward), the way a
+# shield strapped to a forearm sits when the arm is down. It used to hang behind the fist in
+# Z, facing forward, which - together with the held-out arm pose every item then shared -
+# put a torso-sized plate up beside the head. Two brass bars peeking past the crimson face
+# read as a rim without a second, larger copy of the face's own shape.
+SHIELD_X = GRIP[0] + .048
+box('Shield face', (SHIELD_X, .205, GRIP[2]), (.014, .115, .090), 'crimson', .010)
+box('Shield rim top', (SHIELD_X+.004, .2625, GRIP[2]), (.018, .013, .102), 'brass', 0)
+box('Shield rim bottom', (SHIELD_X+.004, .1475, GRIP[2]), (.018, .013, .102), 'brass', 0)
+box('Shield boss', (SHIELD_X+.010, .205, GRIP[2]), (.014, .026, .026), 'brass', 0)
+rod('Shield grip', (GRIP[0], .190, GRIP[2]), (SHIELD_X-.006, .190, GRIP[2]), .009, 'trim', vertices=6)
 
 # The breastplate sits on 'Full tunic's own centre, slightly larger so it reads as worn
 # over the tunic rather than replacing it.

@@ -61,6 +61,10 @@ const HEAD = WALK_CLEARANCE;
 // The keys the feet use. Lifted out of onKeyDown because a board being worked hands
 // every other key to the page and keeps only these.
 const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
+// The letters and digits the browser pairs with ctrl (save, print, find, bookmark, view
+// source, open, history, downloads, address bar, reload, bold; new tab/window, close, tab
+// <n>). Cancelled on foot - see onKeyDown - and locked in fullscreen - see lockKeys().
+const BROWSER_KEYS = new Set([...'sptfduohjklegrbwn123456789', 'tab']);
 
 // A field on a board takes its letters. In here w is a w, not a step, so the feet keep
 // out of it entirely - which is the whole of "type quit and you plant a tree".
@@ -215,6 +219,7 @@ export function createWalkMode({
     onRelease: null,
     moving: false,
     running: false,
+    blocking: false, // the right mouse button is down: the shield arm is up
     paused: false,   // true while an overlay owns the input
   };
 
@@ -261,11 +266,17 @@ export function createWalkMode({
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
     const k = e.key.toLowerCase();
-    // A key with ctrl, meta or alt on it belongs to the browser, and the island does not
-    // get a say: ctrl+W closes the tab and Chrome will not let a page cancel it. Nothing
-    // here is meant to be pressed with a modifier, so they all go straight through -
-    // which also covers AltGr on a Dutch layout, where it arrives as ctrl+alt.
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // A key with ctrl, meta or alt on it is not a game key - which also covers AltGr on a
+    // Dutch layout, where it arrives as ctrl+alt. But on foot the browser's own shortcuts
+    // are a hazard (ctrl+S next to the walking keys, ctrl+P beside the sowing one), so the
+    // ones a page is allowed to cancel are cancelled here, unless somebody is typing into
+    // a field. Chrome reserves ctrl+W, ctrl+T, ctrl+N and ctrl+<digit> and ignores
+    // preventDefault on them: those only come to the page under the keyboard lock that
+    // lockKeys() asks for, and only in fullscreen.
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(k)) e.preventDefault();
+      return;
+    }
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
     // inside a field, where those keys are letters somebody is typing.
@@ -315,15 +326,35 @@ export function createWalkMode({
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
 
-  // Mouse look: drag anywhere on the canvas, or take a pointer lock on double click.
-  let dragging = false, lastX = 0, lastY = 0;
-  const onDown = (e) => { if (!state.active) return; dragging = true; lastX = e.clientX; lastY = e.clientY; };
-  const onUp = () => { dragging = false; };
+  // Mouse look: drag anywhere on the canvas, or take a pointer lock on double click. The
+  // buttons themselves fight (Plans/aanvallen-en-blokkeren.md): the right one blocks for
+  // as long as it is held and never looks; the left one attacks - on the press under a
+  // pointer lock, where the mouse already looks without a button, and otherwise on a click
+  // that did not turn into a drag, so drag-to-look keeps the same button it always had.
+  let dragging = false, lastX = 0, lastY = 0, pressX = 0, pressY = 0, pressMoved = false;
+  const CLICK_PX = 6;
+  // Not with the arms already busy: swimming, lying down or sitting.
+  const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting;
+  const onDown = (e) => {
+    if (!state.active) return;
+    if (e.button === 2) { if (canFight()) state.blocking = true; return; }
+    if (e.button !== 0) return;
+    if (document.pointerLockElement === dom) { if (canFight()) classicAvatar.attack(); return; }
+    dragging = true; pressMoved = false;
+    lastX = pressX = e.clientX; lastY = pressY = e.clientY;
+  };
+  const onUp = (e) => {
+    if (e.button === 2) { state.blocking = false; return; }
+    if (e.button !== 0) return;
+    if (dragging && !pressMoved && canFight()) classicAvatar.attack();
+    dragging = false;
+  };
   const onMove = (e) => {
     if (!state.active) return;
     const locked = document.pointerLockElement === dom;
     let dx = 0, dy = 0;
     if (locked) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    if (dragging && !pressMoved && Math.hypot(e.clientX - pressX, e.clientY - pressY) > CLICK_PX) pressMoved = true;
     if (!dx && !dy) return;
     state.camYaw -= dx * 0.0042;
     state.camPitch = clamp(state.camPitch + dy * 0.0032, -0.25, 0.95);
@@ -344,7 +375,24 @@ export function createWalkMode({
   addEventListener('pointermove', onMove);
   // Not while a board is held: pointer lock turns off DOM events entirely, so taking it
   // back would kill every click on the page hanging in front of you.
-  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.(); });
+  // requestPointerLock() returns a promise in current Chrome and rejects where a lock is not
+  // allowed (an embedded webview, a page without the permission); nothing to do about that
+  // but not to log it as an uncaught error.
+  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.()?.catch?.(() => {}); });
+
+  // Under a keyboard lock the browser hands the page even the shortcuts it otherwise keeps
+  // for itself (ctrl+W closes the tab whatever a page says) - but only in fullscreen, which
+  // is what makes the Fullscreen button the place where the island stops losing tabs. Asked
+  // for on entering walk mode and given back on leaving it; the browser applies it whenever
+  // the page is fullscreen in between. Escape is deliberately not in the list: locking it
+  // turns leaving fullscreen into press-and-hold, and Escape already has a job here.
+  const LOCKED_CODES = [...'WTNRSPFDUOHJKLEGB'].map((c) => 'Key' + c)
+    .concat('Tab', ...Array.from({ length: 9 }, (_, i) => 'Digit' + (i + 1)));
+  function lockKeys(on) {
+    const kb = navigator.keyboard;
+    if (!kb || !kb.lock) return;
+    if (on) kb.lock(LOCKED_CODES).catch(() => {}); else kb.unlock();
+  }
 
   // A cell can have more than one surface to stand on: the ground, and above it a bridge
   // deck, a floor, a roof, the lid of a tunnel. `levels` holds what is above the terrain,
@@ -495,6 +543,7 @@ export function createWalkMode({
     state.active = true;
     avatar.visible = true;
     keys.clear();
+    lockKeys(true);
   }
 
   function exit() {
@@ -502,6 +551,8 @@ export function createWalkMode({
     back = camBack;
     release();
     state.active = false;
+    state.blocking = false;
+    lockKeys(false);
     avatar.visible = false;
     lounge.visible = false;
     standUp();
@@ -735,7 +786,7 @@ export function createWalkMode({
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded,
       crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
-      phase: state.bob,
+      blocking: state.blocking, phase: state.bob,
     }, dt);
 
     // camera sits behind and above, and never dips under the ground

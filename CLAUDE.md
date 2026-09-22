@@ -416,6 +416,15 @@ at `position: fixed` and catches Escape in the capture phase on `window`, so the
 closes the popover and only the second closes the panel - the studio's own Escape handler and
 `walk.js` both listen later in that same keydown.
 
+**The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels the ctrl shortcuts a
+page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboard Lock
+(`navigator.keyboard.lock`) on the letters and digits the browser pairs with ctrl. The lock only
+takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
+ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
+locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
+blocks while held, the left one attacks on a click that did not become a drag, or on the press
+under a pointer lock (double-click on the canvas) - so drag-to-look keeps its button.
+
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
