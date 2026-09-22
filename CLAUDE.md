@@ -86,8 +86,21 @@ without a hook firing.
 
 ## Invariants worth knowing before changing anything
 
-**A house never moves.** `data/layout.json` is append-only and is the only irreplaceable
-file under `data/`; `village.json` and `cache.json` rebuild themselves. Five version gates
+**A house never moves by itself.** `data/layout.json` is append-only and is the only
+irreplaceable file under `data/`; `village.json` and `cache.json` rebuild themselves. The
+scanner never moves a plot; the keeper may, deliberately, through one door — `POST /api/plan`
+(`lib/plan.mjs`, applied in the same slot in `scan.mjs` as `clearRoads`, under the scan
+queue), which moves **whole hamlets** (lobes, with every house, shed and the land itself, by
+a super-cell delta) and paints `layout.zones` (no-build super-cells, countryside only,
+enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). A plan is tried on a
+copy first, all or nothing; `diff.plots.otherMoved` must be empty and no house may be newly
+left without a way to the square (`stranded` in `lib/plan.mjs` — `placeAll` roads a hamlet
+as far as the router gets and says nothing) or nothing is written; `layout.before-plan-
+<ts>.json` is written before the apply and `POST /api/plan/undo` puts one back; the scan
+after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
+two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
+(`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Five version gates
 in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
@@ -96,6 +109,21 @@ paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSIO
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
 assert after a layout change, and the trap: **stop the server before measuring**
 (`stop-island.cmd`), or its own rescan interleaves with yours and every plot looks moved.
+
+**The planner is a third mode, and nothing real moves in it before Apply.** `state.mode`
+is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
+`OrthographicCamera` (north up, so a screen rectangle is a world rectangle) and never touches
+`camera`/`controls`, which is what makes leaving free. A hamlet being dragged is drawn as
+ghosts (`plan-overlay.js`: the real meshes' geometry under ghost.js's green/red) while the
+real groups stay put — `reportPlacements` reads their positions after every scan, and a drag
+across the 60 s rescan would have published a village standing in the wrong place. The
+server is the authority: a dry run after every change, the real thing on Apply, then a
+`reload` broadcast (the page's incremental `applyVillage` does not follow a changed `plot`).
+What plan mode switches off — and `leftPlan` switches back on — is the CSS3D boards, the
+clouds, the hamlet arches, the nameplates and the haze; the frame loop's camera and label
+branches are `=== 'orbit'`, not `!== 'walk'`, for the same reason. The drag's colour comes
+from `GET /api/plan/survey` (`lib/survey.mjs`, bits per super-cell), never from a second copy
+of the rules in the browser.
 
 **A polder and a fairway are the same mechanism pointed two ways.** A polder takes water
 off the island, a dredged fairway takes ground off the sea, and both are a list of cells in
@@ -109,6 +137,15 @@ island that has never dredged still recognises itself, and `layout.terrainHash` 
 *after* the digging, or the next scan finds a mismatch it caused itself and wipes the town.
 A `null` fairway means nobody has asked; `{ cells: [] }` means we asked and there was
 nothing to dig, and the difference is what stops the search running on every scan for ever.
+A polder the keeper drains by hand (`polder` op in `lib/plan.mjs`) goes through the same
+`polderFromSupers` + `digPolder` the ladder uses and records the hash itself, straight after
+digging; it carries `manual`, `at` and `dugAt` (provenance, kept off the bundle), counts as a
+rung for `poldersWanted`, and `scan.mjs` dates the planned ones around it. Every polder also
+gets one sticky approach road (`road:polder:<n>:approach`) from its causeway to the square,
+or an empty polder is orphaned paving until somebody builds on it. The sea can take a polder
+back (`unpolder`): refused while anything stands on or owns it or another polder leans on
+it, one per plan because the list is indexed, and `layout.poldersReturned` is the ladder's
+memory of it so the next scan does not dig the same coast up again.
 Everything that builds ground has to be handed it — `lib/layout.mjs`, `lib/garden.mjs`,
 `lib/fleet.mjs`, `lib/islandbundle.mjs`, three calls in `web/js/main.js` — and the one that
 deliberately is not is `horizon.js`, which ignores the polders too because a silhouette at
@@ -503,8 +540,8 @@ agentvillage` in `src-tauri/`, not a full clean.
 | | |
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
-| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
-| `shared/` | terrain, regions (the world/local contract), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
+| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
+| `shared/` | terrain, regions (the world/local contract), `lattice.mjs` (the super-grid arithmetic: `blockOf`, `superOf` — the one copy), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
 | `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of

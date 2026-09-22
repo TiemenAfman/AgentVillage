@@ -46,6 +46,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   let lobeAt = new Map();          // 'i,j' -> lobe record, as the island stands
   let townAt = new Set();          // 'i,j' the town holds
   let islandZones = new Set();     // 'i,j' zoned on the island today
+  let polderAt = new Map();        // 'i,j' -> index into village.polders, for the ones standing
+  let selPolder = null;            // a standing polder picked with the Polder tool
   let survey = null;
   let snapshots = 0;
   const sel = new Set();           // lobe keys
@@ -135,6 +137,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       if (rec) rec.buildings.push(b.id);
     }
     for (const z of v.zones || []) for (const [i, j] of z.supers || []) islandZones.add(key(i, j));
+    polderAt = new Map();
+    (v.polders || []).forEach((p, idx) => {
+      for (const [gx, gz] of [...(p.cells || []), ...(p.pools || []), ...(p.dike || [])]) {
+        const s = superOf(lat, gx, gz);
+        polderAt.set(key(s[0], s[1]), idx);
+      }
+    });
+    if (selPolder !== null && !(v.polders || [])[selPolder]) selPolder = null;
     // A draft may name a hamlet the island no longer has.
     const before = ops.length;
     ops = ops.filter((o) => o.op !== 'move' || o.lobes.every((l) => lobes.has(lkey(l))));
@@ -227,11 +237,13 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const [di, dj] = deltaOf(k);
       for (const [i, j] of rec.supers) selSupers.add(key(i + di, j + dj));
     }
+    const back = ops.find((o) => o.op === 'unpolder');
     overlay.paint({
       owner: ownerAt,
       hueOf: (k) => ((village().districts[k] || {}).hue || 0),
       zones: islandZones, zoneAdd: add, zoneRemove: remove, polder: polderSet(),
-      selected: (i, j) => selSupers.has(key(i, j)),
+      selected: (i, j) => selSupers.has(key(i, j)) || (selPolder !== null && polderAt.get(key(i, j)) === selPolder),
+      unpolder: (i, j) => !!back && polderAt.get(key(i, j)) === back.index,
       moving: (i, j) => dragOk.get(key(i, j)) || null,
     });
     // Ghosts and tethers for every lobe the draft has moved, the one being dragged included.
@@ -263,7 +275,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const rec = lobes.get(k); const [di, dj] = deltaOf(k);
       return { supers: rec.supers.map(([i, j]) => [i + di, j + dj]), color: new THREE.Color(0xe8b45c) };
     }) });
-    panel.setSelection({ count: sel.size, names: [...sel].map((k) => lobes.get(k).name) });
+    panel.setSelection({ count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder });
     ledger();
   }
   function centreSuper(rec) {
@@ -275,6 +287,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   function sentence(o) {
     if (o.op === 'move') return `Move ${o.lobes.map((l) => (lobes.get(lkey(l)) || { name: l.district }).name).join(', ')} by [${o.di}, ${o.dj}]`;
     if (o.op === 'polder') return `Polder: ${o.supers.length} super-cell${o.supers.length === 1 ? '' : 's'} off the sea`;
+    if (o.op === 'unpolder') return `Give polder ${o.index + 1} back to the sea`;
     return `Zone: ${o.add.length ? `+${o.add.length}` : ''}${o.add.length && o.remove.length ? ' / ' : ''}${o.remove.length ? `−${o.remove.length}` : ''} super-cell${o.add.length + o.remove.length === 1 ? '' : 's'}`;
   }
   function ledger() {
@@ -311,6 +324,11 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       cur.remove = [...remove].map((k) => k.split(',').map(Number));
       if (!z && (cur.add.length || cur.remove.length)) ops.push(cur);
       if (z && !cur.add.length && !cur.remove.length) ops = ops.filter((x) => x !== z);
+    } else if (o.op === 'unpolder') {
+      // One per plan (the server says so too: the list is indexed); asking again for the
+      // same one is a no-op, for another one it replaces the first.
+      ops = ops.filter((x) => x.op !== 'unpolder');
+      ops.push(o);
     } else if (o.op === 'polder') {
       // One polder in a draft, first in the list: the land it makes has to exist before a
       // move later in the plan may be set down on it (lib/plan.mjs applies ops in order).
@@ -331,6 +349,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   function redoOp() { if (!redo.length) return; ops.push(redo.pop()); changed(); }
   function clearOps() { if (!ops.length) return; redo = []; ops = []; changed(); }
   function removeForSelection() {
+    // A standing polder picked with the Polder tool: Delete gives it back to the sea.
+    if (selPolder !== null) { pushOp({ op: 'unpolder', index: selPolder }); return; }
     if (!sel.size) return;
     for (let i = ops.length - 1; i >= 0; i--) {
       const o = ops[i];
@@ -437,6 +457,10 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     ptr = { x: e.clientX, y: e.clientY };
     const painting = tool === 'zone' || tool === 'polder';
     if (e.button === 1 || (e.button === 2 && !painting)) { pan = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz }; return; }
+    if (tool === 'polder' && e.button === 0) {
+      const s = superAt(e.clientX, e.clientY);
+      if (s && polderAt.has(key(s[0], s[1]))) { press = { x: e.clientX, y: e.clientY, polder: polderAt.get(key(s[0], s[1])) }; return; }
+    }
     if (painting && (e.button === 0 || e.button === 2)) {
       paint = { kind: tool, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
       paintStroke(e.clientX, e.clientY);
@@ -510,7 +534,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       return;
     }
     if (paint) { paintStroke(e.clientX, e.clientY); return; }
-    if (!press) return;
+    if (!press || press.polder !== undefined) return;
     const far = Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_PX;
     if (!drag && !band && far) {
       const carry = sel.size && (tool === 'move' || (tool === 'select' && press.onSelected));
@@ -567,9 +591,17 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       redraw();
       return;
     }
+    if (press && press.polder !== undefined) {
+      selPolder = selPolder === press.polder ? null : press.polder;
+      sel.clear();
+      press = null;
+      redraw();
+      return;
+    }
     if (press) {
       // A click.
       const rec = press.rec;
+      selPolder = null;
       if (!press.shift) sel.clear();
       if (rec) { if (press.shift && sel.has(lkey(rec))) sel.delete(lkey(rec)); else sel.add(lkey(rec)); }
       else if (pickBuilding(e.clientX, e.clientY)) toast('The town stays where it is; only hamlets move.');
@@ -608,7 +640,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (e.key === 'Escape') {
       take();
       if (drag || band || paint || pan) cancelGesture();
-      else if (sel.size) { sel.clear(); redraw(); }
+      else if (sel.size || selPolder !== null) { sel.clear(); selPolder = null; redraw(); }
       else exit();
       return;
     }
@@ -638,15 +670,17 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   function hud(s) {
     const tip = tool === 'select' ? 'click a hamlet or drag a box; <kbd>Shift</kbd> adds; drag a selected hamlet to carry it'
       : tool === 'move' ? 'drag to carry the selected hamlets; snaps to the super-grid'
-        : tool === 'polder' ? 'paint shallow water to take off the sea; it has to touch the shore'
+        : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
     if (drag) where = `<span class="${drag.ok ? 'ok' : 'why'}">[${drag.di}, ${drag.dj}] ${drag.ok ? 'fits' : esc(drag.why || 'no')}</span>`;
     else if (s) {
       const k = key(s[0], s[1]);
       const rec = projAt.get(k);
+      const onPolder = polderAt.has(k) ? ` · polder ${polderAt.get(k) + 1}` : '';
       const what = townAt.has(k) ? 'the town' : rec ? esc(rec.name) : usable(s[0], s[1]) ? 'open ground' : reclaimable(s[0], s[1]) ? 'shallows, reclaimable' : 'not for building';
-      where = `<span class="muted">[${s[0]}, ${s[1]}] · ${what}${islandZones.has(k) ? ' · zoned' : ''}</span>`;
+      where = `<span class="muted">[${s[0]}, ${s[1]}] · ${what}${onPolder}${islandZones.has(k) ? ' · zoned' : ''}</span>`;
+      if (selPolder !== null) where += `<span>polder ${selPolder + 1} picked · <kbd>Delete</kbd> gives it back to the sea</span>`;
     }
     return `<b>${tool[0].toUpperCase()}${tool.slice(1)}</b><span>${tip}</span>${where}<span class="muted"><kbd>Esc</kbd> back</span>`;
   }

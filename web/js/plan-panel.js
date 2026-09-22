@@ -15,7 +15,7 @@ export const TOOLS = [
   ['select', 'Select', '1', 'Click a house or its land to pick the whole hamlet. Drag on open ground for a box. Shift adds.'],
   ['move', 'Move', '2', 'Drag the selected hamlets. Snaps to the super-grid.'],
   ['zone', 'Zone', '3', 'Paint ground nothing may be built on. Right-drag releases it.'],
-  ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Right-drag gives it back.'],
+  ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Click a standing polder and press Delete to give it back.'],
 ];
 
 export function createPlanPanel(handlers) {
@@ -64,10 +64,11 @@ export function createPlanPanel(handlers) {
     tools.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
   }
 
-  function setSelection({ count = 0, names = [] } = {}) {
+  function setSelection({ count = 0, names = [], polder = null } = {}) {
     el('plan-sel').textContent = count
       ? `${count} hamlet${count === 1 ? '' : 's'}: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
-      : 'Nothing selected';
+      : polder !== null ? `Polder ${polder + 1} picked — Delete gives it back to the sea`
+        : 'Nothing selected';
   }
 
   // `ops` as sentences; `verdicts` aligned with them from the dry run, or null while one is

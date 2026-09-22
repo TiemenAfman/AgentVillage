@@ -50,6 +50,7 @@ const C = {
   hover: new THREE.Color(0xf4ece0),
   tether: new THREE.Color(0xe8b45c),
   polder: new THREE.Color(0xd8c48a),
+  unpolder: new THREE.Color(0x3d7f9a),
   gridWater: new THREE.Color(0x24444a),
 };
 
@@ -220,6 +221,7 @@ export function createPlanOverlay({ scene, terrain, village, byId }) {
       if (view.zoneRemove.has(kk)) tint(i, j, C.zoneRemove, 0.3);
       if (view.zoneAdd.has(kk)) tint(i, j, C.zoneAdd, 0.42);
       if (view.polder && view.polder.has(kk)) tint(i, j, C.polder, 0.5);
+      if (view.unpolder && view.unpolder(i, j)) tint(i, j, C.unpolder, 0.5);
       if (view.selected(i, j)) tint(i, j, C.select, 0.34);
       const m = view.moving(i, j);
       if (m) tint(i, j, m === 'ok' ? C.ok : C.bad, 0.36);

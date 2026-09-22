@@ -29,6 +29,12 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
   (`settler-figures.js`). Nog niet gebouwd: eerste stap is de rugzak losmaken van de
   speler-merge, dan hetzelfde patroon als de hoed-buckets voor de settlers.
+- [wijkjes-verplaatsen.md](wijkjes-verplaatsen.md) — een planner van bovenaf: hele wijkjes
+  (lobes) selecteren en verplaatsen, grond zoneren als niet-bebouwen, en land bijwinnen met een
+  handmatige polder. De scanner verhuist nooit iets uit zichzelf; de keeper wel, via één deur
+  (`POST /api/plan`), en de scan erna is weer byte-identiek. Bijlage: de gemeten verkenning van
+  22 september 2026. Fase 1 (zones, wijkjes verplaatsen, planner-modus) gebouwd op 22 september 2026;
+  handmatige polder erbij dezelfde dag; parcel bijverven en fase 3 (geen reload na Apply) staan open.
 - [eiland-als-desktop-app.md](eiland-als-desktop-app.md) — het eiland als eigen venster (Tauri,
   `npm run app`): waarom de viewer geladen wordt van `localhost:4747` en níet gebundeld met Vite
   (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de

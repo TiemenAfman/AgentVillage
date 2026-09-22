@@ -63,20 +63,14 @@ test('the next hamlet settles around a zone rather than on it', () => {
   assert.equal(JSON.stringify(layout), written, 'a scan of the zoned island rewrote the layout');
 });
 
-test('a zone over a hamlet freezes it and says so; it never evicts', () => {
+test('a zone over a hamlet is refused: it would cut the lanes, and land somebody owns is not countryside', () => {
   const { model, layout } = settled(36);
   const lobe = layout.districts['proj:2'].lobes[0];
-  const houseCells = lobe.cells.filter(([i, j]) => Object.values(layout.plots).some((p) => p.cell && p.cell[0] === i && p.cell[1] === j));
-  assert.ok(houseCells.length, 'a lobe with a house on it');
-  const wasStanding = stands(layout);
-  const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'zone', add: houseCells }] }), opts);
-  assert.ok(r.ok, r.error);
-  assert.match(r.verdicts[0].notes.join(' '), /covers \d+ building\(s\), which stay/);
-  assert.match(r.verdicts[0].notes.join(' '), /of P2's land/);
-  assert.deepEqual(movedBetween(wasStanding, stands(layout)), [], 'a zone moved a house');
-  const written = JSON.stringify(layout);
-  placeAll(layout, model, opts);
-  assert.equal(JSON.stringify(layout), written);
+  const before = JSON.stringify(layout);
+  const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'zone', add: [lobe.seed] }] }), { ...opts, dryRun: true });
+  assert.equal(r.ok, false);
+  assert.match(r.verdicts[0].reason, /is P2's land/);
+  assert.equal(JSON.stringify(layout), before, 'a refused zone changed the layout');
 });
 
 test('a road through a new zone is laid again around it, and nobody is cut off', () => {

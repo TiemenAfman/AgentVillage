@@ -143,6 +143,46 @@ test('refusals: land, two pieces, no shore, the town\'s own coast', () => {
   assert.equal(JSON.stringify(layout), before, 'a refused polder changed the layout');
 });
 
+test('the sea takes a polder back: coast, hash, roads and the ladder\'s memory', () => {
+  const { model, layout } = settled();
+  const supers = blob(layout, 4);
+  assert.ok(supers);
+  const bare = clone(layout);
+  runPlan(layout, model, parsePlan({ ops: [{ op: 'polder', supers }] }), opts);
+  assert.equal(layout.polders.length, 1);
+  const wasStanding = stands(layout);
+  const before = JSON.stringify(layout);
+  const dry = runPlan(layout, model, parsePlan({ ops: [{ op: 'unpolder', index: 0 }] }), { ...opts, dryRun: true });
+  assert.ok(dry.ok, dry.error || JSON.stringify(dry.verdicts));
+  assert.equal(JSON.stringify(layout), before);
+  const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'unpolder', index: 0 }] }), opts);
+  assert.ok(r.ok, r.error);
+  assert.equal(layout.polders.length, 0);
+  assert.equal(layout.poldersReturned, 1);
+  assert.equal(layout.terrainHash, bare.terrainHash, 'the coast is not the coast before the polder');
+  assert.equal(layout.terrainHash, groundOf(layout));
+  assert.deepEqual(movedBetween(wasStanding, stands(layout)), [], 'giving land back moved something');
+  assert.deepEqual(layout.paths.filter((q) => String(q.id).startsWith('road:polder:')), [], 'a causeway to nowhere stayed');
+  const written = JSON.stringify(layout);
+  placeAll(layout, model, opts);
+  assert.equal(JSON.stringify(layout), written, 'the scan after giving land back rewrote the layout');
+  // The ladder remembers: at POLDER_AT + 10 one rung is wanted, and it was taken.
+  const big = village(POLDER_AT + 10);
+  big.milestones = [{ civicType: 'poldermill', unlocked: true }];
+  placeAll(layout, big, opts);
+  assert.equal(layout.polders.length, 0, 'the ladder dug the returned polder up again');
+  // Refused while something stands on it, and while a second one is asked in one plan.
+  const { model: m2, layout: l2 } = settled();
+  const s2 = blob(l2, 3);
+  runPlan(l2, m2, parsePlan({ ops: [{ op: 'polder', supers: s2 }] }), opts);
+  const c = l2.polders[0].cells[5];
+  l2.plots['shed:squatter'] = { gx: c[0], gz: c[1], w: 1, d: 1, rot: 0 };
+  const no = runPlan(l2, m2, parsePlan({ ops: [{ op: 'unpolder', index: 0 }] }), { ...opts, dryRun: true });
+  assert.match(no.verdicts[0].reason, /shed:squatter stands on it/);
+  assert.match(runPlan(l2, m2, parsePlan({ ops: [{ op: 'unpolder', index: 3 }] }), { ...opts, dryRun: true }).verdicts[0].reason, /no polder 3/);
+  assert.throws(() => parsePlan({ ops: [{ op: 'unpolder', index: 0 }, { op: 'unpolder', index: 1 }] }), /one polder can be given back/);
+});
+
 test('the ladder counts a hand-drawn polder as a rung', () => {
   const { layout } = settled();
   const supers = blob(layout, 3);

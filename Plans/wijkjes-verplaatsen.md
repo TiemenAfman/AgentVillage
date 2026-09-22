@@ -8,7 +8,8 @@
 
 **Status:** fase 1 (zones + wijkjes verplaatsen, server én planner-modus in de browser) gebouwd op
 22 september 2026 op branch `planner-wijkjes`; dry runs op het echte eiland nagekeken, nog geen echte
-Apply gedaan. Fase 2a (handmatige polder, met toegangsweg) gebouwd op 22 september 2026; parcel bijverven en fase 3
+Apply gedaan. Fase 2a (handmatige polder met toegangsweg, en `unpolder` om land terug te geven) gebouwd op 22 september 2026;
+wijkjes verplaatsen en polderen op het echte eiland door Martijn zelf nagekeken; parcel bijverven en fase 3
 (geen reload meer nodig) staan open. De bijlage
 "Verkenning" onderaan is de gemeten stand van de code op die dag — regelnummers, timingen en
 wat er breekt — zodat dat niet opnieuw hoeft.
@@ -318,6 +319,14 @@ Server stoppen vóór het meten (`stop-island.cmd`), anders interleaved de 60 s-
 | 2 | zee-supers verven, Apply | kust hervormd na reload; `terrainHash === makeTerrain(seed,{size,polders,fairway}).hash`; ladder telt hem mee | `plan-polder` (`manual`, hash via `groundOf`, geen huis bewogen, causeway bereikt plein, pools ⊂ water, weigeringen: land/fairway/zone/los/geen kust; bundel-round-trip; datering) |
 
 ## Wat echt moeilijk is
+
+0. **Gemeten op het echte eiland (22 september, avond):** een handmatige polder tegen een strand kreeg een
+   causeway van één cel (geen bouwbaar land erachter); de dijk aan de waterkant en het strand aan de
+   landkant (BLOCKED voor de router) sloten het binnenland af, en de drie huizen van machinedemo die
+   erop gezet werden hadden geen weg. `placeAll` zegt daar niets over. Daarom weigert `runPlan` nu elk
+   plan dat een huis nieuw zonder weg naar het plein achterlaat (`stranded`), en weigert een zone over
+   eigen of bebouwd land (RESERVED sneed de lanen). De causeway zelf het strand laten oversteken is
+   open werk.
 
 1. **`placeAll` weigert niets, dus validatie is het product.** Gemeten: twee huizen op een helling
    van 2.1 (19 onbouwbare cellen) werden geaccepteerd met 0 `unplaced`, weg gelegd, office
