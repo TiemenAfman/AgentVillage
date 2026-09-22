@@ -1,0 +1,46 @@
+1) install rustup and cargo
+
+2)
+	cargo install tauri-cli
+	
+	rustc --version
+	cargo --version
+	cargo tauri --version
+
+
+3) one time for project (al gedaan)
+	npm create tauri-app@latest desktop
+	
+	Bij de keuzes zou ik iets in deze richting nemen:
+
+		Project name: desktop
+		Frontend: Vanilla
+		Language: JavaScript
+		Package manager: npm
+		
+				
+		keuzes die ik heb gedaan 
+   
+					✔ Identifier · com.agentvillage.island
+					✔ Choose which language to use for your frontend · TypeScript / JavaScript - (pnpm, yarn, npm, deno, bun)
+					✔ Choose your package manager · npm
+					✔ Choose your UI template · Vanilla
+					✔ Choose your UI flavor · TypeScript
+							
+		
+		
+		dit geeft 
+			desktop/
+			├── src/
+			├── src-tauri/
+			├── package.json
+			└── ...
+			
+			
+4. Eerst de standaard Tauri-app testen
+Ga naar
+	cd desktop
+		npm install
+		npm run tauri dev
+		
+		
