@@ -17,7 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
-import { createBoats } from '../lib/boats.mjs';
+import { createBoats, skiffOf } from '../lib/boats.mjs';
 import * as THREE from 'three';
 import { DRAUGHT, CABIN_FLOOR } from '../shared/hull.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
@@ -314,4 +314,34 @@ test('the fleet is the moorings, however hard the socket is poked', () => {
     'a mooring with a bad id was accepted and would refuse every message about it');
   assert.throws(() => createBoats({ moorings: [{ id: 'boat:a', x: '0', z: 0 }] }), /place/);
   assert.throws(() => createBoats({ moorings: [{ id: 'boat:a', x: 0, z: 0 }, { id: 'boat:a', x: 1, z: 1 }] }), /two moorings/);
+});
+
+// A skiff is the boat of somebody with no island (the app on a phone). It has no mooring,
+// so it only exists because its owner launched it, only its owner may sail it, and it goes
+// when they do - three rules, because each one missing leaves a hull nobody can fetch.
+test('a skiff is launched by its owner, sailed by nobody else, and sinks when they leave', () => {
+  const boats = createBoats({ moorings: MOORINGS });
+  const id = skiffOf(ANN);
+  assert.equal(boats.take(id, ANN), null, 'a skiff existed before anybody launched it');
+
+  const put = boats.launch(ANN, 40, -12, 1);
+  assert.deepEqual(put, { id, x: 40, z: -12, yaw: 1, pilot: ANN }, 'a launch did not hand its owner the tiller');
+  assert.ok(boats.snapshot().some((b) => b.id === id), 'a late arrival would not be told about the skiff');
+  assert.ok(boats.moved(id, ANN, 42, -12, 1), 'its owner could not row it');
+
+  boats.drop(id, ANN);
+  assert.equal(boats.take(id, BEN), null, "a stranger took somebody else's skiff");
+  assert.equal(boats.take(skiffOf(BEN), BEN), null, 'a skiff appeared out of a take');
+  assert.equal(boats.take(id, ANN).pilot, ANN, 'the owner could not get back into their own skiff');
+
+  // The same boat again after a second launch - a page that reconnects - not a second one.
+  const before = boats.count();
+  boats.launch(ANN, 0, 0, 0);
+  assert.equal(boats.count(), before);
+
+  assert.deepEqual(boats.sink(ANN), [{ id, x: 0, z: 0, yaw: 0, pilot: null, gone: true }]);
+  assert.equal(boats.count(), before - 1, 'a skiff outlived its owner');
+  assert.deepEqual(boats.sink(ANN), [], 'a skiff sank twice');
+  assert.equal(boats.launch('not an id', 0, 0, 0), null);
+  assert.equal(boats.launch(BEN, Number.NaN, 0, 0), null, 'a skiff was launched nowhere');
 });

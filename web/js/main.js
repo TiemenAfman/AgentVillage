@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
@@ -65,7 +65,8 @@ import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
-import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange } from './api.js';
+import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
+import { createTouchPad, eitherPad } from './touchpad.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -878,7 +879,9 @@ function takeBoat(which) {
   // at lib/players.mjs:162 widened on the server first.
   if (state.net) state.net.setRoom('boat', state.walk);
   state.walk.setInteractables(interactables());   // E means something else now
-  state.ui.toast('You cast off. <b>W</b> and <b>S</b> for the oars, <b>A</b> and <b>D</b> for the tiller.');
+  state.ui.toast(STANDALONE
+    ? 'You cast off. The stick on the left rows and steers.'
+    : 'You cast off. <b>W</b> and <b>S</b> for the oars, <b>A</b> and <b>D</b> for the tiller.');
 }
 
 // Off at the bow, which is the end pointing at whatever you have come alongside.
@@ -1188,6 +1191,7 @@ function enterWalk(spot = null) {
   state.walk.enter({
     at,
     facing,
+    pitch: spot && spot.pitch,
     blockers: walkableBlockers(),
     interactables: interactables(),
     ...walkCallbacks(),
@@ -1229,6 +1233,7 @@ let pendingExile = null;
 // plan camera is 300 up, which is deep in a fog whose far end is 3.4 half-widths.
 let planFog = null;
 function enterPlan() {
+  if (STANDALONE) return;
   if (state.mode === 'plan' || !state.plan) return;
   if (keeperOnly('plan the island')) return;
   if (state.mode === 'walk') exitWalk();
@@ -1349,8 +1354,12 @@ function leaveAnimation(rec) {
   };
 }
 
-function exitWalk() {
+function exitWalk({ force = false } = {}) {
   if (state.mode !== 'walk') return;
+  // The phone has no sky to go up to: walk mode is all there is. `force` is for the one
+  // caller that goes straight back down again - being sent home - which without it found
+  // walk mode still on, so enterWalk returned at once and you stayed where you were caught.
+  if (STANDALONE && !force) return;
   showMinimap(false);   // M's own state (minimapMode) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
@@ -1740,6 +1749,7 @@ function launchBoats() {
   for (let i = state.boats.length - 1; i >= 0; i--) {
     const b = state.boats[i];
     if (wanted.has(b.id) || (state.walk && state.walk.aboard() === b)) continue;
+    if (isSkiff(b.id)) continue;   // nobody's island: only the sea's `gone` takes one away
     b.craft.dispose();
     state.boats.splice(i, 1);
   }
@@ -1794,8 +1804,21 @@ function regionOfBoat(id) {
 
 // What the server says about a boat: taken, dropped, moved, or unmoored because its island
 // has gone. A boat under somebody else's hand is theirs to place; ours is placed by us.
+// A skiff - somebody's own boat, with no island behind it (lib/boats.mjs `skiffOf`) - has
+// no mooring to be derived from, so the page first hears of it from the sea, and draws it
+// then. Ours is already in the water by the time the sea echoes it.
+const isSkiff = (id) => typeof id === 'string' && id.startsWith('boat:w-');
+function skiffFor(m) {
+  const craft = createBoat({ scene, material: buildingMat });
+  craft.place(m.x, m.z, m.yaw);
+  const b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: m.pilot || null };
+  state.boats.push(b);
+  return b;
+}
+
 function onBoatFromServer(m) {
-  const b = state.boats.find((x) => x.id === m.id);
+  const b0 = state.boats.find((x) => x.id === m.id);
+  const b = b0 || (isSkiff(m.id) && !m.gone && Number.isFinite(m.x) && Number.isFinite(m.z) ? skiffFor(m) : null);
   if (m.gone) {
     if (!b) return;
     b.craft.dispose();
@@ -2654,7 +2677,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null, open: !!village.island.open });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
     // Our own island, against our own scanner: the page is newer or older than the server
@@ -4500,12 +4523,15 @@ async function boot() {
     onBusyChange: () => {},
   });
 
-  state.pad = createGamepad({
+  const gamepad = createGamepad({
     onConnect: (id) => {
       state.ui.setPad(true);
       state.ui.toast(`Controller ready: ${String(id).slice(0, 40)}`);
     },
   });
+  // On a phone the screen is the controller: a stick and two buttons drawn over the
+  // canvas that poll exactly like a pad, so walk mode and the boat need nothing new.
+  state.pad = STANDALONE ? eitherPad(gamepad, createTouchPad(document.body)) : gamepad;
 
   // Who the controller is talking to. First one that says it is up, wins - a panel over
   // a room, a room over the island, the island over the sky.
@@ -4513,7 +4539,7 @@ async function boot() {
     onFirstPad: () => {
       state.padSeen = true;
       state.ui.setPad(true);
-      state.ui.toast('Controller connected. <b>A</b> to walk the island.');
+      if (!STANDALONE) state.ui.toast('Controller connected. <b>A</b> to walk the island.');
     },
   });
   state.input.mode('panel', {
@@ -4547,6 +4573,13 @@ async function boot() {
   // The page only uses either to decide what to offer; the server refuses the rest
   // whatever the page believes.
   state.hasIslander = true;
+  // The app on a phone. mine() refuses it outright, so the catch below is what makes it a
+  // guest with no keeper's tools; the world and its key come from what the pack wrote in.
+  if (STANDALONE) {
+    useSea(STANDALONE.sea);
+    state.seaKey = STANDALONE.key || null;
+    state.ui.setStandalone();
+  }
   try {
     const hello = await mine('/api/hello').then((r) => r.json());
     // Where the world is. An island always has a sea now - single player is a sea of one,
@@ -4577,7 +4610,7 @@ async function boot() {
       state.signs = true;
       state.ui.setKeeper(false);
       setVisiting(true);
-      state.ui.toast('No island server on this machine. You can look around and walk about — the garden, the post and the tickets live on the keeper’s own screen.');
+      if (!STANDALONE) state.ui.toast('No island server on this machine. You can look around and walk about — the garden, the post and the tickets live on the keeper’s own screen.');
     } else {
       // An island that answers but will not say is treated as our own - including about
       // the signs. They start down so that a page which may not read them never builds
@@ -4596,9 +4629,11 @@ async function boot() {
 
   let village;
   try {
-    village = await fetchVillage();
+    village = STANDALONE ? await standaloneHome() : await fetchVillage();
   } catch (e) {
-    state.ui.boot(false, 'The island could not be reached. Is the server running?');
+    state.ui.boot(false, STANDALONE
+      ? `The sea could not be reached. ${escapeHtml(String(e && e.message || e))}`
+      : 'The island could not be reached. Is the server running?');
     console.error(e);
     return;
   }
@@ -4641,12 +4676,23 @@ async function boot() {
   });
   state.net = createNet({
     onEvicted: (m) => {
-      exitWalk();
+      exitWalk({ force: true });
       state.walk.setPaused(false);
+      // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
+      // it is climbed into at once, so a respawn is back at the oars and not treading water.
+      const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
+      if (skiff) {
+        enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
+        takeBoat(skiff);
+        state.ui.toast(`The people of ${m.island || 'that island'} put you back in your boat.`);
+        return;
+      }
       enterWalk({ at: [m.x, m.z] });
       state.ui.toast(`The people of ${m.island || 'that island'} sent you home.`);
     },
     onBoat: onBoatFromServer,
+    // Only a phone owns a skiff; anybody else's page has nothing here to put back.
+    onWelcome: (self) => { if (STANDALONE) relaunchSkiff(self); },
     peers: state.peers,
     walk: state.walk,
     // Our berth in the sea's frame, read on every message: the socket is where the sea's
@@ -4735,12 +4781,85 @@ async function boot() {
   //
   // ?nointro skips it along with the sweep. That parameter has always meant "just show me
   // the island", and it is what every measurement and every screenshot uses.
-  if (params.has('nointro')) startIntro();
+  if (STANDALONE) castOffOnArrival();
+  else if (params.has('nointro')) startIntro();
   else openMainMenu();
   state.ui.boot(true);
   requestAnimationFrame(tick);
+  // No islander to hear from and none to install from: /events and sw.js are both its own.
+  if (STANDALONE) return;
   connect();
   registerWorker();
+}
+
+// Where a phone stands: nowhere. It has no island, so its home is a berth of open water -
+// the one a newcomer island would be given, which is by construction clear of everybody
+// already at anchor - drawn through the same home-at-the-origin path as a real island, on
+// a terrain that is sea from edge to edge (`open` in shared/terrain.mjs). Every island in
+// the fleet is then somebody else's and joins as a guest, and the body joins as a wanderer
+// (no island in `join`), which is also why no guard can send it home: there is none.
+const OPEN_HOME = 64;
+async function standaloneHome() {
+  await learnTheWorld();
+  const placed = state.fleet
+    .filter((i) => i && Array.isArray(i.origin))
+    .map((i) => ({ half: (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
+  state.islandId = null;
+  state.homeOrigin = nextOrigin(placed, OPEN_HOME / 2);
+  return {
+    v: 1,
+    generatedAt: new Date().toISOString(),
+    all: false,
+    island: { id: 'open', name: 'The open sea', seed: 0, open: true, gridSize: OPEN_HOME, foundedAt: null, landing: null, town: null, lattice: null },
+    grid: { size: OPEN_HOME },
+    districts: [], districtsRev: 0, buildings: [], paths: [], bridges: [], cleared: [],
+    zones: [], polders: [], fairway: null, props: [], crops: [], placements: null, decks: {},
+    milestones: [], active: [], assignments: [],
+    stats: { settlers: 0, apprentices: 0, districts: 0, founded: null },
+  };
+}
+
+// Afloat from the first frame, in a boat of our own in the middle of that berth: a skiff,
+// which the sea puts in the water on `launch`, names after this socket and lets nobody
+// else sail (lib/boats.mjs), so everybody else sees the hull and not a rower on the waves.
+// Held back until the welcome - the skiff's name is our player id, which the welcome is
+// what hands us - and so that the fleet is in the water before you look up.
+function castOffOnArrival(tries = 0) {
+  if (!(state.net && state.net.id()) && tries < 50) { setTimeout(() => castOffOnArrival(tries + 1), 200); return; }
+  // Bow towards the nearest coast, so the first thing on screen is somewhere to row to.
+  // The boat steps along (sin yaw, cos yaw) - see stepAshore - hence atan2(x, z).
+  let yaw = 0, near = Infinity;
+  for (const row of state.fleet || []) {
+    if (!Array.isArray(row.origin)) continue;
+    const [x, z] = worldToScene(row.origin, state.homeOrigin || [0, 0]);
+    const d = Math.hypot(x, z);
+    if (d > 0 && d < near) { near = d; yaw = Math.atan2(x, z); }
+  }
+  const self = state.net && state.net.id();
+  // Every phone is handed the same free berth, so without a scatter the second one to
+  // arrive launches inside the first one's hull. Anywhere in the middle of it will do.
+  const x = (Math.random() - 0.5) * 24, z = (Math.random() - 0.5) * 24;
+  const craft = createBoat({ scene, material: buildingMat });
+  craft.place(x, z, yaw);
+  const b = { id: `boat:w-${self}`, x, z, yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: self, own: true };
+  state.boats.push(b);
+  if (state.net) state.net.launchBoat(b.id, x, z, yaw);
+  enterWalk({ at: [x, z], facing: [x + Math.sin(yaw) * 10, z + Math.cos(yaw) * 10], pitch: 0.12 });
+  takeBoat(b);
+}
+
+// A reconnect is a new player id, and the sea sank the skiff named after the old one when
+// that socket closed. Ours is put back in under the new name, where it floats now, and
+// handed straight back if we are not in it - a launch always comes with the tiller.
+function relaunchSkiff(self) {
+  const b = state.boats.find((x) => x.own);
+  if (!b || !state.net) return;
+  const aboard = state.walk && state.walk.aboard() === b;
+  b.id = `boat:w-${self}`;
+  b.pilot = self;
+  state.net.launchBoat(b.id, b.x, b.z, b.yaw);
+  if (aboard) { state.net.takeBoat(b.id); state.net.setRoom('boat', state.walk); }
+  else { state.net.dropBoat(b.id); b.pilot = null; }
 }
 
 function connect() {

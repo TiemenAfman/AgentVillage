@@ -391,6 +391,11 @@ export function createUI(handlers) {
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
+  // The app on a phone: on foot for good, so the ways up to the sky and into the planner
+  // go, and so does building. A class on body rather than `hidden`, because other setters
+  // (setWalking among them) hand some of these chips their `hidden` back later.
+  function setStandalone() { document.body.classList.add('standalone'); }
+
   // The Sound chip. `on` is what the person asked for, which is not the same as whether a
   // note is playing: a browser will not start an AudioContext until the page has been
   // touched, so somebody who left it on last time sees a lit chip a moment before they
@@ -749,7 +754,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setSound, buildEnabled: () => buildOn,
+    setSigns, setKeeper, setStandalone, setSound, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.

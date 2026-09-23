@@ -980,3 +980,27 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .plan-ops .small { font-size: 11px; }
 .plan-verdict { font-size: 11.5px; margin-bottom: 6px; min-height: 1.2em; }
 .plan-band { position: fixed; z-index: 9; pointer-events: none; border: 1px dashed var(--accent); background: rgba(232,180,92,.12); }
+
+/* The app on a phone (see setStandalone in web/js/ui.js and web/js/touchpad.js). */
+body.standalone #walk-btn, body.standalone #build-btn, body.standalone #plan-btn,
+body.standalone #reset-btn, body.standalone #found-btn,
+body.standalone #walk-keys, body.standalone #fabs, body.standalone #topright > .chips { display: none !important; }
+/* The chronicle replays *our* island's history, and on a phone there is no our: a thumb
+   brushing its slider took the borrowed island back in time and its houses with it. The
+   live dot and the counts belong to the same story. */
+body.standalone #chronicle, body.standalone #live-dot, body.standalone #founded,
+body.standalone #counts { display: none !important; }
+body.standalone .titlecard { min-width: 0; padding: 8px 12px; }
+/* Held sideways a phone is ~400px tall: the desktop's 180px circle at 152px ran into the
+   X button. Tucked up under the single chip row instead. */
+body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
+.touchpad { position: fixed; inset: 0; z-index: 1; touch-action: none; user-select: none; -webkit-user-select: none; }
+.tp-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); background: rgba(20,24,30,.18); pointer-events: none; }
+.tp-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,.55); transform: translate(-50%, -50%); }
+.tp-buttons { position: absolute; right: 18px; bottom: 30px; display: flex; gap: 14px; align-items: flex-end; }
+.tp-btn { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55);
+  background: rgba(20,24,30,.35); color: #fff; font: 600 20px/1 system-ui, sans-serif; touch-action: none; }
+.tp-btn[data-b="X"] { margin-bottom: 44px; }
+.tp-btn.on { background: rgba(232,180,92,.6); }

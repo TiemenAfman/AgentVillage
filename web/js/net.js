@@ -43,7 +43,7 @@ const UI_PER_BEAT = 2;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  name = null, frame = () => [0, 0] } = {}) {
+  onWelcome = () => {}, name = null, frame = () => [0, 0] } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
   // Where the sea says our island lies, in the sea's own frame. The page draws its own
@@ -149,6 +149,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           // Wherever the boats have got to. An untouched one is not in here: both
           // sides derive its mooring from the island (shared/quay.mjs).
           for (const b of m.boats || []) boatIn(b);
+          // Last, so everything the welcome carried is already in place. A new socket is
+          // a new player id, and anything named after the old one - a skiff - is gone.
+          onWelcome(m.id);
           break;
         case 'join': peers.join(m.p); break;
         case 'leave': peers.leave(m.id); break;
@@ -318,6 +321,13 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     takeBoat(id) {
       hullSent.id = null;
       send({ t: 'boat', a: 'take', id });
+    },
+    // A skiff into the water, for a player with no island and so no mooring (the app on a
+    // phone). The sea names it after this socket and hands us its tiller - lib/boats.mjs.
+    launchBoat(id, x, z, yaw) {
+      hullSent.id = null;
+      const [wx, wz] = outgoing(x, z);
+      send({ t: 'boat', a: 'launch', id, x: wx, z: wz, yaw });
     },
     // Mooring her. The pending position goes first: the last beat may be ninety
     // milliseconds old, which at nine and a half units a second is most of a boat's

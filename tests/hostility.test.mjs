@@ -18,8 +18,8 @@ function setup() {
   const p = { id: 'visitor', island: 'home', walking: true, x: -76, y: 1, z: 20, f: 0 };
   const evictions = [];
   let boats = [];
-  const roster = { all: () => [p], boats: { snapshot: () => boats }, evict(player, at, name) {
-    evictions.push({ at, name }); [player.x, player.y, player.z] = at;
+  const roster = { all: () => [p], boats: { snapshot: () => boats }, evict(player, at, name, boat) {
+    evictions.push({ at, name, ...(boat ? { boat } : {}) }); [player.x, player.y, player.z] = at;
   } };
   const hostility = createHostility({ fleet: { all: () => [...islands.values()], get: id => islands.get(id) },
     crowds: { get: id => id === 'enemy' ? crowd : null }, roster, now: () => time });
@@ -60,4 +60,24 @@ test('eviction updates the authoritative player and sends a private respawn mess
   roster.evict(p, [110, 2, -20], 'Codex');
   assert.deepEqual([p.x, p.y, p.z, p.room, p.f], [110, 2, -20, null, 0]);
   assert.deepEqual(messages.at(-1), { t: 'evicted', x: 110, y: 2, z: -20, island: 'Codex' });
+});
+
+// A wanderer - the app on a phone - has no island to be sent home to, so the sea sends
+// them back to their own skiff instead, and names it so the page climbs straight in.
+test('a wanderer is caught and put back in their own skiff', () => {
+  const s = setup();
+  s.p.island = null;
+  s.boats([{ id: 'boat:w-visitor', x: -120, z: 60, yaw: 0, pilot: null }]);
+  for (let i = 0; i < 120 && !s.evictions.length; i++) s.tick();
+  assert.equal(s.evictions.length, 1, 'a wanderer with a skiff was never caught');
+  assert.deepEqual(s.evictions[0], { at: [-120, 0, 60], name: 'Codex', boat: 'boat:w-visitor' });
+});
+
+test('a wanderer with no skiff has nowhere to be sent and is left alone', () => {
+  const s = setup();
+  s.p.island = null;
+  s.boats([{ id: 'boat:w-somebody-else', x: -120, z: 60, yaw: 0, pilot: null }]);
+  for (let i = 0; i < 20; i++) s.tick();
+  assert.equal(s.f.chartered, false);
+  assert.equal(s.evictions.length, 0);
 });

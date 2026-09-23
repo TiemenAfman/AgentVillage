@@ -176,6 +176,12 @@ export function makeTerrain(seed, opts) {
   const size = (opts && opts.size) || 64;
   const polders = (opts && opts.polders) || [];
   const fairway = (opts && opts.fairway) || null;
+  // No island at all: every corner open sea. For a page that stands in a world without an
+  // island of its own - the app on a phone, whose "home" is a free berth of water - so the
+  // page's one home-at-the-origin drawing path still has a terrain to draw, and it draws
+  // exactly the sea around it. Absent for every real island, which therefore hashes as
+  // it always did.
+  const open = !!(opts && opts.open);
   const N = size + 1, half = size / 2;
   let H = new Float64Array(N * N);
   const nShape = makeSimplex2D(hash32(seed + ':shape'));
@@ -286,6 +292,8 @@ export function makeTerrain(seed, opts) {
     for (const c of p.pools || []) setCell(c[0], c[1], POLDER_H);
     for (const c of p.dike || []) setCell(c[0], c[1], DIKE_H);
   }
+
+  if (open) H.fill(-2.5);
 
   const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
   const corner = (i, j) => H[clamp(i, 0, size) + clamp(j, 0, size) * N];

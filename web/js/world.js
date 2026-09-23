@@ -790,6 +790,13 @@ export function createLandscape({
   // the scene entirely when it has not, rather than added empty.
   const bushMesh = bush ? new THREE.InstancedMesh(bush.geo, bush.mats, Math.max(1, bushes.length)) : null;
   const slabMesh = slab ? new THREE.InstancedMesh(slab.geo, slab.mats, Math.max(1, terrain.coastCells.length)) : null;
+  // Math.max(1, …) keeps each buffer allocatable, but an empty list must still draw nothing:
+  // left at count 1, its one untouched identity instance stood a tree on the origin - seen
+  // on the open-sea home a phone stands on, which has no land to grow anything on at all.
+  for (const [m, n] of [[pineMesh, pines.length], [oakMesh, oaks.length], [rockMesh, rocks.length],
+    [grassMesh, tufts.length], [bushMesh, bushes.length], [slabMesh, terrain.coastCells.length]]) {
+    if (m && !n) m.count = 0;
+  }
   for (const m of [bushMesh, slabMesh]) {
     if (!m) continue;
     m.castShadow = true;
@@ -1668,7 +1675,10 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const dl = Math.hypot(x - terrain.lakeCentre[0], z - terrain.lakeCentre[1]);
     return dl < 9 || (terrain.heightAt(gx, gz) > 0.6 && terrain.heightAt(gx, gz) < 2.6);
   });
-  const pool = nearWater.length > 40 ? nearWater : terrain.landCells;
+  // A terrain with no land at all (the open-sea home a phone stands on) still gets its
+  // points, one cell's worth under the water where nobody sees them, rather than a
+  // pick from an empty list taking the whole world down with it.
+  const pool = nearWater.length > 40 ? nearWater : terrain.landCells.length ? terrain.landCells : [[0, 0]];
   const FF = 190;
   const ffPos = new Float32Array(FF * 3);
   const ffCol = new Float32Array(FF * 3);

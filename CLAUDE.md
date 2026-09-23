@@ -628,6 +628,26 @@ the builder. Pitfall: a `cargo build` that fails reading permissions from a path
 longer exists is a stale build-script cache — `cargo clean -p tauri -p tauri-build -p
 promptholm` in `src-tauri/`, not a full clean.
 
+## The phone
+
+`src-android/` is its own Tauri crate, and the one place `web/` *is* bundled: a phone has no
+islander, so none of the desktop's reasons apply ([Plans/eiland-op-android.md](Plans/eiland-op-android.md)).
+`npm run android:pack` copies `web/` + `shared/` to `src-android/dist/` and writes
+`window.PROMPTHOLM_STANDALONE = { sea, key }` into that copy's head — the sea's key
+included, so the APK carries it in plain text. `STANDALONE` in `web/js/api.js` makes
+`mine()` refuse without fetching (the app origin answers every path, and a 404 "from the
+islander" is the keeper's mode); the page then has no island at all: home is a free berth of water (`nextOrigin`, drawn on
+`makeTerrain(…, { open: true })`, which is sea edge to edge), the body joins as a wanderer
+(`island: null`; a hostile island that catches it sends it back to its skiff instead of a
+square, the boat's id in `evicted`), it starts in a *skiff* - a boat with no mooring, `boat:w-<player id>`, which the
+sea makes on `launch`, lets only its owner sail and sinks when that socket closes
+(`lib/boats.mjs`; relaunched under the new id on every welcome) - never leaves walk mode, and is
+driven by `web/js/touchpad.js`, which polls like a gamepad so walk.js needs no touch code.
+`npm run android:apk` builds a debug-signed arm64 APK; it needs JDK **21** (the template's
+Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To try the
+page without a phone, serve `src-android/dist/` from any static server — that origin has no
+islander behind it either.
+
 ## Layout of the source
 
 | | |
