@@ -563,6 +563,12 @@ a pack without founding a second island. The islander runs `setup.mjs --first-ru
 HOME has no config.json (leaves an existing hook alone, since it may be a checkout's), tells
 the user in a message box when there is no node, and leaves the folder it ran from in
 `%LOCALAPPDATA%\Promptholm\checkout.txt` so a stray exe elsewhere can still find the island.
+Pitfall when testing this from a Claude desktop session: that app is an MSIX package, and
+Windows redirects every AppData write by it *and by anything it starts* (the exes included)
+to `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\`. The session sees a merged view, so the
+folder looks written; Explorer and an exe started by the user do not see it at all. Test
+AppData behaviour with `PROMPTHOLM_HOME` pointed at a real folder, or let the user start the
+exe. Shortcuts made through the `WScript.Shell` COM object are not redirected.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
 starts the islander exe next to it (node directly when that exe is missing).
 **The islander outlives the window, and there is never more than

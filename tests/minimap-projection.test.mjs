@@ -81,3 +81,41 @@ test('the chart fits every island in, north up, one scale for both axes', async 
   assert.ok(Math.abs(wx - 17) < 1e-9 && Math.abs(wz + 5) < 1e-9, 'toWorld inverts toPx');
   assert.equal(nx, sx);
 });
+
+// What the chart puts on an island, off a village and the region's own cellWorld. A guest
+// bundle has no district parcels, so a hamlet is found by its centre - which this is.
+import { islandFeatures, LANDMARKS } from '../web/js/minimap.js';
+
+test('islandFeatures names the hamlets, counts their houses and finds the landmarks and roads', () => {
+  const origin = [300, 0];
+  const cellWorld = (gx, gz) => [gx - 4 + origin[0], gz - 4 + origin[1]];   // an 8-cell island
+  const village = {
+    island: { town: { centre: [4, 4], paved: [[4, 4], [5, 4]] } },
+    districts: [{ id: 'd1', name: 'Hawk', center: [1, 2] }, { id: 'd2', name: 'No centre' }],
+    buildings: [
+      { id: 'house:a', kind: 'house', district: 'd1' },
+      { id: 'house:b', kind: 'house', district: 'd1' },
+      { id: 'shed:a:1', kind: 'shed', district: 'd1' },
+      { id: 'civic:lighthouse', kind: 'civic', plot: { gx: 7, gz: 0, w: 1, d: 1 } },
+      { id: 'civic:lamp:1', kind: 'civic', plot: { gx: 3, gz: 3, w: 1, d: 1 } },
+    ],
+    paths: [{ id: 'path:1', cells: [[0, 0], [1, 0], [99, 99]] }],
+    bridges: [{ id: 'civic:bridge', cells: [[6, 6], [6, 7]] }],
+  };
+  const f = islandFeatures(village, cellWorld, 8);
+  assert.deepEqual(f.hamlets, [{ id: 'd1', name: 'Hawk', houses: 2, x: 297, z: -2 }]);
+  assert.equal(f.houses, 2);
+  const kinds = f.landmarks.map((l) => `${l.kind}:${l.label}`).sort();
+  assert.deepEqual(kinds, ['bridge:Bridge', 'lighthouse:Lighthouse', 'square:Town square']);
+  assert.ok(!('civic:lamp:1' in LANDMARKS), 'a lamp is not a landmark');
+  const road = (gx, gz) => f.roads[gx + gz * 8];
+  assert.equal(road(1, 0), 1);
+  assert.equal(road(5, 4), 1, 'the paved square counts as road');
+  assert.equal(road(6, 7), 1, 'and so does a bridge');
+  assert.equal(road(2, 2), 0);
+});
+
+test('islandFeatures survives a village with nothing in it', () => {
+  const f = islandFeatures({}, (gx, gz) => [gx, gz], 4);
+  assert.deepEqual([f.hamlets, f.landmarks, f.houses], [[], [], 0]);
+});
