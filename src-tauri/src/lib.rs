@@ -1,8 +1,8 @@
 // The island as its own window.
 //
 // This is a shell, not a second viewer. The window is a WebView2 pointed at the islander
-// that is already the island - http://localhost:4747/ - exactly as start-island-app.cmd
-// points Chrome at it. Nothing under web/ is bundled, built or copied: the page keeps its
+// that is already the island - http://localhost:4747/ - exactly as Chrome's --app window
+// shows it. Nothing under web/ is bundled, built or copied: the page keeps its
 // import map, api.js keeps working out `mine()` from its own URL, and lib/access.mjs sees a
 // loopback socket with a matching Host and Origin, the same as from any browser. Bundling
 // web/ into the app was the scaffold's default and would have broken all three of those at
@@ -14,6 +14,7 @@
 // nothing answers, waits, and then navigates the same webview to the island. From then on
 // the page is on its own and this side only has two jobs left: sending links to other sites
 // to the system browser, and keeping the window itself on the island.
+#[allow(dead_code)] // shared with the islander exe, which uses the other half of it
 mod island;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,8 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 /// Tauri's own default (the msWebOOUI/msPdfOOUI/msSmartScreenProtection set) has to be
 /// repeated here, because `additional_browser_args` replaces it rather than adding to it.
-/// --force-high-performance-gpu is start-island-app.cmd's flag for the same reason it is
-/// there: on a laptop with two graphics cards Chromium picks the integrated one to save
+/// --force-high-performance-gpu because on a laptop with two graphics cards Chromium picks the integrated one to save
 /// power, and on this machine that is the card whose driver keeps falling over.
 const BROWSER_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force-high-performance-gpu";
@@ -112,7 +112,7 @@ fn bring_up(app: AppHandle) {
             } else {
                 fail(format!(
                     "Nothing is listening on port {}, and this window does not know where the \
-                     island's folder is. Start the island yourself (start-island.cmd), or set \
+                     island's folder is. Start the island yourself (promptholm-island.exe), or set \
                      SETTLERS_ROOT to the checkout and try again.",
                     plan.port
                 ));

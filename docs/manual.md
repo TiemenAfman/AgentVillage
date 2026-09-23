@@ -11,40 +11,41 @@ you are looking at. This is the rest.
 | Who is on it | [Starting a session](#starting-a-new-session-from-the-island) · [Inviting one](#inviting-a-session-that-already-exists) · [Sending one away](#sending-a-settler-away) · [Visitors and neighbours](#visitors-and-neighbours) |
 | How it is built | [How the village grows](#how-the-village-grows) · [Where the data comes from](#where-the-data-comes-from) · [The model sheet](#the-model-sheet) · [The workbench](#the-workbench) · [Layout](#layout) |
 
-## Every morning at 07:30
+## Running the island
 
-A Windows scheduled task called **Promptholm island** starts the server each morning, so
-the village is already up and scanning when you sit down. It runs
-`start-island-hidden.vbs`, which launches the server with no console window. If the
-island is already running it notices the port is taken and exits quietly, so it can
-never start a second copy.
+The island is two programs, built together from `src-tauri/` by `npm run app:build` into
+`src-tauri/target/release/` (`npx tauri build --debug --no-bundle` for the debug pair in
+`src-tauri/target/debug/`). There is no installer: both find the checkout they were built
+from, which is where `serve.mjs` and `data/` are.
 
 | | |
 |---|---|
-| Stop the island | `stop-island.cmd` |
-| Change the time or the days | Task Scheduler, or `Set-ScheduledTrigger` on `Promptholm island` |
-| Turn the schedule off | `Unregister-ScheduledTask -TaskName "Promptholm island"` |
+| `promptholm-island.exe` | **The islander**: runs `serve.mjs` - the scan, the sea, the mail, the agents - with a tray icon and no window. The tray menu opens the island, stops, starts and restarts it, and shows its log; **Quit** stops the island with it. |
+| `agentvillage.exe` | **The window**: the island's page in a window of its own (Tauri, WebView2). Starts the islander if nothing is listening; closing it leaves the island running. |
+
+There is only ever one islander per port - a second copy notices the first and exits - and
+an island started some other way (`npm run dev`, `node serve.mjs`) is taken over by the
+tray rather than started twice. Without Rust, `npm run dev` is the whole island in a
+terminal: ctrl+C stops it.
+
+| | |
+|---|---|
+| Stop the island | Tray → **Stop the island**, or `taskkill /f /im promptholm-island.exe` |
+| Start it at logon | A shortcut to `promptholm-island.exe` in `shell:startup` |
 
 ### As a window of its own
 
-`start-island-app.cmd` opens the island in a Chrome window without tabs or an address bar,
-starting the server first if it is not up. `npm run app` does the same with a window that
-is the island's own (Tauri, WebView2; `npm run app:build` makes an installer). Both show the
-very same page from the very same server - nothing is copied or bundled - and both leave the
-server running when the window closes, since the scan, the mail and the agents live there
-and not in the window. If nothing is listening the app starts `serve.mjs` itself, with its
-output in `data/server.log` like the scheduled task, and shows what it is doing while it
+`agentvillage.exe` (or `npm run app`, which builds it and runs it) shows the very same page
+from the very same server - nothing is copied or bundled - and leaves the server running
+when the window closes, since the scan, the mail and the agents live there and not in the
+window. If nothing is listening it starts the islander itself, with its output in
+`data/server.log`, and shows what it is doing while it
 waits. Links to Jira, GitHub or a repository open in your browser rather than in the window.
 
 The server listens on 127.0.0.1 only and refuses requests whose Origin is not the island
  itself, because it can start unattended agents in any folder on this machine. Opening it
 to other people is possible and deliberate; [Visitors and neighbours](#visitors-and-neighbours)
 says what that does and does not give away.
-
-The task runs as you and only when you are logged on, and it catches up if the machine
-was off at 07:30. It does not open a browser; go to http://localhost:4747 when you want
-to look. Add `--open` to the `sh.Run` line in the .vbs if you would rather it opened
-itself.
 
 ## Walking the island
 
