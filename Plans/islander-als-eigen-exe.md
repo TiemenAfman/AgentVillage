@@ -15,7 +15,7 @@ Twee exe's uit dezelfde crate (`src-tauri`), één build:
 | exe | rol |
 |---|---|
 | `promptholm-island.exe` | **de islander**: start `node serve.mjs --supervised`, tray-icoon, geen venster, geen WebView |
-| `agentvillage.exe` | **de interface**: WebView2 op `http://localhost:<port>/`, verder niets |
+| `promptholm.exe` | **de interface**: WebView2 op `http://localhost:<port>/`, verder niets |
 
 - De islander-exe *is* de islander: zijn leven is dat van node. Hij houdt node's stdin open;
   `--supervised` laat `serve.mjs` netjes `shutdown()` doen als die pipe dichtgaat. Stop via de

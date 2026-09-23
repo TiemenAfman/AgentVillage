@@ -1,7 +1,7 @@
 """Run with Blender --background --python scripts/build-settler.py.
 
 Editable Blender source and a compact, colour-slot mesh for the synchronous avatar API.
-Coordinates in the modelling helpers are AgentVillage's: Y up, facing +Z.
+Coordinates in the modelling helpers are Promptholm's: Y up, facing +Z.
 """
 import bpy
 import json
@@ -241,5 +241,5 @@ bpy.ops.object.select_all(action='DESELECT')
 parts[0].select_set(True)
 bpy.context.view_layer.objects.active = parts[0]
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-settler.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-settler.blend'))
 bpy.ops.render.render(write_still=True)

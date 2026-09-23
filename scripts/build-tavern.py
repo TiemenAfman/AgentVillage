@@ -158,5 +158,5 @@ scene.render.filepath=str(OUT/'tavern-preview.png')
 bpy.context.preferences.filepaths.save_version=0
 for area in bpy.context.screen.areas:
     if area.type=='VIEW_3D':area.spaces.active.region_3d.view_perspective='CAMERA'
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'agentvillage-tavern.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'promptholm-tavern.blend'))
 bpy.ops.render.render(write_still=True)

@@ -28,7 +28,7 @@ npm run models                     # bake every Blender set and check it (needs 
 npm run models -- props            # bake one set
 npm run models:preview             # render assets/<set>/renders/<asset>.png
 npm run app                        # build the islander, then run the window (tauri dev; needs Rust)
-npm run app:build                  # promptholm-island.exe + agentvillage.exe in src-tauri/target/release/
+npm run app:build                  # promptholm-island.exe + promptholm.exe in src-tauri/target/release/
 git tag v0.2.0 && git push origin v0.2.0   # release: .github/workflows/release.yml builds both exes on
                                    # windows-latest and attaches promptholm-windows-x64.zip; the tag must
                                    # equal "version" in src-tauri/tauri.conf.json or the job stops
@@ -422,6 +422,11 @@ The same key also guards `/island/:id` and `/island/:id/parcel`, not only the so
 this an islander refused at the handshake still parked its bundle over HTTP under a token
 that outlived the refusal, for good.
 
+The islander's own line (`lib/seaclient.mjs`) gives up only on `version` and `key`;
+`claimed` and `full` are waited out with backoff. `claimed` is what every islander restart
+meets — the previous process's claim sits out `GRACE_MS` — and giving up on it left the
+island HTTP-only: "keeper away", swept, back on the next changed scan, gone again.
+
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
 from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
@@ -533,7 +538,7 @@ fetches the running islander live, the same page a browser tab would get, and a 
 the window (or the same server restart a server-side change already needs) is all it takes.
 Only a change under `src-tauri/` itself - the splash, the port probing, window behaviour,
 the icon - needs a rebuild. **Two exes from one crate** ([Plans/islander-als-eigen-exe.md](Plans/islander-als-eigen-exe.md)):
-`agentvillage.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
+`promptholm.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
 tray-icon + tao directly, no Tauri, no WebView) *is* the islander — it starts
 `node serve.mjs --no-open --supervised` as its child, output appended to `data/server.log`,
 and keeps a tray icon (open / browser / stop-start / restart / log / quit). `--supervised`
@@ -562,7 +567,7 @@ tells a stray exe where the checkout is. The window is built in Rust, not declar
 `--disable-features=…`, so that has to be repeated) and the two navigation hooks only exist on
 the builder. Pitfall: a `cargo build` that fails reading permissions from a path that no
 longer exists is a stale build-script cache — `cargo clean -p tauri -p tauri-build -p
-agentvillage` in `src-tauri/`, not a full clean.
+promptholm` in `src-tauri/`, not a full clean.
 
 ## Layout of the source
 
@@ -591,6 +596,12 @@ terms ("Zet de kerk op de maat van het stadhuis"), with the reasoning in the bod
 is any. Code, comments and documentation are in English. Comments carry the *why* — which
 alternative was tried, what broke, which number this is the only copy of — and the existing
 files set a high bar for that; match it rather than stripping it back.
+
+The product is **Promptholm** everywhere: the npm package, the crate, both exes
+(`promptholm.exe`, `promptholm-island.exe`), the `.blend` sources, titles and log prefix. The
+exceptions are deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming
+it is the owner's call), `AgentVillage.freeddns.org` is a real hostname, and the `SETTLERS_*`
+variables below are what existing machines already have set.
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,

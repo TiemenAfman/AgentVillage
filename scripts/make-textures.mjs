@@ -303,4 +303,4 @@ for (const [name, make] of Object.entries(SHEETS)) {
   fs.writeFileSync(f, make());
   wrote.push(`${name}.png (${Math.round(fs.statSync(f).size / 1024)} kB)`);
 }
-process.stderr.write(`[settlers] wrote ${wrote.join(', ')}\n`);
+process.stderr.write(`[promptholm] wrote ${wrote.join(', ')}\n`);

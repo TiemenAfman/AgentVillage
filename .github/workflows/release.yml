@@ -57,10 +57,13 @@ jobs:
         run: |
           $name = 'promptholm-windows-x64'
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item src-tauri/target/release/promptholm-island.exe, src-tauri/target/release/agentvillage.exe $name
+          Copy-Item src-tauri/target/release/promptholm-island.exe, src-tauri/target/release/promptholm.exe $name
           Copy-Item src-tauri/release-readme.txt "$name/README.txt"
           Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
-          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Set-Content "$name.zip.sha256" -Encoding ascii
+          # WriteAllText and a bare \n: Set-Content ends the line in CRLF, and `sha256sum -c`
+          # then looks for a file whose name ends in \r (v0.1.0 shipped like that).
+          $line = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip`n"
+          [IO.File]::WriteAllText("$PWD/$name.zip.sha256", $line)
 
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')

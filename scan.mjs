@@ -202,7 +202,7 @@ async function runScan(o) {
   if (plan) result.plan = { ...plan, terrain: undefined, unplaced: plan.unplaced };
   if (!o.quiet) {
     process.stderr.write(
-      `[settlers] ${result.settlers} settlers, ${result.apprentices} apprentices, ${result.districts} districts` +
+      `[promptholm] ${result.settlers} settlers, ${result.apprentices} apprentices, ${result.districts} districts` +
       ` | ${result.changedFiles}/${result.files} transcripts read | ${result.ms} ms` +
       (result.unplaced ? ` | ${result.unplaced} unplaced` : '') + `\n`,
     );
@@ -548,13 +548,13 @@ if (invokedDirectly) {
   const filledIn = fillConfig();
   if (filledIn.added.length) {
     const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
-    process.stderr.write(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}\n`);
+    process.stderr.write(`[promptholm] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}\n`);
   }
   const o = parseArgs(process.argv.slice(2));
   scan(o).then((r) => {
-    if (r && r.skipped) process.stderr.write(`[settlers] skipped: ${r.reason}\n`);
+    if (r && r.skipped) process.stderr.write(`[promptholm] skipped: ${r.reason}\n`);
   }).catch((e) => {
-    process.stderr.write(`[settlers] scan failed: ${e && e.stack ? e.stack : e}\n`);
+    process.stderr.write(`[promptholm] scan failed: ${e && e.stack ? e.stack : e}\n`);
     process.exit(1);
   });
 }

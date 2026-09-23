@@ -9,20 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "agentvillage"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tao",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tray-icon",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2702,6 +2688,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "promptholm"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tao",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tray-icon",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

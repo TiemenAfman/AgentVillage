@@ -49,7 +49,7 @@ const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1
 const filledIn = fillConfig();
 if (filledIn.added.length) {
   const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
-  console.log(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}`);
+  console.log(`[promptholm] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}`);
 }
 
 const config = loadConfig();
@@ -357,7 +357,7 @@ async function rescan(reason, opts = {}) {
   const job = async () => {
     let r = null;
     try { r = await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
-      process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
+      process.stderr.write(`[promptholm] rescan failed (${reason}): ${e && e.message}\n`);
     }
     // The Codex neighbour rides in the same queue slot: its own layout and lock, so it
     // never touches ours, but a scan per job keeps the two islands a minute apart at most.
@@ -1077,7 +1077,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
 
     try {
       const r = dispatch({ issue, settler, cwd: settler.cwd, dryRun: !!dryRun, wording, source: from });
-      process.stderr.write(`[settlers] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
+      process.stderr.write(`[promptholm] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
       setTimeout(() => rescan('assignment'), 1500);
       return json(res, 202, r);
     } catch (e) {
@@ -1409,7 +1409,7 @@ function watchData() {
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    process.stderr.write(`[settlers] the island is already being served at http://localhost:${PORT}\n`);
+    process.stderr.write(`[promptholm] the island is already being served at http://localhost:${PORT}\n`);
     if (OPEN) openBrowser(`http://localhost:${PORT}/`);
     process.exit(0);
   }
@@ -1606,7 +1606,7 @@ async function putToSea() {
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
-  process.stderr.write(`[settlers] ${islandNameOf(config)} is at http://localhost:${PORT}/\n`);
+  process.stderr.write(`[promptholm] ${islandNameOf(config)} is at http://localhost:${PORT}/\n`);
   checkVendor();
   if (access.open) {
     log(`the island is OPEN. Visitors can reach it at:`);

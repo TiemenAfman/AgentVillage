@@ -1,6 +1,6 @@
 # house dwelling
 
-Editable source: agentvillage-house.blend. Bake with npm run models -- house.
+Editable source: promptholm-house.blend. Bake with npm run models -- house.
 Rebuild from design.json with Blender scripts/build-dwelling.py -- house;
 rebuilding replaces hand edits. Roof, chimney and yard remain independent pieces.
 The complete dwelling can be inspected at /dwellings.html?tier=house.

@@ -151,6 +151,20 @@ fn open_elsewhere(url: &Url) {
     }
 }
 
+/// The window's WebView2 profile lives under %LOCALAPPDATA%\<identifier>, and the
+/// identifier used to be com.agentvillage.island. Everything the page keeps in localStorage
+/// - the avatar, the sound, the board filters, a half-drawn plan - is in there, so a
+/// renamed identifier would open on a stranger's island. Moved once, before WebView2 has a
+/// chance to create the new folder empty; if the new one already exists it is left alone.
+fn carry_over_webview_data() {
+    let Some(base) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
+    let old = base.join("com.agentvillage.island");
+    let new = base.join("com.promptholm.island");
+    if old.is_dir() && !new.exists() {
+        let _ = std::fs::rename(&old, &new);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // A second copy of this exe, started by the first to start node and get out of the way.
@@ -158,6 +172,8 @@ pub fn run() {
     if island::spawn_if_asked() {
         return;
     }
+
+    carry_over_webview_data();
 
     let plan = island::plan();
     let own_host = Url::parse(&plan.url)

@@ -2,7 +2,7 @@
 
     blender --background --python scripts/build-rail.py
 
-It writes assets/rail/agentvillage-rail.blend and bakes it to web/js/rail-mesh.js.
+It writes assets/rail/promptholm-rail.blend and bakes it to web/js/rail-mesh.js.
 Running it again replaces both, so edits made by hand in the .blend are lost - export
 those with `npm run models` instead.
 
@@ -207,5 +207,5 @@ for loc, power, size in [((-1.3, -1.9, 2.2), 150, 2.0), ((1.6, -.6, 1.3), 60, 1.
     aim(o, (0, 0, .2))
 
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-rail.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-rail.blend'))
 runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'rail'})

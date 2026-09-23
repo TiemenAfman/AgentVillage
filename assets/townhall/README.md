@@ -1,6 +1,6 @@
 # Town hall
 
-`agentvillage-townhall.blend` is the editable source. It shares the tavern's
+`promptholm-townhall.blend` is the editable source. It shares the tavern's
 plaster, oak, terracotta and warm window materials, with a patinated bell dome,
 civic crest and double entrance doors.
 

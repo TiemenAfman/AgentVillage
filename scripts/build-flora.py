@@ -2,7 +2,7 @@
 
     blender --background --python scripts/build-flora.py
 
-It writes assets/flora/agentvillage-flora.blend and bakes it to web/js/flora-mesh.js.
+It writes assets/flora/promptholm-flora.blend and bakes it to web/js/flora-mesh.js.
 Running it again replaces both, so edits made by hand in the .blend are lost - export
 those with `npm run models` instead.
 
@@ -352,5 +352,5 @@ for loc, power, size in [((-2.2, -3.2, 4.0), 700, 3.0), ((2.8, -1.2, 2.2), 260, 
     aim(o, (0, 0, .55))
 
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-flora.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-flora.blend'))
 runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'flora'})

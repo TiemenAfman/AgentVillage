@@ -3,7 +3,7 @@ Promptholm for Windows - the islander and the viewer
 
   promptholm-island.exe   the islander: runs the island's server (serve.mjs) with a tray icon
                           to open, stop, restart and quit it
-  agentvillage.exe        the viewer: the island in a window of its own; starts the islander
+  promptholm.exe          the viewer: the island in a window of its own; starts the islander
                           if nothing is running
 
 These are not the whole island. They run the checkout they are unpacked into, so you need:

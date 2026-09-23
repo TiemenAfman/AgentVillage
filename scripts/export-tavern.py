@@ -2,7 +2,7 @@
 this is the name scripts/build-tavern.py reaches for, and the name in the README for
 exporting edits made by hand:
 
-    blender assets/tavern/agentvillage-tavern.blend --background --python scripts/export-tavern.py
+    blender assets/tavern/promptholm-tavern.blend --background --python scripts/export-tavern.py
 """
 import runpy
 from pathlib import Path

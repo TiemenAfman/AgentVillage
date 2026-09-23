@@ -1,6 +1,6 @@
 // The islander as a program of its own: `node serve.mjs`, kept, with a tray icon to hold it by.
 //
-// The window (agentvillage.exe) is the interface and nothing else; this is the island. It
+// The window (promptholm.exe) is the interface and nothing else; this is the island. It
 // has no window and no WebView - a tray icon, a menu, and node as its child. Its life is
 // node's life: node's stdin is a pipe this process holds, and `serve.mjs --supervised` shuts
 // down cleanly when that pipe closes, so Stop is polite, Quit takes the island with it, and
@@ -29,7 +29,7 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 /// The window's exe, which stands next to this one.
-const WINDOW_EXE: &str = "agentvillage.exe";
+const WINDOW_EXE: &str = "promptholm.exe";
 
 /// How often the tray looks at the island: is our node still alive, is the port answering.
 const POLL: Duration = Duration::from_secs(2);
