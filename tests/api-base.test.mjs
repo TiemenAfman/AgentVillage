@@ -146,9 +146,9 @@ test('shared/ is reached through the import map, never by climbing out', () => {
 });
 
 // The sea's whole surface, named. It was guessed at when api.js was written - before there
-// was a sea to ask - and /api/neighbours went to it and came back 404, because the UDP
-// beacon lives on the machine with the network interfaces on it. Now that lib/sea.mjs
-// exists the line is exact, and worth pinning: anything under /api/ is the islander's.
+// was a sea to ask - and an /api/ route went to it and came back 404, because it lived on
+// the islander. Now that lib/sea.mjs exists the line is exact, and worth pinning:
+// anything under /api/ is the islander's.
 test('only the world goes to the sea', () => {
   const offenders = [];
   for (const name of fs.readdirSync(WEBJS)) {

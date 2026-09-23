@@ -21,10 +21,9 @@ import {
   mailView, saveAccount, removeAccount, check as checkAccount, inbox, readMessage, setFlag, send as sendMail,
 } from './lib/mail.mjs';
 import { rememberPlayer, whereIsPlayer } from './lib/player.mjs';
-import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge, currentBranch } from './lib/git.mjs';
+import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitTools, openIn, isRepo, branches as gitBranches, merge as gitMerge } from './lib/git.mjs';
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
-import { createNeighbours } from './lib/neighbours.mjs';
 import { guestVillage } from './lib/guestview.mjs';
 import { buildBundle, parseBundle, packParcel, beaconId } from './lib/islandbundle.mjs';
 import { createSea } from './lib/sea.mjs';
@@ -156,7 +155,6 @@ function shutdown(why) {
   try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
   try { codexClient && codexClient.close(); } catch { /* same process, separate island */ }
   try { ownSea && ownSea.close(); } catch { /* and so does the sea, if it was ours */ }
-  try { neighbours && neighbours.stop(); } catch { /* the beacon dies with us regardless */ }
   const stopped = stopAllAgents();
   const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
   log(`stopping on ${why}${tail}`);
@@ -422,57 +420,10 @@ const whoFor = (req) => {
 
 
 
-// Who else is out there. Only the keeper is told: a list of the other machines on your
-// network is not a visitor's to read, so the event goes to local listeners only.
+// The name this islander goes by on the sea, and on the Codex island it keeps.
 const islanderName = config.multiplayer.name || (() => {
   try { return os.userInfo().username; } catch { return os.hostname(); }
 })();
-// An island answering on a port of its own is somebody's working copy rather than the
-// island of this machine -- `--port`, PORT in the environment and autoPort in
-// launch.json all end up here -- and it says so on the horizon, with the branch it is
-// serving. Two Promptholms in the distance are then two pieces of work you can tell
-// apart, instead of a nameless twin of your own island.
-//
-// Read once, in the background: a beacon goes out every five seconds and none of them
-// deserves to shell out to git, and a server does not change branch under its own feet.
-const devPort = PORT !== Number(config.port || 4747);
-let devLabel = devPort ? 'development' : null;
-if (devPort) currentBranch(ROOT).then((b) => { devLabel = workLabel(b) || devLabel; }).catch(() => {});
-
-// The branches here are named <kind>/<issue>-<slug>, so `feature/25-dev-eiland-label`
-// reads back as `#25 dev-eiland-label`. Anything not in that shape is shown as it is.
-function workLabel(branch) {
-  if (!branch) return null;
-  const m = /^[^/]+\/(\d+)-(.+)$/.exec(branch);
-  return m ? `#${m[1]} ${m[2]}` : branch;
-}
-
-const neighbours = config.multiplayer.discovery ? createNeighbours({
-  port: PORT,
-  name: islanderName,
-  // A function, like sea() below and for the same reason: hosting renames this island
-  // (see islandNameOf), /api/sea can start hosting at any moment, and a beacon that
-  // captured the name at construction would shout the old one for the rest of the run.
-  islandName: () => islandNameOf(config),
-  seed: config.seed,
-  gridSize: config.gridSize,
-  announcing: access.open,
-  // Only a sea anybody else can actually reach. Single player's sea is on loopback, so
-  // shouting about it across the network would put an address in everybody's server list
-  // that resolves, on their machine, to their own browser.
-  sea: () => {
-    if (!ownSea || (config.multiplayer.sea || {}).mode !== 'host') return null;
-    const addr = ownSea.address();
-    return addr ? { sea: addr.port, seaName: seaNameOf(config) } : null;
-  },
-  settlers: () => {
-    const v = readJson(VILLAGE_FILE, null);
-    return (v && v.buildings ? v.buildings.filter((b) => b.kind !== 'civic').length : 0);
-  },
-  dev: () => devLabel,
-  log,
-  onChange: (list) => broadcast({ neighbours: list }, 'neighbours', { localOnly: true }),
-}) : null;
 
 // Why a sea did not answer, in words a row in the menu can say. Node's own message for
 // everything under the HTTP layer is the bare "fetch failed", which tells a reader nothing
@@ -966,7 +917,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
       if (addr) offer({ url: seaUrlFor(req), name: seaNameOf(config), from: mode, mine: true });
     }
     offer({ url: OPEN_SEA, name: 'The open sea', from: 'open' });
-    for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
     for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
     if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });
 
@@ -1039,9 +989,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
     return json(res, 200, { ok: true, sea: { mode: sea.mode, url: sea.url } });
   }
 
-  if (p === '/api/neighbours') {
-    return json(res, 200, { me: neighbours ? neighbours.me() : null, neighbours: neighbours ? neighbours.list() : [] });
-  }
   // Hands a card to a settler and starts the agent that works it.
   if (p === '/api/assign' && req.method === 'POST') {
     let body;
@@ -1661,7 +1608,6 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   }
   fs.mkdirSync(DATA, { recursive: true });
   watchData();
-  if (neighbours) neighbours.start();
   await rescan('startup');
   // So the island board has the right number of notes pinned to it before anyone walks
   // up to it. refreshIssues throttles itself and hands back the cache untouched when it

@@ -6,8 +6,8 @@
 // serve.mjs hands lib/boats.mjs the moorings it starts from, and the browser on the other
 // side of the channel has to find an untouched boat in the same place as everybody else.
 // A message saying where the boat is would do for two of them and not for the third, which
-// is the whole argument for deriving it instead - the same argument lib/neighbours.mjs
-// makes about drawing a neighbour's coast from four numbers in a datagram.
+// is the whole argument for deriving it instead - the same argument web/js/horizon.js
+// makes about drawing a far island's coast from a seed and a grid size.
 //
 // It lives in shared/ and obeys shared/'s rule (see the top of rng.mjs): plain arithmetic,
 // no transcendental functions. The one place that would have wanted `atan2` is the bow's

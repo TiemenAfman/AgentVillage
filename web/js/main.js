@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
@@ -1378,23 +1378,6 @@ function exitWalk() {
   frameIsland();
 }
 
-// --------------------------------------------------------------- neighbours
-// Other islands on the network, lying out on the water. Only ever our own: the list names
-// other machines, so the server tells nobody but the keeper.
-const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
-function bearingWord(n) {
-  // Looking down the map, -z is north and +x is east.
-  const a = Math.atan2(n.x, -n.z);
-  return COMPASS[(Math.round(a / (Math.PI / 4)) + 8) % 8];
-}
-
-async function refreshNeighbours() {
-  try {
-    const r = await mine('/api/neighbours').then((x) => x.json());
-    applyNeighbours(r.neighbours || []);
-  } catch { /* no beacon, no neighbours, no matter */ }
-}
-
 // How far the camera may stand back, and how far it may wander. Both come off the whole
 // archipelago rather than off this island, because an island at a berth is a place you have
 // to be able to look at: the orbit target used to be clamped to our own land every frame
@@ -1479,10 +1462,10 @@ function setFogRange(half, out, far) {
   scene.fog.far = h.far;
 }
 
-// Islands that are not on the beacon: an island conjured by `?join=` so that the whole
-// coordinate path - berth, region, haze, camera leash, picking - can be exercised with one
-// server, no multicast and no second machine. They ride along with every beacon sync,
-// because `apply` takes the whole list and whoever is not in it has gone home.
+// Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
+// path - berth, region, haze, camera leash, picking - can be exercised with one server and
+// no second machine. They ride along with every horizon sync, because `apply` takes the
+// whole list and whoever is not in it has gone home.
 const debugJoins = [];
 
 // ?join=self            our own island, again, at the berth due east
@@ -1597,8 +1580,7 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // is rather than disposed and rebuilt, because somebody may be walking on it.
 //
 // Their ground goes into `state.pickables` so the existing raycast finds it. It does NOT go
-// on the horizon: see the filter in applyNeighbours for why an island cannot be in both
-// places at once.
+// on the horizon: see syncHorizon for why an island cannot be in both places at once.
 // ---- the quay -------------------------------------------------------------------
 // The derivation moved to shared/quay.mjs the moment there was a third caller: this file
 // draws the planks and puts the hull in the water, serve.mjs hands lib/boats.mjs the
@@ -1859,6 +1841,69 @@ async function learnTheWorld() {
 // ones and suggest the rest.
 const DETAILED = modest ? 2 : 4;
 
+// Near to *whom*. It used to be near to our own berth, which never moves - so a silhouette
+// stayed a silhouette however close you sailed, with no houses, no people and no ground to
+// stand on: the hundredth island in a sea was a place you could see and never reach. So
+// the ranking is taken from where the viewer is: the walker (or the boat under them) on
+// foot, the orbit target otherwise. In the planner the last answer stands - it looks at
+// home, and a reshuffle there would only cost a rebuild nobody is looking at.
+//
+// Scene coordinates, the frame everything on the page is drawn in (home at the origin).
+let detailFocus = [0, 0];
+function focusPoint() {
+  if (state.mode === 'walk' && state.walk) {
+    const p = state.walk.state.pos;
+    detailFocus = [p.x, p.z];
+  } else if (state.mode === 'orbit') {
+    detailFocus = [controls.target.x, controls.target.z];
+  }
+  return detailFocus;
+}
+
+// How much nearer a newcomer has to be than an island already drawn before it takes that
+// island's place. Raising one costs about half a second of frame (CLAUDE.md, islandsig.js),
+// so two islands at nearly the same distance must not trade places every time the walker
+// takes a step along the line between them. In world units: 60 is a sea gap and a half.
+const DETAIL_HYSTERESIS = 60;
+
+// Which islands are drawn whole, nearest to the focus first. Distance is to the island's
+// box rather than its middle - a 512-grid island's middle can be 256 units off while you
+// are standing on its beach - and the id breaks a tie, so every page with the same focus
+// picks the same set.
+function pickDetailed(others) {
+  const [fx, fz] = focusPoint();
+  const home = state.homeOrigin || [0, 0];
+  const dist = (r) => {
+    const [x, z] = worldToScene(r.origin || [0, 0], home);
+    const half = (r.gridSize || 64) / 2;
+    const dx = Math.max(0, Math.abs(fx - x) - half);
+    const dz = Math.max(0, Math.abs(fz - z) - half);
+    return Math.sqrt(dx * dx + dz * dz) - (state.sea.get(r.id) ? DETAIL_HYSTERESIS : 0);
+  };
+  const ranked = others.map((r) => ({ r, d: dist(r) }))
+    .sort((a, b) => (a.d - b.d) || (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0))
+    .map((x) => x.r);
+  return { near: ranked.slice(0, DETAILED), far: ranked.slice(DETAILED) };
+}
+
+// Asked every couple of seconds whether the viewer has moved far enough for the near set
+// to be a different set. Cheap when it has not - a sort of at most sixteen rows - and when
+// it has, it is the ordinary fleet sync that does the work, so there is one path that
+// raises and drops islands rather than two.
+let chosenNear = new Set();
+function recheckDetail() {
+  if (!state.terrain || !state.fleet || syncing) return;
+  if (state.islandId && !state.fleet.some((r) => r.id === state.islandId)) return;   // not berthed yet
+  const others = state.fleet.filter((r) => r.id !== state.islandId);
+  if (others.length <= DETAILED) return;
+  // Against what the last sync *chose*, not against what is standing: an island that would
+  // not raise - a fetch that failed, a bundle that did not parse - would otherwise look
+  // missing on every recheck and cost a 200 kB fetch every two seconds, for ever.
+  const want = pickDetailed(others).near.map((r) => r.id);
+  if (want.length === chosenNear.size && want.every((id) => chosenNear.has(id))) return;
+  syncFleet();
+}
+
 function farFrom(origin) {
   const home = state.homeOrigin || [0, 0];
   const dx = (origin ? origin[0] : 0) - home[0];
@@ -1866,10 +1911,12 @@ function farFrom(origin) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-// The whole horizon, from both the things that can feed it: islands in our own sea that
-// are too far to draw in full, and islands on the network that are in no sea of ours at
-// all. One caller, because horizon.apply() removes whatever is not in the list it is
-// given - two callers would each spend their turn deleting the other's islands.
+// The whole horizon: islands in our own sea that are too far to draw in full, plus the
+// `?join=` debug islands. Nothing else - there used to be a LAN beacon feeding it islands
+// in no sea of ours, and it went, because the way to meet somebody is to join their sea
+// from the main menu. An island that is really here (a region) is never also a
+// silhouette, or it would be drawn twice in the same water. One caller, because
+// horizon.apply() removes whatever is not in the list it is given.
 function syncHorizon() {
   if (!state.horizon || state.guest) return [];
   const here = new Set(state.sea.regions().map((r) => r.id));
@@ -1880,11 +1927,11 @@ function syncHorizon() {
     state.horizon.pin(row.id, worldToScene(row.origin, state.homeOrigin || [0, 0]));
     // `beacons` is the one thing out here that is not derivable from a seed: where that
     // island's lighthouses stand on it. It rides the manifest row and nothing else does -
-    // an island announcing itself over the network beacon has no such list and gets no
-    // light, which is the same rule the rest of this file keeps: nothing is invented.
+    // a row without that list gets no light, which is the same rule the rest of this file
+    // keeps: nothing is invented.
     shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0, beacons: row.beacons || [] });
   }
-  for (const n of [...(state.neighbours || []), ...debugJoins]) {
+  for (const n of debugJoins) {
     if (here.has(n.id) || shown.has(n.id)) continue;
     shown.set(n.id, n);
   }
@@ -1917,10 +1964,9 @@ function syncFleet(rows) {
 async function doSyncFleet() {
   if (!state.terrain) return;
   const moored = state.fleet || [];
-  // Nearest first, so the ones you can actually see get the detail. Our own island is not
-  // in the running: we are standing on it. The ordering lives in shared/regions.mjs with
-  // the rest of the coordinate contract, and its tiebreak is load-bearing - see there.
-  const others = nearestFirst(moored.filter((r) => r.id !== state.islandId), state.homeOrigin || [0, 0]);
+  // Our own island is not in the running: it is always drawn. Of the rest, the ones
+  // nearest to the viewer get the detail - see pickDetailed.
+  const others = moored.filter((r) => r.id !== state.islandId);
   // Nobody is raised before the sea has said where WE are. Every other island is placed
   // relative to our berth (see rehome), and a joiner's welcome usually arrives before its
   // own islander has published - so for a moment the fleet has everybody but us. Raising
@@ -1931,9 +1977,11 @@ async function doSyncFleet() {
   const berthed = !state.islandId || moored.some((r) => r.id === state.islandId);
   if (!berthed && !waitingForBerth) console.info('island: waiting for the sea to berth this island before raising the others');
   waitingForBerth = !berthed;
-  const near = berthed ? others.slice(0, DETAILED) : [];
+  const picked = pickDetailed(others);
+  const near = berthed ? picked.near : [];
   const nearIds = new Set(near.map((r) => r.id));
-  state.farFleet = berthed ? others.slice(DETAILED) : [];
+  chosenNear = nearIds;
+  state.farFleet = berthed ? picked.far : [];
 
   // An island that has drifted out of the near set gives its ground back and becomes a
   // silhouette again. Done before the fetches below, so the budget is free by the time
@@ -2326,23 +2374,6 @@ function raiseGuestIslands() {
   }
 }
 
-function applyNeighbours(list) {
-  if (!state.horizon || state.guest) return;
-  // An island that is really here is not also a rumour on the horizon. Left in, it would
-  // be drawn twice - once at half resolution and turned by a hashed angle - in the same
-  // water, and clicking the silhouette would offer to sail to somewhere under your feet.
-  // syncHorizon owns that filtering now, and the merge with the far half of our own fleet.
-  state.neighbours = list || [];
-  const arrived = syncHorizon();
-  for (const n of arrived) {
-    const mark = state.horizon.find(n.id);
-    // No offer to sail over any more, because there is nowhere to go: an island on the
-    // horizon is one that is in no sea of ours, and the way to reach it is to join the sea
-    // it is in - which is a choice in Settings, not a boat. An island in *our* sea is not
-    // a rumour on the horizon at all; it is water you can cross.
-    state.ui.toast(`<b>${escapeHtml(n.name)}</b> is keeping an island off to the ${mark ? bearingWord(mark) : 'west'}.`);
-  }
-}
 // --------------------------------------------------------------- particles
 function createParticles() {
   const MAX = 2200;
@@ -3871,8 +3902,9 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
-    // A silhouette on the horizon is not somewhere to go any more - see applyNeighbours -
-    // so a click on one is a click on nothing, and closing the dossier is the right answer.
+    // A silhouette on the horizon is not somewhere to go - a far island in our own sea is
+    // water you cross - so a click on one is a click on nothing, and closing the dossier
+    // is the right answer.
     if (hit && !String(hit).startsWith('neighbour:')) select(hit);
     else state.ui.closeDossier();
   }
@@ -4629,8 +4661,9 @@ async function boot() {
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   state.minimap = createMinimap();
   state.worldMap = createWorldMap();
-  if (!state.guest) refreshNeighbours();
   syncFleet();        // whatever was already in the water when this page opened
+  // And again as the viewer moves: which islands are near is a question of where you are.
+  setInterval(recheckDetail, 2000);
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js
   // for which conversation is which. Made before the line is opened, so a first line
   // cannot arrive with nowhere to land.
@@ -4779,10 +4812,6 @@ function connect() {
     });
     // The server can ask for a reload after its own code changed underneath us.
     es.addEventListener('reload', () => location.reload());
-    // Somebody on the network raised or struck their flag. Only the keeper is sent this.
-    es.addEventListener('neighbours', (e) => {
-      try { applyNeighbours(JSON.parse(e.data).neighbours || []); } catch { /* malformed, ignore */ }
-    });
     es.onerror = () => { state.ui.setLive('off'); };
   };
   open();
@@ -4812,8 +4841,8 @@ function soundSnapshot() {
     // shared/regions.mjs, which is exactly the question the bed is asking.
     depthAt: (x, z) => state.sea.height(x, z),
     // Ours and every visiting island's, because a hammer carries across the water the same
-    // way a mill turns over there. sound picks the nearest few out of this with the same
-    // nearestFirst() the fleet is ordered by.
+    // way a mill turns over there. sound picks the nearest few out of this with
+    // nearestFirst() from shared/regions.mjs.
     crowds: [state.settlers, ...state.guests.map((g) => g.crowd)]
       .filter(Boolean).map((c) => c.figures()),
     quays: state.docks.map((d) => d.head),

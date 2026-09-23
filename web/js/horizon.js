@@ -1,10 +1,11 @@
-// The neighbours: other people's islands, lying out on the water where you can see them.
+// The neighbours: islands in our own sea too far off to draw in full (see `DETAILED` in
+// main.js), lying out on the water where you can see them.
 //
-// Nothing is invented and nothing is fetched. Their beacon carries a seed and a grid
+// Nothing is invented and nothing is fetched. Their manifest row carries a seed and a grid
 // size, and shared/terrain.mjs makes the same land from the same numbers in Node and in
-// the browser - so this draws their island's true shape without ever asking them for it.
-// Which bearing they lie on comes from a hash of their id, so a neighbour is always in
-// the same direction: you learn where to look for them.
+// the browser - so this draws their island's true shape without ever asking for the bundle.
+// A pinned one stands at its real berth; an unpinned one (the `?join=` debug islands)
+// takes its bearing from a hash of its id, so it is always in the same direction.
 import * as THREE from 'three';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { hash32 } from 'shared/rng.mjs';
@@ -160,9 +161,8 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     // Their lighthouses, if the sea said they have any. `info.beacons` is LOCAL x,z out of
     // the manifest row (lib/fleet.mjs) and the height is asked of the ground we have just
     // drawn them on, which is the arrangement the whole horizon runs on: the sea sends the
-    // little that cannot be derived and this file derives the rest. An island announcing
-    // itself over the network beacon carries no such list and gets no light - it is in no
-    // sea of ours, and nothing here is invented.
+    // little that cannot be derived and this file derives the rest. A row without such a
+    // list gets no light - nothing here is invented.
     //
     // Inside the group on purpose, so that an unpinned island's hashed turn takes its
     // lighthouse round with it. A light left in the island's unturned frame would stand
