@@ -67,6 +67,7 @@ import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
+import { updateNotice, refusalNotice, SEA_PROTOCOL } from './update.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -980,6 +981,9 @@ function onRefusedBySea(m) {
   const why = String((m && m.why) || 'no reason given');
   if (why === lastRefusal) return;
   lastRefusal = why;
+  // Over the protocol it is worth saying which side has to move, and where the new
+  // version is if it is us - and it goes in the banner, since nothing works until it is.
+  if (why === 'version') { state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE })); return; }
   state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
 }
 
@@ -4610,6 +4614,9 @@ async function boot() {
   if (STANDALONE) {
     useSea(STANDALONE.sea);
     state.seaKey = STANDALONE.key || null;
+    // Which release this app is, written in at pack time (scripts/pack-android.mjs), for
+    // the "who is behind" banner once the sea says its own.
+    state.build = STANDALONE.build || null;
     state.ui.setStandalone();
   }
   try {
@@ -4621,6 +4628,9 @@ async function boot() {
     state.islandId = hello.islandId || null;
     state.islandToken = hello.token || null;
     state.seaKey = hello.seaKey || null;
+    // Which release this island's own code is (lib/buildinfo.mjs) - this page is served by
+    // it, so it is this page's too.
+    state.build = hello.build || null;
     await learnTheWorld();
     state.guest = hello.role !== 'islander';
     state.signs = hello.signs !== false;
@@ -4725,7 +4735,13 @@ async function boot() {
     },
     onBoat: onBoatFromServer,
     // Only a phone owns a skiff; anybody else's page has nothing here to put back.
-    onWelcome: (self) => { if (STANDALONE) relaunchSkiff(self); },
+    onWelcome: (self, build) => {
+      if (STANDALONE) relaunchSkiff(self);
+      // The sea says which release it is on every welcome, so a sea updated under us is
+      // noticed on the reconnect its restart causes.
+      state.seaBuild = build;
+      state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
+    },
     peers: state.peers,
     walk: state.walk,
     // Our berth in the sea's frame, read on every message: the socket is where the sea's
@@ -4740,7 +4756,7 @@ async function boot() {
     // does can reach anybody's disk.
     // `key` is whatever the islander was given for this sea; a sea without one ignores it,
     // and a sea with one refuses everybody who cannot say it.
-    join: () => ({ v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null }),
+    join: () => ({ v: SEA_PROTOCOL, as: 'client', island: state.islandId || null, key: state.seaKey || null }),
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
     // The sky, straight through: it is one word for the whole world and nothing on this

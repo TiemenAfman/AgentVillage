@@ -152,6 +152,46 @@ pub fn remember_root(root: &Path) {
     let _ = fs::write(file, format!("{}\n", root.display()));
 }
 
+/// Which version and commit the island in `root` is: "0.1.1 · 9eac940". The same rule as
+/// lib/buildinfo.mjs, and it has to stay the same rule or the tray and the island's own
+/// sea name different code: a release says so in release.json (it has no .git), a checkout
+/// has package.json for the version and .git for the commit. Read from the folder, not
+/// from the exe - the tray runs whatever checkout it was pointed at, and that moves on
+/// with every pull while the exe stays the one that was built.
+pub fn build_label(root: &Path) -> String {
+    let json = |f: &Path| -> Option<serde_json::Value> { serde_json::from_str(&fs::read_to_string(f).ok()?).ok() };
+    let text = |v: &serde_json::Value, k: &str| v.get(k).and_then(|s| s.as_str()).map(str::to_string);
+    let (version, commit) = match json(&root.join("release.json")) {
+        Some(r) => (text(&r, "version"), text(&r, "commit")),
+        None => (json(&root.join("package.json")).and_then(|p| text(&p, "version")), git_commit(root)),
+    };
+    let parts: Vec<String> = [version.map(|v| format!("v{v}")), commit].into_iter().flatten().collect();
+    if parts.is_empty() { "unknown build".to_string() } else { parts.join(" · ") }
+}
+
+/// HEAD's commit, seven characters, read by hand: through a worktree's `.git` file, a
+/// symbolic ref, and packed-refs. None without a repository.
+fn git_commit(root: &Path) -> Option<String> {
+    let read = |p: PathBuf| fs::read_to_string(p).ok().map(|s| s.trim().to_string());
+    let hex = |s: &str| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit());
+    let mut dir = root.join(".git");
+    if let Some(pointer) = read(dir.clone()).filter(|p| p.starts_with("gitdir:")) {
+        dir = root.join(pointer[7..].trim());
+    }
+    let head = read(dir.join("HEAD"))?;
+    let Some(r) = head.strip_prefix("ref:").map(str::trim) else {
+        return hex(&head).then(|| head[..7].to_string());
+    };
+    let refs = read(dir.join("commondir")).map(|c| dir.join(c)).unwrap_or_else(|| dir.clone());
+    if let Some(h) = read(refs.join(r)).filter(|h| hex(h)) {
+        return Some(h[..7].to_string());
+    }
+    read(refs.join("packed-refs"))?.lines().find_map(|line| {
+        let (h, name) = line.trim().split_once(' ')?;
+        (name == r && hex(h)).then(|| h[..7].to_string())
+    })
+}
+
 /// `port` out of config.json, when the file is there and says so. Anything else - no file,
 /// a comment somebody added, a string - is the default, exactly as `config.port || 4747`
 /// treats it on the Node side.

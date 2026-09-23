@@ -48,6 +48,18 @@ test('everything the sea imports is in the image', () => {
   assert.deepEqual(missing, [], `the image would not contain ${missing.join(', ')}`);
 });
 
+// The stamp stage copies the whole tree, to read package.json and .git - which is exactly
+// what the image must never do. It may, because that stage is thrown away; the moment the
+// tree is copied into the stage that ships, the scanner and the mail server are on the box.
+test('only the thrown-away stamp stage copies the whole tree', () => {
+  const docker = read('Dockerfile.sea');
+  const stages = docker.split(/^FROM /m).slice(1);
+  assert.ok(stages.length >= 2, 'the stamp stage has gone');
+  const shipped = stages.at(-1);
+  assert.doesNotMatch(shipped, /^COPY\s+(--\S+\s+)*\.\s/m, 'the image that ships copies the whole checkout');
+  assert.match(shipped, /--from=stamp \/build\.mjs \.\/lib\/build\.mjs/, 'the stamp never reaches the image');
+});
+
 test('the image runs the sea open, on the port the compose file publishes', () => {
   const docker = read('Dockerfile.sea');
   const compose = read('docker-compose.sea.yml');

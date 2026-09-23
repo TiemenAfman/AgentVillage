@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, WEB, SHARED, OPEN_SEA } from '../lib/paths.mjs';
+import { readBuildInfo } from '../lib/buildinfo.mjs';
 
 const OUT = path.join(ROOT, 'src-android', 'dist');
 
@@ -47,7 +48,10 @@ fs.cpSync(SHARED, path.join(OUT, 'shared'), { recursive: true });
 
 // Ahead of every other script in the head, so it is there before main.js's graph starts.
 // JSON.stringify of plain strings, with `<` escaped so nothing in it can close the tag.
-const inline = JSON.stringify(key ? { sea, key } : { sea }).replace(/</g, '\\u003c');
+// Which release this app is, for the "who is behind" banner (web/js/update.js): the app
+// cannot ask an islander, so it carries its own answer from the moment it was packed.
+const build = readBuildInfo(ROOT);
+const inline = JSON.stringify(key ? { sea, key, build } : { sea, build }).replace(/</g, '\\u003c');
 const index = path.join(OUT, 'index.html');
 const html = fs.readFileSync(index, 'utf8');
 const at = html.indexOf('<script');

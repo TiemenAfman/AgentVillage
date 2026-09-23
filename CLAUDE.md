@@ -424,6 +424,21 @@ file in it is inside something the Dockerfile copies. `--open` in the `CMD` is n
 inside a container, loopback is nobody, and what keeps the sea shut is the network it is
 published on plus `SEA_KEY`. No volumes, deliberately.
 
+**Which code is running is baked in, not read.** The sea may not touch `node:fs`, so its
+version and commit live in `lib/build.mjs` (null in a checkout) and `Dockerfile.sea`'s
+throwaway first stage overwrites it from `scripts/stamp-build.mjs` - the only stage that
+copies the whole tree, which `tests/sea-image.test.mjs` holds. An islander hands its own sea
+`readBuildInfo(ROOT)` (`lib/buildinfo.mjs`: `release.json` for a release, else
+`package.json` + `.git` read by hand), and the tray shows the same through `build_label` in
+`src-tauri/src/island.rs` - one rule in two languages, keep them agreeing. They surface in
+`/health`, the welcome (`build`) and the front page. Compatibility is still `SEA_V`, not the
+commit: bump it when an old peer would misread a message, not for an addition it can ignore.
+`SEA_PROTOCOL` in `web/js/update.js` is the page's copy (`tests/update.test.mjs` holds the
+two equal). The page knows its own release from `/api/hello` (`build`) or, in the app, from
+what the pack baked in, and compares it with the welcome's on every connect: older is a
+banner with the release link, newer says the sea is behind - by `version`, never by commit,
+which differs between players on the same release all the time.
+
 The sea also serves its own front page — no file on disk (the disk rule above forbids
 that), an inline string in `lib/sea.mjs` that fetches its own `/health` and `/world`. Its
 one button is a restart, wired to `POST /update`, which asks for a Portainer/webhook URL in

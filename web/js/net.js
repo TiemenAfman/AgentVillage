@@ -151,7 +151,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           for (const b of m.boats || []) boatIn(b);
           // Last, so everything the welcome carried is already in place. A new socket is
           // a new player id, and anything named after the old one - a skiff - is gone.
-          onWelcome(m.id);
+          onWelcome(m.id, m.build || null);
           break;
         case 'join': peers.join(m.p); break;
         case 'leave': peers.leave(m.id); break;

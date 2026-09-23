@@ -11,6 +11,18 @@
 #
 #   docker build -f Dockerfile.sea -t promptholm-sea .
 #   docker run -p 4750:4750 -e SEA_NAME="De Waddenzee" promptholm-sea
+# ---- the stamp -----------------------------------------------------------------
+# Which version and commit this is, for the sea's front page and /health. It needs the
+# whole checkout - package.json and .git - so it is worked out in a stage of its own that
+# is thrown away, and only the one generated module goes on into the image below. No git
+# binary: scripts/stamp-build.mjs reads .git by hand, and without one it says null rather
+# than failing the build.
+FROM node:22-alpine AS stamp
+WORKDIR /src
+COPY . .
+RUN node scripts/stamp-build.mjs > /build.mjs
+
+# ---- the sea -------------------------------------------------------------------
 FROM node:22-alpine
 
 # Nothing here runs as root. It has no files to own and no reason to.
@@ -23,6 +35,8 @@ WORKDIR /app
 COPY --chown=node:node sea.mjs ./
 COPY --chown=node:node lib/ ./lib/
 COPY --chown=node:node shared/ ./shared/
+# Over the checked-in lib/build.mjs, which says null.
+COPY --chown=node:node --from=stamp /build.mjs ./lib/build.mjs
 
 ENV SEA_PORT=4750
 EXPOSE 4750

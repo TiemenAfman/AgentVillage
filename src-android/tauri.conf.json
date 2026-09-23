@@ -7,13 +7,7 @@
     "frontendDist": "dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Promptholm",
-        "url": "index.html"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

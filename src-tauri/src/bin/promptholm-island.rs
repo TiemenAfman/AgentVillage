@@ -159,6 +159,10 @@ fn main() {
         let _ = proxy.send_event(UserEvent::Tray(e));
     }));
 
+    // Which code this island is, at the top of the menu and in the tooltip. Read again on
+    // every restart from the menu, since that is when a pulled checkout becomes what runs.
+    let mut label = island::build_label(&keeper.root);
+    let version = MenuItem::new(format!("Promptholm {label}"), false, None);
     let open = MenuItem::new("Open Promptholm", true, None);
     let browser = MenuItem::new("Open in browser", true, None);
     let toggle = MenuItem::new("Stop the island", true, None);
@@ -167,6 +171,8 @@ fn main() {
     let quit = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
     let _ = menu.append_items(&[
+        &version,
+        &PredefinedMenuItem::separator(),
         &open,
         &browser,
         &PredefinedMenuItem::separator(),
@@ -213,6 +219,9 @@ fn main() {
                 } else if id == restart.id() {
                     keeper.stop();
                     keeper.start();
+                    label = island::build_label(&keeper.root);
+                    version.set_text(format!("Promptholm {label}"));
+                    shown = None;   // and the tooltip with it
                 } else if id == log.id() {
                     shell_open(&island::home(&keeper.root).join("data").join("server.log").display().to_string());
                 } else if id == quit.id() {
@@ -231,12 +240,12 @@ fn main() {
         if shown != Some(now) {
             shown = Some(now);
             let (tip, verb) = match now {
-                State::Starting => (format!("Promptholm - starting on port {}", keeper.port), "Stop the island"),
-                State::Running { ours: true } => (format!("Promptholm - on port {}", keeper.port), "Stop the island"),
+                State::Starting => (format!("Promptholm {label} - starting on port {}", keeper.port), "Stop the island"),
+                State::Running { ours: true } => (format!("Promptholm {label} - on port {}", keeper.port), "Stop the island"),
                 State::Running { ours: false } => {
-                    (format!("Promptholm - on port {} (started elsewhere)", keeper.port), "Stop the island")
+                    (format!("Promptholm {label} - on port {} (started elsewhere)", keeper.port), "Stop the island")
                 }
-                State::Stopped => ("Promptholm - stopped".to_string(), "Start the island"),
+                State::Stopped => (format!("Promptholm {label} - stopped"), "Start the island"),
             };
             toggle.set_text(verb);
             restart.set_enabled(now != State::Stopped);

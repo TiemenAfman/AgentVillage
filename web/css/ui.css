@@ -969,8 +969,21 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 }
 .skew b { color: #ffc98a; }
 
+/* Somebody is behind: this page or the sea (web/js/update.js). Up top, so it never sits on
+   the skew banner, but under the chip row and between the title card and the minimap -
+   at 14px it covered Avatar and Sound. Dismissable: unlike a skew it breaks nothing today. */
+.skew.update { top: 64px; bottom: auto; max-width: min(460px, calc(100vw - 340px));
+  display: flex; gap: 12px; align-items: flex-start; }
+.skew.update a { color: #ffc98a; }
+.update-close { background: none; border: 0; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+
 @media (max-width: 520px) {
   .skew { bottom: 120px; font-size: 12px; }
+}
+/* Too narrow for a gap between the title card and the minimap: down to just above the
+   touch buttons instead, full width. */
+@media (max-width: 700px) {
+  .skew.update { top: auto; bottom: 150px; max-width: calc(100vw - 32px); }
 }
 
 /* --- the planner (web/js/plan-mode.js, web/js/plan-panel.js) ---------------- */
