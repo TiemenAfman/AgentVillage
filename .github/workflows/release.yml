@@ -126,6 +126,16 @@ jobs:
 
       - run: npm run android:pack
 
+      # src-android/gen/android was generated with `cargo tauri`, so its Gradle task
+      # (buildSrc BuildTask.kt) runs `cargo tauri android android-studio-script` - and this
+      # runner has the npm CLI only, which failed v0.2.0 with "no such command: tauri". A
+      # shim rather than regenerating gen/: the local builds keep working as they are. Cargo
+      # runs an external subcommand as `cargo-tauri tauri <args>`, hence the shift.
+      - name: cargo tauri, answered by the npm CLI
+        run: |
+          printf '#!/bin/sh\nshift\nexec npx --no-install tauri "$@"\n' > "$HOME/.cargo/bin/cargo-tauri"
+          chmod +x "$HOME/.cargo/bin/cargo-tauri"
+
       - name: Build
         working-directory: src-android
         run: npx tauri android build --apk --target aarch64
