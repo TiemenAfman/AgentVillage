@@ -470,7 +470,14 @@ export function createWalkMode({
   // standing in it. Rectangles, not circles, or a market row would be a fat bollard.
   // People are the exception, and keep their circle: a person is round, and unlike the
   // buildings they move, so they arrive in their own list every frame.
-  function blocked(x, z, from = state.pos.y) {
+  //
+  // And a person you are already standing in is a person you may walk out of. Somebody can
+  // walk into you, or be idling on the spot in front of the board where everybody steps
+  // onto the square; with a plain "inside the circle" test every step from in there was
+  // inside it too, and you stood locked in a stranger until they moved. So when moving, a
+  // peer only blocks a step that brings you closer. Placing somebody (`placing`: stepping
+  // onto the square, ashore) is still strict - the whole point there is to find a free spot.
+  function blocked(x, z, from = state.pos.y, placing = false) {
     // You may wade in as long as the shore stays close; the open water is still a wall.
     if (groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
     for (const b of state.blockers) {
@@ -478,7 +485,12 @@ export function createWalkMode({
     }
     for (const b of state.peerBlockers) {
       const dx = x - b.x, dz = z - b.z;
-      if (dx * dx + dz * dz < (b.r + BODY_R) * (b.r + BODY_R)) return true;
+      const reach = (b.r + BODY_R) * (b.r + BODY_R);
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= reach) continue;
+      if (placing) return true;
+      const ox = state.pos.x - b.x, oz = state.pos.z - b.z;
+      if (d2 <= ox * ox + oz * oz) return true;
     }
     return false;
   }
@@ -505,10 +517,10 @@ export function createWalkMode({
   function unboard(at) {
     if (!state.vehicle) return false;
     let [x, z] = at;
-    let ok = !blocked(x, z);
+    let ok = !blocked(x, z, undefined, true);
     for (let i = 0; i < 40 && !ok; i++) {
       x += 0.25; z += 0.18;
-      ok = !blocked(x, z);
+      ok = !blocked(x, z, undefined, true);
     }
     if (!ok) return false;
     state.vehicle = null;
@@ -537,7 +549,7 @@ export function createWalkMode({
     state.onToggleMinimap = onToggleMinimap;
     let [x, z] = at;
     // step back until we are standing somewhere legal
-    for (let i = 0; i < 40 && blocked(x, z); i++) { x += 0.4; z += 0.25; }
+    for (let i = 0; i < 40 && blocked(x, z, undefined, true); i++) { x += 0.4; z += 0.25; }
     state.pos.set(x, groundAt(x, z), z);
     state.floor = state.pos.y;
     state.vy = 0;

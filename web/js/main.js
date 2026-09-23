@@ -1129,6 +1129,10 @@ function enterWalk(spot = null) {
   state.ui.closeDossier();
   state.ui.setWalking(true, state.padSeen);
   if (state.net) state.net.setWalking(true);
+  // The peers before the spot is chosen, not after. Out of walk mode the frame loop keeps
+  // this list empty, so enter() found the spot in front of the board "free" with somebody
+  // already standing on it, and the next frame put you inside them.
+  if (state.peers) state.walk.setPeerBlockers(state.peers.blockers());
   state.walk.enter({
     at,
     facing,
