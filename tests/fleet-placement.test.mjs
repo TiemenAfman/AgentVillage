@@ -1,9 +1,13 @@
-// Where islands drop anchor in a sea that has no middle.
+// Where islands drop anchor.
 //
 // The property that matters is not "they do not overlap" - createArchipelago.add already
 // refuses that - but "an island that has an origin keeps it". A newcomer that shifted the
 // fleet would slide the world under the feet of everybody standing on it, and it would do
 // it on every screen at once.
+//
+// Most of these place a fleet of equals with nobody special in the middle, which is a sea
+// raised without a volcano; the ones at the bottom put the volcano at [0, 0] the way every
+// real sea does now (lib/fleet.mjs raiseVolcano) and hold the ring round it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nextOrigin, clearOf, berthOf, SEA_GAP, createArchipelago, placeIsland, nearestFirst } from '../shared/regions.mjs';
@@ -139,4 +143,93 @@ test('nearest is measured from home, not from the middle of the world', () => {
   assert.deepEqual(nearestFirst(rows, [304, 0]).map((r) => r.id), ['far', 'near'],
     'both are 304 away, so the tiebreak decides - and it is stable');
   assert.deepEqual(nearestFirst(rows, [600, 0]).map((r) => r.id), ['near', 'far']);
+});
+
+// ---- the middle -----------------------------------------------------------------------
+
+const VOLCANO_HALF = 64;
+const withVolcano = (halves) => {
+  const placed = [isle(VOLCANO_HALF, [0, 0])];
+  for (const half of halves) {
+    const origin = nextOrigin(placed, half);
+    assert.ok(origin, `no berth for an island of ${half}`);
+    placed.push(isle(half, origin));
+  }
+  return placed;
+};
+const allClear = (placed, what) => {
+  for (let i = 0; i < placed.length; i++) {
+    for (let j = i + 1; j < placed.length; j++) {
+      assert.ok(clearOf(placed[i], placed[j]), `${what}: ${placed[i].origin} vs ${placed[j].origin}`);
+    }
+  }
+};
+
+test('the first island hugs the volcano across exactly one sea gap, due east', () => {
+  const [, first] = withVolcano([32]);
+  assert.deepEqual(first.origin, [VOLCANO_HALF + SEA_GAP + 32, 0]);
+});
+
+test('eight 64-grids fit on the first ring round the volcano, and the ninth starts the next', () => {
+  const placed = withVolcano([32, 32, 32, 32, 32, 32, 32, 32, 32]);
+  const ring = VOLCANO_HALF + SEA_GAP + 32;
+  const reach = (p) => Math.max(Math.abs(p.origin[0]), Math.abs(p.origin[1]));
+  assert.deepEqual(placed.slice(1, 9).map(reach), Array(8).fill(ring));
+  // The four bearings first, in berthOf's order, so the horizon's "look east" still holds.
+  assert.deepEqual(placed.slice(1, 5).map((p) => p.origin), [[ring, 0], [-ring, 0], [0, ring], [0, -ring]]);
+  // One pitch of an ordinary island further out - the volcano does not set the spacing.
+  assert.equal(reach(placed[9]), ring + 2 * 32 + SEA_GAP);
+  allClear(placed, 'nine round the volcano');
+});
+
+test('the volcano does not spread the others out: neighbours on the ring keep their own gap', () => {
+  const placed = withVolcano([32, 32, 32, 32, 32]);
+  // The corners come after all four bearings, so the fifth island is a corner, and it sits
+  // one ordinary sea gap from the bearing beside it - not a volcano's width.
+  const corner = placed[5];
+  const beside = placed.find((p) => p.origin[0] === corner.origin[0] && p.origin[1] === 0);
+  const apart = Math.abs(corner.origin[1] - beside.origin[1]);
+  assert.ok(apart >= 32 + 32 + SEA_GAP, `${apart}`);
+  assert.ok(apart < 2 * VOLCANO_HALF + SEA_GAP, 'spaced by the volcano, not by themselves');
+});
+
+test('round the volcano, a newcomer never moves anybody and the answer ignores arrival order', () => {
+  const grown = [isle(VOLCANO_HALF, [0, 0])];
+  for (let n = 0; n < 12; n++) {
+    const before = grown.map((p) => p.origin.join(','));
+    grown.push(isle(32, nextOrigin(grown, 32)));
+    assert.deepEqual(grown.slice(0, -1).map((p) => p.origin.join(',')), before);
+  }
+  // The same set handed over in another order gives the same next berth.
+  const next = nextOrigin(grown, 32);
+  const shuffled = [grown[5], grown[0], ...grown.slice(6).reverse(), ...grown.slice(1, 5)];
+  assert.deepEqual(nextOrigin(shuffled, 32), next);
+});
+
+test('mixed sizes round the volcano still all clear each other and the middle', () => {
+  for (const order of [[32, 64, 32], [64, 32, 128, 32], [128, 32, 32, 64], [32, 32, 32, 32, 32, 32, 32, 32, 64]]) {
+    allClear(withVolcano(order), `${order}`);
+  }
+});
+
+test('a phone looking for open water gets a free berth on the ring, not the volcano', () => {
+  // web/js/main.js standaloneHome asks nextOrigin for a wanderer's home, fed the fleet rows.
+  const placed = withVolcano([32, 32]);
+  const berth = nextOrigin(placed, 32);
+  assert.notDeepEqual(berth, [0, 0]);
+  assert.ok(placed.every((p) => clearOf(isle(32, berth), p)));
+});
+
+test('the archipelago takes a volcano and its ring without complaint', () => {
+  const sea = createArchipelago();
+  const volcano = makeTerrain('volcano', { size: 128, volcano: true });
+  sea.add(placeIsland(volcano, { id: 'volcano', origin: [0, 0] }));
+  const placed = [isle(volcano.half, [0, 0])];
+  for (let n = 0; n < 9; n++) {
+    const terrain = makeTerrain(1337 + n, { size: 64 });
+    const origin = nextOrigin(placed, terrain.half);
+    placed.push(isle(terrain.half, origin));
+    sea.add(placeIsland(terrain, { id: `isle-${n}`, origin }));
+  }
+  assert.equal(sea.count(), 10);
 });

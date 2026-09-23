@@ -10,6 +10,7 @@ import { textureUrl } from './assets.js';
 
 import { quayBasin, quayWaterField } from 'shared/quay-basin.mjs';
 import { buildQuayBasin } from './quay-basin.js';
+import { createVolcanoDressing, lavaLines } from './lava.js';
 export { quayWaterField } from 'shared/quay-basin.mjs';
 
 const tmpColor = new THREE.Color();
@@ -123,6 +124,31 @@ export function bandColour(h, season) {
   if (h < 3.4) return s.upland;
   if (h < 5.2) return 0x8f8a80;
   return s.summit;
+}
+
+// The volcano's ground, by height, and what it is instead of a season: a mountain that is
+// warm all the way through does not go green in spring or white in winter. Blended rather
+// than banded, because on a cone every contour runs round the whole island and a hard band
+// reads as a ring painted on it. Grey-brown sand, a fringe of hardy olive scrub on the
+// coastal flat, dark ash and rock up the flank, and a paler weathered top; inside the
+// crater it goes dark and then scorched towards the pool. The basalt either side of a flow
+// is painted separately, in paintGround.
+const VOLCANO = {
+  deep: new THREE.Color(0x2f4c58), wet: new THREE.Color(0x5b574e), sand: new THREE.Color(0x9a8c77),
+  scrub: new THREE.Color(0x6a6a48), ash: new THREE.Color(0x544e49), top: new THREE.Color(0x7b736b),
+  crater: new THREE.Color(0x3a302b), scorch: new THREE.Color(0x5a2c1c), basalt: new THREE.Color(0x1f1c1b),
+};
+export function volcanoColour(h, out, r = Infinity, crater = null) {
+  if (h < -0.6) return out.copy(VOLCANO.deep);
+  if (h < 0) return out.copy(VOLCANO.wet);
+  out.copy(VOLCANO.sand).lerp(VOLCANO.scrub, smoothstep(SHORE[0], SHORE[1], h));
+  out.lerp(VOLCANO.ash, smoothstep(1.2, 3.0, h));
+  out.lerp(VOLCANO.top, smoothstep(6.5, 10, h));
+  if (crater && r < crater.r) {
+    out.lerp(VOLCANO.crater, smoothstep(crater.r, crater.r * 0.8, r));
+    out.lerp(VOLCANO.scorch, smoothstep(crater.pool * 1.9, crater.pool, r));
+  }
+  return out;
 }
 
 // The sheets the island is drawn on, and the one place that knows how to fetch one.
@@ -320,7 +346,55 @@ export function createLandscape({
     }
   }
 
+  // The basalt either side of a lava flow, per vertex, and how black: full at the lava's
+  // edge and for half a cell past it, gone a cell and a half beyond that. Measured from the line the lava is drawn along
+  // (lava.js) rather than painted cell by cell, which came out as a staircase of black
+  // squares beside a smooth ribbon. Only vertices that touch a lava or bank cell are
+  // measured at all, so the rest of the mountain costs nothing. Off the terrain, so it
+  // follows `reshape` like `reclaimed` does.
+  const basalt = new Float32Array(N * N);
+  function findBasalt() {
+    basalt.fill(0);
+    const lines = lavaLines(terrain);
+    const near = new Uint8Array(N * N);
+    for (const [gx, gz] of [...(terrain.lavaCells || []), ...(terrain.lavaBankCells || [])]) {
+      const k = gx + gz * N;
+      near[k] = 1; near[k + 1] = 1; near[k + N] = 1; near[k + N + 1] = 1;
+    }
+    for (let k = 0; k < N * N; k++) {
+      if (!near[k]) continue;
+      const x = (k % N) - half, z = Math.floor(k / N) - half;
+      let best = 0;
+      for (const { points, widths } of lines) {
+        for (let s = 0; s < points.length; s++) {
+          const dx = x - points[s][0], dz = z - points[s][1];
+          const d = Math.sqrt(dx * dx + dz * dz);
+          const b = 1 - smoothstep(widths[s] + 0.6, widths[s] + 2.2, d);
+          if (b > best) best = b;
+        }
+      }
+      basalt[k] = best;
+    }
+  }
+
+  function paintVolcano() {
+    findBasalt();
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const k = i + j * N;
+        const x = i - half, z = j - half;
+        volcanoColour(terrain.H[k], tmpColor, Math.sqrt(x * x + z * z), terrain.crater);
+        // Mottled like the meadow is, and a little harder: ash is patchier than grass.
+        if (terrain.H[k] >= 0) tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.1);
+        if (basalt[k] > 0) tmpColor.lerp(VOLCANO.basalt, basalt[k]);
+        col[k * 3] = tmpColor.r; col[k * 3 + 1] = tmpColor.g; col[k * 3 + 2] = tmpColor.b;
+      }
+    }
+    geo.attributes.color.needsUpdate = true;
+  }
+
   function paintGround(seasonName) {
+    if (terrain.volcano) { paintVolcano(); return; }
     findReclaimed();
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
@@ -504,7 +578,12 @@ export function createLandscape({
   wallVerge(own.owner, cleared);
   let roads = roadSet(village);
   let settled = settledDistance(terrain, own.owner, roads);
-  let fieldPlan = planFields(village, terrain, own.owner, clearedBase, { ...fieldOpts(village), settled, paved: roads });
+  // Nobody ploughs a volcano. Planned against, the ash on its lower flank would pass for
+  // farmland to planFields as soon as the sea puts a hamlet of houses on it.
+  const surveyFields = (v) => (terrain.volcano
+    ? { patches: [], orchards: [], gardens: [] }
+    : planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled, paved: roads }));
+  let fieldPlan = surveyFields(village);
   computeTint(own.owner, own.inset, hues);
   paintGround(season);
   dressBasin(village);
@@ -716,10 +795,22 @@ export function createLandscape({
   // shuffled the trunks sideways - which would have made the before and after pictures
   // of this card unreadable for a change that is meant to be about shape.
   const bushRng = makeRng(terrain.seed).fork('bush');
+  // A volcano grows nothing: no wood, no grass, no undergrowth - only boulders, thrown out
+  // of the crater and lying where they came down, a few more of them on the steep ground
+  // and none in a flow, where they would stand up out of the lava.
+  const barren = !!terrain.volcano;
   for (const [gx, gz] of terrain.landCells) {
     const k = gx + gz * size;
     const h = terrain.heightAt(gx, gz);
     const [wx, wz] = terrain.cellWorld(gx, gz);
+    if (barren) {
+      if (cleared.has(k) || terrain.isLava(gx, gz)) continue;
+      const steep = terrain.slope(gx, gz) > 0.7;
+      if (rng.chance(steep ? 0.12 : 0.05)) {
+        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(steep ? 0.6 : 0.4, steep ? 1.5 : 1.0)]);
+      }
+      continue;
+    }
     if (h < 0.45 || terrain.isBeach(gx, gz)) {
       if (h >= 0.05 && rng.chance(0.1)) rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.4, 0.9)]);
       continue;
@@ -851,7 +942,8 @@ export function createLandscape({
     tmpObj.scale.setScalar(r[2]);
     tmpObj.updateMatrix();
     rockMesh.setMatrixAt(i, tmpObj.matrix);
-    rockMesh.setColorAt(i, tmpColor.setScalar(0.85 + ((hash32('r' + i) % 100) / 100) * 0.3));
+    // Basalt on a volcano: the same stone, most of the light taken out of it.
+    rockMesh.setColorAt(i, tmpColor.setScalar((0.85 + ((hash32('r' + i) % 100) / 100) * 0.3) * (barren ? 0.42 : 1)));
   });
   rockMesh.instanceMatrix.needsUpdate = true;
   tufts.forEach((g, i) => {
@@ -907,7 +999,7 @@ export function createLandscape({
       tmpObj.scale.set(s, s * (0.7 + (hash32(`ct:${gx},${gz}`) % 60) / 100), s);
       tmpObj.updateMatrix();
       slabMesh.setMatrixAt(i, tmpObj.matrix);
-      slabMesh.setColorAt(i, tmpColor.setScalar(0.8 + ((hash32(`cc:${gx},${gz}`) % 100) / 100) * 0.34));
+      slabMesh.setColorAt(i, tmpColor.setScalar((0.8 + ((hash32(`cc:${gx},${gz}`) % 100) / 100) * 0.34) * (barren ? 0.45 : 1)));
       i++;
     }
     slabMesh.count = Math.max(1, i);
@@ -1046,6 +1138,14 @@ export function createLandscape({
       group.add(bm);
     }
   }
+
+  // ---- the volcano ----------------------------------------------------------
+  // Lava down its gullies, a pool in the crater, smoke out of the top and steam where the
+  // flows reach the sea: web/js/lava.js, two draw calls between them. Here rather than in
+  // createWorld because the volcano is somebody else's island far more often than it is
+  // ours - the sea keeps it in the middle and everybody sees it as a region at a berth,
+  // drawn by guest-island.js through this same call - and createWorld only ever draws home.
+  let volcanoDressing = terrain.volcano ? createVolcanoDressing({ parent: group, terrain }) : null;
 
   // ---- the betonning --------------------------------------------------------
   // Withies down both sides of the dredged channel. A fairway is a hole in a bar and looks
@@ -1198,7 +1298,7 @@ export function createLandscape({
     wallVerge(own.owner, clearedBase);
     roads = roadSet(v);
     settled = settledDistance(terrain, own.owner, roads);
-    fieldPlan = planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled, paved: roads });
+    fieldPlan = surveyFields(v);
     for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
       for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
     }
@@ -1268,6 +1368,7 @@ export function createLandscape({
       f.it.mesh.instanceMatrix.needsUpdate = true;
       if (k >= 1) falling.splice(i, 1);
     }
+    if (volcanoDressing) volcanoDressing.update(dt);
   }
 
   // The coast of another moment. Polders are stamped into the heightfield rather than
@@ -1290,6 +1391,9 @@ export function createLandscape({
     // And the withies go with the channel they mark. Cheap enough to rebuild outright -
     // a dozen stakes - and the alternative is a buoyed fairway on a day before it was dug.
     dressBeacons();
+    // The lava stands on the ground it was routed down, so it goes with the ground too.
+    if (volcanoDressing) { volcanoDressing.dispose(); volcanoDressing = null; }
+    if (terrain.volcano) volcanoDressing = createVolcanoDressing({ parent: group, terrain });
   }
 
   // Everything this landscape put on the GPU, given back. Ours never needed it - our
@@ -1305,7 +1409,8 @@ export function createLandscape({
   }
 
   return {
-    group, ground, update, reshape, fellTrees, dispose, triangles: p / 3,
+    group, ground, update, reshape, fellTrees, dispose,
+    triangles: p / 3 + (volcanoDressing ? volcanoDressing.triangles : 0),
     // The flora stream, handed out rather than kept, and this is load-bearing. The clouds
     // and the fireflies in createWorld have always drawn from it *after* the forest had
     // taken its draws, and their own comments say so: "the random draws happen in the same
@@ -1785,7 +1890,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     }
     placeClouds();
 
-    fireflies.visible = d.fire > 0.02;
+    // None over a volcano: they gather by the lake and the forest edge, and it has neither.
+    fireflies.visible = d.fire > 0.02 && !terrain.volcano;
     if (fireflies.visible) {
       const arr = ffGeo.attributes.position.array, ca = ffGeo.attributes.color.array;
       for (let i = 0; i < FF; i++) {

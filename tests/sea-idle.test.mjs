@@ -17,6 +17,11 @@ import { createSea, SEA_V } from '../lib/sea.mjs';
 import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
+// Every sea raises the volcano at [0, 0] before anybody joins (lib/fleet.mjs raiseVolcano),
+// so "the world" is always one island more than anybody published. These are the ones that
+// belong to somebody.
+const owned = (world) => world.islands.filter((i) => !i.volcano);
+
 function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm' } = {}) {
   const terrain = makeTerrain(seed, { size });
   const id = beaconId(port, `host-${port}`);
@@ -93,8 +98,8 @@ test('the idle sweep closes a frozen walker, and nobody else', async () => {
 
     // And the island is still live, because its islander was never kicked.
     const world = await (await fetch(`${base}/world`)).json();
-    assert.equal(world.islands.length, 1);
-    assert.equal(world.islands[0].live, true);
+    assert.equal(owned(world).length, 1);
+    assert.equal(owned(world)[0].live, true);
 
     keeper.close(); watcher.close();
   } finally {

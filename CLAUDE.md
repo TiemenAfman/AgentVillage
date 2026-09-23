@@ -377,8 +377,9 @@ exists before the first line of `main.js` runs. Do not introduce a loader: the b
 stuck on "Charting the island…" is a failure this project has already had.
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
-(`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay with no island
-of its own: it reads no transcripts, never scans, and **writes nothing to disk**. That last
+(`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island
+of its own is the volcano (below): it reads no transcripts, never scans, and **writes nothing
+to disk**. That last
 one is load-bearing rather than an omission - it is what means there is no schema, no
 migration and no upgrade path, and a restart is a second of blank water while everybody
 reconnects. The *islander* (`serve.mjs`) owns this machine: the scan, `data/`, the agents,
@@ -407,9 +408,27 @@ the two lines. It is read off the fleet every time the fleet is news (`rehomeFro
 joiner's page is connected before its own islander has published, so its berth arrives a
 moment after the welcome. Placing home *at* `homeOrigin` was tried first and is the wrong
 half: the region moved and nothing drawn moved with it, and the host — at the sea's origin,
-which was also the page's — was refused as overlapping home and shown as mist. For a host
-the berth is `[0,0]` and all of this is the identity. Poses still travel in world
+which was also the page's — was refused as overlapping home and shown as mist. The volcano
+holds `[0,0]` now, so the host's page translates exactly like a joiner's; the identity is left
+only for a sea raised with `volcano: false` (tests). Poses still travel in world
 coordinates; the local terrain is still origin-centred and `layout.json` is still local.
+
+**The sea's one island is the volcano, and it is nobody's.** `shared/volcano.mjs` is its whole
+identity (id `0000000000000000`, seed `'volcano'`, size 128, `hostile`, `volcano`);
+`createSea` raises it through `fleet.raiseVolcano()` at `[0,0]` before anybody joins, so a
+restart raises it bit for bit and the disk rule survives. Everything that makes an island
+somebody's is refused for it (`sea: true` on the fleet row): no token, so `publish`/`patch`/
+`claim` refuse it; never quiet or swept; not counted against `MAX_ISLANDS` (`fleet.players()`
+is what `max` reads, `count()` is the world); no landing, so `shared/quay.mjs` gives it no
+dock and no boat. Nobody else may publish `volcano: true`. It travels like any island -
+`volcanoBundle()` goes through `parseBundle` - and `island.volcano` has to reach every
+`makeTerrain` that builds ground from a bundle (fleet publish, `parseBundle`, `joinIsland`,
+the horizon row, which carries `volcano` because a silhouette never sees the bundle), or the
+middle of the world is an ordinary island and a skew banner. Its seed is the one word
+`parseBundle` accepts, and only beside `volcano: true`. `nextOrigin` treats whoever holds
+`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half (144 for
+64-grids round the volcano, eight to a ring, bearings first), later rings one ordinary pitch
+further, so the volcano does not spread everybody else out.
 
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no

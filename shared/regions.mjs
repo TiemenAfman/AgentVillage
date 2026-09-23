@@ -66,6 +66,8 @@ export const SEA_GAP = 48;
 // islands is a rectangle - which is what lets one water plane cover it without waste - and
 // snapped rather than hashed so a neighbour keeps the property the horizon already gives
 // it: always on the same bearing, so you learn where to look for them (horizon.js:5-7).
+// nextOrigin's rings below keep both halves of that: every point on them is axis-aligned
+// to its neighbours, and the four bearings are always the first four points of a ring.
 const BEARINGS = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // east, west, south, north
 export const MAX_BERTHS = BEARINGS.length;
 
@@ -93,7 +95,7 @@ export function clearOf(a, b, gap = SEA_GAP) {
 // berthOf answers "where is that island relative to me", which is the right question with
 // one neighbour and the wrong one with seven: it has four bearings, and it is relative, so
 // every screen would have to agree about who the middle is. A fleet needs absolute origins
-// and no ceiling, so this walks a lattice outwards and takes the first free point.
+// and no ceiling, so this walks square rings outwards and takes the first free point.
 //
 // Two properties this has to have, and they are the whole design:
 //
@@ -101,25 +103,42 @@ export function clearOf(a, b, gap = SEA_GAP) {
 //   that shifted the fleet would slide the world under the feet of everybody standing on
 //   it - the same reasoning replace() applies to levelBase further down.
 //   The answer depends only on who is already placed, not on the order they are asked
-//   about, so two machines given the same fleet reach the same lattice point.
+//   about, so two machines given the same fleet reach the same point.
 //
-// The pitch is set by the biggest island present, so a 256-grid joining a fleet of 64s
-// simply lands further out rather than anybody having to move. And the first four points
-// are the four bearings in berthOf's own order, so with one neighbour of the same size
-// this puts them due east - exactly where the old code did, and where horizon.js has
-// always taught you to look.
+// The middle is special. Whoever holds [0, 0] - in a real sea the volcano, raised there by
+// the sea before anybody joins (lib/fleet.mjs raiseVolcano); in a sea without one, the
+// first island to arrive - sets how far out the FIRST ring lies, and only the first: its
+// own half, SEA_GAP, and the biggest of everybody else. Every ring after that is one pitch
+// further out, and the pitch is set by the biggest island that is *not* the middle. That
+// split is the point. The pitch used to come from the biggest island present, full stop,
+// so a 128-grid volcano would have spread every 64-grid in the world out to 176 apart and
+// pushed the first ring out with it; now the first islands hug the middle across exactly
+// SEA_GAP of water, eight of them to a ring (four bearings, four corners), and keep their
+// own spacing amongst each other.
+//
+// A 256-grid joining a fleet of 64s still simply lands further out rather than anybody
+// having to move: the biggest-other-island rule makes the rings coarser for newcomers from
+// then on, and clearOf against everybody already placed is what keeps the answer right
+// whatever the rings happen to offer. And with a middle of the same size as the rest the
+// rings are exactly the old square lattice - ring 1 at one pitch, so one neighbour of the
+// same size still lands due east, where berthOf and horizon.js have always put it.
 export function nextOrigin(placed, half, gap = SEA_GAP) {
   if (!placed.length) return [0, 0];
+  const centre = placed.find((p) => p.origin[0] === 0 && p.origin[1] === 0) || null;
   let biggest = half;
-  for (const p of placed) if (p.half > biggest) biggest = p.half;
+  for (const p of placed) if (p !== centre && p.half > biggest) biggest = p.half;
   const pitch = 2 * biggest + gap;
+  // With nobody at the origin - the first island went home and nothing took the middle -
+  // the rings are laid as though an island of the ordinary size stood there, which is the
+  // lattice this always was, and the origin itself is left empty as it always was.
+  const first = (centre ? centre.half : biggest) + gap + biggest;
   const mine = { half, origin: [0, 0] };
   for (let ring = 1; ring < 64; ring++) {
-    for (const [i, j] of ringPoints(ring)) {
-      mine.origin = [i * pitch, j * pitch];
+    for (const origin of ringPoints(first + (ring - 1) * pitch, pitch)) {
+      mine.origin = origin;
       let ok = true;
       for (const p of placed) if (!clearOf(mine, p, gap)) { ok = false; break; }
-      if (ok) return mine.origin;
+      if (ok) return origin;
     }
   }
   return null;    // sixty-four rings out is not a crowded sea, it is a bug somewhere else
@@ -141,8 +160,9 @@ export function nextOrigin(placed, half, gap = SEA_GAP) {
 // would touch every place main.js adds something to the scene. So the page keeps home at
 // [0, 0] and translates everything else by its berth: a position from the sea loses the
 // berth on the way in, a position for the sea gains it on the way out. `home` is that
-// berth, in the sea's frame. For the first island into a world it is [0, 0] and both of
-// these are the identity, which is why nothing about a host changed when they arrived.
+// berth, in the sea's frame. In a sea with a volcano nobody's berth is [0, 0] - the
+// volcano holds the middle - so every page, the host's included, translates; it is the
+// identity only for the first island into a sea raised without one (tests, an old sea).
 //
 // Two lines, here rather than in the page, so the two directions live next to each other
 // and a test can hold them to being exact inverses.
@@ -158,19 +178,31 @@ export function nearestFirst(rows, home = [0, 0]) {
   return [...rows].sort((a, b) => (d(a) - d(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-// The lattice points at distance `ring`, in a fixed order: the four bearings first, in
-// BEARINGS' own order, then the rest of the square's edge. Sorted rather than walked round
-// the perimeter so the order is stated in one place and cannot drift.
-function ringPoints(ring) {
+// The points of the square ring `r` out from the middle, in a fixed order: the four
+// bearings first, in BEARINGS' own order, then the rest of the square's edge, the ones
+// nearest a bearing first. Sorted rather than walked round the perimeter so the order is
+// stated in one place and cannot drift.
+//
+// Spaced at least `pitch` apart along each side, so two islands of the biggest size fit on
+// neighbouring points, and the corners are exactly at `r` so a ring is clear of the one
+// inside it by a whole pitch. Whole numbers wherever the halves are: the step is rounded
+// down and the corner keeps the remainder, which only ever widens the gap before it.
+function ringPoints(r, pitch) {
+  const per = Math.max(1, Math.floor(r / pitch));    // points from a bearing to its corner
+  const step = Math.floor(r / per);
+  const at = (i) => (Math.abs(i) === per ? Math.sign(i) * r : i * step);
   const out = [];
-  for (const [dx, dz] of BEARINGS) out.push([dx * ring, dz * ring]);
-  for (let i = -ring; i <= ring; i++) {
-    for (let j = -ring; j <= ring; j++) {
-      if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
-      if ((i === 0 || j === 0) && (Math.abs(i) === ring || Math.abs(j) === ring)) continue;
-      out.push([i, j]);
+  for (const [dx, dz] of BEARINGS) out.push([dx * r, dz * r]);
+  const rest = [];
+  for (let i = -per; i <= per; i++) {
+    for (let j = -per; j <= per; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) !== per || i === 0 || j === 0) continue;
+      rest.push([i, j]);
     }
   }
+  const off = (p) => Math.min(Math.abs(p[0]), Math.abs(p[1]));
+  rest.sort((a, b) => (off(a) - off(b)) || (a[0] - b[0]) || (a[1] - b[1]));
+  for (const [i, j] of rest) out.push([at(i), at(j)]);
   return out;
 }
 
@@ -179,8 +211,13 @@ function ringPoints(ring) {
 // web/js/interior.js:532-542 already hands a flat floor to createWalkMode and peers.place().
 //
 // The cell-taking members (heightAt, slope, isLand, isWater, isBeach, isBuildable, isRiver,
-// inGrid, corner) are passed straight through: a cell is local by definition, and every
-// caller holding one got it out of village.json or layout.json, which are local too.
+// inGrid, corner, isLava) are passed straight through: a cell is local by definition, and
+// every caller holding one got it out of village.json or layout.json, which are local too.
+//
+// The volcano's own fields ride along the same way (every ordinary island carries them too,
+// empty, with isLava always false). `crater.centre` stays LOCAL like hillCentre and
+// lakeCentre: it is a point on the island's own grid, and whoever wants it in world
+// coordinates adds the origin, the way cellWorld does.
 export function placeIsland(terrain, { id, origin = [0, 0] } = {}) {
   const ox = origin[0], oz = origin[1];
   const half = terrain.half;
@@ -207,10 +244,12 @@ export function placeIsland(terrain, { id, origin = [0, 0] } = {}) {
     coastCells: terrain.coastCells,
     rivers: terrain.rivers, riverCells: terrain.riverCells,
     riverBankCells: terrain.riverBankCells,
+    volcano: terrain.volcano, crater: terrain.crater,
+    lavaCells: terrain.lavaCells, lavaBankCells: terrain.lavaBankCells,
     inGrid: terrain.inGrid, corner: terrain.corner,
     heightAt: terrain.heightAt, slope: terrain.slope,
     isLand: terrain.isLand, isWater: terrain.isWater, isBeach: terrain.isBeach,
-    isBuildable: terrain.isBuildable, isRiver: terrain.isRiver,
+    isBuildable: terrain.isBuildable, isRiver: terrain.isRiver, isLava: terrain.isLava,
 
     // The two that move, in opposite directions.
     cellWorld: (gx, gz) => {

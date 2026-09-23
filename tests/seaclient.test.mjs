@@ -15,6 +15,13 @@ import { createSeaClient, mintToken } from '../lib/seaclient.mjs';
 import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
+// Every sea raises the volcano at [0, 0] before anybody joins (lib/fleet.mjs raiseVolcano),
+// so "the world" is always one island more than anybody published. These are the ones that
+// belong to somebody, and FIRST_BERTH is where the first of them anchors: on the ring round
+// the volcano, its half (64) + SEA_GAP (48) + a 64-grid's half (32) due east.
+const owned = (world) => world.islands.filter((i) => !i.volcano);
+const FIRST_BERTH = [144, 0];
+
 function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', houses = 0 } = {}) {
   const terrain = makeTerrain(seed, { size });
   const id = beaconId(port, `host-${port}`);
@@ -72,11 +79,11 @@ test('an islander joins, publishes itself, and turns up in the world', () => afl
   const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle });
   try {
     await until(() => client.connected(), 'the socket never came up');
-    await until(() => sea.fleet.count() === 1, 'the island never arrived');
-    const row = sea.fleet.manifest().islands[0];
+    await until(() => sea.fleet.players() === 1, 'the island never arrived');
+    const row = owned(sea.fleet.manifest())[0];
     assert.equal(row.name, 'Promptholm');
     assert.equal(row.buildings, 3);
-    assert.deepEqual(row.origin, [0, 0]);
+    assert.deepEqual(row.origin, FIRST_BERTH);
   } finally {
     client.close();
   }
@@ -113,14 +120,14 @@ test('a house being built is what makes an island worth sending again', () => af
   const client = createSeaClient({ url, islandId: current.id, bundle: () => current.bundle });
   try {
     await until(async () => (await client.publish()).why === 'unchanged', 'the first publish never settled');
-    assert.equal(sea.fleet.manifest().islands[0].buildings, 1);
+    assert.equal(owned(sea.fleet.manifest())[0].buildings, 1);
 
     // The scan ran and found another house. Same island, same id, new contents.
     const grown = island({ houses: 2, port: 4747 });
     current = { id: current.id, bundle: grown.bundle };
     const r = await client.publish();
     assert.equal(r.sent, true);
-    assert.equal(sea.fleet.manifest().islands[0].buildings, 2);
+    assert.equal(owned(sea.fleet.manifest())[0].buildings, 2);
   } finally {
     client.close();
   }
@@ -135,7 +142,7 @@ test('the islander keeps its berth across a reconnect, and the sea keeps its isl
   first.close();
   await until(() => sea.fleet.get(a.id).live === false, 'the sea never noticed the keeper leave');
 
-  assert.equal(sea.fleet.count(), 1, 'the island stays while the keeper is away');
+  assert.equal(sea.fleet.players(), 1, 'the island stays while the keeper is away');
 
   const again = createSeaClient({ url, islandId: a.id, token, bundle: () => a.bundle });
   try {
@@ -159,7 +166,7 @@ test('a sea that has restarted gets the island again without anybody editing a f
   const addr = await fresh.listen();
   const again = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: a.id, bundle: () => a.bundle });
   try {
-    await until(() => fresh.fleet.count() === 1, 'the world never reassembled itself');
+    await until(() => fresh.fleet.players() === 1, 'the world never reassembled itself');
   } finally {
     again.close();
     await fresh.close();

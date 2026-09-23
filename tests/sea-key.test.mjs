@@ -16,6 +16,11 @@ import { createSeaClient } from '../lib/seaclient.mjs';
 import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
+// Every sea raises the volcano at [0, 0] before anybody joins (lib/fleet.mjs raiseVolcano),
+// so "the world" is always one island more than anybody published. These are the ones that
+// belong to somebody.
+const owned = (world) => world.islands.filter((i) => !i.volcano);
+
 function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm' } = {}) {
   const terrain = makeTerrain(seed, { size });
   const id = beaconId(port, `host-${port}`);
@@ -76,7 +81,7 @@ test('a keyed sea wants its key on a publish, and on a parcel', () => afloat(asy
   const shut = await post(base, `/island/${a.id}`, a.bundle, { 'X-Island-Token': 'tok' });
   assert.equal(shut.status, 403);
   assert.equal((await shut.json()).error, 'key', 'the refusal should name the reason in the wire’s own word');
-  assert.equal((await (await fetch(`${base}/world`)).json()).islands.length, 0, 'the island was parked anyway');
+  assert.equal(owned(await (await fetch(`${base}/world`)).json()).length, 0, 'the island was parked anyway');
 
   const open = await post(base, `/island/${a.id}`, a.bundle, { 'X-Island-Token': 'tok', 'X-Sea-Key': 'sesame' });
   assert.equal(open.status, 200);
@@ -92,8 +97,8 @@ test('an island published with nobody on the line for it is not live, and comes 
   // Over HTTP alone, the way an islander whose socket was refused does it.
   assert.equal((await post(base, `/island/${a.id}`, a.bundle, { 'X-Island-Token': 'tok' })).status, 200);
   let world = await (await fetch(`${base}/world`)).json();
-  assert.equal(world.islands.length, 1);
-  assert.equal(world.islands[0].live, false, 'an island with no islander behind it was called live');
+  assert.equal(owned(world).length, 1);
+  assert.equal(owned(world)[0].live, false, 'an island with no islander behind it was called live');
 
   // Its islander turns up on the socket with the same token: that is the claim.
   const keeper = talk(wsUrl);
@@ -101,7 +106,7 @@ test('an island published with nobody on the line for it is not live, and comes 
   keeper.say({ t: 'join', v: SEA_V, as: 'islander', island: a.id, token: 'tok' });
   await keeper.until((m) => m.t === 'welcome');
   world = await (await fetch(`${base}/world`)).json();
-  assert.equal(world.islands[0].live, true);
+  assert.equal(owned(world)[0].live, true);
 
   // And a publish while the socket is up is live from the start, as it always was.
   const b = island({ port: 4748, name: 'Hoogezand' });
@@ -123,7 +128,7 @@ test('the islander sends the key with its bundle', () => afloat(async ({ base })
     const r = await client.publish({ force: true });
     assert.equal(r.sent, true, `the sea would not take it: ${r.why}`);
     const world = await (await fetch(`${base}/world`)).json();
-    assert.equal(world.islands.length, 1);
+    assert.equal(owned(world).length, 1);
   } finally {
     client.close();
   }

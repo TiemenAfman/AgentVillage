@@ -29,6 +29,12 @@ no prompts, local paths, tool arguments or transcript contents are published.
 Restart the islander after changing this configuration. The neighbour's own name is
 retained when hosting a sea, rather than being replaced by the machine's hostname.
 
+The sea has a hostile island of its own too: the volcano (`shared/volcano.mjs`), raised at
+the middle of every sea before anybody joins, with the islands on a ring round it. It has no
+residents yet; the guards and the Codex houses of every islander move there in the next
+steps (`Plans/vulkaan-in-het-midden.md`), and this per-islander Codex island goes with them.
+Until then it is published as before and berths on the ring like any island.
+
 The Codex island is hostile to everybody, its own islander's walker included: the island
 is nobody's. Once a player is on land, on a deck, or swimming within two cells of the
 shore, residents pursue them at 4.5 - faster than a walk (3.4), slower than a run (6.6), so

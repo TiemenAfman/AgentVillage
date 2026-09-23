@@ -1519,10 +1519,12 @@ function freeBerth(theirHalf) {
 // dredged `fairway` is the same thing pointed the other way, and has to travel with them
 // for the same reason: leave it out and a neighbour's river mouth silts back up on our
 // screen, which the terrain hash on the next line reports as two machines running
-// different code.
-function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, terrainHash = null, name = null, village = null, origin = null }) {
+// different code. `volcano` is the third of those and the bluntest: the sea's own island
+// (shared/volcano.mjs) is a different heightfield from the same seed, and without the flag
+// it would be drawn as an ordinary island and flagged as skew.
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, volcano = false, terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway, volcano });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -1958,7 +1960,9 @@ function syncHorizon() {
     // island's lighthouses stand on it. It rides the manifest row and nothing else does -
     // a row without that list gets no light, which is the same rule the rest of this file
     // keeps: nothing is invented.
-    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, settlers: row.buildings || 0, beacons: row.beacons || [] });
+    // `volcano` so a silhouette of the middle of the world is the volcano's shape and not an
+    // ordinary island of the same seed - the row is all horizon.js ever sees of it.
+    shown.set(row.id, { id: row.id, name: row.name, island: row.name, seed: row.seed, gridSize: row.gridSize, volcano: row.volcano === true, settlers: row.buildings || 0, beacons: row.beacons || [] });
   }
   for (const n of debugJoins) {
     if (here.has(n.id) || shown.has(n.id)) continue;
@@ -2049,6 +2053,7 @@ async function doSyncFleet() {
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       fairway: bundle.fairway || null,
+      volcano: bundle.island.volcano === true,
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
       village: bundle,
@@ -2731,10 +2736,12 @@ function buildScene(village) {
   // coordinates, and there is no offset group to move them by; so instead of moving home
   // the page moves the world. `state.homeOrigin` is the berth the sea gave us, in the
   // sea's frame, and it is applied as a translation at the socket (web/js/net.js) and
-  // wherever a fleet row's origin is turned into a region (joinIsland, syncHorizon). For
-  // the first island into a world - every single-player island and every host - it is
-  // [0, 0] and the translation is the identity, which is how nothing here changed for
-  // them. shared/regions.mjs has the two lines and the argument.
+  // wherever a fleet row's origin is turned into a region (joinIsland, syncHorizon). It
+  // used to be [0, 0] - the identity - for every single-player island and every host,
+  // because the first island into a world took the origin. The sea's volcano holds the
+  // origin now (lib/fleet.mjs raiseVolcano), so a host is berthed on the ring round it and
+  // translates exactly the way a joiner always has; there is one path and no special case.
+  // shared/regions.mjs has the two lines and the argument.
   //
   // It used to be `origin: state.homeOrigin` here, on the theory that only the region's
   // offset needed to move. It did move, and nothing drawn moved with it: a joiner's own

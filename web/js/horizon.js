@@ -11,6 +11,7 @@ import { makeTerrain } from 'shared/terrain.mjs';
 import { hash32 } from 'shared/rng.mjs';
 import { BEACON_RISE } from './buildings.js';
 import { SWEEP } from './beacon.js';
+import { volcanoColour } from './world.js';
 
 // How far out a neighbour lies, measured from the water between the two islands rather
 // than written down flat. It used to be a fixed 150 to 190 units, which was fine when
@@ -60,7 +61,8 @@ function islandGeometry(terrain) {
       const k = (j * n + i) * 3;
       height[j * n + i] = h;
       pos[k] = x; pos[k + 1] = y; pos[k + 2] = z;
-      if (h < 0.35) c.copy(SAND);
+      if (terrain.volcano) volcanoColour(h, c, Math.sqrt(x * x + z * z), terrain.crater);
+      else if (h < 0.35) c.copy(SAND);
       else if (h > 3.4) c.copy(ROCK);
       else c.copy(GRASS).lerp(ROCK, Math.min(1, (h - 0.35) / 5));
       col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
@@ -146,7 +148,10 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     group.position.set(x, 0, z);
     if (!pinned) group.rotation.y = ((h >>> 8) % 360) * Math.PI / 180;   // not all facing the same way
 
-    const terrain = makeTerrain(info.seed, { size: info.gridSize });
+    // `volcano` off the manifest row, the one thing about the volcano's shape its seed and
+    // size do not say: without it the sea's mountain would be drawn out here as whatever
+    // ordinary island the seed 'volcano' happens to make.
+    const terrain = makeTerrain(info.seed, { size: info.gridSize, volcano: !!info.volcano });
     const geo = islandGeometry(terrain);
     const mesh = new THREE.Mesh(geo, material);
     mesh.userData.id = `neighbour:${info.id}`;              // so the existing picking finds it
@@ -156,6 +161,14 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     geo.computeBoundingBox();
     const top = geo.boundingBox.max.y;
     lamp.position.set(0, top + 0.6, 0);
+    // Nobody lives on the volcano, so it has no lit window - but its crater glows, and at
+    // night that glow is the whole of what can be seen of it from out here. The same lamp,
+    // down in the crater and the colour of the lava, for the same one draw call.
+    if (terrain.volcano && terrain.crater) {
+      lamp.material.color.setHex(0xff6a1a);
+      lamp.position.set(terrain.crater.centre[0], terrain.crater.floor + 0.8, terrain.crater.centre[1]);
+      lamp.scale.setScalar(Math.max(1.5, terrain.crater.pool * 0.7));
+    }
     group.add(lamp);
 
     // Their lighthouses, if the sea said they have any. `info.beacons` is LOCAL x,z out of

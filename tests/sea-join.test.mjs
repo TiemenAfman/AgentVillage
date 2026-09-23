@@ -13,6 +13,13 @@ import { createSea, SEA_V, MAX_BUNDLE_BYTES } from '../lib/sea.mjs';
 import { buildBundle, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
+// Every sea raises the volcano at [0, 0] before anybody joins (lib/fleet.mjs raiseVolcano),
+// so "the world" is always one island more than anybody published. These are the ones that
+// belong to somebody, and FIRST_BERTH is where the first of them anchors: on the ring round
+// the volcano, its half (64) + SEA_GAP (48) + a 64-grid's half (32) due east.
+const owned = (world) => world.islands.filter((i) => !i.volcano);
+const FIRST_BERTH = [144, 0];
+
 function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm' } = {}) {
   const terrain = makeTerrain(seed, { size });
   const id = beaconId(port, `host-${port}`);
@@ -83,15 +90,15 @@ test('an island published over HTTP turns up in the world', () => afloat(async (
   const r = await post(base, a.id, a.bundle, 'tok');
   assert.equal(r.status, 200);
   const put = await r.json();
-  assert.deepEqual(put.origin, [0, 0]);
+  assert.deepEqual(put.origin, FIRST_BERTH);
 
   const world = await (await fetch(`${base}/world`)).json();
-  assert.equal(world.islands.length, 1);
-  assert.equal(world.islands[0].name, 'Promptholm');
+  assert.equal(owned(world).length, 1);
+  assert.equal(owned(world)[0].name, 'Promptholm');
   // Published over HTTP with nobody on the socket for it, so it is in the world but not
   // live: it comes alive when its islander joins and claims it, and is swept after the
   // grace if nobody does. tests/sea-key.test.mjs has the why.
-  assert.equal(world.islands[0].live, false);
+  assert.equal(owned(world)[0].live, false);
 
   // And the island itself is fetched separately, which is the whole reason the manifest
   // is small: 200 kB of island does not belong in a message everybody gets.
@@ -114,7 +121,7 @@ test('nonsense and giants are refused by the door, not by the parser', () => afl
   const giant = 'x'.repeat(MAX_BUNDLE_BYTES + 1024);
   const r = await post(base, a.id, `{"v":1,"pad":"${giant}"}`, 'x');
   assert.ok(r.status === 413 || r.status === 400, `a giant got ${r.status}`);
-  assert.equal((await (await fetch(`${base}/world`)).json()).islands.length, 0);
+  assert.equal(owned(await (await fetch(`${base}/world`)).json()).length, 0);
 }));
 
 test('a client that speaks another version is turned away with the number', () => afloat(async ({ wsUrl }) => {
@@ -148,7 +155,7 @@ test('joining answers with the fleet and one clock for everybody', () => afloat(
   const m = await c.next();
   assert.equal(m.t, 'welcome');
   assert.equal(m.v, SEA_V);
-  assert.equal(m.world.islands.length, 1);
+  assert.equal(owned(m.world).length, 1);
   assert.ok(Number.isFinite(m.now), 'the sea owns the time of day');
   assert.ok(Number.isFinite(m.tickMs));
   c.close();
@@ -165,7 +172,7 @@ test('everybody already here is told when an island arrives', () => afloat(async
   const m = await c.until((x) => x.t === 'island');
   assert.equal(m.a, 'joined');
   assert.equal(m.name, 'Promptholm');
-  assert.deepEqual(m.origin, [0, 0]);
+  assert.deepEqual(m.origin, FIRST_BERTH);
   c.close();
 }));
 
@@ -190,7 +197,7 @@ test('an islander losing its socket leaves its island standing, and says so', ()
   // The island is still in the world. Losing a socket must not sink an island under the
   // feet of whoever is standing on it - a page reload does that every time.
   const world = await (await fetch(`${base}/world`)).json();
-  assert.equal(world.islands.length, 1);
+  assert.equal(owned(world).length, 1);
   watcher.close();
 }));
 
@@ -241,7 +248,7 @@ test('nothing the sea imports can reach a disk or start a process', async () => 
 test('an island the sea holds is held in memory and nowhere else', () => afloat(async ({ base, sea }) => {
   const a = island();
   await post(base, a.id, a.bundle, 'tok');
-  assert.equal(sea.fleet.count(), 1, 'it is all in memory, and that is the point');
+  assert.equal(sea.fleet.players(), 1, 'it is all in memory, and that is the point');
 }));
 
 test('two bodies from two islands see each other, and do not share a tavern', () => afloat(async ({ base, wsUrl }) => {
@@ -254,7 +261,7 @@ test('two bodies from two islands see each other, and do not share a tavern', ()
   await mine.ready;
   mine.say({ t: 'join', v: SEA_V, as: 'client', island: a.id });
   const hello = await mine.next();
-  assert.equal(hello.world.islands.length, 2, 'both coasts are in the world');
+  assert.equal(owned(hello.world).length, 2, 'both coasts are in the world');
   assert.equal(hello.you.island, a.id, 'my body belongs over my own coast');
 
   const theirs = talk(wsUrl);
