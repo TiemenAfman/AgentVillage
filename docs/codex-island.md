@@ -29,9 +29,13 @@ no prompts, local paths, tool arguments or transcript contents are published.
 Restart the islander after changing this configuration. The neighbour's own name is
 retained when hosting a sea, rather than being replaced by the machine's hostname.
 
-The Codex island is hostile to visitors from other islands. After a visitor steps onto
-land or a deck, residents pursue them; contact sends the visitor back to their own town
-square. Sailing past, swimming and viewing from orbit do not trigger pursuit. Retreating
-offshore releases the residents. The sea decides pursuit and capture, broadcasts the
-ordinary crowd positions, and privately tells the captured player to respawn. A short
-grace period prevents an old pose in flight from causing a second capture.
+The Codex island is hostile to everybody, its own islander's walker included: the island
+is nobody's. Once a player is on land, on a deck, or swimming within two cells of the
+shore, residents pursue them at 4.5 - faster than a walk (3.4), slower than a run (6.6), so
+a sprint gets away and running out of stamina does not. Residents swim that same coastal
+strip, rivers included. Contact is a hit through `hurt()` (`lib/health.mjs`), which for now
+always sends the player back to their own town square, or a phone player to their skiff,
+followed by five seconds of immunity. Sailing, swimming further out than the strip and
+viewing from orbit do not trigger pursuit, and retreating past the strip releases the
+residents. The sea decides pursuit and capture, broadcasts the ordinary crowd positions,
+and privately tells the captured player to respawn.

@@ -237,6 +237,21 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
 
+/* Health over stamina (web/js/vitals.js). The fill is a scaleX of a full-width bar rather
+   than a width, so the frame loop writes one custom property and nothing reflows; the
+   rounded ends belong to the track, which clips it. A full bar fades out on a delay and a
+   draining one comes straight back: the transition that applies is the one on the state
+   being entered, so `.full` carries the slow one and the plain rule the quick one. */
+.vitals { display: flex; flex-direction: column; gap: 4px; width: 184px; }
+.vital { height: 7px; border-radius: 99px; overflow: hidden; opacity: 1; transition: opacity .1s ease;
+  background: rgba(8, 16, 18, .62); border: 1px solid var(--edge); box-shadow: 0 2px 8px rgba(5, 22, 24, .25); }
+.vital i { display: block; height: 100%; transform-origin: left center; transform: scaleX(var(--f, 1)); }
+.vital.health i { background: linear-gradient(#ea7a68, #b93c30); }
+.vital.stamina i { background: linear-gradient(#f5d98a, #d9a441); }
+/* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
+.vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
+.vital.full { opacity: 0; transition: opacity 1.2s ease 1.5s; }
+
 /* --- the walk-mode minimap ---------------------------------------------- */
 .minimap {
   /* Measured against .topright's own bottom edge (chips + nav buttons), which runs

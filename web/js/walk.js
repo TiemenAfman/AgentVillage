@@ -10,6 +10,7 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
+import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -30,10 +31,20 @@ const EYE = PLAYER_EYE;
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
 const GRAVITY = 12.5;
-// Wading, not open-water swimming: the shore has to stay within reach, so you can stand
-// in the surf and cross a stream but you cannot set out to sea. The sea surface is y = 0,
-// matching the water plane in world.js, and the body sits a little way into it.
+// Swimming goes anywhere, the open sea included. It used to be wading only - no step into
+// water with no shore within SWIM_REACH - and that rule made a swimmer who ended up at sea
+// by any other route (a bug, a respawn, a boat left from) a statue: every direction was
+// open water, so every step was refused. The crossing is slow enough on its own (1.9
+// against the boat's 9.5, tests/boat.test.mjs holds the ratio) to leave the boat its job.
+// SWIM_REACH survives only for *putting* somebody down: stepping ashore and entering walk
+// mode still want ground within reach of a shore. The sea surface is y = 0, matching the
+// water plane in world.js, and the body sits a little way into it.
 const SWIM_SPEED = 1.9;
+// Shift in the water: a harder stroke, out of the same pool as a run (web/js/stamina.js).
+// Well under a walk still, and a third of the boat's cruising speed, so six seconds of it
+// gets you off a beach or away from somebody on the shore and does not make the hull
+// pointless on a crossing.
+const SWIM_TURBO = 3.2;
 const SWIM_REACH = 2.0;
 const WATER_Y = 0;
 const SWIM_SINK = 0.07;
@@ -220,6 +231,11 @@ export function createWalkMode({
     onRelease: null,
     moving: false,
     running: false,
+    // Shift answered this frame: a run, a swimmer's turbo or the boat's, whichever applies.
+    turbo: false,
+    // What Shift spends. Running and swimming share the body's; the boat has its own, and
+    // both fill whenever they are not being drawn on - see web/js/stamina.js.
+    stamina: { body: createPool(BODY), boat: createPool(BOAT) },
     blocking: false, // the right mouse button is down: the shield arm is up
     paused: false,   // true while an overlay owns the input
   };
@@ -497,8 +513,8 @@ export function createWalkMode({
     return best;
   }
 
-  // Is there dry land within arm's reach? This is what keeps a swim to the coast and a
-  // stream, and refuses the open sea, without needing to know where either of them is.
+  // Is there dry land within arm's reach? Only asked when placing somebody (see `blocked`),
+  // so a step ashore or a walk-mode entry never sets you down out at sea.
   // Asked from your own height, or the deck you are swimming under would count as a
   // shore you cannot possibly climb onto.
   function shoreWithinReach(x, z, from) {
@@ -519,8 +535,10 @@ export function createWalkMode({
   // peer only blocks a step that brings you closer. Placing somebody (`placing`: stepping
   // onto the square, ashore) is still strict - the whole point there is to find a free spot.
   function blocked(x, z, from = state.pos.y, placing = false) {
-    // You may wade in as long as the shore stays close; the open water is still a wall.
-    if (groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
+    // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
+    // a shore close by - unboard's step-back loop relies on it to find the beach rather than
+    // drop you in the channel beside the hull.
+    if (placing && groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
     for (const b of state.blockers) {
       if (Math.abs(x - b.x) < b.hx + BODY_R && Math.abs(z - b.z) < b.hz + BODY_R) return true;
     }
@@ -707,9 +725,18 @@ export function createWalkMode({
 
   function update(dt) {
     if (!state.active) return null;
-    if (state.paused) { stick.x = 0; stick.z = 0; return { near: state.near, pos: state.pos, distance: 0 }; }
+    if (state.paused) {
+      stick.x = 0; stick.z = 0;
+      // A conversation is a rest: both pools go on filling behind it.
+      stepPool(state.stamina.body, false, dt);
+      stepPool(state.stamina.boat, false, dt);
+      state.turbo = false;
+      return { near: state.near, pos: state.pos, distance: 0 };
+    }
 
-    const run = (keys.has('shift') || stick.run) && !state.swimming && !state.crouching;
+    // Shift, or the pad's sprint toggle (which the phone's touchpad drives too). What it
+    // means depends on where you are, and is decided below; this is only the asking.
+    const boost = keys.has('shift') || stick.run;
     let ix = 0, iz = 0;
     if (keys.has('w') || keys.has('arrowup')) iz += 1;
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
@@ -719,14 +746,16 @@ export function createWalkMode({
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
     // ---- aboard ------------------------------------------------------------
-    // A boat is not feet, so `blocked` is left exactly as it is. It refuses open water
-    // unless a shore is within SWIM_REACH, which is what makes a strip of sea between two
-    // islands a crossing rather than a paddle - that line turned from a limitation into the
-    // reason the boat exists, and teaching it about vehicles would have put a mode flag
-    // inside the collision test of every walking frame. The vehicle simply steers instead
-    // of walking, and land is its wall the way water is ours.
+    // A boat is not feet, so `blocked` knows nothing about it: teaching it about vehicles
+    // would have put a mode flag inside the collision test of every walking frame. The
+    // vehicle simply steers instead of walking, and land is its wall. The sea is open to a
+    // swimmer too, but at a fifth of the speed - that ratio is what the boat is for now.
     if (state.vehicle) {
-      stepBoat(state.vehicle, { throttle: iz, turn: ix }, dt, (x, z) => groundAt(x, z, Infinity));
+      // Only ahead: the turbo lifts the top speed, and astern has nothing for it to lift.
+      const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
+      stepPool(state.stamina.body, false, dt);
+      state.turbo = turbo;
+      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, (x, z) => groundAt(x, z, Infinity));
       state.pos.set(state.vehicle.x, state.vehicle.deckY ?? DECK_Y, state.vehicle.z);
       state.yaw = state.vehicle.yaw;
       // The camera trails the bow rather than staying where the mouse left it. You steer
@@ -745,8 +774,17 @@ export function createWalkMode({
     }
 
     const push = Math.min(1, Math.hypot(ix, iz));
+    // Shift only spends while it does something: held standing still, crouched on land, or
+    // on a stool, it is not a run and costs nothing. `swimming` is last frame's answer,
+    // which is the one every other line here uses too. An empty pool is the ordinary gait -
+    // a walk on land, a plain stroke in the water - until RECOVER_AT opens it again.
+    const wants = boost && push > 0.02 && !state.lying && !state.sitting && (state.swimming || !state.crouching);
+    const turbo = stepPool(state.stamina.body, wants, dt);
+    stepPool(state.stamina.boat, false, dt);
+    state.turbo = turbo;
+    const run = turbo && !state.swimming;
     const speed = (state.lying || state.sitting ? 0
-      : state.swimming ? SWIM_SPEED
+      : state.swimming ? (turbo ? SWIM_TURBO : SWIM_SPEED)
         : state.crouching ? CROUCH_SPEED
           : run ? RUN_SPEED : WALK_SPEED) * push * dt;
     state.moving = push > 0.02;
@@ -836,7 +874,8 @@ export function createWalkMode({
       // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
       // limbs to animate - the whole body leans into it instead, which at this scale is
       // what reads as swimming.
-      state.bob += dt * (state.moving ? 6.5 : 1.4);
+      // A turbo stroke is a quicker one, by the same ratio as the speed it buys.
+      state.bob += dt * (state.moving ? 6.5 * (state.turbo ? SWIM_TURBO / SWIM_SPEED : 1) : 1.4);
       avatar.position.set(state.pos.x, state.pos.y + Math.sin(state.bob) * 0.03, state.pos.z);
       // Positive pitch, so the head goes forward: rotating about local x maps +y (up,
       // towards the head) onto +z, which is the direction yaw points along. The other

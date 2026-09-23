@@ -1,11 +1,10 @@
-// A boat you steer, and the one rule that makes the crossing a voyage.
+// A boat you steer, and what makes the crossing a voyage.
 //
-// The strip of sea between the two islands is a wall to feet: walk.js:440 refuses any step
-// onto ground below 0.06 unless there is a shore within SWIM_REACH, which is what lets you
-// wade a stream and what stops you leaving the island (tests/sea-gap.test.mjs holds that
-// line over the whole channel). That refusal turned from a limitation into the reason a
-// boat exists, so nothing here touches it. A boat is not feet: this file is the exact
-// inverse of it. Land is the wall, and the open water is where the hull belongs.
+// The strip of sea between two islands used to be a wall to feet: walk.js refused any step
+// into water with no shore within SWIM_REACH. That trapped anybody who reached open water
+// some other way, so a swimmer may now go anywhere - at SWIM_SPEED, a fifth of this hull's
+// (tests/boat.test.mjs holds the ratio), which is what leaves a boat worth taking. A boat is
+// not feet: land is its wall, and the open water is where the hull belongs.
 //
 // The two halves of the file share nothing on purpose. `stepBoat` is a pure function of
 // the hull, the tiller and the ground under one point - no THREE, no document, no clock -
@@ -31,6 +30,12 @@ export const BOAT_DRAG = 0.9;       // let go and it coasts ~4 s to a stop
 export const BOAT_TURN = 1.25;      // rad/s at speed
 export const BOAT_TURN_MIN = 0.35;  // rad/s at rest - an oar, so you are never stuck
 export const BOAT_TURN_BITE = 0.25; // a hard turn spends way: v *= 1 - BITE*|turn|*dt
+// Shift at the tiller: the top speed and the push to reach it, both times this, for as long
+// as the boat's own stamina pool lasts (web/js/stamina.js - four seconds of it). 15.2 at
+// full turbo, and the same ~2 s to get there, so it reads as the engine opening up rather
+// than a second, twitchier boat. Let go and the water brings you back to BOAT_TOP by the
+// ordinary drag, about half a second - the eased-off branch in stepBoat, not a snap.
+export const BOAT_TURBO = 1.6;
 // The baked hull's one part. One part, so one draw call.
 const HULL = 'benchy hull';
 
@@ -119,6 +124,10 @@ const CREEP = 0.25;
 // boat's length inside an island before anything is tested. It also keeps a single step
 // under half a ground cell at top speed, so the bow can never jump a coastline.
 const MAX_STEP = 0.05;
+// The same promise at turbo, which is what makes it a distance and not a time: 15.2 u/s
+// over 0.05 s is 0.76, past half a cell, so above BOAT_TOP the slice shrinks by the same
+// factor the speed grew. At 60 fps (a 0.017 s frame) neither cap is ever reached.
+const TURBO_STEP = MAX_STEP / BOAT_TURBO;
 
 const TAU = Math.PI * 2;
 
@@ -136,11 +145,17 @@ function axis(v) {
 //
 // It also sets `b.aground` on every step that tries to move, so the page can say why the
 // tiller has gone dead instead of leaving somebody pushing a beached hull at a hill.
-export function stepBoat(b, { throttle = 0, turn = 0 } = {}, dt, heightAt) {
+//
+// `turbo` is whether the pool behind it is open this frame, decided by the caller: the pool
+// is page state with a clock in it, and this function stays a function of what it is handed.
+// It only lifts the ceiling ahead - astern is for pushing off a beach, at any stamina.
+export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, heightAt) {
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) return b;
-  const step = Math.min(dt, MAX_STEP);
+  const boost = turbo === true;
+  const step = Math.min(dt, boost || b.v > BOAT_TOP ? TURBO_STEP : MAX_STEP);
   const t = axis(throttle);
   const r = axis(turn);
+  const top = boost ? BOAT_TOP * BOAT_TURBO : BOAT_TOP;
 
   // ---- the tiller ---------------------------------------------------------------
   // The rudder works on water flowing past it, so the turn tightens with the way on. From
@@ -166,8 +181,8 @@ export function stepBoat(b, { throttle = 0, turn = 0 } = {}, dt, heightAt) {
   // times over in the same frame (5.0 u/s² against about 0.04 a frame at top speed), so
   // without a ceiling the tightest turn in the game would cost a boat under power exactly
   // nothing and the hull would corner on rails.
-  const want = (t >= 0 ? t * BOAT_TOP : t * BOAT_REVERSE) * (1 - BOAT_TURN_BITE * Math.abs(r));
-  const accel = want >= 0 ? BOAT_ACCEL : ASTERN_ACCEL;
+  const want = (t >= 0 ? t * top : t * BOAT_REVERSE) * (1 - BOAT_TURN_BITE * Math.abs(r));
+  const accel = want >= 0 ? BOAT_ACCEL * (top / BOAT_TOP) : ASTERN_ACCEL;
   const sameWay = want !== 0 && (b.v === 0 || Math.sign(b.v) === Math.sign(want));
   if (want === 0) {
     // Hands off: the water takes it off, and only the water.
@@ -189,7 +204,10 @@ export function stepBoat(b, { throttle = 0, turn = 0 } = {}, dt, heightAt) {
     b.v -= b.v * BOAT_DRAG * step;
     b.v += Math.sign(want) * accel * step;
   }
-  b.v = clamp(b.v, -BOAT_REVERSE, BOAT_TOP);
+  // The turbo ceiling whether or not the turbo is on this frame: the frame it runs out, the
+  // hull is still doing fifteen, and clamping to BOAT_TOP here would stop it dead at 9.5 in
+  // one step instead of letting the drag above ease it down.
+  b.v = clamp(b.v, -BOAT_REVERSE, BOAT_TOP * BOAT_TURBO);
   if (!t && Math.abs(b.v) < CREEP) b.v = 0;
 
   // ---- the crossing -------------------------------------------------------------

@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [vulkaan-in-het-midden.md](vulkaan-in-het-midden.md) — het Codex-eiland wordt één vijandige
+  vulkaan in het midden van de zee, van de zee zelf; meer islanders betekent meer bewakers, wie
+  Codex-data heeft bouwt er huisjes op, lavastromen zoals de rivier. Daarbij: `hurt()` en health
+  op de zee, stamina en Shift-turbo (rennen/zwemmen samen, boot apart) met rode en gele balken,
+  en vrij zwemmen in open zee. Stap 0 t/m 2 gebouwd op 23 september 2026, de vulkaan zelf nog niet.
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.

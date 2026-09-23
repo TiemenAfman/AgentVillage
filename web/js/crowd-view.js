@@ -65,6 +65,13 @@ const SNAP_U = 6;
 // late walker dead still, and a body treading air in a walking gait is what both of those
 // look like without it.
 const STANDING_U_S = 0.05;
+// How far under the surface a body out of its depth is drawn. Guards on a hostile island
+// swim a strip off the coast now (lib/hostility.mjs, GUARD_SWIM), and the stand height is
+// the ground's - which out there is the sea bed, a metre or more down, so they chased you
+// along the bottom. Clamped to the water instead, deep enough that only the chest and head
+// show: the figures have no swimming pose, and an upright body at the player's own
+// SWIM_SINK (walk.js) reads as walking on the water.
+const WADE_Y = -0.22;
 
 export function createCrowdView({ scene, material, region, buildings = [] }) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
@@ -303,7 +310,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // faster than a stroll, which is how a newcomer's dash up from the beach has always
       // been drawn.
       if (moving) { f.face = [gx, gz]; f.turn = f.anim === 'walk' ? 0.2 : 0.12; f.speed = speed; }
-      f.y = groundAt ? groundAt(nx, nz) : 0;
+      f.y = groundAt ? Math.max(WADE_Y, groundAt(nx, nz)) : 0;
     }
     view.draw(figures, dt);
   }

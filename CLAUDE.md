@@ -472,6 +472,17 @@ Behind Nginx Proxy Manager, two settings or the island connects and then sits in
 **Websockets Support on**, and a read timeout longer than the sea's own 25 s ping
 (`proxy_read_timeout 300s`). Everything after the handshake goes over that socket.
 
+**Everything that harms a player goes through `hurt()`, and health is the sea's.**
+`lib/health.mjs` holds it per connection in memory; a guard's reach (`lib/hostility.mjs`)
+calls `hurt`, and lava and other players must too, never `roster.evict` directly. Today
+every hit is fatal (`oneHit`, the default) and sends you home with 5 s immunity; the bar
+counting for real is flipping that default. A hostile island chases *everybody*, its own
+islander's walker included, and its guards swim `GUARD_SWIM` cells off the coast - the
+strip is a per-crowd reach mask handed to `findPath` as `isLand`, and a swimmer inside it
+is a target. The private `{t:'health', hp, max, regenIn, rate}` carries relative times so
+the page fills the bar on its own clock; it is sent only when the page's number would be
+wrong without it, so never while every hit is fatal.
+
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
 minutes or so on the sea's own clock and riding out on the welcome and on one broadcast. It

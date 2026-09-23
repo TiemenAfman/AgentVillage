@@ -108,6 +108,12 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .chips-label { display: none; }
   .right-column { top: 215px; }
   .panel { top: auto; height: min(62vh, calc(100vh - 190px)); bottom: 80px; }
+  /* To the left and narrower. At 390 wide, centred, the bars ran from x 103 to 287
+     at 92px up, straight across the touchpad's X button (x 230-294, 74-138px up) - which
+     reads as the bar being part of the button. The left edge is the stick's side, but that
+     stick floats wherever the thumb lands and is drawn over whatever is there. */
+  .vitals { align-self: flex-start; margin-left: 16px; width: min(160px, 42vw); gap: 3px; }
+  .vital { height: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

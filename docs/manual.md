@@ -62,10 +62,18 @@ puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does no
 a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
 C again, to get back up. (It was Ctrl until crouching and walking turned out to be
 ctrl+W, which closes the tab: Chrome keeps that one for itself and a page cannot refuse
-it.) You can wade into
-the sea as long as the shore stays within reach - about two metres - and you swim rather
-than walk once you are past the waterline. You cannot jump out of the water, and you
-cannot set out for the horizon.
+it.) You can walk into
+the sea and you swim rather than walk once you are past the waterline - as far as you
+like, even to another island, but slowly: the boat is five times faster. You cannot jump
+out of the water.
+
+Shift is a turbo wherever you are: a run on land, a harder stroke in the water, and at
+the tiller the boat opens up to about one and a half times her speed. It does not last.
+Running and swimming share one pool of stamina (six seconds of it) and the boat has its
+own (four), shown as the yellow bar over the key strip for whichever you are using; both
+fill again a second after you let go, even while you are spending the other. Run a pool
+dry and Shift does nothing - the bar goes dull - until it is back to a quarter. A full
+bar fades away. The red bar above it is health, which nothing takes away yet.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
 the on-screen hints switch to controller buttons. The buttons are laid out the way a
@@ -346,10 +354,10 @@ and they always come home, which is why the route is a wide circle out and back 
 a wander. If the dock is up a creek too narrow to turn in, the walk to the end of the pier
 is the whole of the outing.
 
-On foot the open water is still a wall. You may wade in as long as the shore stays within
-about two metres, and not a step further, which is what has always kept you from setting
-out for the horizon. That refusal is the reason the boat is worth having: it is what makes
-the strip of sea between two islands a crossing rather than a paddle. Leave it in place.
+On foot the open water is no longer a wall: you may swim anywhere, the strip of sea between
+two islands included. It used to stop two metres from the shore, and that trapped anybody
+who ended up at sea some other way. What keeps the boat worth having is speed - a swim is a
+fifth of a sail - so keep SWIM_SPEED well below BOAT_TOP (tests/boat.test.mjs says so).
 
 **One thing this cannot defend against.** A port forwarder on this machine — `netsh
 interface portproxy`, ngrok, `ssh -L`, Docker's userland proxy, a reverse proxy — makes

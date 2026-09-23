@@ -1,10 +1,10 @@
-// The gap is impassable on foot, and that is load-bearing rather than a limitation.
+// No shore is within SWIM_REACH of the middle of the gap.
 //
-// web/js/walk.js:440 refuses any step onto ground below 0.06 unless there is a shore within
-// SWIM_REACH, so you can wade, and cross a stream, and swim a few strides off a beach - and
-// you cannot leave the island. Once there is a second island across a strip of sea, that one
-// line is the entire reason a boat exists. So it has to be true of the strip we chose, not
-// merely hoped to be, and it has to stay true if somebody narrows SEA_GAP later.
+// This used to be the wall that kept feet on their own island. It is not any more - a
+// swimmer may cross the open sea (walk.js, next to SWIM_SPEED), slowly, because a swimmer
+// who reached open water any other way was stuck there. What still rests on it is placing
+// somebody: stepping ashore and entering walk mode only accept a spot within SWIM_REACH of a
+// shore, so "step ashore" is never offered - or honoured - in the middle of a crossing.
 //
 // Asserted over the middle third of the water, because the outer thirds are the shallows
 // either coast is allowed to have.

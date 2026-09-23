@@ -67,6 +67,8 @@ import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
+import { createVitals } from './vitals.js';
+import { shownPool } from './stamina.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -333,6 +335,10 @@ const state = {
   // you are still on foot, the room simply owns the camera and the keyboard while you
   // are in it.
   inside: null,
+  // The health and stamina bars over the walking strip. Made with the state rather than at
+  // boot, because the markup is already in the page and nothing about it waits on the sea.
+  // Health stays full - and so out of sight - until the sea has a number for it to show.
+  vitals: createVitals(document.getElementById('vitals')),
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   // Whether the yard signs are standing. The island answers this at /api/hello before
   // anything is built, so a page that may not read them never makes them in the first
@@ -837,7 +843,7 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 // stepping back out of a room re-enters walk mode, and a second copy of this list would
 // drift away from the first one.
 // Aboard. The boat is handed to walk mode, which steers it from there; nothing else about
-// being on foot changes, which is why `blocked` and the wading rule are untouched.
+// being on foot changes, which is why `blocked` knows nothing about vehicles.
 // The quay's own key. This island has one boat and it is at its mooring, or it is wherever
 // somebody left it - and if that is the far shore, then that is where it is. Nothing is
 // summoned to reach you and you are not carried to it, which is the whole of what a boat
@@ -4039,11 +4045,13 @@ function frame(nowMs) {
   if (state.inside) {
     const w = state.inside.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
+    state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
     showMinimap(true);

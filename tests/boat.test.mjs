@@ -1,12 +1,12 @@
 // The boat, and the two promises it has to keep.
 //
-// The first is a comparison. tests/sea-gap.test.mjs proves the channel cannot be waded, so
-// the boat is the only way across it - and a way across that is slower than running round
+// The first is a comparison. A swimmer can cross the channel too, so the boat is only worth
+// taking if it is much faster than that - and a way across that is slower than running round
 // your own island is a punishment rather than a journey. So the numbers in web/js/boat.js
 // are only meaningful next to the ones the feet use, and those are read out of walk.js
 // below rather than copied here: if RUN_SPEED is ever raised past the hull, this says so.
 //
-// The second is the inverse of walk.js:440. Feet refuse the water; the hull refuses the
+// The second is the inverse of the feet. Feet walk the land; the hull refuses the
 // land, and it refuses it at the bow rather than at the waist. That is the assertion worth
 // having a net under, because the failure is not a crash - it is a boat sitting on a hill,
 // found by somebody sailing rather than by anything here.
@@ -27,7 +27,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const {
   stepBoat, createBoat,
-  BOAT_TOP, BOAT_REVERSE, BOAT_TURN, BOAT_TURN_MIN, BOW, DECK_Y,
+  BOAT_TOP, BOAT_REVERSE, BOAT_TURN, BOAT_TURN_MIN, BOAT_TURBO, BOW, DECK_Y,
 } = await import('../web/js/boat.js');
 delete globalThis.document;
 
@@ -44,6 +44,7 @@ function feetSpeed(name) {
 const WALK_SPEED = feetSpeed('WALK_SPEED');
 const RUN_SPEED = feetSpeed('RUN_SPEED');
 const SWIM_SPEED = feetSpeed('SWIM_SPEED');
+const SWIM_TURBO = feetSpeed('SWIM_TURBO');
 
 const FRAME = 1 / 60;
 const OPEN_SEA = () => -2.5;                                  // shared/regions.mjs's own number
@@ -95,6 +96,44 @@ test('let go and it coasts to a stop, never speeding up on the way', () => {
   assert.ok(t > 3 && t < 5, `it drifted for ${t.toFixed(1)} s, which is not about four`);
 });
 
+// ---- Shift at the tiller ------------------------------------------------------------
+
+test('the turbo opens the engine up, and letting go eases her back down', () => {
+  const top = BOAT_TOP * BOAT_TURBO;
+  const b = hull();
+  let t = 0;
+  while (b.v < top - 1e-9 && t < 10) { stepBoat(b, { throttle: 1, turn: 0, turbo: true }, FRAME, OPEN_SEA); t += FRAME; }
+  assert.ok(Math.abs(b.v - top) < 1e-9, `full turbo settled at ${b.v}`);
+  // The same ~2 s as without it: a stronger engine, not a twitchier boat.
+  assert.ok(t > 1.5 && t < 2.5, `it took ${t.toFixed(2)} s to reach turbo speed, not about two`);
+
+  // The pool runs out mid-crossing. No step down to 9.5 in one frame - the water takes it
+  // off, and the hull never drops below what the throttle is still asking for.
+  let last = b.v;
+  t = 0;
+  while (b.v > BOAT_TOP + 1e-9 && t < 5) {
+    stepBoat(b, { throttle: 1, turn: 0, turbo: false }, FRAME, OPEN_SEA);
+    assert.ok(last - b.v < 0.3, `the turbo ran out and the boat lost ${(last - b.v).toFixed(2)} in one frame`);
+    assert.ok(b.v >= BOAT_TOP, 'running out of turbo braked below cruising speed');
+    last = b.v;
+    t += FRAME;
+  }
+  assert.ok(t > 0.2 && t < 1.5, `it took ${t.toFixed(2)} s to ease back to cruising speed`);
+  assert.equal(b.v, BOAT_TOP);
+
+  // Astern is for pushing off a beach, and Shift does not make it a way to travel.
+  const astern = sail(hull(), { throttle: -1, turn: 0, turbo: true }, 6);
+  assert.ok(Math.abs(astern.v + BOAT_REVERSE) < 1e-9, `full astern at turbo settled at ${astern.v}`);
+  // Only `true` is a turbo: a caller handing over a pool object or a number gets none.
+  assert.equal(sail(hull(), { throttle: 1, turn: 0, turbo: 1 }, 5).v, BOAT_TOP);
+});
+
+test('a swimmer at full turbo is still no boat', () => {
+  assert.ok(SWIM_TURBO > SWIM_SPEED, `the swim turbo at ${SWIM_TURBO} is no faster than a swim`);
+  assert.ok(SWIM_TURBO < WALK_SPEED, `the swim turbo at ${SWIM_TURBO} outpaces a walk at ${WALK_SPEED}`);
+  assert.ok(BOAT_TOP > SWIM_TURBO * 2.5, `a boat at ${BOAT_TOP} barely beats a turbo swim at ${SWIM_TURBO}`);
+});
+
 // ---- the shore ----------------------------------------------------------------------
 
 test('the bow cannot climb onto land, at any angle or frame rate', () => {
@@ -110,11 +149,13 @@ test('the bow cannot climb onto land, at any angle or frame rate', () => {
   for (const { yaw, throttle } of runs) {
     // 0.25 is a browser tab coming back to the front: a step that long, integrated whole,
     // would carry the bow two boat-lengths inland before anything looked at the ground.
-    for (const dt of [FRAME, 0.25]) {
+    // And every run again at turbo, which is the bow MAX_STEP's half-a-cell promise has to
+    // hold for at the fastest.
+    for (const [dt, turbo] of [[FRAME, false], [0.25, false], [FRAME, true], [0.25, true]]) {
       const b = hull({ x: -5, yaw });
       let grounded = false;
       for (let i = 0; i < 1600; i++) {
-        stepBoat(b, { throttle, turn: 0 }, dt, coast);
+        stepBoat(b, { throttle, turn: 0, turbo }, dt, coast);
         const lead = b.x + Math.sin(b.yaw) * BOW * (b.v >= 0 ? 1 : -1);
         assert.ok(lead <= 10 + 1e-9, `the bow reached x=${lead.toFixed(3)} at yaw ${yaw.toFixed(2)}, dt ${dt}`);
         assert.ok(b.x < 10, `the hull is standing on the beach at x=${b.x.toFixed(3)}`);
