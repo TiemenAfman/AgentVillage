@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [klok-en-hemel-van-de-zee.md](klok-en-hemel-van-de-zee.md) — de zee als enige klok: één
+  `shared/worldclock.mjs` voor uur, maand, weekdag en maanfase, `SEA_TZ` zodat de zee in Docker
+  niet op UTC draait, de borrel weer echt (de zee zet `setGather`, dat sinds de crowd naar de
+  zee ging nergens meer werd aangeroepen) en wolken als functie van wereldtijd. Fase 1 (de
+  wereldklok en `SEA_TZ`) gebouwd op 23 september 2026.
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.

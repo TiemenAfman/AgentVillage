@@ -13,7 +13,8 @@ import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
-import { createWorld, seasonOf } from './world.js';
+import { createWorld } from './world.js';
+import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
@@ -2354,7 +2355,7 @@ function raiseGuestIslands() {
   for (const region of state.sea.regions()) {
     if (region === state.region || standing.has(region.id)) continue;
     const g = createGuestIsland({
-      scene, region, month: new Date().getMonth(),
+      scene, region, month: worldNow().month,
       buildings: (region.village && region.village.buildings) || [],
       material: buildingMat, modest,
     });
@@ -2527,17 +2528,22 @@ function groundAt(x, z) { return state.terrain.worldHeight(x, z); }
 //
 // With no sea to ask, both fall back to this machine, which is exactly what the island did
 // before there were any.
+//
+// The month and the weekday come from the same place as the hour. They used to be
+// `getMonth()` and `getDay()` - this browser's zone, not the world's - so the hour was the
+// sea's while the season and the Friday were each viewer's own. shared/worldclock.mjs is
+// the one copy, and tests/worldclock.test.mjs fails on a local getter anywhere in web/js/.
 function timeNow() {
   if (state.chronicle.t != null) return state.chronicle.t;
   return Date.now() + (state.seaSkewMs || 0);
 }
+function worldNow() {
+  const t = timeNow();
+  return worldTime(t, state.seaTz == null ? localZone(t) : state.seaTz);
+}
 function currentHour() {
   if (state.hourOverride != null) return state.hourOverride;
-  const d = new Date(timeNow());
-  const tz = state.seaTz == null ? -d.getTimezoneOffset() : state.seaTz;
-  // UTC plus the world's own offset, rather than this browser's idea of local time.
-  const mins = d.getUTCHours() * 60 + d.getUTCMinutes() + tz;
-  return (((mins % 1440) + 1440) % 1440) / 60;
+  return worldNow().hour;
 }
 
 // Eight ways to look for a beach from a hull that has come alongside one.
@@ -2743,7 +2749,7 @@ function buildScene(village) {
   state.region.village = village;
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
-    month: new Date().getMonth(),
+    month: worldNow().month,
     shadowSize: modest ? 1024 : 2048,
     modest,
     // So the water is laid over everything there is, not over this island alone.
@@ -4086,7 +4092,8 @@ function frame(nowMs) {
   }
 
   const hour = currentHour();
-  const month = new Date(timeNow()).getMonth();
+  const calendar = worldNow();
+  const month = calendar.month;
   if (state.world) {
     state.world.update(dt, hour, month);
     // Straight after it, and never before: the weather multiplies what the hour has just
@@ -4104,8 +4111,7 @@ function frame(nowMs) {
     // left here is the furniture, which is scenery and always was: one set of tables per
     // ten islanders, of which the set the village earned is the first, so the rest are
     // carried out and taken back in with the borrel itself.
-    const d = new Date(timeNow());
-    const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+    const borrel = calendar.weekday === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
@@ -4214,7 +4220,7 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  state.ui.setClock(hour, state.world ? state.world.season() : seasonOf(month));
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
     // Colour pass only: three.js resets renderer.info after the shadow pass, so the
@@ -4790,7 +4796,7 @@ async function boot() {
     island: {
       name: () => (state.village && state.village.island ? state.village.island.name : 'Promptholm'),
       hour: () => currentHour(),
-      season: () => (state.world ? state.world.season() : seasonOf(new Date(timeNow()).getMonth())),
+      season: () => (state.world ? state.world.season() : worldNow().season),
       building: () => (state.village
         ? state.village.buildings.filter((b) => b.active && b.kind !== 'civic').map((b) => b.name)
         : []),
