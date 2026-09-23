@@ -28,6 +28,7 @@ import {
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createNameplate } from './nameplate.js';
+import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
@@ -2843,7 +2844,7 @@ function handOutDecks() {
     : null;
 }
 
-// A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
+// A hamlet's name, on a board beside its entrance, and the quay's planks. A lone farmstead gets
 // neither: it is one house in the countryside, not a place with a name.
 const hamletGroup = new THREE.Group();
 const hamletSigns = new Map();
@@ -2854,7 +2855,7 @@ function titleCaseName(s) {
     .join(' ');
 }
 
-// Where a hamlet's road leaves its land - the gate the welcome sign stands over. Derived
+// Where a hamlet's road leaves its land - the entrance the welcome sign stands beside. Derived
 // rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
 // on the wire, and the parcel says which of them are still on the hamlet's own ground.
 // Deriving it also means the chronicle gets it for nothing, because it filters the roads
@@ -2945,6 +2946,7 @@ function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
   const live = new Set();
+  const signSite = hamletSignSites(village, terrain);
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
@@ -2980,30 +2982,30 @@ function syncHamlets(village) {
     if (!d.center || d.tier === 'farmstead') continue;
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
-      live.add(key);
-      // Over the road where it leaves the hamlet's land, square to it, so you read the
-      // name walking through rather than passing a placard in a field. The green it used
-      // to stand on is gone.
+      // Keep the entrance in sight, but put both posts on free ground beside it.
       const gate = gateOf(village, d, li, lobe);
-      const [gx, gz] = gate ? gate.at : (lobe.green || d.center);
+      const site = signSite(gate);
+      if (!site) continue;
+      live.add(key);
+      const { gx, gz, turn } = site;
       const [x, z] = terrain.cellWorld(gx, gz);
       const sx = x, sz = z;
-      const along = gate ? Math.abs(gate.next[0] - gate.at[0]) > Math.abs(gate.next[1] - gate.at[1]) : false;
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name && have.along === along) {
-        have.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
+      if (have && have.text === d.name) {
+        have.group.rotation.y = turn;
+        have.group.position.set(sx, groundAt(sx, sz), sz);
         continue;
       }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
         width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
       });
-      // The arch straddles the road: its posts sit either side of the way through.
-      sign.group.rotation.y = along ? Math.PI / 2 : 0;
-      sign.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
+      // Face approaching walkers, with the whole frame clear of the paving.
+      sign.group.rotation.y = turn;
+      sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, along, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
     }
   }
   for (const [key, rec] of [...hamletSigns]) {

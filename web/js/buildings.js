@@ -51,14 +51,9 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
-// The lighthouse's lamp: how many painted bands the tower is built of, and how high the
-// lamp therefore stands over its own foot. Hoisted out of the `lighthouse` case below,
-// where it is still the only arithmetic that decides it, because web/js/horizon.js has to
-// put a light on a tower it never builds - a silhouette has no mesh to read an anchor off.
-// A second, hand-copied 2.4 somewhere else is how a far island's lamp ends up buried in
-// its own lantern room the first time the tower gains a band.
-export const BEACON_BANDS = 4;
-export const BEACON_RISE = BEACON_BANDS * 0.55 + 0.2;
+// Both the nearby beam and horizon light use the baked lantern's centre. Reading
+// its actual origin keeps a future Blender edit from leaving the distant lamp behind.
+export const BEACON_RISE = models.part('Lighthouse lantern glass').at[1];
 
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
@@ -1201,35 +1196,13 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.78 };
     }
     case 'clocktower':
-      parts.push(box(0.56, 2.3, 0.56, C.stone, { sheet: 'stone' }));
-      parts.push(box(0.6, 0.1, 0.6, 0x8f8a80, { y: 1.5, sheet: 'stone' }));
-      parts.push(cylinder(0.17, 0.17, 0.04, 14, C.white, { y: 1.85, z: 0.29, rx: Math.PI / 2 }));
-      parts.push(pyramidRoof(0.68, 0.68, 0.44, C.copper, { y: 2.3 }));
-      parts.push(sphere(0.06, C.gold, { y: 2.78 }));
-      for (let i = 0; i < 3; i++) parts.push(box(0.1, 0.16, 0.03, C.glass, { y: 0.5 + i * 0.45, z: 0.29, emissive: 1 }));
-      animated.clock = { at: [0, 1.85, 0.32] };
-      return { anchors, animated, height: 2.9 };
+      parts.push(...meshAsset('clocktower'));
+      Object.assign(anchors, meshAnchors('clocktower'));
+      animated.clock = { at: [...models.part('Clocktower clock dial').at] };
+      return { anchors, animated, height: models.heightOf('clocktower') };
     case 'statue': {
-      // A founder on a plinth, one arm out over the square. Bronze, so it reads warm
-      // against all the grey stone around it.
-      let y = 0;
-      parts.push(box(0.52, 0.09, 0.52, C.foundation, { y })); y += 0.09;
-      parts.push(box(0.42, 0.10, 0.42, C.stone, { y })); y += 0.10;
-      parts.push(box(0.32, 0.46, 0.32, C.stone, { y }));
-      parts.push(box(0.18, 0.12, 0.02, 0xcfc4a8, { y: y + 0.16, z: 0.161 }));   // the plaque
-      y += 0.46;
-      parts.push(box(0.38, 0.06, 0.38, C.stone, { y })); y += 0.06;
-      const bronze = 0x9c7a3c;
-      parts.push(box(0.05, 0.16, 0.05, bronze, { x: -0.045, y }));
-      parts.push(box(0.05, 0.16, 0.05, bronze, { x: 0.045, y }));
-      const hip = y + 0.14;
-      parts.push(box(0.15, 0.26, 0.11, bronze, { y: hip }));
-      parts.push(box(0.19, 0.08, 0.13, bronze, { y: hip + 0.2 }));
-      parts.push(box(0.045, 0.22, 0.045, bronze, { x: -0.11, y: hip + 0.06, rz: 0.55 }));
-      parts.push(box(0.045, 0.2, 0.045, bronze, { x: 0.1, y: hip + 0.05, rz: -0.15 }));
-      parts.push(sphere(0.072, bronze, { y: hip + 0.35 }));
-      parts.push(cylinder(0.016, 0.02, 0.34, 5, bronze, { x: 0.13, y: hip - 0.02 }));
-      return { anchors, animated, height: hip + 0.45 };
+      parts.push(...meshAsset('statue'));
+      return { anchors, animated, height: models.heightOf('statue') };
     }
     case 'lamp': {
       // The glass is emissive, so the square lights itself once the sun is down.
@@ -1446,36 +1419,21 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
+    case 'poldermill':
       parts.push(...meshAsset('civic_windmill'));
       // The entire sail disc stands ahead of the widest course of brickwork.
       animated.blades = { at: [0, 1.61, 0.64], r: 0.5 };
       return { anchors, animated, height: models.heightOf('civic_windmill') };
     case 'lighthouse': {
-      const bands = BEACON_BANDS;
-      for (let i = 0; i < bands; i++) {
-        parts.push(cylinder(0.24 - i * 0.02, 0.3 - i * 0.02, 0.55, 16, i % 2 ? C.white : C.red, { y: i * 0.55, sheet: 'wall' }));
-      }
-      const top = bands * 0.55;
-      parts.push(cylinder(0.3, 0.3, 0.06, 12, C.iron, { y: top }));
-      parts.push(cylinder(0.19, 0.19, 0.3, 8, 0xfff2b0, { y: top + 0.06, emissive: 1 }));
-      parts.push(cone(0.26, 0.28, 8, C.red, { y: top + 0.36 }));
-      animated.beacon = { at: [0, BEACON_RISE, 0] };   // = top + 0.2, and the only copy of it
-      return { anchors, animated, height: top + 0.7 };
+      parts.push(...meshAsset('lighthouse'));
+      Object.assign(anchors, meshAnchors('lighthouse'));
+      animated.beacon = { at: [0, BEACON_RISE, 0] };
+      return { anchors, animated, height: models.heightOf('lighthouse') };
     }
     case 'castle': {
-      parts.push(box(1.3, 1.5, 1.3, C.stone, { sheet: 'stone' }));
-      for (const [x, z] of [[-0.72, -0.72], [0.72, -0.72], [-0.72, 0.72], [0.72, 0.72]]) {
-        parts.push(cylinder(0.22, 0.25, 2.1, 12, C.stone, { x, z, sheet: 'stone' }));
-        parts.push(cone(0.3, 0.4, 12, C.slate, { x, y: 2.1, z, sheet: 'roof' }));
-      }
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        parts.push(box(0.14, 0.14, 0.14, C.stone, { x: Math.cos(a) * 0.62, y: 1.5, z: Math.sin(a) * 0.62 }));
-      }
-      parts.push(box(0.4, 0.6, 0.1, 0x3a2a20, { z: 0.66 }));
-      anchors.flag = [0.72, 2.75, -0.72];
-      parts.push(box(0.025, 0.5, 0.025, C.darkWood, { x: 0.72, y: 2.5, z: -0.72 }));
-      return { anchors, animated, height: 2.9 };
+      parts.push(...meshAsset('castle'));
+      Object.assign(anchors, meshAnchors('castle'));
+      return { anchors, animated, height: models.heightOf('castle') };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
@@ -1536,11 +1494,6 @@ function civic(parts, spec, rng) {
       parts.push(pyramidRoof(0.30, 0.30, 0.09, C.stone, { y, sheet: 'stone' }));
       return { anchors, animated, height: y + 0.09 };
     }
-    case 'poldermill':
-      parts.push(cylinder(0.3, 0.42, 1.2, 14, 0xd9b98c, { sheet: 'wall' }));
-      parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));
-      animated.blades = { at: [0, 1.3, 0.38], r: 0.5 };
-      return { anchors, animated, height: 1.8 };
     case 'crane': {
       // The harbour crane on the quayside, reaching out over the water. Every civic on
       // this island faces the town; this one faces the sea, which lib/layout.mjs arranges

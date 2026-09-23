@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
 import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
+import { placeBuoys } from './buoy-placement.js';
 import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, FIELD_REACH, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
@@ -1041,7 +1042,7 @@ export function createLandscape({
   }
 
   // ---- the betonning --------------------------------------------------------
-  // Withies down both sides of the dredged channel. A fairway is a hole in a bar and looks
+  // Blender buoys down both sides of the dredged channel. A fairway is a hole in a bar and looks
   // from the water exactly like the bar it was cut through - the whole of it is under the
   // surface - so an unmarked one is a channel nobody can find, which is the problem it was
   // dug to solve wearing a different hat.
@@ -1049,85 +1050,36 @@ export function createLandscape({
   // Read off `terrain.fairway` and not the village, so a guest island's channel marks
   // itself from the same ground everyone agrees on, and so this survives a `reshape`: the
   // chronicle rebuilds the terrain as it was on the day being looked at, and on a day
-  // before the dredging there is no channel and therefore no stakes.
+  // before the dredging there is no channel and therefore no buoys.
   //
   // IALA region A, which is the sea this island is in: entering from seaward, red cans to
   // port and green cones to starboard. The direction is the centreline's own - `planFairway`
   // lays it down from the sea inwards precisely so that "port" has a meaning here - and
   // the handedness is walk.js's: with forward (fx, fz), starboard is (-fz, fx).
-  // A ground cell is four metres, so these are smaller than they look written down: a
-  // stake stands 2.2 m out of the water with a topmark half a metre across, which is a
-  // withy and not a lighthouse. The first cut of this was 1.15 and 0.22, and from the
-  // water they were the size of trees - the scale error you only see by standing in it.
-  const BEACON_EVERY = 3;       // cells between pairs: close enough to read as a lane
-  const BEACON_OUT = 2.0;       // how far off the middle, which is FAIRWAY_HALF in cells
-  const BEACON_RISE = 0.55;     // stake above the water; a wave hides anything shorter
+  // The asset base is immersed so the broad belt sits on the waterline. All copies
+  // are merged: a richer silhouette still costs one draw call for the whole channel.
+  const BEACON_EVERY = 3;
+  const BEACON_OUT = 2.0;
+  const BUOY_DRAFT = 0.09;
   let beaconMesh = null;
 
   function buildBeacons() {
     const f = terrain.fairway;
     if (!f || !f.line || f.line.length < 2) return null;
-    const pos = [], col = [], idx = [];
-    let v = 0;
-    const quad = (a, b, c, d, hex) => {
-      tmpColor.setHex(hex);
-      for (const p of [a, b, c, d]) { pos.push(p[0], p[1], p[2]); col.push(tmpColor.r, tmpColor.g, tmpColor.b); }
-      idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
-      v += 4;
-    };
-    // A stake is a square post and a topmark, both drawn as four upright quads - no cones
-    // and no cylinders, because at this size the silhouette is the whole of it and a
-    // twelve-sided anything is triangles spent on nothing anybody can see from a boat.
-    const stake = (x, z, hex, cone) => {
-      const bed = terrain.worldHeight(x, z);
-      const top = BEACON_RISE, r = 0.035;
-      const corners = [[-r, -r], [r, -r], [r, r], [-r, r]];
-      for (let k = 0; k < 4; k++) {
-        const [ax, az] = corners[k], [bx, bz] = corners[(k + 1) % 4];
-        quad([x + ax, bed, z + az], [x + bx, bed, z + bz], [x + bx, top, z + bz], [x + ax, top, z + az], 0x6b4a2f);
-      }
-      // The topmark. A cone stands on its base and a can is a drum, which is the one
-      // difference a helmsman actually reads at a distance.
-      const w = 0.11, hgt = 0.2;
-      for (let k = 0; k < 4; k++) {
-        const [ax, az] = corners[k].map((c) => (c / r) * w);
-        const [bx, bz] = corners[(k + 1) % 4].map((c) => (c / r) * w);
-        const tipW = cone ? 0 : 1;
-        quad(
-          [x + ax, top, z + az], [x + bx, top, z + bz],
-          [x + bx * tipW, top + hgt, z + bz * tipW], [x + ax * tipW, top + hgt, z + az * tipW], hex,
-        );
-      }
-    };
-    for (let s = 0; s < f.line.length; s += BEACON_EVERY) {
-      const a = f.line[Math.max(0, s - 1)], b = f.line[Math.min(f.line.length - 1, s + 1)];
-      let fx = b[0] - a[0], fz = b[1] - a[1];
-      const L = Math.hypot(fx, fz);
-      if (!L) continue;
-      fx /= L; fz /= L;
-      const [cx, cz] = terrain.cellWorld(f.line[s][0], f.line[s][1]);
-      // Out to where the channel actually ends rather than to a number: the cut is
-      // narrower where it passed a headland, and a stake on dry sand is worse than none.
-      for (const [side, hex, cone] of [[1, 0x3f8f4f, true], [-1, 0xb03a2e, false]]) {
-        const ox = -fz * side, oz = fx * side;
-        let at = 0;
-        for (let d = BEACON_OUT; d >= 1.0; d -= 0.2) {
-          if (terrain.worldHeight(cx + ox * d, cz + oz * d) < 0) { at = d; break; }
-        }
-        if (at) stake(cx + ox * at, cz + oz * at, hex, cone);
-      }
+    const pieces = [];
+    const shapes = [models.grouped('prop_buoy_green', ['plain']), models.grouped('prop_buoy_red', ['plain'])];
+    for (const { x, z, side } of placeBuoys(terrain)) {
+      pieces.push(shapes[side === 1 ? 0 : 1].clone().translate(x, -BUOY_DRAFT, z));
     }
-    if (!pos.length) return null;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    return g;
+    for (const shape of shapes) shape.dispose();
+    if (!pieces.length) return null;
+    const geometry = mergeGeometries(pieces);
+    for (const piece of pieces) piece.dispose();
+    return geometry;
   }
 
   function dressBeacons() {
-    if (beaconMesh) { group.remove(beaconMesh); beaconMesh.geometry.dispose(); beaconMesh = null; }
+    if (beaconMesh) { group.remove(beaconMesh); beaconMesh.geometry.dispose(); beaconMesh.material.dispose(); beaconMesh = null; }
     const bg = buildBeacons();
     if (!bg) return;
     beaconMesh = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
@@ -1249,32 +1201,6 @@ export function createLandscape({
       buildGroundWear();                    // and the feather round a yard follows the meadow
     }
     // felling animation
-  // Where the work is, for the sea (Plans/inwoners-aan-het-werk.md). The settlers walk in
-  // Node off the island's bundle, and nothing in a bundle says where a field was laid or a
-  // tree was planted - both are this file's own survey. So the keeper's page writes it down
-  // the way it writes down where the houses really stand (reportPlacements in main.js).
-  //
-  // Cells for the fields and the kitchen gardens, positions for the trees. Only the trees
-  // within FIELD_REACH of a door or a road, which is the edge of the wood rather than the
-  // middle of it - nobody walks to the far side of the island for kindling - and at most
-  // WORK_TREES of those, taken by a spatial hash so the choice does not move when the
-  // forest is thinned somewhere else.
-  function workSites() {
-    const WORK_TREES = 500;
-    const rect = (p) => [p.gx, p.gz, p.w, p.d];
-    const edge = [];
-    for (const it of trees) {
-      if (it.felled || settled.dist[it.cell] > FIELD_REACH) continue;
-      edge.push([hash32(`work:${it.cell}:${Math.round(it.x * 100)}`), it]);
-    }
-    edge.sort((a, b) => a[0] - b[0]);
-    return {
-      fields: fieldPlan.patches.map(rect),
-      gardens: fieldPlan.gardens.map(rect),
-      trees: edge.slice(0, WORK_TREES).map(([, it]) => [Math.round(it.x * 1000) / 1000, Math.round(it.z * 1000) / 1000]),
-    };
-  }
-
     for (let i = falling.length - 1; i >= 0; i--) {
       const f = falling[i];
       f.t += dt;
@@ -1307,7 +1233,7 @@ export function createLandscape({
     // The decals stand on the heightfield, so a coast that has moved takes them with it.
     buildGroundWear();
     // And the withies go with the channel they mark. Cheap enough to rebuild outright -
-    // a dozen stakes - and the alternative is a buoyed fairway on a day before it was dug.
+    // a dozen buoys - and the alternative is a buoyed fairway on a day before it was dug.
     dressBeacons();
   }
 
@@ -1321,6 +1247,32 @@ export function createLandscape({
       if (o.geometry) o.geometry.dispose();
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) m.dispose();
     });
+  }
+
+  // Where the work is, for the sea (Plans/inwoners-aan-het-werk.md). The settlers walk in
+  // Node off the island's bundle, and nothing in a bundle says where a field was laid or a
+  // tree was planted - both are this file's own survey. So the keeper's page writes it down
+  // the way it writes down where the houses really stand (reportPlacements in main.js).
+  //
+  // Cells for the fields and the kitchen gardens, positions for the trees. Only the trees
+  // within FIELD_REACH of a door or a road, which is the edge of the wood rather than the
+  // middle of it - nobody walks to the far side of the island for kindling - and at most
+  // WORK_TREES of those, taken by a spatial hash so the choice does not move when the
+  // forest is thinned somewhere else.
+  function workSites() {
+    const WORK_TREES = 500;
+    const rect = (p) => [p.gx, p.gz, p.w, p.d];
+    const edge = [];
+    for (const it of trees) {
+      if (it.felled || settled.dist[it.cell] > FIELD_REACH) continue;
+      edge.push([hash32(`work:${it.cell}:${Math.round(it.x * 100)}`), it]);
+    }
+    edge.sort((a, b) => a[0] - b[0]);
+    return {
+      fields: fieldPlan.patches.map(rect),
+      gardens: fieldPlan.gardens.map(rect),
+      trees: edge.slice(0, WORK_TREES).map(([, it]) => [Math.round(it.x * 1000) / 1000, Math.round(it.z * 1000) / 1000]),
+    };
   }
 
   return {

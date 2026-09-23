@@ -16,6 +16,10 @@
 // Adding a set: bake it, import it here, put it in SETS. Everything else - the workbench,
 // the model sheet, the shape catalogue - reads it through this file.
 import * as THREE from 'three';
+import { LIGHTHOUSE } from './lighthouse-mesh.js';
+import { CLOCKTOWER } from './clocktower-mesh.js';
+import { STATUE } from './statue-mesh.js';
+import { CASTLE } from './castle-mesh.js';
 import { TAVERN } from './tavern-mesh.js';
 import { COTTAGE } from './cottage-mesh.js';
 import { HOUSE } from './house-mesh.js';
@@ -34,9 +38,10 @@ import { WALL } from './wall-mesh.js';
 import { DOCKS } from './docks-mesh.js';
 import { BOARDWALK } from './boardwalk-mesh.js';
 import { QUAYSTEPS } from './quaysteps-mesh.js';
+import { BUOYS } from './buoys-mesh.js';
 import { BENCHY } from './benchy-mesh.js';
 
-const SETS = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY };
+const SETS = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
