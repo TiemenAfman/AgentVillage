@@ -1445,7 +1445,27 @@ if (access.open) {
 // Read through config rather than captured, so /api/sea changing it is enough.
 const SEA = () => config.multiplayer.sea || {};
 const ISLAND_ID = beaconId(PORT);
-const ISLAND_TOKEN = mintToken();
+// Kept on disk rather than minted per process. The token is what holds this island's claim
+// in the sea, and a fresh one per process made every restart of the tray a stranger to its
+// own island: refused as `claimed` for as long as the previous process's grace ran
+// (fleet.GRACE_MS), and the island gone from the sea until that ran out. The same keeper
+// on the same machine is the same claimant, so the claim should survive a restart.
+// data/ is gitignored, and .gitignore names this file a second time on purpose.
+const TOKEN_FILE = path.join(DATA, 'sea-token.json');
+function keptToken(which) {
+  const kept = readJson(TOKEN_FILE, null) || {};
+  if (typeof kept[which] === 'string' && /^[0-9a-f]{48}$/.test(kept[which])) return kept[which];
+  const token = mintToken();
+  try {
+    fs.mkdirSync(DATA, { recursive: true });
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ ...kept, [which]: token }, null, 2));
+  } catch (e) {
+    // Not fatal: this process still holds its claim, only the next restart waits one out.
+    log(`could not keep the sea token (${e.message}); a restart will have to wait out its own claim`);
+  }
+  return token;
+}
+const ISLAND_TOKEN = keptToken('home');
 let ownSea = null;
 let seaClient = null;
 let codexClient = null;
@@ -1598,7 +1618,7 @@ async function putToSea() {
     // Let home claim its berth first, including when the sea starts empty.
     await seaClient.publish();
     codexClient = createSeaClient({
-      url, islandId: CODEX_ISLAND_ID, key: cfg.key || null,
+      url, islandId: CODEX_ISLAND_ID, token: keptToken('codex'), key: cfg.key || null,
       name: islanderName, bundle: codexBundle,
       log: (m) => log(`Codex sea: ${m}`),
     });

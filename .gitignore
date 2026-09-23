@@ -22,6 +22,8 @@ config.json.bak*
 # data/ rule above already covers it - this second one is deliberate, so that widening
 # that rule later cannot quietly start publishing somebody's mail password.
 data/mail.json
+# the token that holds this island's claim in the sea - whoever has it can publish over it
+data/sea-token.json
 
 # somebody else's island, parked here while they visit. Swept at every start anyway, so a
 # copy in the history would outlive the visit itself.

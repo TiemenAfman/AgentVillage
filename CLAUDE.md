@@ -422,6 +422,15 @@ The same key also guards `/island/:id` and `/island/:id/parcel`, not only the so
 this an islander refused at the handshake still parked its bundle over HTTP under a token
 that outlived the refusal, for good.
 
+**While the islander runs, the sea keeps its island.** The claim token is kept in
+`data/sea-token.json` (home and Codex), not minted per process: a fresh token made every
+tray restart a stranger to its own island, refused as `claimed` until the old claim's
+`GRACE_MS` ran out. `onClose` in `lib/sea.mjs` does not mark an island quiet while another
+islander socket still holds it — the old line dying after the new one joined used to get a
+live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`; `claimed`
+and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
+back on the next changed scan, gone again.
+
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
 from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
