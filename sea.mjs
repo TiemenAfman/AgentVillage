@@ -37,6 +37,7 @@ const sea = createSea({
   key,
   adminKey,
   updateHook,
+  // build is left to lib/sea.mjs's default: lib/build.mjs, stamped by Dockerfile.sea.
   log,
 });
 

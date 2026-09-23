@@ -595,6 +595,17 @@ export function createUI(handlers) {
       + 'page disagrees with. Pull and restart on both sides.';
   }
 
+  // Who is behind, this page or the sea (web/js/update.js builds the words). Closed by
+  // hand it stays closed for the rest of the visit: it says the same thing until somebody
+  // installs something, and that is not going to happen mid-walk.
+  let updateClosed = false;
+  el('update-close').addEventListener('click', () => { updateClosed = true; el('update').hidden = true; });
+  function setUpdate(html) {
+    const box = el('update');
+    el('update-text').innerHTML = html || '';
+    box.hidden = !html || updateClosed;
+  }
+
   // The two-step confirmation shown while walking, before anyone is sent away.
   function setConfirm(item) {
     const p = el('walk-confirm');
@@ -769,7 +780,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, buildEnabled: () => buildOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.

@@ -7,6 +7,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { ROOT, DATA, WEB, SHARED, OPEN_SEA, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -36,6 +37,10 @@ import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
+
+// Which release and commit this checkout (or unpacked release) is, read once: it is what
+// this process was started from, whatever a later pull puts on disk (lib/buildinfo.mjs).
+const BUILD = readBuildInfo(ROOT);
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -494,6 +499,9 @@ async function handle(req, res) {
       // it is not public either, and a page on this machine is the only one that has any
       // business having it from here.
       seaKey: who.role === 'islander' ? (config.multiplayer.sea && config.multiplayer.sea.key) || null : null,
+      // Which release and commit this island runs, for the page's "who is behind" banner.
+      // Harmless to a visitor: the sea's front page says the same about itself.
+      build: BUILD,
     });
   }
 
@@ -1558,6 +1566,8 @@ async function putToSea() {
         host,
         name: seaNameOf(config),
         key: cfg.key || null,
+        // This checkout's own version and commit, for its sea's front page and /health.
+        build: BUILD,
         tickMs: config.multiplayer.tickMs,
         maxPlayers: config.multiplayer.maxPlayers,
         log: (m) => log(`sea: ${m}`),

@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gitCommit } from '../lib/buildinfo.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const OUT = path.join(ROOT, 'dist', 'Promptholm');
@@ -53,7 +54,10 @@ for (const f of FILES) {
 for (const d of DIRS) fs.cpSync(path.join(ROOT, d), path.join(APP, d), { recursive: true });
 
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
-fs.writeFileSync(path.join(APP, 'release.json'), `${JSON.stringify({ name: 'Promptholm', version }, null, 2)}\n`);
+// The commit too: an unpacked release has no .git, so this is the only place the tray and
+// the island's own page can learn which code they are (lib/buildinfo.mjs).
+const commit = gitCommit(ROOT);
+fs.writeFileSync(path.join(APP, 'release.json'), `${JSON.stringify({ name: 'Promptholm', version, commit }, null, 2)}\n`);
 
 let bytes = 0, files = 0;
 (function walk(dir) {
