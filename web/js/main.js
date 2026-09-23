@@ -11,7 +11,7 @@ import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
-import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
+import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createRoadDebug } from './road-debug.js';  
@@ -535,10 +535,13 @@ function interactables() {
   // is up yet.
   if (state.panels) out.push(...state.panels.interactables());
   for (const d of state.docks) {
-    const moored = state.boats.find((b) => Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
+    // Within reach of the head, which is where all three of a harbour's berths are (see
+    // berthOf in shared/quay.mjs) - the same test takeBoatAt makes.
+    const moored = state.boats.find((b) => Math.hypot(b.x - d.head[0], b.z - d.head[1]) <= 4.5);
     out.push({
       id: d.id, kind: 'dock', x: d.head[0], z: d.head[1], r: 3.2,
-      label: 'the quay', prompt: moored ? 'take the boat' : 'take a boat',
+      label: d.side ? `the ${SIDE_WORD[d.side]} harbour` : 'the quay',
+      prompt: dockPrompt(d, moored),
     });
   }
   for (const b of state.boats) {
@@ -716,6 +719,11 @@ function sowHere() {
 // Pressing it again while something is already in hand puts that back, so the key is a
 // toggle rather than a way to open a menu on top of a ghost.
 function openBuild() {
+  // Off unless switched on under Settings -> Debug: the planner keeps the town now.
+  if (!state.ui.buildEnabled()) {
+    state.ui.toast('Building by hand is switched off. The town is kept from the planner (<b>Plan</b>); Settings → Debug brings Build back.');
+    return;
+  }
   if (state.mode === 'plan') exitPlan();
   if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
   if (keeperOnly('build on this island')) return;
@@ -836,10 +844,17 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 function takeBoatAt(dockId) {
   const d = dockAt(dockId);
   if (!d) return;
-  const b = boatFor(d.region);
-  if (!b) return;
-  if (Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) > 4) {
-    state.ui.toast('The boat is out on the water.');
+  // The boat lying at this dock, if one does, and the nearest free one if several do. With
+  // four harbours "the island's boat is out on the water" was wrong three times out of
+  // four: it was lying at another harbour, and this one never had one.
+  boatsFor(d.region);
+  const near = state.boats
+    .map((x) => ({ x, d: Math.hypot(x.x - d.head[0], x.z - d.head[1]) }))
+    .filter((e) => e.d <= 4.5)
+    .sort((a, b) => (!!a.x.pilot - !!b.x.pilot) || a.d - b.d);
+  const b = near.length ? near[0].x : null;
+  if (!b) {
+    state.ui.toast('No boat lies at this harbour.');
     return;
   }
   if (b.pilot && state.net && b.pilot !== state.net.id()) {
@@ -900,7 +915,12 @@ function walkCallbacks() {
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
     onPrevSeed: () => cycleSeed(-1),
-    onBuild: () => openBuild(),
+    // At a harbour B builds a boat; anywhere else it is the build menu it always was.
+    onBuild: () => {
+      const near = state.walk && state.walk.state.near;
+      const d = near && near.kind === 'dock' ? dockAt(near.id) : null;
+      if (d) buildBoatAt(d); else openBuild();
+    },
     onAvatar: () => openStudio(),
     onRelease: () => releasePanel(),
     // Escape on the chart goes back to the radar rather than all the way up to the sky.
@@ -1090,7 +1110,7 @@ function minimapDistrict() {
 // Where every island's harbour is, in world coordinates: the head of each dock's planks,
 // where a boat is moored and the prompt to take it out appears.
 function mapDocks() {
-  return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id }));
+  return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id, side: d.side || null }));
 }
 
 function minimapData() {
@@ -1585,22 +1605,28 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // moorings, and the browser across the channel has to find an untouched boat in the same
 // place. Three sides agreeing without a message between them is only possible if all three
 // do the same arithmetic, which is what shared/ is for.
-function dockFor(region, village) {
+// Every dock an island has: its harbours, one per side of the coast (lib/layout.mjs
+// planHarbours, carried as village.island.harbours), or the one quay of an island that has
+// none on record - a guest whose bundle predates them, or whose islander is older than
+// this page. shared/quay.mjs's quaysOf decides which, so this page and every other agree.
+function docksFor(region, village) {
   const v = village || region.village;
   const landing = v && v.island && v.island.landing;
-  if (!landing) return null;
+  if (!landing) return [];
   // Local coordinates, because the mesh goes inside the island's own group - and world
   // coordinates for `head` and `berth`, because walk mode and the boat speak nothing else.
   // shared/quay.mjs names them apart for exactly this reason.
-  // The kade this village built, where it built one: the quay district's own planks are the
-  // island's harbour, and the derivation off the landing is the fallback for an island whose
-  // districts we do not have. Without this the island grew a second pier somewhere else on
-  // its coast, and that one - not the kade - got the deck, the boat and the prompt.
-  const quay = quayFor(region.terrain, landing, planksOf(v));
-  if (!quay) return null;
+  // The kade this village built, where it built one: the quay district's own planks are one
+  // of the island's harbours, and the derivation off the landing is the fallback for an
+  // island whose districts we do not have. Without this the island grew a second pier
+  // somewhere else on its coast, and that one - not the kade - got the deck, the boat and
+  // the prompt.
   const [ox, oz] = region.origin;
-  return {
-    id: `dock:${region.id}`, region, cells: quay.cells, dir: quay.dir,
+  return quaysOf(region.terrain, v, landing).map((quay) => ({
+    // The side in the id, so a dock keeps its name when the list around it changes.
+    id: quay.side ? `dock:${region.id}:${quay.side}` : `dock:${region.id}`,
+    side: quay.side,
+    region, cells: quay.cells, dir: quay.dir,
     from: quay.from,
     yaw: quay.yaw,
     head: [quay.head[0] + ox, quay.head[1] + oz],
@@ -1609,7 +1635,7 @@ function dockFor(region, village) {
     // settler walking down to the water has to be routed to, because the roads stop on land
     // and the planks begin here. quaySite picks it, and it is not always the landing.
     shore: quay.shore,
-  };
+  }));
 }
 
 // The village the home dock was last built from.
@@ -1618,7 +1644,7 @@ function dockFor(region, village) {
 // callers that rebuild the docks for a reason of their own do not have a village to hand.
 // syncFleet's rebuild is about who else is in the water, and at boot it runs *before*
 // applyVillage has set state.village: so `homeVillage || state.village` was undefined,
-// dockFor answered null, and the dock buildScene had just built correctly was torn down
+// docksFor answered nothing, and the dock buildScene had just built correctly was torn down
 // and not put back until the next publish. Remembering it is what makes a rebuild for
 // somebody else's island harmless to ours.
 let dockVillage = null;
@@ -1630,34 +1656,34 @@ function buildDocks(homeVillage) {
   for (const d of state.docks) d.dispose();
   state.docks = [];
   for (const region of state.sea.regions()) {
-    const spec = dockFor(region, region === state.region ? dockVillage : null);
-    if (!spec) continue;
-    const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
-    if (!geo) continue;
-    const mesh = new THREE.Mesh(geo, buildingMat);
-    // In the island's own frame: at the origin for home, inside the guest group otherwise.
-    const parent = region === state.region
-      ? scene
-      : (state.guests.find((g) => g.region === region) || {}).group || scene;
-    mesh.position.set(spec.from[0], 0, spec.from[1]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.id = spec.id;
-    parent.add(mesh);
-    // Out of the raycast as well as out of the scene. It used to only leave the group, and
-    // the raycast's own `m.parent` filter covered for that - which was true and quiet right
-    // up until buildDocks started running on every change of district instead of once.
-    state.docks.push({
-      ...spec,
-      mesh,
-      dispose: () => {
-        parent.remove(mesh);
-        const k = state.pickables.indexOf(mesh);
-        if (k >= 0) state.pickables.splice(k, 1);
-        geo.dispose();
-      },
-    });
-    state.pickables.push(mesh);
+    for (const spec of docksFor(region, region === state.region ? dockVillage : null)) {
+      const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
+      if (!geo) continue;
+      const mesh = new THREE.Mesh(geo, buildingMat);
+      // In the island's own frame: at the origin for home, inside the guest group otherwise.
+      const parent = region === state.region
+        ? scene
+        : (state.guests.find((g) => g.region === region) || {}).group || scene;
+      mesh.position.set(spec.from[0], 0, spec.from[1]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.id = spec.id;
+      parent.add(mesh);
+      // Out of the raycast as well as out of the scene. It used to only leave the group, and
+      // the raycast's own `m.parent` filter covered for that - which was true and quiet right
+      // up until buildDocks started running on every change of district instead of once.
+      state.docks.push({
+        ...spec,
+        mesh,
+        dispose: () => {
+          parent.remove(mesh);
+          const k = state.pickables.indexOf(mesh);
+          if (k >= 0) state.pickables.splice(k, 1);
+          geo.dispose();
+        },
+      });
+      state.pickables.push(mesh);
+    }
   }
   // The planks are a floor, and the floor is worked out from these docks - so whoever
   // rebuilds them has rebuilt the floor too, whether or not they were thinking about it.
@@ -1668,16 +1694,52 @@ function buildDocks(homeVillage) {
   handOutDecks();
 }
 
+// What E and B do at a dock. B only at one of our own harbours, and only while it has room.
+function dockPrompt(d, moored) {
+  const take = moored ? 'take the boat' : 'no boat here';
+  if (d.region !== state.region || !d.side || state.guest || !state.village) return take;
+  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  return here < BOATS_PER_HARBOUR ? `${take} · B build a boat (${here} of ${BOATS_PER_HARBOUR})` : take;
+}
+
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
+const SIDE_WORD = { n: 'north', e: 'east', s: 'south', w: 'west' };
+const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) || []);
+
+// B at one of this island's own harbours: another boat, free, three a harbour
+// (Plans/vier-havens.md). Counted here first so the answer is immediate, and again by the
+// server (lib/boatyard.mjs), which is the one that is believed. The hull appears when the
+// rescan that follows reaches this page as a new village - see harbourSig in applyVillage.
+async function buildBoatAt(d) {
+  if (d.region !== state.region || !d.side) { state.ui.toast("Only your own island's harbours are yours to build at."); return; }
+  if (keeperOnly('build a boat')) return;
+  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  const word = SIDE_WORD[d.side];
+  if (here >= BOATS_PER_HARBOUR) { state.ui.toast(`The ${word} harbour already moors ${BOATS_PER_HARBOUR} boats.`); return; }
+  try {
+    const r = await mine('/api/harbour/boat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ side: d.side }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `the island said ${r.status}`);
+    state.ui.toast(`A new boat is put in the water at the ${word} harbour.`);
+  } catch (e) {
+    state.ui.toast(`No boat built: ${e.message}`);
+  }
+}
 function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
 
 // Every island's boat, put in the water with the island. Not when walk mode starts: a boat
 // somebody across the channel is sailing has to be drawn whether or not you are on foot.
 function launchBoats() {
-  for (const region of state.sea.regions()) boatFor(region);
+  const wanted = new Set();
+  for (const region of state.sea.regions()) for (const b of boatsFor(region)) wanted.add(b.id);
+  // Whatever no island moors any more - its island has gone, or a keeper's boat count fell -
+  // is taken out of the water, unless somebody is sailing it: that one is theirs until they
+  // step off, and the sea says `gone` for it when it is.
   for (let i = state.boats.length - 1; i >= 0; i--) {
     const b = state.boats[i];
-    if (state.sea.regions().some((r) => b.id === `boat:${r.id}`)) continue;
+    if (wanted.has(b.id) || (state.walk && state.walk.aboard() === b)) continue;
     b.craft.dispose();
     state.boats.splice(i, 1);
   }
@@ -1698,27 +1760,36 @@ function showMinimap(on) {
   state.worldMap.setVisible(on && minimapMode === 'map');
 }
 
-// One boat per island, at the mooring shared/quay.mjs derives - the same arithmetic the
-// server does for lib/boats.mjs and the same every other browser does, so an untouched
-// boat is in the same water on every screen without a message being sent about it.
+// Every boat an island puts in the water, at the moorings shared/quay.mjs derives - the
+// same arithmetic the sea does for lib/boats.mjs and the same every other browser does, so
+// an untouched boat is in the same water on every screen without a message being sent
+// about it.
 //
-// One and not three. Three was mine and it was a way of never being stranded, but a boat
-// that belongs to nobody cannot also be always to hand: if somebody has left the island's
-// boat on the far shore, that is where it is, and the answer is the other island's boat and
-// not a spare conjured at the jetty. The same reasoning lib/boats.mjs gives for putting
-// them back at their moorings on a restart.
-function boatFor(region) {
+// The first is the island's own and the rest are what its keeper has built at its harbours
+// (at most three a harbour, Plans/vier-havens.md). None of them is conjured: a boat that
+// belongs to nobody cannot also be always to hand, so if somebody has left one on the far
+// shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
+// at their moorings on a restart.
+function boatsFor(region) {
   const v = region === state.region ? state.village : region.village;
-  const landing = v && v.island && v.island.landing;
-  const m = landing ? mooringFor(region.id, region.terrain, landing, region.origin, planksOf(v)) : null;
-  if (!m) return null;
-  const had = state.boats.find((b) => b.id === m.id);
-  if (had) return had;
-  const craft = createBoat({ scene, material: buildingMat });
-  craft.place(m.x, m.z, m.yaw);
-  const b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
-  state.boats.push(b);
-  return b;
+  const out = [];
+  for (const m of v ? mooringsFor(region.id, region.terrain, v, region.origin) : []) {
+    let b = state.boats.find((x) => x.id === m.id);
+    if (!b) {
+      const craft = createBoat({ scene, material: buildingMat });
+      craft.place(m.x, m.z, m.yaw);
+      b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
+      state.boats.push(b);
+    }
+    out.push(b);
+  }
+  return out;
+}
+
+// The region a boat id belongs to: `boat:<region>` for an island's first, and
+// `boat:<region>-<side><k>` for the ones built after it.
+function regionOfBoat(id) {
+  return state.sea.regions().find((r) => id === `boat:${r.id}` || id.startsWith(`boat:${r.id}-`)) || null;
 }
 
 // What the server says about a boat: taken, dropped, moved, or unmoored because its island
@@ -1732,8 +1803,8 @@ function onBoatFromServer(m) {
     if (state.walk && state.walk.aboard() === b) state.walk.unboard([b.x, b.z]);
     return;
   }
-  const region = state.sea.regions().find((r) => m.id === `boat:${r.id}`);
-  const craft = b || (region ? boatFor(region) : null);
+  const region = regionOfBoat(m.id);
+  const craft = b || (region ? boatsFor(region).find((x) => x.id === m.id) || null : null);
   if (!craft) return;
   // Only when the message names one. A `moved` says where the hull is and nothing about
   // whose hand is on it, so taking `m.pilot` as authoritative there wiped the tiller ten
@@ -3476,6 +3547,10 @@ function applyVillage(next, { animate }) {
     // shared/quay.mjs.
     if (prev) buildDocks(next);
   }
+  // The harbours are not districts, so a new harbour - or a boat built at one, which comes
+  // as a changed count and nothing else - would not show until a reload. Docks and fleet
+  // both, because a new count is a new hull at a new berth (shared/quay.mjs mooringsFor).
+  if (prev && harbourSig(next) !== harbourSig(prev)) { buildDocks(next); launchBoats(); }
   // The ground itself, when the polders or the channel changed under it - a polder the
   // keeper dug or gave back. Before the buildings below, because a house set down on new
   // land is built at the height of the terrain it finds. `shownPolders` is a count and a
@@ -4321,6 +4396,13 @@ async function boot() {
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
     onBuild: () => openBuild(),
+    // Switched off with something in hand or the catalogue open: both go, or the ghost
+    // would stay on the cursor with no chip left to put it back with.
+    onBuildMode: (on) => {
+      if (on) return;
+      if (state.buildMenu && state.buildMenu.isOpen()) state.buildMenu.close();
+      if (state.ghost && state.ghost.holding()) state.ghost.drop();
+    },
     onSound: () => state.ui.setSound(state.sound.toggle()),
   });
 

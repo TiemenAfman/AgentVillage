@@ -65,6 +65,7 @@ export function createUI(handlers) {
       const k = btn.dataset.filter;
       state.filters[k] = !state.filters[k];
       btn.classList.toggle('on', state.filters[k]);
+      btn.setAttribute('aria-pressed', String(state.filters[k]));
       handlers.onFilters(state.filters);
     });
   });
@@ -239,6 +240,19 @@ export function createUI(handlers) {
     if (b.active) html += '<span class="tag">Building now</span>';
     if (b.archived) html += '<span class="tag">Archived</span>';
     html += '</div>';
+    // What they are waiting on you for, and the way to answer, before anything else. The
+    // "question for you" list is how most people arrive here, and the question itself used
+    // to be nowhere in the dossier, with Talk below the fold - on a phone, five screens down.
+    const w = b.waiting;
+    if (w && w.question) {
+      html += `<div class="ask${w.asked ? ' asked' : ''}"><h3 class="sec">${w.asked ? 'Asks you' : 'Waiting for you'}</h3>`
+        + `<p>${esc(w.question)}</p></div>`;
+    }
+    html += `<p class="dossier-actions">
+      ${b.kind === 'civic' || !b.sessionId ? '' : `<button class="btn primary" id="talk-btn">${w ? 'Answer' : 'Talk to them'}</button>`}
+      ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
+      <button class="btn" id="focus-btn">Focus camera</button>
+    </p>`;
     html += `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 
     if (b.kind !== 'civic') {
@@ -301,12 +315,8 @@ export function createUI(handlers) {
     } else if (b.title) {
       html += `<p style="margin:0 0 12px">${esc(b.title)}</p>`;
     }
-    html += `<p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-      ${b.kind === 'civic' || !b.sessionId ? '' : '<button class="btn primary" id="talk-btn">Talk to them</button>'}
-      ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
-      <button class="btn" id="focus-btn">Focus camera</button>
-      ${b.kind === 'civic' ? '' : '<button class="btn danger" id="exile-btn">Send off the island</button>'}
-    </p>`;
+    // The one destructive button stays down here, a long way from Answer.
+    if (b.kind !== 'civic') html += '<p class="dossier-actions end"><button class="btn danger" id="exile-btn">Send off the island</button></p>';
 
     const body = el('dossier-body');
     body.innerHTML = html;
@@ -366,6 +376,17 @@ export function createUI(handlers) {
     ['nobody', 'Nobody', 'No signs at all, here or for a visitor.'],
   ];
   let signMode = null;
+
+  // Building by hand - the Build chip, the B key, the catalogue and the ghost - is off
+  // unless somebody switches it on under Debug. The planner is how the town is kept now;
+  // the old way stays reachable for trying things, not as a second way of doing the same
+  // job. Per browser, like the sound: it changes nothing on the island, only what this
+  // page offers, so it is not a config.json setting the islander has to write down.
+  const BUILD_KEY = 'promptholm.debug.build';
+  let buildOn = false;
+  try { buildOn = localStorage.getItem(BUILD_KEY) === '1'; } catch { /* private window: off */ }
+  function applyBuild() { el('build-btn').hidden = !buildOn; }
+  applyBuild();
 
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
@@ -437,9 +458,21 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
-      + seaSection();
+      + seaSection()
+      + '<h3 class="sec">Debug</h3>'
+      + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
+      + `<p class="muted" style="margin-top:9px">${buildOn
+        ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+    el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
+      buildOn = !buildOn;
+      try { if (buildOn) localStorage.setItem(BUILD_KEY, '1'); else localStorage.removeItem(BUILD_KEY); } catch { /* kept for this page only */ }
+      applyBuild();
+      renderSettings();
+      if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
     el('settings-body').querySelectorAll('[data-seamode]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
     el('settings-body').querySelectorAll('[data-sea]')
@@ -569,9 +602,9 @@ export function createUI(handlers) {
           + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
           + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
-          + `<span>drag to look, double-click to hold the mouse</span>`
+          + `<span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
-          + `<span><kbd>Esc</kbd> step outside</span>`;
+          + `<span><kbd>Esc</kbd><kbd>Esc</kbd> step outside</span>`;
       return;
     }
     el('walk-keys').innerHTML = padConnected
@@ -582,12 +615,12 @@ export function createUI(handlers) {
         + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
-      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look, double-click to lock the mouse</span>`
+      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
         + `<span><kbd>LMB</kbd> attack</span><span><kbd>RMB</kbd> hold to block</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
         + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
-        + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
+        + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;
@@ -716,7 +749,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setSound,
+    setSigns, setKeeper, setSound, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.

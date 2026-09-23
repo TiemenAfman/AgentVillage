@@ -87,6 +87,10 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
         <h3>The town hall</h3>
         <p class="ho-sum">Every session this machine remembers. Invite one and it takes a plot and
         builds according to what it did. ${onIsland} of ${sessions.length} live here already.</p>
+        <!-- The New settler chip lands here, so starting a new session is the first thing on
+             the page, not a button under the whole register. -->
+        <p class="th-new-row"><button class="btn primary" id="th-new">Start a new session</button>
+          <span class="muted">or invite one of the sessions below</span></p>
 
         <div class="th-controls">
           <input id="th-search" class="ho-input" placeholder="Search a name, a session, a project…" value="${esc(query)}" spellcheck="false">
@@ -102,7 +106,6 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
         </div>
 
         <div class="th-foot">
-          <button class="btn" id="th-new">Send for a newcomer instead</button>
           <span class="muted" id="th-out"></span>
         </div>
       </div>`;

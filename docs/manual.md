@@ -294,15 +294,21 @@ And it is a **snapshot of the moment it was uploaded**. There is no line open to
 machine. A house that goes up over there does not go up over here, a settler who arrives
 does not arrive, and nothing at that berth changes until the whole island is sent again.
 
-**The quay and the boat.** Where a village has earned a quay district, its kade is the
-island's dock: the same planks a Cowork settler sails up to, with the boat tied up at the
-end of them. An island that never earned one still gets a dock — out over the water from
-its landing, the coast cell nearest the town centre where a new settler walks ashore — so
-there is always somewhere to cast off from, seed alone. Either way there is exactly one,
-and it is the one the harbour houses are looking at.
+**The harbours and the boats.** An island has four harbours, one on each side of the town
+— north, east, south and west — wherever that side's coast has open water worth a pier,
+each with its own road up to the square. The first of them is the dock the island always
+had: where a village has earned a quay district, its kade, the same planks a Cowork settler
+sails up to; otherwise the dock out over the water from its landing, where a new settler
+walks ashore. They are chosen once and stay where they are, like everything else built on
+the island, and the chart of the sea (**M** twice) shows each one as an anchor.
 
-Walk out along the planks and press **E**, and there is a boat alongside: one per dock, so
-pressing it twice does not leave a raft of hulls tied up together. Aboard, **W** and **S**
+The island's own boat lies at that first harbour. At any of your own harbours **B** builds
+another — free, and three to a harbour at most, the island's own boat counting towards its
+harbour's three — and the prompt at the planks says how many it has. A visitor can sail your
+boats but not add to them.
+
+Walk out along the planks and press **E**, and if a boat is lying there you are aboard; at a
+harbour with none, the prompt says so rather than pretending there is one. Aboard, **W** and **S**
 are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
 there is shore to step onto. She is quicker than running and takes a couple of seconds to
 find it, and a hard turn spends the way you had on. Press her at a coast and she will not

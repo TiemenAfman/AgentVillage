@@ -92,6 +92,17 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .topright { max-width: calc(100vw - 183px); }
   .chronicle { padding: 8px; gap: 8px; }
   .right-column, .panel { top: 285px; }
+  /* Measured at 390 wide: the HUD took the top 55% of the screen before a single panel
+     was open, the title card alone four rows of counts. It keeps the name and the head
+     count. A panel is a sheet from the bottom rather than a column hung under the HUD,
+     which left the dossier 40% of the height to scroll in. */
+  .titlecard { padding: 10px 12px; }
+  #founded { display: none; }
+  .counts { padding-top: 6px; margin-top: 6px; }
+  .counts span:nth-child(n+2) { display: none; }
+  .chips-label { display: none; }
+  .right-column { top: 215px; }
+  .panel { top: auto; height: min(62vh, calc(100vh - 190px)); bottom: 80px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

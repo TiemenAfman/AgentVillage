@@ -312,7 +312,13 @@ export function createWalkMode({
     if (k === 'i') { e.preventDefault(); state.onAvatar && state.onAvatar(); }
     // The radar: on by default, M cycles it to the chart of the sea and then to neither.
     if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
-    if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
+    // The first Escape only frees the mouse (the browser ends the lock itself); the next one
+    // leaves walk mode.
+    if (k === 'escape') {
+      e.preventDefault();
+      if (document.pointerLockElement === dom || performance.now() - unlockedAt < 300) return;
+      state.onExit && state.onExit();
+    }
   };
   const onKeyUp = (e) => {
     const k = e.key.toLowerCase();
@@ -327,28 +333,69 @@ export function createWalkMode({
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
 
-  // Mouse look: drag anywhere on the canvas, or take a pointer lock on double click. The
-  // buttons themselves fight (Plans/aanvallen-en-blokkeren.md): the right one blocks for
-  // as long as it is held and never looks; the left one attacks - on the press under a
-  // pointer lock, where the mouse already looks without a button, and otherwise on a click
-  // that did not turn into a drag, so drag-to-look keeps the same button it always had.
-  let dragging = false, lastX = 0, lastY = 0, pressX = 0, pressY = 0, pressMoved = false;
+  // Mouse look is a pointer lock, taken as you step onto the island and held for as long as
+  // nothing needs a cursor: a panel (setPaused) or a board (setWorking) gives it back, and
+  // closing or walking away from them takes it again - see syncLock. Escape is the browser's
+  // own way out of a lock and costs nothing but the lock; a single click on the island takes
+  // it back. It used to wait for a double click, which nobody found.
+  //
+  // Where a lock is refused outright (an embedded webview, a page without the permission)
+  // the old drag-to-look is still there, which is also what a press does while the lock is
+  // on its way. The buttons themselves fight (Plans/aanvallen-en-blokkeren.md): the right one
+  // blocks for as long as it is held and never looks; the left one attacks - on the press
+  // under a lock, and otherwise on a click that did not turn into a drag. The one click that
+  // takes the lock does not also swing.
+  let dragging = false, lastX = 0, lastY = 0, pressX = 0, pressY = 0, pressMoved = false, pressLocks = false;
   const CLICK_PX = 6;
+  let lockRefused = !dom.requestPointerLock;
+  // A click that asked for the lock and was turned down anyway. Some hosts refuse every
+  // request with a WrongDocumentError (the desktop app's browser pane does, measured) and
+  // that same error is also what an unfocused window gets, so it cannot mean "never" - but
+  // after one refused click the next ones swing again, or the left button would do nothing
+  // at all there. A lock that does arrive puts this back.
+  let clickLockFailed = false;
   // Not with the arms already busy: swimming, lying down or sitting.
   const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting;
+  const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
+  function requestLock(fromClick = false) {
+    if (document.pointerLockElement === dom) return;
+    // A request without a user gesture is refused, except straight after a lock the page
+    // itself let go of - which is exactly the close-a-panel and walk-off-a-board case. The
+    // refusal is a rejected promise in current Chrome; only NotSupportedError means never.
+    try {
+      dom.requestPointerLock()?.catch?.((err) => {
+        if (err?.name === 'NotSupportedError') lockRefused = true;
+        else if (fromClick) clickLockFailed = true;
+      });
+    } catch { lockRefused = true; }
+  }
+  function syncLock() {
+    if (wantLock()) requestLock();
+    else if (document.pointerLockElement === dom) document.exitPointerLock?.();
+  }
+  // When the lock went away, so the Escape that took it does not also leave walk mode: the
+  // keydown can reach the page either side of the pointerlockchange that says it is gone.
+  let unlockedAt = -Infinity;
+  const onLockChange = () => {
+    if (document.pointerLockElement === dom) clickLockFailed = false;
+    else unlockedAt = performance.now();
+  };
+  document.addEventListener('pointerlockchange', onLockChange);
   const onDown = (e) => {
     if (!state.active) return;
     if (e.button === 2) { if (canFight()) state.blocking = true; return; }
     if (e.button !== 0) return;
     if (document.pointerLockElement === dom) { if (canFight()) classicAvatar.attack(); return; }
+    pressLocks = wantLock() && !clickLockFailed;
+    if (wantLock()) requestLock(true);
     dragging = true; pressMoved = false;
     lastX = pressX = e.clientX; lastY = pressY = e.clientY;
   };
   const onUp = (e) => {
     if (e.button === 2) { state.blocking = false; return; }
     if (e.button !== 0) return;
-    if (dragging && !pressMoved && canFight()) classicAvatar.attack();
-    dragging = false;
+    if (dragging && !pressMoved && !pressLocks && canFight()) classicAvatar.attack();
+    dragging = false; pressLocks = false;
   };
   const onMove = (e) => {
     if (!state.active) return;
@@ -374,12 +421,6 @@ export function createWalkMode({
   dom.addEventListener('pointerdown', onDown);
   addEventListener('pointerup', onUp);
   addEventListener('pointermove', onMove);
-  // Not while a board is held: pointer lock turns off DOM events entirely, so taking it
-  // back would kill every click on the page hanging in front of you.
-  // requestPointerLock() returns a promise in current Chrome and rejects where a lock is not
-  // allowed (an embedded webview, a page without the permission); nothing to do about that
-  // but not to log it as an uncaught error.
-  dom.addEventListener('dblclick', () => { if (state.active && !state.working) dom.requestPointerLock?.()?.catch?.(() => {}); });
 
   // Under a keyboard lock the browser hands the page even the shortcuts it otherwise keeps
   // for itself (ctrl+W closes the tab whatever a page says) - but only in fullscreen, which
@@ -562,13 +603,15 @@ export function createWalkMode({
     avatar.visible = true;
     keys.clear();
     lockKeys(true);
+    syncLock();
   }
 
   function exit() {
     state.vehicle = null;
     back = camBack;
-    release();
+    // Inactive before the release, or release() would ask for the lock back on the way out.
     state.active = false;
+    release();
     state.blocking = false;
     lockKeys(false);
     avatar.visible = false;
@@ -636,6 +679,8 @@ export function createWalkMode({
     // The sprint toggle is state now, so it has to be dropped along with the rest - or you
     // come out of a conversation already running.
     if (v) { keys.clear(); stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; }
+    // An overlay needs the cursor; closing it hands the mouse back to looking around.
+    syncLock();
   }
 
   // Step up to a board and work it. Pointer lock is the thing that has to go: while the
@@ -646,9 +691,8 @@ export function createWalkMode({
   // board is not that - you are still out on the island, and a step away is a way out.
   function setWorking(it) {
     state.working = it || null;
-    if (!state.working) return;
-    keys.clear();
-    if (document.pointerLockElement === dom) document.exitPointerLock?.();
+    if (state.working) keys.clear();
+    syncLock();
   }
 
   function release() {
@@ -656,6 +700,7 @@ export function createWalkMode({
     const was = state.working;
     state.working = null;
     if (state.onRelease) state.onRelease(was);
+    syncLock();
   }
 
   function update(dt) {
@@ -849,6 +894,7 @@ export function createWalkMode({
     removeEventListener('pointermove', onMove);
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('wheel', onWheel);
+    document.removeEventListener('pointerlockchange', onLockChange);
     scene.remove(avatar);
     classicAvatar.dispose();
   }

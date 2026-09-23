@@ -403,3 +403,28 @@ test('a harbour deck survives publication and carries the sea crowd without brow
   crowd.advance(1, 0);
   assert.equal(resident.y, .44, 'the sea keeps the resident on the deck');
 });
+
+// The harbours (Plans/vier-havens.md): what every other island draws the docks from and
+// moors the boats at, so they travel - and the boat count is capped by the host, because a
+// stranger's bundle asking for a hundred boats is a hundred hulls in everybody's water.
+test('the harbours travel, boat counts included, and survive the round trip', () => {
+  const v = village();
+  v.island.harbours = [
+    { side: 'n', shore: [25, 54], pier: [[25, 55], [25, 56]], boats: 2 },
+    { side: 'e', shore: [40, 30], pier: [[41, 30]] },
+  ];
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.island.harbours, [
+    { side: 'n', shore: [25, 54], pier: [[25, 55], [25, 56]], boats: 2 },
+    { side: 'e', shore: [40, 30], pier: [[41, 30]], boats: 0 },
+  ]);
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+});
+
+test('a host refuses a harbour with too many boats, no side, or no planks', () => {
+  const harbour = (h) => mutated((w) => { w.island.harbours = [{ side: 'n', shore: [25, 54], pier: [[25, 55]], boats: 1, ...h }]; });
+  assert.throws(() => parseBundle(harbour({ boats: 9 })), /outside 0\.\.3/);
+  assert.throws(() => parseBundle(harbour({ side: 'up' })), /without a side/);
+  assert.throws(() => parseBundle(harbour({ pier: [] })), /no planks/);
+  assert.equal(parseBundle(harbour({})).island.harbours[0].boats, 1);
+});

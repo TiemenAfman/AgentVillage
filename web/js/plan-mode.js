@@ -19,7 +19,14 @@
 //
 // Keys are taken in the capture phase on window, the way ghost.js and buildmenu.js do,
 // and only while planning: Escape backs out one level at a time, Ctrl+Z/Y undo and redo,
-// 1-3 pick a tool, WASD and the arrows pan. Installed on enter, removed on exit.
+// 1-6 pick a tool, WASD and the arrows pan. Installed on enter, removed on exit.
+//
+// The Road tool draws in grid cells, not super-cells: a road is one cell wide and goes
+// where the keeper drags it. What the browser does for itself is keep the stroke a string
+// of neighbouring cells and hold it straight across ground a road cannot lie on - the
+// river, its banks - because a deck has nowhere to turn and the server refuses one that
+// bends (`opRoad` in lib/plan.mjs). Whether the road may be there at all, and how long
+// the bridge is, is the server's answer, as with every other op.
 import * as THREE from 'three';
 import { blockOf, superOf, superComplete } from 'shared/lattice.mjs';
 import { mine } from './api.js';
@@ -55,7 +62,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   const sel = new Set();           // lobe keys
   let ops = [], redo = [];
   let ptr = { x: 0, y: 0 };
-  let press = null, drag = null, band = null, paint = null, pan = null;
+  let press = null, drag = null, band = null, paint = null, pan = null, stroke = null;
   let dragOk = new Map();          // 'i,j' -> 'ok' | 'bad' during a drag
   const keys = new Set();
   let dry = { seq: 0, timer: null, state: 'idle', verdicts: null, error: null };
@@ -90,6 +97,18 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (!t.inGrid(gx, gz)) return null;
     return superOf(lat, gx, gz);
   }
+  // The grid cell under a screen point, for the Road tool.
+  function cellAt(px, py) {
+    const t = terrain();
+    if (!t) return null;
+    const [x, z] = toWorld(px, py);
+    const gx = Math.floor(x + t.half), gz = Math.floor(z + t.half);
+    return t.inGrid(gx, gz) ? [gx, gz] : null;
+  }
+  // Ground a road cannot lie on, which is where it has to be a bridge: the same line the
+  // server's grid draws (`isBuildable` is what makes a cell BLOCKED there). Close enough
+  // to steer a stroke by; the dry run has the last word.
+  const deckCell = (c) => { const t = terrain(); return !t.isBuildable(c[0], c[1]); };
   function frameIsland() {
     const t = terrain();
     if (!t) return;
@@ -283,10 +302,36 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         }
       }
     }
+    for (const o of ops) if (o.op === 'road') roadMarks(o.cells, lines, rects);
+    if (stroke) roadMarks(stroke.cells, lines, rects);
     overlay.setGhosts(ghosts);
     overlay.setMarks({ rects, lines, outlines: [...sel].map((k) => ({ supers: supersOf(k), color: new THREE.Color(0xe8b45c) })) });
     panel.setSelection({ count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder });
     ledger();
+  }
+  // A road as the overlay draws it: a line from cell middle to cell middle, the stretches
+  // that will be a bridge in blue with every deck cell boxed, so the length of the bridge
+  // can be read off before it is asked for.
+  const ROAD_C = new THREE.Color(0xf0d9a0), DECK_C = new THREE.Color(0x7fd4ff);
+  function roadMarks(cells, lines, rects) {
+    const t = terrain();
+    const mid = ([gx, gz]) => [gx + 0.5 - t.half, gz + 0.5 - t.half];
+    for (let n = 1; n < cells.length; n++) {
+      const deck = deckCell(cells[n - 1]) || deckCell(cells[n]);
+      lines.push({ from: mid(cells[n - 1]), to: mid(cells[n]), color: deck ? DECK_C : ROAD_C });
+    }
+    for (const c of cells) if (deckCell(c)) rects.push({ gx: c[0], gz: c[1], w: 1, d: 1, color: DECK_C });
+  }
+  // The runs of a road that will be bridges, as the server cuts them: every stretch of
+  // deck between two cells of ground.
+  function deckRuns(cells) {
+    const runs = [];
+    let run = null;
+    for (const c of cells) {
+      if (deckCell(c)) { (run = run || []).push(c); continue; }
+      if (run) { runs.push(run); run = null; }
+    }
+    return runs;
   }
   function centreSuper(rec) {
     let si = 0, sj = 0;
@@ -298,6 +343,10 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (o.op === 'move') return `Move ${o.lobes.map((l) => (lobes.get(lkey(l)) || { name: l.district }).name).join(', ')} by [${o.di}, ${o.dj}]`;
     if (o.op === 'polder') return `Polder: ${o.supers.length} super-cell${o.supers.length === 1 ? '' : 's'} off the sea`;
     if (o.op === 'unpolder') return `Give polder ${o.index + 1} back to the sea`;
+    if (o.op === 'road') {
+      const spans = deckRuns(o.cells).map((r) => r.length);
+      return `Road: ${o.cells.length} cells${spans.length ? `, ${spans.map((n) => `a bridge of ${n}`).join(', ')}` : ''}`;
+    }
     if (o.op === 'parcel') return `Land for ${(lobes.get(lkey(o)) || { name: o.district }).name}: ${[o.add.length ? `+${o.add.length}` : '', o.remove.length ? `−${o.remove.length}` : ''].filter(Boolean).join(' / ')}`;
     return `Zone: ${o.add.length ? `+${o.add.length}` : ''}${o.add.length && o.remove.length ? ' / ' : ''}${o.remove.length ? `−${o.remove.length}` : ''} super-cell${o.add.length + o.remove.length === 1 ? '' : 's'}`;
   }
@@ -437,7 +486,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         toast(esc(dry.error));
         return;
       }
-      toast(`Applied: ${body.diff.plots.moved.length} building(s) moved.`);
+      const moved = body.diff.plots.moved.length;
+      toast(moved ? `Applied: ${moved} building(s) moved.` : 'Applied.');
     } catch { ops = draft; saveDraft(); dry.state = 'unreachable'; redraw(); toast('The island did not answer.'); }
   }
   async function restorePrevious() {
@@ -483,6 +533,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (tool === 'polder' && e.button === 0) {
       const s = superAt(e.clientX, e.clientY);
       if (s && polderAt.has(key(s[0], s[1]))) { press = { x: e.clientX, y: e.clientY, polder: polderAt.get(key(s[0], s[1])) }; return; }
+    }
+    if (tool === 'road' && e.button === 0) {
+      const c = cellAt(e.clientX, e.clientY);
+      if (!c) return;
+      if (deckCell(c)) { toast('A road starts on dry ground: begin it on a road that reaches the square.'); return; }
+      stroke = { cells: [c] };
+      redraw();
+      return;
     }
     if (tool === 'land' && sel.size !== 1) { toast('Land goes to one hamlet at a time: select it first (1), then paint.'); return; }
     if (painting && (e.button === 0 || e.button === 2)) {
@@ -577,9 +635,40 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     });
     if (paint.kind === 'parcel') project();
   }
+  // Walk the stroke towards the cell under the pointer, one neighbouring cell at a time.
+  // Dragging back over the road already drawn takes it back to there, which is how a
+  // wrong turn is undone mid-stroke. On a deck the only way on is straight ahead, so a
+  // bridge comes out as one straight run however the hand wobbles over the water.
+  function extendStroke(px, py) {
+    const goal = cellAt(px, py);
+    if (!goal) return;
+    const cells = stroke.cells;
+    const was = `${cells.length}:${cells[cells.length - 1]}`;
+    for (let guard = 0; guard < 600; guard++) {
+      const last = cells[cells.length - 1];
+      const dx = goal[0] - last[0], dz = goal[1] - last[1];
+      if (!dx && !dz) break;
+      let step;
+      if (cells.length > 1 && deckCell(last)) {
+        const prev = cells[cells.length - 2];
+        step = [last[0] - prev[0], last[1] - prev[1]];
+        // Only while the pointer is further out along that line; otherwise wait for it.
+        if ((step[0] && Math.sign(dx) !== step[0]) || (step[1] && Math.sign(dz) !== step[1])) break;
+      } else {
+        step = Math.abs(dx) >= Math.abs(dz) ? [Math.sign(dx), 0] : [0, Math.sign(dz)];
+      }
+      const next = [last[0] + step[0], last[1] + step[1]];
+      const back = cells.findIndex((c) => c[0] === next[0] && c[1] === next[1]);
+      if (back >= 0) cells.length = back + 1;
+      else cells.push(next);
+      if (cells.length >= 512) break;
+    }
+    if (`${cells.length}:${cells[cells.length - 1]}` !== was) redraw();
+  }
   function onMove(e) {
     if (!active) return;
     ptr = { x: e.clientX, y: e.clientY };
+    if (stroke) { extendStroke(e.clientX, e.clientY); return; }
     if (pan) {
       const wpp = (2 * view.hh) / innerHeight;
       view.cx = pan.cx - (e.clientX - pan.x) * wpp;
@@ -612,6 +701,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (!active) return;
     try { dom.releasePointerCapture(e.pointerId); } catch { /* never captured */ }
     if (pan) { pan = null; return; }
+    if (stroke) {
+      const cells = stroke.cells;
+      stroke = null;
+      // A road that ends out over the water is pulled back to its last dry cell: the
+      // stroke let go of mid-river is a road to the bank, not a refusal.
+      while (cells.length && deckCell(cells[cells.length - 1])) cells.pop();
+      if (cells.length >= 2) pushOp({ op: 'road', cells }); else redraw();
+      return;
+    }
     if (paint) {
       const o = paint.kind === 'parcel' ? strokeOp()
         : { op: paint.kind, kind: 'no-build', add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [...paint.remove].map((k) => k.split(',').map(Number)) };
@@ -682,6 +780,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (drag) { drag = null; dragOk = new Map(); }
     if (band) { band = null; panel.setBand(null); }
     if (paint) paint = null;
+    stroke = null;
     redraw();
   }
 
@@ -694,7 +793,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
     if (e.key === 'Escape') {
       take();
-      if (drag || band || paint || pan) cancelGesture();
+      if (drag || band || paint || pan || stroke) cancelGesture();
       else if (sel.size || selPolder !== null) { sel.clear(); selPolder = null; redraw(); }
       else exit();
       return;
@@ -708,6 +807,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (e.key === '3') { take(); setTool('zone'); return; }
     if (e.key === '4') { take(); setTool('polder'); return; }
     if (e.key === '5') { take(); setTool('land'); return; }
+    if (e.key === '6') { take(); setTool('road'); return; }
     if (PAN_KEYS[e.code]) { take(); keys.add(e.code); }
   }
   function setTool(t) { tool = t; panel.setTool(t); cancelGesture(); }
@@ -724,7 +824,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     let mx = 0, mz = 0;
     for (const k of keys) { const d = PAN_KEYS[k]; if (d) { mx += d[0]; mz += d[1]; } }
     if (mx || mz) { view.cx += mx * view.hh * 1.5 * dt; view.cz += mz * view.hh * 1.5 * dt; applyView(); }
-    const s = drag || band || pan ? null : superAt(ptr.x, ptr.y);
+    const s = drag || band || pan || stroke ? null : superAt(ptr.x, ptr.y);
     overlay.setHover(s);
     panel.setHud(hud(s));
   }
@@ -733,9 +833,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       : tool === 'move' ? 'drag to carry the selected hamlets; snaps to the super-grid'
         : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
           : tool === 'land' ? (sel.size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : 'select one hamlet first (1), then paint its land')
+          : tool === 'road' ? 'drag a road out from one that reaches the square; over a river it is bridged to size'
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
     if (drag) where = `<span class="${drag.ok ? 'ok' : 'why'}">[${drag.di}, ${drag.dj}] ${drag.ok ? 'fits' : esc(drag.why || 'no')}</span>`;
+    else if (stroke) {
+      const spans = deckRuns(stroke.cells).map((r) => r.length);
+      where = `<span class="muted">${stroke.cells.length} cells${spans.length ? ` · bridge ${spans.join(' + ')}` : ''}</span>`;
+    }
     else if (s) {
       const k = key(s[0], s[1]);
       const rec = projAt.get(k);

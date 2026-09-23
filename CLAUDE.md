@@ -112,8 +112,14 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Five version gates
-in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
+The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
+exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
+paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
+house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/wegen-tekenen.md`).
+Building by hand (the Build chip, `B`, `buildmenu.js`/`ghost.js`) is off unless switched on
+under Settings → Debug (per browser, `promptholm.debug.build`): the planner keeps the town.
+Five version gates in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
@@ -281,6 +287,27 @@ somebody who is *walking* — an islander's own socket presence is its join
 (`lib/seaclient.mjs`), and a watching page has no walker either, so before this a minute of
 quiet closed those sockets too: forced republish, three rev bumps a minute, and every
 settler walking back to their own door, on every screen, every sixty seconds.
+
+**Four harbours, and boats counted rather than listed** ([Plans/vier-havens.md](Plans/vier-havens.md)).
+`layout.harbours` is one slot per side (`HARBOUR_SIDES`, n/e/s/w from the town centre),
+`null` like the fairway until planned, a `null` slot for a side with no open-water coast.
+`planHarbours` picks each with `pickPier` narrowed to its side, but the quay the island
+already shows *is* its side's harbour (`standingQuay`: the quay district's planks, else the
+landing-derived quay the page and the sea already drew) - so nothing anybody saw moves.
+Each harbour has a slipway `road:harbour:<n>` over the beach (BLOCKED, so forced back every
+scan like a polder causeway) and `road:harbour:<n>:approach` to the square, planned *after*
+`planBridge`, or an approach bridges the river first and the island's own bridge is never
+built. The page, the sea and every other page derive the same docks and boats without a
+message: `quaysOf` / `mooringsFor` in `shared/quay.mjs`, fed `island.harbours` (village.json,
+and the bundle - strict in `parseBundle`). The island's first boat keeps `boat:<region>` at
+the berth it always had, because older pages and seas find it by that id; the rest are
+`boat:<region>-<side><k>`, derived from a per-side count in `data/boats.json`
+(`lib/boatyard.mjs`, its own file so layout.json keeps one writer), capped at
+`BOATS_PER_HARBOUR` (3, the one copy) where it is made, where it arrives and where it is laid
+out. B at one of your own harbours posts `/api/harbour/boat` (keeper-only, not on
+`PUBLIC_API`); the rescan after it republishes, and `harbourSig` in `applyVillage` is what
+makes the new hull appear without a reload, since harbours are not districts. A bundle with no
+harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
@@ -486,8 +513,18 @@ page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboa
 takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
 ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
 locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
-blocks while held, the left one attacks on a click that did not become a drag, or on the press
-under a pointer lock (double-click on the canvas) - so drag-to-look keeps its button.
+blocks while held, the left one attacks on the press under a pointer lock, and otherwise on a
+click that did not become a drag.
+
+**On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
+`enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
+`setWorking` for a board) and asks for it again on the way out of those — so a new panel only
+has to pause the walker, never touch the lock. A re-request without a gesture is allowed only
+after a lock the *page* released; after the user's Escape it needs a click, which is why a
+single click on the canvas takes it back and does not also swing. That first Escape only frees
+the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look is the fallback
+where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
+pointer lock cannot be tested there — use a real Chrome or the Tauri window.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -602,6 +639,7 @@ promptholm` in `src-tauri/`, not a full clean.
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
 any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |
+| `web/css/` | `ui.css` is the layout, `harbour.css` the theme loaded after it — and it overrides positions too (`.panel { top }` per breakpoint), so a rule for the phone (≤480px, where a panel is a bottom sheet) belongs in harbour.css's media block or it silently loses |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
