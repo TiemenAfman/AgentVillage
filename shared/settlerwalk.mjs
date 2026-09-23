@@ -59,7 +59,9 @@ export const DT = 0.05;
 // than what it replaced, not a compromise.
 const GATHER_PER_TICK = 8;
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
-const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+// Exported for lib/crowd.mjs, which stands the volcano's guards in rows in front of one
+// door and has to know which way is "in front" by exactly the rule spawn uses.
+export const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 // 4-neighbour A* over the cell grid, used when a settler walks in from the beach.
 export function findPath(terrain, from, to, blocked) {

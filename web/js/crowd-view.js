@@ -35,6 +35,7 @@
 import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { isGuard, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -100,12 +101,19 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   const byIdx = new Map();
 
   // Who the indices mean. Sent when the island arrives and again when its village changes,
-  // which is the only time the order can move.
+  // which is the only time the order can move - and on the volcano whenever a guard comes
+  // out or falls, which never moves it: a new guard is appended, and a fallen one is a
+  // `null` hole that retires whoever stood there and enrols nobody (shared/settlerwire.mjs).
   function roster(ids) {
     for (const [idx, f] of figures) if (ids[idx] !== f.id) retire(idx);
     ids.forEach((id, idx) => {
-      if (figures.has(idx)) return;
-      const spec = byId.get(id);
+      if (figures.has(idx) || !id) return;
+      // A guard has no house of their own: they live in the guardhouse, and it is the one
+      // building a guard can be dressed against. The face comes from the guard's own id -
+      // settlerLook hashes it - so each is somebody, where dressing them from the building's
+      // id would have made every guard on the mountain the same man. lib/crowd.mjs passes
+      // the same three arguments, so the stride the sea gave them fits the legs drawn here.
+      const spec = byId.get(id) || (isGuard(id) ? byId.get(GUARDHOUSE_ID) : null);
       if (!spec) return;                      // a settler whose house we have not got yet
       const kind = kindOf(spec);
       const look = settlerLook(id, styleOf(spec), kind);

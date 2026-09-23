@@ -8,12 +8,13 @@ import { createRoster } from '../lib/players.mjs';
 // `coast`, when given, is the local x beyond which the island is sea: ground at 1 on the
 // near side, sea bed at -2 on the far side - deep enough that a guard's feet on the bottom
 // are well over a metre below a swimmer's.
-function setup({ coast = null } = {}) {
+function setup({ coast = null, lava = null } = {}) {
   let time = 1000;
   const height = (x) => (coast == null || x < coast ? 1 : -2);
   const cellWorld = (x, z) => [x - 15.5, z - 15.5];
   const terrain = { size: 32, half: 16, seed: 1, slope: () => 0,
-    isLand: (gx, gz) => height(cellWorld(gx, gz)[0]) >= 0, worldHeight: (x) => height(x), cellWorld };
+    isLand: (gx, gz) => height(cellWorld(gx, gz)[0]) >= 0, worldHeight: (x) => height(x), cellWorld,
+    ...(lava ? { isLava: lava } : {}) };
   const village = { buildings: [], districts: [] };
   const walk = createWalk(terrain, village);
   const f = walk.spawn('guard', { plot: { gx: 15, gz: 15, w: 3, d: 3, rot: 0 } }, [0, 0, 0]);
@@ -147,4 +148,53 @@ test('a caught player is immune for a moment and then fair game again', () => {
   assert.equal(s.evictions.length, 1, 'caught again inside the immunity');
   for (let i = 0; i < 40 && s.evictions.length < 2; i++) s.tick();
   assert.equal(s.evictions.length, 2, 'never caught again after the immunity ran out');
+});
+
+// A lava stream right across the island, from one edge of the grid to the other, between
+// the guard (local x 0, cell 15) and the visitor (local x 4, cell 19). With no way round
+// it, a guard that respected the lava could never reach them; one that did not would walk
+// straight through.
+test("a guard's path never crosses lava: a stream across the island is a wall to them", () => {
+  const s = setup({ lava: (gx) => gx === 17 });
+  s.p.x = -80 + 4;
+  const route = [];
+  for (let i = 0; i < 200; i++) { s.tick(); route.push(s.f.pos[0]); }
+  assert.equal(s.evictions.length, 0, 'the guard reached the visitor through the lava');
+  assert.ok(Math.max(...route) < 1, `the guard stood at local x ${Math.max(...route)}, in or past the stream`);
+  // And without the stream the same guard gets there: it is the lava, not the distance.
+  const open = setup();
+  open.p.x = -80 + 4;
+  for (let i = 0; i < 200 && !open.evictions.length; i++) open.tick();
+  assert.equal(open.evictions.length, 1);
+});
+
+test('a visitor standing in the lava is not chased into it', () => {
+  const s = setup({ lava: (gx) => gx === 17 });
+  s.p.x = -80 + 1.5;                         // cell 17
+  s.tick();
+  assert.equal(s.f.chartered, false);
+});
+
+// lib/players.mjs marks a socket posed once a pose has arrived. Before that its x and z
+// are a default - [0, 0], the middle of the volcano - and nobody is chased for standing at
+// a place they never said they were.
+test("a walker the sea has never had a pose from is nobody's target", () => {
+  const s = setup();
+  s.p.posed = false;
+  for (let i = 0; i < 40; i++) s.tick();
+  assert.equal(s.f.chartered, false);
+  assert.equal(s.evictions.length, 0);
+  s.p.posed = true;
+  for (let i = 0; i < 120 && !s.evictions.length; i++) s.tick();
+  assert.equal(s.evictions.length, 1);
+});
+
+test('the roster marks a socket posed on its first pose, and not on "walking" alone', () => {
+  const roster = createRoster();
+  const p = roster.attach({ id: 'aabbccdd', send() {}, close() {} }, { island: 'aaaaaaaa' });
+  roster.message(p.conn, JSON.stringify({ t: 'w', on: true }));
+  assert.equal(p.walking, true);
+  assert.equal(p.posed, false);
+  roster.message(p.conn, JSON.stringify({ t: 'p', x: 3, y: 1, z: 4, yaw: 0, f: 0 }));
+  assert.equal(p.posed, true);
 });

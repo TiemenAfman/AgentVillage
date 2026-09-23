@@ -7,7 +7,12 @@ en op het zwemmen/rennen met een gele staminabalk, een rode healthbalk die strak
 tellen, en de bewegingsbeperking in open zee gaat eruit. Nieuwe settler-modellen voor de
 Codex-agents komen later van Martijn zelf.
 
-Stap 0 t/m 4 van de volgorde zijn gebouwd op 23 september 2026: vrij zwemmen, stamina met Shift-turbo en de balken (`web/js/stamina.js`, `web/js/vitals.js`), en `hurt()` op de zee (`lib/health.mjs`) met de omgebouwde hostility. Daarna het vulkaanterrein met lavastromen (`shared/terrain.mjs` met `volcano: true`, `web/js/lava.js`) en de vulkaan van de zee zelf op [0,0] (`shared/volcano.mjs`, `fleet.raiseVolcano()`), met de eilanden in ringen eromheen. Stap 5 en verder is ontwerp.
+Stap 0 t/m 4 van de volgorde zijn gebouwd op 23 september 2026: vrij zwemmen, stamina met Shift-turbo en de balken (`web/js/stamina.js`, `web/js/vitals.js`), en `hurt()` op de zee (`lib/health.mjs`) met de omgebouwde hostility. Daarna het vulkaanterrein met lavastromen (`shared/terrain.mjs` met `volcano: true`, `web/js/lava.js`) en de vulkaan van de zee zelf op [0,0] (`shared/volcano.mjs`, `fleet.raiseVolcano()`), met de eilanden in ringen eromheen. Stap 5 ook (dezelfde dag): het wachthuis op de flank
+(`guardhouseSite()` in `shared/volcano.mjs`, voorlopig getekend als het kasteel), bewakers
+`guard:<n>` die meeschalen met het aantal online islanders (`lib/guards.mjs`; Codex-eilanden
+tellen niet mee, dus één islander telt één keer), lava die pijn doet (`lib/lava.mjs`) en die
+de A* van de bewakers mijdt, en geen pose meer vóór de pagina haar ligplaats kent. Stap 6 en
+verder is ontwerp.
 
 ## Hoe het nu zit (gemeten in de sessie van 23-09)
 

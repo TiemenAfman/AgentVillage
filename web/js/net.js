@@ -55,6 +55,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // A function rather than a value because the berth changes when the island changes seas,
   // and the pose beat below notices the change and reports our body where it now is.
   const homeAt = () => { const h = frame(); return Array.isArray(h) ? h : [0, 0]; };
+  // Whether the berth is known at all. `frame` answers null until the sea has said where our
+  // island lies, and then [0, 0] above is a guess and not a place: our body and our hull are
+  // not sent while it is, rather than being reported in the middle of the world - which is
+  // the volcano, with guards on it. Incoming positions still use the guess: there is nothing
+  // better to draw them against, and a rehome redraws everything once the berth arrives.
+  const berthKnown = () => Array.isArray(frame());
   const outgoing = (x, z) => sceneToWorld([x, z], homeAt());
   const incoming = (x, z) => worldToScene([x, z], homeAt());
   // A boat's row, if it carries a position. `moved` does, and so does every boat in a
@@ -232,7 +238,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // pilot sitting at the tiller with the throttle shut is `still`, and the last metre of way
   // she carried before stopping still has to reach the server.
   function sendHull() {
-    if (!hull.live) return;
+    if (!hull.live || !berthKnown()) return;
     const [hx, hz] = homeAt();
     if (hull.id === hullSent.id
       && Math.abs(hull.x - hullSent.x) < MOVED
@@ -247,7 +253,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
 
   const beat = setInterval(() => {
     sendHull();
-    if (!walking || !here || !here.state.active) return;
+    if (!walking || !here || !here.state.active || !berthKnown()) return;
     const s = here.state;
     const f = (s.moving ? FLAG_MOVING : 0)
       | (s.swimming ? FLAG_SWIMMING : 0)

@@ -30,9 +30,14 @@ Restart the islander after changing this configuration. The neighbour's own name
 retained when hosting a sea, rather than being replaced by the machine's hostname.
 
 The sea has a hostile island of its own too: the volcano (`shared/volcano.mjs`), raised at
-the middle of every sea before anybody joins, with the islands on a ring round it. It has no
-residents yet; the guards and the Codex houses of every islander move there in the next
-steps (`Plans/vulkaan-in-het-midden.md`), and this per-islander Codex island goes with them.
+the middle of every sea before anybody joins, with the islands on a ring round it. It has one
+building, the guardhouse on the lower flank (drawn as the castle until it has a model of its
+own), and guards who live in it: four, plus three for every islander online, at most 24. A
+new islander brings their three out at once; one who goes home takes nobody away - the
+surplus stays until guards can fall. Its lava hurts anybody who walks into it, the same way
+a guard's reach does, and guards will not path through it, so a flow is a way to shake them
+off. The Codex houses of every islander move there in the next step
+(`Plans/vulkaan-in-het-midden.md`), and this per-islander Codex island goes with them.
 Until then it is published as before and berths on the ring like any island.
 
 The Codex island is hostile to everybody, its own islander's walker included: the island

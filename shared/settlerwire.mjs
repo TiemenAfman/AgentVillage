@@ -181,9 +181,14 @@ export function decodeCrowd(flat, half, into = new Map()) {
 // Who the indices mean. Sent when an island arrives and again when its village changes -
 // which is the only time the order can move, because it is the order of the buildings in
 // the bundle. Colours are deliberately absent: see the header.
+//
+// And when the volcano's guards change (lib/guards.mjs), which never moves the order: a
+// new guard is appended at the end, and a fallen one leaves a hole - `null` at its index -
+// rather than closing the gap, so every body behind it keeps its number. A page retires
+// whatever stands at a hole and enrols nobody there (web/js/crowd-view.js).
 export function crowdRoster(crowd) {
   const out = [];
-  for (const f of crowd.figures.values()) out.push(f.id);
+  for (const f of crowd.figures.values()) out.push(f.dead ? null : f.id);
   return out;
 }
 

@@ -284,3 +284,34 @@ test('two bodies from two islands see each other, and do not share a tavern', ()
   mine.close();
   theirs.close();
 }));
+
+// The volcano's guards over the wire: a joiner is sent their roster, an islander coming
+// online brings three more out of the guardhouse on the next beat - appended, so the first
+// four keep their numbers - and going home again takes nobody away.
+test('the volcano\'s guards come out for each islander and stay when they leave', () => afloat(async ({ sea, base, wsUrl }) => {
+  const VOLCANO_ID = '0000000000000000';
+  const watcher = talk(wsUrl);
+  await watcher.ready;
+  watcher.say({ t: 'join', v: SEA_V, as: 'client' });
+  const first = await watcher.until((m) => m.t === 'fr' && m.i === VOLCANO_ID);
+  assert.deepEqual(first.ids, ['guard:0', 'guard:1', 'guard:2', 'guard:3']);
+
+  const a = island();
+  await post(base, a.id, a.bundle, 'tok');
+  const keeper = talk(wsUrl);
+  await keeper.ready;
+  keeper.say({ t: 'join', v: SEA_V, as: 'islander', island: a.id, token: 'tok' });
+  const grown = await watcher.until((m) => m.t === 'fr' && m.i === VOLCANO_ID && m.ids.length > 4, 40);
+  assert.deepEqual(grown.ids.slice(0, 4), first.ids);
+  assert.equal(grown.ids.length, 7);
+  // And their positions right behind the roster, rather than a keyframe later.
+  const placed = await watcher.until((m) => m.t === 'f' && m.i === VOLCANO_ID, 10);
+  assert.ok((placed.k.length + placed.a.length) / 4 >= 7, 'not everybody was placed at once');
+
+  keeper.close();
+  await watcher.until((m) => m.t === 'island' && m.a === 'rev' && m.live === false, 40);
+  await new Promise((r) => setTimeout(r, 250));
+  assert.equal(sea.guards.target(), 4);
+  assert.equal(sea.guards.standing(), 7, 'guards vanished when their islander went home');
+  watcher.close();
+}));

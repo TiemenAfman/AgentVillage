@@ -430,6 +430,23 @@ middle of the world is an ordinary island and a skew banner. Its seed is the one
 64-grids round the volcano, eight to a ring, bearings first), later rings one ordinary pitch
 further, so the volcano does not spread everybody else out.
 
+**One building has many residents: the volcano's guardhouse and its guards.** The bundle
+carries one building, `civic:guardhouse` (drawn as `civicType: 'castle'` until there is a
+model - `GUARDHOUSE_LOOKS_LIKE`), placed by `guardhouseSite()` from the terrain alone, so
+the next houses on the volcano (step 6) must stay off its lot. Its residents are not in the
+bundle: `lib/guards.mjs` counts islanders online (`live`, non-sea, **non-hostile** islands -
+the per-islander Codex island is hostile, so one islander counts once) and calls
+`crowd.addGuard()`, which **appends** `guard:<n>` to the running crowd; the sea then
+broadcasts the roster and everybody's position at once (`onRoster` in `lib/sea.mjs`). Never
+`crowds.join` for this - that rebuilds the crowd and walks every guard home. Target is
+`guardTarget()` (`GUARDS` in `shared/volcano.mjs`, the one copy); only a rise acts at once,
+a fall hides nobody, and `guardDied(id)` (for step 7) leaves a `null` hole in `crowdRoster`
+so no index moves and respawns after `RESPAWN_MS` only while below the target. The page
+dresses a `guard:<n>` against the guardhouse spec with the guard's own id
+(`web/js/crowd-view.js`), which is what makes them individuals. Because guards walk on every
+sea from the first beat, `broadcast` in `lib/sea.mjs` reaches **joined** sockets only - before
+that, a socket's first message was as likely a crowd frame as its welcome.
+
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
 route open to anybody — so an inbound half would be a change of posture, not a convenience.
@@ -493,7 +510,13 @@ Behind Nginx Proxy Manager, two settings or the island connects and then sits in
 
 **Everything that harms a player goes through `hurt()`, and health is the sea's.**
 `lib/health.mjs` holds it per connection in memory; a guard's reach (`lib/hostility.mjs`)
-calls `hurt`, and lava and other players must too, never `roster.evict` directly. Today
+and standing in lava (`lib/lava.mjs`, `terrain.isLava`, not on a deck, feet within
+`LAVA_FEET`) call `hurt`, and other players must too, never `roster.evict` directly. Both
+use `afoot()` from hostility, which also demands `p.posed` (`lib/players.mjs`): a socket
+that said "walking" but never sent a pose is at a default [0,0], the volcano's crater, and
+is nobody's target. The page does not send poses at all until its berth is known
+(`state.homeOrigin` is null until then; `frame` in `web/js/net.js`). Lava is out of the
+guards' reach mask, so a flow is a wall to their A*. Today
 every hit is fatal (`oneHit`, the default) and sends you home with 5 s immunity; the bar
 counting for real is flipping that default. A hostile island chases *everybody*, its own
 islander's walker included, and its guards swim `GUARD_SWIM` cells off the coast - the

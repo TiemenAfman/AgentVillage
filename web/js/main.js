@@ -1841,7 +1841,12 @@ function onBoatFromServer(m) {
 // look at the fleet, so a page that boots into a busy world raises every coast in one go
 // rather than watching them pop in one socket message at a time.
 async function learnTheWorld() {
-  state.homeOrigin = [0, 0];
+  // Null until the sea has said where we are, and not [0, 0]. Everything that draws reads
+  // `state.homeOrigin || [0, 0]` and is none the worse for it, but the pose beat reads this
+  // raw (net.js `frame`) and sends nothing while it is null: [0, 0] in the sea's frame is
+  // the middle of the volcano, and a walker reported there before its page knew its berth
+  // was caught by the volcano's guards while standing on its own island.
+  state.homeOrigin = null;
   state.fleet = [];
   try {
     const world = await sea('/world').then((r) => r.json());
@@ -2310,8 +2315,11 @@ function rehomeFrom(rows) {
 // next roster - five seconds at most - puts them back where they are. Our own pose goes
 // out in the new frame on the next beat: net.js reads the berth on every send.
 function rehome(origin) {
-  const home = state.homeOrigin || [0, 0];
-  if (origin[0] === home[0] && origin[1] === home[1]) return false;
+  // An unknown berth always takes the first one offered - even [0, 0], which an
+  // `|| [0, 0]` fallback here would call "no change", leaving the pose beat silent for good.
+  // The regions dropped below were placed against that guess, so they go too.
+  const home = state.homeOrigin;
+  if (home && origin[0] === home[0] && origin[1] === home[1]) return false;
   state.homeOrigin = [origin[0], origin[1]];
   for (const region of state.sea.regions()) {
     if (region === state.region || region.id.startsWith('debug-')) continue;
@@ -4744,8 +4752,9 @@ async function boot() {
     peers: state.peers,
     walk: state.walk,
     // Our berth in the sea's frame, read on every message: the socket is where the sea's
-    // coordinates and this page's meet. See rehome() and shared/regions.mjs.
-    frame: () => state.homeOrigin || [0, 0],
+    // coordinates and this page's meet. See rehome() and shared/regions.mjs. Null while it
+    // is not known yet (learnTheWorld), and net.js sends no pose until it is.
+    frame: () => state.homeOrigin || null,
     // Functions, not values. This island can be moved to another world while the page is
     // open, and a captured address is the address of the world it booted into - see
     // followSea() and the note above createNet.
