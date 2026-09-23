@@ -28,8 +28,9 @@ export function createPlanPanel(handlers) {
     `<button class="chip tool" data-tool="${id}" title="${esc(tip)}"><kbd>${k}</kbd> ${label}</button>`).join('')
     + '<div class="plan-sel muted" id="plan-sel">Nothing selected</div>'
     + '<div class="plan-actions">'
+    // No Done of its own: the ✕ above and the menu's Plan chip (which reads Done in here)
+    // already are, and three buttons for one way out read as three different things.
     + '<button class="btn tiny" id="plan-overview" title="Frame the whole island">Overview</button>'
-    + '<button class="btn tiny" id="plan-done" title="Back to the sky (Esc)">Done</button>'
     + '</div>';
   ledger.querySelector('.panel-body').innerHTML = '<ol class="plan-ops" id="plan-ops"></ol>'
     + '<div class="plan-verdict muted" id="plan-verdict"></div>'
@@ -45,7 +46,6 @@ export function createPlanPanel(handlers) {
 
   tools.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => handlers.onTool(b.dataset.tool)));
   el('plan-overview').addEventListener('click', () => handlers.onOverview());
-  el('plan-done').addEventListener('click', () => handlers.onDone());
   el('plan-undo').addEventListener('click', () => handlers.onUndo());
   el('plan-redo').addEventListener('click', () => handlers.onRedo());
   el('plan-clear').addEventListener('click', () => handlers.onClear());

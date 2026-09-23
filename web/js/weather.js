@@ -304,6 +304,17 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
     const cy = camera.position.y + TALL * 0.28;
     const cz = camera.position.z - camera.matrix.elements[10] * SPAN * 0.33;
 
+    // Nothing right against the lens. From the sky the whole box hangs around the camera, so
+    // all anybody sees of the rain is the handful of drops within a few units of it - and a
+    // 1.3-unit streak three units away is a white pole half the screen tall, which is what
+    // the overview showed: poles standing out of the island. A drop inside this radius is
+    // parked far below the box. It grows with height: 1.5 on foot, where rain all round you
+    // is the point, and 14 in the sky, measured - at 8, from an overview camera 45 up, the
+    // nearest streaks were still a quarter of the screen tall and six pixels wide. At 14 a
+    // streak is two pixels by a hundred, which reads as rain, and it is 11% of the box.
+    const near = clamp(camera.position.y * 0.25, 1.5, 14);
+    const near2 = near * near;
+    const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
     const arr = drops.instanceMatrix.array;
     for (let i = 0; i < n; i++) {
       const fell = t * f.speed * (1 + (ph[i] % 1) * f.jitter);
@@ -314,9 +325,11 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
         z += f.flutter * Math.cos(t * 0.9 + ph[i] * 1.7);
       }
       const o = i * 16;
-      arr[o + 12] = cx + wrap(x - cx, SPAN);
-      arr[o + 13] = cy + wrap(by[i] - fell - cy, TALL);
-      arr[o + 14] = cz + wrap(z - cz, SPAN);
+      const qx = cx + wrap(x - cx, SPAN), qy = cy + wrap(by[i] - fell - cy, TALL), qz = cz + wrap(z - cz, SPAN);
+      const dx = qx - px, dy = qy - py, dz = qz - pz;
+      arr[o + 12] = qx;
+      arr[o + 13] = dx * dx + dy * dy + dz * dz < near2 ? qy - 1e4 : qy;
+      arr[o + 14] = qz;
     }
     drops.instanceMatrix.needsUpdate = true;
   }

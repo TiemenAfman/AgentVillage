@@ -430,15 +430,20 @@ export function createUI(handlers) {
   function seaSection() {
     if (!seas) return '<h3 class="sec">The sea</h3><p class="muted">Asking around…</p>';
     const chosen = MODES.find(([k]) => k === seas.mode) || MODES[0];
+    // One row per sea: a dot for whether it answers, the name, and underneath where it came
+    // from and what is in it. The count used to read "2 islands, 1 here" beside a separate
+    // "here" meaning *you* are here, and an address with no name ran over two lines.
     const rows = (seas.seas || []).map((o) => {
       const here = o.url === seas.current || (o.mine && seas.mode !== 'join');
       const said = o.up
-        ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'}, ${o.players ?? 0} here`
+        ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'} · ${o.players ?? 0} online`
         : esc(o.why || 'no answer');
       const from = o.from === 'network' ? 'on this network' : o.from === 'known' ? 'always on' : o.mine ? 'mine' : 'saved';
-      return `<div class="row${here ? ' on' : ''}" style="display:flex;gap:8px;align-items:baseline;justify-content:space-between;margin:5px 0">`
-        + `<span><b>${esc(o.name || o.url)}</b> <span class="muted">${esc(from)} · ${said}</span></span>`
-        + (here ? '<span class="muted">here</span>'
+      const name = o.name || String(o.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      return `<div class="sea-row${here ? ' here' : ''}${o.up ? '' : ' down'}">`
+        + `<i class="sea-dot" title="${o.up ? 'Answering' : 'Not answering'}"></i>`
+        + `<span class="sea-what"><b title="${esc(o.url || '')}">${esc(name)}</b><small>${esc(from)} · ${said}</small></span>`
+        + (here ? '<span class="tag here">You are here</span>'
           : `<button class="chip" data-sea="${esc(o.url)}"${o.up ? '' : ' disabled'}>Join</button>`)
         + '</div>';
     }).join('') || '<p class="muted">No seas found yet.</p>';

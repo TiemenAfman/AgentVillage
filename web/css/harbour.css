@@ -51,6 +51,11 @@
 #walk-btn { color: var(--accent); font-weight: 650; }
 #walk-btn.on { color: #203530; }
 .right-column, .building-now, .panel { top: 160px; }
+/* The planner's tools sit on the left, under the title card - which runs to about 192px
+   here, so the 160px every right-hand panel clears by put the tools over its last row. The
+   draft grows with what is in it instead of standing screen-tall around one line. */
+.panel.left { top: 206px; }
+.panel.plan-ledger { bottom: auto; max-height: calc(100vh - 256px); }
 #clock-chip { border-radius: 8px; padding: 7px 12px; letter-spacing: .05em; }
 .btn, .fab { box-shadow: inset 0 1px #ffffff08; }
 .btn:hover { border-color: #e8c17c70; }
