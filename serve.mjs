@@ -842,7 +842,10 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // for writes. A visitor's browser drew the same island and has nothing to add.
   if (p === '/api/placements' && req.method === 'POST') {
     let body;
-    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    // More than the default: since the work sites came along (the fields, the gardens and
+    // five hundred trees) a big village's report is past 64 kB. The caps in
+    // lib/placements.mjs are what bound it; this only has to let them be reached.
+    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     let saved;
     try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
     // Worth republishing at once rather than waiting for the next scan: until this arrives

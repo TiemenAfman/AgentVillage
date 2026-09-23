@@ -35,6 +35,12 @@
 import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { MOVING } from 'shared/settlerwire.mjs';
+
+// What a body does standing still that is not merely standing: the hammer and the chores
+// (Plans/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
+// moving on this screen, exactly as the hammer always was.
+const AT_WORK = new Set(['hammer', 'hoe', 'weed', 'chop', 'gather', 'fish']);
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -165,7 +171,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // interpolating from jumping back to catch up.
       f.from = [f.pos[0], f.pos[1]];
       f.to = [x, z];
-      const cap = at.anim === 'walk' ? WALK_TOOK_MS : STAND_TOOK_MS;
+      const cap = MOVING.has(at.anim) ? WALK_TOOK_MS : STAND_TOOK_MS;
       f.took = Math.min(cap, Math.max(MIN_TOOK_MS, now - f.at));
       f.at = now;
       // What the sea said the body was doing, and what it said the time before. draw()
@@ -269,7 +275,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // body backwards for one frame. And never past the guess, which is nothing at all
       // for a body the sea said was standing.
       const age = now - f.at;
-      const guess = f.said === 'walk' ? MAX_GUESS_MS : 0;
+      const guess = MOVING.has(f.said) ? MAX_GUESS_MS : 0;
       const tMax = 1 + guess / f.took;
       const t = Math.max(0, Math.min(age / f.took, tMax));
       const gx = f.to[0] - f.from[0], gz = f.to[1] - f.from[1];
@@ -293,16 +299,20 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // hitch on every message that happens to land between the two.
       const speed = t >= tMax ? 0 : Math.sqrt(gx * gx + gz * gz) / (f.took / 1000);
       const moving = speed > STANDING_U_S;
-      const gait = f.said === 'walk' || f.came === 'walk' ? 'walk' : 'step';
-      f.anim = f.said === 'hammer' ? 'hammer' : !moving ? 'still' : gait;
-      f.mode = f.anim === 'walk' ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
+      // A chore is taken at its word only when the body is not going anywhere here: the
+      // glide towards the word that somebody has started hoeing is the last stride of the
+      // walk that brought them, the same as the glide towards a stop.
+      const gait = f.said === 'haul' || (f.came === 'haul' && !MOVING.has(f.said)) ? 'haul'
+        : MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step';
+      f.anim = f.said === 'hammer' ? 'hammer' : !moving ? (AT_WORK.has(f.said) ? f.said : 'still') : gait;
+      f.mode = MOVING.has(f.anim) ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
       // Only turn when actually going somewhere: a body nudged a centimetre by a late
       // message should not spin to face it. Towards the word rather than along this
       // frame's step, as briskly as the walk turned - it took its corners at 0.2 and its
       // idle steps at 0.12 - and the renderer picks a longer stride for anybody moving
       // faster than a stroll, which is how a newcomer's dash up from the beach has always
       // been drawn.
-      if (moving) { f.face = [gx, gz]; f.turn = f.anim === 'walk' ? 0.2 : 0.12; f.speed = speed; }
+      if (moving) { f.face = [gx, gz]; f.turn = MOVING.has(f.anim) ? 0.2 : 0.12; f.speed = speed; }
       f.y = groundAt ? groundAt(nx, nz) : 0;
     }
     view.draw(figures, dt);

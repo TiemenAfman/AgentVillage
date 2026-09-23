@@ -31,8 +31,15 @@
 
 // A settler's animation, as a number. The order is the wire format and must not be
 // rearranged; the names are shared/settlerwalk.mjs's own.
-export const ANIMS = ['still', 'step', 'walk', 'hammer'];
+//
+// New words go on the end: a page running older code reads a number it has never heard of
+// as 'still', which is a settler standing in their field rather than hammering in it. The
+// six after 'hammer' are the chores (Plans/inwoners-aan-het-werk.md); 'haul' is the walk
+// home from the wood with a bundle of sticks, and is a walker in every sense below.
+export const ANIMS = ['still', 'step', 'walk', 'hammer', 'hoe', 'weed', 'chop', 'gather', 'fish', 'haul'];
 const ANIM_OF = new Map(ANIMS.map((a, i) => [a, i]));
+// The words that mean going somewhere, and so ride at the walker rate.
+export const MOVING = new Set(['walk', 'haul']);
 
 // How finely a position travels. A thirty-second of an island unit is about three
 // centimetres against a body a third of a unit wide - far below anything an eye can
@@ -90,7 +97,7 @@ export function encodeCrowd(crowd, { half, slice = 0, slices = 1, movers = true,
     // the beat they step ashore.
     if (f.aboard) { if (walking) walking.delete(idx); continue; }
     const row = [idx, quant(f.pos[0], half), quant(f.pos[1], half), ANIM_OF.get(f.anim) ?? 0];
-    if (f.anim === 'walk') {
+    if (MOVING.has(f.anim)) {
       if (movers) { walkers.push(row); if (walking) walking.add(idx); }
     } else if (walking && walking.has(idx)) {
       walking.delete(idx);

@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
+import { islandClock, borrelAt } from 'shared/daylight.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -3125,12 +3126,6 @@ function passesFilter(spec) {
   if (spec.harbour) return state.filters.cowork;
   return state.filters.code;
 }
-// When the Friday borrel is on: half an hour, from half past four. One place rather than
-// three numbers in the middle of the frame loop, because this is the sort of thing that
-// gets asked for by the half hour and should be one line to move.
-const BORREL_DAY = 5;              // Sunday is 0, so Friday is 5
-const BORREL_FROM = 16.5;
-const BORREL_UNTIL = 17;
 
 function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
@@ -3497,13 +3492,17 @@ function reportPlacements() {
   const decks = {};
   const size = state.terrain.size;
   for (const [cell, y] of deckMapForHome()) decks[cell] = Math.round(y * 1000) / 1000;
-  const key = JSON.stringify([at, decks]);
+  // And where the work is: the fields, the kitchen gardens and the edge of the wood, which
+  // only this page's own survey knows - the sea sends idle settlers out to them
+  // (Plans/inwoners-aan-het-werk.md).
+  const work = state.world && state.world.workSites ? state.world.workSites() : null;
+  const key = JSON.stringify([at, decks, work]);
   if (key === toldPlacements) return;
   toldPlacements = key;
   mine('/api/placements', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ at, decks }),
+    body: JSON.stringify({ at, decks, work }),
   }).catch(() => { toldPlacements = ''; });   // it will be sent again on the next rebuild
 }
 
@@ -3878,8 +3877,11 @@ function frame(nowMs) {
     // left here is the furniture, which is scenery and always was: one set of tables per
     // ten islanders, of which the set the village earned is the first, so the rest are
     // carried out and taken back in with the borrel itself.
-    const d = new Date(timeNow());
-    const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+    // The sea's clock, not this browser's: the people go to the square on the island's
+    // own Friday afternoon (shared/daylight.mjs), and the tables have to come out for the
+    // same half hour or a viewer in another zone sees a borrel with no furniture.
+    const clock = islandClock(timeNow());
+    const borrel = borrelAt(clock.day, clock.hour);
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }

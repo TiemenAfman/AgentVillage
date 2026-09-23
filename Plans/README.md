@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [inwoners-aan-het-werk.md](inwoners-aan-het-werk.md) — ledige inwoners schoffelen op de akkers,
+  wieden in de moestuin, hakken en sprokkelen hout en vissen; waarom de pagina de werkplekken meldt
+  (zoals de huisposities) en de zee alleen de visplekken zelf uitrekent. Gebouwd op 23 september 2026.
 - [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
   vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.

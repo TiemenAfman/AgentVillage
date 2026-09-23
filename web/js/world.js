@@ -5,7 +5,7 @@ import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 's
 import { POLDER_H } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
-import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, FIELD_REACH, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
 
 import { quayBasin, quayWaterField } from 'shared/quay-basin.mjs';
@@ -1249,6 +1249,32 @@ export function createLandscape({
       buildGroundWear();                    // and the feather round a yard follows the meadow
     }
     // felling animation
+  // Where the work is, for the sea (Plans/inwoners-aan-het-werk.md). The settlers walk in
+  // Node off the island's bundle, and nothing in a bundle says where a field was laid or a
+  // tree was planted - both are this file's own survey. So the keeper's page writes it down
+  // the way it writes down where the houses really stand (reportPlacements in main.js).
+  //
+  // Cells for the fields and the kitchen gardens, positions for the trees. Only the trees
+  // within FIELD_REACH of a door or a road, which is the edge of the wood rather than the
+  // middle of it - nobody walks to the far side of the island for kindling - and at most
+  // WORK_TREES of those, taken by a spatial hash so the choice does not move when the
+  // forest is thinned somewhere else.
+  function workSites() {
+    const WORK_TREES = 500;
+    const rect = (p) => [p.gx, p.gz, p.w, p.d];
+    const edge = [];
+    for (const it of trees) {
+      if (it.felled || settled.dist[it.cell] > FIELD_REACH) continue;
+      edge.push([hash32(`work:${it.cell}:${Math.round(it.x * 100)}`), it]);
+    }
+    edge.sort((a, b) => a[0] - b[0]);
+    return {
+      fields: fieldPlan.patches.map(rect),
+      gardens: fieldPlan.gardens.map(rect),
+      trees: edge.slice(0, WORK_TREES).map(([, it]) => [Math.round(it.x * 1000) / 1000, Math.round(it.z * 1000) / 1000]),
+    };
+  }
+
     for (let i = falling.length - 1; i >= 0; i--) {
       const f = falling[i];
       f.t += dt;
@@ -1298,7 +1324,7 @@ export function createLandscape({
   }
 
   return {
-    group, ground, update, reshape, fellTrees, dispose, triangles: p / 3,
+    group, ground, update, reshape, fellTrees, dispose, triangles: p / 3, workSites,
     // The flora stream, handed out rather than kept, and this is load-bearing. The clouds
     // and the fireflies in createWorld have always drawn from it *after* the forest had
     // taken its draws, and their own comments say so: "the random draws happen in the same
@@ -1834,7 +1860,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update,
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
-    fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells,
+    fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
     followShadow, recentre, reshapeWater, state, reshape,
