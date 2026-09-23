@@ -592,9 +592,9 @@ export function createUI(handlers) {
           + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
           + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
-          + `<span>drag to look, double-click to hold the mouse</span>`
+          + `<span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
-          + `<span><kbd>Esc</kbd> step outside</span>`;
+          + `<span><kbd>Esc</kbd><kbd>Esc</kbd> step outside</span>`;
       return;
     }
     el('walk-keys').innerHTML = padConnected
@@ -605,12 +605,12 @@ export function createUI(handlers) {
         + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
-      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>drag to look, double-click to lock the mouse</span>`
+      : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
         + `<span><kbd>LMB</kbd> attack</span><span><kbd>RMB</kbd> hold to block</span>`
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
         + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
-        + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd> back to the sky</span>`;
+        + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
     if (hasPad != null) padConnected = hasPad;

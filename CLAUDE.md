@@ -492,8 +492,18 @@ page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboa
 takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
 ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
 locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
-blocks while held, the left one attacks on a click that did not become a drag, or on the press
-under a pointer lock (double-click on the canvas) - so drag-to-look keeps its button.
+blocks while held, the left one attacks on the press under a pointer lock, and otherwise on a
+click that did not become a drag.
+
+**On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
+`enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
+`setWorking` for a board) and asks for it again on the way out of those — so a new panel only
+has to pause the walker, never touch the lock. A re-request without a gesture is allowed only
+after a lock the *page* released; after the user's Escape it needs a click, which is why a
+single click on the canvas takes it back and does not also swing. That first Escape only frees
+the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look is the fallback
+where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
+pointer lock cannot be tested there — use a real Chrome or the Tauri window.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
