@@ -85,8 +85,10 @@ export function createUI(handlers) {
   // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
   // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
   const NAV_KEY = 'promptholm.nav.collapsed';
-  let navCollapsed = false;
-  try { navCollapsed = localStorage.getItem(NAV_KEY) === '1'; } catch { /* no storage */ }
+  // With nothing remembered, a phone starts with it tucked away: at 390 wide the menu is
+  // three rows over the top of the island. A choice somebody made either way still wins.
+  let navCollapsed = matchMedia('(max-width: 480px)').matches;
+  try { const kept = localStorage.getItem(NAV_KEY); if (kept !== null) navCollapsed = kept === '1'; } catch { /* no storage */ }
   function applyNavCollapsed() {
     el('nav-chips').hidden = navCollapsed;
     // The glyph itself stays '‹' - collapsed flips it 180deg in CSS rather than swapping
@@ -529,8 +531,16 @@ export function createUI(handlers) {
       const it = items[i];
       if (!it) { d.style.display = 'none'; return; }
       d.style.display = '';
-      d.textContent = it.text;
-      d.style.opacity = String(it.opacity);
+      // Measured once per name rather than per frame: offsetWidth after a write is a layout,
+      // and twenty of those a frame is a stall. A zero means it was measured while hidden.
+      if (d._text !== it.text) { d.textContent = it.text; d._text = it.text; d._w = 0; }
+      if (!d._w) d._w = d.offsetWidth;
+      // A caption the screen edge cuts through read as a fragment of another word - "PLC",
+      // "CU COMPLETEPROJECT", a lone "-A" under the title card. It fades out over the last
+      // 24 px before its end would leave the screen, and is gone once it does.
+      const room = Math.min(it.x - d._w / 2, innerWidth - (it.x + d._w / 2));
+      const edge = room >= 24 ? 1 : room <= 0 ? 0 : room / 24;
+      d.style.opacity = String(it.opacity * edge);
       d.style.color = `hsl(${it.hue} 60% 82%)`;
       d.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -100%)`;
     });

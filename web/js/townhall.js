@@ -23,6 +23,7 @@ function when(iso) {
 
 export function createTownHall(root, { onInvited, onFound, onClose }) {
   let sessions = [];
+  let counts = { total: 0, onIsland: 0 };
   let filter = 'available';
   let query = '';
   let busy = false;
@@ -58,7 +59,11 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
   async function load() {
     try {
       const r = await mine('/api/sessions', { cache: 'no-store' });
-      sessions = (await r.json()).sessions || [];
+      const body = await r.json();
+      sessions = body.sessions || [];
+      // The list is the newest 200; the counts are over all of them. An older server sends
+      // no onIsland, and then the list is all there is to count.
+      counts = { total: body.total ?? sessions.length, onIsland: body.onIsland ?? sessions.filter((s) => s.onIsland).length };
     } catch (e) {
       el.innerHTML = `<div class="handover-panel wide"><p class="ho-warn">The register could not be read: ${esc(e.message)}</p></div>`;
       return;
@@ -80,13 +85,13 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
 
   function render() {
     const list = shown();
-    const onIsland = sessions.filter((s) => s.onIsland).length;
+    const shownNote = counts.total > sessions.length ? ` The newest ${sessions.length} are listed.` : '';
     el.innerHTML = `
       <div class="handover-panel wide">
         <button class="x" id="th-close">✕</button>
         <h3>The town hall</h3>
         <p class="ho-sum">Every session this machine remembers. Invite one and it takes a plot and
-        builds according to what it did. ${onIsland} of ${sessions.length} live here already.</p>
+        builds according to what it did. ${counts.onIsland} of ${counts.total} live here already.${shownNote}</p>
         <!-- The New settler chip lands here, so starting a new session is the first thing on
              the page, not a button under the whole register. -->
         <p class="th-new-row"><button class="btn primary" id="th-new">Start a new session</button>

@@ -1138,7 +1138,9 @@ if (req.url === '/api/command' && req.method === 'POST') {
       rows = rows.filter((r) => [r.name, r.title, r.project, r.cwd, r.sessionId, r.model]
         .some((f) => f && String(f).toLowerCase().includes(q)));
     }
-    return json(res, 200, { sessions: rows.slice(0, 200), total: rows.length });
+    // Counted before the slice: the town hall says "N of M live here", and counted over the
+    // newest 200 it read "144 of 200" beside a header saying 145 settlers.
+    return json(res, 200, { sessions: rows.slice(0, 200), total: rows.length, onIsland: rows.filter((r) => r.onIsland).length });
   }
 
   // Adopt (or release) a session: adds its id to config.founders and rescans, so a
