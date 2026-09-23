@@ -1087,6 +1087,12 @@ function minimapDistrict() {
 // reasons - see the minimap section of the Promptholm plan for why none of this needs new
 // plumbing. `state.walk.state` rather than `state.walk.update(dt)`'s return value: that
 // return is only `{ near, pos, distance }`, no yaw.
+// Where every island's harbour is, in world coordinates: the head of each dock's planks,
+// where a boat is moored and the prompt to take it out appears.
+function mapDocks() {
+  return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id }));
+}
+
 function minimapData() {
   const w = state.walk.state;
   return {
@@ -1095,6 +1101,10 @@ function minimapData() {
     // and blends the last few cells into it (shared/regions.mjs), which is exactly what a
     // radar sampling well past the coast wants and the raw heightfield does not do.
     home: state.region,
+    // The whole archipelago as well, so the radar has ground under it on every island and
+    // not only on home - see drawTerrain in minimap.js.
+    sea: state.sea,
+    docks: mapDocks(),
     boats: state.boats,
     near: state.sea.regions().filter((r) => r !== state.region).map((r) => ({ x: r.origin[0], z: r.origin[1] })),
     far: state.horizon ? state.horizon.marks() : [],
@@ -1115,7 +1125,11 @@ function worldMapData() {
     regions: state.sea.regions().filter((r) => !r.id.startsWith('debug-')).map((r) => ({
       id: r.id, origin: r.origin, half: r.half, region: r, home: r === state.region,
       name: r === state.region ? homeName : names.get(r.id) || null,
+      // What stands on it - hamlets, landmarks, roads - for islandFeatures in minimap.js.
+      // Home's village is state.village; a guest's rode in with its bundle.
+      village: r === state.region ? state.village : r.village || null,
     })),
+    docks: mapDocks(),
     far: state.horizon ? state.horizon.marks() : [],
     boats: state.boats,
     town: townCentreScenePos(),
