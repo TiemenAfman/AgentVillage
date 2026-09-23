@@ -440,7 +440,9 @@ of these reasons fix themselves, so the loop turned one problem into a toast eve
 seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
 is wrong and tells whoever has to fix it nothing.
 
-`SEA_KEY` is shared by everybody in a world. Each islander keeps it in
+`SEA_KEY` is optional and only for a private sea - the open sea has none, so a Windows
+release and the phone app can both just join, and `POST /update` is locked by
+`SEA_ADMIN_KEY` instead (falling back to `SEA_KEY`). When set, it is shared by everybody in a world. Each islander keeps it in
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that
 hand-off a sea that gets a key locks out the browser of the very island publishing to it.
@@ -633,8 +635,11 @@ promptholm` in `src-tauri/`, not a full clean.
 `src-android/` is its own Tauri crate, and the one place `web/` *is* bundled: a phone has no
 islander, so none of the desktop's reasons apply ([Plans/eiland-op-android.md](Plans/eiland-op-android.md)).
 `npm run android:pack` copies `web/` + `shared/` to `src-android/dist/` and writes
-`window.PROMPTHOLM_STANDALONE = { sea, key }` into that copy's head — the sea's key
-included, so the APK carries it in plain text. `STANDALONE` in `web/js/api.js` makes
+`window.PROMPTHOLM_STANDALONE = { sea }` into that copy's head. No key, deliberately: an
+APK is a zip anybody can read, so the open sea runs with no `SEA_KEY` (anybody may join;
+an island's claim token keeps its name) and the restart button has its own
+`SEA_ADMIN_KEY`; the pack only bakes a key given by name (`--key`), for a private sea.
+`release.yml`'s `android` job builds and signs it on every tag. `STANDALONE` in `web/js/api.js` makes
 `mine()` refuse without fetching (the app origin answers every path, and a 404 "from the
 islander" is the keeper's mode); the page then has no island at all: home is a free berth of water (`nextOrigin`, drawn on
 `makeTerrain(…, { open: true })`, which is sea edge to edge), the body joins as a wanderer

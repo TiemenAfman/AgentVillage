@@ -13,12 +13,13 @@
 //
 //   node scripts/pack-android.mjs [--sea <url>] [--key <key>]
 //
-// The key defaults to PROMPTHOLM_SEA_KEY, then to config.json's multiplayer.sea.key when
-// that config is in the same sea. It is baked into the APK in plain text: an APK is a zip,
-// so hand it only to people who could have been given the key anyway.
+// No key by default: the open sea is open, and an APK is a zip anybody can read, so a key
+// in it is a key handed to everybody who ever gets the file. Only for a private sea, and
+// only when asked for by name (--key or PROMPTHOLM_SEA_KEY) - never lifted quietly out of
+// this machine's config.json, which is how the first builds leaked it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, HOME, WEB, SHARED, OPEN_SEA, readJson } from '../lib/paths.mjs';
+import { ROOT, WEB, SHARED, OPEN_SEA } from '../lib/paths.mjs';
 
 const OUT = path.join(ROOT, 'src-android', 'dist');
 
@@ -28,10 +29,7 @@ function arg(name) {
 }
 
 const sea = new URL(arg('sea') || OPEN_SEA).href;
-const config = readJson(path.join(HOME, 'config.json'), {}) || {};
-const mine = config.multiplayer && config.multiplayer.sea;
-const key = arg('key') || process.env.PROMPTHOLM_SEA_KEY
-  || (mine && mine.key && mine.url && new URL(mine.url).href === sea ? mine.key : null);
+const key = arg('key') || process.env.PROMPTHOLM_SEA_KEY || null;
 
 if (!fs.existsSync(path.join(WEB, 'vendor', 'three.module.js'))) {
   process.stderr.write('pack-android: web/vendor is empty - run `npm install` first (it vendors three.js)\n');
@@ -39,7 +37,7 @@ if (!fs.existsSync(path.join(WEB, 'vendor', 'three.module.js'))) {
 }
 const health = await fetch(new URL('health', sea)).then((r) => r.json()).catch(() => null);
 if (health && health.keyed && !key) {
-  process.stderr.write(`pack-android: ${sea} wants a key and none was found - pass --key or set PROMPTHOLM_SEA_KEY\n`);
+  process.stderr.write(`pack-android: ${sea} wants a key - pass --key (it goes into the APK in plain text) or open the sea\n`);
   process.exit(1);
 }
 
@@ -49,7 +47,7 @@ fs.cpSync(SHARED, path.join(OUT, 'shared'), { recursive: true });
 
 // Ahead of every other script in the head, so it is there before main.js's graph starts.
 // JSON.stringify of plain strings, with `<` escaped so nothing in it can close the tag.
-const inline = JSON.stringify({ sea, key }).replace(/</g, '\\u003c');
+const inline = JSON.stringify(key ? { sea, key } : { sea }).replace(/</g, '\\u003c');
 const index = path.join(OUT, 'index.html');
 const html = fs.readFileSync(index, 'utf8');
 const at = html.indexOf('<script');

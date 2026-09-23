@@ -40,6 +40,17 @@ test('a sea with a key lets nobody else press the button', async () => {
   }, { key: 'k' });
 });
 
+test('an open sea locks its button with the admin key and lets everybody else in', async () => {
+  await afloat(async ({ base }) => {
+    const health = await fetch(`${base}/health`).then((r) => r.json());
+    assert.equal(health.keyed, false, 'an open sea told the picker it wants a key');
+    const none = await fetch(`${base}/update`, { method: 'POST' });
+    assert.equal(none.status, 403, 'a stranger pressed the button on an open sea');
+    const right = await fetch(`${base}/update`, { method: 'POST', headers: { 'X-Sea-Key': 'boss' } });
+    assert.equal(right.status, 501, 'the admin key did not open the button');
+  }, { adminKey: 'boss' });
+});
+
 test('a sea without a key will not restart itself for anybody', async () => {
   // Who before what: 403 and not 501, because answering "no hook here" first would tell a
   // stranger something about how this sea is deployed.

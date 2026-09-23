@@ -10,7 +10,7 @@ De desktop-window bundelt niets (`Plans/eiland-als-desktop-app.md`): zijn pagina
 de islander op 4747, en bundelen brak `mine()`, `lib/access.mjs` en de import map tegelijk.
 Op een telefoon is er geen islander en komt er nooit een, dus alle drie de redenen vallen
 weg. `scripts/pack-android.mjs` kopieert `web/` + `shared/` naar `src-android/dist/` en
-schrijft `window.PROMPTHOLM_STANDALONE = { sea, key }` in de head van die kopie van
+schrijft `window.PROMPTHOLM_STANDALONE = { sea }` in de head van die kopie van
 `index.html`. Een door een islander geserveerde pagina heeft dat nooit, dus daar verandert
 niets.
 
@@ -50,9 +50,11 @@ niets.
 - **Touch als gamepad.** `web/js/touchpad.js` pollt in precies de vorm van `gamepad.js`
   (linkerhelft zwevende stick, rechterhelft slepen om te kijken, knoppen A en X), dus
   walk mode, roeien en sturen werken zonder touch-code in `walk.js`.
-- **De key zit in de APK.** De open zee is keyed; de pack neemt `--key`,
-  `PROMPTHOLM_SEA_KEY` of `multiplayer.sea.key` uit `config.json` als die dezelfde zee is.
-  Een APK is een zip: geef hem alleen aan wie de key toch al mag hebben.
+- **Geen key.** De eerste builds haalden `SEA_KEY` uit `config.json` en droegen hem leesbaar
+  mee - een APK is een zip - en met die key kon iedereen de zee herstarten. De key voegde op
+  een open zee niets toe (iedereen moet erin; een eiland houdt zijn naam met zijn claim-
+  token), dus de open zee draait zonder `SEA_KEY`, de herstartknop heeft een eigen
+  `SEA_ADMIN_KEY`, en de pack bakt alleen nog een key die hem met `--key` gegeven wordt.
 - **Eigen crate `src-android/`**, niet een target van `src-tauri/`: dat zijn twee Windows-
   exes rond een islander (tray-icon, tao, windows-sys, node als kind).
 
@@ -72,6 +74,8 @@ is niet gestript. Kleiner (≈10 MB): `tauri android build --apk --target aarch6
 
 ## Nog niet
 
-- Een release-gesigneerde APK (keystore) en een CI-job.
+- Een vaste keystore als repo-secret (`ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`); zonder
+  die tekent de `android`-job in `release.yml` met een wegwerpsleutel en updatet een release
+  niet over de vorige heen.
 - Een zee kiezen in de app zelf; nu is het wat de pack erin schreef.
 - Panels/boards op een telefoon: ze openen, maar zijn niet op touch ontworpen.
