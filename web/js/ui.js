@@ -367,6 +367,17 @@ export function createUI(handlers) {
   ];
   let signMode = null;
 
+  // Building by hand - the Build chip, the B key, the catalogue and the ghost - is off
+  // unless somebody switches it on under Debug. The planner is how the town is kept now;
+  // the old way stays reachable for trying things, not as a second way of doing the same
+  // job. Per browser, like the sound: it changes nothing on the island, only what this
+  // page offers, so it is not a config.json setting the islander has to write down.
+  const BUILD_KEY = 'promptholm.debug.build';
+  let buildOn = false;
+  try { buildOn = localStorage.getItem(BUILD_KEY) === '1'; } catch { /* private window: off */ }
+  function applyBuild() { el('build-btn').hidden = !buildOn; }
+  applyBuild();
+
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
@@ -437,9 +448,21 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
-      + seaSection();
+      + seaSection()
+      + '<h3 class="sec">Debug</h3>'
+      + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
+      + `<p class="muted" style="margin-top:9px">${buildOn
+        ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+    el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
+      buildOn = !buildOn;
+      try { if (buildOn) localStorage.setItem(BUILD_KEY, '1'); else localStorage.removeItem(BUILD_KEY); } catch { /* kept for this page only */ }
+      applyBuild();
+      renderSettings();
+      if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
     el('settings-body').querySelectorAll('[data-seamode]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
     el('settings-body').querySelectorAll('[data-sea]')
@@ -716,7 +739,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setSound,
+    setSigns, setKeeper, setSound, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.

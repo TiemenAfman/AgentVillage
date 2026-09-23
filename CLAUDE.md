@@ -112,8 +112,14 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Five version gates
-in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
+The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
+exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
+paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
+house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/wegen-tekenen.md`).
+Building by hand (the Build chip, `B`, `buildmenu.js`/`ghost.js`) is off unless switched on
+under Settings → Debug (per browser, `promptholm.debug.build`): the planner keeps the town.
+Five version gates in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from

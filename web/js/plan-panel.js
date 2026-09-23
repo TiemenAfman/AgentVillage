@@ -17,6 +17,7 @@ export const TOOLS = [
   ['zone', 'Zone', '3', 'Paint ground nothing may be built on. Right-drag releases it.'],
   ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Click a standing polder and press Delete to give it back.'],
   ['land', 'Land', '5', 'Give the selected hamlet more land, painted onto its edge. Right-drag takes land away.'],
+  ['road', 'Road', '6', 'Drag a road out from one that reaches the square. Over a river it gets a bridge as long as the gap.'],
 ];
 
 export function createPlanPanel(handlers) {

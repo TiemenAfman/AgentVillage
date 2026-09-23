@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
+  een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
+  (Settings → Debug). Gebouwd op 23 september 2026.
 - [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
   vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.

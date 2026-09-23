@@ -716,6 +716,11 @@ function sowHere() {
 // Pressing it again while something is already in hand puts that back, so the key is a
 // toggle rather than a way to open a menu on top of a ghost.
 function openBuild() {
+  // Off unless switched on under Settings -> Debug: the planner keeps the town now.
+  if (!state.ui.buildEnabled()) {
+    state.ui.toast('Building by hand is switched off. The town is kept from the planner (<b>Plan</b>); Settings → Debug brings Build back.');
+    return;
+  }
   if (state.mode === 'plan') exitPlan();
   if (state.inside) { state.ui.toast('Nothing to build in here.'); return; }
   if (keeperOnly('build on this island')) return;
@@ -4321,6 +4326,13 @@ async function boot() {
     onMarket: () => openMarket(),
     onCustomize: () => openStudio(),
     onBuild: () => openBuild(),
+    // Switched off with something in hand or the catalogue open: both go, or the ghost
+    // would stay on the cursor with no chip left to put it back with.
+    onBuildMode: (on) => {
+      if (on) return;
+      if (state.buildMenu && state.buildMenu.isOpen()) state.buildMenu.close();
+      if (state.ghost && state.ghost.holding()) state.ghost.drop();
+    },
     onSound: () => state.ui.setSound(state.sound.toggle()),
   });
 
