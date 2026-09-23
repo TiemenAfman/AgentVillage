@@ -147,7 +147,7 @@ function loungeGeometry() {
 // camera low and a low camera aiming at eye level is looking at the rafters.
 export function createWalkMode({
   scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
-  camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null,
+  camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null,
 }) {
   // What is underfoot, and which cell of which island a surface belongs to.
   //
@@ -370,8 +370,16 @@ export function createWalkMode({
   // after one refused click the next ones swing again, or the left button would do nothing
   // at all there. A lock that does arrive puts this back.
   let clickLockFailed = false;
-  // Not with the arms already busy: swimming, lying down or sitting.
-  const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting;
+  // Not with the arms already busy: swimming, lying down, sitting, or at a tiller.
+  const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting
+    && !state.vehicle;
+  // One press of the left button, if it may fight at all. `onSwing` hears of every swing
+  // the arm actually started - main.js puts it on the wire (net.js swing()), which is what
+  // makes the button hit something on the sea rather than only move an arm - and of none
+  // it refused, so a mashed button is not a volley the sea sees and nobody else does. Not
+  // behind a raised shield: the sea ignores a swing from a blocking player
+  // (lib/combat.mjs), so the arm does not pretend otherwise - you lower the shield to hit.
+  const fight = () => { if (canFight() && !state.blocking && classicAvatar.attack() && onSwing) onSwing(); };
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
@@ -401,7 +409,7 @@ export function createWalkMode({
     if (!state.active) return;
     if (e.button === 2) { if (canFight()) state.blocking = true; return; }
     if (e.button !== 0) return;
-    if (document.pointerLockElement === dom) { if (canFight()) classicAvatar.attack(); return; }
+    if (document.pointerLockElement === dom) { fight(); return; }
     pressLocks = wantLock() && !clickLockFailed;
     if (wantLock()) requestLock(true);
     dragging = true; pressMoved = false;
@@ -410,7 +418,7 @@ export function createWalkMode({
   const onUp = (e) => {
     if (e.button === 2) { state.blocking = false; return; }
     if (e.button !== 0) return;
-    if (dragging && !pressMoved && !pressLocks && canFight()) classicAvatar.attack();
+    if (dragging && !pressMoved && !pressLocks) fight();
     dragging = false; pressLocks = false;
   };
   const onMove = (e) => {
@@ -561,6 +569,9 @@ export function createWalkMode({
     if (!boat) return;
     state.vehicle = boat;
     standUp();
+    // Both hands to the tiller: a shield held up on the way aboard is let go of, or it
+    // would ride along in the pose (net.js drops the flag afloat, but the arm would not).
+    state.blocking = false;
     state.crouching = false;
     state.lying = false;
     state.swimming = false;

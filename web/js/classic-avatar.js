@@ -273,12 +273,17 @@ export function createClassicAvatar(spec, material) {
   const blockSide = () => (holding.leftArm === 'shield' ? 'leftArm' : holding.rightArm === 'shield' ? 'rightArm'
     : attackSide() === 'rightArm' ? 'leftArm' : 'rightArm');
 
+  // Whether a swing started. walk.js tells the sea once for each one that did (net.js
+  // swing()), so a click the arm refused - still winding up - is no blow on the sea either.
+  // (The sea counts one per 0.45 s, the length of the swing; one that cuts the last short
+  // past its strike is drawn but not sent - see SWING_MS in net.js.)
   function attack() {
     // A swing past its strike can be cut short by the next one; one still winding up or
     // striking plays out, or mashing the button would jitter the arm at the top.
-    if (swing && swing.t / SWING_S < 0.6) return;
+    if (swing && swing.t / SWING_S < 0.6) return false;
     const side = attackSide();
     swing = { side, t: 0, from: pieces[side].pivot.rotation.x };
+    return true;
   }
 
   // Where the swinging arm is, u of the way through, and how much of the item's upright

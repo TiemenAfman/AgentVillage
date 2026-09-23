@@ -12,9 +12,10 @@ const terrain = volcanoTerrain();
 const bundle = volcanoBundle(terrain);
 const ORIGIN = [300, -200];
 
-// A lava cell halfway down the first flow, and a cell of plain flank well clear of it.
-const course = terrain.lavaFlows[0];
-const [lgx, lgz] = course.find(([gx, gz]) => terrain.isLava(gx, gz) && Math.abs(gx - terrain.half) > 20) || terrain.lavaCells[0];
+// A lava cell down a flow rather than in the crater, and a cell of plain flank well clear of
+// it. Out of `lavaCells`, not a particular flow, so reshaping the flows moves the cell
+// without breaking the test.
+const [lgx, lgz] = terrain.lavaCells.find(([gx, gz]) => Math.abs(gx - terrain.half) > 20 || Math.abs(gz - terrain.half) > 20) || terrain.lavaCells[0];
 const [safeGx, safeGz] = terrain.landCells.find(([gx, gz]) => {
   for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) if (terrain.isLava(gx + dx, gz + dz)) return false;
   return terrain.heightAt(gx, gz) > 1;
@@ -41,10 +42,10 @@ function setup({ deck = 0 } = {}) {
   const hurts = [];
   const spy = { hurt: (...a) => { hurts.push(a); return health.hurt(...a); } };
   const lava = createLava({ fleet, crowds: { get: (id) => (id === VOLCANO.id ? crowd : null) }, roster, health: spy, now: () => time });
-  return { p, evictions, hurts, lava, boats: (v) => { boats = v; }, tick() { time += 100; return lava.tick(); } };
+  return { p, evictions, hurts, lava, health, boats: (v) => { boats = v; }, tick() { time += 100; return lava.tick(); } };
 }
 
-test('a walker with their feet in the lava is hurt, as lava, and sent home', () => {
+test('a walker with their feet in the lava is hurt, as lava, at LAVA_PER_S, and sent home when it runs out', () => {
   assert.ok(terrain.isLava(lgx, lgz));
   const s = setup();
   assert.equal(s.tick(), 1);
@@ -52,11 +53,26 @@ test('a walker with their feet in the lava is hurt, as lava, and sent home', () 
   const [who, amount, cause] = s.hurts[0];
   assert.equal(who, s.p);
   assert.deepEqual(cause, { kind: 'lava', island: 'De Vulkaan' });
-  assert.ok(amount > 0 && amount <= LAVA_PER_S);
+  assert.equal(amount, 1, 'a sliver on the very first beat, when there is no dt yet');
+  // Then a tenth of a second at a time, each charged at the rate.
+  for (let i = 0; i < 10; i++) s.tick();
+  for (const [, a] of s.hurts.slice(1)) assert.ok(Math.abs(a - LAVA_PER_S / 10) < 1e-9, `a beat cost ${a}`);
+  assert.ok(Math.abs(s.health.health(s.p) - (100 - 1 - LAVA_PER_S)) < 1e-9, `after a second ${s.health.health(s.p)} is left`);
+  assert.equal(s.evictions.length, 0, 'a second in lava is survivable');
+  // Standing there: nothing grows back, and a little over half a second more finishes it.
+  for (let i = 0; i < 20 && !s.evictions.length; i++) s.tick();
   assert.deepEqual(s.evictions, [{ where: [2, 1, 403], name: 'De Vulkaan' }]);
+  assert.ok(s.hurts.length <= 18, `it took ${s.hurts.length} beats`);
   // Home, and immune there for a moment: the next beats burn nobody.
   Object.assign(s.p, at(lgx, lgz));
   assert.equal(s.tick(), 0);
+});
+
+test('lava is not blockable: a raised shield changes nothing', () => {
+  const s = setup();
+  s.p.f = 16;
+  s.tick(); s.tick();
+  assert.ok(Math.abs(s.hurts[1][1] - LAVA_PER_S / 10) < 1e-9);
 });
 
 test('the flank beside it, a pilot, a room, a jump and a walker with no pose yet are all left alone', () => {

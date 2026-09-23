@@ -19,6 +19,12 @@ const FLAG_MOVING = 1;
 const FLAG_SWIMMING = 2;
 const FLAG_RUNNING = 4;
 const FLAG_AIRBORNE = 8;
+// The right mouse button held. net.js's FLAG_BLOCKING, copied rather than imported so this
+// file keeps its one import of walk.js; lib/players.mjs's POSE is the sea's copy of all five.
+const FLAG_BLOCKING = 16;
+// How far somebody behind their shield leans back into it. A peer is one mesh with no arms
+// (see the header), so a raised shield cannot be drawn; a braced stance can, for nothing.
+const BRACE_LEAN = -0.1;
 
 const LABEL_W = 256;
 const LABEL_H = 64;
@@ -281,6 +287,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const swimming = !!(f & FLAG_SWIMMING);
       const running = !!(f & FLAG_RUNNING);
       const airborne = !!(f & FLAG_AIRBORNE);
+      const blocking = !!(f & FLAG_BLOCKING);
 
       // Standing on our own ground rather than on the height we were sent. If a visitor
       // generated the island from a different seed the two terrains disagree, and this is
@@ -302,7 +309,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       } else {
         const bobY = moving && !airborne ? Math.abs(Math.sin(p.bob)) * 0.045 : 0;
         p.mesh.position.set(x, base + bobY, z);
-        p.mesh.rotation.set(0, yaw, moving ? Math.sin(p.bob) * 0.045 : 0);
+        p.mesh.rotation.set(blocking ? BRACE_LEAN : 0, yaw, moving ? Math.sin(p.bob) * 0.045 : 0);
       }
 
       // Somebody to bump into. Swimmers and jumpers are left out: a wall you cannot see

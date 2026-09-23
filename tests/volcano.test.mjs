@@ -56,7 +56,7 @@ test('the volcano is the same mountain every time it is made', () => {
   // on disk holds this number - the sea raises the volcano from its seed on every start -
   // but a page and a sea running different shapes disagree about where the lava is, and
   // the page says so only as a banner (ui.setSkew). Tune it on purpose and update this.
-  assert.equal(a.hash, '049beb47');
+  assert.equal(a.hash, 'd28fb90d');
   assert.deepEqual(a.lavaCells, b.lavaCells);
   assert.deepEqual(a.crater, b.crater);
 });
@@ -131,6 +131,35 @@ test('lava lies in gullies above the sea and nobody builds in it, beside it or i
     const side = (k) => t.worldHeight(x - (dz / L) * k, z + (dx / L) * k);
     const depth = (side(2.5) + side(-2.5)) / 2 - t.worldHeight(x, z);
     assert.ok(depth > 0.2 && depth < 1.2, `the gully halfway down is ${depth} deep`);
+  }
+});
+
+test('a flow is an unbroken chain of cells that bends on its way down', () => {
+  // Routed as a greedy walk the flows ran down the fall line, 52 cells straying at most five
+  // from the straight line between their ends, and from orbit they were two ruled lines. What
+  // lavaCourse promises instead: a chain the gully, the banks and the ribbon can all follow,
+  // that swings well off that line and to both sides of it, and never climbs back towards
+  // the crater. The bounds are this seed's: the greedy flows measured 4.7 one way and 0.1 the
+  // other, and 0.6 and 5.7; these measure 9.9 and 3.5, and 2.1 and 6.7.
+  const t = volcano();
+  for (const course of t.lavaFlows) {
+    for (let i = 1; i < course.length; i++) {
+      const step = Math.abs(course[i][0] - course[i - 1][0]) + Math.abs(course[i][1] - course[i - 1][1]);
+      assert.equal(step, 1, `a gap in the flow between ${course[i - 1]} and ${course[i]}`);
+    }
+    const [a, b] = [course[0], course[course.length - 1]];
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz);
+    let left = 0, right = 0, far = 0;
+    for (const [gx, gz] of course) {
+      const [x, z] = t.cellWorld(gx, gz);
+      const r = Math.sqrt(x * x + z * z);
+      assert.ok(r >= far - 1, `the flow climbs back towards the crater at (${gx}, ${gz})`);
+      far = Math.max(far, r);
+      const off = ((gx - a[0]) * dz - (gz - a[1]) * dx) / L;
+      left = Math.max(left, off); right = Math.max(right, -off);
+    }
+    assert.ok(Math.max(left, right) >= 6, `a flow strays only ${Math.max(left, right).toFixed(1)} cells from a straight line`);
+    assert.ok(Math.min(left, right) >= 1.5, 'a flow bends to one side only: an arc, not a meander');
   }
 });
 

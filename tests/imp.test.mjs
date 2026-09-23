@@ -152,12 +152,21 @@ test('the culling sphere holds every pose of every clip, so a culled imp is real
   assert.ok(worst <= 1, `a vertex reaches ${worst.toFixed(3)} of the culling sphere's radius`);
 });
 
-test('imps share their geometry and material, each has its own skeleton, and one going leaves the rest intact', () => {
+test('imps share their geometry and their program, each has its own skeleton, and one going leaves the rest intact', () => {
   const scene = new THREE.Scene();
   const a = imp.standImp(template, scene, 'guard:0');
   const b = imp.standImp(template, scene, 'guard:1');
   assert.equal(a.mesh.geometry, b.mesh.geometry, 'every imp uploads its own copy of the mesh');
-  assert.equal(a.mesh.material, b.mesh.material, 'every imp compiles its own program');
+  // A material each, so a hit can flush one imp red - but made out of the template's with the
+  // same patch and the same cache key, which is what three.js shares a program by.
+  const tmpl = skinnedOf(template.model).material;
+  assert.notEqual(a.mesh.material, b.mesh.material, 'a hit on one imp would flush every imp');
+  assert.notEqual(a.mesh.material, tmpl);
+  for (const m of [a.mesh.material, b.mesh.material]) {
+    assert.equal(m.onBeforeCompile, tmpl.onBeforeCompile, 'a clone lost the lava patch, or got a closure of its own');
+    assert.equal(m.customProgramCacheKey, tmpl.customProgramCacheKey, 'a clone compiles a program of its own');
+    assert.equal(m.customProgramCacheKey(), 'hostile-settler-lava-glow');
+  }
   assert.notEqual(a.mesh.skeleton, b.mesh.skeleton, 'two imps on one skeleton move as one');
   assert.notEqual(a.mesh.skeleton.bones[0], b.mesh.skeleton.bones[0]);
   assert.notEqual(a.idleTime(), b.idleTime(), 'two guards start their idle together');
@@ -238,6 +247,61 @@ test('the guards stand clear of the castle they live in: its real footprint is w
   assert.ok(reach > GUARDHOUSE_REACH - 0.05, `GUARDHOUSE_REACH (${GUARDHOUSE_REACH}) is far bigger than the castle (${reach}): measure again`);
 });
 
+test('a hit flushes that one imp red and rocks it back, then it is itself again - with no material made for it', () => {
+  const scene = new THREE.Scene();
+  const a = imp.standImp(template, scene, 'guard:6');
+  const b = imp.standImp(template, scene, 'guard:7');
+  const mat = a.mesh.material;
+  const frame = (actor, dt) => actor.update({ x: 0, y: 0, z: 0, yaw: 0.7, dt, now: 0 });
+  frame(a, 0); frame(b, 0);
+  assert.equal(mat.emissive.getHex(), 0x000000, 'an imp nobody has hit is flushed');
+  assert.equal(a.object.rotation.x, 0);
+  for (let i = 0; i < 10; i++) { a.hit(); frame(a, 0.01); frame(b, 0.01); }
+  assert.equal(a.mesh.material, mat, 'a hit swapped the material: one per blow is a program per blow');
+  assert.equal(a.hurting(), true);
+  assert.ok(mat.emissive.r > 0.5 && mat.emissive.r > mat.emissive.g * 4, `not red: ${mat.emissive.getHexString()}`);
+  assert.ok(a.object.rotation.x < -0.2, 'the blow did not rock it back');
+  assert.equal(a.object.rotation.order, 'YXZ', 'the flinch would tip it sideways when it faces anywhere but +z');
+  assert.equal(b.mesh.material.emissive.getHex(), 0x000000, 'a hit on one imp flushed another');
+  for (let t = 0; t < imp.HIT_S + 0.05; t += 0.05) frame(a, 0.05);
+  assert.equal(a.hurting(), false);
+  assert.equal(mat.emissive.getHex(), 0x000000, 'the flush never faded');
+  assert.equal(a.object.rotation.x, 0, 'it never stood up again');
+  a.dispose(); b.dispose();
+});
+
+test('the lava glows brighter by night, by one shared uniform, and exactly as before by day', () => {
+  assert.equal(imp.lavaGlow(0).glow, 2.2, 'daytime is not what it was');
+  assert.equal(imp.lavaGlow(0).ember, 0);
+  let last = -1;
+  for (const n of [0, 0.25, 0.5, 0.75, 1]) {
+    const g = imp.lavaGlow(n);
+    assert.ok(g.glow > last, `the glow does not rise at night ${n}`);
+    last = g.glow;
+  }
+  assert.ok(imp.lavaGlow(1).glow >= 2.5 * imp.lavaGlow(0).glow, 'hardly brighter at night');
+  assert.deepEqual(imp.lavaGlow(7), imp.lavaGlow(1), 'not clamped');
+  assert.deepEqual(imp.lavaGlow(NaN), imp.lavaGlow(0));
+  // Two imps' materials are handed the same uniform objects, so one write lights them all.
+  const scene = new THREE.Scene();
+  const a = imp.standImp(template, scene, 'guard:8');
+  const b = imp.standImp(template, scene, 'guard:9');
+  const src = '#include <common>\nvoid main() {\n#include <emissivemap_fragment>\n}';
+  const sa = { uniforms: {}, fragmentShader: src }, sb = { uniforms: {}, fragmentShader: src };
+  a.mesh.material.onBeforeCompile(sa);
+  b.mesh.material.onBeforeCompile(sb);
+  assert.equal(sa.uniforms.uLavaGlow, sb.uniforms.uLavaGlow, 'each imp has a glow of its own to set');
+  assert.equal(sa.fragmentShader, sb.fragmentShader, 'two imps, two programs');
+  assert.match(sa.fragmentShader, /uniform float uLavaGlow;/);
+  assert.match(sa.fragmentShader, /totalEmissiveRadiance \+= /, 'the patch throws the material\'s own emissive (the hit flush) away');
+  imp.setImpNight(1);
+  assert.equal(sa.uniforms.uLavaGlow.value, imp.LAVA_GLOW.night);
+  assert.deepEqual(imp.impGlow(), imp.lavaGlow(1));
+  imp.setImpNight(0);
+  assert.equal(sb.uniforms.uLavaGlow.value, imp.LAVA_GLOW.day);
+  a.dispose(); b.dispose();
+});
+
 // ---- the swap in crowd-view.js --------------------------------------------------------
 
 const volcano = {
@@ -250,8 +314,8 @@ const LODGER = 'codex:0123456789abcdef:house:s3';
 function stubImps() {
   const made = [];
   const make = (id) => {
-    const calls = { id, updates: [], disposed: 0 };
-    const actor = { update: (u) => calls.updates.push(u), dispose: () => { calls.disposed++; } };
+    const calls = { id, updates: [], disposed: 0, hits: 0 };
+    const actor = { update: (u) => calls.updates.push(u), dispose: () => { calls.disposed++; }, hit: () => { calls.hits++; } };
     made.push({ id, calls, actor });
     return actor;
   };
@@ -298,6 +362,32 @@ test('every guard is parked while an imp stands in for him, where he would have 
   crowd.draw(0.016, () => 0.5, 1016);
   assert.equal(torsoY(crowd, 'guard:1'), -999);
   assert.equal(s.made.length, 2, 'an imp was made again for a guard who already had one');
+});
+
+test('a hit reaches the imp standing in for a guard, and makes an ordinary figure flinch and come back to its colours', () => {
+  const s = stubImps();
+  const crowd = crowdWith(s.make);
+  crowd.draw(0.016, () => 0.5, 1000);
+  assert.equal(crowd.hit('guard:0'), true);
+  assert.equal(s.of('guard:0').calls.hits, 1, 'the imp never heard of the blow');
+  assert.equal(s.of('guard:1').calls.hits, 0);
+  assert.equal(crowd.hit('guard:99'), false, 'somebody nobody here has heard of was hit');
+  // The lodger is an instanced settler: his torso goes red and comes back exactly.
+  const f = crowd.figure(LODGER);
+  const torso = crowd.pickables()[0];
+  const c = new THREE.Color();
+  torso.getColorAt(f.slot, c);
+  const before = c.getHex();
+  assert.equal(crowd.hit(LODGER), true);
+  crowd.draw(0.016, () => 0.5, 1016);
+  torso.getColorAt(f.slot, c);
+  assert.notEqual(c.getHex(), before, 'the figure did not flush');
+  assert.ok(c.r > c.g, 'the flush is not red');
+  assert.equal(s.of('guard:0').calls.hits, 1, 'the lodger\'s blow reached an imp');
+  for (let i = 0; i < 25; i++) crowd.draw(0.016, () => 0.5, 1032 + i * 16);
+  torso.getColorAt(f.slot, c);
+  assert.equal(c.getHex(), before, 'the figure kept the flush');
+  assert.equal(f.flinch, 0);
 });
 
 test('a guard over water is told he is swimming, and one on land is not', () => {

@@ -16,6 +16,29 @@ const FLAG_MOVING = 1;
 const FLAG_SWIMMING = 2;
 const FLAG_RUNNING = 4;
 const FLAG_AIRBORNE = 8;
+// The right mouse button held (Plans/aanvallen-en-blokkeren.md). The sea's copy is POSE in
+// lib/players.mjs and web/js/peers.js mirrors it; lib/hostility.mjs is what reads it - a
+// guard's blow that lands on a shield raised towards it costs less. Only ever set on foot:
+// a swimmer's arms are busy and a pilot's are on the tiller, and the sea refuses a block
+// from a swimmer anyway, so saying one would only be a lie it has to see through.
+export const FLAG_BLOCKING = 16;
+
+// How much health we have, from the last thing the sea said about it. The sea keeps the
+// count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
+// is left) and tells us privately - after a hit that leaves us standing, and after being
+// sent back whole - with how long until it starts coming back and how fast. It sends
+// nothing while it does come back: the page does the same sum from that one message and the
+// bar fills smoothly on its own, which is the whole of why `regenIn` and `rate` are on the
+// wire at all. A fraction of the bar, 1 when nothing has been said.
+//
+// `h` is { hp, max, regenIn, rate, at }: the message as it arrived, and `at` the moment it
+// did on this page's own clock - relative times, because the sea's clock is somebody else's.
+export function healthAt(h, t) {
+  if (!h || !(h.max > 0)) return 1;
+  const from = h.at + h.regenIn;
+  const hp = t > from ? Math.min(h.max, h.hp + ((t - from) / 1000) * h.rate) : h.hp;
+  return Math.min(1, Math.max(0, hp / h.max));
+}
 
 // What somebody does on a board goes out on this beat, coalesced: a field typed into or
 // pressed repeatedly is one value every sixth of a second, not one per keystroke.
@@ -27,6 +50,14 @@ const FLAG_AIRBORNE = 8;
 // with four fields waiting would send 24 on its own and take the line down.
 const UI_MS = 160;
 const UI_PER_BEAT = 2;
+
+// The sea counts at most one swing per SWING_MS from a player (SWING_MS in lib/combat.mjs)
+// and drops the rest, so they are not sent: the avatar lets a second swing cut the
+// first short once it is past its strike (classic-avatar.js, 0.27 s), and that quicker one
+// would be a message the sea throws away. The same number as the sea's, and as the swing
+// animation itself (SWING_S in classic-avatar.js); the sea may not import web/, so it is
+// written out twice.
+export const SWING_MS = 450;
 
 // `url` is where the world is. It used to be worked out from location.host, which was
 // right for as long as the page and the world came off the same server - and is the one
@@ -43,7 +74,7 @@ const UI_PER_BEAT = 2;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, name = null, frame = () => [0, 0] } = {}) {
+  onWelcome = () => {}, onAgent = () => {}, name = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
   // Where the sea says our island lies, in the sea's own frame. The page draws its own
@@ -103,6 +134,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // One object, mutated. A boat position per frame is not worth an allocation per frame.
   const hull = { id: null, x: 0, z: 0, yaw: 0, live: false };
   const hullSent = { id: null, x: 0, z: 0, yaw: 0 };
+  // The sea's last word on our health - see healthAt. Null is whole, which is what a body the
+  // sea has never hurt is, and what a new connection is: a new socket is a new player id on
+  // the sea and so a fresh body (lib/health.mjs), so a dropped line forgets it too.
+  let health = null;
+  // When the last swing went, on `clock`; see SWING_MS.
+  let swungAt = -Infinity;
 
   const send = (obj) => {
     if (sock && sock.readyState === 1) { sock.send(JSON.stringify(obj)); return true; }
@@ -192,6 +229,25 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // every beat. So "no pilot named" and "nobody at the tiller" are different things
         // and the page has to be able to tell them apart.
         case 'boat': boatIn(m); break;
+        // Our health, privately. Replaced whole by each message rather than merged: every one
+        // carries the count and the wait from scratch, so a hit halfway through a regen simply
+        // starts the sum again from where the sea says we now are. A message that does not add
+        // up is ignored rather than drawn - a bar at NaN is a bar that never fades.
+        case 'health': {
+          if (![m.hp, m.max].every(Number.isFinite) || m.max <= 0) break;
+          health = {
+            hp: Math.min(m.max, Math.max(0, m.hp)), max: m.max,
+            regenIn: Number.isFinite(m.regenIn) ? Math.max(0, m.regenIn) : 0,
+            rate: Number.isFinite(m.rate) ? Math.max(0, m.rate) : 0,
+            at: clock(),
+          };
+          break;
+        }
+        // Something on an island was hit - a guard or a Codex resident on the volcano, by
+        // whoever swung (lib/combat.mjs). Everybody who can see that island is told, so the
+        // flinch is on every screen and not only the swinger's. Passed through: the ids are
+        // the sea's crowd ids and main.js knows which crowd view holds them.
+        case 'agent': onAgent(m); break;
         case 'evicted': {
           if (![m.x, m.y, m.z].every(Number.isFinite)) break;
           const [ox, oz] = frame();
@@ -212,6 +268,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       // a stale name for somebody who may not even be here. Start clean.
       peers.clear();
       selfId = null;
+      health = null;
       sock = null;
       schedule();
     };
@@ -251,14 +308,18 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     hullSent.hx = hx; hullSent.hz = hz;
   }
 
-  const beat = setInterval(() => {
-    sendHull();
+  // Our body, if it has changed enough to be worth saying or the keepalive is due. On the
+  // beat, and also straight before a swing (see swing()), so the sea measures the blow from
+  // where we are and which way we face now, and never from a pose still saying BLOCKING a
+  // tenth of a second after the shield came down - it ignores a swing from a blocker.
+  function sendPose() {
     if (!walking || !here || !here.state.active || !berthKnown()) return;
     const s = here.state;
     const f = (s.moving ? FLAG_MOVING : 0)
       | (s.swimming ? FLAG_SWIMMING : 0)
       | (s.moving && !s.swimming && s.running ? FLAG_RUNNING : 0)
-      | (s.grounded ? 0 : FLAG_AIRBORNE);
+      | (s.grounded ? 0 : FLAG_AIRBORNE)
+      | (s.blocking && !s.swimming && !s.vehicle ? FLAG_BLOCKING : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.
@@ -277,6 +338,11 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     if (!send(pose)) return;
     last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.r = room; last.at = now;
     last.hx = hx; last.hz = hz;
+  }
+
+  const beat = setInterval(() => {
+    sendHull();
+    sendPose();
   }, POSE_MS);
 
   // A standing player sends nothing but the slow keepalive, and a hand moving over a
@@ -314,6 +380,34 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       last.f = -1;                    // force the next pose through, wherever it is
     },
     setName(n) { if (n) send({ t: 'hello', name: n }); },
+    // One swing of whatever we are holding, the moment it starts (walk.js, the left button).
+    // Nothing else goes with it: the sea already has our position and heading off the pose
+    // beat, and it believes nothing about the swing but that it happened - what it reaches and
+    // what that costs is lib/combat.mjs's to decide. At once rather than on the beat, because a
+    // hit that lands a tenth of a second after the arm came down reads as lag; and cheap on
+    // the bucket in lib/players.mjs: at most one per SWING_MS, each with at most one pose
+    // flushed ahead of it, is under five messages a second against a refill of 25.
+    //
+    // Only on foot on the sea: in walk mode, outdoors (a room is nobody's battlefield), with
+    // our own feet under us and not a hull or the water, and with a berth the sea knows, since
+    // the pose it measures the swing from is not sent before that either. Not behind a raised
+    // shield - the sea ignores a swing from a player whose pose says BLOCKING, as it does one
+    // from a swimmer - and not sooner than SWING_MS after the last. Every one of those the sea
+    // would drop on arrival, so none of them is worth a token from the bucket. Returns whether
+    // it went.
+    swing() {
+      const s = here && here.state;
+      if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.swimming || s.blocking || !berthKnown()) return false;
+      const t = clock();
+      if (t - swungAt < SWING_MS) return false;
+      sendPose();
+      if (!send({ t: 'swing' })) return false;
+      swungAt = t;
+      return true;
+    },
+    // Where the red bar stands now, regen included: a fraction, 1 when whole or never hurt.
+    // Called every frame; it is one subtraction and a min.
+    health: () => healthAt(health, clock()),
     // One field of one board. Queued rather than sent: see UI_MS.
     setPanelField(id, action, value) {
       pending.set(`${id}:${action}`, { t: 'ui', id, a: action, v: value });

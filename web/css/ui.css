@@ -251,6 +251,12 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
 .vital.full { opacity: 0; transition: opacity 1.2s ease 1.5s; }
+/* A hit: the red bar flares and its track flushes for a moment (web/js/vitals.js). Two names
+   for one animation, taken in turn, so a second blow restarts it without a reflow. */
+.vital.health.hurt-a { animation: vital-hurt-a .45s ease-out; }
+.vital.health.hurt-b { animation: vital-hurt-b .45s ease-out; }
+@keyframes vital-hurt-a { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
+@keyframes vital-hurt-b { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
 
 /* --- the walk-mode minimap ---------------------------------------------- */
 .minimap {

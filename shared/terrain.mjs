@@ -78,8 +78,8 @@ const VOLCANO_SHORE = 0.1;         // the beach shelf, as a share of the way fro
 const VOLCANO_RIDGE = 0.11;        // how high the radial ridges stand at mid-flank, of the peak
 const VOLCANO_ROUGH = 0.025;       // plain bumpiness, everywhere there is land, of the peak
 
-// The lava. A flow is routed exactly the way a river is - `riverCourse`, from a cell on the
-// rim with a mouth a little round the coast - but it is not carved the way a river is: a
+// The lava. A flow runs from a cell on the rim to a mouth a little round the coast, like a
+// river from its source (the route is `lavaCourse`, below) - but it is not carved the way a river is: a
 // river has to go below SEA_LEVEL to be water at all, and the one sea plane at y = 0 is what
 // is drawn in its bed. Lava has a surface of its own (web/js/lava.js), so it wants a gully
 // and not a flooded valley: LAVA_DEPTH under the ground either side of it, following the
@@ -94,8 +94,19 @@ export const LAVA_W0 = 0.55;       // half-width at the rim
 export const LAVA_W1 = 0.85;       // and at the sea
 const LAVA_FLOOR = 0.12;           // the lowest the bed may lie, above SEA_LEVEL
 const LAVA_REACH = 0.25;           // a cell is lava if its middle is this close to the flow's edge
-const LAVA_PULL = 0.18;            // pull toward the mouth, per cell - under half the river's
-const LAVA_WOBBLE = 0.3;           // and nearly twice the river's meander
+// How a flow bends on its way down (lavaCourse). Cells throughout, measured sideways off the
+// line a flow would take if it did not bend at all.
+const LAVA_BEND_GAP = [9, 14];     // cells of descent from one bend to the next
+const LAVA_BEND = [5, 8];          // how far a bend swings out, to alternate sides
+const LAVA_SWING = 9;              // the furthest a flow may stray from its line, either side
+const LAVA_SETTLE = 6;             // cells below the rim before it may swing at all
+const LAVA_KEEP_BEND = 0.12;       // cost per cell^2 of straying from the bend it was given
+const LAVA_KEEP_SMOOTH = 0.35;     // cost per cell^2 of stepping sideways, so it curves, not zigzags
+const LAVA_VALLEY = 1;             // weight of the ground: a unit lower than its ring is a unit cheaper
+// How much of the way down the flow's line has finished turning towards its mouth. All of it
+// at 1, and the last of the turn fell on the beach shelf, where the line ran along the coast
+// for ten cells before the sea took it; done by 70% the last stretch runs straight out.
+const LAVA_SWEEP = 0.7;
 
 // 16 unit vectors at 22.5 degree steps, written out as literals because the
 // trigonometric functions are not allowed in this module.
@@ -138,19 +149,14 @@ function boxBlur(H, N) {
 // the flattest ground near the centre of the grid and a river through it would take the
 // square, the civic lots and the commons with it.
 //
-// The options are the lava's, and each default is the river's own number, so a river is
-// routed exactly as it was before they existed. A lava flow starts on the crater rim,
-// which is well inside RIVER_CENTRE_KEEP, so it keeps only the crater itself; it runs on to
-// the waterline instead of stopping two cells short, because the steam where it meets the
-// sea is the point; and it wobbles off a salt of its own so that it does not meander in step
-// with a river that is not there. It is pulled less and wobbles more (LAVA_PULL, LAVA_WOBBLE):
-// on a cone every cell is downhill from the one above it, so the river's pull alone drew a
-// ruler-straight line from the rim to the mouth, and a flow is meant to find the valleys
-// between the ridges instead.
-function riverCourse(H, N, size, start, mouth, {
-  keep = RIVER_CENTRE_KEEP, mouthReach = RIVER_MOUTH_REACH, salt = 'river',
-  pull = RIVER_PULL, wobble = RIVER_WOBBLE,
-} = {}) {
+// Lava used to be routed through here too, with options for a smaller keep, a shorter mouth
+// reach and a weaker pull. It no longer is (see lavaCourse): a greedy walk on a cone goes
+// down the fall line whatever the pull, because every step down the mountain outscores any
+// step across it, and the flows came out as ruled lines. The river numbers are back to
+// being the only ones, as literals, so a river is routed exactly as it always was.
+function riverCourse(H, N, size, start, mouth) {
+  const keep = RIVER_CENTRE_KEEP, mouthReach = RIVER_MOUTH_REACH, salt = 'river';
+  const pull = RIVER_PULL, wobble = RIVER_WOBBLE;
   const half = size / 2;
   const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
   const cellH = (gx, gz) =>
@@ -289,6 +295,205 @@ function volcanoGround(seed, size, N, half) {
   return { H, rim, peak, depth, pool: rim * VOLCANO_POOL, floor: flank(1) + 0.3 - depth };
 }
 
+// Where one lava flow runs, from the rim cell in direction `d0` to the sea round the coast in
+// direction `d1` (unit vectors off DIRS16).
+//
+// Not a greedy walk. That was tried first, as riverCourse with a weaker pull and a stronger
+// wobble, and on a cone it cannot bend: every step down the mountain gains more than any step
+// across it, so however the pull and the wobble were tuned the flow went down the fall line,
+// 52 cells with a sideways spread of five, and read from orbit as two ruled lines. So the flow
+// is chosen whole, as a curve:
+//
+//   - the line it would take without bending is a gentle spiral, the direction swept from d0
+//     to d1 while the radius climbs from the rim to the mouth one cell per step;
+//   - off that line it is given bends: a target that swings to alternate sides every
+//     LAVA_BEND_GAP cells by LAVA_BEND, drawn from `rng` so that each flow bends its own way
+//     and nothing else on the island moves if these numbers change;
+//   - and the ground decides the rest. A dynamic programme over every sideways offset (half a
+//     cell apart, up to LAVA_SWING) at every step picks the one curve that is cheapest in
+//     straying from its bend, stepping sideways, and standing high. "High" is measured
+//     against the mean of the ground at the same radius, not against the ground itself - the
+//     cone falls away sideways off a spiral too, and a flow drawn to the lowest ground would
+//     just slide round the mountain - so what pulls it is the valleys between the ridges,
+//     which is what a flow follows.
+//
+// A step moves at most one cell sideways per cell down, and the swing allowed at each step
+// (LAVA_SWING, eased in over LAVA_SETTLE) is always less than the radius there - at 64 as at
+// 128 - so the distance from the crater grows every step: the flow never turns back up the
+// mountain, and the staircase of cells it rasterises to does not run into itself. The first
+// LAVA_SETTLE cells are held to the line and the bends are grown into over the upper flank, so
+// the flow leaves the rim going down it and not along the crater's lip.
+//
+// The staircase stops where a river's would: on the first cell under water, or the first
+// beach cell with the sea one cell off - the steam where it meets the sea is the point. The
+// arithmetic is +, -, *, / and sqrt, and ties go to the lower index, so both runtimes pick the
+// same curve. Measured at 128 on the sea's own seed: 66 and 69 cells (they were 52 and 53),
+// straying up to ten cells either side of the straight line from rim to mouth (was five), three
+// bends each; 239 lava cells against 198, and the Codex pool (shared/volcano.mjs) is 137 lots.
+function lavaCourse(H, N, size, vol, d0, d1, mouthR, reachR, rng) {
+  const half = size / 2;
+  const rim = vol.rim;
+  const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const cellH = (gx, gz) =>
+    0.25 * (H[gx + gz * N] + H[gx + 1 + gz * N] + H[gx + (gz + 1) * N] + H[gx + 1 + (gz + 1) * N]);
+  const seaWithin = (gx, gz, r) => {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = gx + dx, nz = gz + dz;
+        if (!inGrid(nx, nz) || cellH(nx, nz) < SEA_LEVEL) return true;
+      }
+    }
+    return false;
+  };
+  // The ground at a world point, bilinear over the corners, as worldHeight reads it.
+  const ground = (x, z) => {
+    const fx = clamp(x + half, 0, size - 1e-6), fz = clamp(z + half, 0, size - 1e-6);
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+    const a = H[i + j * N], b = H[i + 1 + j * N], c = H[i + (j + 1) * N], d = H[i + 1 + (j + 1) * N];
+    return lerp(lerp(a, b, u), lerp(c, d, u), v);
+  };
+  // The mean of the ground in rings half a cell wide: the mountain with its ridges averaged out.
+  const BIN = 2;
+  const nb = Math.ceil(half * 1.5 * BIN) + 1;
+  const sum = new Float64Array(nb), cnt = new Float64Array(nb);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = i - half, z = j - half;
+      const b = Math.min(nb - 1, Math.floor(Math.sqrt(x * x + z * z) * BIN));
+      sum[b] += H[i + j * N]; cnt[b] += 1;
+    }
+  }
+  const ring = (r) => { const b = Math.min(nb - 1, Math.floor(r * BIN)); return cnt[b] ? sum[b] / cnt[b] : 0; };
+
+  const n = Math.ceil(reachR - rim);
+  const sweep = (mouthR - rim) * LAVA_SWEEP;
+  const axis = (i) => {
+    const s = Math.min(1, i / sweep);
+    const ux = d0[0] + (d1[0] - d0[0]) * s, uz = d0[1] + (d1[1] - d0[1]) * s;
+    const L = Math.sqrt(ux * ux + uz * uz);
+    return [ux / L, uz / L];
+  };
+  // (x, z) of step i at sideways offset l: out along the axis to its radius, then across it.
+  const pointAt = (i, l) => { const [ux, uz] = axis(i); const R = rim + i; return [ux * R - uz * l, uz * R + ux * l]; };
+
+  // The bends: a waypoint every LAVA_BEND_GAP cells, alternating sides, eased between.
+  const target = new Float64Array(n + 1);
+  let side = rng.chance(0.5) ? 1 : -1;
+  let pi = 0, pl = 0;
+  while (pi < n) {
+    const ni = pi + rng.range(LAVA_BEND_GAP[0], LAVA_BEND_GAP[1]);
+    const nl = side * rng.range(LAVA_BEND[0], LAVA_BEND[1]);
+    for (let i = Math.ceil(pi); i <= Math.min(n, Math.floor(ni)); i++) target[i] = pl + (nl - pl) * bump((i - pi) / (ni - pi));
+    pi = ni; pl = nl; side = -side;
+  }
+  // Grown into over the upper flank. A cell sideways is a far bigger turn at the rim, nine
+  // cells out, than at the coast: given the full swing at once the first bend left the rim
+  // nearly along it, a dead-straight run round the crater's lip before it ever went down.
+  for (let i = 0; i <= n; i++) target[i] *= smoothstep(0, 3 * LAVA_SETTLE, i);
+
+  const J = 2 * LAVA_SWING, nj = 2 * J + 1;      // offsets -LAVA_SWING..+LAVA_SWING, half a cell apart
+  let cost = new Float64Array(nj).fill(Infinity);
+  cost[J] = 0;                                   // step 0 is the rim cell itself, on the line
+  const back = [null];
+  for (let i = 1; i <= n; i++) {
+    const env = LAVA_SWING * smoothstep(0, LAVA_SETTLE, i);
+    const next = new Float64Array(nj).fill(Infinity);
+    const from = new Int16Array(nj).fill(-1);
+    for (let j = 0; j < nj; j++) {
+      const l = (j - J) * 0.5;
+      if (Math.abs(l) > env + 1e-9) continue;
+      let best = Infinity, bk = -1;
+      for (let k = Math.max(0, j - 2); k <= Math.min(nj - 1, j + 2); k++) {
+        if (cost[k] === Infinity) continue;
+        const dl = (j - k) * 0.5;
+        const c = cost[k] + LAVA_KEEP_SMOOTH * dl * dl;
+        if (c < best) { best = c; bk = k; }
+      }
+      if (bk < 0) continue;
+      const [x, z] = pointAt(i, l);
+      const off = l - target[i];
+      next[j] = best + LAVA_KEEP_BEND * off * off + LAVA_VALLEY * (ground(x, z) - ring(Math.sqrt(x * x + z * z)));
+      from[j] = bk;
+    }
+    back.push(from);
+    cost = next;
+  }
+  let jEnd = J;
+  for (let j = 0; j < nj; j++) if (cost[j] < cost[jEnd]) jEnd = j;
+  const lat = new Float64Array(n + 1);
+  for (let i = n, j = jEnd; i >= 0; i--) { lat[i] = (j - J) * 0.5; if (i > 0) j = back[i][j]; }
+  // The programme prices a sideways step, not a change of heading, so what it hands back is
+  // straight runs joined at corners - a flow that read as a line of dog-legs from above.
+  // Two passes of a small kernel round the corners off. A mean of neighbouring offsets is
+  // never steeper than the steepest of them, so the curve still moves at most one cell across
+  // per cell down, and it still leaves the rim on the line.
+  for (let pass = 0; pass < 4; pass++) {
+    const was = lat.slice();
+    for (let i = 1; i <= n; i++) {
+      let s = 0, w = 0;
+      for (let d = -2; d <= 2; d++) {
+        const k = Math.min(n, Math.max(0, i + d)), c = 3 - (d < 0 ? -d : d);
+        s += was[k] * c; w += c;
+      }
+      lat[i] = s / w;
+    }
+  }
+
+  // Down the curve a fifth of a cell at a time, into four-connected cells: a diagonal step
+  // gets the lower of the two cells beside it, which is the way the lava would spill.
+  // A curve that comes back into a cell it already crossed (a tight bend's corner cells can)
+  // cuts the little loop off rather than leaving a gap in the chain: `at` is each cell's place
+  // in the course, plus one.
+  const course = [];
+  const at = new Int32Array(size * size);
+  let done = false, ashore = false, last = null;
+  const add = (gx, gz) => {
+    if (!inGrid(gx, gz)) { done = true; return; }
+    last = [gx, gz];
+    const k = gx + gz * size;
+    if (at[k]) {
+      while (course.length > at[k]) { const [ox, oz] = course.pop(); at[ox + oz * size] = 0; }
+      return;
+    }
+    course.push(last);
+    at[k] = course.length;
+    const h = cellH(gx, gz);
+    if (h < SEA_LEVEL || (h < BEACH_MAX && seaWithin(gx, gz, 1))) done = true;
+    else if (h < BEACH_MAX || seaWithin(gx, gz, 3)) ashore = true;
+  };
+  const SUB = 5;
+  for (let i = 0; i < n && !done && !ashore; i++) {
+    const [ax, az] = pointAt(i, lat[i]), [bx, bz] = pointAt(i + 1, lat[i + 1]);
+    for (let q = 0; q < SUB && !done && !ashore; q++) {
+      const gx = Math.floor(ax + (bx - ax) * (q / SUB) + half), gz = Math.floor(az + (bz - az) * (q / SUB) + half);
+      if (last && gx === last[0] && gz === last[1]) continue;
+      if (last && gx !== last[0] && gz !== last[1]) {
+        const a = [gx, last[1]], b = [last[0], gz];
+        const pick = !inGrid(b[0], b[1]) || (inGrid(a[0], a[1]) && cellH(a[0], a[1]) <= cellH(b[0], b[1])) ? a : b;
+        add(pick[0], pick[1]);
+        if (done || ashore) break;
+      }
+      add(gx, gz);
+    }
+  }
+  // On the sand the curve is done with: it was drawn for a coast at one radius, the real one
+  // is warped in and out, and following it on over a shelf three cells deep ran the flow along
+  // the beach for a dozen cells and back again. From the first beach cell it goes straight
+  // down to the water, the lowest neighbour each step, which on the shelf is a few cells.
+  for (let step = 0; last && !done && step < 12; step++) {
+    let best = null, bestH = Infinity;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = last[0] + dx, nz = last[1] + dz;
+      if (!inGrid(nx, nz) || at[nx + nz * size]) continue;
+      const h = cellH(nx, nz);
+      if (h < bestH) { bestH = h; best = [nx, nz]; }
+    }
+    if (!best) break;
+    add(best[0], best[1]);
+  }
+  return course;
+}
+
 // The gully under one flow. The same shape of loop as carveRiver, and the same `min`, so two
 // flows that cross take the deeper of the two - but measured against `O`, the ground as it
 // was before any lava, rather than against H as it is being cut: measured against H, the
@@ -423,14 +628,9 @@ export function makeTerrain(seed, opts) {
     for (const k of [k1, k2]) {
       const side = lr.chance(0.5) ? 1 : -1;
       const kEnd = (k + side * 2 + 16) % 16;
-      const start = [
-        Math.round(DIRS16[k][0] * vol.rim + half - 0.5),
-        Math.round(DIRS16[k][1] * vol.rim + half - 0.5),
-      ];
-      const mouth = [DIRS16[kEnd][0] * (coast + 2), DIRS16[kEnd][1] * (coast + 2)];
-      const course = riverCourse(H, N, size, start, mouth, {
-        keep: vol.rim - 1.5, mouthReach: 1, salt: 'lava', pull: LAVA_PULL, wobble: LAVA_WOBBLE,
-      });
+      // Its bends from a fork of their own, so that the second flow's `side` above is the
+      // draw it always was however many numbers the first one's bends took.
+      const course = lavaCourse(H, N, size, vol, DIRS16[k], DIRS16[kEnd], coast + 2, coast + 8, lr.fork(`bends:${k}`));
       if (course.length >= 6) lavaFlows.push(course);
     }
     const O = H.slice();

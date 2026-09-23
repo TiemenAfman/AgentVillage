@@ -30,6 +30,10 @@ import { HELD_ITEM_PARTS } from './classic-avatar.js';
 export { settlerLook, styleLook, kindOf, styleOf };
 
 const tmpObj = new THREE.Object3D();
+// Yaw first, then pitch: a flinch rocks a body back about its own shoulders, whichever way
+// it faces. Every other rotation written through this object has no pitch, and for those the
+// two orders give the same matrix, so nothing that was drawn before moves.
+tmpObj.rotation.order = 'YXZ';
 const tmpColor = new THREE.Color();
 const bodyMat = new THREE.Matrix4();
 const headMat = new THREE.Matrix4();
@@ -43,6 +47,16 @@ const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new TH
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
 export const CAPACITY = 640;
+// A blow landing on a figure (crowd-view.js hit): how long the flinch lasts, how far it rocks
+// back (radians), and how far its clothes and skin go towards FLINCH_RED at the moment of the
+// hit. Through the instance colours the crowd already has, so it costs no material and no
+// draw call - only a re-upload of those few colour buffers while a flinch is showing, and
+// one more when it ends to put the real colours back. The same length as an imp's (imp.js
+// HIT_S), so a guard past the imp limit and one with an imp flinch alike.
+const FLINCH_S = 0.3;
+const FLINCH_LEAN = 0.3;
+const FLINCH_TINT = 0.65;
+const FLINCH_RED = new THREE.Color(0xd8281c);
 const HEAD_Y = RESIDENT_HEAD_Y;
 
 // How far above its own feet a figure's eyes are. A function rather than a constant
@@ -270,6 +284,22 @@ export function createFigures(scene, material, { armed = false } = {}) {
     return true;
   }
 
+  // Somebody has been hit. Only starts the clock - draw() does the lean and the colour - and
+  // a second blow while the first is showing starts it again.
+  function flinch(f) {
+    if (f.slot == null) return;
+    f.flinch = FLINCH_S;
+  }
+  // Their colours, pushed `k` of FLINCH_TINT towards red, or put back exactly when `k` is 0.
+  function tintFlinch(f, k) {
+    const t = k * FLINCH_TINT;
+    const put = (mesh, hex) => { mesh.setColorAt(f.slot, tmpColor.setHex(hex).lerp(FLINCH_RED, t)); mesh.instanceColor.needsUpdate = true; };
+    put(torso, f.look.tunic);
+    put(leftArm, f.look.tunic);
+    put(rightArm, f.look.tunic);
+    put(head, f.look.skin);
+  }
+
   function hide(f) {
     if (f.slot == null) return;
     tmpObj.position.set(0, -999, 0);
@@ -311,6 +341,15 @@ export function createFigures(scene, material, { armed = false } = {}) {
       else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
       const walking = f.anim === 'walk' || f.anim === 'step';
       const hammering = f.anim === 'hammer';
+      // A flinch: `k` from 1 at the blow to 0, eased so it snaps back first and settles last.
+      // The frame it runs out puts the real colours back and then it is forgotten.
+      let flinchK = 0;
+      if (f.flinch > 0) {
+        f.flinch = Math.max(0, f.flinch - dt);
+        flinchK = f.flinch / FLINCH_S;
+        tintFlinch(f, flinchK);
+        flinchK *= flinchK;
+      }
       const bob = f.anim === 'walk' ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
@@ -332,7 +371,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
       const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
-      tmpObj.rotation.set(0, f.yaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01));
+      tmpObj.rotation.set(-FLINCH_LEAN * flinchK, f.yaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01));
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
@@ -397,5 +436,5 @@ export function createFigures(scene, material, { armed = false } = {}) {
     spare.length = 0;
   }
 
-  return { enrol, hide, free, draw, pickables, figureAt, dispose };
+  return { enrol, hide, free, flinch, draw, pickables, figureAt, dispose };
 }

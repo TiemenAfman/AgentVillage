@@ -8,7 +8,8 @@ import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
-import { allowImp } from './imp.js';
+import { nearestOnRay, guestLabel } from './guest-pick.js';
+import { allowImp, setImpNight } from './imp.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
@@ -2240,6 +2241,17 @@ function onCrowdMessage(m) {
   g.crowd.applyRides(decodeRides(m.b, half), now);
 }
 
+// Something on an island was hit (lib/combat.mjs, `{t:'agent', a:'hit'}`): a guard or a Codex
+// resident on the volcano, told to everybody who can see it. The crowd view of the island it
+// names makes that body flinch. Only guests: the sea knows our own settlers by redacted
+// names (see ourRoster), and nothing on our own island can be hit. A fall needs nothing
+// here - the roster's null hole takes the body away.
+function onAgentMessage(m) {
+  if (m.a !== 'hit') return;
+  const g = state.guests.find((x) => x.region.id === m.i);
+  if (g && g.crowd) g.crowd.hit(m.id);
+}
+
 // Take an island's ground back out of the world: its region, its buildings, its crowd. The
 // sweep below and the rebuild above both need it, and doing it in two places is how one of
 // them ends up leaking a hundred meshes.
@@ -3975,7 +3987,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // A silhouette on the horizon is not somewhere to go - a far island in our own sea is
     // water you cross - so a click on one is a click on nothing, and closing the dossier
     // is the right answer.
-    if (hit && !String(hit).startsWith('neighbour:')) select(hit);
+    // A body on a visiting island is the same: named on hover, but nothing to open.
+    if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else state.ui.closeDossier();
   }
   downAt = null;
@@ -3986,6 +3999,13 @@ let pickedFigure = null;
 // Testing several hundred instanced people costs real time, and past this distance
 // they are a couple of pixels anyway, so only look for them once the camera is close.
 const PEOPLE_PICK_RANGE = 42;
+// The same for somebody on a visiting island, and which island: one object, rewritten by
+// every pick() rather than made by it, because pick() runs every frame in orbit.
+const pickedGuest = { f: null, t: 0, g: null };
+// How far along the ray a guest body is looked for when there is no building to stop at.
+// The camera is within PEOPLE_PICK_RANGE of what it looks at, so this is past the target
+// with room for a slope, and short of the next island's crowd.
+const GUEST_PICK_T = PEOPLE_PICK_RANGE * 1.5;
 
 function pick() {
   ray.setFromCamera(pointer, camera);
@@ -3993,6 +4013,7 @@ function pick() {
   const b = buildings[0] || null;
 
   pickedFigure = null;
+  pickedGuest.f = null; pickedGuest.g = null;
   if (state.settlers && controls.getDistance() < PEOPLE_PICK_RANGE) {
     const people = ray.intersectObjects(state.settlers.pickables(), false);
     const p = people[0];
@@ -4002,9 +4023,25 @@ function pick() {
       const f = state.settlers.figureAt(p.object, p.instanceId);
       if (f) { pickedFigure = f; return f.id; }
     }
+    // Then everybody on a visiting island - the volcano's guards and Codex residents above
+    // all. Not through their meshes: a guard close to the camera is a skinned imp rather
+    // than an instance, so web/js/guest-pick.js finds the nearest drawn body to the ray by
+    // arithmetic. Only when nobody of ours was nearer, and with the same tie as ours.
+    const maxT = b ? b.distance + 0.5 : GUEST_PICK_T;
+    for (const g of state.guests) {
+      if (!g.crowd || !chronicleLive()) continue;
+      const h = nearestOnRay(g.crowd.figures(), ray.ray.origin, ray.ray.direction, maxT);
+      if (h.f && (!pickedGuest.f || h.t < pickedGuest.t)) {
+        pickedGuest.f = h.f; pickedGuest.t = h.t; pickedGuest.g = g;
+      }
+    }
+    if (pickedGuest.f) return `guest:${pickedGuest.g.region.id}:${pickedGuest.f.id}`;
   }
   return b ? b.object.userData.id : null;
 }
+// Guest crowds are hidden while the chronicle is scrubbed back (crowd-view draw), and the
+// same test as the frame loop's `live` says so here.
+const chronicleLive = () => !state.chronicle || state.chronicle.t == null;
 
 // --------------------------------------------------------------- loop
 let last = performance.now();
@@ -4099,6 +4136,10 @@ function frame(nowMs) {
     if (minimapMode === 'radar') state.minimap.update(minimapData());
     else if (minimapMode === 'map') state.worldMap.update(worldMapData());
   }
+  // Health is the sea's (net.js keeps its last word and fills the bar from it), whichever
+  // walk mode has the feet - and in orbit too, where the strip is hidden and this costs one
+  // string compare.
+  state.vitals.setHealth(state.net ? state.net.health() : 1);
   // A conversation borrows the camera, and this is where it writes it: after the feet,
   // because while it is running walk mode is paused and this is the only hand on it.
   faceToFace.update(dt);
@@ -4141,6 +4182,8 @@ function frame(nowMs) {
     // The island keeps its clock while you are indoors - it is the same afternoon when
     // you come back out - but a room with its shutters closed does not brighten at noon.
     buildingMat.userData.uniforms.uNight.value = state.inside ? INDOOR_GLOW : state.world.state.night;
+    // The imps' lava by the same nightfall (web/js/imp.js): two shared uniforms, every imp.
+    setImpNight(state.world.state.night);
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
@@ -4308,6 +4351,22 @@ function updateLabels() {
       hoverItem = {
         name: spec.name,
         sub: labelSub(spec),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
+  // Or on somebody on a visiting island: a guard, a Codex resident, a neighbour's settler.
+  // Over their head the same way, from what guest-pick.js can say without an id.
+  const guest = hoverId ? pickedGuest.f : null;
+  if (guest) {
+    projected.set(guest.pos[0], (guest.y || 0) + 0.62, guest.pos[1]).project(camera);
+    if (projected.z <= 1) {
+      const v = pickedGuest.g.region.village;
+      const said = guestLabel(guest, v && v.island, state.fleet);
+      hoverItem = {
+        name: said.name,
+        sub: said.sub,
         x: (projected.x + 1) / 2 * innerWidth,
         y: (1 - projected.y) / 2 * innerHeight,
       };
@@ -4723,6 +4782,10 @@ async function boot() {
   state.walk = createWalkMode({
     scene, camera, terrain: state.terrain, ground: state.sea,
     material: buildingMat, dom: renderer.domElement,
+    // Every swing the arm starts goes to the sea, which decides what it reaches
+    // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function
+    // because the line is opened after this.
+    onSwing: () => { if (state.net) state.net.swing(); },
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
@@ -4793,6 +4856,7 @@ async function boot() {
     join: () => ({ v: 1, as: 'client', island: state.islandId || null, key: state.seaKey || null }),
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
+    onAgent: onAgentMessage,
     // The sky, straight through: it is one word for the whole world and nothing on this
     // side has an opinion about it. web/js/weather.js holds it whether or not the scene
     // has been built yet, which it has not when the welcome lands on a slow boot.

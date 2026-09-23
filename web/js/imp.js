@@ -23,12 +23,17 @@
 // guards would be forty-eight calls where the whole instanced crowd costs thirteen. Three
 // things keep that honest, and they are the rules to keep if this file grows:
 //
-//   - one geometry and one material for every imp on the page. Each is a SkeletonUtils
-//     clone of the loaded model, which gives it its own bones, skeleton and mixer and
-//     shares everything on the GPU. The shared pair is kept for the page's life and never
-//     disposed with an imp: guards fall and come back every twenty seconds, and a
-//     re-upload of the whole mesh each time the last one fell is worse than a megabyte
-//     held (see `standImp`'s dispose);
+//   - one geometry and one shader program for every imp on the page. Each is a
+//     SkeletonUtils clone of the loaded model, which gives it its own bones, skeleton and
+//     mixer and shares the mesh on the GPU. The geometry is kept for the page's life and
+//     never disposed with an imp: guards fall and come back every twenty seconds, and a
+//     re-upload of the whole mesh each time the last one fell is worse than a megabyte held
+//     (see `standImp`'s dispose). Each imp does get a material of its own, made once when it
+//     is stood up, so that a hit can flush that one imp red (`hit`) - a colour on a shared
+//     material would flush every imp on the mountain at once. That costs no draw call (every
+//     imp is its own call anyway) and no program: the clones carry the template's
+//     `onBeforeCompile` and `customProgramCacheKey` by reference, so three.js hands them all
+//     the one compiled program and only the uniforms differ (see `impMaterial`);
 //   - real frustum culling. A skinned mesh's bounds do not follow its bones, which is why
 //     the one-imp version turned culling off; instead every imp carries one sphere that
 //     encloses every pose of every clip (`cullSphere`, measured against the real clips in
@@ -82,6 +87,37 @@ const IMP_HEIGHT_M = 1.08;
 const RESIDENT_HEIGHT_U = 0.430;
 export const IMP_SIZE = 1.3;
 export const IMP_SCALE = (RESIDENT_HEIGHT_U * IMP_SIZE) / IMP_HEIGHT_M;
+
+// A blow landing on one (the sea's `{t:'agent', a:'hit'}`, routed here by crowd-view.js):
+// how long the flinch lasts, how far it rocks back on its heels (radians, about its feet),
+// and how red it flushes at the moment of the hit, as an emissive colour that fades with it.
+// Short enough that three blows in a row read as three.
+export const HIT_S = 0.3;
+const HIT_LEAN = 0.35;
+const HIT_FLUSH = [0.9, 0.08, 0.02];
+
+// The lava's glow, which the hour sets (`setImpNight`, from the frame loop with world.js's
+// night amount - the same 0..1 the building material's uNight is given). By day the patch's
+// old strength, so daytime looks exactly as it did; by night the fissures, eyes, claws and
+// tail flame burn nearly three times as bright, and the whole body picks up a faint ember
+// of its own colour, because under a night sky the rest of the imp goes as dark as
+// everything else and a guard should still be something you can see coming. Uniforms and
+// not defines, so the hour never compiles a second program.
+export const LAVA_GLOW = Object.freeze({ day: 2.2, night: 6, emberNight: 0.14 });
+export function lavaGlow(night) {
+  const n = Number.isFinite(night) ? Math.min(1, Math.max(0, night)) : 0;
+  return { glow: LAVA_GLOW.day + (LAVA_GLOW.night - LAVA_GLOW.day) * n, ember: LAVA_GLOW.emberNight * n };
+}
+// One pair of uniform objects for every imp material: lavaCompile hands each material these
+// same objects, so one write here reaches every imp without a loop over them.
+const glowUniforms = { uLavaGlow: { value: LAVA_GLOW.day }, uLavaEmber: { value: 0 } };
+export function setImpNight(night) {
+  const g = lavaGlow(night);
+  glowUniforms.uLavaGlow.value = g.glow;
+  glowUniforms.uLavaEmber.value = g.ember;
+}
+// For the tests and a console: where the glow stands now.
+export const impGlow = () => ({ glow: glowUniforms.uLavaGlow.value, ember: glowUniforms.uLavaEmber.value });
 
 // When it lashes out: this page's own walker within ATTACK_RANGE units, and not again until
 // ATTACK_COOLDOWN_MS after the last swing finished - per imp, so a row of guards swings one
@@ -181,24 +217,51 @@ function ready() {
 }
 
 // The lava lives in the baked colour: fissures, claws, eyes and the tail flame are the only
-// yellow-orange regions, so exactly those are promoted to emissive - imp-demo.js's patch,
-// unchanged. It is what makes them read after dark, when the rest of the body has gone as
-// dark as everything else under a night sky.
-function addLavaGlow(material) {
-  material.emissive = new THREE.Color(0xffffff);
-  material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
+// yellow-orange regions, so exactly those are promoted to emissive - imp-demo.js's mask,
+// with its strength now a uniform the hour turns up (see LAVA_GLOW). What the material's own
+// `emissive` says is added on top rather than thrown away, as the first version of this
+// patch did: it is black, except for the moment a hit flushes one imp red.
+//
+// Module-level functions, not closures made per material, and that is load-bearing: a
+// clone of this material (impMaterial) is handed these same two references, so three.js
+// finds the same cache key and gives every imp the one compiled program.
+function lavaCompile(shader) {
+  shader.uniforms.uLavaGlow = glowUniforms.uLavaGlow;
+  shader.uniforms.uLavaEmber = glowUniforms.uLavaEmber;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+      uniform float uLavaGlow;
+      uniform float uLavaEmber;`)
+    .replace(
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
       #ifdef USE_COLOR
         float lava = smoothstep(0.10, 0.32, vColor.g) * step(vColor.b * 1.6, vColor.r);
-        totalEmissiveRadiance = vColor.rgb * lava * 2.2;
-      #else
-        totalEmissiveRadiance = vec3(0.0);
+        totalEmissiveRadiance += vColor.rgb * (lava * uLavaGlow + uLavaEmber);
       #endif`,
     );
-  };
-  material.customProgramCacheKey = () => 'hostile-settler-lava-glow';
+}
+const lavaKey = () => 'hostile-settler-lava-glow';
+function addLavaGlow(material) {
+  material.emissive = new THREE.Color(0x000000);
+  material.onBeforeCompile = lavaCompile;
+  material.customProgramCacheKey = lavaKey;
+}
+
+// One imp's own material: a copy of the template's, made once when the imp is stood up and
+// never per hit. Material.copy does not carry onBeforeCompile or the cache key across -
+// they are instance properties the patch put there - so they are handed on here, the same
+// two functions, which is what keeps the program shared. Never disposed with its imp: a
+// material owns no GPU memory of its own (the textures are the template's, and dispose()
+// would not free them anyway), and disposing it would release its hold on the shared
+// program - so the last guard to fall would take the program with him and the next one to
+// come out of the guardhouse would compile it again.
+export function impMaterial(material) {
+  const m = material.clone();
+  m.onBeforeCompile = material.onBeforeCompile;
+  m.customProgramCacheKey = material.customProgramCacheKey;
+  m.emissive.setRGB(0, 0, 0);
+  return m;
 }
 
 // The loaded glTF made ready to be cloned: every setting a clone should inherit is put on
@@ -241,11 +304,18 @@ export function standImp(t, scene, id) {
   const model = t.clone(t.model);
   let mesh = null;
   model.traverse((o) => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+  // Its own material, once - see impMaterial and the header. Every mesh in the model, in
+  // case a later GLB splits the body; one today.
+  const own = [];
+  model.traverse((o) => { if (o.isMesh) { o.material = impMaterial(o.material); own.push(o.material); } });
   // root carries where and which way; body the bob and the lean, so neither disturbs the
   // other; the model inside keeps its own scale.
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.name = `imp:${id}`;
+  // Yaw first, then the flinch's pitch about the imp's own shoulders - with the default
+  // order a hit would rock it sideways whenever it was not facing down the z axis.
+  root.rotation.order = 'YXZ';
   root.add(body);
   body.add(model);
   scene.add(root);
@@ -278,6 +348,8 @@ export function standImp(t, scene, id) {
   const swimName = actions.swim ? 'swim' : null;
   let current = null;
   const st = { attacking: false, readyAt: 0 };
+  // Seconds left of the flinch from the last blow; 0 when none is showing.
+  let hurt = 0;
   let lastNow = 0;
   let time = 0;
   let yaw = 0;
@@ -315,6 +387,13 @@ export function standImp(t, scene, id) {
     root.visible = visible;
     const drawn = seen;
     seen = false;
+    // The flinch runs on whether or not the imp is drawn, so one hit off the screen is not
+    // saved up and played the moment it comes back into view.
+    if (hurt > 0) {
+      hurt = Math.max(0, hurt - dt);
+      const k = hurt / HIT_S;
+      for (const m of own) m.emissive.setRGB(HIT_FLUSH[0] * k, HIT_FLUSH[1] * k, HIT_FLUSH[2] * k);
+    }
     if (!visible) return;
     time += dt;
     const swims = swimming && !!swimName;
@@ -331,6 +410,10 @@ export function standImp(t, scene, id) {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     yaw += d * Math.min(1, dt * 12);
     root.rotation.y = yaw;
+    // Rocked back on its heels by the blow, and straight up again as the flush fades: eased
+    // out of the moment of the hit, so it snaps back first and settles last.
+    const k = hurt / HIT_S;
+    root.rotation.x = k > 0 ? -HIT_LEAN * k * k : 0;
     // In the water it paddles, moving or not; on land a walk clip is used the moment the GLB
     // has one, at the pace the body is going. Without one a moving imp keeps idle and gets a
     // trot on top of it: a small bob and a lean into the direction of travel, enough that it
@@ -368,9 +451,15 @@ export function standImp(t, scene, id) {
     scene.remove(root);
   }
 
+  // A blow from somebody's swing. Only starts the flinch: the colour and the lean are
+  // update()'s, off the same clock as everything else, and a blow while one is still showing
+  // starts it again from the top.
+  function hit() { hurt = HIT_S; }
+
   return {
-    object: root, mesh, update, dispose,
+    object: root, mesh, update, dispose, hit,
     attacking: () => st.attacking,
+    hurting: () => hurt > 0,
     // For the tests and a console: where this imp is in its idle, and what it is playing.
     idleTime: () => (actions.idle ? actions.idle.time : null),
     clip: () => (current ? current.getClip().name : null),

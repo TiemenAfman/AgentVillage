@@ -8,7 +8,7 @@ import { createRoster } from '../lib/players.mjs';
 // `coast`, when given, is the local x beyond which the island is sea: ground at 1 on the
 // near side, sea bed at -2 on the far side - deep enough that a guard's feet on the bottom
 // are well over a metre below a swimmer's.
-function setup({ coast = null, lava = null } = {}) {
+function setup({ coast = null, lava = null, oneHit = false } = {}) {
   let time = 1000;
   const height = (x) => (coast == null || x < coast ? 1 : -2);
   const cellWorld = (x, z) => [x - 15.5, z - 15.5];
@@ -29,7 +29,7 @@ function setup({ coast = null, lava = null } = {}) {
     evictions.push({ at, name, ...(boat ? { boat } : {}) }); [player.x, player.y, player.z] = at;
   } };
   const fleet = { all: () => [...islands.values()], get: id => islands.get(id) };
-  const health = createHealth({ fleet, roster, now: () => time });
+  const health = createHealth({ fleet, roster, now: () => time, oneHit });
   const hostility = createHostility({ fleet, crowds: { get: id => id === 'enemy' ? crowd : null }, roster, health, now: () => time });
   return { f, p, walk, enemy, evictions, tick() { time += 50; hostility.tick(); health.tick(); walk.advance(1); },
     boats: value => { boats = value; } };
@@ -138,8 +138,9 @@ test('a wanderer with no skiff has nowhere to be sent and is left alone', () => 
   assert.equal(s.evictions.length, 0);
 });
 
+// About the immunity, not the blows it takes to get there: one hit is a capture here.
 test('a caught player is immune for a moment and then fair game again', () => {
-  const s = setup();
+  const s = setup({ oneHit: true });
   for (let i = 0; i < 120 && !s.evictions.length; i++) s.tick();
   assert.equal(s.evictions.length, 1);
   // Put straight back in front of the guard: the five seconds hold.

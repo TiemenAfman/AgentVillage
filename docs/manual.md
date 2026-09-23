@@ -73,7 +73,20 @@ Running and swimming share one pool of stamina (six seconds of it) and the boat 
 own (four), shown as the yellow bar over the key strip for whichever you are using; both
 fill again a second after you let go, even while you are spending the other. Run a pool
 dry and Shift does nothing - the bar goes dull - until it is back to a quarter. A full
-bar fades away. The red bar above it is health, which nothing takes away yet.
+bar fades away.
+
+The red bar above it is health, and the sea keeps it: a guard's blow or a step into the
+volcano's lava costs some, and the bar flares red when it drops. Three seconds without
+being hurt and it fills again by itself, from empty to full in four. Run it out and you
+are sent back to your own town square (a phone, to its skiff), whole. The **left mouse
+button** swings whatever you hold - a sword, a hammer, or a fist - and a swing that
+reaches a guard or a Codex resident on the volcano makes it flinch red on every screen;
+enough of them and it falls, to come back from the guardhouse (or its own house) twenty
+seconds later. Holding the **right mouse button** raises your shield, or an arm if you
+have none, which softens a guard's blow that comes from in front. You cannot swing and
+block at once, nor do either swimming, lying down, sitting or at the tiller. After dark
+the imps' lava fissures, eyes and tail flames burn brighter, so a guard is still something
+you see coming.
 
 Any XInput controller works: plug it in, press a button so the browser notices it, and
 the on-screen hints switch to controller buttons. The buttons are laid out the way a

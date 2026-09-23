@@ -57,7 +57,7 @@ duplicate, a number where a word goes or more than 60 entries refuses the whole 
 
 ## Houses, lodgers and residents
 
-The volcano has 134 building plots on its flank (`codexPlots`): three-by-three lots with a
+The volcano has 137 building plots on its flank (`codexPlots`): three-by-three lots with a
 cell of path between them, clear of the crater, the lava, the beach and the guardhouse,
 with the door facing downhill. A settler's plot is a hash of its full id,
 `codex:<island id>:<redacted id>`. If that plot is taken it gets the next free plot in a
@@ -85,18 +85,38 @@ The volcano is raised at the middle of every sea before anybody joins, with the 
 rings round it. Its guardhouse stands on the lower flank (drawn as the castle until it has
 a model of its own). Its guards live there: four, plus three for every islander online, at
 most 24. A new islander brings three more out at once; an islander who goes home takes
-nobody away, and the surplus stays until guards can fall. Its lava hurts anybody who walks
-into it, the same way a guard's reach does, and guards will not path through it, so a flow
-is a way to shake them off.
+nobody away, and the surplus thins out as guards fall (see Fighting). Its lava hurts
+anybody who walks into it, and guards will not path through it, so a flow is a way to shake
+them off.
 
 The volcano is hostile to everybody, including islanders with houses on it. Once a player
 is on land, on a deck, or swimming within two cells of the shore, guards and residents
 pursue them at 4.5: faster than a walk (3.4), slower than a run (6.6), so a sprint gets away
-and running out of stamina does not. They swim that same coastal strip. Contact is a hit
-through `hurt()` (`lib/health.mjs`), which for now always sends the player back to their own
-town square, or a phone player to their skiff, followed by five seconds of immunity.
-Sailing, swimming further out than the strip and viewing from orbit do not trigger pursuit,
-and retreating past the strip releases them.
+and running out of stamina does not. They swim that same coastal strip. Sailing, swimming
+further out than the strip and viewing from orbit do not trigger pursuit, and retreating past
+the strip releases them.
+
+## Fighting
+
+A player has 100 health, held by the sea (`lib/health.mjs`); everything that harms a player
+goes through `hurt()`. A guard within reach (0.65) swings once every 1.2 s for 34, so three
+blows empty the bar; a Codex resident swings as often for 20. Lava costs 60 a second for as
+long as you stand in it. Health comes back at 25 a second once nothing has hurt you for 3 s,
+so never while you are still in the lava. At 0 you are sent back to your own town square, or
+a phone player to their skiff, whole again and immune for five seconds.
+
+Holding the right mouse button blocks: a guard's blow from within 60 degrees of the way you
+face costs 30% (ten blows instead of three). Lava cannot be blocked, and nothing can be
+blocked while swimming.
+
+A left click swings back. The page sends only that it swung; the sea finds the nearest guard
+or Codex resident within 0.9 in front of you (the same 60 degrees) from your last pose, and
+takes 25 off it. One swing per 0.45 s, only on foot, not in the water and not while blocking.
+Agents have 100 health and do not heal, so four blows fell one. Everybody watching sees the
+hit. A fallen guard comes back out of the guardhouse 20 s later, but only if the volcano still
+has fewer guards than it should (four, plus three per islander online); a fallen Codex settler
+gets up at its own house (or in front of the guardhouse, for a lodger) 20 s later.
+`lib/combat.mjs` has the player's side, `lib/hostility.mjs` the guard's.
 
 ## Mixed versions
 

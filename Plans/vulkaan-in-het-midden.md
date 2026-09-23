@@ -7,14 +7,14 @@ en op het zwemmen/rennen met een gele staminabalk, een rode healthbalk die strak
 tellen, en de bewegingsbeperking in open zee gaat eruit. Nieuwe settler-modellen voor de
 Codex-agents komen later van Martijn zelf.
 
-Stap 0 t/m 4 van de volgorde zijn gebouwd op 23 september 2026: vrij zwemmen, stamina met Shift-turbo en de balken (`web/js/stamina.js`, `web/js/vitals.js`), en `hurt()` op de zee (`lib/health.mjs`) met de omgebouwde hostility. Daarna het vulkaanterrein met lavastromen (`shared/terrain.mjs` met `volcano: true`, `web/js/lava.js`) en de vulkaan van de zee zelf op [0,0] (`shared/volcano.mjs`, `fleet.raiseVolcano()`), met de eilanden in ringen eromheen. Stap 5 ook (dezelfde dag): het wachthuis op de flank
+Het hele plan is gebouwd op 23 september 2026. Stap 0 t/m 4: vrij zwemmen, stamina met Shift-turbo en de balken (`web/js/stamina.js`, `web/js/vitals.js`), `hurt()` op de zee (`lib/health.mjs`) met de omgebouwde hostility, het vulkaanterrein met meanderende lavastromen (`shared/terrain.mjs` met `volcano: true`, `lavaCourse`, `web/js/lava.js`) en de vulkaan van de zee zelf op [0,0] (`shared/volcano.mjs`, `fleet.raiseVolcano()`) met de eilanden in ringen eromheen. Stap 5 en 6: het wachthuis met bewakers die meeschalen met de islanders, lava die pijn doet, en de Codex-huisjes van alle islanders door elkaar op de helling (`lib/residents.mjs`; het Codex-eiland per islander is weg). Stap 7: elke bewaker is de lava-imp uit de img2threejs-pipeline (`web/js/imp.js`, `web/models/hostile-settler.glb`, lazy geladen), health telt echt (100, een bewaker 34 per klap, lava 60/s, herstel na 3 s), je slaat terug (`{t:'swing'}`, `lib/combat.mjs`), blokken scheelt 70%, bewakers en bewoners vallen om en komen na 20 s terug, en een bewaker onder de muis heeft een naam (`web/js/guest-pick.js`).
 (`guardhouseSite()` in `shared/volcano.mjs`, voorlopig getekend als het kasteel), bewakers
 `guard:<n>` die meeschalen met het aantal online islanders (`lib/guards.mjs`; Codex-eilanden
 tellen niet mee, dus één islander telt één keer), lava die pijn doet (`lib/lava.mjs`) en die
 de A* van de bewakers mijdt, en geen pose meer vóór de pagina haar ligplaats kent. Stap 6 ook
 (dezelfde dag): elke islander stuurt een lijstje van zijn Codex-settlers door een nieuwe deur
 `POST /island/:id/codex` (`packCodex`/`parseCodex`, max. 60, achter de key en het claim-token),
-en de zee zet de huisjes op 134 vaste bouwplekken op de helling (`codexPlots`, hash op
+en de zee zet de huisjes op 137 vaste bouwplekken op de helling (`codexPlots`, hash op
 `codex:<island>:<id>` met lineair doorzoeken), de rest woont in het wachthuis, en de bewoners
 komen erbij in de lopende crowd (`lib/residents.mjs`). De pagina krijgt de huisjes via een
 `codex`-bericht zonder `rev` te verzetten. Het Codex-eiland per islander is weg. Stap 7 is
@@ -142,7 +142,9 @@ los van de rest en kan als eerste.
 - **De helling moet beloopbaar blijven**: `slope()` bepaalt waar je kunt lopen en bouwen. Een te
   steile kegel kun je niet beklimmen, en de bewakers dan ook niet. Eventueel paden omhoog.
 - **Lavastromen**:
-  - de route komt uit `riverCourse`, met de start op de kraterrand;
+  - de route kwam eerst uit `riverCourse`, met de start op de kraterrand - dat gaf op een kegel
+    kaarsrechte stromen; nu kiest `lavaCourse` de hele stroom in één keer (bochten om en om,
+    de rest bepaald door de dalen tussen de ruggen), zie het commentaar in `shared/terrain.mjs`;
   - een ondiepe geul die de helling volgt (±0,5 onder de grond ernaast), in plaats van
     `carveRiver` onder zeeniveau;
   - het levert `lavaCells` en `lavaBankCells` op, zoals `riverCells`: die zijn niet bebouwbaar,

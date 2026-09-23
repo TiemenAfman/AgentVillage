@@ -381,8 +381,9 @@ import of GLTFLoader and SkeletonUtils through `modelUrl`, allowed only after `s
 once and every guard stays an instanced figure. Nothing may await it - keep any future model on
 that pattern. Every `guard:<n>` is drawn as an imp (Codex lodgers stay settlers), and a skinned
 mesh cannot be instanced, so the rules that make that affordable are load-bearing: each imp is a
-`SkeletonUtils.clone` sharing **one** geometry and material that are never disposed with an imp
-(guards respawn every 20 s); culling stays on through one `boundingSphere` that holds every pose
+`SkeletonUtils.clone` sharing **one** geometry and **one** shader program - each imp has its own
+material copy, made once at creation for the hit flash (same patch, same cache key, so three
+compiles once), and neither is ever disposed with an imp (guards respawn every 20 s); culling stays on through one `boundingSphere` that holds every pose
 of every clip (`cullSphere`, sampled against the real GLB in `tests/imp.test.mjs`); an imp not
 drawn last frame (`onBeforeRender`) or over `ANIMATE_RANGE` (40) from the camera skips its mixer
 unless it is mid-swing; and only the nearest `IMP_LIMIT` to the camera are imps (16 desktop, 6 with
@@ -476,7 +477,7 @@ when its hash changed, and forced on every welcome; a 404 is repaired by publish
 The sea's door checks the key first (`keyOpens`), then **`fleet.vouch`** - the island's own
 claim token, and an untokened island cannot be spoken for at all - then `parseCodex`, which is
 stricter than `parseParcel`: an unknown field, a duplicate, a number for a word or 61 entries
-refuses the lot. `lib/residents.mjs` puts them up: a house on `codexPlots()` (134 3x3 lots on
+refuses the lot. `lib/residents.mjs` puts them up: a house on `codexPlots()` (137 3x3 lots on
 a pitch-4 lattice, off the guardhouse by `CODEX.CLEAR`, doors downhill) at `hash32('codex:<island>:<id>')
 % pool`, linear probe when taken, assignments kept until their own settler leaves - so neither
 an arrival nor a departure moves a standing house; the rest **lodge in the guardhouse**
@@ -562,14 +563,24 @@ use `afoot()` from hostility, which also demands `p.posed` (`lib/players.mjs`): 
 that said "walking" but never sent a pose is at a default [0,0], the volcano's crater, and
 is nobody's target. The page does not send poses at all until its berth is known
 (`state.homeOrigin` is null until then; `frame` in `web/js/net.js`). Lava is out of the
-guards' reach mask, so a flow is a wall to their A*. Today
-every hit is fatal (`oneHit`, the default) and sends you home with 5 s immunity; the bar
-counting for real is flipping that default. A hostile island chases *everybody*, its own
+guards' reach mask, so a flow is a wall to their A*. The bar
+counts (`oneHit` is off by default and kept only as a way back): a guard in `GUARD_REACH`
+swings once per `GUARD_SWING_MS` of its own (a `WeakMap` by figure) - never once per beat,
+which emptied a bar in 200 ms - and a raised shield (pose bit `POSE.BLOCKING` = 16, the mask
+in `lib/players.mjs` is 31) facing the guard within `FRONT_ARC_COS` takes `BLOCK_FRACTION`;
+lava is never blocked. Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
+`lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
+(`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
+guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`. At
+0 an agent falls only through its owner (`guards.guardDied`, `residents.died`), a hole in the
+roster and back 20 s later through the same running crowd, never a rebuild; a fallen resident
+is kept out of `place()` so a list arriving meanwhile cannot raise it early. A hostile island chases *everybody*, its own
 islander's walker included, and its guards swim `GUARD_SWIM` cells off the coast - the
 strip is a per-crowd reach mask handed to `findPath` as `isLand`, and a swimmer inside it
 is a target. The private `{t:'health', hp, max, regenIn, rate}` carries relative times so
 the page fills the bar on its own clock; it is sent only when the page's number would be
-wrong without it, so never while every hit is fatal.
+wrong without it: after every hit that leaves you standing, and "whole" after an evict the
+page was told less than.
 
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven

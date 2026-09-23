@@ -114,8 +114,8 @@ export function createCrowdView({
   // guess, the wade, the ride) in one place, and it means an imp that never arrives - still
   // loading, failed, a page that has not finished booting, or a guard past the nearest
   // `impLimit` - leaves the guard exactly the figure it always was. Codex residents lodging
-  // in the guardhouse are not guards and stay settlers. Hovering a guard names nobody on the
-  // volcano either way: main.js only picks people out of our own island's crowd.
+  // in the guardhouse are not guards and stay settlers. Hovering a guard names him either way:
+  // web/js/guest-pick.js picks by the figure's drawn position, which is where the imp stands.
   const standIn = impsOn(region) ? (makeImp || ((id) => createImp(scene, id))) : null;
   const imps = new Map();   // guard id -> { f, actor }
 
@@ -274,6 +274,25 @@ export function createCrowdView({
     }
     rides.clear();
     for (const [idx, r] of rows) rides.set(idx, r);
+  }
+
+  // A blow landing on somebody here - the sea's `{t:'agent', a:'hit'}` (lib/combat.mjs),
+  // which main.js routes to the view of the island it names. The id is the sea's crowd id,
+  // which is exactly the id the roster enrolled the body under (`guard:<n>`,
+  // `codex:<island>:<id>`), so this is one lookup. An imp standing in for the body flinches
+  // (imp.js hit); an ordinary figure flinches in settler-figures.js off `f.flinch`. Only one
+  // of the two: a body under an imp is parked out of sight, and a flinch left on it would play
+  // the moment the imp was handed to a nearer guard. What is left (`hp`, `max`) is not
+  // drawn - there are no bars over strangers' heads - and a fall needs nothing from here: the
+  // roster's null hole retires the body and its imp together. Returns whether anybody here
+  // was hit, for the tests and a console.
+  function hit(id) {
+    const f = byIdx.get(id);
+    if (!f) return false;
+    const s = imps.get(id);
+    if (s && s.f === f && s.actor.hit) s.actor.hit();
+    else view.flinch(f);
+    return true;
   }
 
   function dropImp(id) {
@@ -443,7 +462,7 @@ export function createCrowdView({
   }
 
   return {
-    roster, apply, applyRides, draw, dispose, setVisible, setBuildings,
+    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.
