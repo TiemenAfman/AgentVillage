@@ -216,6 +216,15 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   pointer-events: none;   /* a HUD, not a click target, same as .walk-hud */
 }
 .minimap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
+/* The second press of M: the whole sea on one sheet. Still a HUD - the walk keeps the
+   keyboard and the mouse underneath it - so no pointer events either. */
+.worldmap {
+  position: fixed; inset: 48px; z-index: 12; overflow: hidden;
+  border-radius: 14px; background: rgb(33,94,120);
+  border: 1px solid rgba(232,180,92,.45); box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.worldmap canvas { width: 100%; height: 100%; display: block; }
 .pad-dot { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
 .pad-dot i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 

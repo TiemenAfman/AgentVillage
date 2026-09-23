@@ -64,3 +64,20 @@ test('districtColor tints owned ground toward the hamlet hue, and two different 
   assert.notEqual(a, grass, 'an owned cell should differ from the bare terrain colour');
   assert.notEqual(a, b, 'two districts on opposite hues should not read the same');
 });
+
+test('the chart fits every island in, north up, one scale for both axes', async () => {
+  const { fitMap, mapBounds } = await import('../web/js/minimap.js');
+  const regions = [{ origin: [0, 0], half: 32 }, { origin: [100, 0], half: 32 }];
+  const b = mapBounds(regions, [{ x: 0, z: -80 }]);
+  assert.deepEqual(b, { minX: -32, maxX: 132, minZ: -92, maxZ: 32 });
+  const fit = fitMap(b, 1000, 600, 40);
+  const [nx, ny] = fit.toPx(0, -80), [sx, sy] = fit.toPx(0, 0);
+  assert.ok(ny < sy, 'north is up');
+  for (const [x, z] of [[b.minX, b.minZ], [b.maxX, b.maxZ]]) {
+    const [px, py] = fit.toPx(x, z);
+    assert.ok(px >= 39.999 && px <= 960.001 && py >= 39.999 && py <= 560.001, 'inside the padding');
+  }
+  const [wx, wz] = fit.toWorld(...fit.toPx(17, -5));
+  assert.ok(Math.abs(wx - 17) < 1e-9 && Math.abs(wz + 5) < 1e-9, 'toWorld inverts toPx');
+  assert.equal(nx, sx);
+});

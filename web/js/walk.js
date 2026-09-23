@@ -310,7 +310,7 @@ export function createWalkMode({
     // The wardrobe, same door the Avatar chip opens. Like Build, whoever is standing here
     // rather than something with the keyboard.
     if (k === 'i') { e.preventDefault(); state.onAvatar && state.onAvatar(); }
-    // The radar, like ?stats: off until asked for.
+    // The radar: on by default, M cycles it to the chart of the sea and then to neither.
     if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
     if (k === 'escape') { e.preventDefault(); state.onExit && state.onExit(); }
   };

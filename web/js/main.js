@@ -33,7 +33,7 @@ import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
-import { createMinimap } from './minimap.js';
+import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership } from './hamlets.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
@@ -903,11 +903,9 @@ function walkCallbacks() {
     onBuild: () => openBuild(),
     onAvatar: () => openStudio(),
     onRelease: () => releasePanel(),
-    onExit: () => exitWalk(),
-    onToggleMinimap: () => {
-      minimapOn = !minimapOn;
-      state.minimap.setVisible(minimapOn);
-    },
+    // Escape on the chart goes back to the radar rather than all the way up to the sky.
+    onExit: () => { if (minimapMode === 'map') setMinimapMode('radar'); else exitWalk(); },
+    onToggleMinimap: () => setMinimapMode(MINIMAP_NEXT[minimapMode]),
   };
 }
 
@@ -1105,6 +1103,26 @@ function minimapData() {
   };
 }
 
+// The chart's picture of the sea: every region with ground under it, named off the fleet
+// (home off its own village), plus the horizon's marks for everything further out.
+function worldMapData() {
+  const w = state.walk.state;
+  const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
+  const homeName = state.village && state.village.island ? state.village.island.name : null;
+  return {
+    pos: w.pos, yaw: w.yaw,
+    sea: state.sea,
+    regions: state.sea.regions().filter((r) => !r.id.startsWith('debug-')).map((r) => ({
+      id: r.id, origin: r.origin, half: r.half, region: r, home: r === state.region,
+      name: r === state.region ? homeName : names.get(r.id) || null,
+    })),
+    far: state.horizon ? state.horizon.marks() : [],
+    boats: state.boats,
+    town: townCentreScenePos(),
+    district: minimapDistrict(),
+  };
+}
+
 function enterWalk(spot = null) {
   if (state.mode === 'walk') return;
   if (state.mode === 'plan') exitPlan();
@@ -1295,7 +1313,7 @@ function leaveAnimation(rec) {
 
 function exitWalk() {
   if (state.mode !== 'walk') return;
-  state.minimap.setVisible(false);   // M's own state (minimapOn) survives; only the sky hides it
+  showMinimap(false);   // M's own state (minimapMode) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
   faceToFace.cancel();
@@ -1649,9 +1667,18 @@ function launchBoats() {
 
 // Whether the last frame was spent afloat, so the frame you step off can notice.
 let wasAboard = false;
-// Whether the player has asked for the radar, kept across a trip in and out of a building -
-// off by default, like ?stats.
-let minimapOn = false;
+// What M is showing, kept across a trip in and out of a building and up to the sky and
+// back: the radar by default, then the chart of every island, then neither.
+let minimapMode = 'radar';
+const MINIMAP_NEXT = { radar: 'map', map: 'off', off: 'radar' };
+function setMinimapMode(mode) {
+  minimapMode = mode;
+  showMinimap(state.mode === 'walk' && !state.inside);
+}
+function showMinimap(on) {
+  state.minimap.setVisible(on && minimapMode === 'radar');
+  state.worldMap.setVisible(on && minimapMode === 'map');
+}
 
 // One boat per island, at the mooring shared/quay.mjs derives - the same arithmetic the
 // server does for lib/boats.mjs and the same every other browser does, so an untouched
@@ -3865,13 +3892,15 @@ function frame(nowMs) {
     const w = state.inside.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
-    state.minimap.setVisible(false);      // the radar is for the shore, not the tavern floor
+    showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
-    if (minimapOn) state.minimap.update(minimapData());
+    showMinimap(true);
+    if (minimapMode === 'radar') state.minimap.update(minimapData());
+    else if (minimapMode === 'map') state.worldMap.update(worldMapData());
   }
   // A conversation borrows the camera, and this is where it writes it: after the feet,
   // because while it is running walk mode is paused and this is the only hand on it.
@@ -4499,6 +4528,7 @@ async function boot() {
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   state.minimap = createMinimap();
+  state.worldMap = createWorldMap();
   if (!state.guest) refreshNeighbours();
   syncFleet();        // whatever was already in the water when this page opened
   // Talking to the people here rather than to the settlers - see web/js/islandchat.js

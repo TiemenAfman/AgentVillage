@@ -188,11 +188,15 @@
   <div class="walk-keys" id="walk-keys"></div>
 </div>
 
-<!-- Boats, neighbours and the town square while you're on foot - toggled with M, off by
-     default like ?stats. A sibling of the walk HUD, not nested in it: that strip is a
-     centred bottom bar and this is a fixed corner radar. -->
+<!-- Boats, neighbours and the town square while you're on foot. M cycles radar (the
+     default) -> the chart of every island -> neither. Siblings of the walk HUD, not nested
+     in it: that strip is a centred bottom bar and these are a fixed corner radar and a
+     near-fullscreen sheet. -->
 <div class="minimap" id="minimap" hidden>
   <canvas id="minimap-canvas" width="180" height="180"></canvas>
+</div>
+<div class="worldmap" id="worldmap" hidden>
+  <canvas id="worldmap-canvas"></canvas>
 </div>
 
 <!-- What is in your hand while building. Outside the walk HUD on purpose: that strip is

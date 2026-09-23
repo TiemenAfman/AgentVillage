@@ -82,11 +82,15 @@ function hslToRgb(hueDeg, s, l) {
 // `owner` is a district index, TOWN (-2) or NONE (-1) - hamlets.js's decodeOwnership(),
 // read by main.js off the same village every other ownership picture on the island comes
 // from. `hues` is village.districts[].hue, by index.
-export function districtColor(h, owner, hues) {
+export function districtRGB(h, owner, hues) {
   const base = terrainRGB(h);
-  if (owner == null || owner === NONE_OWNER) return `rgb(${base[0]},${base[1]},${base[2]})`;
+  if (owner == null || owner === NONE_OWNER) return base;
   const tint = owner === TOWN_OWNER ? TOWN_TINT : hslToRgb((hues && hues[owner]) || 0, 0.55, 0.5);
-  const c = lerp3(base, tint, owner === TOWN_OWNER ? TOWN_ALPHA : DISTRICT_ALPHA);
+  return lerp3(base, tint, owner === TOWN_OWNER ? TOWN_ALPHA : DISTRICT_ALPHA);
+}
+
+export function districtColor(h, owner, hues) {
+  const c = districtRGB(h, owner, hues);
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
@@ -249,3 +253,182 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 4 
 
   return { setVisible, update };
 }
+
+// ---------------------------------------------------------------- the chart of the sea
+// The second press of M: every island this page knows about on one north-up sheet, framed
+// to fit rather than centred on the player. Same colours as the radar (terrainRGB,
+// districtColor), so a coast reads the same on both.
+
+// A world rectangle fitted into a w x h canvas with `pad` pixels to spare on every side,
+// one scale for both axes so an island stays square. Pure, for the test.
+export function fitMap(b, w, h, pad = 40) {
+  const spanX = Math.max(1, b.maxX - b.minX), spanZ = Math.max(1, b.maxZ - b.minZ);
+  const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanZ);
+  const midX = (b.minX + b.maxX) / 2, midZ = (b.minZ + b.maxZ) / 2;
+  return {
+    scale,
+    toPx: (x, z) => [w / 2 + (x - midX) * scale, h / 2 + (z - midZ) * scale],
+    toWorld: (px, py) => [midX + (px - w / 2) / scale, midZ + (py - h / 2) / scale],
+  };
+}
+
+// Everything worth framing: the grids that have ground under them, plus every mark on the
+// horizon, which has a position but no ground this page has fetched.
+export function mapBounds(regions, far, margin = 12) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  const take = (x0, x1, z0, z1) => {
+    if (x0 < minX) minX = x0; if (x1 > maxX) maxX = x1;
+    if (z0 < minZ) minZ = z0; if (z1 > maxZ) maxZ = z1;
+  };
+  for (const r of regions) take(r.origin[0] - r.half, r.origin[0] + r.half, r.origin[1] - r.half, r.origin[1] + r.half);
+  for (const m of far) take(m.x - margin, m.x + margin, m.z - margin, m.z + margin);
+  if (minX === Infinity) return { minX: -32, maxX: 32, minZ: -32, maxZ: 32 };
+  return { minX, maxX, minZ, maxZ };
+}
+
+export function createWorldMap({ step = 3 } = {}) {
+  const panel = document.getElementById('worldmap');
+  const canvas = document.getElementById('worldmap-canvas');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+
+  // The ground is a few hundred thousand height lookups, so it is painted once into a
+  // sheet of its own and only redrawn when what it shows changes: a region raised or
+  // dropped, home rebuilt (a new region object - the archipelago replaces it), the
+  // district picture (a new village), or the canvas resized. The markers go on top every
+  // frame.
+  const ground = document.createElement('canvas');
+  const gctx = ground.getContext('2d');
+  const objIds = new WeakMap();
+  let nextObj = 1;
+  const objId = (o) => {
+    if (!o) return 0;
+    if (!objIds.has(o)) objIds.set(o, nextObj++);
+    return objIds.get(o);
+  };
+  let groundKey = '';
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = Math.max(1, panel.clientWidth);
+    H = Math.max(1, panel.clientHeight);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    groundKey = '';
+  }
+  window.addEventListener('resize', () => { if (!panel.hidden) resize(); });
+
+  function setVisible(on) {
+    if (panel.hidden === !on) return;
+    panel.hidden = !on;
+    if (on) resize();
+  }
+
+  function paintGround(data, fit) {
+    const gw = Math.ceil(W / step), gh = Math.ceil(H / step);
+    ground.width = gw; ground.height = gh;
+    const img = gctx.createImageData(gw, gh);
+    const home = data.regions.find((r) => r.home);
+    const d = data.district;
+    for (let j = 0; j < gh; j++) {
+      for (let i = 0; i < gw; i++) {
+        const [x, z] = fit.toWorld((i + 0.5) * step, (j + 0.5) * step);
+        const hgt = data.sea.height(x, z);
+        let c;
+        if (d && home && home.region.contains(x, z)) {
+          const gx = Math.floor(x - home.origin[0] + home.half), gz = Math.floor(z - home.origin[1] + home.half);
+          const who = gx >= 0 && gz >= 0 && gx < d.size && gz < d.size ? d.owner[gx + gz * d.size] : null;
+          c = districtRGB(hgt, who, d.hues);
+        } else {
+          c = terrainRGB(hgt);
+        }
+        const k = (i + j * gw) * 4;
+        img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; img.data[k + 3] = 255;
+      }
+    }
+    gctx.putImageData(img, 0, 0);
+  }
+
+  function label(x, y, text, strong) {
+    ctx.font = `${strong ? 600 : 500} ${strong ? 13 : 12}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(12,14,18,.75)';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = strong ? '#e8b45c' : 'rgba(244,236,224,.92)';
+    ctx.fillText(text, x, y);
+  }
+
+  function update(data) {
+    if (panel.hidden) return;
+    const fit = fitMap(mapBounds(data.regions, data.far), W, H);
+    const key = [W, H, objId(data.district && data.district.owner),
+      ...data.regions.map((r) => `${r.id}@${objId(r.region)}`)].join('|');
+    if (key !== groundKey) { paintGround(data, fit); groundKey = key; }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(ground, 0, 0, ground.width * step, ground.height * step);
+
+    // Islands on the horizon: a place with no ground fetched, so a pin and a name. A
+    // hashed bearing (not pinned) is a rumour from a sea we have not joined, and looks it.
+    for (const m of data.far) {
+      const [px, py] = fit.toPx(m.x, m.z);
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.fillStyle = m.pinned ? 'rgba(244,236,224,.9)' : 'rgba(244,236,224,.35)';
+      ctx.fill();
+      if (m.name) label(px, py - 8, m.name, false);
+    }
+    for (const r of data.regions) {
+      const [px, py] = fit.toPx(r.origin[0], r.origin[1] - r.half);
+      if (r.name) label(px, py - 4, r.name, r.home);
+    }
+    for (const b of data.boats || []) {
+      if (!b || b.x == null) continue;
+      const [px, py] = fit.toPx(b.x, b.z);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(4.5, 5); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 5);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(127,199,217,.95)';
+      ctx.fill();
+      ctx.restore();
+    }
+    if (data.town) {
+      const [px, py] = fit.toPx(data.town[0], data.town[1]);
+      ctx.strokeStyle = '#e8b45c'; ctx.fillStyle = '#e8b45c'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(px, py + 7); ctx.lineTo(px, py - 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px, py - 7); ctx.lineTo(px + 7, py - 4); ctx.lineTo(px, py - 1); ctx.closePath(); ctx.fill();
+    }
+    // The player, with the same `Math.PI - yaw` as the radar's arrow (see there for why).
+    const [px, py] = fit.toPx(data.pos.x, data.pos.z);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(Math.PI - (data.yaw || 0));
+    ctx.beginPath();
+    ctx.moveTo(0, -9); ctx.lineTo(5.5, 6.5); ctx.lineTo(-5.5, 6.5);
+    ctx.closePath();
+    ctx.fillStyle = '#f4ece0';
+    ctx.strokeStyle = 'rgba(20,16,12,.7)';
+    ctx.lineWidth = 1.2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(244,236,224,.75)';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('N', W / 2, 10);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('M  close   ·   Esc  back to the radar', W - 14, H - 10);
+  }
+
+  return { setVisible, update };
+}
+
