@@ -131,9 +131,12 @@ async function runScan(o) {
   const arrivals = o.codex ? [] : readArrivals(files.arrivals);
   const banished = o.codex ? new Map() : readBanished();
   const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
-  const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
-
+  // The layout before the model, for one thing in it: who the keeper has given a hamlet of
+  // their own (`layout.rehomed`, lib/plan.mjs's `rehome`). That is a word about the village,
+  // not about the ground, and buildVillage has to hear it before it counts the hamlets.
   const layout = loadLayout(files.layout, config.seed, size);
+  const survey = (rehomed) => buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed });
+  let model = survey(layout.rehomed || null);
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
   if (o.clearRoads) clearRoads(layout);
@@ -179,11 +182,15 @@ async function runScan(o) {
   if (o.plan) {
     plan = runPlan(layout, model, o.plan, {
       seed: config.seed, size, dryRun: !!o.dryRun, layoutFile: files.layout, placementsFile: files.placements, now: o.now,
+      remodel: survey,
     });
     if (!plan.ok || o.dryRun) {
       return { plan, settlers: model.stats.settlers, districts: model.stats.districts, files: jobs.length, changedFiles, ms: Date.now() - t0 };
     }
     ({ terrain, unplaced } = plan);
+    // A `rehome` changed who lives where, and the village is assembled from the model the
+    // plan placed the island against.
+    if (plan.model) model = plan.model;
   } else {
     ({ terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size }));
   }
@@ -199,7 +206,7 @@ async function runScan(o) {
     districts: model.stats.districts, files: jobs.length, changedFiles,
     unplaced: unplaced.length, ms: Date.now() - t0, placeMs, out: files.village,
   };
-  if (plan) result.plan = { ...plan, terrain: undefined, unplaced: plan.unplaced };
+  if (plan) result.plan = { ...plan, terrain: undefined, model: undefined, unplaced: plan.unplaced };
   if (!o.quiet) {
     process.stderr.write(
       `[settlers] ${result.settlers} settlers, ${result.apprentices} apprentices, ${result.districts} districts` +

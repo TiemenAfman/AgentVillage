@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
+  een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
+  Gebouwd en op het eiland toegepast op 23 september 2026.
 - [inwoners-aan-het-werk.md](inwoners-aan-het-werk.md) — ledige inwoners schoffelen op de akkers,
   wieden in de moestuin, hakken en sprokkelen hout en vissen; waarom de pagina de werkplekken meldt
   (zoals de huisposities) en de zee alleen de visplekken zelf uitrekent. Gebouwd op 23 september 2026.
