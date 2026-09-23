@@ -435,6 +435,10 @@ function assemble({ config, model, layout, terrain, size, all }) {
       foundedAt: config.foundedAt,
       terrainHash: terrain.hash,
       landing: layout.landing,
+      // The island's harbours (lib/layout.mjs planHarbours): side, the shore cell the
+      // planks start from, and the planks. The sides with none are left out; `side` says
+      // which is which. The quay's own planks are one of these.
+      harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier })),
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: TOWN_CORE_R,
         // When the square reached each of its widths. The chronicle needs this to lay the

@@ -192,6 +192,29 @@ export function quayFor(terrain, landing, planks = null) {
   };
 }
 
+// Every quay an island has, in its OWN coordinates like quayFor, each with the `side` it
+// faces from the town ('n'/'e'/'s'/'w', or null for the one quay of an island that has no
+// harbours on record). The harbours are village.island.harbours (lib/layout.mjs
+// planHarbours); each goes through quayFor with its own planks, so it is checked against
+// this terrain exactly the way the quay always has been - and one whose planks the ground
+// no longer agrees with falls back to the derived quay, which is why the list is deduped by
+// shore rather than trusted to be distinct. A village with no harbours - an older islander,
+// a bundle from before they existed, an island known from a datagram - gets the single
+// quay of old, so a world of mixed versions still has somewhere to moor on every island.
+export function quaysOf(terrain, village, landing) {
+  const harbours = village && village.island && Array.isArray(village.island.harbours) ? village.island.harbours : null;
+  const out = [];
+  for (const h of harbours || []) {
+    if (!h || !Array.isArray(h.pier)) continue;
+    const q = quayFor(terrain, landing, { pier: h.pier, shore: h.shore || null });
+    if (!q || out.some((o) => o.shore[0] === q.shore[0] && o.shore[1] === q.shore[1])) continue;
+    out.push({ ...q, side: typeof h.side === 'string' ? h.side : null });
+  }
+  if (out.length) return out;
+  const one = quayFor(terrain, landing, planksOf(village));
+  return one ? [{ ...one, side: null }] : [];
+}
+
 // What lib/boats.mjs wants: one mooring per island, named after it. The id has to survive
 // BOAT_ID over there, and it has to be the same on both sides of the channel - so it is
 // built from the region's own id and nothing else.

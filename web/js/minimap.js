@@ -660,7 +660,8 @@ export function createWorldMap({ step = 3 } = {}) {
       const [px, py] = fit.toPx(d.x, d.z);
       anchorIcon(ctx, px, py);
       const island = regionName.get(d.region);
-      marks.push({ px, py, title: 'Harbour', sub: island ? `${island} · a boat puts out from here` : 'a boat puts out from here' });
+      const side = { n: 'North', e: 'East', s: 'South', w: 'West' }[d.side];
+      marks.push({ px, py, title: side ? `${side} harbour` : 'Harbour', sub: island || null });
     }
     for (const r of data.regions) {
       const [px, py] = fit.toPx(r.origin[0], r.origin[1] - r.half);

@@ -11,7 +11,7 @@ import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
-import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
+import { quaysOf, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createRoadDebug } from './road-debug.js';  
@@ -538,7 +538,8 @@ function interactables() {
     const moored = state.boats.find((b) => Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) < 3);
     out.push({
       id: d.id, kind: 'dock', x: d.head[0], z: d.head[1], r: 3.2,
-      label: 'the quay', prompt: moored ? 'take the boat' : 'take a boat',
+      label: d.side ? `the ${SIDE_WORD[d.side]} harbour` : 'the quay',
+      prompt: moored ? 'take the boat' : 'no boat here',
     });
   }
   for (const b of state.boats) {
@@ -841,10 +842,13 @@ const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 function takeBoatAt(dockId) {
   const d = dockAt(dockId);
   if (!d) return;
-  const b = boatFor(d.region);
-  if (!b) return;
-  if (Math.hypot(b.x - d.berth[0], b.z - d.berth[1]) > 4) {
-    state.ui.toast('The boat is out on the water.');
+  // The boat lying at this dock, if one does. With four harbours and one boat, "the
+  // island's boat is out on the water" was wrong three times out of four: it was lying at
+  // another harbour, and this one never had one.
+  boatFor(d.region);
+  const b = state.boats.find((x) => Math.hypot(x.x - d.berth[0], x.z - d.berth[1]) <= 4);
+  if (!b) {
+    state.ui.toast('No boat lies at this harbour.');
     return;
   }
   if (b.pilot && state.net && b.pilot !== state.net.id()) {
@@ -1095,7 +1099,7 @@ function minimapDistrict() {
 // Where every island's harbour is, in world coordinates: the head of each dock's planks,
 // where a boat is moored and the prompt to take it out appears.
 function mapDocks() {
-  return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id }));
+  return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id, side: d.side || null }));
 }
 
 function minimapData() {
@@ -1590,22 +1594,28 @@ function joinRegionsFromParams(homeTerrain, homeVillage) {
 // moorings, and the browser across the channel has to find an untouched boat in the same
 // place. Three sides agreeing without a message between them is only possible if all three
 // do the same arithmetic, which is what shared/ is for.
-function dockFor(region, village) {
+// Every dock an island has: its harbours, one per side of the coast (lib/layout.mjs
+// planHarbours, carried as village.island.harbours), or the one quay of an island that has
+// none on record - a guest whose bundle predates them, or whose islander is older than
+// this page. shared/quay.mjs's quaysOf decides which, so this page and every other agree.
+function docksFor(region, village) {
   const v = village || region.village;
   const landing = v && v.island && v.island.landing;
-  if (!landing) return null;
+  if (!landing) return [];
   // Local coordinates, because the mesh goes inside the island's own group - and world
   // coordinates for `head` and `berth`, because walk mode and the boat speak nothing else.
   // shared/quay.mjs names them apart for exactly this reason.
-  // The kade this village built, where it built one: the quay district's own planks are the
-  // island's harbour, and the derivation off the landing is the fallback for an island whose
-  // districts we do not have. Without this the island grew a second pier somewhere else on
-  // its coast, and that one - not the kade - got the deck, the boat and the prompt.
-  const quay = quayFor(region.terrain, landing, planksOf(v));
-  if (!quay) return null;
+  // The kade this village built, where it built one: the quay district's own planks are one
+  // of the island's harbours, and the derivation off the landing is the fallback for an
+  // island whose districts we do not have. Without this the island grew a second pier
+  // somewhere else on its coast, and that one - not the kade - got the deck, the boat and
+  // the prompt.
   const [ox, oz] = region.origin;
-  return {
-    id: `dock:${region.id}`, region, cells: quay.cells, dir: quay.dir,
+  return quaysOf(region.terrain, v, landing).map((quay) => ({
+    // The side in the id, so a dock keeps its name when the list around it changes.
+    id: quay.side ? `dock:${region.id}:${quay.side}` : `dock:${region.id}`,
+    side: quay.side,
+    region, cells: quay.cells, dir: quay.dir,
     from: quay.from,
     yaw: quay.yaw,
     head: [quay.head[0] + ox, quay.head[1] + oz],
@@ -1614,7 +1624,7 @@ function dockFor(region, village) {
     // settler walking down to the water has to be routed to, because the roads stop on land
     // and the planks begin here. quaySite picks it, and it is not always the landing.
     shore: quay.shore,
-  };
+  }));
 }
 
 // The village the home dock was last built from.
@@ -1623,7 +1633,7 @@ function dockFor(region, village) {
 // callers that rebuild the docks for a reason of their own do not have a village to hand.
 // syncFleet's rebuild is about who else is in the water, and at boot it runs *before*
 // applyVillage has set state.village: so `homeVillage || state.village` was undefined,
-// dockFor answered null, and the dock buildScene had just built correctly was torn down
+// docksFor answered nothing, and the dock buildScene had just built correctly was torn down
 // and not put back until the next publish. Remembering it is what makes a rebuild for
 // somebody else's island harmless to ours.
 let dockVillage = null;
@@ -1635,34 +1645,34 @@ function buildDocks(homeVillage) {
   for (const d of state.docks) d.dispose();
   state.docks = [];
   for (const region of state.sea.regions()) {
-    const spec = dockFor(region, region === state.region ? dockVillage : null);
-    if (!spec) continue;
-    const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
-    if (!geo) continue;
-    const mesh = new THREE.Mesh(geo, buildingMat);
-    // In the island's own frame: at the origin for home, inside the guest group otherwise.
-    const parent = region === state.region
-      ? scene
-      : (state.guests.find((g) => g.region === region) || {}).group || scene;
-    mesh.position.set(spec.from[0], 0, spec.from[1]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.id = spec.id;
-    parent.add(mesh);
-    // Out of the raycast as well as out of the scene. It used to only leave the group, and
-    // the raycast's own `m.parent` filter covered for that - which was true and quiet right
-    // up until buildDocks started running on every change of district instead of once.
-    state.docks.push({
-      ...spec,
-      mesh,
-      dispose: () => {
-        parent.remove(mesh);
-        const k = state.pickables.indexOf(mesh);
-        if (k >= 0) state.pickables.splice(k, 1);
-        geo.dispose();
-      },
-    });
-    state.pickables.push(mesh);
+    for (const spec of docksFor(region, region === state.region ? dockVillage : null)) {
+      const geo = buildPierGeometry(spec.cells, region.terrain, spec.from);
+      if (!geo) continue;
+      const mesh = new THREE.Mesh(geo, buildingMat);
+      // In the island's own frame: at the origin for home, inside the guest group otherwise.
+      const parent = region === state.region
+        ? scene
+        : (state.guests.find((g) => g.region === region) || {}).group || scene;
+      mesh.position.set(spec.from[0], 0, spec.from[1]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.id = spec.id;
+      parent.add(mesh);
+      // Out of the raycast as well as out of the scene. It used to only leave the group, and
+      // the raycast's own `m.parent` filter covered for that - which was true and quiet right
+      // up until buildDocks started running on every change of district instead of once.
+      state.docks.push({
+        ...spec,
+        mesh,
+        dispose: () => {
+          parent.remove(mesh);
+          const k = state.pickables.indexOf(mesh);
+          if (k >= 0) state.pickables.splice(k, 1);
+          geo.dispose();
+        },
+      });
+      state.pickables.push(mesh);
+    }
   }
   // The planks are a floor, and the floor is worked out from these docks - so whoever
   // rebuilds them has rebuilt the floor too, whether or not they were thinking about it.
@@ -1674,6 +1684,7 @@ function buildDocks(homeVillage) {
 }
 
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
+const SIDE_WORD = { n: 'north', e: 'east', s: 'south', w: 'west' };
 function boatAt(id) { return state.boats.find((b) => b.id === id) || null; }
 
 // Every island's boat, put in the water with the island. Not when walk mode starts: a boat
