@@ -90,12 +90,20 @@ async function runDeleteRoads(o) {
   return { ok: true, paths: 0 };
 }
 
+const CODEX_SCAN = Object.freeze({ name: 'Codex', seed: 7331 });
+
 async function runScan(o) {
   const t0 = Date.now();
   ensureData();
   const base = loadConfig();
+  // The Codex scan keeps the name and seed its layout was founded on. They were settings
+  // while the Codex village was an island of its own on the sea; it is not any more (the sea
+  // houses those settlers on its volcano), so they are constants here that an old config.json
+  // may still override - and must be allowed to, or a layout founded on another seed would be
+  // thrown away by the next scan.
+  const codexOf = base.codexIsland || {};
   const config = o.codex ? {
-    ...base, islandName: base.codexIsland.name, seed: base.codexIsland.seed,
+    ...base, islandName: codexOf.name || CODEX_SCAN.name, seed: Number.isFinite(codexOf.seed) ? codexOf.seed : CODEX_SCAN.seed,
     foundedAt: null, founders: [],
     multiplayer: { ...base.multiplayer, sea: { ...base.multiplayer.sea, mode: 'single' } },
   } : base;

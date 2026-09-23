@@ -432,10 +432,11 @@ further, so the volcano does not spread everybody else out.
 
 **One building has many residents: the volcano's guardhouse and its guards.** The bundle
 carries one building, `civic:guardhouse` (drawn as `civicType: 'castle'` until there is a
-model - `GUARDHOUSE_LOOKS_LIKE`), placed by `guardhouseSite()` from the terrain alone, so
-the next houses on the volcano (step 6) must stay off its lot. Its residents are not in the
+model - `GUARDHOUSE_LOOKS_LIKE`), placed by `guardhouseSite()` from the terrain alone.
+Its residents are not in the
 bundle: `lib/guards.mjs` counts islanders online (`live`, non-sea, **non-hostile** islands -
-the per-islander Codex island is hostile, so one islander counts once) and calls
+an older islander's separate Codex island is hostile, so in a world of mixed versions one
+islander still counts once) and calls
 `crowd.addGuard()`, which **appends** `guard:<n>` to the running crowd; the sea then
 broadcasts the roster and everybody's position at once (`onRoster` in `lib/sea.mjs`). Never
 `crowds.join` for this - that rebuilds the crowd and walks every guard home. Target is
@@ -446,6 +447,33 @@ dresses a `guard:<n>` against the guardhouse spec with the guard's own id
 (`web/js/crowd-view.js`), which is what makes them individuals. Because guards walk on every
 sea from the first beat, `broadcast` in `lib/sea.mjs` reaches **joined** sockets only - before
 that, a socket's first message was as likely a crowd frame as its welcome.
+
+**There is no Codex island any more: every islander's Codex settlers live on the volcano.**
+The islander publishes one island; `codexSettlers()` in `serve.mjs` reads the Codex scan's
+`data/codex/village.json` (the scan and its `layout.json` carry on, but nothing places a house
+from it) and `packCodex` - the same `guestVillage` redaction a bundle gets, so `house:s3` and
+never a uuid, prompt or path - gives at most `CODEX.PER_ISLANDER` (60) `{id, style, tier, kind,
+active}`. `seaClient.sendCodex()` posts it to **`POST /island/:id/codex`** after every publish
+when its hash changed, and forced on every welcome; a 404 is repaired by publishing first.
+The sea's door checks the key first (`keyOpens`), then **`fleet.vouch`** - the island's own
+claim token, and an untokened island cannot be spoken for at all - then `parseCodex`, which is
+stricter than `parseParcel`: an unknown field, a duplicate, a number for a word or 61 entries
+refuses the lot. `lib/residents.mjs` puts them up: a house on `codexPlots()` (134 3x3 lots on
+a pitch-4 lattice, off the guardhouse by `CODEX.CLEAR`, doors downhill) at `hash32('codex:<island>:<id>')
+% pool`, linear probe when taken, assignments kept until their own settler leaves - so neither
+an arrival nor a departure moves a standing house; the rest **lodge in the guardhouse**
+(dressed from their own id, like guards) and move in when a plot frees; past `CODEX.RESIDENTS`
+(360) bodies they wait in the list. Residents are **added to the running volcano crowd**
+(`crowd.placeResident` / `removeResident`: appended, departures are `null` holes, `compact()`
+closes them past 64 and renumbers - the sea then forgets `onWire` for that crowd), never a
+`crowds.join`. The houses go into the volcano's bundle through `fleet.furnishVolcano`
+**without moving `rev`**, and the sea broadcasts `{t:'island', a:'codex', i, houses}` (the
+whole set) *before* the roster and positions. The page takes it like a parcel: `region.village`
+updated, `guest.applyBuildings()` raises/lowers only the changed houses (no landscape rebuild),
+`crowd.setBuildings()` re-dresses whoever moved; `drawnSignature` leaves `codex:` buildings out.
+The sweep that drops an islander after `GRACE_MS` calls `residents.drop` - houses and residents
+go, guards and the volcano stay. `settler-figures.js` now reuses freed slots (`free`), because
+the volcano's crowd churns for as long as the page is open.
 
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
@@ -485,13 +513,13 @@ release and the phone app can both just join, and `POST /update` is locked by
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that
 hand-off a sea that gets a key locks out the browser of the very island publishing to it.
-The same key also guards `/island/:id` and `/island/:id/parcel`, not only the socket join —
+The same key also guards `/island/:id`, `/island/:id/parcel` and `/island/:id/codex`, not only the socket join —
 `seaClient` posts over HTTP regardless of whether its own socket was accepted, so before
 this an islander refused at the handshake still parked its bundle over HTTP under a token
 that outlived the refusal, for good.
 
 **While the islander runs, the sea keeps its island.** The claim token is kept in
-`data/sea-token.json` (home and Codex), not minted per process: a fresh token made every
+`data/sea-token.json` (under `home`; an old `codex` entry is left alone), not minted per process: a fresh token made every
 tray restart a stranger to its own island, refused as `claimed` until the old claim's
 `GRACE_MS` ran out. `onClose` in `lib/sea.mjs` does not mark an island quiet while another
 islander socket still holds it — the old line dying after the new one joined used to get a
@@ -714,7 +742,7 @@ islander behind it either.
 | | |
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
-| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency) |
+| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency); on the sea side `guards.mjs` and `residents.mjs` (the volcano's guards, and every islander's Codex settlers housed on it) |
 | `shared/` | terrain, regions (the world/local contract), `lattice.mjs` (the super-grid arithmetic: `blockOf`, `superOf` — the one copy), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
 | `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is

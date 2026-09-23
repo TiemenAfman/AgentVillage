@@ -2287,6 +2287,26 @@ function onFleetNews(world, one, clock) {
     syncBoards();
     return;
   }
+  // The Codex houses on the volcano: every islander's, the whole set, whenever one of their
+  // lists changed (lib/residents.mjs). The parcel's bargain again - `rev` did not move, so
+  // this must not reach syncFleet, and the ground and the landscape stay exactly as they are:
+  // the region takes the new list on board (so a later raise builds from it), the guest
+  // raises and lowers only the houses that changed, and the crowd dresses whoever moved in
+  // or out. The roster and everybody's position follow on the wire right behind this.
+  if (one.a === 'codex') {
+    const region = state.sea.get(one.i);
+    if (!region || !region.village) return;
+    const houses = Array.isArray(one.houses) ? one.houses : [];
+    const keep = (region.village.buildings || []).filter((b) => !b.id.startsWith('codex:'));
+    region.village.buildings = [...keep, ...houses];
+    const g = state.guests.find((x) => x.region === region);
+    if (!g) return;
+    const { added } = g.applyBuildings(region.village.buildings);
+    for (const rec of added) attachExtras(rec, { mail: false, signs: false });
+    if (g.crowd) g.crowd.setBuildings(region.village.buildings);
+    if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+    return;
+  }
   const { t, a, ...row } = one;
   const rows = (state.fleet || []).filter((r) => r.id !== one.id);
   // Sorted by id rather than by arrival, so "the fleet" is the same list on every machine

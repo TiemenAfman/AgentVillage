@@ -99,3 +99,107 @@ test('the region facade hands on the volcano\'s own fields, and keeps the crater
   assert.ok(!plain.volcano);
   assert.equal(plain.isLava(32, 32), false);
 });
+
+// The Codex houses, as the sea hands them on (lib/residents.mjs, the `codex` message): real
+// specs off the plot pool, through the same whitelist a bundle's buildings go through.
+const { codexPlots, codexId } = await import('../shared/volcano.mjs');
+const { codexHouse } = await import('../lib/islandbundle.mjs');
+function codexHouses(islandId, ids, terrain) {
+  const pool = codexPlots(terrain);
+  return ids.map((id, i) => codexHouse({ id: codexId(islandId, id), style: 'unknown', tier: 'cottage', active: false, ...pool[i * 7] }));
+}
+
+test('a Codex house going up or coming down touches that house and nothing else on the volcano', () => {
+  const { region, bundle, terrain } = raise();
+  const scene = new THREE.Scene();
+  const material = new THREE.MeshBasicMaterial();
+  const g = createGuestIsland({ scene, region, buildings: bundle.buildings, material, month: 8 });
+  const ground = g.ground;
+  const triangles = g.triangles;
+  const guardhouse = g.records[0];
+  const island = 'aaaaaaaaaaaaaaaa';
+
+  const three = codexHouses(island, ['house:s0', 'house:s1', 'house:s2'], terrain);
+  let r = g.applyBuildings([...bundle.buildings, ...three]);
+  assert.equal(r.added.length, 3);
+  assert.equal(r.removed.length, 0);
+  assert.equal(g.buildingCount, 4);
+  assert.equal(g.ground, ground, 'the ground was built again for a house');
+  assert.equal(g.triangles, triangles);
+  assert.equal(g.records[0], guardhouse, 'the guardhouse was raised again');
+  const s1 = g.records.find((x) => x.id === codexId(island, 'house:s1'));
+  assert.ok(s1.group.parent === g.group, 'not standing in the volcano\'s own group');
+  const { gx, gz } = three[1].plot;
+  assert.ok(Math.abs(s1.group.position.x - (gx + 1.5 - 64)) < 0.8 && Math.abs(s1.group.position.z - (gz + 1.5 - 64)) < 0.8);
+  assert.ok(g.blockers().some((b) => b.id === `guest:${region.id}:${codexId(island, 'house:s1')}`), 'a new house is not solid');
+
+  // s0 comes down, s1 is left alone (only its settler's `active` moved), s3 goes up.
+  const next = [...bundle.buildings, { ...three[1], active: true }, three[2], ...codexHouses(island, ['house:s3'], terrain).map((h, i) => ({ ...h, plot: codexPlots(terrain)[50 + i].plot }))];
+  r = g.applyBuildings(next);
+  assert.deepEqual(r.removed.map((x) => x.id), [codexId(island, 'house:s0')]);
+  assert.deepEqual(r.added.map((x) => x.id), [codexId(island, 'house:s3')]);
+  assert.equal(g.records.find((x) => x.id === codexId(island, 'house:s1')), s1, 'a house was rebuilt for its settler starting work');
+  assert.equal(r.removed[0].group.parent, null, 'the house that came down is still in the scene');
+  assert.equal(g.ground, ground);
+
+  // Everybody gone again is the volcano as it was raised.
+  r = g.applyBuildings(bundle.buildings);
+  assert.equal(g.buildingCount, 1);
+  assert.equal(g.records[0], guardhouse);
+  g.dispose();
+});
+
+test('a Codex resident is dressed from its house, or from the guardhouse while it lodges there', () => {
+  const { region, bundle, terrain } = raise();
+  const crowd = createCrowdView({ scene: new THREE.Scene(), material: new THREE.MeshBasicMaterial(), region, buildings: bundle.buildings });
+  const island = 'aaaaaaaaaaaaaaaa';
+  const lodger = codexId(island, 'house:s0');
+  const housed = codexId(island, 'house:s1');
+  // The roster before the houses: a lodger is dressed at once, against the guardhouse; the
+  // other has a house the page has not been told about yet, and waits.
+  const [h1] = codexHouses(island, ['house:s1'], terrain);
+  crowd.roster(['guard:0', lodger, housed]);
+  assert.equal(crowd.figure(lodger).spec.id, 'civic:guardhouse');
+  assert.deepEqual(crowd.figure(lodger).look, settlerLook(lodger, 'unknown', 'adult'), 'not dressed as the sea strode them');
+  assert.equal(crowd.figure(housed).spec.id, 'civic:guardhouse', 'a resident with no house the page knows lodges until it does');
+
+  // The houses arrive: the one who has one moves in, and nobody else is touched.
+  const guard = crowd.figure('guard:0');
+  const wasLodger = crowd.figure(lodger);
+  crowd.setBuildings([...bundle.buildings, { ...h1, style: 'opus' }]);
+  assert.equal(crowd.figure(housed).spec.id, housed);
+  assert.deepEqual(crowd.figure(housed).look, settlerLook(housed, 'opus', 'adult'));
+  assert.equal(crowd.figure('guard:0'), guard, 'a guard was dressed again for somebody else\'s house');
+  assert.equal(crowd.figure(lodger), wasLodger);
+  assert.equal(crowd.count(), 3);
+
+  // And a house coming down puts its resident back in the guardhouse, under the same number.
+  crowd.setBuildings(bundle.buildings);
+  assert.equal(crowd.figure(housed).spec.id, 'civic:guardhouse');
+  assert.equal(crowd.count(), 3);
+  // A resident who leaves is a hole, like a fallen guard.
+  crowd.roster(['guard:0', null, housed]);
+  assert.equal(crowd.figure(lodger), null);
+  assert.equal(crowd.count(), 2);
+  crowd.dispose();
+});
+
+test('a crowd that runs all evening gives a departed body\'s slot to the next one enrolled', async () => {
+  const { createFigures, CAPACITY } = await import('../web/js/settler-figures.js');
+  const view = createFigures(new THREE.Scene(), new THREE.MeshBasicMaterial(), { armed: true });
+  const look = settlerLook('x', 'unknown', 'adult');
+  const bodies = Array.from({ length: CAPACITY }, (_, i) => ({ id: `codex:aaaaaaaaaaaaaaaa:house:s${i}`, pos: [0, 0], y: 0, yaw: 0, visible: true }));
+  for (const f of bodies) assert.equal(view.enrol(f, look, 'adult'), true);
+  assert.equal(view.enrol({ id: 'one-too-many', pos: [0, 0], visible: true }, look, 'adult'), false, 'the crowd was not full');
+  // Arrivals and departures for longer than the crowd is wide, and still room every time.
+  for (let i = 0; i < CAPACITY + 10; i++) {
+    const gone = bodies[i % CAPACITY];
+    view.free(gone);
+    assert.equal(gone.slot, null);
+    const next = { id: `guard:${i}`, pos: [0, 0], y: 0, yaw: 0, visible: true };
+    assert.equal(view.enrol(next, look, 'adult'), true, `no room on arrival ${i}`);
+    assert.equal(view.figureAt(view.pickables()[0], next.slot), next, 'the slot still names the one who left');
+    bodies[i % CAPACITY] = next;
+  }
+  view.dispose();
+});

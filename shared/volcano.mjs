@@ -141,3 +141,80 @@ export function guardhouseSpec(terrain) {
     door: site.door,
   };
 }
+
+// ---- the Codex houses --------------------------------------------------------------
+//
+// Every islander with Codex sessions sends the sea a short list of its Codex settlers
+// (lib/islandbundle.mjs packCodex / parseCodex, POST /island/:id/codex), and the sea puts
+// them up here: a house on the flank for as many as there are plots, and a bed in the
+// guardhouse for the rest. Plans/vulkaan-in-het-midden.md, section 8. Nobody can do anything
+// with a house on the volcano, so unlike a house on anybody's own island it is allowed to
+// move - the plot follows from the id, not from a layout.json.
+
+// The numbers, and the one copy of each. PER_ISLANDER caps the list on both sides of the
+// door (the islander sends the busiest and the newest, the sea refuses more). RESIDENTS caps
+// the bodies on the mountain as a whole, because a page draws a crowd into a fixed number of
+// instance slots (CAPACITY in web/js/settler-figures.js) and the chase walks every one of
+// them: sixteen islanders at sixty is 960, and past this a settler gets neither a house nor a
+// body - it waits in the list until somebody leaves. PITCH is the lattice the plots sit on: a
+// three-by-three lot and one cell of path between it and the next, which is also the row
+// the door steps out into. CLEAR is how far every plot keeps from the guardhouse, whose
+// front is where the guards and the lodgers stand.
+export const CODEX = Object.freeze({ PER_ISLANDER: 60, RESIDENTS: 360, PITCH: 4, CLEAR: 3 });
+
+// The house tiers a Codex settler may arrive as - lib/village.mjs's TIERS, the ones
+// web/js/buildings.js knows how to raise. A list, not a pattern, so a word nobody can draw
+// is refused at the door rather than warned about on every screen.
+export const CODEX_TIERS = Object.freeze(['tent', 'hut', 'cottage', 'house', 'manor', 'keep']);
+
+// A Codex settler's name on the volcano: the island it came from in front of the redacted
+// id it had there, because two islanders can both have a `house:s3`. It is the house's id
+// and the resident's - one string, the way every other settler is named after its house -
+// and the page dresses the resident from it (web/js/crowd-view.js).
+export const codexId = (islandId, id) => `codex:${islandId}:${id}`;
+export const isCodex = (id) => typeof id === 'string' && id.startsWith('codex:');
+// Which island a Codex id belongs to.
+export const codexIsland = (id) => (isCodex(id) ? id.split(':')[1] : null);
+
+// The plots on the flank, in a fixed order, worked out from the ground alone so a restarted
+// sea finds the same ones.
+//
+// Lots on a PITCH lattice, so two never overlap and there is always a cell of path between
+// them. A lot is taken if all nine of its cells are buildable (which on the volcano already
+// refuses the crater, the lava and the basalt beside it, the beach, and anything too steep
+// or too high), it keeps CLEAR cells away from the guardhouse, and the cell its door steps
+// out onto is dry, lava-free land. The door faces away from the crater - downhill, the way
+// the guardhouse's does - by the same dominant-axis rule, so a settler comes out of the house
+// facing the sea. Measured: 136 lattice lots are buildable on the volcano, and 134 are left
+// once the guardhouse's clearance and the door steps that would open onto lava have had theirs.
+//
+// The offset of 2 is the one that fits the most of them (0 gives 131, 1 and 3 give 135).
+export function codexPlots(terrain) {
+  const { half, size } = terrain;
+  const { PITCH, CLEAR } = CODEX;
+  const ok = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const gh = guardhouseSite(terrain);
+  const nearGuardhouse = (gx, gz) => {
+    if (!gh) return false;
+    const p = gh.plot;
+    return gx + 3 > p.gx - CLEAR && gx < p.gx + p.w + CLEAR && gz + 3 > p.gz - CLEAR && gz < p.gz + p.d + CLEAR;
+  };
+  const out = [];
+  for (let gz = 2; gz + 3 <= size; gz += PITCH) {
+    for (let gx = 2; gx + 3 <= size; gx += PITCH) {
+      if (nearGuardhouse(gx, gz)) continue;
+      let clear = true;
+      for (let dz = 0; dz < 3 && clear; dz++) for (let dx = 0; dx < 3; dx++) {
+        if (!terrain.isBuildable(gx + dx, gz + dz)) { clear = false; break; }
+      }
+      if (!clear) continue;
+      const cx = gx + 1.5 - half, cz = gz + 1.5 - half;
+      const rot = Math.abs(cx) >= Math.abs(cz) ? (cx >= 0 ? 1 : 3) : (cz >= 0 ? 2 : 0);
+      const step = rot === 0 ? [gx + 1, gz - 1] : rot === 1 ? [gx + 3, gz + 1] : rot === 2 ? [gx + 1, gz + 3] : [gx - 1, gz + 1];
+      if (!ok(step[0], step[1]) || !terrain.isLand(step[0], step[1]) || terrain.isLava(step[0], step[1])) continue;
+      const door = rot === 0 ? [gx + 1, gz] : rot === 1 ? [gx + 2, gz + 1] : rot === 2 ? [gx + 1, gz + 2] : [gx, gz + 1];
+      out.push({ plot: { gx, gz, w: 3, d: 3, rot }, door });
+    }
+  }
+  return out;
+}

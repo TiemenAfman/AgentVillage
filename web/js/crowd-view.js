@@ -35,7 +35,7 @@
 import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
-import { isGuard, GUARDHOUSE_ID } from 'shared/volcano.mjs';
+import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -84,7 +84,10 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   const figures = new Map();
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
   // bundle is already on the region; this is only a faster way to look one up.
-  const byId = new Map(buildings.map((b) => [b.id, b]));
+  let byId = new Map(buildings.map((b) => [b.id, b]));
+  // The last roster, so a change of buildings can dress again whoever it touched without
+  // waiting for the sea to say who the numbers mean once more - see setBuildings.
+  let lastIds = [];
   const [ox, oz] = region.origin;
 
   // The afternoon boats. index -> what the last message said about that outing, and
@@ -104,16 +107,24 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // which is the only time the order can move - and on the volcano whenever a guard comes
   // out or falls, which never moves it: a new guard is appended, and a fallen one is a
   // `null` hole that retires whoever stood there and enrols nobody (shared/settlerwire.mjs).
+  // Which building somebody is dressed against. Their own house, which is every settler
+  // on every island - and on the volcano a Codex settler's house, whose id is theirs too
+  // (`codex:<island>:<id>`). A guard has no house of their own: they live in the
+  // guardhouse, and it is the one building a guard can be dressed against; so does a Codex
+  // settler the plots ran out for (lib/residents.mjs). The face comes from their own id -
+  // settlerLook hashes it - so each is somebody, where dressing them from the building's id
+  // would have made every guard on the mountain the same man. lib/crowd.mjs passes the same
+  // three arguments, so the stride the sea gave them fits the legs drawn here.
+  const specFor = (id) => byId.get(id) || (isGuard(id) || isCodex(id) ? byId.get(GUARDHOUSE_ID) : null) || null;
+  // What about that building shows on the body: which one it is, its palette and its kind.
+  const dressOf = (spec) => `${spec.id}|${styleOf(spec)}|${kindOf(spec)}`;
+
   function roster(ids) {
+    lastIds = ids;
     for (const [idx, f] of figures) if (ids[idx] !== f.id) retire(idx);
     ids.forEach((id, idx) => {
       if (figures.has(idx) || !id) return;
-      // A guard has no house of their own: they live in the guardhouse, and it is the one
-      // building a guard can be dressed against. The face comes from the guard's own id -
-      // settlerLook hashes it - so each is somebody, where dressing them from the building's
-      // id would have made every guard on the mountain the same man. lib/crowd.mjs passes
-      // the same three arguments, so the stride the sea gave them fits the legs drawn here.
-      const spec = byId.get(id) || (isGuard(id) ? byId.get(GUARDHOUSE_ID) : null);
+      const spec = specFor(id);
       if (!spec) return;                      // a settler whose house we have not got yet
       const kind = kindOf(spec);
       const look = settlerLook(id, styleOf(spec), kind);
@@ -136,9 +147,29 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     const f = figures.get(idx);
     if (!f) return;
     f.visible = false;
-    view.hide(f);
+    // Freed rather than hidden: the slot goes back to the view for whoever is enrolled next,
+    // which on the volcano - guards falling, Codex settlers arriving and leaving - is the
+    // difference between a crowd that lasts the evening and one that fills up.
+    if (view.free) view.free(f); else view.hide(f);
     figures.delete(idx);
     if (byIdx.get(f.id) === f) byIdx.delete(f.id);
+  }
+
+  // The island's buildings changed while it stands - the volcano's Codex houses (web/js/main.js,
+  // the `codex` message). Whoever now lives in a different building, or is dressed
+  // differently by it, is retired and enrolled again from the last roster, at the same index,
+  // with the new clothes; whoever was waiting for a house they can be dressed against is
+  // enrolled now; everybody else keeps their body and just learns their building. A retired
+  // body is hidden until the sea next places it, and the sea places everybody at once right
+  // after it sends the houses (lib/sea.mjs), so a move reads as a blink.
+  function setBuildings(list = []) {
+    byId = new Map(list.map((b) => [b.id, b]));
+    for (const [idx, f] of [...figures]) {
+      const spec = specFor(f.id);
+      if (!spec || dressOf(spec) !== dressOf(f.spec)) retire(idx);
+      else f.spec = spec;
+    }
+    roster(lastIds);
   }
 
   // Taken out of sight without being forgotten: a filter, a chronicle scrubbed back past
@@ -333,7 +364,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   }
 
   return {
-    roster, apply, applyRides, draw, dispose, setVisible,
+    roster, apply, applyRides, draw, dispose, setVisible, setBuildings,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

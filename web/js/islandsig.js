@@ -32,6 +32,13 @@ export const SOFT_FIELDS = new Set(['props', 'crops', 'placements', 'decks']);
 // that differed, and `active` and `lastAt` were the only two keys inside it. They are the
 // settler's state, not the building's shape, and neither changes a pixel of the ground.
 export const SOFT_BUILDING_FIELDS = new Set(['active', 'lastAt']);
+// And the Codex houses on the volcano, whole. They have a door of their own too - the sea
+// sends them in a `codex` message and guest-island.js raises and lowers them one at a time
+// (applyBuildings) - so a region that has taken them on board and one fetched afresh must
+// not read as two different islands. Only the volcano has any. The prefix is isCodex's in
+// shared/volcano.mjs, spelled out rather than imported so this file stays importable without
+// the `shared/` import map (tests/island-signature.test.mjs registers no loader).
+const SOFT_BUILDING = (b) => !!b && typeof b.id === 'string' && b.id.startsWith('codex:');
 
 export function drawnSignature(b) {
   if (!b || !b.island) return '';
@@ -39,7 +46,7 @@ export function drawnSignature(b) {
   for (const k of Object.keys(b)) {
     if (SOFT_FIELDS.has(k)) continue;
     if (k !== 'buildings') { out[k] = b[k]; continue; }
-    out.buildings = (b.buildings || []).map((x) => {
+    out.buildings = (b.buildings || []).filter((x) => !SOFT_BUILDING(x)).map((x) => {
       const kept = {};
       for (const f of Object.keys(x)) if (!SOFT_BUILDING_FIELDS.has(f)) kept[f] = x[f];
       return kept;

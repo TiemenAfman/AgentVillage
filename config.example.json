@@ -5,7 +5,9 @@
   "seed": 1337,
   "port": 4747,
   "gridSize": 64,
-  "codexIsland": { "enabled": true, "name": "Codex", "seed": 7331 },
+  "codexIsland": {
+    "enabled": true
+  },
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
   "network": {

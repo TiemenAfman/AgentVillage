@@ -25,7 +25,7 @@ import { overview, fileDiff, commitDetail, commitDiff, fetch as gitFetch, gitToo
 import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { guestVillage } from './lib/guestview.mjs';
-import { buildBundle, parseBundle, packParcel, beaconId } from './lib/islandbundle.mjs';
+import { buildBundle, parseBundle, packParcel, packCodex, beaconId } from './lib/islandbundle.mjs';
 import { createSea } from './lib/sea.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
@@ -35,7 +35,6 @@ import { buildBoat } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
-import { createHash } from 'node:crypto';
 import { executeCommand } from './lib/commands.mjs';
 
 const argv = process.argv.slice(2);
@@ -153,7 +152,6 @@ process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack :
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
 function shutdown(why) {
   try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
-  try { codexClient && codexClient.close(); } catch { /* same process, separate island */ }
   try { ownSea && ownSea.close(); } catch { /* and so does the sea, if it was ours */ }
   const stopped = stopAllAgents();
   const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
@@ -358,11 +356,13 @@ async function rescan(reason, opts = {}) {
     try { r = await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
       process.stderr.write(`[promptholm] rescan failed (${reason}): ${e && e.message}\n`);
     }
-    // The Codex neighbour rides in the same queue slot: its own layout and lock, so it
-    // never touches ours, but a scan per job keeps the two islands a minute apart at most.
+    // The Codex scan rides in the same queue slot: its own files and lock, so it never
+    // touches ours. What it produces is no longer an island - data/codex/village.json is
+    // only where codexSettlers() below reads this islander's Codex settlers from, for the
+    // sea to house on the volcano.
     if (config.codexIsland.enabled) {
       try { await scan({ codex: true, quiet: true }); }
-      catch (e) { log(`Codex island scan failed: ${e.message}`); }
+      catch (e) { log(`Codex scan failed: ${e.message}`); }
     }
     return r;
   };
@@ -380,8 +380,9 @@ async function rescan(reason, opts = {}) {
   // sent, so a scan that found nothing costs nothing - and a scan that found a house puts
   // it on everybody else's horizon within the minute rather than whenever they next
   // reload. This is the whole of "live, also between scans" for the shape of an island.
-  if (seaClient) seaClient.publish().catch(() => {});
-  if (codexClient) codexClient.publish().catch(() => {});
+  // The Codex settlers after the island, through their own door: they live on the volcano,
+  // not here, so they are not part of the bundle - see sendCodex in lib/seaclient.mjs.
+  if (seaClient) seaClient.publish().then(() => seaClient && seaClient.sendCodex()).catch(() => {});
   return r;
 }
 
@@ -420,7 +421,7 @@ const whoFor = (req) => {
 
 
 
-// The name this islander goes by on the sea, and on the Codex island it keeps.
+// The name this islander goes by on the sea.
 const islanderName = config.multiplayer.name || (() => {
   try { return os.userInfo().username; } catch { return os.hostname(); }
 })();
@@ -960,7 +961,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
     try { sea = setSea(body || {}); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     config.multiplayer.sea = sea;
     if (seaClient) { seaClient.close(); seaClient = null; }
-    if (codexClient) { codexClient.close(); codexClient = null; }
     // Raced, as a backstop, and deliberately kept even though the cause is fixed twice
     // over above and below. This await was measured holding the route for 62 seconds, and
     // the shape of that failure is the reason for the belt: the island ends up in no world
@@ -1438,14 +1438,24 @@ function keptToken(which) {
 const ISLAND_TOKEN = keptToken('home');
 let ownSea = null;
 let seaClient = null;
-let codexClient = null;
-const CODEX_ISLAND_ID = createHash('sha256').update(`${ISLAND_ID}:codex`).digest('hex').slice(0, 16);
 
-function codexBundle() {
+// This islander's Codex settlers, as the list the sea houses on its volcano.
+//
+// This used to be a whole second island: a Codex village published under an id of its own
+// (a hash of ours plus ":codex"), hostile, on a berth of its own, over a second sea client
+// with a second token. The sea has one hostile island now and it is its own, so all that
+// crosses is who the settlers are - packCodex runs the same redaction buildBundle does, so a
+// settler travels as `house:s3` and never as a session uuid, a prompt or a path. Read from
+// the Codex scan's village.json; its layout.json is still written by that scan and still
+// kept, but nothing places a house from it any more - the sea chooses the plot.
+//
+// Null when there is nothing to say: Codex switched off, or no Codex scan yet. An island
+// whose Codex village is empty sends an empty list, which takes its houses down.
+function codexSettlers() {
+  if (!config.codexIsland.enabled) return null;
   const village = readJson(filesFor({ codex: true }).village, null);
   if (!village) return null;
-  village.island.hostile = true;
-  return buildBundle({ config, village, id: CODEX_ISLAND_ID, keeper: islanderName });
+  return packCodex({ village });
 }
 
 // What this island looks like to the world. Built here, on the machine that holds the
@@ -1580,19 +1590,9 @@ async function putToSea() {
     key: cfg.key || null,
     name: islanderName,
     bundle: islandBundle,
+    codex: codexSettlers,
     log: (m) => log(`sea: ${m}`),
   });
-  // A second ordinary publisher lets the sea assign a permanent neighbouring berth.
-  // It carries only a redacted bundle; the sea never gets access to Codex's home.
-  if (config.codexIsland.enabled) {
-    // Let home claim its berth first, including when the sea starts empty.
-    await seaClient.publish();
-    codexClient = createSeaClient({
-      url, islandId: CODEX_ISLAND_ID, token: keptToken('codex'), key: cfg.key || null,
-      name: islanderName, bundle: codexBundle,
-      log: (m) => log(`Codex sea: ${m}`),
-    });
-  }
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {

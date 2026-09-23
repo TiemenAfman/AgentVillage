@@ -25,6 +25,7 @@ import * as THREE from 'three';
 import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding } from './buildings.js';
 import { housePlacement } from './house-placement.js';
+import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -43,7 +44,7 @@ const EMPTY_VILLAGE = {
 };
 
 export function createGuestIsland({
-  scene, region, buildings = [], material = null, modest = false,
+  scene, region, buildings: given = [], material = null, modest = false,
   month = new Date().getMonth(),
 }) {
   const terrain = region.terrain;
@@ -100,6 +101,10 @@ export function createGuestIsland({
   // a fountain, a chimney fire) are left off because each one needs a frame-by-frame update
   // and none of them changes what the place looks like from across the water.
   const records = [];
+  // Kept rather than read once: the volcano's Codex houses come and go while it stands (see
+  // applyBuildings below), and housePlacement and the yard nudge ask this list about a
+  // building's neighbours.
+  let buildings = given;
   const local = region.terrain;
   const plotCentre = (plot) => [plot.gx + plot.w / 2 - local.half, plot.gz + plot.d / 2 - local.half];
   const plotOf = (id) => {
@@ -122,41 +127,83 @@ export function createGuestIsland({
     return [dx * room(swap ? rz : rx), dz * room(swap ? rx : rz)];
   };
 
-  if (material) {
-    for (const spec of buildings) {
-      if (!spec || !spec.plot) continue;
-      let built;
-      try {
-        built = buildBuilding(spec, { modest });
-      } catch (e) {
-        // One building that will not build must not cost the island. Their bundle came off
-        // another machine, which may be running a version of buildings.js that knows a kind
-        // this one does not.
-        console.warn(`island: ${region.id} cannot build ${spec.id}: ${e && e.message}`);
-        continue;
-      }
-      const nudge = yardNudge(spec, built);
-      const pose = housePlacement(spec, built.bbox, buildings);
-      const c = plotCentre(spec.plot);
-      const x = c[0] + nudge[0] + pose.x;
-      const z = c[1] + nudge[1] + pose.z;
-      let y = local.worldHeight(x, z);
-      if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
-
-      const g = new THREE.Group();
-      g.position.set(x, y, z);
-      g.rotation.y = pose.yaw;
-      const mesh = new THREE.Mesh(built.geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      // Namespaced, and it has to be. Both islands have a `civic:board`, a `civic:townhall`
-      // and a `civic:tavern`, so a bare id put into state.byId would overwrite ours - and
-      // clicking their town hall would quietly open the dossier of our own.
-      mesh.userData.id = `guest:${region.id}:${spec.id}`;
-      g.add(mesh);
-      group.add(g);
-      records.push({ id: spec.id, spec, group: g, built, mesh });
+  function raise(spec) {
+    if (!spec || !spec.plot) return null;
+    let built;
+    try {
+      built = buildBuilding(spec, { modest });
+    } catch (e) {
+      // One building that will not build must not cost the island. Their bundle came off
+      // another machine, which may be running a version of buildings.js that knows a kind
+      // this one does not.
+      console.warn(`island: ${region.id} cannot build ${spec.id}: ${e && e.message}`);
+      return null;
     }
+    const nudge = yardNudge(spec, built);
+    const pose = housePlacement(spec, built.bbox, buildings);
+    const c = plotCentre(spec.plot);
+    const x = c[0] + nudge[0] + pose.x;
+    const z = c[1] + nudge[1] + pose.z;
+    let y = local.worldHeight(x, z);
+    if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
+
+    const g = new THREE.Group();
+    g.position.set(x, y, z);
+    g.rotation.y = pose.yaw;
+    const mesh = new THREE.Mesh(built.geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // Namespaced, and it has to be. Both islands have a `civic:board`, a `civic:townhall`
+    // and a `civic:tavern`, so a bare id put into state.byId would overwrite ours - and
+    // clicking their town hall would quietly open the dossier of our own.
+    mesh.userData.id = `guest:${region.id}:${spec.id}`;
+    g.add(mesh);
+    group.add(g);
+    const rec = { id: spec.id, spec, group: g, built, mesh, sig: shapeOf(spec) };
+    records.push(rec);
+    return rec;
+  }
+  if (material) for (const spec of buildings) raise(spec);
+
+  // What about a building decides how it is drawn: everything but the settler's own state -
+  // the same two fields islandsig.js leaves out of an island's signature for the same reason.
+  function shapeOf(spec) {
+    const kept = {};
+    for (const k of Object.keys(spec)) if (!SOFT_BUILDING_FIELDS.has(k)) kept[k] = spec[k];
+    return JSON.stringify(kept);
+  }
+
+  // The island's buildings changing while it stands - on the volcano, the Codex houses of
+  // every islander, which the sea sends whenever one of their lists changes (web/js/main.js,
+  // the `codex` message). Only what changed is touched: a house that is gone is taken down, a
+  // new one is raised, one whose shape changed is both, and everything else - the ground, the
+  // landscape, every other building - stays exactly as it stands. Rebuilding the region
+  // instead is ~550 ms of createLandscape for a tent (islandsig.js). Returns what it did, so
+  // the caller can hang the extras on what went up and give the walker new blockers.
+  function applyBuildings(next = []) {
+    buildings = next;
+    const want = new Map();
+    for (const spec of next) if (spec && spec.plot) want.set(spec.id, spec);
+    const added = [];
+    const removed = [];
+    for (let i = records.length - 1; i >= 0; i--) {
+      const rec = records[i];
+      const spec = want.get(rec.id);
+      if (spec && shapeOf(spec) === rec.sig) { rec.spec = spec; continue; }
+      group.remove(rec.group);
+      rec.built.geometry.dispose();
+      records.splice(i, 1);
+      removed.push(rec);
+    }
+    if (material) {
+      const standing = new Set(records.map((r) => r.id));
+      for (const spec of want.values()) {
+        if (standing.has(spec.id)) continue;
+        const rec = raise(spec);
+        if (rec) added.push(rec);
+      }
+    }
+    return { added, removed };
   }
 
   // The same rectangles main.js's blockersOf makes, moved into world coordinates. The
@@ -187,11 +234,12 @@ export function createGuestIsland({
     region,
     records,
     blockers,
+    applyBuildings,
     // Their season turns with ours and a tree felled over there falls rather than
     // vanishing. One call a frame; main.js walks the guests for the mills anyway.
     update: (dt, month2) => land.update(dt, month2),
     triangles: land.triangles,
-    buildingCount: records.length,
+    get buildingCount() { return records.length; },
     dispose: () => {
       land.dispose();
       scene.remove(group);

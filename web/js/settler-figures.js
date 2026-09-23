@@ -174,6 +174,12 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // also what lets a ray hit on a torso or a head name the person it belongs to.
   const roster = [];
   let slots = 0;
+  // Slots given back by `free`, taken again before the count grows. A crowd used to be
+  // enrolled once and thrown away whole, so a slot was never reused; the volcano's crowd
+  // runs for as long as the page does while guards fall and come back and islanders' Codex
+  // settlers arrive and leave, and every one of those that took a fresh slot would fill
+  // CAPACITY in an evening and leave the next arrival undrawn.
+  const spare = [];
   const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
   const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]));
   const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
@@ -207,7 +213,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const hats = new Map();
   for (const h of HAT_SHAPES) {
     if (h.id === 'none') continue;
-    hats.set(h.id, { mesh: makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y))), slots: 0 });
+    hats.set(h.id, { mesh: makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y))), slots: 0, spare: [] });
   }
 
   const hammerGeo = mergeGeometries([
@@ -226,9 +232,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // false when the crowd is full, which is the caller's cue to take the figure back out
   // again - a body with no slot would be stepped every frame and drawn nowhere.
   function enrol(f, look, kind) {
-    const slot = slots;
+    const slot = spare.length ? spare.pop() : slots;
     if (slot >= CAPACITY) return false;
-    slots++;
+    if (slot === slots) slots++;
     for (const m of body) m.count = slots;
     tint(torso, slot, look.tunic);
     for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
@@ -237,8 +243,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
     for (const mesh of [leftHand, rightHand, skinCore]) tint(mesh, slot, look.skin);
     const hatBucket = hats.get(look.hatShape) || null;
     let hatSlot = -1;
-    if (hatBucket && hatBucket.slots < CAPACITY) {
-      hatSlot = hatBucket.slots++;
+    if (hatBucket && (hatBucket.spare.length || hatBucket.slots < CAPACITY)) {
+      hatSlot = hatBucket.spare.length ? hatBucket.spare.pop() : hatBucket.slots++;
       hatBucket.mesh.count = hatBucket.slots;
       tint(hatBucket.mesh, hatSlot, look.hat);
     }
@@ -275,6 +281,19 @@ export function createFigures(scene, material, { armed = false } = {}) {
       f.hatBucket.mesh.setMatrixAt(f.hatSlot, tmpObj.matrix);
       f.hatBucket.mesh.instanceMatrix.needsUpdate = true;
     }
+  }
+
+  // Out of sight for good: hidden, and its slots handed back for the next one enrolled. The
+  // figure keeps nothing of them, so a figure freed and then drawn again would draw nowhere -
+  // the caller enrols a new one instead (web/js/crowd-view.js retire).
+  function free(f) {
+    if (f.slot == null) return;
+    hide(f);
+    if (roster[f.slot] === f) roster[f.slot] = null;
+    spare.push(f.slot);
+    if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.spare.push(f.hatSlot);
+    f.slot = null;
+    f.hatSlot = -1;
   }
 
   // Everything the eye sees, from where the walk has put everybody. `f.anim` is the whole
@@ -375,7 +394,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
     }
     roster.length = 0;
     slots = 0;
+    spare.length = 0;
   }
 
-  return { enrol, hide, draw, pickables, figureAt, dispose };
+  return { enrol, hide, free, draw, pickables, figureAt, dispose };
 }

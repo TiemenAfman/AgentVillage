@@ -11,8 +11,14 @@ Stap 0 t/m 4 van de volgorde zijn gebouwd op 23 september 2026: vrij zwemmen, st
 (`guardhouseSite()` in `shared/volcano.mjs`, voorlopig getekend als het kasteel), bewakers
 `guard:<n>` die meeschalen met het aantal online islanders (`lib/guards.mjs`; Codex-eilanden
 tellen niet mee, dus één islander telt één keer), lava die pijn doet (`lib/lava.mjs`) en die
-de A* van de bewakers mijdt, en geen pose meer vóór de pagina haar ligplaats kent. Stap 6 en
-verder is ontwerp.
+de A* van de bewakers mijdt, en geen pose meer vóór de pagina haar ligplaats kent. Stap 6 ook
+(dezelfde dag): elke islander stuurt een lijstje van zijn Codex-settlers door een nieuwe deur
+`POST /island/:id/codex` (`packCodex`/`parseCodex`, max. 60, achter de key en het claim-token),
+en de zee zet de huisjes op 134 vaste bouwplekken op de helling (`codexPlots`, hash op
+`codex:<island>:<id>` met lineair doorzoeken), de rest woont in het wachthuis, en de bewoners
+komen erbij in de lopende crowd (`lib/residents.mjs`). De pagina krijgt de huisjes via een
+`codex`-bericht zonder `rev` te verzetten. Het Codex-eiland per islander is weg. Stap 7 is
+ontwerp.
 
 ## Hoe het nu zit (gemeten in de sessie van 23-09)
 

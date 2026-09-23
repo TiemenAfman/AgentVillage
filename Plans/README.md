@@ -20,7 +20,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   vulkaan in het midden van de zee, van de zee zelf; meer islanders betekent meer bewakers, wie
   Codex-data heeft bouwt er huisjes op, lavastromen zoals de rivier. Daarbij: `hurt()` en health
   op de zee, stamina en Shift-turbo (rennen/zwemmen samen, boot apart) met rode en gele balken,
-  en vrij zwemmen in open zee. Stap 0 t/m 5 gebouwd op 23 september 2026: de vulkaan ligt in het midden met een wachthuis en bewakers die meeschalen met de islanders, en lava die pijn doet; Codex-huisjes erop nog niet.
+  en vrij zwemmen in open zee. Stap 0 t/m 6 gebouwd op 23 september 2026: de vulkaan ligt in het midden met een wachthuis en bewakers die meeschalen met de islanders, lava die pijn doet, en de Codex-huisjes van alle islanders door elkaar op de helling (het Codex-eiland per islander is weg). Stap 7 (modellen, echte health) is nog ontwerp.
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
