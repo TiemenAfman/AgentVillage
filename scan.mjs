@@ -18,6 +18,7 @@ import {
 import { hash32 } from './shared/rng.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan } from './lib/plan.mjs';
+import { builtBoats } from './lib/boatyard.mjs';
 
 export function parseArgs(argv) {
   const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null };
@@ -189,7 +190,7 @@ async function runScan(o) {
   }
   const placeMs = Date.now() - tp;
 
-  const village = assemble({ config, model, layout, terrain, size, all: o.all });
+  const village = assemble({ config, model, layout, terrain, size, all: o.all, boats: o.codex ? {} : builtBoats() });
   writeJsonAtomic(files.village, village);
   saveCache(files.cache, cache);
   if (o.persistLayout) saveLayout(files.layout, layout);
@@ -210,7 +211,7 @@ async function runScan(o) {
   return result;
 }
 
-function assemble({ config, model, layout, terrain, size, all }) {
+function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   const plot = (id) => {
     const p = layout.plots[id];
     return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
@@ -438,7 +439,8 @@ function assemble({ config, model, layout, terrain, size, all }) {
       // The island's harbours (lib/layout.mjs planHarbours): side, the shore cell the
       // planks start from, and the planks. The sides with none are left out; `side` says
       // which is which. The quay's own planks are one of these.
-      harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier })),
+      // `boats` is how many the keeper has built there (lib/boatyard.mjs, its own file).
+      harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier, boats: boats[h.side] || 0 })),
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: TOWN_CORE_R,
         // When the square reached each of its widths. The chronicle needs this to lay the

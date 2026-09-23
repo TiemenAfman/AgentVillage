@@ -32,6 +32,7 @@ import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
+import { buildBoat } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import os from 'node:os';
@@ -1306,6 +1307,22 @@ if (req.url === '/api/command' && req.method === 'POST') {
     } catch (e) {
       return json(res, 400, { error: String(e.message || e) });
     }
+  }
+
+  // ---- the boatyard ------------------------------------------------------------------
+  // Another boat at one of the harbours: the keeper's, and so not on PUBLIC_API - a visitor
+  // may sail an island's boats but not add to them. Free, three a harbour (lib/boatyard.mjs,
+  // Plans/vier-havens.md). The count lives in its own file; the rescan after it puts the
+  // count into village.json, every page of ours moors the new hull from that, and the
+  // publish the rescan ends with is how the sea and everybody else's page learn of it.
+  if (p === '/api/harbour/boat' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let done;
+    try { done = buildBoat(String((body || {}).side || '')); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    log(`built a boat at the ${done.side} harbour (${done.built} built there now)`);
+    await rescan('boat');
+    return json(res, 200, { ok: true, ...done });
   }
 
   // ---- the postbox on the town hall pavement ------------------------------------

@@ -79,5 +79,14 @@ c. meerdere ligplaatsen per haven in shared/ + de zee (fleet, boats, wire) → d
 - **(b) klaar.** `quaysOf` in `shared/quay.mjs` (één lijst voor pagina en straks zee; zonder
   havens de ene kade van vroeger); `docksFor`/`buildDocks` tekenen alle vier, ids
   `dock:<regio>:<kant>`; de prompt noemt de haven en zegt "no boat here" waar er geen ligt.
-- **Nog:** (c) ligplaatsen per haven in de zee + bundel, (d) boot bouwen (gratis, max. 3).
-  Andere eilanden zien de extra havens pas als de bundel `island.harbours` meestuurt (c).
+- **(c) klaar.** `mooringsFor` in `shared/quay.mjs`: de eerste boot houdt `boat:<regio>` en
+  zijn oude ligplaats (oudere pagina's en zeeën vinden hem zo), de rest is
+  `boat:<regio>-<kant><k>` op drie ligplaatsen per haven (weerszijden van de kop, en naast het
+  midden). De bundel draagt `island.harbours` met `boats`, streng in `parseBundle` (0..3, een
+  kant, planken); `lib/fleet.mjs` houdt per eiland de hele lijst ligplaatsen bij.
+- **(d) klaar.** B bij een eigen haven → `POST /api/harbour/boat` (alleen de keeper) → telling in
+  `data/boats.json` (`lib/boatyard.mjs`, een eigen bestand zodat `layout.json` één schrijver
+  houdt) → rescan → publish. De prompt zegt "B build a boat (1 of 3)"; `harbourSig` in
+  `applyVillage` laat de nieuwe boot verschijnen zonder herladen. Gemeten op een testserver:
+  twee boten bij noord, de oude bij oost, een vreemde Origin krijgt 403.
+- **Niet gedaan:** een haven verplaatsen in de planner; boten weer weghalen.

@@ -288,6 +288,27 @@ somebody who is *walking* — an islander's own socket presence is its join
 quiet closed those sockets too: forced republish, three rev bumps a minute, and every
 settler walking back to their own door, on every screen, every sixty seconds.
 
+**Four harbours, and boats counted rather than listed** ([Plans/vier-havens.md](Plans/vier-havens.md)).
+`layout.harbours` is one slot per side (`HARBOUR_SIDES`, n/e/s/w from the town centre),
+`null` like the fairway until planned, a `null` slot for a side with no open-water coast.
+`planHarbours` picks each with `pickPier` narrowed to its side, but the quay the island
+already shows *is* its side's harbour (`standingQuay`: the quay district's planks, else the
+landing-derived quay the page and the sea already drew) - so nothing anybody saw moves.
+Each harbour has a slipway `road:harbour:<n>` over the beach (BLOCKED, so forced back every
+scan like a polder causeway) and `road:harbour:<n>:approach` to the square, planned *after*
+`planBridge`, or an approach bridges the river first and the island's own bridge is never
+built. The page, the sea and every other page derive the same docks and boats without a
+message: `quaysOf` / `mooringsFor` in `shared/quay.mjs`, fed `island.harbours` (village.json,
+and the bundle - strict in `parseBundle`). The island's first boat keeps `boat:<region>` at
+the berth it always had, because older pages and seas find it by that id; the rest are
+`boat:<region>-<side><k>`, derived from a per-side count in `data/boats.json`
+(`lib/boatyard.mjs`, its own file so layout.json keeps one writer), capped at
+`BOATS_PER_HARBOUR` (3, the one copy) where it is made, where it arrives and where it is laid
+out. B at one of your own harbours posts `/api/harbour/boat` (keeper-only, not on
+`PUBLIC_API`); the rescan after it republishes, and `harbourSig` in `applyVillage` is what
+makes the new hull appear without a reload, since harbours are not districts. A bundle with no
+harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
+
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.

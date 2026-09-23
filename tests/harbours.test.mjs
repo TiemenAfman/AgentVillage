@@ -132,3 +132,50 @@ test('quaysOf hands back one dock per harbour, and the one quay of old without t
   assert.equal(one[0].side, null);
   assert.deepEqual(one[0].cells, layout.districts.quay.pier);
 });
+
+// Where the boats lie. The island's first boat keeps its id and its berth - an older page
+// finds it by that id - and counts towards its harbour's three; the rest follow from the
+// harbour alone, so every page and the sea moor them in the same place without a message.
+import { mooringsFor, mooringFor, planksOf, BOATS_PER_HARBOUR } from '../shared/quay.mjs';
+
+test('mooringsFor keeps the first boat where it was and adds the built ones, at most three a harbour', () => {
+  const seed = 7;
+  const layout = emptyLayout(seed, SIZE);
+  const { terrain } = placeAll(layout, village({ cowork: 5 }), { seed, size: SIZE });
+  const districts = [{ id: 'quay', pier: layout.districts.quay.pier, shore: layout.districts.quay.shore }];
+  const harbours = layout.harbours.filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier, boats: 0 }));
+  const v = { island: { landing: layout.landing, harbours }, districts };
+
+  const alone = mooringsFor('abc123', terrain, v, [300, 0]);
+  const old = mooringFor('abc123', terrain, layout.landing, [300, 0], planksOf(v));
+  assert.deepEqual(alone.map((m) => m.id), ['boat:abc123'], 'no boats built: the one boat of old, and only it');
+  assert.deepEqual([alone[0].x, alone[0].z, alone[0].yaw], [old.x, old.z, old.yaw], 'at exactly the berth it always had');
+
+  for (const h of harbours) h.boats = 9;                    // more than a harbour holds
+  const full = mooringsFor('abc123', terrain, v, [300, 0]);
+  assert.equal(full.length, harbours.length * BOATS_PER_HARBOUR, 'three a harbour, the first boat among them');
+  assert.equal(new Set(full.map((m) => m.id)).size, full.length, 'no two boats share an id');
+  assert.equal(new Set(full.map((m) => `${m.x.toFixed(2)},${m.z.toFixed(2)}`)).size, full.length, 'nor a berth');
+  for (const m of full) assert.match(m.id, /^boat:[a-z0-9-]{1,32}$/, `${m.id} fits lib/boats.mjs BOAT_ID`);
+  assert.ok(full.some((m) => m.id === 'boat:abc123'));
+  for (const m of full) assert.ok(terrain.isWater(Math.floor(m.x - 300 + terrain.half), Math.floor(m.z + terrain.half)), `${m.id} lies in water`);
+});
+
+// The boatyard: a count per side in its own file, capped where it is made.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { builtBoats, buildBoat } from '../lib/boatyard.mjs';
+
+test('the boatyard counts boats per harbour, three at most, and survives a missing file', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'boatyard-')), 'boats.json');
+  assert.deepEqual(builtBoats({ file }), { n: 0, e: 0, s: 0, w: 0 }, 'no file is no boats');
+  assert.deepEqual(buildBoat('n', { file }), { side: 'n', built: 1 });
+  buildBoat('n', { file });
+  buildBoat('n', { file });
+  assert.throws(() => buildBoat('n', { file }), /all the boats it can moor/);
+  assert.throws(() => buildBoat('up', { file }), /no up harbour/);
+  assert.deepEqual(builtBoats({ file }), { n: 3, e: 0, s: 0, w: 0 });
+  fs.writeFileSync(file, '{ not json');
+  assert.deepEqual(builtBoats({ file }), { n: 0, e: 0, s: 0, w: 0 }, 'a broken file is no boats, not an error');
+});

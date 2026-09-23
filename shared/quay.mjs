@@ -215,6 +215,61 @@ export function quaysOf(terrain, village, landing) {
   return one ? [{ ...one, side: null }] : [];
 }
 
+// How many boats one harbour can hold: three berths along five planks - either side of the
+// head, and one alongside the middle. lib/islandbundle.mjs refuses more, lib/layout.mjs
+// builds no more, and this lays out no more; it is the one copy of the number.
+export const BOATS_PER_HARBOUR = 3;
+
+// Where the k-th boat of a quay lies, in the quay's own coordinates. Berth 0 is quayFor's
+// own berth, so an island that had one boat still has it exactly where it was; 1 is the
+// mirror of it across the head; 2 is two planks in from the head on the first side.
+function berthOf(q, k) {
+  const side = [-q.dir[1], q.dir[0]];   // the side quayFor's berth is on
+  if (k === 0) return q.berth;
+  if (k === 1) return [q.head[0] - side[0] * 1.3, q.head[1] - side[1] * 1.3];
+  return [q.head[0] - q.dir[0] * 2 + side[0] * 1.3, q.head[1] - q.dir[1] * 2 + side[1] * 1.3];
+}
+
+// Every boat an island puts in the water, in the world frame - what lib/boats.mjs is
+// handed by the sea and what every page puts in the water itself, so that an untouched boat
+// lies in the same place on every screen without a message about it.
+//
+// The island's first boat keeps the id it always had, `boat:<region>`, and the berth it
+// always had - berth 0 of the harbour mooringFor would have put it at - because an older
+// page finds its boat by exactly that id and an older sea moors exactly that one. It counts
+// towards its harbour's three. Every other boat is `boat:<region>-<side><k>`: built by the
+// keeper (`harbours[].boats`, lib/layout.mjs), counted rather than listed, so its id and
+// berth follow from the harbour alone and need no message either. BOAT_ID in lib/boats.mjs
+// allows 32 characters after `boat:`; a 16-character island id and a three-character
+// suffix is 19.
+export function mooringsFor(regionId, terrain, village, origin = [0, 0]) {
+  const landing = village && village.island && village.island.landing;
+  if (!landing) return [];
+  const legacy = quayFor(terrain, landing, planksOf(village));
+  const harbours = (village.island && Array.isArray(village.island.harbours)) ? village.island.harbours : [];
+  const out = [];
+  let placedLegacy = false;
+  for (const q of quaysOf(terrain, village, landing)) {
+    const h = harbours.find((x) => x && x.side === q.side) || null;
+    const isLegacy = !!legacy && !placedLegacy && legacy.shore[0] === q.shore[0] && legacy.shore[1] === q.shore[1];
+    const built = Math.max(0, Math.min(BOATS_PER_HARBOUR, (h && Number.isInteger(h.boats)) ? h.boats : 0));
+    const n = Math.min(BOATS_PER_HARBOUR, built + (isLegacy ? 1 : 0));
+    for (let k = 0; k < n; k++) {
+      const [bx, bz] = berthOf(q, k);
+      const id = isLegacy && k === 0 ? `boat:${regionId}` : `boat:${regionId}-${q.side || 'q'}${k}`;
+      out.push({ id, x: bx + origin[0], z: bz + origin[1], yaw: q.yaw, side: q.side });
+    }
+    if (isLegacy) placedLegacy = true;
+  }
+  // The first boat is never lost: an island whose one quay is not among its harbours (the
+  // ground no longer agrees with them, say) still has the boat it always had.
+  if (legacy && !placedLegacy) {
+    const [bx, bz] = legacy.berth;
+    out.unshift({ id: `boat:${regionId}`, x: bx + origin[0], z: bz + origin[1], yaw: legacy.yaw, side: null });
+  }
+  return out;
+}
+
 // What lib/boats.mjs wants: one mooring per island, named after it. The id has to survive
 // BOAT_ID over there, and it has to be the same on both sides of the channel - so it is
 // built from the region's own id and nothing else.
