@@ -83,6 +83,7 @@ The **material name's prefix, up to the first colon, is the sheet tag**:
 | `stone` | rubble / paving | foundations, chimneys, plinths |
 | `plank` | boards along x | beams, doors, furniture |
 | `plankZ` | boards along z | the same boards turned a quarter, for a run along z |
+| `ground` | grass / river shingle | tent mounds, with a gradual turf-to-earth transition |
 
 Anything after the colon is for you: `wall:cream`, `plank:oak`, `plain:iron`. Any other
 prefix and the bake stops with the list it knows — quietly falling back to `plain` would

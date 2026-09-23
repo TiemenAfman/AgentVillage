@@ -669,15 +669,20 @@ export function createWalk(terrain, village = null) {
         }
       } else if (f.mode === 'hammer') {
         f.anim = 'hammer';
-        const dx = f.home[0] - f.pos[0], dz = f.home[1] - f.pos[1];
+        // Home is the doorstep, not the centre of the house. A ring around it put
+        // half the builders through the wall and made the others hammer away from it.
+        // Work on its outward side and face the building, independent of spawn jitter.
+        const [ox, oz] = DOOR_DIR[f.spec.plot?.rot | 0] || DOOR_DIR[0];
+        const clearance = f.spec.kind === 'shed' ? 0.20 : 0.35;
+        const dx = f.home[0] + ox * clearance - f.pos[0];
+        const dz = f.home[1] + oz * clearance - f.pos[1];
         const d = dist(dx, dz);
-        const want = 0.52;
-        if (Math.abs(d - want) > 0.08) {
-          const dir = d > want ? 1 : -1;
-          f.pos[0] += (dx / (d || 1)) * dir * 0.5 * dt;
-          f.pos[1] += (dz / (d || 1)) * dir * 0.5 * dt;
+        if (d > 0) {
+          const step = Math.min(d, 0.5 * dt);
+          f.pos[0] += (dx / d) * step;
+          f.pos[1] += (dz / d) * step;
         }
-        face(f, dx, dz, 0.15);
+        face(f, -ox, -oz, 0.15);
       } else if (f.chartered) {
         // Between the legs of somebody else's errand: off the planks and into the boat, or
         // standing on the quay waiting for a hull. Whoever chartered them says what happens

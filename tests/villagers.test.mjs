@@ -111,3 +111,39 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   for (const mesh of scene.children) mesh.geometry.dispose();
   material.dispose();
 });
+
+test('working hammers stay in the posed hand for every body size and beyond sixty builders', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
+  const view = createFigures(scene, material);
+  const figures = new Map();
+  for (let i = 0; i < 80; i++) {
+    const f = { id: `builder:${i}`, visible: true, pos: [i, -i], y: 0.4,
+      yaw: i * 0.37, anim: 'hammer', mode: 'hammer' };
+    view.enrol(f, settlerLook(f.id, 'sonnet'), i % 2 ? 'apprentice' : 'settler');
+    figures.set(f.id, f);
+  }
+  const hand = scene.children[7], hammers = scene.children.at(-1);
+  for (const dt of [0, 0.17, 0.31, 0.49]) {
+    view.draw(figures, dt);
+    assert.equal(hammers.count, figures.size);
+    for (const f of figures.values()) {
+      const handPose = new THREE.Matrix4(), hammerPose = new THREE.Matrix4();
+      hand.getMatrixAt(f.slot, handPose);
+      hammers.getMatrixAt(f.slot, hammerPose);
+      const grip = new THREE.Vector3(0.113, 0.19, 0.015);
+      assert.ok(grip.clone().applyMatrix4(handPose).distanceTo(grip.clone().applyMatrix4(hammerPose)) < 1e-6);
+      assert.deepEqual(hammerPose.elements, handPose.elements, 'the tool follows the full hand rotation and scale');
+      const vertices = hammers.geometry.attributes.position;
+      const head = new THREE.Vector3();
+      // The head is the second box: measure the actual geometry, not just its pose.
+      for (let i = 36; i < vertices.count; i++) head.add(new THREE.Vector3().fromBufferAttribute(vertices, i));
+      head.divideScalar(vertices.count - 36).applyMatrix4(hammerPose);
+      const fromHand = head.sub(grip.clone().applyMatrix4(handPose));
+      assert.ok(fromHand.dot(new THREE.Vector3(Math.sin(f.yaw), 0, Math.cos(f.yaw))) > .015,
+        'the hammer head stays in front of the fist, away from the shoulder');
+      assert.ok(fromHand.y > .015, 'the head is raised above the grip');
+    }
+  }
+  view.dispose();
+  material.dispose();
+});

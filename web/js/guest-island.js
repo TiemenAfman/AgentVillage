@@ -24,6 +24,7 @@
 import * as THREE from 'three';
 import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding } from './buildings.js';
+import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
@@ -155,7 +156,9 @@ export function createGuestIsland({
       mesh.userData.id = `guest:${region.id}:${spec.id}`;
       g.add(mesh);
       group.add(g);
-      records.push({ id: spec.id, spec, group: g, built, mesh });
+      const rec = { id: spec.id, spec, group: g, built, mesh };
+      if (spec.active) addScaffold(rec, material);
+      records.push(rec);
     }
   }
 

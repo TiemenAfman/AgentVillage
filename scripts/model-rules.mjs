@@ -13,7 +13,7 @@
 // and these are the ids buildings.js already carries on the vertex (see SHEET there).
 // `plain` is the default and the commonest: glass, ironwork, cloth and every small
 // painted thing read better flat.
-export const SHEETS = { plain: 0, wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5 };
+export const SHEETS = { plain: 0, wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5, ground: 6 };
 
 // And two sheets no building is drawn on. A building has one material and carries the
 // sheet as a number on the vertex; the forest cannot, because bark and needles have to

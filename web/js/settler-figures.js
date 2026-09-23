@@ -214,8 +214,14 @@ export function createFigures(scene, material, { armed = false } = {}) {
     paintGeo(new THREE.BoxGeometry(0.022, 0.16, 0.022), 0x8b5e3c),
     (() => { const g = new THREE.BoxGeometry(0.075, 0.05, 0.05); g.translate(0, 0.09, 0); return paintGeo(g, 0x3a3a3f); })(),
   ], false);
+  // Use the same rest grip and shoulder pose as the hand: a separate world-space
+  // swing loses contact as soon as the body turns, bobs or changes proportions.
+  // The resting fist points forward. An upright handle rotates back towards the
+  // shoulder when this arm rises; align it with the fist before posing the arm.
+  hammerGeo.rotateX(Math.PI / 2);
+  hammerGeo.translate(...RESIDENT_GRIP);
   hammerGeo.computeVertexNormals();
-  const hammers = new THREE.InstancedMesh(hammerGeo, material, 64);
+  const hammers = new THREE.InstancedMesh(hammerGeo, material, CAPACITY);
   hammers.count = 0;
   hammers.frustumCulled = false;
   scene.add(hammers);
@@ -297,18 +303,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : 0;
 
-      if (hammering && hammerCount < 60) {
-        // The hammer is held in a hand, so it hangs off whatever size that settler is:
-        // an apprentice's is a small hammer at an apprentice's height.
-        const s = f.baseScale * f.look.height;
-        const swing = -1.15 + 0.75 * (0.5 + 0.5 * Math.sin(time * 8 + f.phase));
-        tmpObj.position.set(f.pos[0] + Math.sin(f.yaw) * 0.16 * s, f.y + 0.26 * s, f.pos[1] + Math.cos(f.yaw) * 0.16 * s);
-        tmpObj.rotation.set(0, f.yaw, swing);
-        tmpObj.scale.setScalar(s);
-        tmpObj.updateMatrix();
-        hammers.setMatrixAt(hammerCount++, tmpObj.matrix);
-      }
-
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
@@ -333,6 +327,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle);
       setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+      if (hammering) setPosed(hammers, hammerCount++, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
       if (armed) {
         // A settler at work puts the sword away for the hammer rather than holding both in
         // one fist; the torch stays lit in the other hand.

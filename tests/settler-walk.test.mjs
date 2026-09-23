@@ -283,3 +283,21 @@ test('quay residents use the permanent deck before browser measurements arrive',
   const land = terrain.cellWorld(10, 10);
   assert.equal(walk.groundOrDeck(...land), terrain.worldHeight(...land), 'ordinary ground keeps its own height');
 });
+
+test('builders stand outside their doorstep and face the house at every rotation', () => {
+  const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  for (const kind of ['house', 'shed']) for (let rot = 0; rot < 4; rot++) {
+    const walk = createWalk(makeTerrain(SEED, { size: SIZE }));
+    const [ox, oz] = directions[rot];
+    for (let i = 0; i < 20; i++) {
+      walk.spawn(`builder:${i}`, { kind, plot: { rot } }, [0, 0, 0], { mode: 'hammer' });
+    }
+    walk.advance(100);
+    for (const f of walk.figures.values()) {
+      assert.equal(f.anim, 'hammer');
+      assert.ok(Math.abs(f.pos[0] - ox * (kind === 'shed' ? .66 : 1.20)) < 1e-8);
+      assert.ok(Math.abs(f.pos[1] - oz * (kind === 'shed' ? .66 : 1.20)) < 1e-8);
+      assert.ok(f.face[0] * -ox + f.face[1] * -oz > 0, 'look towards the house');
+    }
+  }
+});

@@ -78,7 +78,7 @@ const texLoader = new THREE.TextureLoader();
 // multiplies out, so a building with no textures is the building the island always drew.
 const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 BLANK.needsUpdate = true;
-const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank' };
+const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank', grass: 'uGrass', earth: 'uEarthDetail' };
 const sheetUsers = [];               // the uniform block of every material handed out
 function loadSheet(name, slot) {
   texLoader.load(textureUrl(name), (tex) => {
@@ -94,6 +94,8 @@ loadSheet('wall-plaster', 'wall');
 loadSheet('roof-tile', 'roof');
 loadSheet('stone-stacked', 'stone');
 loadSheet('plank', 'plank');
+loadSheet('grass', 'grass');
+loadSheet('river-shingle', 'earth');
 
 // What a part is drawn on. Zero - no sheet at all - is the default and stays the default:
 // glass, ironwork, cloth, paper and every small painted thing are better flat.
@@ -101,7 +103,7 @@ loadSheet('plank', 'plank');
 // the sheet's own x, so a deck that runs north-south wants them turned a quarter, and
 // the shader does that by reading the position and the normal back to front rather than
 // by carrying a second copy of the wood.
-const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5 };
+const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5, ground: 6 };
 const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
 
 // ---------------------------------------------------------------- material
@@ -110,6 +112,7 @@ export function createBuildingMaterial() {
   mat.userData.uniforms = {
     uNight: { value: 0 },
     uWall: { value: BLANK }, uRoof: { value: BLANK }, uStone: { value: BLANK }, uPlank: { value: BLANK },
+    uGrass: { value: BLANK }, uEarthDetail: { value: BLANK },
   };
   sheetUsers.push(mat.userData.uniforms);
   mat.onBeforeCompile = (shader) => {
@@ -119,6 +122,8 @@ export function createBuildingMaterial() {
     shader.uniforms.uRoof = u.uRoof;
     shader.uniforms.uStone = u.uStone;
     shader.uniforms.uPlank = u.uPlank;
+    shader.uniforms.uGrass = u.uGrass;
+    shader.uniforms.uEarthDetail = u.uEarthDetail;
     const glsl = (...lines) => lines.join(String.fromCharCode(10));
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', glsl(
@@ -154,6 +159,8 @@ export function createBuildingMaterial() {
         'uniform sampler2D uRoof;',
         'uniform sampler2D uStone;',
         'uniform sampler2D uPlank;',
+        'uniform sampler2D uGrass;',
+        'uniform sampler2D uEarthDetail;',
         'vec3 islandSheet(sampler2D m, vec3 p, vec3 n, float s) {',
         '  vec3 w = n * n;',
         '  w /= max(1e-4, w.x + w.y + w.z);',
@@ -171,7 +178,16 @@ export function createBuildingMaterial() {
         // island, and the paving is meant to keep the deepest tone here, so a plinth takes
         // under two thirds of the sheet.
         '  float sk = 1.0;',
-        '  if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
+        // The same three-unit grass grain and shingle scale as the terrain. A noisy
+        // crossfade lets turf run down the shoulders instead of meeting a solid band.
+        '  if (vSheet > 5.5) {',
+        '    vec3 grass = texture2D(uGrass, vSheetPos.xz / 3.0).rgb;',
+        '    vec3 earth = islandSheet(uEarthDetail, vSheetPos, sn, .72) * 1.27;',
+        '    float fleck = texture2D(uGrass, vSheetPos.xz * 2.7).r;',
+        '    float turf = smoothstep(.015, .18, vSheetPos.y + (fleck-.5)*.10);',
+        '    sc = mix(earth, grass, turf);',
+        '  }',
+        '  else if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
         '  else if (vSheet > 3.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.3); }',
         '  else if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 1.0); sk = 0.62; }',
         '  else if (vSheet > 1.5) { sc = islandSheet(uRoof, vSheetPos, sn, 1.0); }',
@@ -182,7 +198,7 @@ export function createBuildingMaterial() {
         '#include <emissivemap_fragment>',
         'totalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);'));
   };
-  mat.customProgramCacheKey = () => 'settlers-emissive';
+  mat.customProgramCacheKey = () => 'settlers-emissive-ground-v1';
   return mat;
 }
 
@@ -769,6 +785,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   if (tier === 0) {                                   // tent
     if (models.hasAsset('prop_tent')) {
       for (const g of meshAsset('prop_tent', tentTint(pal))) parts.push(g);
+      parts.push(...meshAsset('addon_tent_camp'));
       return { anchors, height: assetRise('prop_tent'), w: 0.8, yard: yard(parts) };
     }
     // The tent the island drew before Blender, and what a checkout with no props-mesh.js
@@ -1846,7 +1863,7 @@ function turnAround(parts, anchors, animated) {
   for (const a of Object.values(animated)) if (a && a.at) a.at = [-a.at[0], a.at[1], -a.at[2]];
 }
 
-function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD]) {
+function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD], earthen = false) {
   const r = groundRect(parts);
   if (!r) return;
   for (const g of parts) lift(g, PORCH_RISE);
@@ -1854,6 +1871,15 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   for (const a of Object.values(animated)) if (a && a.at) a.at = [a.at[0], a.at[1] + PORCH_RISE, a.at[2]];
 
   const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
+  if (earthen) {
+    // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
+    // plateau to the actual tent, while keeping the top exactly under the groundsheet.
+    parts.push(...meshAsset('addon_tent_mound', 0xffffff, {
+      x, y: -PORCH_SKIRT, z,
+      sx: r.x1 - r.x0 + .05, sy: PORCH_SKIRT + PORCH_RISE, sz: r.z1 - r.z0 + .05,
+    }));
+    return;
+  }
   // Two courses, not one: the lower is wider and comes up half way, so whichever side the
   // door is on there is something to step onto before the floor. One tall kerb all round
   // would have left every door on the island opening onto a drop.
@@ -1941,7 +1967,7 @@ export function buildBuilding(spec, ctx = {}) {
   // keeps every settler on the island walking the lines it already walks.
   const wallRects = footprintOf(parts, WALK_CLEARANCE / s);
   if (wantsPorch(spec)) {
-    porch(parts, anchors, animated, porchOverhang(spec));
+    porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
   }
   // And the yard last of all, which is the whole reason houseBody() handed it back rather
