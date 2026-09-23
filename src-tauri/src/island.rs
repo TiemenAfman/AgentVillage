@@ -68,7 +68,7 @@ pub fn plan() -> Plan {
 
 /// The folder serve.mjs lives in. Five places to look, in the order they are likely to be
 /// right:
-///   SETTLERS_ROOT          somebody said so
+///   PROMPTHOLM_ROOT          somebody said so
 ///   app\ beside the exe    an unpacked release: both exes and the island they run, in one
 ///                          folder that can stand anywhere
 ///   CARGO_MANIFEST_DIR/..  where this binary was built from - correct for `tauri dev` and
@@ -80,7 +80,7 @@ pub fn plan() -> Plan {
 pub fn find_root() -> Option<PathBuf> {
     let is_root = |p: &Path| p.join("serve.mjs").is_file();
 
-    if let Ok(v) = std::env::var("SETTLERS_ROOT") {
+    if let Ok(v) = std::env::var("PROMPTHOLM_ROOT") {
         let p = PathBuf::from(v.trim());
         if is_root(&p) {
             return Some(p);
@@ -263,7 +263,7 @@ pub fn spawn_if_asked() -> bool {
             let mut cmd = Command::new(&exe);
             cmd.arg("--port")
                 .arg(port.to_string())
-                .env("SETTLERS_ROOT", &root)
+                .env("PROMPTHOLM_ROOT", &root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());

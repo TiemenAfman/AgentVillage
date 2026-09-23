@@ -466,7 +466,7 @@ it on screen and names who.
 **The server is dangerous on purpose.** `/api/assign` spawns real Claude Code sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
 loopback socket, a known `Host` and a matching `Origin`, and never reads
-`X-Forwarded-For`. The ceiling is `SETTLERS_MAX_AGENTS` (4). Put any new write route behind
+`X-Forwarded-For`. The ceiling is `PROMPTHOLM_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
@@ -577,7 +577,7 @@ to the island once the port is up; the splash asks Rust to begin (`start_island`
 event is emitted before anybody listens. Links to other sites (`on_new_window`,
 `on_navigation`) go to the system browser, so a Jira ticket cannot replace the island with
 no back button. Port order is `--port` → `PORT` → `config.json` → 4747, the same as
-`serve.mjs`; `--url` attaches to an island elsewhere and starts nothing; `SETTLERS_ROOT`
+`serve.mjs`; `--url` attaches to an island elsewhere and starts nothing; `PROMPTHOLM_ROOT`
 tells a stray exe where the checkout is. The window is built in Rust, not declared in
 `tauri.conf.json`, because `additional_browser_args` (which *replaces* Tauri's default
 `--disable-features=…`, so that has to be repeated) and the two navigation hooks only exist on
@@ -614,12 +614,15 @@ alternative was tried, what broke, which number this is the only copy of — and
 files set a high bar for that; match it rather than stripping it back.
 
 The product is **Promptholm** everywhere: the npm package, the crate, both exes
-(`promptholm.exe`, `promptholm-island.exe`), the `.blend` sources, titles and log prefix. The
-exceptions are deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming
-it is the owner's call), `AgentVillage.freeddns.org` is a real hostname, and the `SETTLERS_*`
-variables below are what existing machines already have set.
+(`promptholm.exe`, `promptholm-island.exe`), the `.blend` sources, titles, log prefix and every
+environment variable (`PROMPTHOLM_*`; the old `SETTLERS_*` names are gone, with no fallback).
+"Settlers" survives only as what the island's inhabitants are called (`web/js/settlers.js`,
+`village.settlers`), which is the game's vocabulary rather than its name. The exceptions are
+deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming it is the
+owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
-`SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,
-`CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
+`PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
+`PROMPTHOLM_CODEX_HOME`, `PROMPTHOLM_ROOT` (which checkout the exes run), `PROMPTHOLM_HOME`
+(where config.json and data/ live), `CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
 `SEA_KEY`.

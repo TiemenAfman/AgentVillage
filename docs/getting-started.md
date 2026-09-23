@@ -72,5 +72,5 @@ or whose `Origin` is not the island itself. That matters more than it looks: the
 can start unattended Claude agents with full permissions in any folder, so it must never
 be reachable from the network or from another website in your browser.
 
-At most four agents run at once. The ceiling is `SETTLERS_MAX_AGENTS`, and they are
+At most four agents run at once. The ceiling is `PROMPTHOLM_MAX_AGENTS`, and they are
 stopped when the server shuts down.

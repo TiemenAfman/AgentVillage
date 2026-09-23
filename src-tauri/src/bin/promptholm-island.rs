@@ -304,7 +304,7 @@ fn open_window(keeper: &Keeper) {
         return;
     };
     let mut cmd = Command::new(exe);
-    cmd.arg("--port").arg(keeper.port.to_string()).env("SETTLERS_ROOT", &keeper.root);
+    cmd.arg("--port").arg(keeper.port.to_string()).env("PROMPTHOLM_ROOT", &keeper.root);
     if cmd.spawn().is_err() {
         shell_open(&keeper.url());
     }

@@ -43,7 +43,7 @@ bij inloggen is een snelkoppeling naar `promptholm-island.exe` in `shell:startup
 ## Geen installer
 
 `npm run app:build` is `tauri build --no-bundle` en NSIS staat uit (`bundle.active: false`):
-een geïnstalleerde kopie in Program Files vindt de checkout niet zonder `SETTLERS_ROOT`, en
+een geïnstalleerde kopie in Program Files vindt de checkout niet zonder `PROMPTHOLM_ROOT`, en
 `serve.mjs` en `data/` stáán in de checkout. De twee exe's in `target/release/` vinden hem
 vanzelf (`CARGO_MANIFEST_DIR`). `npm run app` bouwt eerst de islander, omdat `tauri dev`
 alleen de bin draait die het start en het venster anders naar node zonder tray terugvalt.
