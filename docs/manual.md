@@ -15,8 +15,10 @@ you are looking at. This is the rest.
 
 The island is two programs, built together from `src-tauri/` by `npm run app:build` into
 `src-tauri/target/release/` (`npx tauri build --debug --no-bundle` for the debug pair in
-`src-tauri/target/debug/`). There is no installer: both find the checkout they were built
-from, which is where `serve.mjs` and `data/` are.
+`src-tauri/target/debug/`). Built like that they run the checkout they were built from.
+The release zip (`npm run app:pack` lays it out) is the other way round: one folder with
+both exes and the island in `app\`, unpacked anywhere, keeping its config and data in
+`%LOCALAPPDATA%\Promptholm`.
 
 | | |
 |---|---|

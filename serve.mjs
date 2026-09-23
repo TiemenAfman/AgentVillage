@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, OPEN_SEA, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -954,13 +954,17 @@ if (req.url === '/api/command' && req.method === 'POST') {
   if (p === '/api/seas') {
     const cfg = config.multiplayer.sea || {};
     const candidates = new Map();
-    const offer = (o) => { if (o && o.url && !candidates.has(o.url)) candidates.set(o.url, o); };
+    // Keyed on the address as URL() spells it, so the open sea saved in `known` with its
+    // own spelling is still one row, and the one saying 'open'.
+    const spell = (u) => { try { return new URL(String(u)).href; } catch { return String(u); } };
+    const offer = (o) => { if (o && o.url && !candidates.has(spell(o.url))) candidates.set(spell(o.url), o); };
 
     if (ownSea) {
       const addr = ownSea.address();
       const mode = cfg.mode === 'host' ? 'host' : 'single';
       if (addr) offer({ url: seaUrlFor(req), name: seaNameOf(config), from: mode, mine: true });
     }
+    offer({ url: OPEN_SEA, name: 'The open sea', from: 'open' });
     for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
     for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
     if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });

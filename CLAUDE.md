@@ -422,10 +422,14 @@ The same key also guards `/island/:id` and `/island/:id/parcel`, not only the so
 this an islander refused at the handshake still parked its bundle over HTTP under a token
 that outlived the refusal, for good.
 
-The islander's own line (`lib/seaclient.mjs`) gives up only on `version` and `key`;
-`claimed` and `full` are waited out with backoff. `claimed` is what every islander restart
-meets — the previous process's claim sits out `GRACE_MS` — and giving up on it left the
-island HTTP-only: "keeper away", swept, back on the next changed scan, gone again.
+**While the islander runs, the sea keeps its island.** The claim token is kept in
+`data/sea-token.json` (home and Codex), not minted per process: a fresh token made every
+tray restart a stranger to its own island, refused as `claimed` until the old claim's
+`GRACE_MS` ran out. `onClose` in `lib/sea.mjs` does not mark an island quiet while another
+islander socket still holds it — the old line dying after the new one joined used to get a
+live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`; `claimed`
+and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
+back on the next changed scan, gone again.
 
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
@@ -547,6 +551,18 @@ outside, so that pipe is how Stop is polite, and why a killed islander exe leave
 behind. One islander per port (named mutex); an island started by hand is adopted, and its
 Stop is `kill_listener` (netstat for the pid, `taskkill /f`). `src/island.rs` is shared by both
 through `#[path]`, so it must never reach for Tauri. Neither exe has a console, in debug too.
+**A release is a folder, not a checkout**: `npm run app:pack` (`scripts/pack-release.mjs`)
+lays out `dist/Promptholm/` - both exes, and the island in `app/` beside them, copied *by
+name* like `Dockerfile.sea` (a runtime import from a new top-level folder must be added to
+its list). `app/release.json` is the marker, and it moves the island's own files: `HOME` in
+`lib/paths.mjs` (config.json, data/, .env) is `%LOCALAPPDATA%\Promptholm` for a release and
+`ROOT` for a checkout, decided from the files alone because the session hook runs with none
+of our environment; `home()` in `src/island.rs` is the same rule and must stay it, or the
+tray's log and the server's are two files. `PROMPTHOLM_HOME` overrides both - use it to try
+a pack without founding a second island. The islander runs `setup.mjs --first-run` when
+HOME has no config.json (leaves an existing hook alone, since it may be a checkout's), tells
+the user in a message box when there is no node, and leaves the folder it ran from in
+`%LOCALAPPDATA%\Promptholm\checkout.txt` so a stray exe elsewhere can still find the island.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
 starts the islander exe next to it (node directly when that exe is missing).
 **The islander outlives the window, and there is never more than

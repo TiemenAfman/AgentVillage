@@ -31,5 +31,5 @@ data/guests/
 data/placements.json
 /.vs/
 
-# The islander and the viewer, unpacked from a GitHub release (src-tauri/release-readme.txt)
-/bin/
+# A release laid out by scripts/pack-release.mjs
+/dist/

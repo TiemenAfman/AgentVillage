@@ -13,6 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CONFIG_FILE } from '../lib/paths.mjs';
+
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const SETTINGS = path.join(CLAUDE_HOME, 'settings.json');
@@ -21,6 +23,11 @@ const HOOK = path.join(ROOT, 'hooks', 'on-session.mjs');
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry-run');
 const UNINSTALL = argv.includes('--uninstall');
+// What promptholm-island.exe passes on the first start of an unpacked release. The one
+// difference: a hook that is already there is left alone, because on a machine that also
+// has a checkout it points at that checkout's island, and quietly moving it to a copy
+// somebody unpacked on the desktop to try would take the sessions away from the real one.
+const FIRST_RUN = argv.includes('--first-run');
 
 const say = (s) => process.stdout.write(`${s}\n`);
 const step = (s) => say(`  ${s}`);
@@ -44,7 +51,9 @@ function writeJson(file, value) {
 
 // ---------------------------------------------------------------- config
 function ensureConfig() {
-  const file = path.join(ROOT, 'config.json');
+  // CONFIG_FILE, not ROOT: an unpacked release keeps its config in %LOCALAPPDATA%\Promptholm
+  // (see HOME in lib/paths.mjs), and this has to write where the server will read.
+  const file = CONFIG_FILE;
   if (fs.existsSync(file)) {
     const cfg = readJson(file, {});
     step(`config.json is already there (island "${cfg.islandName || 'unnamed'}"${cfg.foundedAt ? `, founded ${new Date(cfg.foundedAt).toLocaleDateString()}` : ', not yet founded'})`);
@@ -71,6 +80,10 @@ function installHook() {
   const settings = readJson(SETTINGS, {});
   const before = JSON.stringify(settings);
   const hooks = currentHooks(settings);
+  if (FIRST_RUN && ['SessionStart', 'SessionEnd'].some((e) => hooks[e].some((g) => (g.hooks || []).some(isOurs)))) {
+    step('a Promptholm hook is already installed; left as it is (run setup by hand to point it here)');
+    return;
+  }
 
   let added = 0;
   let updated = 0;
@@ -150,8 +163,13 @@ try {
     ensureConfig();
     installHook();
     checks();
-    say('\nReady. Start it with:  npm run dev');
-    say('Or, with Rust installed, npm run app for its own window.\n');
+    // On a first run the islander is about to start the island itself, and there is no
+    // npm in an unpacked release to point anybody at.
+    if (FIRST_RUN) say('\nReady.\n');
+    else {
+      say('\nReady. Start it with:  npm run dev');
+      say('Or, with Rust installed, npm run app for its own window.\n');
+    }
   }
 } catch (e) {
   process.stderr.write(`\nsetup failed: ${e.message}\n`);

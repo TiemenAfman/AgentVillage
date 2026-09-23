@@ -56,3 +56,21 @@ geen Rust nodig heeft. Alleen de exe's, geen broncode: ze draaien de checkout wa
 uitgepakt worden (`<checkout>in\`, gitignored) en vinden die door omhoog te lopen. De tag
 moet gelijk zijn aan `version` in `src-tauri/tauri.conf.json`. Niet gesigneerd, dus
 SmartScreen vraagt de eerste keer.
+
+## Een release is een map, geen checkout (0.1.1)
+
+v0.1.0 bleek alleen te werken als je de zip in een checkout uitpakte: op het bureaublad
+vond de viewer niets om te starten. Nu is de zip de hele app: beide exe's naast elkaar en
+het eiland in `app\` ernaast (`scripts/pack-release.mjs`, lijst op naam zoals
+`Dockerfile.sea`). Alleen Node moet op de machine staan; ontbreekt die, dan zegt de
+islander dat in een melding.
+
+- **Waar de eigen bestanden staan.** `app\release.json` markeert een release; dan staan
+  `config.json`, `data\` en `.env` in `%LOCALAPPDATA%\Promptholm` (`HOME` in
+  `lib/paths.mjs`, `home()` in `island.rs`), zodat een nieuwe versie eroverheen uitpakken of
+  de map verplaatsen het eiland niet opnieuw sticht. Een checkout houdt ze bij zich.
+- **Eerste start** = `setup.mjs --first-run`: config stichten en de hook zetten, maar een
+  bestaande Promptholm-hook laten staan (die kan van een checkout op dezelfde machine zijn).
+- **`checkout.txt`** in `%LOCALAPPDATA%\Promptholm`: de islander noteert waar hij draaide,
+  zodat een losse exe elders het eiland nog vindt. En een viewer zonder iets om te starten
+  wacht 8 s op de poort voor hij opgeeft - een herstart duurt ~1 s.

@@ -1,9 +1,9 @@
-# Builds the islander and the viewer and hangs them on a GitHub release, so that somebody
-# with a checkout does not need Rust to have them.
+# Builds Promptholm and hangs it on a GitHub release, so that nobody needs a checkout or
+# Rust to have it.
 #
-# A release is the two exes and nothing else: serve.mjs, web/ and the vendored three.js are
-# the checkout's, and node still runs the island. Both exes find the checkout by walking up
-# from their own folder, so the zip is meant to be unpacked into <checkout>\bin\ (gitignored).
+# A release is one folder that stands anywhere: both exes side by side, and the island they
+# run in app\ next to them (scripts/pack-release.mjs lays it out). Node is the only thing it
+# needs from the machine; config and data go to %LOCALAPPDATA%\Promptholm.
 #
 # To release: bump "version" in src-tauri/tauri.conf.json, commit, then tag and push it -
 #   git tag v0.2.0 && git push origin v0.2.0
@@ -56,10 +56,8 @@ jobs:
         shell: pwsh
         run: |
           $name = 'promptholm-windows-x64'
-          New-Item -ItemType Directory $name | Out-Null
-          Copy-Item src-tauri/target/release/promptholm-island.exe, src-tauri/target/release/promptholm.exe $name
-          Copy-Item src-tauri/release-readme.txt "$name/README.txt"
-          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          node scripts/pack-release.mjs
+          Compress-Archive -Path dist/Promptholm/* -DestinationPath "$name.zip"
           # WriteAllText and a bare \n: Set-Content ends the line in CRLF, and `sha256sum -c`
           # then looks for a file whose name ends in \r (v0.1.0 shipped like that).
           $line = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip`n"

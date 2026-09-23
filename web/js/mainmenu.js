@@ -87,8 +87,11 @@ export function createMainMenu({
     const said = o.up
       ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'}, ${o.players ?? 0} aboard${o.keyed ? ', needs a key' : ''}`
       : esc(o.why || 'no answer');
-    const from = o.from === 'network' ? 'on this network'
-      : o.from === 'known' ? 'always on'
+    // 'open' is the one sea every island offers (OPEN_SEA in lib/paths.mjs). 'known' used
+    // to be labelled "always on" because the always-on sea used to live in that list; it
+    // is only what the keeper has saved now.
+    const from = o.from === 'open' ? 'always on'
+      : o.from === 'network' ? 'on this network'
         : o.mine ? 'yours' : 'saved';
     // Only the saved ones can be forgotten. One found on the network is not ours to
     // forget - it will be back the next time it is announced - and the sea we are in is

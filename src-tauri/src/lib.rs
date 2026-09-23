@@ -35,6 +35,10 @@ const BROWSER_ARGS: &str =
 /// before it listens, and a village of a few hundred sessions takes a while to read.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a window with no checkout to start from waits for an island that may only be
+/// restarting before it says it cannot find one.
+const NO_ROOT_GRACE: Duration = Duration::from_secs(8);
+
 struct Island {
     plan: Mutex<island::Plan>,
     /// One bring-up at a time: a second Try again while the first is still waiting would
@@ -109,11 +113,17 @@ fn bring_up(app: AppHandle) {
                         )),
                     },
                 }
+            } else if island::wait(plan.port, NO_ROOT_GRACE).is_some() {
+                // Nothing to start it from, but an island that is only restarting - its tray's
+                // Restart, a server change - is back within a second or two. Measured: a
+                // viewer opened during such a restart gave up in the one second it was down.
+                show(&app, &plan.url);
             } else {
                 fail(format!(
-                    "Nothing is listening on port {}, and this window does not know where the \
-                     island's folder is. Start the island yourself (promptholm-island.exe), or set \
-                     SETTLERS_ROOT to the checkout and try again.",
+                    "Nothing is listening on port {}, and this copy of Promptholm is not inside \
+                     a checkout, so it has nothing to start the island from. Start \
+                     promptholm-island.exe from your checkout once - after that every copy on \
+                     this machine can find it - or unpack this one into <checkout>\\bin\\.",
                     plan.port
                 ));
             }
