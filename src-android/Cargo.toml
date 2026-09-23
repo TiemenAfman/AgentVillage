@@ -1,0 +1,25 @@
+[package]
+name = "promptholm-android"
+version = "0.1.1"
+description = "Promptholm on a phone: web/ carried inside the app, joining one sea - see Plans/eiland-op-android.md"
+authors = ["Martijn Jansen"]
+edition = "2021"
+
+# Its own crate rather than a target of src-tauri: that one is two Windows exes around an
+# islander (tray-icon, tao, windows-sys, node as a child), and none of it exists on a phone.
+[lib]
+name = "promptholm_android_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

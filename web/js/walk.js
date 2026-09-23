@@ -573,7 +573,7 @@ export function createWalkMode({
     return true;
   }
 
-  function enter({ at, facing, blockers, interactables, onInteract, onSendAway, onPlant,
+  function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap }) {
     state.blockers = blockers || [];
     state.interactables = interactables || [];
@@ -598,7 +598,9 @@ export function createWalkMode({
     standUp();
     // look at whatever we were dropped in front of, so the camera stays behind us
     state.yaw = state.camYaw = facing ? Math.atan2(facing[0] - x, facing[1] - z) : 0;
-    state.camPitch = 0.44;   // high enough to look over the treetops
+    // High enough to look over the treetops. Out at sea there are none, and the one thing
+    // worth seeing is a coast on the horizon, which 0.44 puts above the top of the screen.
+    state.camPitch = pitch ?? 0.44;
     state.active = true;
     avatar.visible = true;
     keys.clear();

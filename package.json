@@ -18,6 +18,8 @@
     "app": "cargo build --manifest-path src-tauri/Cargo.toml --bin promptholm-island && tauri dev",
     "app:build": "tauri build --no-bundle",
     "app:pack": "node scripts/pack-release.mjs",
+    "android:pack": "node scripts/pack-android.mjs",
+    "android:apk": "node scripts/pack-android.mjs && cd src-android && tauri android build --apk --debug --target aarch64",
     "tauri": "tauri",
     "models": "node scripts/models.mjs",
     "models:preview": "node scripts/models.mjs --preview",

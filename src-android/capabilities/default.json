@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "The bundled page asks Rust for nothing",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

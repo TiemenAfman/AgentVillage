@@ -443,7 +443,9 @@ of these reasons fix themselves, so the loop turned one problem into a toast eve
 seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
 is wrong and tells whoever has to fix it nothing.
 
-`SEA_KEY` is shared by everybody in a world. Each islander keeps it in
+`SEA_KEY` is optional and only for a private sea - the open sea has none, so a Windows
+release and the phone app can both just join, and `POST /update` is locked by
+`SEA_ADMIN_KEY` instead (falling back to `SEA_KEY`). When set, it is shared by everybody in a world. Each islander keeps it in
 `multiplayer.sea.key`, and **its own page is handed it over loopback** in `/api/hello` —
 never a visitor, who could otherwise park an island and wear a name there. Without that
 hand-off a sea that gets a key locks out the browser of the very island publishing to it.
@@ -630,6 +632,29 @@ tells a stray exe where the checkout is. The window is built in Rust, not declar
 the builder. Pitfall: a `cargo build` that fails reading permissions from a path that no
 longer exists is a stale build-script cache — `cargo clean -p tauri -p tauri-build -p
 promptholm` in `src-tauri/`, not a full clean.
+
+## The phone
+
+`src-android/` is its own Tauri crate, and the one place `web/` *is* bundled: a phone has no
+islander, so none of the desktop's reasons apply ([Plans/eiland-op-android.md](Plans/eiland-op-android.md)).
+`npm run android:pack` copies `web/` + `shared/` to `src-android/dist/` and writes
+`window.PROMPTHOLM_STANDALONE = { sea }` into that copy's head. No key, deliberately: an
+APK is a zip anybody can read, so the open sea runs with no `SEA_KEY` (anybody may join;
+an island's claim token keeps its name) and the restart button has its own
+`SEA_ADMIN_KEY`; the pack only bakes a key given by name (`--key`), for a private sea.
+`release.yml`'s `android` job builds and signs it on every tag. `STANDALONE` in `web/js/api.js` makes
+`mine()` refuse without fetching (the app origin answers every path, and a 404 "from the
+islander" is the keeper's mode); the page then has no island at all: home is a free berth of water (`nextOrigin`, drawn on
+`makeTerrain(…, { open: true })`, which is sea edge to edge), the body joins as a wanderer
+(`island: null`; a hostile island that catches it sends it back to its skiff instead of a
+square, the boat's id in `evicted`), it starts in a *skiff* - a boat with no mooring, `boat:w-<player id>`, which the
+sea makes on `launch`, lets only its owner sail and sinks when that socket closes
+(`lib/boats.mjs`; relaunched under the new id on every welcome) - never leaves walk mode, and is
+driven by `web/js/touchpad.js`, which polls like a gamepad so walk.js needs no touch code.
+`npm run android:apk` builds a debug-signed arm64 APK; it needs JDK **21** (the template's
+Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To try the
+page without a phone, serve `src-android/dist/` from any static server — that origin has no
+islander behind it either.
 
 ## Layout of the source
 

@@ -24,6 +24,12 @@
 // document would have given the right answer at / and the wrong one everywhere else - and
 // it is the same bug the texture prefix had, see assets.js.
 
+// A page with no islander behind it at all, and never one: the Android app, which carries
+// web/ inside itself and joins one sea straight from the phone. scripts/pack-android.mjs
+// writes `{ sea, key }` into that copy of index.html; a page served by an islander never
+// has it, so everything below behaves exactly as it always did there.
+export const STANDALONE = globalThis.PROMPTHOLM_STANDALONE || null;
+
 // Where this island's own server is: the directory above web/js/, whatever that turns out
 // to be. Every HTML page on this island lives there, so this is the same answer no matter
 // which of them loaded the module.
@@ -79,7 +85,7 @@ export class IslanderUnreachable extends Error {
 // around in it, and the only thing it cannot do is touch somebody's disk. Kept here rather
 // than discovered separately by forty catch blocks, because forty opinions about it is
 // forty bugs.
-let reachable = true;
+let reachable = !STANDALONE;
 const watchers = new Set();
 export function islanderHere() { return reachable; }
 export function onIslanderChange(fn) { watchers.add(fn); return () => watchers.delete(fn); }
@@ -93,6 +99,10 @@ function verdict(ok) {
 // is the other axis entirely - who you are, not whether there is a machine - so it comes
 // back as an ordinary Response for the caller to read, exactly as it always did.
 export async function mine(path, init) {
+  // Asked without asking. The app's own origin (http://tauri.localhost) answers every path
+  // with *something*, so a fetch there would come back as an islander that said 404 - and
+  // a 404 from an islander is "our own island, which will not say", the keeper's mode.
+  if (STANDALONE) throw new IslanderUnreachable(path, null);
   let r;
   try {
     r = await fetch(mineUrl(path), { credentials: 'same-origin', ...init });

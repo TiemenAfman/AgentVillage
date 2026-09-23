@@ -32,14 +32,15 @@ services:
     environment:
       SEA_PORT: 4750
       SEA_NAME: ${SEA_NAME:-Promptholm}
-      # Set this. Without it anybody who can reach the port can park an island and wear a
-      # name. They cannot read a file or start a process - there are none here - but that is
-      # a property of the design, not a reason to leave the door open.
-      #
-      # Everybody in the world shares it: each islander puts it in multiplayer.sea.key, and
-      # its own page is handed it over loopback (/api/hello). It is a door key, not a
-      # secret - do not reuse anything.
+      # Only for a private sea. Left empty, anybody may join - an islander from the Windows
+      # release, the app on a phone - and an island's claim token is still what keeps anybody
+      # else from wearing its name. Set, everybody in the world shares it: each islander puts
+      # it in multiplayer.sea.key, and its own page is handed it over loopback (/api/hello).
+      # The phone app would then have to carry it, in plain text, in the APK.
       SEA_KEY: ${SEA_KEY:-}
+      # The restart button's own key (POST /update). Set this on an open sea: without it,
+      # and without SEA_KEY, the button refuses everybody. Never goes to a player.
+      SEA_ADMIN_KEY: ${SEA_ADMIN_KEY:-}
       # The redeploy hook behind the button on the harbour page (GET /). Portainer's own
       # stack webhook does nicely. Leave it out and the button answers 501 instead of
       # pretending: a sea started by hand has nothing to ask. Whoever has this URL can
