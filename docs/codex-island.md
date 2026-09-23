@@ -11,7 +11,7 @@ placement rules, and walks both crowds. Switching seas takes both islands along.
 ```
 
 The scanner reads rollouts under `~/.codex/sessions` and `~/.codex/archived_sessions`,
-plus titles from `session_index.jsonl`. `SETTLERS_CODEX_HOME` overrides the source;
+plus titles from `session_index.jsonl`. `PROMPTHOLM_CODEX_HOME` overrides the source;
 otherwise `CODEX_HOME` is honoured before falling back to the user's home. These are
 local Codex sessions, not cloud ChatGPT conversations. No account connection is needed.
 

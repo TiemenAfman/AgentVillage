@@ -16,7 +16,7 @@ import { cropsView, gardenView } from '../lib/garden.mjs';
 import { catalogueLines } from '../shared/shapes.mjs';
 import { CROPS, growthOf, ripeIn } from '../shared/crops.mjs';
 
-const PORT = Number(process.env.SETTLERS_PORT || loadConfig().port || 4747);
+const PORT = Number(process.env.PROMPTHOLM_PORT || loadConfig().port || 4747);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const USAGE = `The island's command line - ${BASE}

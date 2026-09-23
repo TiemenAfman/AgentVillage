@@ -6,7 +6,7 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'assets/settler'
-bpy.ops.wm.open_mainfile(filepath=str(OUT / 'agentvillage-settler.blend'))
+bpy.ops.wm.open_mainfile(filepath=str(OUT / 'promptholm-settler.blend'))
 scene = bpy.context.scene
 scene['avatar_mesh_name'] = 'villager-mesh.js'
 scene['avatar_eye_y'] = .350 + (.383-.363)*.94
@@ -108,5 +108,5 @@ mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = mat.
 runpy.run_path(str(ROOT / 'scripts/export-settler.py'))
 scene.render.filepath = str(OUT / 'villager-preview.png')
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-villager.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-villager.blend'))
 bpy.ops.render.render(write_still=True)

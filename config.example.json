@@ -26,9 +26,7 @@
       "key": null,
       "port": 4750,
       "name": null,
-      "known": [
-        "http://AgentVillage.freeddns.org:4750/"
-      ]
+      "known": []
     }
   },
   "display": {

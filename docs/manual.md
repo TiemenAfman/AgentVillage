@@ -15,13 +15,15 @@ you are looking at. This is the rest.
 
 The island is two programs, built together from `src-tauri/` by `npm run app:build` into
 `src-tauri/target/release/` (`npx tauri build --debug --no-bundle` for the debug pair in
-`src-tauri/target/debug/`). There is no installer: both find the checkout they were built
-from, which is where `serve.mjs` and `data/` are.
+`src-tauri/target/debug/`). Built like that they run the checkout they were built from.
+The release zip (`npm run app:pack` lays it out) is the other way round: one folder with
+both exes and the island in `app\`, unpacked anywhere, keeping its config and data in
+`%LOCALAPPDATA%\Promptholm`.
 
 | | |
 |---|---|
 | `promptholm-island.exe` | **The islander**: runs `serve.mjs` - the scan, the sea, the mail, the agents - with a tray icon and no window. The tray menu opens the island, stops, starts and restarts it, and shows its log; **Quit** stops the island with it. |
-| `agentvillage.exe` | **The window**: the island's page in a window of its own (Tauri, WebView2). Starts the islander if nothing is listening; closing it leaves the island running. |
+| `promptholm.exe` | **The window**: the island's page in a window of its own (Tauri, WebView2). Starts the islander if nothing is listening; closing it leaves the island running. |
 
 There is only ever one islander per port - a second copy notices the first and exits - and
 an island started some other way (`npm run dev`, `node serve.mjs`) is taken over by the
@@ -35,7 +37,7 @@ terminal: ctrl+C stops it.
 
 ### As a window of its own
 
-`agentvillage.exe` (or `npm run app`, which builds it and runs it) shows the very same page
+`promptholm.exe` (or `npm run app`, which builds it and runs it) shows the very same page
 from the very same server - nothing is copied or bundled - and leaves the server running
 when the window closes, since the scan, the mail and the agents live there and not in the
 window. If nothing is listening it starts the islander itself, with its output in

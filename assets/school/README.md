@@ -1,6 +1,6 @@
 # Village school
 
-Editable source: `agentvillage-school.blend`. Bake with `npm run models -- school`.
+Editable source: `promptholm-school.blend`. Bake with `npm run models -- school`.
 Rebuilding with `scripts/build-school.py` replaces manual Blender edits.
 
 The school shares the tavern palette, with tall classroom windows, a book emblem,

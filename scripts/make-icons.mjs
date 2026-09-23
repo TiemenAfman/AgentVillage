@@ -62,4 +62,4 @@ for (const size of [192, 512]) {
 const f = path.join(OUT, 'island-maskable-512.png');
 fs.writeFileSync(f, draw(512, { maskable: true }));
 wrote.push(`${path.basename(f)} (${fs.statSync(f).size} bytes)`);
-process.stderr.write(`[settlers] wrote ${wrote.join(', ')}\n`);
+process.stderr.write(`[promptholm] wrote ${wrote.join(', ')}\n`);

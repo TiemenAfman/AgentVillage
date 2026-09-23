@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'assets/school'
 OUT.mkdir(parents=True, exist_ok=True)
 # Borrow the actual tavern materials and studio, not a second approximation of its palette.
-bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/agentvillage-tavern.blend'))
+bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/promptholm-tavern.blend'))
 for obj in list(bpy.context.scene.objects):
     if obj.get('building_part') or obj.name.startswith('anchor.'):
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -102,7 +102,7 @@ scene=bpy.context.scene;scene['building_height']=2.08
 cam=scene.camera;cam.location=(3.5,-5,3.2);cam.rotation_euler=(Vector((0,0,1.0))-cam.location).to_track_quat('-Z','Y').to_euler();cam.data.ortho_scale=3.3
 scene.render.filepath=str(OUT/'school-preview.png')
 bpy.context.preferences.filepaths.save_version=0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'agentvillage-school.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'promptholm-school.blend'))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':'school'})
 bpy.ops.render.render(write_still=True)
 

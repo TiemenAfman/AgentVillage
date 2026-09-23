@@ -1,6 +1,6 @@
 // The islander as a program of its own: `node serve.mjs`, kept, with a tray icon to hold it by.
 //
-// The window (agentvillage.exe) is the interface and nothing else; this is the island. It
+// The window (promptholm.exe) is the interface and nothing else; this is the island. It
 // has no window and no WebView - a tray icon, a menu, and node as its child. Its life is
 // node's life: node's stdin is a pipe this process holds, and `serve.mjs --supervised` shuts
 // down cleanly when that pipe closes, so Stop is polite, Quit takes the island with it, and
@@ -29,7 +29,7 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 /// The window's exe, which stands next to this one.
-const WINDOW_EXE: &str = "agentvillage.exe";
+const WINDOW_EXE: &str = "promptholm.exe";
 
 /// How often the tray looks at the island: is our node still alive, is the port answering.
 const POLL: Duration = Duration::from_secs(2);
@@ -123,10 +123,28 @@ fn main() {
         return;
     };
     let port = plan.port;
+    // Before the mutex: a second copy that is about to exit still knows where the island is,
+    // and saying so again costs nothing.
+    island::remember_root(&root);
     let Some(_one) = only_islander(port) else {
         // Another islander already keeps this port. It has the tray; this one has nothing to do.
         return;
     };
+
+    if !node_answers() {
+        // Everything else is written to server.log, but somebody who has just unpacked a
+        // zip and double-clicked it is not going to go and read a log: without node there
+        // is no island at all, so it is said to their face, once, and the tray does not
+        // pretend to be keeping anything.
+        alert(
+            "Promptholm needs Node.js",
+            "Promptholm runs on Node.js 22 or newer, and this computer does not seem to have it.\n\n\
+             Install it from https://nodejs.org (the LTS version), then start Promptholm again.",
+        );
+        shell_open("https://nodejs.org/");
+        return;
+    }
+    first_run(&root);
 
     let mut keeper = Keeper { root, port, child: None };
     keeper.start();
@@ -196,7 +214,7 @@ fn main() {
                     keeper.stop();
                     keeper.start();
                 } else if id == log.id() {
-                    shell_open(&keeper.root.join("data").join("server.log").display().to_string());
+                    shell_open(&island::home(&keeper.root).join("data").join("server.log").display().to_string());
                 } else if id == quit.id() {
                     keeper.stop();
                     tray = None;
@@ -231,6 +249,53 @@ fn main() {
     });
 }
 
+/// Can we run node at all? `node --version`, windowless, and nothing more.
+fn node_answers() -> bool {
+    let mut cmd = Command::new(island::node_exe());
+    cmd.arg("--version").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    island::no_window(&mut cmd);
+    cmd.status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// An island with no config.json has never been founded: run setup once, the same
+/// scripts/setup.mjs a checkout runs by hand, before the server starts. For an unpacked
+/// release that is the whole install - config.json in %LOCALAPPDATA%\Promptholm, founded
+/// as of now, and the session hook. `--first-run` makes setup leave a hook that is already
+/// there alone (it may belong to a checkout on the same machine). Waited for, output to
+/// server.log, and a failure only noted: the server still starts, and says the rest itself.
+fn first_run(root: &Path) {
+    if island::home(root).join("config.json").is_file() {
+        return;
+    }
+    note(root, "first start: running setup");
+    let log = island::home(root).join("data").join("server.log");
+    let out = std::fs::OpenOptions::new().create(true).append(true).open(&log);
+    let mut cmd = Command::new(island::node_exe());
+    cmd.arg("scripts/setup.mjs").arg("--first-run").current_dir(root).stdin(std::process::Stdio::null());
+    if let Ok(f) = out {
+        if let Ok(g) = f.try_clone() {
+            cmd.stdout(f).stderr(g);
+        }
+    }
+    island::no_window(&mut cmd);
+    match cmd.status() {
+        Ok(s) if s.success() => {}
+        Ok(s) => note(root, &format!("setup exited with {s}")),
+        Err(e) => note(root, &format!("could not run setup: {e}")),
+    }
+}
+
+#[cfg(windows)]
+fn alert(title: &str, text: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+    let w = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (t, m) = (w(title), w(text));
+    unsafe { MessageBoxW(std::ptr::null_mut(), m.as_ptr(), t.as_ptr(), MB_OK | MB_ICONWARNING) };
+}
+
+#[cfg(not(windows))]
+fn alert(_title: &str, _text: &str) {}
+
 /// The window, pointed at this island. The browser when the window's exe is not next to us.
 fn open_window(keeper: &Keeper) {
     let exe = std::env::current_exe().ok().map(|e| e.with_file_name(WINDOW_EXE)).filter(|p| p.is_file());
@@ -239,7 +304,7 @@ fn open_window(keeper: &Keeper) {
         return;
     };
     let mut cmd = Command::new(exe);
-    cmd.arg("--port").arg(keeper.port.to_string()).env("SETTLERS_ROOT", &keeper.root);
+    cmd.arg("--port").arg(keeper.port.to_string()).env("PROMPTHOLM_ROOT", &keeper.root);
     if cmd.spawn().is_err() {
         shell_open(&keeper.url());
     }
@@ -258,7 +323,9 @@ fn shell_open(target: &str) {
 /// A line in server.log for the one thing that can go wrong before node is there to log.
 fn note(root: &Path, line: &str) {
     use std::io::Write;
-    let path = root.join("data").join("server.log");
+    let dir = island::home(root).join("data");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("server.log");
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "[promptholm-island] {line}");
     }

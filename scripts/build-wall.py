@@ -2,7 +2,7 @@
 
     blender --background --python scripts/build-wall.py
 
-It writes assets/wall/agentvillage-wall.blend and bakes it to web/js/wall-mesh.js.
+It writes assets/wall/promptholm-wall.blend and bakes it to web/js/wall-mesh.js.
 Running it again replaces both, so edits made by hand in the .blend are lost - export
 those with `npm run models` instead.
 
@@ -241,5 +241,5 @@ for loc, power, size in [((-1.3, -1.9, 2.2), 150, 2.0), ((1.6, -.6, 1.3), 60, 1.
     aim(o, (0, 0, .2))
 
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-wall.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-wall.blend'))
 runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'wall'})

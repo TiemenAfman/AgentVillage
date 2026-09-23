@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { forgetSea } from '../lib/paths.mjs';
+import { forgetSea, OPEN_SEA } from '../lib/paths.mjs';
 
 const A = 'https://one.example/';
 const B = 'https://two.example/';
@@ -77,4 +77,14 @@ test('the same address written two ways is one address', () => {
   // person does or does not type cannot make a row that is impossible to remove.
   const file = config();
   assert.deepEqual(forgetSea('https://one.example', { file }).known, [B]);
+});
+
+test('the open sea cannot be forgotten', () => {
+  // It is offered by /api/seas whatever `known` says, so taking it off the list would be a
+  // button that reports success and changes nothing. Refused, in whatever spelling, and
+  // the file is left alone.
+  const file = config({ known: [OPEN_SEA, B] });
+  assert.throws(() => forgetSea(OPEN_SEA, { file }), /always on the list/);
+  assert.throws(() => forgetSea('HTTPS://agentvillage.xeroxmsj.freeddns.org', { file }), /always on the list/);
+  assert.deepEqual(read(file).multiplayer.sea.known, [OPEN_SEA, B]);
 });

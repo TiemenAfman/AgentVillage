@@ -28,7 +28,7 @@ npm run models                     # bake every Blender set and check it (needs 
 npm run models -- props            # bake one set
 npm run models:preview             # render assets/<set>/renders/<asset>.png
 npm run app                        # build the islander, then run the window (tauri dev; needs Rust)
-npm run app:build                  # promptholm-island.exe + agentvillage.exe in src-tauri/target/release/
+npm run app:build                  # promptholm-island.exe + promptholm.exe in src-tauri/target/release/
 git tag v0.2.0 && git push origin v0.2.0   # release: .github/workflows/release.yml builds both exes on
                                    # windows-latest and attaches promptholm-windows-x64.zip; the tag must
                                    # equal "version" in src-tauri/tauri.conf.json or the job stops
@@ -422,6 +422,15 @@ The same key also guards `/island/:id` and `/island/:id/parcel`, not only the so
 this an islander refused at the handshake still parked its bundle over HTTP under a token
 that outlived the refusal, for good.
 
+**While the islander runs, the sea keeps its island.** The claim token is kept in
+`data/sea-token.json` (home and Codex), not minted per process: a fresh token made every
+tray restart a stranger to its own island, refused as `claimed` until the old claim's
+`GRACE_MS` ran out. `onClose` in `lib/sea.mjs` does not mark an island quiet while another
+islander socket still holds it — the old line dying after the new one joined used to get a
+live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`; `claimed`
+and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
+back on the next changed scan, gone again.
+
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
 from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
@@ -457,7 +466,7 @@ it on screen and names who.
 **The server is dangerous on purpose.** `/api/assign` spawns real Claude Code sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
 loopback socket, a known `Host` and a matching `Origin`, and never reads
-`X-Forwarded-For`. The ceiling is `SETTLERS_MAX_AGENTS` (4). Put any new write route behind
+`X-Forwarded-For`. The ceiling is `PROMPTHOLM_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
@@ -533,7 +542,7 @@ fetches the running islander live, the same page a browser tab would get, and a 
 the window (or the same server restart a server-side change already needs) is all it takes.
 Only a change under `src-tauri/` itself - the splash, the port probing, window behaviour,
 the icon - needs a rebuild. **Two exes from one crate** ([Plans/islander-als-eigen-exe.md](Plans/islander-als-eigen-exe.md)):
-`agentvillage.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
+`promptholm.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
 tray-icon + tao directly, no Tauri, no WebView) *is* the islander — it starts
 `node serve.mjs --no-open --supervised` as its child, output appended to `data/server.log`,
 and keeps a tray icon (open / browser / stop-start / restart / log / quit). `--supervised`
@@ -542,6 +551,18 @@ outside, so that pipe is how Stop is polite, and why a killed islander exe leave
 behind. One islander per port (named mutex); an island started by hand is adopted, and its
 Stop is `kill_listener` (netstat for the pid, `taskkill /f`). `src/island.rs` is shared by both
 through `#[path]`, so it must never reach for Tauri. Neither exe has a console, in debug too.
+**A release is a folder, not a checkout**: `npm run app:pack` (`scripts/pack-release.mjs`)
+lays out `dist/Promptholm/` - both exes, and the island in `app/` beside them, copied *by
+name* like `Dockerfile.sea` (a runtime import from a new top-level folder must be added to
+its list). `app/release.json` is the marker, and it moves the island's own files: `HOME` in
+`lib/paths.mjs` (config.json, data/, .env) is `%LOCALAPPDATA%\Promptholm` for a release and
+`ROOT` for a checkout, decided from the files alone because the session hook runs with none
+of our environment; `home()` in `src/island.rs` is the same rule and must stay it, or the
+tray's log and the server's are two files. `PROMPTHOLM_HOME` overrides both - use it to try
+a pack without founding a second island. The islander runs `setup.mjs --first-run` when
+HOME has no config.json (leaves an existing hook alone, since it may be a checkout's), tells
+the user in a message box when there is no node, and leaves the folder it ran from in
+`%LOCALAPPDATA%\Promptholm\checkout.txt` so a stray exe elsewhere can still find the island.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
 starts the islander exe next to it (node directly when that exe is missing).
 **The islander outlives the window, and there is never more than
@@ -556,13 +577,13 @@ to the island once the port is up; the splash asks Rust to begin (`start_island`
 event is emitted before anybody listens. Links to other sites (`on_new_window`,
 `on_navigation`) go to the system browser, so a Jira ticket cannot replace the island with
 no back button. Port order is `--port` → `PORT` → `config.json` → 4747, the same as
-`serve.mjs`; `--url` attaches to an island elsewhere and starts nothing; `SETTLERS_ROOT`
+`serve.mjs`; `--url` attaches to an island elsewhere and starts nothing; `PROMPTHOLM_ROOT`
 tells a stray exe where the checkout is. The window is built in Rust, not declared in
 `tauri.conf.json`, because `additional_browser_args` (which *replaces* Tauri's default
 `--disable-features=…`, so that has to be repeated) and the two navigation hooks only exist on
 the builder. Pitfall: a `cargo build` that fails reading permissions from a path that no
 longer exists is a stale build-script cache — `cargo clean -p tauri -p tauri-build -p
-agentvillage` in `src-tauri/`, not a full clean.
+promptholm` in `src-tauri/`, not a full clean.
 
 ## Layout of the source
 
@@ -592,7 +613,16 @@ is any. Code, comments and documentation are in English. Comments carry the *why
 alternative was tried, what broke, which number this is the only copy of — and the existing
 files set a high bar for that; match it rather than stripping it back.
 
+The product is **Promptholm** everywhere: the npm package, the crate, both exes
+(`promptholm.exe`, `promptholm-island.exe`), the `.blend` sources, titles, log prefix and every
+environment variable (`PROMPTHOLM_*`; the old `SETTLERS_*` names are gone, with no fallback).
+"Settlers" survives only as what the island's inhabitants are called (`web/js/settlers.js`,
+`village.settlers`), which is the game's vocabulary rather than its name. The exceptions are
+deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming it is the
+owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
+
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
-`SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,
-`CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
+`PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
+`PROMPTHOLM_CODEX_HOME`, `PROMPTHOLM_ROOT` (which checkout the exes run), `PROMPTHOLM_HOME`
+(where config.json and data/ live), `CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
 `SEA_KEY`.

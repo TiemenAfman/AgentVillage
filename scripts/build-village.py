@@ -2,7 +2,7 @@
 
     blender --background --python scripts/build-village.py
 
-It writes assets/village/agentvillage-village.blend and bakes it to web/js/village-mesh.js.
+It writes assets/village/promptholm-village.blend and bakes it to web/js/village-mesh.js.
 Running it again replaces both, so edits made by hand in the .blend are lost - export
 those with `npm run models` instead.
 
@@ -838,5 +838,5 @@ for loc, power, size in [((-3, -4, 5), 420, 4), ((4, -1, 3), 180, 3), ((0, 3, 4)
     aim(o, (0, 0, 1.0))
 
 bpy.context.preferences.filepaths.save_version = 0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'agentvillage-village.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-village.blend'))
 runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'village'})

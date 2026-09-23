@@ -59,7 +59,7 @@ function rock() {
 
 // The shapes that are not drawn here at all. The barrel, the cart, the crate, the
 // woodpile, the tent and the washing line are modelled in
-// assets/props/agentvillage-props.blend and baked into web/js/props-mesh.js, and what
+// assets/props/promptholm-props.blend and baked into web/js/props-mesh.js, and what
 // arrives is ordinary parts - the same sheets, the same one material, the same single
 // draw call as a rock. The barrel is the tavern's own barrel to the millimetre, so one
 // put down by hand beside the tavern door reads as one of the pair already standing

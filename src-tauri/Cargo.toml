@@ -1,12 +1,12 @@
 [package]
-name = "agentvillage"
-version = "0.1.0"
+name = "promptholm"
+version = "0.1.1"
 description = "Promptholm as its own window: a shell around serve.mjs, see Plans/eiland-als-desktop-app.md"
 authors = ["Martijn Jansen"]
 edition = "2021"
 # Two binaries: the window (src/main.rs) and the islander (src/bin/promptholm-island.rs).
 # The window is the one `tauri dev` / `tauri build` run and bundle.
-default-run = "agentvillage"
+default-run = "promptholm"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,7 +14,7 @@ default-run = "agentvillage"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "agentvillage_lib"
+name = "promptholm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -31,7 +31,7 @@ tray-icon = "0.24"
 tao = "0.35"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security", "Win32_UI_WindowsAndMessaging"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

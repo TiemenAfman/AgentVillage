@@ -10,7 +10,7 @@ kind=sys.argv[sys.argv.index('--')+1]
 OUT=ROOT/'assets'/kind
 D=json.loads((OUT/'design.json').read_text(encoding='utf-8-sig'))
 w,h=D['width'],D['height']; name='house_'+kind+'_a'
-bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/agentvillage-tavern.blend'))
+bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/promptholm-tavern.blend'))
 for o in list(bpy.context.scene.objects):
     if o.get('building_part') or o.name.startswith('anchor.'):bpy.data.objects.remove(o,do_unlink=True)
 collection=bpy.data.collections.new(name);bpy.context.scene.collection.children.link(collection)
@@ -77,7 +77,7 @@ scene=bpy.context.scene;scene['building_height']=h
 cam=scene.camera;cam.location=(2.6,-4,2.4);cam.rotation_euler=(Vector((0,0,h*.5))-cam.location).to_track_quat('-Z','Y').to_euler();cam.data.ortho_scale=2.15
 scene.render.filepath=str(OUT/(kind+'-preview.png'))
 bpy.context.preferences.filepaths.save_version=0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT/('agentvillage-'+kind+'.blend')))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT/('promptholm-'+kind+'.blend')))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':kind})
 bpy.ops.render.render(write_still=True)
 

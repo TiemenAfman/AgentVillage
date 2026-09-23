@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'assets/townhall'
 OUT.mkdir(parents=True, exist_ok=True)
 # Borrow the actual tavern materials and studio, not a second approximation of its palette.
-bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/agentvillage-tavern.blend'))
+bpy.ops.wm.open_mainfile(filepath=str(ROOT/'assets/tavern/promptholm-tavern.blend'))
 for obj in list(bpy.context.scene.objects):
     if obj.get('building_part') or obj.name.startswith('anchor.'):
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -153,6 +153,6 @@ cam.rotation_euler=(Vector((0,0,1.3))-cam.location).to_track_quat('-Z','Y').to_e
 cam.data.ortho_scale=3.8
 scene.render.filepath=str(OUT/'townhall-preview.png')
 bpy.context.preferences.filepaths.save_version=0
-bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'agentvillage-townhall.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'promptholm-townhall.blend'))
 runpy.run_path(str(ROOT/'scripts/export-models.py'),init_globals={'MODEL_SET':'townhall'})
 bpy.ops.render.render(write_still=True)

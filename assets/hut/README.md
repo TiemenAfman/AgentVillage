@@ -1,6 +1,6 @@
 # Timber hut
 
-Editable source: `agentvillage-hut.blend`. The 408-triangle body adds fitted shutters,
+Editable source: `promptholm-hut.blend`. The 408-triangle body adds fitted shutters,
 framed warm windows, corner posts, diagonal braces and a small entrance canopy.
 It composes with the existing roofs, chimney, porch and safe yard placement.
 

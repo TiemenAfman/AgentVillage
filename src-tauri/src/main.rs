@@ -5,5 +5,5 @@
 #![windows_subsystem = "windows"]
 
 fn main() {
-    agentvillage_lib::run()
+    promptholm_lib::run()
 }

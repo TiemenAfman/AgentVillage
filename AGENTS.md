@@ -341,7 +341,7 @@ it on screen and names who.
 **The server is dangerous on purpose.** `/api/assign` spawns real Codex sessions
 unattended with full permissions in any folder, so `lib/access.mjs` demands all three of a
 loopback socket, a known `Host` and a matching `Origin`, and never reads
-`X-Forwarded-For`. The ceiling is `SETTLERS_MAX_AGENTS` (4). Put any new write route behind
+`X-Forwarded-For`. The ceiling is `PROMPTHOLM_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
@@ -412,6 +412,6 @@ alternative was tried, what broke, which number this is the only copy of — and
 files set a high bar for that; match it rather than stripping it back.
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
-`SETTLERS_GITHUB_REPO`, `SETTLERS_MAX_AGENTS`, `SETTLERS_PORT`, `SETTLERS_CLAUDE_HOME`,
+`PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
 `CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
 `SEA_KEY`.

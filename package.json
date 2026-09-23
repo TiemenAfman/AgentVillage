@@ -1,6 +1,6 @@
 {
-  "name": "settlers",
-  "version": "0.1.0",
+  "name": "promptholm",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
@@ -17,6 +17,7 @@
     "watch": "node watch-island.mjs --open",
     "app": "cargo build --manifest-path src-tauri/Cargo.toml --bin promptholm-island && tauri dev",
     "app:build": "tauri build --no-bundle",
+    "app:pack": "node scripts/pack-release.mjs",
     "tauri": "tauri",
     "models": "node scripts/models.mjs",
     "models:preview": "node scripts/models.mjs --preview",

@@ -34,7 +34,7 @@ pub struct Plan {
 
 impl Plan {
     pub fn log_path(&self) -> Option<PathBuf> {
-        self.root.as_ref().map(|r| r.join("data").join("server.log"))
+        self.root.as_ref().map(|r| home(r).join("data").join("server.log"))
     }
 }
 
@@ -66,20 +66,30 @@ pub fn plan() -> Plan {
     Plan { url: format!("http://localhost:{port}/"), port, root, remote: false }
 }
 
-/// The checkout serve.mjs lives in. Three places to look, in the order they are likely to
-/// be right:
-///   SETTLERS_ROOT          somebody said so
+/// The folder serve.mjs lives in. Five places to look, in the order they are likely to be
+/// right:
+///   PROMPTHOLM_ROOT          somebody said so
+///   app\ beside the exe    an unpacked release: both exes and the island they run, in one
+///                          folder that can stand anywhere
 ///   CARGO_MANIFEST_DIR/..  where this binary was built from - correct for `tauri dev` and
 ///                          for a build that stays on this machine
-///   above the executable   a release exe dropped into the repo, or into a folder next to it
-fn find_root() -> Option<PathBuf> {
+///   above the executable   an exe dropped into a checkout, or into a folder next to it
+///   remembered             the checkout the last islander on this machine ran from
+///                          (`remember_root`) - what makes a release zip unpacked on the
+///                          desktop find the island instead of reporting it missing
+pub fn find_root() -> Option<PathBuf> {
     let is_root = |p: &Path| p.join("serve.mjs").is_file();
 
-    if let Ok(v) = std::env::var("SETTLERS_ROOT") {
+    if let Ok(v) = std::env::var("PROMPTHOLM_ROOT") {
         let p = PathBuf::from(v.trim());
         if is_root(&p) {
             return Some(p);
         }
+    }
+
+    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("app")));
+    if let Some(p) = beside.filter(|p| is_root(p)) {
+        return Some(p);
     }
 
     let built_from = Path::new(env!("CARGO_MANIFEST_DIR")).parent().map(Path::to_path_buf);
@@ -87,22 +97,66 @@ fn find_root() -> Option<PathBuf> {
         return Some(p);
     }
 
-    let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent();
-    while let Some(d) = dir {
-        if is_root(d) {
-            return Some(d.to_path_buf());
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent();
+        while let Some(d) = dir {
+            if is_root(d) {
+                return Some(d.to_path_buf());
+            }
+            dir = d.parent();
         }
-        dir = d.parent();
     }
-    None
+
+    remembered_root().filter(|p| is_root(p))
+}
+
+/// %LOCALAPPDATA%\Promptholm - where an unpacked release keeps its config and data, and
+/// where the islander leaves a note of which folder it ran from.
+fn local_home() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|b| PathBuf::from(b).join("Promptholm"))
+}
+
+/// Where the island in `root` keeps config.json and data/. The same rule as HOME in
+/// lib/paths.mjs, and it has to stay the same rule: the log the tray opens and the one the
+/// server writes are only one file while the two agree. A checkout keeps them in itself; a
+/// release (release.json beside serve.mjs) in %LOCALAPPDATA%\Promptholm.
+pub fn home(root: &Path) -> PathBuf {
+    if let Some(v) = std::env::var_os("PROMPTHOLM_HOME").filter(|v| !v.is_empty()) {
+        return PathBuf::from(v);
+    }
+    if root.join("release.json").is_file() {
+        if let Some(h) = local_home() {
+            return h;
+        }
+    }
+    root.to_path_buf()
+}
+
+fn memory_file() -> Option<PathBuf> {
+    local_home().map(|h| h.join("checkout.txt"))
+}
+
+fn remembered_root() -> Option<PathBuf> {
+    let text = fs::read_to_string(memory_file()?).ok()?;
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| PathBuf::from(line))
+}
+
+/// Written by the islander each time it starts. Best effort: an exe that cannot write it
+/// still runs its island, it only means a stray copy elsewhere will not find it.
+pub fn remember_root(root: &Path) {
+    let Some(file) = memory_file() else { return };
+    if let Some(dir) = file.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let _ = fs::write(file, format!("{}\n", root.display()));
 }
 
 /// `port` out of config.json, when the file is there and says so. Anything else - no file,
 /// a comment somebody added, a string - is the default, exactly as `config.port || 4747`
 /// treats it on the Node side.
 fn port_from_config(root: &Path) -> Option<u16> {
-    let text = fs::read_to_string(root.join("config.json")).ok()?;
+    let text = fs::read_to_string(home(root).join("config.json")).ok()?;
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
     json.get("port")?.as_u64().and_then(|p| u16::try_from(p).ok())
 }
@@ -175,7 +229,7 @@ pub fn start(root: &Path, port: u16) -> Result<(), String> {
 
 /// data/server.log opened for appending, twice - one handle for stdout, one for stderr.
 fn open_log(root: &Path) -> Result<(fs::File, fs::File), String> {
-    let data = root.join("data");
+    let data = home(root).join("data");
     fs::create_dir_all(&data).map_err(|e| format!("could not create {}: {e}", data.display()))?;
     let log_path = data.join("server.log");
     let log = OpenOptions::new()
@@ -209,7 +263,7 @@ pub fn spawn_if_asked() -> bool {
             let mut cmd = Command::new(&exe);
             cmd.arg("--port")
                 .arg(port.to_string())
-                .env("SETTLERS_ROOT", &root)
+                .env("PROMPTHOLM_ROOT", &root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
@@ -305,7 +359,7 @@ pub fn kill_listener(port: u16) -> bool {
 
 /// `node` from PATH, or the place the Windows installer puts it - in that order, because a
 /// PATH that says something is more deliberate than a default location.
-fn node_exe() -> PathBuf {
+pub fn node_exe() -> PathBuf {
     if let Some(found) = which("node") {
         return found;
     }

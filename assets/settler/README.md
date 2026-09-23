@@ -1,10 +1,10 @@
-# AgentVillage settler
+# Promptholm settler
 
 An original low-poly village worker inspired by the proportions of classic settlement
 games: short legs, broad sleeves, large boots, an expressive face, a leather backpack,
 bedroll and hammer. Created in Blender 5.2; no game assets or textures are used.
 
-- `agentvillage-settler.blend`: editable named parts, six hidden/visible hat variants,
+- `promptholm-settler.blend`: editable named parts, six hidden/visible hat variants,
   materials, lighting and preview camera. Bare-headed uses no hat mesh.
 - `settler-preview.png`: Blender studio render of the default wardrobe.
 - `../../web/js/settler-mesh.js`: generated geometry used directly by the app.
@@ -34,11 +34,11 @@ character facing -Y. Update `avatar_eye_y` if you move the eyes vertically.
 From the project root, export the saved edits in PowerShell:
 
 ```powershell
-& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' assets/settler/agentvillage-settler.blend --background --python scripts/export-settler.py
+& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' assets/settler/promptholm-settler.blend --background --python scripts/export-settler.py
 node --test tests/*.test.mjs
 ```
 
-Reload AgentVillage and open **Avatar** to see the result. The studio and walking
+Reload Promptholm and open **Avatar** to see the result. The studio and walking
 avatar both use the exported geometry. No GLTF loader or asynchronous asset loading
 is needed.
 
@@ -52,7 +52,7 @@ This regenerates the blend file and render, replacing any manual Blender edits:
 
 ## Village residents
 
-`agentvillage-villager.blend` contains the residents' shorter body, rolled sleeves,
+`promptholm-villager.blend` contains the residents' shorter body, rolled sleeves,
 waistcoat, pocket apron and compact work hats. They share the player's facial style
 but have no expedition pack or bedroll. `villager-preview.png` shows one resident;
 `/characters.html` compares the runtime models, including an apprentice and sailor.
@@ -68,7 +68,7 @@ proportions. Resident eye height is used by face-to-face conversations.
 To export manual edits to the resident blend, run:
 
 ```powershell
-& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' assets/settler/agentvillage-villager.blend --background --python scripts/export-settler.py
+& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' assets/settler/promptholm-villager.blend --background --python scripts/export-settler.py
 node --test tests/*.test.mjs
 ```
 

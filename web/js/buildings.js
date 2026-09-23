@@ -1355,7 +1355,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.48 };
     }
     case 'tavern': {
-      // Authored in assets/tavern/agentvillage-tavern.blend, facing the street (+z).
+      // Authored in assets/tavern/promptholm-tavern.blend, facing the street (+z).
       // The existing porch, footprint, shader and editor consume ordinary parts.
       parts.push(...meshAsset('tavern'));
       for (const [name, at] of Object.entries(models.anchorsOf('tavern'))) anchors[name] = [...at];

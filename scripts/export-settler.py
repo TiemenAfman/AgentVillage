@@ -29,7 +29,7 @@ for obj in bpy.context.scene.objects:
     data.append(dict(name=obj.name, slot=slot, variant=obj['avatar_variant'], positions=positions))
     evaluated.to_mesh_clear()
 if not data:
-    raise RuntimeError('Open assets/settler/agentvillage-settler.blend before exporting.')
+    raise RuntimeError('Open assets/settler/promptholm-settler.blend before exporting.')
 mesh_name = bpy.context.scene.get('avatar_mesh_name', 'settler-mesh.js')
 if mesh_name not in ('settler-mesh.js', 'villager-mesh.js'):
     raise RuntimeError('Unknown avatar mesh output')

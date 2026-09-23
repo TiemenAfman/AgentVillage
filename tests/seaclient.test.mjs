@@ -199,6 +199,49 @@ test('two islanders cannot claim the same island', () => afloat(async ({ sea, ur
   }
 }));
 
+// The restart case. The islander before this one left a claim behind that the sea holds
+// for its grace period; giving up on `claimed` left the new islander with no socket for
+// as long as it ran, and its island blinking in and out as "keeper away".
+test('an islander refused because its predecessor still holds the claim gets in once it lapses', () => afloat(async ({ sea, url }) => {
+  const a = island();
+  const before = createSeaClient({ url, islandId: a.id, token: 'the-old-process', bundle: () => a.bundle });
+  await until(() => sea.fleet.has(a.id), 'the island never arrived');
+  before.close();
+  const said = [];
+  const after = createSeaClient({ url, islandId: a.id, token: 'the-new-process', bundle: () => a.bundle, log: (m) => said.push(m) });
+  try {
+    await until(() => said.some((m) => /claimed/.test(m)), 'the old claim was never in the way');
+    sea.fleet.drop(a.id);                          // what the sweep does once the grace runs out
+    await until(() => after.connected(), 'it gave up instead of waiting the claim out', 10000);
+    await until(() => sea.fleet.get(a.id)?.token === 'the-new-process' && sea.fleet.get(a.id).live,
+      'joined, but the island is not live under the new claim');
+    assert.equal(said.filter((m) => /turned this island away/.test(m)).length, 1, 'said once, not per retry');
+  } finally {
+    after.close();
+  }
+}));
+
+// The tray restarting, with the token kept on disk: the same claimant, back at once - and
+// the old line dying *after* the new one is in must not mark the island quiet, or the
+// sweep takes it 45 s later with its islander connected.
+test('a restarted islander with its kept token stays live, whichever socket closes last', () => afloat(async ({ sea, url }) => {
+  const a = island();
+  const token = mintToken();
+  const before = createSeaClient({ url, islandId: a.id, token, bundle: () => a.bundle });
+  await until(() => before.connected() && sea.fleet.has(a.id), 'the island never arrived');
+  const said = [];
+  const after = createSeaClient({ url, islandId: a.id, token, bundle: () => a.bundle, log: (m) => said.push(m) });
+  try {
+    await until(() => after.connected(), 'the same token was not let back in');
+    before.close();
+    await settle(200);
+    assert.equal(sea.fleet.get(a.id).live, true, 'the old socket closing made a held island quiet');
+    assert.ok(!said.some((m) => /turned this island away/.test(m)), `refused: ${said.join(' / ')}`);
+  } finally {
+    after.close();
+  }
+}));
+
 test('nothing in the line home listens for instructions', async () => {
   const src = await (await import('node:fs/promises')).readFile(new URL('../lib/seaclient.mjs', import.meta.url), 'utf8');
   for (const forbidden of ['node:fs', 'node:child_process', 'writeFile', 'exec(', 'spawn(']) {

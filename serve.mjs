@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, OPEN_SEA, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -49,7 +49,7 @@ const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1
 const filledIn = fillConfig();
 if (filledIn.added.length) {
   const how = filledIn.written ? 'added to config.json' : 'missing from config.json (it could not be written)';
-  console.log(`[settlers] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}`);
+  console.log(`[promptholm] ${filledIn.added.length} new setting(s) ${how}: ${filledIn.added.join(', ')}`);
 }
 
 const config = loadConfig();
@@ -357,7 +357,7 @@ async function rescan(reason, opts = {}) {
   const job = async () => {
     let r = null;
     try { r = await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
-      process.stderr.write(`[settlers] rescan failed (${reason}): ${e && e.message}\n`);
+      process.stderr.write(`[promptholm] rescan failed (${reason}): ${e && e.message}\n`);
     }
     // The Codex neighbour rides in the same queue slot: its own layout and lock, so it
     // never touches ours, but a scan per job keeps the two islands a minute apart at most.
@@ -954,13 +954,17 @@ if (req.url === '/api/command' && req.method === 'POST') {
   if (p === '/api/seas') {
     const cfg = config.multiplayer.sea || {};
     const candidates = new Map();
-    const offer = (o) => { if (o && o.url && !candidates.has(o.url)) candidates.set(o.url, o); };
+    // Keyed on the address as URL() spells it, so the open sea saved in `known` with its
+    // own spelling is still one row, and the one saying 'open'.
+    const spell = (u) => { try { return new URL(String(u)).href; } catch { return String(u); } };
+    const offer = (o) => { if (o && o.url && !candidates.has(spell(o.url))) candidates.set(spell(o.url), o); };
 
     if (ownSea) {
       const addr = ownSea.address();
       const mode = cfg.mode === 'host' ? 'host' : 'single';
       if (addr) offer({ url: seaUrlFor(req), name: seaNameOf(config), from: mode, mine: true });
     }
+    offer({ url: OPEN_SEA, name: 'The open sea', from: 'open' });
     for (const n of (neighbours ? neighbours.list() : [])) if (n.sea) offer(n.sea);
     for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
     if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });
@@ -1077,7 +1081,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
 
     try {
       const r = dispatch({ issue, settler, cwd: settler.cwd, dryRun: !!dryRun, wording, source: from });
-      process.stderr.write(`[settlers] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
+      process.stderr.write(`[promptholm] ${issueKey} -> ${settler.name} (${r.status}) in ${settler.cwd}\n`);
       setTimeout(() => rescan('assignment'), 1500);
       return json(res, 202, r);
     } catch (e) {
@@ -1409,7 +1413,7 @@ function watchData() {
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    process.stderr.write(`[settlers] the island is already being served at http://localhost:${PORT}\n`);
+    process.stderr.write(`[promptholm] the island is already being served at http://localhost:${PORT}\n`);
     if (OPEN) openBrowser(`http://localhost:${PORT}/`);
     process.exit(0);
   }
@@ -1445,7 +1449,27 @@ if (access.open) {
 // Read through config rather than captured, so /api/sea changing it is enough.
 const SEA = () => config.multiplayer.sea || {};
 const ISLAND_ID = beaconId(PORT);
-const ISLAND_TOKEN = mintToken();
+// Kept on disk rather than minted per process. The token is what holds this island's claim
+// in the sea, and a fresh one per process made every restart of the tray a stranger to its
+// own island: refused as `claimed` for as long as the previous process's grace ran
+// (fleet.GRACE_MS), and the island gone from the sea until that ran out. The same keeper
+// on the same machine is the same claimant, so the claim should survive a restart.
+// data/ is gitignored, and .gitignore names this file a second time on purpose.
+const TOKEN_FILE = path.join(DATA, 'sea-token.json');
+function keptToken(which) {
+  const kept = readJson(TOKEN_FILE, null) || {};
+  if (typeof kept[which] === 'string' && /^[0-9a-f]{48}$/.test(kept[which])) return kept[which];
+  const token = mintToken();
+  try {
+    fs.mkdirSync(DATA, { recursive: true });
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ ...kept, [which]: token }, null, 2));
+  } catch (e) {
+    // Not fatal: this process still holds its claim, only the next restart waits one out.
+    log(`could not keep the sea token (${e.message}); a restart will have to wait out its own claim`);
+  }
+  return token;
+}
+const ISLAND_TOKEN = keptToken('home');
 let ownSea = null;
 let seaClient = null;
 let codexClient = null;
@@ -1598,7 +1622,7 @@ async function putToSea() {
     // Let home claim its berth first, including when the sea starts empty.
     await seaClient.publish();
     codexClient = createSeaClient({
-      url, islandId: CODEX_ISLAND_ID, key: cfg.key || null,
+      url, islandId: CODEX_ISLAND_ID, token: keptToken('codex'), key: cfg.key || null,
       name: islanderName, bundle: codexBundle,
       log: (m) => log(`Codex sea: ${m}`),
     });
@@ -1606,7 +1630,7 @@ async function putToSea() {
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
-  process.stderr.write(`[settlers] ${islandNameOf(config)} is at http://localhost:${PORT}/\n`);
+  process.stderr.write(`[promptholm] ${islandNameOf(config)} is at http://localhost:${PORT}/\n`);
   checkVendor();
   if (access.open) {
     log(`the island is OPEN. Visitors can reach it at:`);

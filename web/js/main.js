@@ -1084,7 +1084,7 @@ function minimapDistrict() {
 }
 
 // Everything the radar draws, read straight off state that is already kept live for other
-// reasons - see the minimap section of the AgentVillage plan for why none of this needs new
+// reasons - see the minimap section of the Promptholm plan for why none of this needs new
 // plumbing. `state.walk.state` rather than `state.walk.update(dt)`'s return value: that
 // return is only `{ near, pos, distance }`, no yaw.
 function minimapData() {

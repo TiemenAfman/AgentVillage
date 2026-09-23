@@ -35,6 +35,10 @@ const BROWSER_ARGS: &str =
 /// before it listens, and a village of a few hundred sessions takes a while to read.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a window with no checkout to start from waits for an island that may only be
+/// restarting before it says it cannot find one.
+const NO_ROOT_GRACE: Duration = Duration::from_secs(8);
+
 struct Island {
     plan: Mutex<island::Plan>,
     /// One bring-up at a time: a second Try again while the first is still waiting would
@@ -109,11 +113,17 @@ fn bring_up(app: AppHandle) {
                         )),
                     },
                 }
+            } else if island::wait(plan.port, NO_ROOT_GRACE).is_some() {
+                // Nothing to start it from, but an island that is only restarting - its tray's
+                // Restart, a server change - is back within a second or two. Measured: a
+                // viewer opened during such a restart gave up in the one second it was down.
+                show(&app, &plan.url);
             } else {
                 fail(format!(
-                    "Nothing is listening on port {}, and this window does not know where the \
-                     island's folder is. Start the island yourself (promptholm-island.exe), or set \
-                     SETTLERS_ROOT to the checkout and try again.",
+                    "Nothing is listening on port {}, and this copy of Promptholm is not inside \
+                     a checkout, so it has nothing to start the island from. Start \
+                     promptholm-island.exe from your checkout once - after that every copy on \
+                     this machine can find it - or unpack this one into <checkout>\\bin\\.",
                     plan.port
                 ));
             }
@@ -151,6 +161,20 @@ fn open_elsewhere(url: &Url) {
     }
 }
 
+/// The window's WebView2 profile lives under %LOCALAPPDATA%\<identifier>, and the
+/// identifier used to be com.agentvillage.island. Everything the page keeps in localStorage
+/// - the avatar, the sound, the board filters, a half-drawn plan - is in there, so a
+/// renamed identifier would open on a stranger's island. Moved once, before WebView2 has a
+/// chance to create the new folder empty; if the new one already exists it is left alone.
+fn carry_over_webview_data() {
+    let Some(base) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
+    let old = base.join("com.agentvillage.island");
+    let new = base.join("com.promptholm.island");
+    if old.is_dir() && !new.exists() {
+        let _ = std::fs::rename(&old, &new);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // A second copy of this exe, started by the first to start node and get out of the way.
@@ -158,6 +182,8 @@ pub fn run() {
     if island::spawn_if_asked() {
         return;
     }
+
+    carry_over_webview_data();
 
     let plan = island::plan();
     let own_host = Url::parse(&plan.url)

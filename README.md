@@ -36,15 +36,18 @@ other setting, including your own hooks, alone. `npm run setup:remove` takes it 
 
 `npm run dev` is the whole island in a terminal. To have it as two programs instead - the
 **islander** (`promptholm-island.exe`: the server, with a tray icon to stop, restart and
-open it) and the **viewer** (`agentvillage.exe`: the island in a window of its own) - they
+open it) and the **viewer** (`promptholm.exe`: the island in a window of its own) - they
 have to be built once from `src-tauri/`. Everything the build needs besides Rust comes in
 with `npm install` (the Tauri CLI is a devDependency); WebView2 is part of Windows 11.
 
-**Without Rust:** download `promptholm-windows-x64.zip` from
+**Without a checkout at all:** download `promptholm-windows-x64.zip` from
 [Releases](https://github.com/TiemenAfman/AgentVillage/releases), unblock it (right click →
-Properties → Unblock), unpack it into `bin\` in your checkout and start
-`bin\promptholm-island.exe`. The exes find the checkout from there, and `bin/` is
-gitignored. They are unsigned, so SmartScreen may ask once: *More info* → *Run anyway*.
+Properties → Unblock), unpack it into any folder and start `promptholm-island.exe`. The zip
+carries the island itself in `app\` beside the two exes, so all it needs from the machine is
+Node 22+. The first start founds the island in `%LOCALAPPDATA%\Promptholm` (config and
+data live there, not in the folder, so a newer version unpacks over the old one), and adds
+the session hook unless one is already there. The exes are unsigned, so SmartScreen may ask
+once: *More info* → *Run anyway*.
 
 **With Rust**, building them yourself:
 
@@ -95,7 +98,7 @@ the page updates itself as sessions come and go.
 
 Best as its own window rather than a browser tab. With [Rust](https://rustup.rs) installed,
 `npm run app:build` makes two programs in `src-tauri/target/release/`: `promptholm-island.exe`, the island itself with a
-tray icon to stop, restart and open it, and `agentvillage.exe`, a window of its own (Tauri)
+tray icon to stop, restart and open it, and `promptholm.exe`, a window of its own (Tauri)
 that starts the island if it is not running and shows the same page from it. Without Rust,
 open the page once and use Chrome's **Install page as app**. Setting it up:
 [The islander and the viewer](#the-islander-and-the-viewer-needs-rust); using it:
