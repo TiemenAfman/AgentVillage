@@ -163,6 +163,16 @@ function shutdown(why) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+// Started by promptholm-island.exe, which holds our stdin open for as long as it wants us.
+// Windows has no SIGTERM to send a process from outside - taskkill without /f posts
+// WM_CLOSE, which a windowless node never sees - so a closed pipe is the only polite way
+// to ask, and it is also what an islander exe that was killed outright leaves behind:
+// without this, node would carry on unowned, with no tray to stop it from.
+if (has('--supervised')) {
+  process.stdin.on('end', () => shutdown('supervisor gone'));
+  process.stdin.on('error', () => shutdown('supervisor gone'));
+  process.stdin.resume();
+}
 
 // What is worth compressing: the text the island is made of. Everything not in here -
 // the sheets, the icons, the fonts, a .glb - is already compressed, and packing it again

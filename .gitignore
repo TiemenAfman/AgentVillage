@@ -30,3 +30,6 @@ data/guests/
 # Generated, safe to delete, rebuilt the next time anybody looks at the island.
 data/placements.json
 /.vs/
+
+# The islander and the viewer, unpacked from a GitHub release (src-tauri/release-readme.txt)
+/bin/

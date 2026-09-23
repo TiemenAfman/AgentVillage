@@ -27,8 +27,11 @@ npm run scan:all                   # ignore foundedAt, use every session ever; w
 npm run models                     # bake every Blender set and check it (needs Blender)
 npm run models -- props            # bake one set
 npm run models:preview             # render assets/<set>/renders/<asset>.png
-npm run app                        # the island as its own window (Tauri; needs Rust)
-npm run app:build                  # exe + NSIS installer in src-tauri/target/release/bundle/
+npm run app                        # build the islander, then run the window (tauri dev; needs Rust)
+npm run app:build                  # promptholm-island.exe + agentvillage.exe in src-tauri/target/release/
+git tag v0.2.0 && git push origin v0.2.0   # release: .github/workflows/release.yml builds both exes on
+                                   # windows-latest and attaches promptholm-windows-x64.zip; the tag must
+                                   # equal "version" in src-tauri/tauri.conf.json or the job stops
 ```
 
 Tests are `node:test` with no npm script. On Windows the shell does not expand the glob, so
@@ -67,8 +70,9 @@ tabs to refetch `web/js/`, it does not touch the server process. `npm run watch`
 console (`[watch-island] ... restart the island? [Y/n]`) before restarting on a change -
 never silently, since the island already running may have somebody's session or an open
 panel worth not interrupting without warning. During a session working alongside a person,
-Claude may run `stop-island.cmd` + `start-island.cmd` (or `start-island-app.cmd`, which also
-opens the Chrome app window) itself after a server-side change without a formal
+Claude may restart the islander itself after a server-side change -
+`taskkill /f /im promptholm-island.exe` (its node shuts down cleanly when the tray exe's pipe
+closes) and start `promptholm-island.exe` again from whichever of `src-tauri/target/{debug,release}/` it was running from - without a formal
 confirmation step first - a quick heads-up in the conversation is enough, matching the
 console's own Y/n rather than a blocking question.
 
@@ -116,7 +120,7 @@ paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSIO
 `placeAll` rather than `loadLayout`, because it has to ask the ground a question). Reach
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
 assert after a layout change, and the trap: **stop the server before measuring**
-(`stop-island.cmd`), or its own rescan interleaves with yours and every plot looks moved.
+(tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
 
 **The planner is a third mode, and nothing real moves in it before Apply.** `state.mode`
 is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
@@ -518,8 +522,7 @@ there.)
 ## The desktop window
 
 `src-tauri/` is a Tauri 2 shell around the islander, not a second viewer: the window is a
-WebView2 pointed at `http://localhost:4747/`, exactly what `start-island-app.cmd` does with
-Chrome. **Nothing under `web/` is bundled** — the scaffold's Vite route (`web/` → `dist/` →
+WebView2 pointed at `http://localhost:4747/`, exactly what Chrome's `--app` window shows. **Nothing under `web/` is bundled** — the scaffold's Vite route (`web/` → `dist/` →
 `http://tauri.localhost`) was removed because it broke three invariants at once: `api.js`
 would work `mine()` out from the wrong origin, `lib/access.mjs` refuses an Origin that is not
 the Host on every route, and the import map for `three`/`shared/` is the no-build-step
@@ -529,17 +532,26 @@ server-side one (`lib/`, `serve.mjs`) never needs `npm run app:build` — the wi
 fetches the running islander live, the same page a browser tab would get, and a reload of
 the window (or the same server restart a server-side change already needs) is all it takes.
 Only a change under `src-tauri/` itself - the splash, the port probing, window behaviour,
-the icon - needs a rebuild. What the shell adds is what a browser cannot: `src-tauri/src/island.rs` probes the
-port and, if nothing answers, starts `node serve.mjs --no-open` — no console
-(`CREATE_NO_WINDOW`), output appended to `data/server.log`, the same as
-`start-island-hidden.vbs`. **The islander outlives the window, and there is never more than
+the icon - needs a rebuild. **Two exes from one crate** ([Plans/islander-als-eigen-exe.md](Plans/islander-als-eigen-exe.md)):
+`agentvillage.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
+tray-icon + tao directly, no Tauri, no WebView) *is* the islander — it starts
+`node serve.mjs --no-open --supervised` as its child, output appended to `data/server.log`,
+and keeps a tray icon (open / browser / stop-start / restart / log / quit). `--supervised`
+makes serve.mjs `shutdown()` when its stdin closes: Windows has no SIGTERM to send from
+outside, so that pipe is how Stop is polite, and why a killed islander exe leaves no node
+behind. One islander per port (named mutex); an island started by hand is adopted, and its
+Stop is `kill_listener` (netstat for the pid, `taskkill /f`). `src/island.rs` is shared by both
+through `#[path]`, so it must never reach for Tauri. Neither exe has a console, in debug too.
+What the window adds is what a browser cannot: it probes the port and, if nothing answers,
+starts the islander exe next to it (node directly when that exe is missing).
+**The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
-window starts node through a second copy of its own exe (`--spawn-island`) that exits at
-once — node's parent is a dead pid before anybody walks the tree. Never more than one because
-the app only starts one when the port is silent and `serve.mjs` itself exits on
-`EADDRINUSE`, so two launchers racing still leave a single islander. Stopping is still
-`stop-island.cmd`. The window opens on `src-tauri/splash/index.html` and is navigated
+window starts it through a second copy of its own exe (`--spawn-island`) that exits at
+once — the islander's parent is a dead pid before anybody walks the tree. That go-between is
+waited on with `status()`, never `output()`: its stdout/stderr pipes are inherited all the way
+down to node, so `output()` waited for node to *exit* and the splash sat on "Starting the
+island" while the island was up. The window opens on `src-tauri/splash/index.html` and is navigated
 to the island once the port is up; the splash asks Rust to begin (`start_island`) so no
 event is emitted before anybody listens. Links to other sites (`on_new_window`,
 `on_navigation`) go to the system browser, so a Jira ticket cannot replace the island with

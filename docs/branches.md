@@ -72,8 +72,8 @@ against an island nobody is planning.
 **The island server rescans on a timer** - every sixty seconds by default. So a
 "second scan changes nothing" test run against a live island is measuring the server's
 scan interleaved with yours, and it will show plots moving and files differing when
-nothing is wrong. This cost half a day once. `stop-island.cmd`, then measure, then start
-it again.
+nothing is wrong. This cost half a day once. Stop it (tray → Stop, or `taskkill /f /im
+promptholm-island.exe`), then measure, then start it again.
 
 ## The version gates, and which one to reach for
 

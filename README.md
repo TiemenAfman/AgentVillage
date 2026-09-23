@@ -32,6 +32,54 @@ npm run dev
 session hook to `~/.claude/settings.json` after backing that file up. It leaves every
 other setting, including your own hooks, alone. `npm run setup:remove` takes it back out.
 
+### The islander and the viewer (needs Rust)
+
+`npm run dev` is the whole island in a terminal. To have it as two programs instead - the
+**islander** (`promptholm-island.exe`: the server, with a tray icon to stop, restart and
+open it) and the **viewer** (`agentvillage.exe`: the island in a window of its own) - they
+have to be built once from `src-tauri/`. Everything the build needs besides Rust comes in
+with `npm install` (the Tauri CLI is a devDependency); WebView2 is part of Windows 11.
+
+**Without Rust:** download `promptholm-windows-x64.zip` from
+[Releases](https://github.com/TiemenAfman/AgentVillage/releases), unblock it (right click →
+Properties → Unblock), unpack it into `bin\` in your checkout and start
+`bin\promptholm-island.exe`. The exes find the checkout from there, and `bin/` is
+gitignored. They are unsigned, so SmartScreen may ask once: *More info* → *Run anyway*.
+
+**With Rust**, building them yourself:
+
+1. **Rust**, with the MSVC toolchain. Run `rustup-init.exe` from
+   [rustup.rs](https://rustup.rs) (or `winget install Rustlang.Rustup`) and accept the
+   defaults. If it says the Visual Studio C++ build tools are missing, let it install them
+   (option 1) - that is the linker Rust uses on Windows. Without its offer:
+   ```bash
+   winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+   ```
+2. **A new terminal**, so `cargo` is on the PATH, and check it:
+   ```bash
+   cargo --version
+   ```
+3. **Build** from the repository root. The first build fetches and compiles a few hundred
+   crates and takes several minutes; after that it is seconds.
+   ```bash
+   npm install
+   npm run app:build
+   ```
+   Both exes land in `src-tauri/target/release/`. There is no installer, on purpose: they
+   find this checkout by themselves, and that is where `serve.mjs` and `data/` live.
+4. **Run the islander** - `src-tauri\target\release\promptholm-island.exe`. Its icon appears
+   in the tray (perhaps behind the ^); a left click opens the viewer. A shortcut to it in
+   `shell:startup` starts the island at logon.
+
+**Pulled after the start scripts went?** `start-island*.cmd`, `start-island-hidden.vbs` and
+`stop-island.cmd` are gone, replaced by the islander. Stop an island still running from one
+of them first - `netstat -ano | findstr :4747` gives its pid, `taskkill /f /pid <pid>` stops
+it - then take one of the two routes above, and remove any
+scheduled task or shortcut that pointed at the old scripts:
+```bash
+schtasks /delete /tn "Promptholm island" /f
+```
+
 Your island is your own: `seed` in `config.json` decides the shape of the land and
 `islandName` names it. `config.json` is not in the repository, so nobody inherits anyone
 else's village.
@@ -45,13 +93,13 @@ npm run dev
 That serves the island at http://localhost:4747 and opens a browser. Leave it running and
 the page updates itself as sessions come and go.
 
-Best as its own window rather than a browser tab: double-click `start-island-app.cmd`, or
-open the page once and use Chrome's **Install page as app**. The island then gets a taskbar
-icon and a window with no tab strip or address bar, which is what you want for something
-you keep open beside your work. With Rust installed, `npm run app` gives it a window of its
-own (Tauri) that starts the server if it is not running and shows the same page from it.
-`stop-island.cmd` shuts the server down again, and a Windows scheduled task can start it
-every morning — see [Every morning at 07:30](docs/manual.md#every-morning-at-0730).
+Best as its own window rather than a browser tab. With [Rust](https://rustup.rs) installed,
+`npm run app:build` makes two programs in `src-tauri/target/release/`: `promptholm-island.exe`, the island itself with a
+tray icon to stop, restart and open it, and `agentvillage.exe`, a window of its own (Tauri)
+that starts the island if it is not running and shows the same page from it. Without Rust,
+open the page once and use Chrome's **Install page as app**. Setting it up:
+[The islander and the viewer](#the-islander-and-the-viewer-needs-rust); using it:
+[Running the island](docs/manual.md#running-the-island).
 
 | Command | What it does |
 |---|---|

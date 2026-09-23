@@ -151,7 +151,7 @@ try {
     installHook();
     checks();
     say('\nReady. Start it with:  npm run dev');
-    say('Or double-click start-island-app.cmd for its own window.\n');
+    say('Or, with Rust installed, npm run app for its own window.\n');
   }
 } catch (e) {
   process.stderr.write(`\nsetup failed: ${e.message}\n`);

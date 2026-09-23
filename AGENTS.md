@@ -78,7 +78,7 @@ paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSIO
 `placeAll` rather than `loadLayout`, because it has to ask the ground a question). Reach
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
 assert after a layout change, and the trap: **stop the server before measuring**
-(`stop-island.cmd`), or its own rescan interleaves with yours and every plot looks moved.
+(tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
 
 **A polder and a fairway are the same mechanism pointed two ways.** A polder takes water
 off the island, a dredged fairway takes ground off the sea, and both are a list of cells in

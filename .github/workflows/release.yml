@@ -1,0 +1,77 @@
+# Builds the islander and the viewer and hangs them on a GitHub release, so that somebody
+# with a checkout does not need Rust to have them.
+#
+# A release is the two exes and nothing else: serve.mjs, web/ and the vendored three.js are
+# the checkout's, and node still runs the island. Both exes find the checkout by walking up
+# from their own folder, so the zip is meant to be unpacked into <checkout>\bin\ (gitignored).
+#
+# To release: bump "version" in src-tauri/tauri.conf.json, commit, then tag and push it -
+#   git tag v0.2.0 && git push origin v0.2.0
+# The tag has to match that version; the first step checks, because a zip called 0.2.0 whose
+# exes say 0.1.0 is a bug report waiting to be written. Run by hand (workflow_dispatch) it
+# builds the same zip as an artifact and publishes nothing.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "tag $env:GITHUB_REF_NAME does not match version $version in src-tauri/tauri.conf.json"
+          }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # npm ci brings the Tauri CLI (a devDependency); its postinstall vendors three.js,
+      # which the build does not need but costs nothing.
+      - run: npm ci
+
+      - run: npm run app:build
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = 'promptholm-windows-x64'
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item src-tauri/target/release/promptholm-island.exe, src-tauri/target/release/agentvillage.exe $name
+          Copy-Item src-tauri/release-readme.txt "$name/README.txt"
+          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Set-Content "$name.zip.sha256" -Encoding ascii
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            promptholm-windows-x64.zip
+            promptholm-windows-x64.zip.sha256
+          generate_release_notes: true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          name: promptholm-windows-x64
+          path: promptholm-windows-x64.zip
