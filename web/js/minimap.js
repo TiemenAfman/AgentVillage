@@ -15,7 +15,7 @@
 // map that simply stops drawing, since a neighbour a hundred units out is still worth
 // knowing the direction of. The bearing survives the clamp exactly; only the magnitude caps.
 export function projectToRadar(dx, dz, worldRadius, pixelRadius) {
-  // -z is north, +x is east (the project's own convention - see bearingWord in main.js),
+  // -z is north, +x is east (the project's own convention),
   // and canvas y grows downward, so north (-z) already lands on "up" (-y) with no flip:
   // px = dx, py = dz.
   const dist = Math.hypot(dx, dz);

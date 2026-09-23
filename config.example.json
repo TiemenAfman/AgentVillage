@@ -19,7 +19,6 @@
     "tickMs": 66,
     "guestView": "redacted",
     "name": null,
-    "discovery": true,
     "sea": {
       "mode": "single",
       "url": null,

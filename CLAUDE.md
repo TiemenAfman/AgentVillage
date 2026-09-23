@@ -211,14 +211,17 @@ Its people come the same way — and so do ours. **There is no local simulation 
 browser.** `web/js/crowd-view.js` feeds positions off the wire into `createFigures` for
 every island including our own, so a village of three hundred costs the same eleven draw
 calls a village of three does. And only the near ones are drawn
-whole — `DETAILED` in `main.js`, nearest first by `nearestFirst()` — while the rest are
+whole — `DETAILED` in `main.js`, nearest to the *viewer* first (`pickDetailed`: the walker or boat
+on foot, the orbit target otherwise, rechecked every 2 s with a hysteresis so two islands
+at the same distance do not trade places every step) — while the rest are
 silhouettes at their real berth through `horizon.js`. Eight islands in full does not render;
 measured at six, 850 draw calls against 788 for one.
 
 There is no longer any way to visit somebody by *leaving*. `cross()`, `visitNeighbour()`
 and `?arrive=` are gone with the berth machinery: an island in your sea is water you can
-cross, and an island on the horizon is one in a sea you have not joined — which is a choice
-in Settings, not a boat.
+cross. The LAN beacon (`lib/neighbours.mjs`, `multiplayer.discovery`) is gone too — islands
+meet only by joining the same sea from the main menu, so the horizon holds nothing but the
+far part of our own fleet (past `DETAILED`) and the `?join=` debug islands.
 
 **Nothing a visitor can reach writes anything.** There is no write route on `PUBLIC_API`
 and there is not meant to be one. There was — `POST /api/island` took delivery of somebody

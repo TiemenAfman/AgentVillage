@@ -23,9 +23,8 @@
 // **A village of three hundred is not three hundred sources.** Every voice in here is
 // allocated once, at build time, and nothing ever allocates a second one. Four hammers,
 // two gulls, one tavern, two bed loops: nine sources, whatever the population. Which four
-// hammers is decided by `nearestFirst` from shared/regions.mjs - the same ordering
-// main.js already uses to decide which islands get drawn whole, rather than a second one
-// that could disagree with it.
+// hammers is decided by `nearestFirst` from shared/regions.mjs, with its load-bearing
+// tiebreak, rather than a sort of its own.
 //
 // A fourth rule, softer, about taste: quiet and sparse beats busy. A gull cries once every
 // half minute or so and only in daylight over the quay; the tavern only hums when there is

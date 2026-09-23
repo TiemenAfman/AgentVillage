@@ -187,8 +187,8 @@ can no more read it than they could read the post through the slot.
 ## Visitors and neighbours
 
 The island is open. Other people can walk it with you, each connection getting its own
-settler to steer; two islands on the same network find each other, lie on each other's
-horizon, and can be moored side by side. It answers on every address the machine has, and
+settler to steer. Islands meet by joining the same sea from the main menu - they no
+longer find each other on the local network. It answers on every address the machine has, and
 phones and laptops reach it at `http://<the machine's name>:4747/`.
 
 It was shut by default once, and that was right while a visitor could only look. Visiting
@@ -201,11 +201,9 @@ lock is off and the thing to know is how to put it back on:
 ```
 
 A shut island keeps its mouth closed and its ears open: it listens only to this computer,
-it does not announce itself, and it still sees the neighbours who did open theirs and can
-go and visit them. `node serve.mjs --public` opens one for an afternoon without editing
+and it can still join any sea. `node serve.mjs --public` opens one for an afternoon without editing
 anything.
-Windows Firewall asks about the port the first time, and about UDP 47474, which is how
-islands announce themselves to each other.
+Windows Firewall asks about the port the first time.
 
 **What a visitor can do.** Walk, swim, sail, look at the village, read a settler's dossier,
 and bump into the other people walking it. Handing out a ticket, talking to a settler,

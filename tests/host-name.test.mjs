@@ -73,17 +73,3 @@ test('nothing publishes config.islandName directly any more', () => {
     assert.ok(src.includes('islandNameOf('), `${file} should use islandNameOf()`);
   }
 });
-
-test('the beacon asks for the island name every time it shouts', async () => {
-  // A string captured at construction would be the old name for the rest of the run, and
-  // /api/sea can start hosting at any moment. createNeighbours takes either; serve.mjs
-  // passes the function, and this is the half that matters.
-  const src = fs.readFileSync(path.join(ROOT, 'serve.mjs'), 'utf8');
-  assert.ok(/islandName:\s*\(\)\s*=>\s*islandNameOf\(config\)/.test(src),
-    'serve.mjs should hand the beacon a function, not a name');
-  const { createNeighbours } = await import('../lib/neighbours.mjs');
-  let called = 0;
-  const n = createNeighbours({ port: 4747, name: 'x', islandName: () => { called += 1; return 'Later'; } });
-  assert.equal(typeof n.list, 'function');
-  assert.equal(called, 0, 'the name is read when a beacon goes out, not at construction');
-});

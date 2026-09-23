@@ -5,7 +5,7 @@
 // across and wrong the moment one was not - a 256-cell neighbour has a radius of 128, so at
 // 150 its coast came ashore inside ours and the two islands shared a beach. berthOf does
 // the arithmetic from both radii instead, and this is the test that keeps it honest for
-// every pair of sizes the beacon will accept (lib/neighbours.mjs:64 clamps to 16..512).
+// every pair of sizes a bundle will accept (GRID_MIN..GRID_MAX in lib/islandbundle.mjs).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
