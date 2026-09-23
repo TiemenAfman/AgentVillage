@@ -14,6 +14,9 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* Every list that scrolls sits on a dark panel; the native scrollbar is a white bar down the
+   side of it. Inherited, so this one line covers the dossier, the legend, the town hall... */
+html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin; }
 html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; }
 body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; }
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
@@ -63,6 +66,9 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 }
 .chip:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
 .chip.on { color: #1c1814; background: var(--accent); border-color: transparent; font-weight: 600; }
+.filter-chips { align-items: center; }
+.chips-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
+  text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 #clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 #nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
 #nav-collapse-btn.collapsed { transform: rotate(180deg); }
@@ -106,6 +112,19 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10.5px; color: var(--ink-dim); word-break: break-all; }
 .btn { font: inherit; font-size: 12px; color: var(--ink); background: rgba(255,255,255,.07); border: 1px solid var(--edge); border-radius: 9px; padding: 6px 11px; cursor: pointer; }
 .btn:hover { background: rgba(255,255,255,.13); }
+.dossier-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+.dossier-actions.end { margin: 18px 0 0; }
+.ask { border: 1px solid var(--edge); border-radius: 10px; padding: 8px 11px 9px; margin: 0 0 10px; background: rgba(255,255,255,.04); }
+.ask.asked { border-color: rgba(232,180,92,.5); background: rgba(232,180,92,.08); }
+.ask h3.sec { margin: 0 0 4px; }
+.ask.asked h3.sec { color: var(--accent); }
+.ask p { margin: 0; font-size: 13px; line-height: 1.45; }
+/* A bare text field: the sea address in Settings, the world picker. Without this it was the
+   browser's white box in the middle of a dark panel. */
+.field { font: inherit; font-size: 12px; min-width: 0; background: rgba(255,255,255,.07); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 9px; padding: 6px 9px; }
+.field:focus, .ho-input:focus { outline: none; border-color: rgba(232,180,92,.5); }
+.field::placeholder, .ho-input::placeholder { color: #8d7f6c; }
 .legend-item { display: grid; grid-template-columns: 22px 1fr; gap: 9px; align-items: start; margin-bottom: 7px; }
 .sw { width: 13px; height: 13px; border-radius: 4px; margin-top: 3px; border: 1px solid rgba(0,0,0,.3); }
 .legend-item div b { display: block; font-weight: 600; }
@@ -177,6 +196,9 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   .titlecard { max-width: 190px; }
   .chronicle-meta select { display: none; }
   #chronicle-date { min-width: 0; }
+  /* The install/fullscreen buttons sat over the bottom of every open panel - its own
+     actions included. Nobody needs them while reading one. */
+  body:has(.panel:not([hidden])) .fabs { display: none; }
 }
 
 /* --- walking ---------------------------------------------------------- */
@@ -381,6 +403,11 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 
 /* --- the town hall register -------------------------------------------- */
 .handover-panel.wide { width: min(720px, calc(100vw - 32px)); }
+.th-new-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; }
+.th-new-row .muted { margin: 0; }
+/* The foot only says how an invite went; with the newcomer button gone from it, an empty
+   one is just a rule under the list. */
+.th-foot:has(#th-out:empty) { display: none; }
 .th-controls { display: flex; gap: 10px; align-items: center; margin: 14px 0 10px; flex-wrap: wrap; }
 .th-controls .ho-input { flex: 1; min-width: 200px; font-family: inherit; }
 .th-list { max-height: 46vh; overflow: auto; display: grid; gap: 6px; padding-right: 4px; }

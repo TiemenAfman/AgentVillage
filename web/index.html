@@ -113,7 +113,7 @@
       <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
       <button class="chip" id="build-btn" title="Put something on the island">Build</button>
       <button class="chip" id="plan-btn" title="The island from above: move hamlets, zone ground" hidden>Plan</button>
-      <button class="chip" id="avatar-btn" title="Compose the settler you walk as">Avatar</button>
+      <button class="chip" id="avatar-btn" title="Compose the settler you walk as (I)">Inventory</button>
       <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
       <button class="chip" id="legend-btn">Legend</button>
       <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
@@ -122,10 +122,12 @@
     <button class="chip" id="nav-collapse-btn" title="Hide the menu">‹</button>
     <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
   </div>
-  <div class="chips">
-    <button class="chip on" data-filter="code">Code</button>
-    <button class="chip on" data-filter="cowork">Cowork</button>
-    <button class="chip on" data-filter="apprentices">Apprentices</button>
+  <!-- Toggles, not places to go: without the label and the titles nothing said which. -->
+  <div class="chips filter-chips" role="group" aria-label="Show on the island">
+    <span class="chips-label">Show</span>
+    <button class="chip on" data-filter="code" aria-pressed="true" title="Claude Code sessions: show or hide their houses">Code</button>
+    <button class="chip on" data-filter="cowork" aria-pressed="true" title="Cowork tasks: show or hide the harbour houses">Cowork</button>
+    <button class="chip on" data-filter="apprentices" aria-pressed="true" title="Subagents: show or hide the sheds beside the houses">Apprentices</button>
   </div>
 </div>
 

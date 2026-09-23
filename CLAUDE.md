@@ -618,6 +618,7 @@ promptholm` in `src-tauri/`, not a full clean.
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
 any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |
+| `web/css/` | `ui.css` is the layout, `harbour.css` the theme loaded after it — and it overrides positions too (`.panel { top }` per breakpoint), so a rule for the phone (≤480px, where a panel is a bottom sheet) belongs in harbour.css's media block or it silently loses |
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |

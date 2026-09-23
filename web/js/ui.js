@@ -65,6 +65,7 @@ export function createUI(handlers) {
       const k = btn.dataset.filter;
       state.filters[k] = !state.filters[k];
       btn.classList.toggle('on', state.filters[k]);
+      btn.setAttribute('aria-pressed', String(state.filters[k]));
       handlers.onFilters(state.filters);
     });
   });
@@ -239,6 +240,19 @@ export function createUI(handlers) {
     if (b.active) html += '<span class="tag">Building now</span>';
     if (b.archived) html += '<span class="tag">Archived</span>';
     html += '</div>';
+    // What they are waiting on you for, and the way to answer, before anything else. The
+    // "question for you" list is how most people arrive here, and the question itself used
+    // to be nowhere in the dossier, with Talk below the fold - on a phone, five screens down.
+    const w = b.waiting;
+    if (w && w.question) {
+      html += `<div class="ask${w.asked ? ' asked' : ''}"><h3 class="sec">${w.asked ? 'Asks you' : 'Waiting for you'}</h3>`
+        + `<p>${esc(w.question)}</p></div>`;
+    }
+    html += `<p class="dossier-actions">
+      ${b.kind === 'civic' || !b.sessionId ? '' : `<button class="btn primary" id="talk-btn">${w ? 'Answer' : 'Talk to them'}</button>`}
+      ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
+      <button class="btn" id="focus-btn">Focus camera</button>
+    </p>`;
     html += `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 
     if (b.kind !== 'civic') {
@@ -301,12 +315,8 @@ export function createUI(handlers) {
     } else if (b.title) {
       html += `<p style="margin:0 0 12px">${esc(b.title)}</p>`;
     }
-    html += `<p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-      ${b.kind === 'civic' || !b.sessionId ? '' : '<button class="btn primary" id="talk-btn">Talk to them</button>'}
-      ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
-      <button class="btn" id="focus-btn">Focus camera</button>
-      ${b.kind === 'civic' ? '' : '<button class="btn danger" id="exile-btn">Send off the island</button>'}
-    </p>`;
+    // The one destructive button stays down here, a long way from Answer.
+    if (b.kind !== 'civic') html += '<p class="dossier-actions end"><button class="btn danger" id="exile-btn">Send off the island</button></p>';
 
     const body = el('dossier-body');
     body.innerHTML = html;
