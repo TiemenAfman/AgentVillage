@@ -8,6 +8,7 @@ import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
+import { allowImp } from './imp.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
@@ -2400,6 +2401,11 @@ function raiseGuestIslands() {
     g.crowd = createCrowdView({
       scene, material: buildingMat, region,
       buildings: (region.village && region.village.buildings) || [],
+      // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
+      // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
+      // imps. Scene frame, the same one the crowd's positions are in.
+      player: () => (state.mode === 'walk' && !state.inside && state.walk ? state.walk.state.pos : null),
+      eye: () => camera.position,
     });
     // Their scenery and their vegetable beds. Built into the island's own offset group
     // with its RAW local terrain, which is the rule from shared/regions.mjs: a module that
@@ -4863,6 +4869,9 @@ async function boot() {
   else openMainMenu();
   state.ui.boot(true);
   requestAnimationFrame(tick);
+  // The one model that is fetched rather than baked - the volcano's imp - may start loading
+  // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.
+  allowImp();
   // No islander to hear from and none to install from: /events and sw.js are both its own.
   if (STANDALONE) return;
   connect();

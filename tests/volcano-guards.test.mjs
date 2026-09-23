@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  VOLCANO, volcanoTerrain, guardhouseSite, guardTarget, GUARDS, GUARDHOUSE_ID, isGuard,
+  VOLCANO, volcanoTerrain, guardhouseSite, guardTarget, GUARDS, GUARDHOUSE_ID, GUARDHOUSE_REACH, isGuard,
 } from '../shared/volcano.mjs';
 import { volcanoBundle, parseBundle } from '../lib/islandbundle.mjs';
 import { createCrowds } from '../lib/crowd.mjs';
@@ -178,7 +178,18 @@ test('a rise brings a guard who fell above the target out first, rather than gro
   assert.equal(s.rosters.at(-1)[2], 'guard:2');
 });
 
-test('guards stand apart in front of the gate, on the mountain and out of the lava', () => {
+// How far in front of the guardhouse's middle a spot is, along the way its door faces, and
+// how far off to the side.
+function frontOf(g, at) {
+  const [ox, oz] = [[0, -1], [1, 0], [0, 1], [-1, 0]][g.rot];
+  const [cx, cz] = [g.gx + g.w / 2 - terrain.half, g.gz + g.d / 2 - terrain.half];
+  const dx = at[0] - cx, dz = at[1] - cz;
+  return { out: dx * ox + dz * oz, side: -dx * oz + dz * ox };
+}
+// A guard idles up to his `radius` (0.3) from his spot, and an imp is 0.35 across.
+const WANDER = 0.3, HALF_IMP = 0.18;
+
+test('guards stand apart in front of the gate, clear of the castle, on the mountain and out of the lava', () => {
   const s = sea();
   for (let i = 0; i < 7; i++) s.join();
   s.guards.tick();
@@ -187,13 +198,24 @@ test('guards stand apart in front of the gate, on the mountain and out of the la
   const spots = new Set(gs.map((f) => f.door.map((v) => v.toFixed(2)).join(',')));
   assert.equal(spots.size, gs.length, 'two guards share a spot');
   const g = bundle.buildings[0].plot;
-  const [cx, cz] = [g.gx + 1.5 - terrain.half, g.gz + 1.5 - terrain.half];
+  let nearest = Infinity;
   for (const f of gs) {
     assert.ok(isGuard(f.id));
     const [gx, gz] = [Math.floor(f.door[0] + terrain.half), Math.floor(f.door[1] + terrain.half)];
-    assert.ok(terrain.isLand(gx, gz) && !terrain.isLava(gx, gz), `${f.id} lives at (${gx}, ${gz})`);
-    assert.ok(Math.hypot(f.door[0] - cx, f.door[1] - cz) < 3, `${f.id} stands a long way from the guardhouse`);
+    assert.ok(terrain.isBuildable(gx, gz) && !terrain.isLava(gx, gz), `${f.id} lives at (${gx}, ${gz})`);
+    const { out, side } = frontOf(g, f.door);
+    nearest = Math.min(nearest, out);
+    // In front of the gate, never inside the castle it is drawn as: at the near edge of his
+    // wander, the whole of him is still past its towers and the step they stand on.
+    assert.ok(out - WANDER - HALF_IMP >= GUARDHOUSE_REACH - 1e-9, `${f.id} stands ${out.toFixed(2)} out - inside the castle`);
+    assert.ok(Math.abs(side) < 1.5, `${f.id} stands off to the side of the gate`);
+    assert.ok(out < 3.5, `${f.id} stands a long way from the guardhouse`);
+    // And he is sent home to the same spot he stands at: `home` is where the idle wander
+    // circles, and a guard back from a chase or out of the guardhouse goes to `door`.
+    assert.deepEqual(f.home, f.door);
   }
+  // Right up to the step, not somewhere down the mountain.
+  assert.ok(nearest < GUARDHOUSE_REACH + 0.6, `the first row stands ${nearest.toFixed(2)} out`);
   // And they idle like residents: a while later some of them have stepped about.
   const before = gs.map((f) => [...f.pos]);
   s.crowd.advance(200, 0);

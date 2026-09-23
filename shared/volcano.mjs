@@ -60,6 +60,16 @@ export const guardId = (n) => `guard:${n}`;
 // exists this is the one word to change, plus the case in web/js/buildings.js.
 export const GUARDHOUSE_LOOKS_LIKE = 'castle';
 
+// How far the guardhouse reaches from the middle of its lot along the ground, the step it
+// stands on included: the castle's towers stand out to 0.97 either way and the porch shows
+// 0.23 past them (web/js/buildings.js, measured off buildBuilding - tests/imp.test.mjs holds
+// the model to this number, since this side may not load it). Everybody who lives at the
+// guardhouse stands outside it (lib/crowd.mjs, guardHome); before this number existed the
+// first row was put 0.85 out, which is between the front wall and the towers' front, and
+// the outer two guards of it stood inside a tower. A new guardhouse model means measuring
+// again.
+export const GUARDHOUSE_REACH = 1.2;
+
 // How many guards there should be: BASE, and PER_ISLANDER more for every islander online,
 // never more than CAP. The cap is not decoration: the hostility tick has three path searches
 // a beat for the whole world, and a page's crowd has a fixed number of instance slots.

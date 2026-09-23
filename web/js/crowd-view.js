@@ -36,6 +36,9 @@ import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
+import { lerpAngle } from 'shared/settlerwalk.mjs';
+import { SEA_LEVEL } from 'shared/terrain.mjs';
+import { impsOn, wantsImp, createImp, pickImps, IMP_LIMIT } from './imp.js';
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -74,7 +77,14 @@ const STANDING_U_S = 0.05;
 // SWIM_SINK (walk.js) reads as walking on the water.
 const WADE_Y = -0.22;
 
-export function createCrowdView({ scene, material, region, buildings = [] }) {
+// `player` is where this page's own walker is (scene frame, like every position here), or
+// null when nobody is on foot, and `eye` where the camera is - only the volcano's imps use
+// either. `imp` makes the stand-in for one guard, (id) => actor or null while there is none
+// to be had; web/js/imp.js by default, a stub in the tests. `impLimit` is how many stand at
+// once. See syncImps below.
+export function createCrowdView({
+  scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = IMP_LIMIT,
+}) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
   // this is only what makes it look like they mean it). Read off the bundle the region
   // was raised from, the same flag the sea reads - there is no second copy of it.
@@ -95,6 +105,19 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // ours and the row is theirs and only one of the two survives a message.
   const rides = new Map();
   const hulls = new Map();
+
+  // The volcano's guards, drawn as lava imps instead of as members of the crowd.
+  //
+  // Each figure stays in the crowd - enrolled, interpolated, found by its id - and only its
+  // drawing is swapped: every frame its instanced body is parked out of sight and its imp is
+  // put where the body would have been drawn. That keeps every rule above (the snap, the
+  // guess, the wade, the ride) in one place, and it means an imp that never arrives - still
+  // loading, failed, a page that has not finished booting, or a guard past the nearest
+  // `impLimit` - leaves the guard exactly the figure it always was. Codex residents lodging
+  // in the guardhouse are not guards and stay settlers. Hovering a guard names nobody on the
+  // volcano either way: main.js only picks people out of our own island's crowd.
+  const standIn = impsOn(region) ? (makeImp || ((id) => createImp(scene, id))) : null;
+  const imps = new Map();   // guard id -> { f, actor }
 
   // The same bodies, by building id. The wire counts in indices because that is what is
   // cheap to send; everything on this side that is *about* somebody - the dossier, the
@@ -253,6 +276,55 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     for (const [idx, r] of rows) rides.set(idx, r);
   }
 
+  function dropImp(id) {
+    const s = imps.get(id);
+    if (!s) return;
+    s.actor.dispose();
+    imps.delete(id);
+  }
+
+  // After the figures have been placed and before they are drawn. A guard who has been
+  // retired - fell, the roster sent a hole - or replaced by a new body under the same id
+  // takes his imp with him; the next body gets a fresh one. Which guards have an imp is
+  // decided again every frame (pickImps: two dozen distances, sorted), and a guard who
+  // drifts out of the nearest `impLimit` gives his up and is a figure again. A heading is
+  // worked out here, the way settler-figures.js would have: that file only turns figures it
+  // draws.
+  function syncImps(dt, now, showing) {
+    if (!standIn) return;
+    for (const [id, s] of imps) if (byIdx.get(id) !== s.f) dropImp(id);
+    const cands = [];
+    for (const f of figures.values()) {
+      if (wantsImp(f.id) && f.to) cands.push({ id: f.id, x: f.pos[0], y: f.y, z: f.pos[1], has: imps.has(f.id) });
+    }
+    const chosen = pickImps(cands, eye ? eye() : null, impLimit);
+    for (const id of [...imps.keys()]) if (!chosen.has(id)) dropImp(id);
+    const walker = showing && player ? player() : null;
+    for (const id of chosen) {
+      const f = byIdx.get(id);
+      let s = imps.get(id);
+      if (!s) {
+        const actor = standIn(id);
+        if (!actor) continue;
+        s = { f, actor };
+        imps.set(id, s);
+      }
+      const shown = showing && f.visible && f.slot != null;
+      if (f.faceAngle != null) f.yaw = f.faceAngle;
+      else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
+      s.actor.update({
+        x: f.pos[0], y: f.y, z: f.pos[1], yaw: f.yaw,
+        moving: f.anim === 'walk' || f.anim === 'step', speed: f.speed, swimming: !!f.wet,
+        visible: shown, dt, now,
+        player: shown ? walker : null,
+      });
+      // Out of the instanced crowd for this frame. `visible` is written back to true by the
+      // next frame's placing, so this is said again every frame rather than remembered - and
+      // it is exactly what the crowd does with a body it may not show.
+      if (f.visible) { f.visible = false; view.hide(f); }
+    }
+  }
+
   // Draw everybody where they have got to. A body glides from where it was drawn when the
   // last word landed to where that word put it, over about the time the word before took
   // to arrive, and then a little further along the same line if the next one is late; the
@@ -271,6 +343,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     if (!showing) {
       for (const f of figures.values()) { if (f.visible) { f.visible = false; view.hide(f); } }
       for (const hull of hulls.values()) hull.object.visible = false;
+      syncImps(dt, now, false);
       return;
     }
     // Whoever is on the water first: their hull decides where they are, how high and
@@ -349,12 +422,18 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // faster than a stroll, which is how a newcomer's dash up from the beach has always
       // been drawn.
       if (moving) { f.face = [gx, gz]; f.turn = f.anim === 'walk' ? 0.2 : 0.12; f.speed = speed; }
-      f.y = groundAt ? Math.max(WADE_Y, groundAt(nx, nz)) : 0;
+      const ground = groundAt ? groundAt(nx, nz) : 0;
+      f.y = Math.max(WADE_Y, ground);
+      // Out of their depth: the ground under them is below the sea - walk.js's own test for
+      // the player. Only an imp reads it (it swims rather than wades); the figures do not.
+      f.wet = ground < SEA_LEVEL;
     }
+    syncImps(dt, now, true);
     view.draw(figures, dt);
   }
 
   function dispose() {
+    for (const id of [...imps.keys()]) dropImp(id);
     for (const idx of [...figures.keys()]) retire(idx);
     byIdx.clear();
     view.dispose();
@@ -373,6 +452,9 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
     // everything that is about a person goes through.
     figure: (id) => byIdx.get(id) || null,
     byId: () => byIdx,
+    // Whatever stands in for each guard right now, by guard id: the imps, once the model
+    // has loaded. For a console and the tests.
+    imps: () => new Map([...imps].map(([id, s]) => [id, s.actor])),
     // Picking somebody out of the crowd with the mouse. Straight through to the meshes:
     // a view has no opinion about it, and the figures are instanced, so an instance id is
     // the only way back from a ray to a body.

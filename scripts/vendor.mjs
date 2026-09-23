@@ -12,7 +12,8 @@ const files = [
   ['build/three.core.js', 'three.core.js'],                 // only exists in newer three versions
   ['examples/jsm/controls/OrbitControls.js', 'addons/controls/OrbitControls.js'],
   ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],
-  ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page only
+  ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page, and the volcano's imps (imp.js, lazily)
+  ['examples/jsm/utils/SkeletonUtils.js', 'addons/utils/SkeletonUtils.js'],     // one skeleton per imp (imp.js, lazily)
   ['examples/jsm/controls/TransformControls.js', 'addons/controls/TransformControls.js'],   // editor only
   ['examples/jsm/renderers/CSS3DRenderer.js', 'addons/renderers/CSS3DRenderer.js'],         // the HTML panels
 

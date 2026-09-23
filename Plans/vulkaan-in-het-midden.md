@@ -18,7 +18,12 @@ en de zee zet de huisjes op 134 vaste bouwplekken op de helling (`codexPlots`, h
 `codex:<island>:<id>` met lineair doorzoeken), de rest woont in het wachthuis, en de bewoners
 komen erbij in de lopende crowd (`lib/residents.mjs`). De pagina krijgt de huisjes via een
 `codex`-bericht zonder `rev` te verzetten. Het Codex-eiland per islander is weg. Stap 7 is
-ontwerp.
+ontwerp. Wel alvast (niet gecommit): elke bewaker (`guard:<n>`) op de vulkaan wordt op de pagina getekend als de
+geriggde lava-imp (`web/js/imp.js`, `web/models/hostile-settler.glb`, lui geladen na de boot, idle met een fase per
+id, walk, swim in het water en attack als je eigen walker binnen 1,5 komt) in plaats van als instanced figuur (`syncImps` in
+`web/js/crowd-view.js`): SkeletonUtils-clones met gedeelde geometrie, frustum culling via een vaste bol, geen
+animatie buiten beeld of verder dan 40, en alleen de dichtstbijzijnde 16 (telefoon 6). De rijen bewakers staan nu
+voor het kasteel in plaats van erin (`GUARDHOUSE_REACH` 1,2 + 0,5: eerste rij 1,7 uit het midden, was 0,85).
 
 ## Hoe het nu zit (gemeten in de sessie van 23-09)
 

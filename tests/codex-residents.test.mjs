@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  VOLCANO, CODEX, CODEX_TIERS, GUARDHOUSE_ID, volcanoTerrain, guardhouseSite, codexPlots, codexId, isCodex,
+  VOLCANO, CODEX, CODEX_TIERS, GUARDHOUSE_ID, GUARDHOUSE_REACH, volcanoTerrain, guardhouseSite, codexPlots, codexId, isCodex,
 } from '../shared/volcano.mjs';
 import { volcanoBundle, packCodex, parseCodex, parseBundle } from '../lib/islandbundle.mjs';
 import { createCrowds } from '../lib/crowd.mjs';
@@ -203,10 +203,22 @@ test('when the plots run out the rest lodge in the guardhouse, and move into a h
   assert.equal(lodgers.length, all - pool);
   const gh = s.volcano.bundle.buildings[0].plot;
   const [cx, cz] = [gh.gx + 1.5 - terrain.half, gh.gz + 1.5 - terrain.half];
+  const [ox, oz] = [[0, -1], [1, 0], [0, 1], [-1, 0]][gh.rot];
+  const plots = codexPlots(terrain).map((p) => p.plot);
   for (const f of lodgers) {
     assert.ok(Math.hypot(f.home[0] - cx, f.home[1] - cz) < 5, `${f.id} lodges a long way from the guardhouse`);
     const [gx, gz] = [Math.floor(f.home[0] + terrain.half), Math.floor(f.home[1] + terrain.half)];
     assert.ok(terrain.isLand(gx, gz) && !terrain.isLava(gx, gz), `${f.id} lodges at (${gx}, ${gz})`);
+    // Behind the guards, out in front of the castle rather than inside it, and never
+    // wandering onto somebody's plot: a lodger idles up to 0.3 from home and is 0.16 wide.
+    const out = (f.home[0] - cx) * ox + (f.home[1] - cz) * oz;
+    assert.ok(out - 0.3 - 0.16 >= GUARDHOUSE_REACH, `${f.id} lodges ${out.toFixed(2)} out - inside the castle`);
+    for (const p of plots) {
+      const x0 = p.gx - terrain.half, z0 = p.gz - terrain.half;
+      const dx = Math.max(x0 - f.home[0], 0, f.home[0] - (x0 + p.w));
+      const dz = Math.max(z0 - f.home[1], 0, f.home[1] - (z0 + p.d));
+      assert.ok(Math.hypot(dx, dz) >= 0.3 + 0.16, `${f.id} lodges on the plot at ${p.gx},${p.gz}`);
+    }
   }
   // C goes home: every lodger left has a house now, and nobody housed before moved.
   const before = new Map(s.volcano.bundle.buildings.map((b) => [b.id, JSON.stringify(b.plot)]));

@@ -374,7 +374,25 @@ were checked against each other for all four rotations and agree exactly.
 **Nothing is fetched at boot.** Blender sets are baked into ordinary modules
 (`web/js/*-mesh.js`) imported synchronously through `web/js/models.js`, so every shape
 exists before the first line of `main.js` runs. Do not introduce a loader: the boot screen
-stuck on "Charting the island…" is a failure this project has already had.
+stuck on "Charting the island…" is a failure this project has already had. The one deliberate
+exception is the volcano's lava imp (`web/js/imp.js`, a skinned GLB a bake cannot carry): a dynamic
+import of GLTFLoader and SkeletonUtils through `modelUrl`, allowed only after `state.ui.boot(true)`
+(`allowImp()`) and started only when a volcano crowd has a guard to swap; a failed load is logged
+once and every guard stays an instanced figure. Nothing may await it - keep any future model on
+that pattern. Every `guard:<n>` is drawn as an imp (Codex lodgers stay settlers), and a skinned
+mesh cannot be instanced, so the rules that make that affordable are load-bearing: each imp is a
+`SkeletonUtils.clone` sharing **one** geometry and material that are never disposed with an imp
+(guards respawn every 20 s); culling stays on through one `boundingSphere` that holds every pose
+of every clip (`cullSphere`, sampled against the real GLB in `tests/imp.test.mjs`); an imp not
+drawn last frame (`onBeforeRender`) or over `ANIMATE_RANGE` (40) from the camera skips its mixer
+unless it is mid-swing; and only the nearest `IMP_LIMIT` to the camera are imps (16 desktop, 6 with
+`STANDALONE`; `pickImps`, holders kept by a 0.8 distance factor), the rest instanced figures.
+Clips: `idle` (phase hashed from the guard id), `walk` in place at 0.346 m/s scale 1 (timeScale
+follows the body's speed), `swim` whenever the ground under it is below `SEA_LEVEL` (the model
+lowered so the surface is at 0.50 m of it, instead of the settlers' `WADE_Y`), `attack`;
+`walk-rootmotion` is dropped at load. A new GLB means re-checking `IMP_HEIGHT_M` and the sphere.
+SkeletonUtils is a new vendored file: a checkout that has not run `npm install` (or
+`node scripts/vendor.mjs`) since then gets the logged failure, not imps.
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island
