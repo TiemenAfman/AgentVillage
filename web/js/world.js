@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
 import { POLDER_H } from 'shared/terrain.mjs';
+import { seasonOf, worldTime, localZone } from 'shared/worldclock.mjs';
 import * as models from './models.js';
 import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, NONE, TOWN } from './hamlets.js';
@@ -24,12 +25,10 @@ export const SEASON = {
   autumn: { meadow: 0x91ad68, upland: 0x738b53, canopyMul: 0.95, summit: 0xa39d90 },
   winter: { meadow: 0x8f9f76, upland: 0x77855f, canopyMul: 0.86, summit: 0xe6e6e0 },
 };
-export function seasonOf(month) {
-  if (month <= 1 || month === 11) return 'winter';
-  if (month <= 4) return 'spring';
-  if (month <= 7) return 'summer';
-  return 'autumn';
-}
+// Which season a month is lives in shared/worldclock.mjs now, beside the month itself, so
+// the sea and the page cannot disagree about when autumn starts. Re-exported because half of
+// web/js/ has always asked world.js for it.
+export { seasonOf } from 'shared/worldclock.mjs';
 
 // hour -> the look of the sky. Interpolated linearly between neighbours.
 const DAY = [
@@ -1429,7 +1428,9 @@ export function createLandscape({
 
 export function createWorld(scene, terrain, village, opts = {}) {
   const size = terrain.size, half = terrain.half, N = terrain.N;
-  const season = seasonOf(opts.month ?? new Date().getMonth());
+  // Without a month - the workbench pages - this machine's own calendar, which is all a
+  // page with no sea has.
+  const season = seasonOf(opts.month ?? worldTime(Date.now(), localZone(Date.now())).month);
   const group = new THREE.Group();
   scene.add(group);
 

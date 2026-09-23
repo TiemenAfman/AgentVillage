@@ -614,6 +614,17 @@ haze is still decided in exactly one place: `applyFogRange` hands `hazeRange` a 
 and the floor in there is what keeps the furthest coast in the world on this side of the
 murk — the price being that thick fog is milder the wider the world is.
 
+**The calendar is the sea's too, and the page never asks its own zone.** The welcome's `now`
++ `tz` go through `worldTime()` in `shared/worldclock.mjs` — hour, month, weekday, season,
+moon phase, the one copy — via `worldNow()` in `main.js`; `tests/worldclock.test.mjs` fails
+on any local `.getMonth()`/`.getDay()`/`.getHours()` in `web/js/` or `shared/` (the
+workbench and real-date labels excepted). The sea reads its zone by name (`SEA_TZ`,
+`lib/seaclock.mjs`, offset per moment through `Intl`, so summer time is free) and broadcasts
+`{t:'clock'}` when the offset changes. Without `SEA_TZ` it is the host's zone — which in a
+container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
+[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
+borrel, the clouds, the moon).
+
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
 else's — and when their `shared/terrain.mjs` disagree an island is drawn in the wrong shape
@@ -821,5 +832,5 @@ owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
 `PROMPTHOLM_CODEX_HOME`, `PROMPTHOLM_ROOT` (which checkout the exes run), `PROMPTHOLM_HOME`
-(where config.json and data/ live), `CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own three: `SEA_PORT`, `SEA_NAME`,
-`SEA_KEY`.
+(where config.json and data/ live), `CLAUDE_EXE`, `GH_EXE`, `BLENDER`. The sea reads its own: `SEA_PORT`, `SEA_NAME`,
+`SEA_KEY`, `SEA_ADMIN_KEY`, `SEA_UPDATE_HOOK` and `SEA_TZ` (the world's time zone by name).

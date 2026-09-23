@@ -26,6 +26,9 @@ const adminKey = value('admin-key', process.env.SEA_ADMIN_KEY || null);
 // Where to ask for a redeploy, for the button on the harbour page. Whoever has this can
 // replace the container, so it stays in the environment and is never sent to a browser.
 const updateHook = value('update-hook', process.env.SEA_UPDATE_HOOK || null);
+// Whose afternoon the world is having, by name (Europe/Amsterdam). Without it the machine's
+// own zone, which in a container is UTC - see lib/seaclock.mjs.
+const zone = value('tz', process.env.SEA_TZ || null);
 
 const stamp = () => new Date().toISOString();
 const log = (m) => console.log(`${stamp()} ${m}`);
@@ -37,12 +40,14 @@ const sea = createSea({
   key,
   adminKey,
   updateHook,
+  zone,
   // build is left to lib/sea.mjs's default: lib/build.mjs, stamped by Dockerfile.sea.
   log,
 });
 
 await sea.listen();
 console.log(`[sea] "${name}" is at http://${open ? '0.0.0.0' : 'localhost'}:${port}/`);
+console.log(`      its clock reads in ${sea.clock.zone()}.`);
 console.log(open
   ? '      open to the network. It holds no files and writes nothing to disk.'
   : '      loopback only. Pass --open to let the rest of the network in.');

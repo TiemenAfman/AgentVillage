@@ -39,6 +39,9 @@ COPY --chown=node:node shared/ ./shared/
 COPY --chown=node:node --from=stamp /build.mjs ./lib/build.mjs
 
 ENV SEA_PORT=4750
+# The world's time zone. The image itself is UTC, and without this the open sea's afternoon
+# is two hours behind a Dutch one in summer - see lib/seaclock.mjs. Override with -e SEA_TZ.
+ENV SEA_TZ=Europe/Amsterdam
 EXPOSE 4750
 
 # --open, because inside a container loopback is nobody. What keeps it shut is the network

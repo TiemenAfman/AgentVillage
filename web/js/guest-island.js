@@ -45,7 +45,9 @@ const EMPTY_VILLAGE = {
 
 export function createGuestIsland({
   scene, region, buildings: given = [], material = null, modest = false,
-  month = new Date().getMonth(),
+  // The world's month, from main.js's worldNow(). No fallback to this machine's calendar:
+  // a guest island only exists in a sea, and the sea says what month it is.
+  month,
 }) {
   const terrain = region.terrain;
   const season = seasonOf(month);

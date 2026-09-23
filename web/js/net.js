@@ -216,6 +216,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // Passed through as it arrived, exactly as the welcome's copy is, so there is one
         // shape for the page to understand rather than two.
         case 'weather': onWeather(m); break;
+        // The clocks going forward or back, twice a year. The same two numbers the welcome
+        // carries, handed to the same place, so a page connected across the switch does not
+        // keep last week's offset until it next reconnects - see lib/seaclock.mjs.
+        case 'clock': onWorld(null, null, { now: m.now, tz: m.tz }); break;
         // Somebody else's settlers. `fr` says who the numbers mean and comes once per
         // island; `f` is where they have got to and comes on the beat. Passed through as
         // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and

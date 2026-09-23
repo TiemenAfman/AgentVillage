@@ -21,6 +21,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   Codex-data heeft bouwt er huisjes op, lavastromen zoals de rivier. Daarbij: `hurt()` en health
   op de zee, stamina en Shift-turbo (rennen/zwemmen samen, boot apart) met rode en gele balken,
   en vrij zwemmen in open zee. Helemaal gebouwd op 23 september 2026: de vulkaan in het midden met een wachthuis, lava-imps als bewakers die meeschalen met de islanders, de Codex-huisjes van alle islanders op de helling, en health die echt telt met terugslaan en blokken.
+- [klok-en-hemel-van-de-zee.md](klok-en-hemel-van-de-zee.md) — de zee als enige klok: één
+  `shared/worldclock.mjs` voor uur, maand, weekdag en maanfase, `SEA_TZ` zodat de zee in Docker
+  niet op UTC draait, de borrel weer echt (de zee zet `setGather`, dat sinds de crowd naar de
+  zee ging nergens meer werd aangeroepen) en wolken als functie van wereldtijd. Fase 1 (de
+  wereldklok en `SEA_TZ`) gebouwd op 23 september 2026.
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
