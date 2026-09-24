@@ -12,7 +12,7 @@ import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
-import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
+import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
@@ -427,11 +427,14 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
+  // By the name the sea knows them by (seaIdOf): with our own `house:<uuid>` the sea found
+  // nobody, and the settler walked on mid-sentence on every screen.
+  const onSea = seaIdOf(id);
+  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => { if (state.net) state.net.unattend(id); },
+    onLetGo: () => { if (state.net) state.net.unattend(onSea); },
   });
 }
 
@@ -2171,6 +2174,9 @@ async function changeSea(what) {
 // milliseconds later, because the bundle has to be fetched first. Kept rather than dropped:
 // without the roster nobody on that island has a face.
 const crowdRosters = new Map();
+// And who on it is in the middle of a conversation (`fh`), for the same reason: the join
+// hands it over straight after the roster, long before the bundle is in.
+const crowdHeld = new Map();
 
 // Our own roster, in the sea's names and then in ours.
 //
@@ -2195,6 +2201,13 @@ let ourIds = null;
 // message big enough to matter is the one guaranteed to arrive at the wrong moment.
 let namingIds = null;
 let heldWhere = null;
+// The other way round: the name the sea knows one of our settlers by, for a message that
+// names somebody to it (`attend`). The sea's crowd is built from the redacted bundle, so our
+// own `house:<uuid>` is nobody there. The page's id when there is no map yet.
+function seaIdOf(id) {
+  if (ourIds) for (const k in ourIds) if (ourIds[k] === id) return k;
+  return id;
+}
 async function ourRoster(ids) {
   const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
   if (unknown) {
@@ -2249,6 +2262,17 @@ function onCrowdMessage(m) {
     if (home) { ourRoster(m.ids); return; }
     if (g && g.crowd) g.crowd.roster(m.ids);
     else crowdRosters.set(m.island, m.ids);
+    return;
+  }
+  // Who is being spoken to. By index, like the positions, so our own needs no translating
+  // and is not held back while the roster is: the view keeps it by number until the body is
+  // there. Kept for a reseed like the roster (state.homeHeld).
+  if (m.kind === 'held') {
+    if (home) {
+      state.homeHeld = m.h;
+      if (state.settlers && state.region) state.settlers.held(decodeHeld(m.h, state.region.half));
+    } else if (g && g.crowd) g.crowd.held(decodeHeld(m.h, g.region.half));
+    else crowdHeld.set(m.island, m.h);
     return;
   }
   if (home) {
@@ -2478,6 +2502,8 @@ function raiseGuestIslands() {
     g.crops.apply((region.village && region.village.crops) || [], { animate: false });
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
+    const talking = crowdHeld.get(region.id);
+    if (talking) { g.crowd.held(decodeHeld(talking, region.half)); crowdHeld.delete(region.id); }
     state.guests.push(g);
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
@@ -2982,6 +3008,7 @@ function buildScene(village) {
   // always does, and after a reseed it is the scene that was rebuilt, not the island.
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
+  if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);

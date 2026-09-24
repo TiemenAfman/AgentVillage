@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [aangesproken-settler-draait-zich-om.md](aangesproken-settler-draait-zich-om.md) — een
+  settler die je aanspreekt draait zich op elk scherm naar je toe: de zee stuurt wie er
+  vastgehouden wordt en waar de spreker staat als eigen bericht (`fh`, alleen bij verandering),
+  geen richting in elke rij; en `faceUp` noemt de settler bij zijn naam op de zee (`seaIdOf`).
+  Gebouwd op 24 september 2026.
 - [vulkaan-in-het-midden.md](vulkaan-in-het-midden.md) — het Codex-eiland wordt één vijandige
   vulkaan in het midden van de zee, van de zee zelf; meer islanders betekent meer bewakers, wie
   Codex-data heeft bouwt er huisjes op, lavastromen zoals de rivier. Daarbij: `hurt()` en health

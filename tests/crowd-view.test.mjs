@@ -330,3 +330,92 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
   assert.ok(glow.some((v) => v > 0), 'the torch has no flame');
   assert.ok(!extra[0].geometry.attributes.aEmissive.array.some((v) => v > 0), 'the sword is glowing');
 });
+
+// ---- being spoken to -------------------------------------------------------------------
+//
+// The sea stops a settler somebody is talking to and turns them round, and a row can say
+// the first but not the second: they are 'still', and a heading is not on the wire. The
+// held list (`fh`, crowd.held) is where the talker stands; this is what the view makes of it.
+// Plans/aangesproken-settler-draait-zich-om.md.
+
+const yawTowards = (f, x, z) => Math.atan2(x - f.pos[0], z - f.pos[1]);
+const turnedBy = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); };
+
+test('a settler held by a conversation turns round to the talker, on any screen', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox, oz] = region.origin;
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'still' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  assert.ok(Math.abs(f.yaw) < 1e-9, 'the fixture should start facing +z');
+  // The talker stands a stride due east of them, in the island's own frame like every row.
+  crowd.held(new Map([[idx, { x: 1.3, z: 0 }]]));
+  let now = 1000;
+  for (let i = 0; i < 120; i++) { now += 16; crowd.draw(0.016, ground, now); }
+  assert.ok(turnedBy(f.yaw, yawTowards(f, ox + 1.3, oz)) < 0.01,
+    `faces ${f.yaw.toFixed(3)} rather than the talker at ${yawTowards(f, ox + 1.3, oz).toFixed(3)}`);
+  // At the walk's own rate, not a snap: the first frame only makes a start.
+  const g = crowd.figure('house:b');
+  const gi = indexOf(crowd, g);
+  crowd.apply(new Map([[gi, { x: 5, z: 5, anim: 'still' }]]), now);
+  crowd.draw(0.016, ground, now);
+  crowd.held(new Map([[idx, { x: 1.3, z: 0 }], [gi, { x: 3, z: 5 }]]));
+  crowd.draw(0.016, ground, now + 16);
+  assert.ok(g.yaw < 0 && g.yaw > -Math.PI / 2 * 0.5, `turned ${g.yaw.toFixed(3)} in one frame: a snap, not a turn`);
+  // And nobody who is not in the list is turned at all.
+  assert.ok(Math.abs(crowd.figure('house:c').yaw) < 1e-9);
+});
+
+test('a held settler finishes the stride they were on before turning', () => {
+  // The sea stops them dead, and this screen is a word behind: turning to the talker while
+  // the last stride is still being glided reads as a sidestep.
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  const [ox, oz] = region.origin;
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'walk' }]]), 1000);
+  crowd.draw(0.016, ground, 1000);
+  crowd.apply(new Map([[idx, { x: 0, z: 0.1, anim: 'walk' }]]), 1200);
+  // Stopped a step further on, talker to the west.
+  crowd.apply(new Map([[idx, { x: 0, z: 0.2, anim: 'still' }]]), 1400);
+  crowd.held(new Map([[idx, { x: -2, z: 0.2 }]]));
+  crowd.draw(0.016, ground, 1450);
+  assert.deepEqual(f.face.map(Math.sign), [0, 1], 'looked at the talker in the middle of a stride');
+  for (let t = 1466; t < 3500; t += 16) crowd.draw(0.016, ground, t);
+  assert.ok(turnedBy(f.yaw, yawTowards(f, ox - 2, oz + 0.2)) < 0.01, `stood facing ${f.yaw.toFixed(3)}, not the talker`);
+});
+
+test('let go of, a settler keeps looking where they were until they walk off', () => {
+  const crowd = view();
+  const f = crowd.figure('house:a');
+  const idx = indexOf(crowd, f);
+  crowd.apply(new Map([[idx, { x: 0, z: 0, anim: 'still' }]]), 1000);
+  crowd.held(new Map([[idx, { x: 2, z: 0 }]]));
+  let now = 1000;
+  for (let i = 0; i < 120; i++) { now += 16; crowd.draw(0.016, ground, now); }
+  const looking = f.yaw;
+  // The whole set, empty: everybody let go of.
+  crowd.held(new Map());
+  for (let i = 0; i < 30; i++) { now += 16; crowd.draw(0.016, ground, now); }
+  assert.ok(turnedBy(f.yaw, looking) < 1e-6, 'turned back round the moment they were let go of');
+  // And off they go, facing the way they are going - south.
+  crowd.apply(new Map([[idx, { x: 0, z: -0.2, anim: 'walk' }]]), now + 200);
+  for (let i = 0; i < 60; i++) { now += 16; crowd.draw(0.016, ground, now + 200); }
+  assert.ok(turnedBy(f.yaw, Math.PI) < 0.05, `walked off facing ${f.yaw.toFixed(3)}, not the way they went`);
+});
+
+test('a held list that lands before the body is kept for it', () => {
+  // Our own roster waits on a round trip to the islander, and the sea's join hands the list
+  // over straight after it: it is kept by number, not on a body that is not there yet.
+  const scene = new THREE.Scene();
+  const crowd = createCrowdView({ scene, material: new THREE.MeshBasicMaterial(), region, buildings: [{ id: 'house:a', kind: 'house', name: 'A', style: 'opus' }] });
+  crowd.held(new Map([[0, { x: 0, z: -2 }]]));
+  crowd.roster(['house:a']);
+  const f = crowd.figure('house:a');
+  crowd.apply(new Map([[0, { x: 0, z: 0, anim: 'still' }]]), 1000);
+  let now = 1000;
+  for (let i = 0; i < 120; i++) { now += 16; crowd.draw(0.016, ground, now); }
+  assert.ok(turnedBy(f.yaw, Math.PI) < 0.01, `faces ${f.yaw.toFixed(3)} rather than the talker to the south`);
+  crowd.dispose();
+});

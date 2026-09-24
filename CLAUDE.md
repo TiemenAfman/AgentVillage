@@ -371,6 +371,18 @@ fill up over ten seconds is not a first impression worth having. The client hold
 message while it translates the roster — see below — or it would be dropped in full, which
 is exactly the ten seconds back again.
 
+**A settler held in a conversation turns on every screen through `fh`, not through a row.**
+A row has no heading and a held settler is `'still'`, so the page used to leave them facing
+the way they had been walking. The sea works the whole held set out of `f.attend` every beat
+(`encodeHeld`: `[idx, x, z, …]`, the talker's spot in the island's own frame) and broadcasts
+`{t:'fh', i, h}` only when it changes, plus one per island - empty too - in the join dump, or a
+page back from a sea restart keeps the old word for ever. Derived rather than hooked on
+attend/release, because `f.attend` is also cleared by a guard falling, a resident moving and a
+republish, and a compact renumbers. `crowd-view.js held()` keeps it by index (it can land before
+our roster is translated) and `draw` faces a *standing* body at the talker at the walk's 0.12.
+Anything that names one of our settlers *to* the sea goes through `seaIdOf` in main.js (the
+inverse of `/api/crowd-ids`): `faceUp` sent `house:<uuid>` and the sea held nobody.
+
 On the drawing side `rev` only decides whether to refetch, never whether to rebuild:
 `web/js/islandsig.js` compares a `drawnSignature()` of what is already standing against the
 new bundle, because a neighbour's landscape costs the same ~550 ms to build as our own
