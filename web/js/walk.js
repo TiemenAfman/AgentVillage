@@ -558,14 +558,22 @@ export function createWalkMode({
   // inside it too, and you stood locked in a stranger until they moved. So when moving, a
   // peer only blocks a step that brings you closer. Placing somebody (`placing`: stepping
   // onto the square, ashore) is still strict - the whole point there is to find a free spot.
+  // One solid, grown by a body's radius: a circle for what is round (`r`, see ROUND in
+  // buildings.js), the rectangle for everything else.
+  function inside(b, x, z, pad) {
+    if (b.r) {
+      const dx = x - b.x, dz = z - b.z, reach = b.r + pad;
+      return dx * dx + dz * dz < reach * reach;
+    }
+    return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
+  }
+
   function blocked(x, z, from = state.pos.y, placing = false) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
     if (placing && groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
-    for (const b of state.blockers) {
-      if (Math.abs(x - b.x) < b.hx + BODY_R && Math.abs(z - b.z) < b.hz + BODY_R) return true;
-    }
+    for (const b of state.blockers) if (inside(b, x, z, BODY_R)) return true;
     for (const b of state.peerBlockers) {
       const dx = x - b.x, dz = z - b.z;
       const reach = (b.r + BODY_R) * (b.r + BODY_R);
@@ -978,9 +986,7 @@ export function createWalkMode({
   // cannot be walked through, so "can a vegetable bed go where I am standing" is that
   // same question asked with a bed's radius instead of a settler's.
   function roomFor(x, z, r) {
-    for (const b of state.blockers) {
-      if (Math.abs(x - b.x) < b.hx + r && Math.abs(z - b.z) < b.hz + r) return false;
-    }
+    for (const b of state.blockers) if (inside(b, x, z, r)) return false;
     return true;
   }
 

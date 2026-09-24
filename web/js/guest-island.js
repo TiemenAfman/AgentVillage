@@ -246,6 +246,7 @@ export function createGuestIsland({
           z: oz + rec.group.position.z - r.x * s + r.z * c,
           hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
           hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
+          ...(r.r ? { r: r.r } : {}),
           id: `guest:${region.id}:${rec.id}`,
         });
       }

@@ -143,6 +143,36 @@ test('refusals: land, two pieces, no shore, the town\'s own coast', () => {
   assert.equal(JSON.stringify(layout), before, 'a refused polder changed the layout');
 });
 
+// The coast the keeper found on the live island: a strip of shallows before the sand, so
+// the all-water super-cell never touches the shore and the one with the sand in it was
+// "already land". A super-cell the coastline runs through is now a polder of its wet part.
+test('a hand-drawn polder may take a super-cell the coast runs through, and leaves its sand', () => {
+  const { model, layout } = settled();
+  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway });
+  const lat = layout.lattice;
+  const keep = new Set(((layout.fairway || {}).cells || []).map(key));
+  let mixed = null;
+  for (let j = -15; j <= 15 && !mixed; j++) for (let i = -15; i <= 15 && !mixed; i++) {
+    if (!polderCandidate(t, lat, i, j, keep) && polderCandidate(t, lat, i, j, keep, { shore: true })) {
+      const [gx, gz] = blockOf(lat, i, j);
+      let land = 0;
+      for (let z = 0; z < lat.pitch; z++) for (let x = 0; x < lat.pitch; x++) if (t.isLand(gx + x, gz + z)) land++;
+      if (land > 0 && land < 16) mixed = { at: [i, j], land };
+    }
+  }
+  assert.ok(mixed, 'no super-cell on this coast is part sand, part shallows');
+  const wasStanding = stands(layout);
+  const r = runPlan(layout, model, parsePlan({ ops: [{ op: 'polder', supers: [mixed.at] }] }), opts);
+  assert.ok(r.ok, r.error || JSON.stringify(r.verdicts));
+  const p = layout.polders[0];
+  assert.equal(p.cells.length, 16 - mixed.land, 'the sand became part of the polder');
+  for (const c of p.cells) assert.ok(!t.isLand(c[0], c[1]), `${key(c)} was land before`);
+  assert.equal(layout.terrainHash, groundOf(layout));
+  assert.deepEqual(movedBetween(wasStanding, stands(layout)), []);
+  // The ladder's rule did not move: it still refuses the same super-cell.
+  assert.equal(polderCandidate(t, lat, mixed.at[0], mixed.at[1], keep), false);
+});
+
 test('the sea takes a polder back: coast, hash, roads and the ladder\'s memory', () => {
   const { model, layout } = settled();
   const supers = blob(layout, 4);

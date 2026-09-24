@@ -76,7 +76,7 @@ async function runDeleteRoads(o) {
   const files = filesFor(o);
   const size = config.gridSize || 64;
 
-  const layout = loadLayout(files.layout, config.seed, size);
+  const layout = loadLayout(files.layout, config.seed, size, { minSize: o.codex ? null : config.minGridSize });
   clearRoads(layout);
   saveLayout(files.layout, layout);
 
@@ -142,7 +142,7 @@ async function runScan(o) {
   const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
-  const layout = loadLayout(files.layout, config.seed, size);
+  const layout = loadLayout(files.layout, config.seed, size, { minSize: o.codex ? null : config.minGridSize });
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
   if (o.clearRoads) clearRoads(layout);
@@ -507,6 +507,9 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     fairway: layout.fairway
       ? { ...layout.fairway, at: FAIRWAY_AT, unlockedAt: iso(model.arrivals[FAIRWAY_AT - 1] || null) }
       : null,
+    // How the island has grown. Every page and the sea build the ground from it, exactly as
+    // they do from the polders, so it travels as the layout keeps it.
+    grow: layout.grow || null,
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),

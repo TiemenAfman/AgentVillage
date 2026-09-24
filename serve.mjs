@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -145,7 +145,7 @@ function survey() {
   try { key = `${fs.statSync(files.layout).mtimeMs}|${fs.statSync(files.village).mtimeMs}`; } catch { return null; }
   if (surveyCache.key === key) return surveyCache.body;
   const size = config.gridSize || 64;
-  const layout = loadLayout(files.layout, config.seed, size);
+  const layout = loadLayout(files.layout, config.seed, size, { minSize: config.minGridSize });
   const village = readJson(files.village, null);
   const body = buildSurvey({ layout, village, seed: config.seed, size });
   surveyCache = { key, body };
@@ -1105,7 +1105,22 @@ if (req.url === '/api/command' && req.method === 'POST') {
   if (p === '/api/adopt' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    const { sessionId, remove } = body || {};
+    const { sessionId, remove, all } = body || {};
+    // Everybody in the register who does not live here yet, from the same catalog the town
+    // hall lists - not just the newest 200 it was sent.
+    if (all) {
+      try {
+        const village = readJson(VILLAGE_FILE, null);
+        const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
+        const ids = catalog({ config: loadConfig(), onIslandIds: onIsland }).filter((r) => !r.onIsland).map((r) => r.sessionId);
+        const { founders, added } = addFounders(ids);
+        log(`adopted ${added} at once; founders now ${founders.length}`);
+        if (added) await rescan('adopt');
+        return json(res, 200, { ok: true, added, founders: founders.length });
+      } catch (e) {
+        return json(res, 400, { error: String(e.message || e) });
+      }
+    }
     try {
       const founders = setFounder(sessionId, !remove);
       log(`${remove ? 'released' : 'adopted'} ${sessionId}; founders now ${founders.length}`);

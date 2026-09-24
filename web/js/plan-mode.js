@@ -215,7 +215,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const p = ops.find((o) => o.op === 'polder');
     return new Set((p ? p.supers : []).map(([i, j]) => key(i, j)));
   }
-  // Water the ladder would take: the survey's own `polderCandidate` bit per super-cell.
+  // Water a keeper may reclaim: the survey's own `polderCandidate` bit per super-cell, in
+  // its shore form - a super-cell the coastline runs through counts, its sand left as is.
   function reclaimable(i, j) {
     if (!survey) return false;
     const row = survey.water[j + survey.R];
@@ -343,6 +344,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (o.op === 'move') return `Move ${o.lobes.map((l) => (lobes.get(lkey(l)) || { name: l.district }).name).join(', ')} by [${o.di}, ${o.dj}]`;
     if (o.op === 'polder') return `Polder: ${o.supers.length} super-cell${o.supers.length === 1 ? '' : 's'} off the sea`;
     if (o.op === 'unpolder') return `Give polder ${o.index + 1} back to the sea`;
+    if (o.op === 'grow') return 'Grow the island: one ring of new coast';
     if (o.op === 'road') {
       const spans = deckRuns(o.cells).map((r) => r.length);
       return `Road: ${o.cells.length} cells${spans.length ? `, ${spans.map((n) => `a bridge of ${n}`).join(', ')}` : ''}`;
@@ -401,6 +403,12 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       // same one is a no-op, for another one it replaces the first.
       ops = ops.filter((x) => x.op !== 'unpolder');
       ops.push(o);
+    } else if (o.op === 'grow') {
+      // First in the list, after any grow already there, for the polder's reason: the ground
+      // it makes has to exist before a move later in the plan may be set down on it.
+      let at = 0;
+      while (at < ops.length && ops[at].op === 'grow') at++;
+      ops.splice(at, 0, o);
     } else if (o.op === 'polder') {
       // One polder in a draft, first in the list: the land it makes has to exist before a
       // move later in the plan may be set down on it (lib/plan.mjs applies ops in order).
@@ -865,6 +873,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     loadDraft();
     panel.show();
     panel.setTool(tool);
+    panel.setGrowable && panel.setGrowable(!!(village() && village().grow));
     dom.addEventListener('pointerdown', onDown);
     dom.addEventListener('pointermove', onMove);
     dom.addEventListener('pointerup', onUp);
@@ -903,5 +912,6 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     camera, view, enter, exit, active: () => active, update, frameIsland, setTool,
     resize: () => { if (active) applyView(); },
     undo: undoOp, redo: redoOp, clear: clearOps, apply: applyDraft, restore: restorePrevious,
+    grow: () => { if (active) pushOp({ op: 'grow' }); },
   };
 }

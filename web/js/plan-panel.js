@@ -31,6 +31,10 @@ export function createPlanPanel(handlers) {
     // No Done of its own: the ✕ above and the menu's Plan chip (which reads Done in here)
     // already are, and three buttons for one way out read as three different things.
     + '<button class="btn tiny" id="plan-overview" title="Frame the whole island">Overview</button>'
+    // The island's next ring of coast, now rather than when the village runs out of room
+    // (Plans/eiland-laten-groeien.md). Hidden on an island founded on its whole grid,
+    // which has nowhere to grow to until its grid can (setGrowable).
+    + '<button class="btn tiny" id="plan-grow" hidden title="Grow the island by one ring of new coast. The quay and the harbours move out with it.">Grow</button>'
     + '</div>';
   ledger.querySelector('.panel-body').innerHTML = '<ol class="plan-ops" id="plan-ops"></ol>'
     + '<div class="plan-verdict muted" id="plan-verdict"></div>'
@@ -46,6 +50,7 @@ export function createPlanPanel(handlers) {
 
   tools.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => handlers.onTool(b.dataset.tool)));
   el('plan-overview').addEventListener('click', () => handlers.onOverview());
+  el('plan-grow').addEventListener('click', () => handlers.onGrow && handlers.onGrow());
   el('plan-undo').addEventListener('click', () => handlers.onUndo());
   el('plan-redo').addEventListener('click', () => handlers.onRedo());
   el('plan-clear').addEventListener('click', () => handlers.onClear());
@@ -120,5 +125,7 @@ export function createPlanPanel(handlers) {
     band.style.height = `${Math.abs(rect.y1 - rect.y0)}px`;
   }
 
-  return { show, hide, setTool, setSelection, setLedger, setHud, setBand };
+  function setGrowable(on) { el('plan-grow').hidden = !on; }
+
+  return { show, hide, setTool, setSelection, setLedger, setHud, setBand, setGrowable };
 }

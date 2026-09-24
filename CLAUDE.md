@@ -162,7 +162,12 @@ nothing to dig, and the difference is what stops the search running on every sca
 A polder the keeper drains by hand (`polder` op in `lib/plan.mjs`) goes through the same
 `polderFromSupers` + `digPolder` the ladder uses and records the hash itself, straight after
 digging; it carries `manual`, `at` and `dugAt` (provenance, kept off the bundle), counts as a
-rung for `poldersWanted`, and `scan.mjs` dates the planned ones around it. Every polder also
+rung for `poldersWanted`, and `scan.mjs` dates the planned ones around it. Unlike the
+ladder's, a hand-drawn polder may take a super-cell the coastline runs through
+(`polderCandidate(…, { shore: true })`, also the survey's `water` bit): its land cells are
+left out of `p.cells`, which is what makes a coast with shallows before the sand
+reclaimable at all. The ladder keeps the strict all-water rule, or islands that already
+have polders would dig different ones. Every polder also
 gets one sticky approach road (`road:polder:<n>:approach`) from its causeway to the square,
 or an empty polder is orphaned paving until somebody builds on it. The sea can take a polder
 back (`unpolder`): refused while anything stands on or owns it or another polder leans on
@@ -172,6 +177,23 @@ Everything that builds ground has to be handed it — `lib/layout.mjs`, `lib/gar
 `lib/fleet.mjs`, `lib/islandbundle.mjs`, three calls in `web/js/main.js` — and the one that
 deliberately is not is `horizon.js`, which ignores the polders too because a silhouette at
 that range is every other cell.
+
+**An island founded small grows, by accretion** ([Plans/eiland-laten-groeien.md](Plans/eiland-laten-groeien.md)).
+`layout.grow = { base, steps }` (null on an island founded on its whole grid, which never
+grows) is makeTerrain's `grow` and travels wherever ground is built, exactly like the
+polders - bundle (`growth`, strict, radii whole numbers), `village.grow`, every page and
+the sea. The founding ground is built on `base` (`groundOf`) and set down in the middle of
+the grid; each step `{ r, grid, hold }` raises only sea and beach joined to open water,
+never touches a corner above `BEACH_MAX` or of a `hold` cell (what stood there, in local
+coordinates), and remembers the grid it was worked out on so a bigger grid later reproduces
+it bit for bit. `placeAll` grows by itself (`growStep`) when houses are left over, in the
+same scan, and records the hash before placing again; a house with no room in its own
+hamlet waits one ring instead of taking the commons (`waited`), and the polder ladder waits
+until the island has reached its grid. What the new ground drowns moves on purpose: the
+quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads left leading
+nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
+`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (256 grid,
+`minGridSize` 32) - deliberately not the defaults, which also fill in old configs.
 
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
@@ -254,7 +276,10 @@ and for a long time nothing sent one, which is plumbing with no button; `scopePa
 `ourPanel` in `shared/panels.mjs` are the button, and they must stay exact inverses —
 `panels.all()` replaces the whole set, so one of somebody else's leaking in would empty
 ours rather than merely clutter it. There is **one** panels layer, not one per island: it
-is a CSS3D renderer over the whole canvas. A foreign board therefore carries what that
+is a CSS3D renderer *under* the whole canvas (`#panels` precedes `#stage`), seen through
+a hole each board writes into the island's scene (alpha 0 + depth, `HOLE` in
+`web/js/panels.js`) - which is why the renderer has `alpha: true` with clear alpha 1, and
+why an opaque material that writes alpha below 1 would open a window onto the page. A foreign board therefore carries what that
 layer cannot work out for it — world coordinates and its own `y`, because the layer was
 handed our terrain — and renders blank with a sentence naming whose machine reads it.
 That sentence is the feature: what a board says comes out of one islander's Jira token,

@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONFIG_FILE } from '../lib/paths.mjs';
+import { CONFIG_FILE, FOUNDING } from '../lib/paths.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -60,7 +60,8 @@ function ensureConfig() {
     return;
   }
   const example = readJson(path.join(ROOT, 'config.example.json'), {});
-  const cfg = { ...example, foundedAt: new Date().toISOString() };
+  // Founded today, so founded small: FOUNDING in lib/paths.mjs, and why it is not the example.
+  const cfg = { ...example, ...FOUNDING, foundedAt: new Date().toISOString() };
   writeJson(file, cfg);
   step(`config.json created; the island is founded as of now, so it starts empty and grows`);
   step(`  rename it or pick another seed in config.json for a different island`);
