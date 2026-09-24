@@ -302,12 +302,15 @@ test('the village is spread over the island, and nobody is a guest', () => {
 // Sixty cells, on an island that never grew. A harbour's approach on one that did may be as
 // much longer as its coast moved out (Plans/eiland-laten-groeien.md): the harbour moves out
 // with the coast, and the fresh ring it now stands on has no hamlet lane yet to braid onto.
-// Measured on the live island's first ring (coast 120 to 156): an approach of 64.
+// Measured on the live island's first ring (coast 120 to 156): an approach of 64. A polder's
+// approach is the same road from the other end of the island's history - a way in from the
+// old coast - and gets the same room: polder 2's, laid once its boxed-in causeway was carried
+// over the beach (beachWalk), runs 60 cells out of its pocket and round to the square.
 test('a road is a road and not a kilometre of one', () => {
   const steps = (L.grow && L.grow.steps) || [];
   const outward = steps.length ? steps[steps.length - 1].r - foundingCoast(L.grow.base) : 0;
   for (const p of L.paths.filter((q) => String(q.id).startsWith('road:'))) {
-    const most = /^road:harbour:\d+:approach$/.test(p.id) ? 60 + outward : 60;
+    const most = /^road:(harbour|polder):\d+:approach$/.test(p.id) ? 60 + outward : 60;
     assert.ok(p.cells.length < most, `${p.id} is ${p.cells.length} cells long`);
   }
 });
