@@ -9,7 +9,7 @@
 
 // The page's copy of SEA_V. Written out twice on purpose - the page may not import lib/ -
 // and tests/update.test.mjs holds the two copies together.
-export const SEA_PROTOCOL = 2;
+export const SEA_PROTOCOL = 3;
 
 // Where a new version is fetched from: the Windows zip and the Android APK both hang off
 // the latest release (.github/workflows/release.yml).
