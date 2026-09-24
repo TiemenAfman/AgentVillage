@@ -11,7 +11,9 @@
 // what clicking a card already means, and leaving it alone means clicking the world you are
 // already in. So a card *is* the choice: the one this island is in says so and closes when
 // pressed, and Join opens its list underneath itself, because "which sea" is the second
-// half of that one answer rather than a fourth option.
+// half of that one answer rather than a fourth option. (Joining the online sea did become a
+// card of its own later - see MODES - because it is the answer almost everybody gives, and
+// "open the list, find it, click it" was three steps for it.)
 //
 // The three are the islander's `multiplayer.sea.mode`, because all three are things the
 // *islander* does: single player and hosting both start a sea in its own process, and
@@ -37,10 +39,20 @@ const MODES = [
     blurb: 'Open the water around this island, so others can sail in and moor alongside.',
     mark: '⚓',
   },
+  // Joining used to be one card that unfolded a list with the open sea somewhere in it. The
+  // open sea is the one almost everybody wants, so it is a card of its own and one click;
+  // "a local sea" keeps the list, for a sea on this network or at an address you type.
+  // Both are the islander's `join` mode - `online` is only which sea it means.
+  {
+    key: 'online',
+    name: 'Join the online sea',
+    blurb: 'Everybody’s water, always on. Your island comes along and stays yours.',
+    mark: '🌐',
+  },
   {
     key: 'join',
-    name: 'Join a sea',
-    blurb: 'Sail to somebody else’s water. Your island comes along and stays yours.',
+    name: 'Join a local sea',
+    blurb: 'A sea on this network, or at an address you type.',
     mark: '⛵',
   },
 ];
@@ -80,7 +92,21 @@ export function createMainMenu({
   const wantsKey = () => !!(list && (list.seas || []).some((o) => o.keyed)) || !!typedKey;
 
   // A page with nothing to start has one real choice, so it is not offered three.
-  const modes = hasIslander ? MODES : MODES.filter((m) => m.key === 'join');
+  const modes = hasIslander ? MODES : MODES.filter((m) => m.key === 'join' || m.key === 'online');
+
+  // The open sea, as /api/seas lists it (`from: 'open'`, OPEN_SEA in lib/paths.mjs). Read off
+  // the list rather than written down again here: the page may not import lib/, and the
+  // islander is the one that knows which address the open sea is this week.
+  const openSea = () => (list && (list.seas || []).find((o) => o.from === 'open')) || null;
+  const inJoin = (url) => !!(list && list.mode === 'join' && url && url === list.current);
+  // Which card "you are here" belongs to: the join mode is split by which sea it is in.
+  const hereFor = (key) => {
+    if (!list) return false;
+    const open = openSea();
+    if (key === 'online') return !!open && inJoin(open.url);
+    if (key === 'join') return list.mode === 'join' && !(open && inJoin(open.url));
+    return key === list.mode;
+  };
 
   function seaRow(o) {
     const here = list && list.mode === 'join' && o.url === list.current;
@@ -108,7 +134,7 @@ export function createMainMenu({
   }
 
   function modeCard(m) {
-    const here = list && m.key === list.mode;
+    const here = hereFor(m.key);
     const open = m.key === opened;
     const working = busy === m.key;
     return `<button class="menu-mode${open ? ' open' : ''}${here ? ' on' : ''}"
@@ -132,7 +158,8 @@ export function createMainMenu({
         <div class="menu-modes">${modes.map(modeCard).join('')}</div>
         ${opened === 'join' ? `<div class="menu-seas">
           ${list === null ? '<p class="menu-note">Listening for seas…</p>'
-    : (list.seas || []).length ? (list.seas || []).map(seaRow).join('')
+    : (list.seas || []).some((o) => o.from !== 'open')
+      ? (list.seas || []).filter((o) => o.from !== 'open').map(seaRow).join('')
       : '<p class="menu-note">Nothing out there yet. Type an address.</p>'}
           <div class="menu-add">
             <input id="menu-url" class="field" placeholder="http://address:4750/" autocomplete="off"
@@ -164,7 +191,8 @@ export function createMainMenu({
         if (opened === 'join' && list === null) refresh();
         return;
       }
-      if (list && list.mode === mode) { close(); return; }
+      if (mode === 'online') { joinOnline(); return; }
+      if (hereFor(mode)) { close(); return; }
       go(mode, null);
     }));
     root.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => {
@@ -198,14 +226,25 @@ export function createMainMenu({
     if (keyField) keyField.addEventListener('keydown', (e) => { if (e.key === 'Enter') typed(); });
   }
 
+  // One click. The list may still be out when the card is pressed (open() asks for it), so
+  // it is waited for rather than guessed at.
+  async function joinOnline() {
+    if (busy) return;
+    if (list === null) await refresh();
+    const open = openSea();
+    if (!open) { list = { ...(list || { seas: [] }), error: 'this island does not know where the online sea is' }; draw(); return; }
+    if (inJoin(open.url)) { close(); return; }
+    go('join', open.url, 'online');
+  }
+
   async function refresh() {
     try { list = await seas(); } catch { list = { seas: [] }; }
     draw();
   }
 
-  async function go(mode, url) {
+  async function go(mode, url, card = mode) {
     if (busy) return;
-    busy = mode;
+    busy = card;
     draw();
     // The key goes with every join, typed or picked from the list. Left out when it is
     // empty rather than sent as '': the islander keeps whatever key it already had unless
