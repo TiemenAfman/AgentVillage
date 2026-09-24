@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, CLAUDE_HOME, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
@@ -34,6 +34,9 @@ import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
+import { readUsage, USAGE_FILE } from './lib/usage.mjs';
+import { ensureStatusLine } from './lib/statusline.mjs';
+import { goldOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { executeCommand } from './lib/commands.mjs';
@@ -533,6 +536,13 @@ async function handle(req, res) {
       seaKey: who.role === 'islander' ? (config.multiplayer.sea && config.multiplayer.sea.key) || null : null,
     });
   }
+
+  // How much gold is left in the pit by the square: the keeper's five-hour usage window,
+  // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
+  // public path, so only the keeper's own page gets it - how much of somebody's
+  // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
+  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold.
+  if (p === '/api/gold') return json(res, 200, goldNow());
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
   // see lib/access.mjs, where the API is deny-by-default.
@@ -1400,6 +1410,30 @@ function watchData() {
   }
 }
 
+// The gold pit's count, and telling the keeper's own pages when it changes.
+//
+// Polled rather than watched. The status line rewrites data/usage.json only when the
+// reading moves, which is every minute or two while somebody works and never otherwise; and
+// the count also changes with no write at all, the moment a window's `resetsAt` goes by and
+// the pit fills up again. Reading a two-hundred-byte file every few seconds catches both
+// for nothing, where a second fs.watch on DATA beside watchData's would still need a timer
+// for the reset. readFileSync, like everything here that reads a data/*.json: a handle held
+// across a turn is what makes the writer's rename fail with EPERM on Windows.
+const goldNow = () => goldOf(readUsage(USAGE_FILE), Date.now());
+const GOLD_POLL_MS = 5000;
+function watchGold() {
+  let said = JSON.stringify(goldNow());
+  const t = setInterval(() => {
+    const g = goldNow();
+    const text = JSON.stringify(g);
+    if (text === said) return;
+    said = text;
+    // localOnly: a visitor's page draws a full pit and is never told otherwise.
+    broadcast(g, 'gold', { localOnly: true });
+  }, GOLD_POLL_MS);
+  t.unref?.();
+}
+
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     process.stderr.write(`[settlers] the island is already being served at http://localhost:${PORT}\n`);
@@ -1612,6 +1646,23 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   fs.mkdirSync(DATA, { recursive: true });
   watchData();
   if (neighbours) neighbours.start();
+  watchGold();
+  // The status line that reads the gold pit its number (hooks/statusline.mjs), put into
+  // ~/.claude/settings.json by the islander itself so there is nothing to run by hand - once
+  // per island, backed up first, in front of a status line that was already there, and never
+  // again after that (lib/statusline.mjs ensureStatusLine). Never fatal: an island that could
+  // not write it is still an island, with a full pit.
+  try {
+    const r = ensureStatusLine({
+      settingsFile: path.join(CLAUDE_HOME, 'settings.json'),
+      script: path.join(ROOT, 'hooks', 'statusline.mjs'),
+      markerFile: path.join(DATA, 'statusline.json'),
+    });
+    if (r.did === 'added' || r.did === 'wrapped' || r.did === 'updated') log(`status line ${r.did} for the gold pit: ${r.command}`);
+    else if (r.did === 'unreadable') log('the gold pit gets no status line: ~/.claude/settings.json does not read as JSON, so it was left alone');
+  } catch (e) {
+    log(`the gold pit gets no status line: ${e.message}`);
+  }
   await rescan('startup');
   // So the island board has the right number of notes pinned to it before anyone walks
   // up to it. refreshIssues throttles itself and hands back the cache untouched when it

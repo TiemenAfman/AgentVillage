@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [goudkuil.md](goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
+  5-uurs usage limit, één staaf per procent, dat slinkt terwijl je werkt. Het getal komt uit
+  de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
+  settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
+  overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
 - [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
   een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
   Gebouwd en op het eiland toegepast op 23 september 2026.

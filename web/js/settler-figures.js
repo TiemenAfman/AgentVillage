@@ -26,6 +26,7 @@ import { lerpAngle } from 'shared/settlerwalk.mjs';
 // second model of them: an armed resident carries exactly what the player can pick up.
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { HELD_ITEM_PARTS } from './classic-avatar.js';
+import { goldBarGeometry } from './goldpit.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -41,6 +42,8 @@ const posedMat = new THREE.Matrix4();
 const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
+const carryOffMat = new THREE.Matrix4();
+const carryMat = new THREE.Matrix4();
 // Out of sight: the same parking spot hide() puts a whole figure in.
 const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
   new THREE.Vector3(0.0001, 0.0001, 0.0001));
@@ -135,6 +138,23 @@ function heldGeometry(names, grip) {
   g.computeBoundingSphere();
   return g;
 }
+// A bar of gold carried home from the pit (Plans/goudkuil.md), the 'carry' walk: both arms
+// out in front at the same angle, and the bar resting across the two fists. The arms do not
+// swing while they hold it - the legs still walk - which is what makes it read as something
+// with weight, the way the right hand stays up on a bundle of sticks.
+//
+// Where the fists end up is the hand's grip swung about the shoulder by CARRY_ARM, worked
+// out once here; the bar is drawn level there rather than tipped with the forearms, and a
+// little above the fists so it sits on them. CARRY_BARS is how many can be seen carrying at
+// once: MAX_GOLD on each of a few islands.
+const CARRY_ARM = -1.05;
+const CARRY_BARS = 48;
+const CARRY_AT = (() => {
+  const piv = RESIDENT_PIVOTS.rightHand;
+  const dy = RESIDENT_GRIP[1] - piv[1], dz = RESIDENT_GRIP[2] + 0.02 - piv[2];
+  const c = Math.cos(CARRY_ARM), s = Math.sin(CARRY_ARM);
+  return [0, piv[1] + dy * c - dz * s + 0.018, piv[2] + dy * s + dz * c];
+})();
 // How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
 // Enough that the sword and the torch are held out rather than hanging against the leg,
 // and the stride is halved on top of it so the blade does not windmill on a walk.
@@ -334,6 +354,15 @@ export function createFigures(scene, material, { armed = false } = {}) {
   bundles.frustumCulled = false;
   bundles.visible = false;
   scene.add(bundles);
+  // Everybody's bar of gold on the way home from the pit, the same bargain as the tools:
+  // count 0 - no draw call - while nobody is carrying one. The pile's own ingot
+  // (web/js/goldpit.js), a size down so it sits across a settler's two fists.
+  const bars = new THREE.InstancedMesh(goldBarGeometry({ l: 0.24, h: 0.05, w: 0.09 }), material, CARRY_BARS);
+  bars.count = 0;
+  bars.castShadow = true;
+  bars.frustumCulled = false;
+  bars.visible = false;
+  scene.add(bars);
   const TOOL_OF = { hoe: hoes, chop: axes, fish: rods };
   // The hammer last, after the tools, where the rest of the island has always found it.
   scene.add(hammers);
@@ -401,7 +430,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0, bundleCount = 0;
+    let hammerCount = 0, bundleCount = 0, barCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
@@ -410,10 +439,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
       if (f.faceAngle != null) f.yaw = f.faceAngle;
       else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
       const hauling = f.anim === 'haul';
-      const walking = f.anim === 'walk' || f.anim === 'step' || hauling;
+      const carrying = f.anim === 'carry';
+      const walking = f.anim === 'walk' || f.anim === 'step' || hauling || carrying;
       const hammering = f.anim === 'hammer';
       const work = workPose(f.anim, time + f.phase);
-      const bob = f.anim === 'walk' || hauling ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
+      const bob = f.anim === 'walk' || hauling || carrying ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : work ? work.drop + hipLift(work.lean, f.look) : 0;
@@ -432,13 +462,16 @@ export function createFigures(scene, material, { armed = false } = {}) {
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering || work ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
-      // Hauling, the right hand is up on the bundle and only the left arm swings.
+      // Hauling, the right hand is up on the bundle and only the left arm swings. Carrying
+      // gold, both are out in front under the bar (CARRY_ARM).
       const leftArmAngle = work ? work.left
-        : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
+        : carrying ? CARRY_ARM
+          : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
       const rightArmAngle = work ? work.right
         : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
           : hauling ? -2.5
-            : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
+            : carrying ? CARRY_ARM
+              : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : stride);
       setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
@@ -453,11 +486,18 @@ export function createFigures(scene, material, { armed = false } = {}) {
         toolCount.set(tool, n + 1);
       }
       if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
+      if (carrying && barCount < CARRY_BARS) {
+        // Off the person's own transform rather than bodyMat, so the bar is stretched by
+        // neither their build nor their height - only moved to where their fists are.
+        carryOffMat.makeTranslation(CARRY_AT[0] * f.look.build, CARRY_AT[1] * f.look.height, CARRY_AT[2] * f.look.build);
+        carryMat.multiplyMatrices(tmpObj.matrix, carryOffMat);
+        bars.setMatrixAt(barCount++, carryMat);
+      }
       if (armed) {
         // A settler at work puts the sword away for the hammer or the tool rather than
         // holding both in one fist; the torch stays lit in the other hand unless that one
         // is at work too.
-        if (hammering || work || hauling) swords.setMatrixAt(f.slot, HIDDEN);
+        if (hammering || work || hauling || carrying) swords.setMatrixAt(f.slot, HIDDEN);
         else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
         if (work && f.anim !== 'fish') torches.setMatrixAt(f.slot, HIDDEN);
         else setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
@@ -480,6 +520,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
     bundles.count = bundleCount;
     bundles.visible = bundleCount > 0;
     if (bundleCount) bundles.instanceMatrix.needsUpdate = true;
+    bars.count = barCount;
+    bars.visible = barCount > 0;
+    if (barCount) bars.instanceMatrix.needsUpdate = true;
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
@@ -499,7 +542,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, hoes, axes, rods, bundles, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...body, hammers, hoes, axes, rods, bundles, bars, ...[...hats.values()].map((h) => h.mesh)]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();

@@ -302,8 +302,11 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // A chore is taken at its word only when the body is not going anywhere here: the
       // glide towards the word that somebody has started hoeing is the last stride of the
       // walk that brought them, the same as the glide towards a stop.
+      // A bar of gold carried home from the pit (Plans/goudkuil.md) is kept the same way as
+      // a bundle of sticks: to its last stride.
       const gait = f.said === 'haul' || (f.came === 'haul' && !MOVING.has(f.said)) ? 'haul'
-        : MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step';
+        : f.said === 'carry' || (f.came === 'carry' && !MOVING.has(f.said)) ? 'carry'
+          : MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step';
       f.anim = f.said === 'hammer' ? 'hammer' : !moving ? (AT_WORK.has(f.said) ? f.said : 'still') : gait;
       f.mode = MOVING.has(f.anim) ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
       // Only turn when actually going somewhere: a body nudged a centimetre by a late

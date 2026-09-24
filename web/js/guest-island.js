@@ -198,7 +198,11 @@ export function createGuestIsland({
     dispose: () => {
       land.dispose();
       scene.remove(group);
-      for (const rec of records) rec.built.geometry.dispose();
+      for (const rec of records) {
+        rec.built.geometry.dispose();
+        // The gold pit's bars, hung on by main.js's attachExtras (web/js/goldpit.js).
+        if (rec.goldPile) rec.goldPile.dispose();
+      }
     },
   };
 }

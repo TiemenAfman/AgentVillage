@@ -181,6 +181,40 @@ the island a visitor cannot open at all. `/api/mail` is not on the public list i
 `lib/access.mjs`, so a guest walking an open island sees a postbox with a flag on it and
 can no more read it than they could read the post through the slot.
 
+## The gold pit
+
+Near the square, open towards it, stands a concrete trench silo with a heap of gold bars
+in it. The heap is your Claude usage limit for the current five-hour window: a hundred bars,
+one for every percent, so a pit with 65 bars in it means 35% of the window is spent. It
+shrinks from the top as you work, and fills up again the moment the window runs out.
+Walk up to it and the count is over the keys; press **E**, or click it, and it says when
+the pit will be full again.
+
+Whoever is at work fetches gold first. A settler whose session is running walks over to
+the pit, loads a bar, carries it home in both hands and only then starts hammering — and
+goes again every few minutes of work after that. That is the sea walking them, so every
+screen watching your island sees the same trips.
+
+The number comes from Claude Code itself, which hands it to a **status line** and to
+nothing else. There is nothing to run for it: the first time the island starts with the pit
+it puts one in by itself (`hooks/statusline.mjs`, in `~/.claude/settings.json`, which it
+backs up beside itself first), and from then on every Claude Code session writes the window
+down in `data/usage.json` and shows `⛏ 65/100 gold` at the bottom of the terminal. A
+session that was already open may need restarting to pick it up. If you already had a status
+line of your own it is kept: the island's goes in front of it in a pipe
+(`… statusline.mjs --pass | your-command`) and hands it exactly the input it always got.
+The island does this once and writes down that it did (`data/statusline.json`); take the
+line out again and it stays out. The reading is only there for a Pro or Max subscription,
+and only once a session has had its first answer.
+
+Until there is a reading the pit is full, and says why. A status line is a terminal thing,
+so a reading is taken while a Claude Code session runs in a terminal; whether the desktop
+app runs one too has not been checked, and if it does not, work done only there leaves the
+pile where the last terminal session put it. The pile never moves on a guess.
+
+The count is yours alone, like the post. It is not in `village.json` and it does not go to
+the sea: a visitor, and anybody who sees your island from theirs, sees a full pit.
+
 ## Visitors and neighbours
 
 The island is open. Other people can walk it with you, each connection getting its own
