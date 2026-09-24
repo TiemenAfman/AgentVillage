@@ -26,6 +26,9 @@ export const FLAG_BLOCKING = 16;
 // blow from an agent (lib/hostility.mjs armorOf). Walk mode's `shields`, off the avatar.
 export const FLAG_SHIELD_LEFT = 32;
 export const FLAG_SHIELD_RIGHT = 64;
+// In the saddle (web/js/bicycle.js). The sea only relays it, and peers.js draws a bicycle
+// under whoever carries it; lib/players.mjs's POSE.RIDING is the sea's copy.
+export const FLAG_RIDING = 128;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -326,7 +329,8 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.swimming ? FLAG_SWIMMING : 0)
       | (s.moving && !s.swimming && s.running ? FLAG_RUNNING : 0)
       | (s.grounded ? 0 : FLAG_AIRBORNE)
-      | (s.blocking && !s.swimming && !s.vehicle ? FLAG_BLOCKING : 0)
+      | (s.blocking && !s.swimming && !s.vehicle && !s.bike ? FLAG_BLOCKING : 0)
+      | (s.bike ? FLAG_RIDING : 0)
       | (s.shields && s.shields.left ? FLAG_SHIELD_LEFT : 0)
       | (s.shields && s.shields.right ? FLAG_SHIELD_RIGHT : 0);
     const now = Date.now();
@@ -406,7 +410,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // it went.
     swing() {
       const s = here && here.state;
-      if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.swimming || !berthKnown()) return false;
+      if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.bike || s.swimming || !berthKnown()) return false;
       const t = clock();
       if (t - swungAt < SWING_MS) return false;
       sendPose();

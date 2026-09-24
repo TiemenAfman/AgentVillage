@@ -464,6 +464,19 @@ lowered so the surface is at 0.50 m of it, instead of the settlers' `WADE_Y`), `
 SkeletonUtils is a new vendored file: a checkout that has not run `npm install` (or
 `node scripts/vendor.mjs`) since then gets the logged failure, not imps.
 
+**The bicycle is `state.bike`, never `state.vehicle`** ([Plans/fiets.md](Plans/fiets.md)).
+`vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
+boat's stamina pool), so a second kind of vehicle in it would make them all lie. F (pad Y)
+mounts and dismounts in any walk mode created with `bikes: true` (the island and `/demo`, not
+rooms); the bike comes out of the satchel and goes back in, so no server state exists for it.
+`stepBike` (`web/js/bicycle.js`) is pure like `stepBoat` and takes walk.js's own `groundAt` and
+`blocked`, so water, walls and ledges above `STEP_UP` stop it exactly as they stop feet. The mesh
+hangs each baked part (`scripts/build-bicycle.py`) on its Blender origin, and the steering axis
+is read off the steer and front-axle origins - move a pivot in the builder, not in JS. Peers
+see a rider through `FLAG_RIDING` (128; `POSE_MASK` is 255 now); a sea still running the old
+`lib/players.mjs` masks it away, so a remote-hosted sea has to be redeployed before other
+players see bicycles.
+
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island
 of its own is the volcano (below): it reads no transcripts, never scans, and **writes nothing

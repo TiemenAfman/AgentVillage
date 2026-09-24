@@ -273,15 +273,19 @@ test('a swing from behind a raised shield lands: one hand blocks while the other
   assert.equal(s.said.length, 1);
 });
 
-test('the roster keeps BLOCKING and the shields in a pose, drops what is above them, and hands a swing on', () => {
+test('the roster keeps BLOCKING, the shields and RIDING in a pose, drops what is above them, and hands a swing on', () => {
   const swung = [];
   const roster = createRoster({ swing: (p) => swung.push(p.id) });
   const p = roster.attach({ id: 'aabbccdd', send() {}, close() {} }, { island: 'aaaaaaaa' });
   roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0.5, f: POSE.BLOCKING | POSE.MOVING }));
   assert.equal(p.f, 17);
   assert.equal(p.yaw, 0.5, 'the heading a swing is aimed by');
-  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 128 | POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }));
+  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 256 | POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }));
   assert.equal(p.f, POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT, 'the shields are kept, and nothing above them');
+  // The bicycle is relayed as it is (Plans/fiets.md), so a peer can draw it.
+  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: POSE.RIDING | POSE.MOVING }));
+  assert.equal(p.f, POSE.RIDING | POSE.MOVING);
+  assert.equal(POSE.RIDING, 128);
   roster.message(p.conn, JSON.stringify({ t: 'swing', target: 'guard:0', hp: 0 }));
   assert.deepEqual(swung, ['aabbccdd']);
 });

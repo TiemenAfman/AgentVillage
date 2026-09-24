@@ -65,6 +65,16 @@ const PIVOTS = {
   leftArm: [-0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
   rightArm: [0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
 };
+// The hips' height over the soles: where a rider's legs turn, which is what walk.js puts on
+// the saddle.
+export const HIP_Y = PIVOTS.leftLeg[1];
+// A rider (web/js/bicycle.js). The legs hang forward to the bottom bracket and go round with
+// the crank, one half a turn behind the other; the arms reach for the grips. Tuned by eye in
+// /demo against the baked bike - a rigid leg with no knee cannot follow the pedal exactly, and
+// a swing a little short of the crank's reads as pedalling rather than as kicking.
+const RIDE_LEG = -0.42;
+const RIDE_SWING = 0.3;
+const RIDE_ARM = -1.15;
 // Where "Right hand" sits, measured off its own raw geometry (bounding-box centre) and
 // carried through the same PLAYER_SCALE the pivots already are, minus the rightArm pivot's
 // own offset - the same translate makePiece already does to its mesh, done once here by
@@ -375,16 +385,20 @@ export function createClassicAvatar(spec, material) {
   let time = 0;
   function update(pose, dt) {
     time += dt;
-    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying;
+    const ride = pose.riding || null;
+    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride;
     const phase = pose.phase;
     const stride = moving ? Math.sin(phase) * (pose.running ? 0.82 : 0.5) : 0;
     const idle = moving ? 0 : Math.sin(time * 1.8) * 0.035;
     const airborne = pose.grounded ? 0 : 0.32;
     const crouch = pose.crouching ? -0.28 : 0;
     const sit = pose.sitting ? -1.05 : 0;
+    // The left crank arm starts up and the right one down (scripts/build-bicycle.py), and a
+    // leg is furthest forward when its pedal is: -sin of the crank for the right, +sin left.
+    const pedal = ride ? RIDE_SWING * Math.sin(ride.crank) : 0;
     const targets = {
-      leftLeg: sit || (stride + airborne + crouch),
-      rightLeg: sit || (-stride - airborne + crouch),
+      leftLeg: ride ? RIDE_LEG - pedal : sit || (stride + airborne + crouch),
+      rightLeg: ride ? RIDE_LEG + pedal : sit || (-stride - airborne + crouch),
       // Held out in front rather than swinging with the stride - an item on a walking arm
       // would windmill through the body otherwise, and there is no elbow to fold instead.
       leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
@@ -396,6 +410,8 @@ export function createClassicAvatar(spec, material) {
       : typeof pose.blocking === 'object' ? ['leftArm', 'rightArm'].filter((side) => pose.blocking[side])
         : [blockSide()];
     for (const side of blocks) targets[side] = BLOCK_ARM_X;
+    // Both hands on the bars, whatever they are holding.
+    if (ride) targets.leftArm = targets.rightArm = RIDE_ARM;
     // A glass being handed over: reached out for the first half second, through the same
     // damping as any held pose, and not in the hand at all until the settler has drunk it.
     for (const side of ['leftArm', 'rightArm']) {
@@ -429,6 +445,8 @@ export function createClassicAvatar(spec, material) {
     for (const [name, target] of Object.entries(targets)) {
       if (swung && name === swing.side) pieces[name].pivot.rotation.x = swung.x;
       else if (drunk[name]) pieces[name].pivot.rotation.x = drunk[name].x;
+      // A pedalling leg follows the crank exactly: damped, it lags a quarter turn at speed.
+      else if (ride && (name === 'leftLeg' || name === 'rightLeg')) pieces[name].pivot.rotation.x = target;
       else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, 15, dt);
     }
     pieces.leftArm.pivot.rotation.z = drunk.leftArm ? drunk.leftArm.z

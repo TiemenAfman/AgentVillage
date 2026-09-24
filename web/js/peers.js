@@ -7,6 +7,7 @@
 // is what turns a stream of samples into someone walking.
 import * as THREE from 'three';
 import { playerGeometry, lerpAngle } from './walk.js';
+import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
 
 // How far behind the newest sample we draw. Two server ticks: enough to always have a
 // pair to interpolate between, short enough that nobody feels remote.
@@ -22,6 +23,14 @@ const FLAG_AIRBORNE = 8;
 // The right mouse button held. net.js's FLAG_BLOCKING, copied rather than imported so this
 // file keeps its one import of walk.js; lib/players.mjs's POSE is the sea's copy of all five.
 const FLAG_BLOCKING = 16;
+// In the saddle: net.js's FLAG_RIDING. The bicycle is drawn here from the pose alone - its
+// wheels turn with how fast the peer is actually going, its bars and lean with how fast they
+// are turning - because the sea only ever relays the one bit (Plans/fiets.md).
+const FLAG_RIDING = 128;
+// A peer is one merged mesh with no hips to bend, so a rider sits on the saddle with the
+// legs hanging past the cranks, leaning over the bars as walk.js's own rider does.
+const RIDE_PITCH = 0.28;
+const HIP = 0.14 * 1.12;          // the figure's hips over its soles, as classic-avatar.js has it
 // How far somebody behind their shield leans back into it. A peer is one mesh with no arms
 // (see the header), so a raised shield cannot be drawn; a braced stance can, for nothing.
 const BRACE_LEAN = -0.1;
@@ -122,6 +131,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       room: null,
       want: null,
       cursor: null,       // where their hand is on a board, if it is on one
+      bike: null,         // their bicycle, made the first time they are seen riding
+      ride: { wheel: 0, crank: 0, steer: 0, lean: 0, x: 0, z: 0, yaw: 0 },
       shown: false,
       fade: 0,             // seconds left of the leaving animation
       leaving: false,
@@ -175,6 +186,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
   function drop(p) {
     setCursor(p, null);
+    if (p.bike) { p.bike.dispose(); p.bike = null; }
     const from = places.get(p.room);
     if (from) from.scene.remove(p.mesh);
     p.mesh.remove(p.sprite);
@@ -256,6 +268,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     }
 
     for (const p of [...peers.values()]) {
+      if (p.bike) p.bike.visible = false;   // shown again below, by a pose that says so
       if (p.leaving) {
         p.fade -= dt;
         if (p.fade <= 0) { drop(p); continue; }
@@ -303,7 +316,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const base = airborne ? (a.y + (b.y - a.y) * k) : (ground < 0 ? -0.07 : ground);
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
-      if (swimming) {
+      if (f & FLAG_RIDING && !swimming && !p.room) {
+        ride(p, x, base, z, yaw, dt);
+      } else if (swimming) {
         p.mesh.position.set(x, base + Math.sin(p.bob) * 0.03, z);
         p.mesh.rotation.set(1.32 + Math.sin(p.bob) * 0.1, yaw, Math.sin(p.bob * 0.5) * 0.16);
       } else {
@@ -317,6 +332,40 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       if (!swimming && !airborne) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
   }
+
+  // One frame of a peer on a bicycle. Everything the bike does is read off where the rider
+  // has got to since the last frame: distance is the wheels, a turn is the bars and the lean.
+  function ride(p, x, y, z, yaw, dt) {
+    const r = p.ride;
+    if (!p.bike) {
+      p.bike = createBicycle({ scene, material });   // outdoors only: nobody rides indoors
+      r.x = x; r.z = z; r.yaw = yaw;
+    }
+    const step = Math.hypot(x - r.x, z - r.z);
+    // Forwards or backwards along the heading, and never a jump from a teleport or a respawn.
+    const along = step < 1 ? Math.sign((x - r.x) * Math.sin(yaw) + (z - r.z) * Math.cos(yaw)) * step : 0;
+    let turned = yaw - r.yaw;
+    if (turned > Math.PI) turned -= Math.PI * 2;
+    else if (turned < -Math.PI) turned += Math.PI * 2;
+    const rate = dt > 0 ? -turned / dt : 0;      // right is a falling yaw
+    const speed = dt > 0 ? Math.abs(along) / dt : 0;
+    r.wheel = (r.wheel + along / BIKE.tyre) % (Math.PI * 2);
+    if (along > 0) r.crank = (r.crank + along / BIKE.tyre / 4.5) % (Math.PI * 2);
+    const k = 1 - Math.exp(-8 * dt);
+    r.steer += (Math.max(-0.5, Math.min(0.5, rate * 0.25)) - r.steer) * k;
+    r.lean += (Math.max(-0.3, Math.min(0.3, rate * speed * 0.03)) - r.lean) * k;
+    r.x = x; r.z = z; r.yaw = yaw;
+
+    p.bike.visible = true;
+    p.bike.place(x, y, z, yaw);
+    p.bike.pose(r);
+    p.bike.object.updateMatrixWorld(true);
+    seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP, RIDER.saddle[2]);
+    p.bike.object.localToWorld(seat);
+    p.mesh.position.copy(seat);
+    p.mesh.rotation.set(RIDE_PITCH, yaw, r.lean);
+  }
+  const seat = new THREE.Vector3();
 
   return {
     join,
