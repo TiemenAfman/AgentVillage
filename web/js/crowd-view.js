@@ -32,7 +32,8 @@
 // cost on one guest island, and a crowd is not 41 but 274. And no faces on the wire: the
 // roster carries building ids, and settlerLook hashes the identical person out of one on
 // both sides, which is the promise the wardrobe has always made.
-import { createFigures } from './settler-figures.js';
+import { createFigures, SETTLER_DRINK_S } from './settler-figures.js';
+import { createTipsy, drinkIn, stepTipsy, settlerSway, SETTLER_TIPSY } from './tipsy.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
@@ -132,6 +133,15 @@ export function createCrowdView({
   // they live in. Kept beside the index map rather than searched for, because the picker
   // runs on every mouse move.
   const byIdx = new Map();
+
+  // The beer the player has handed round (Plans/bier-en-dronken.md), by building id rather
+  // than on the figure: a roster or a change of buildings enrols a fresh body for the same
+  // person, and a settler four beers down should not be sobered by a re-dress. This page's
+  // alone - the sea walks them and knows nothing of it - so what it changes is only how they
+  // are drawn here (`f.sway`, settler-figures.js). `sipping` is who is drinking one right now
+  // and until when, so they keep facing whoever gave it them until it is down.
+  const merry = new Map();     // id -> tipsy pool
+  const sipping = new Map();   // id -> { f, until }
 
   // Who the indices mean. Sent when the island arrives and again when its village changes,
   // which is the only time the order can move - and on the volcano whenever a guard comes
@@ -320,6 +330,23 @@ export function createCrowdView({
     return true;
   }
 
+  // A beer handed to `id` by somebody standing at `from` ([x, z], scene frame). They turn to
+  // face the giver and drink it (settler-figures.js drinkBeer), and it counts towards their
+  // sway at once. Refused - false - for somebody not drawn here, or still drinking the last.
+  function giveBeer(id, from, now) {
+    const f = byIdx.get(id);
+    if (!f || f.hidden || !f.to || !view.drinkBeer(f)) return false;
+    if (from) f.faceAngle = Math.atan2(from[0] - f.pos[0], from[1] - f.pos[1]);
+    sipping.set(id, { f, until: now + SETTLER_DRINK_S * 1000 });
+    let pool = merry.get(id);
+    if (!pool) { pool = createTipsy(SETTLER_TIPSY); merry.set(id, pool); }
+    drinkIn(pool, 1);
+    return true;
+  }
+  // How many whole glasses' worth `id` still has in them, for the page to say something
+  // when the third one goes down.
+  const beersIn = (id) => (merry.has(id) ? merry.get(id).level / SETTLER_TIPSY.dose : 0);
+
   // Everybody here who could be fought, for the health bars: the guards and Codex residents
   // of a hostile island, standing where they are drawn (an imp stands exactly where its body
   // would have), in the scene frame. Appended to `out`, which main.js collects from every
@@ -398,6 +425,19 @@ export function createCrowdView({
   // difference comes out as a number of hours and the interpolation clamps at its far end,
   // for ever.
   function draw(dt, groundAt, now, showing = true) {
+    // The beer wears off whether anybody is drawn or not. Everybody's sway comes from their
+    // own pool, and whoever has put their glass down is let go of the face they turned to.
+    for (const [id, pool] of merry) {
+      stepTipsy(pool, dt);
+      const f = byIdx.get(id);
+      if (f) f.sway = settlerSway(pool.level);
+      if (pool.level <= 0) merry.delete(id);
+    }
+    for (const [id, s] of sipping) {
+      if (now < s.until) continue;
+      if (byIdx.get(id) === s.f) s.f.faceAngle = null;
+      sipping.delete(id);
+    }
     // Off while the chronicle is scrubbed back. Their people are here, now, and the island
     // on the screen is somebody's island in May - so they are hidden rather than left to
     // walk through a history they were not in. The positions keep arriving and keep being
@@ -498,6 +538,8 @@ export function createCrowdView({
     for (const id of [...imps.keys()]) dropImp(id);
     for (const idx of [...figures.keys()]) retire(idx);
     byIdx.clear();
+    merry.clear();
+    sipping.clear();
     view.dispose();
     for (const hull of hulls.values()) hull.dispose();
     hulls.clear();
@@ -505,7 +547,7 @@ export function createCrowdView({
   }
 
   return {
-    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit, swing, bars,
+    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

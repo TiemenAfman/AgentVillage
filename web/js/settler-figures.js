@@ -25,7 +25,7 @@ import { lerpAngle } from 'shared/settlerwalk.mjs';
 // The sword and the torch are the player's own baked parts (build-settler.py), not a
 // second model of them: an armed resident carries exactly what the player can pick up.
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
-import { HELD_ITEM_PARTS } from './classic-avatar.js';
+import { HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -41,6 +41,7 @@ const posedMat = new THREE.Matrix4();
 const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
+const rollMat = new THREE.Matrix4();
 // Out of sight: the same parking spot hide() puts a whole figure in.
 const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
   new THREE.Vector3(0.0001, 0.0001, 0.0001));
@@ -70,6 +71,35 @@ export function strikeArm(u, rest) {
   if (u < STRIKE_HIT) return STRIKE_UP + (STRIKE_DOWN - STRIKE_UP) * smooth((u - STRIKE_TOP) / (STRIKE_HIT - STRIKE_TOP));
   return STRIKE_DOWN + (rest - STRIKE_DOWN) * smooth((u - STRIKE_HIT) / (1 - STRIKE_HIT));
 }
+// A beer the player has handed over (crowd-view.js giveBeer; Plans/bier-en-dronken.md): the
+// right arm brings a pint to the mouth, holds it tipped while they gulp, and puts it down.
+// The player's own drink (classic-avatar.js drinkPose) at a settler's size: up to about -2 on
+// the stride's rotation.x, turned a little inward so the glass ends up in front of the face
+// rather than out by the ear, and the glass rolled towards the mouth. `drinkArm` is how far
+// into that pose the arm is at `t` seconds (`w`, 0..1, so the rest can be blended in) and
+// where it is going.
+export const SETTLER_DRINK_S = 2.2;
+// The roll is gentler than the player's: it turns the glass about the fist, and past about
+// 0.95 the rim of a glass held out in front (PINT_OUT) drops below a settler's chin.
+const DRINK_UP = 0.45, DRINK_DOWN = 1.7, DRINK_X = -2.0, DRINK_Z = 0.3, DRINK_ROLL = [0.6, 0.95];
+export function drinkArm(t) {
+  const w = t < DRINK_UP ? smooth(t / DRINK_UP) : t < DRINK_DOWN ? 1 : 1 - smooth(Math.min(1, (t - DRINK_DOWN) / (SETTLER_DRINK_S - DRINK_DOWN)));
+  const g = Math.max(0, Math.min(1, (t - DRINK_UP) / (DRINK_DOWN - DRINK_UP)));
+  const bob = t > DRINK_UP && t < DRINK_DOWN ? 0.035 * Math.sin(g * Math.PI * 6) : 0;
+  return { w, x: DRINK_X - 0.12 * g + bob, z: DRINK_Z, roll: DRINK_ROLL[0] + (DRINK_ROLL[1] - DRINK_ROLL[0]) * g };
+}
+// What a settler who has had a few does with it (tipsy.js settlerSway gives `f.sway`, 0..1): a
+// roll about their own forward, a nod, and the body drawn a few centimetres to one side and
+// then the other. All of it on the drawn matrix and none of it on `f.pos` - the sea is where
+// they are, this is only how they stand there.
+const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
+// And on the move a zigzag round the route the sea walks them along rather than a wobble on
+// it - "he still follows his route neatly", said about the first version - with the nose
+// swinging after each lurch, and now and then a stumble: a pitch forward and a stagger
+// sideways. Two sines at unrelated rates for the zigzag, as walk.js does for the player, and
+// a narrow pulse off a slower one for the stumble, so it comes every few seconds and never on
+// a beat.
+const STAGGER_SIDE = 0.2, STAGGER_YAW = 0.45, STUMBLE_PITCH = 0.3, STUMBLE_SIDE = 0.12;
 const HEAD_Y = RESIDENT_HEAD_Y;
 
 // How far above its own feet a figure's eyes are. A function rather than a constant
@@ -158,6 +188,22 @@ function heldGeometry(names, grip) {
   g.computeBoundingSphere();
   return g;
 }
+// The player's pint (classic-avatar.js beerGeometry: its ear at the grip, in world units,
+// the glass inboard of the fist) moved into a resident's right fist at a resident's size -
+// and held a few centimetres further out in front. A resident's arm is short and its head
+// large: measured in the browser, the player's own grip put the glass's middle 5 cm *inside*
+// the face at the height of the mouth, where nobody could see it being drunk.
+const PINT_OUT = 0.045;
+function pintGeometry() {
+  const g = heldItemGeometry('beer', {});
+  g.scale(RESIDENT_TO_PLAYER, RESIDENT_TO_PLAYER, RESIDENT_TO_PLAYER);
+  g.translate(RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2] + PINT_OUT);
+  g.computeBoundingSphere();
+  return g;
+}
+// How many settlers can be seen drinking at once: one instanced mesh for all of them, like
+// the hammers. A beer is handed over one at a time, so this is only ever a handful.
+const PINTS = 32;
 // How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
 // Enough that the sword and the torch are held out rather than hanging against the leg,
 // and the stride is halved on top of it so the blade does not windmill on a walk.
@@ -228,12 +274,32 @@ export function createFigures(scene, material, { armed = false } = {}) {
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
 
-  function setPosed(mesh, slot, base, pivot, angle) {
+  // `turn` is a turn about z after the swing about x - the same XYZ order classic-avatar.js
+  // poses the player's arms in - which only a drinking arm uses, to bring its fist in.
+  function setPosed(mesh, slot, base, pivot, angle, turn = 0) {
     pivotMat.makeTranslation(pivot[0], pivot[1], pivot[2]);
     rotateMat.makeRotationX(angle);
+    if (turn) rotateMat.multiply(rollMat.makeRotationZ(turn));
     unpivotMat.makeTranslation(-pivot[0], -pivot[1], -pivot[2]);
     posedMat.copy(base).multiply(pivotMat).multiply(rotateMat).multiply(unpivotMat);
     mesh.setMatrixAt(slot, posedMat);
+  }
+  // A pint in a drinking fist. It swings with the arm like the sword does, and then has the
+  // arm's own turn taken back off about its grip, so it stands upright wherever the arm is -
+  // the counter-rotation classic-avatar.js gives the player's held items - before `roll` tips
+  // it in towards the mouth (+z tips the top to -x, inboard for a right hand).
+  const gripMat = new THREE.Matrix4(), ungripMat = new THREE.Matrix4(), uprightMat = new THREE.Matrix4();
+  function setPint(i, base, angle, turn, roll) {
+    const pivot = RESIDENT_PIVOTS.rightHand;
+    pivotMat.makeTranslation(pivot[0], pivot[1], pivot[2]);
+    rotateMat.makeRotationX(angle).multiply(rollMat.makeRotationZ(turn));
+    unpivotMat.makeTranslation(-pivot[0], -pivot[1], -pivot[2]);
+    gripMat.makeTranslation(RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]);
+    ungripMat.makeTranslation(-RESIDENT_GRIP[0], -RESIDENT_GRIP[1], -RESIDENT_GRIP[2]);
+    uprightMat.copy(rotateMat).invert().multiply(rollMat.makeRotationZ(roll));
+    posedMat.copy(base).multiply(pivotMat).multiply(rotateMat).multiply(unpivotMat)
+      .multiply(gripMat).multiply(uprightMat).multiply(ungripMat);
+    pints.setMatrixAt(i, posedMat);
   }
   // The hats keep their own slots: a settler is in exactly one of these meshes, or in
   // none of them if it is bare-headed.
@@ -252,6 +318,13 @@ export function createFigures(scene, material, { armed = false } = {}) {
   hammers.count = 0;
   hammers.frustumCulled = false;
   scene.add(hammers);
+  // Everybody's beer, drawn only while it is being drunk (count 0 the rest of the time, so
+  // an island nobody has bought a round costs no draw call for it).
+  const pints = new THREE.InstancedMesh(pintGeometry(), material, PINTS);
+  pints.count = 0;
+  pints.castShadow = true;
+  pints.frustumCulled = false;
+  scene.add(pints);
 
   let time = 0;
 
@@ -308,6 +381,14 @@ export function createFigures(scene, material, { armed = false } = {}) {
     if (f.slot == null) return;
     f.strike = STRIKE_S;
   }
+  // Somebody has been handed a beer. The same kind of clock, except that a second one is
+  // refused while the first is still going down: whether it started is the caller's cue to
+  // count it (crowd-view.js giveBeer).
+  function drinkBeer(f) {
+    if (f.slot == null || f.drink > 0) return false;
+    f.drink = SETTLER_DRINK_S;
+    return true;
+  }
   // Their colours, pushed `k` of FLINCH_TINT towards red, or put back exactly when `k` is 0.
   function tintFlinch(f, k) {
     const t = k * FLINCH_TINT;
@@ -349,7 +430,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // own clock, and none of them can move a body.
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0;
+    let hammerCount = 0, pintCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
@@ -372,13 +453,38 @@ export function createFigures(scene, material, { armed = false } = {}) {
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : 0;
+      // A beer going down (drinkBeer), `t` seconds in, and what a few have done already.
+      let drunk = null;
+      if (f.drink > 0) {
+        f.drink = Math.max(0, f.drink - dt);
+        drunk = drinkArm(SETTLER_DRINK_S - f.drink);
+      }
+      const sway = f.sway || 0;
+      const swayPhase = time * 1.9 + f.phase;
+      const swayRoll = sway * SWAY_ROLL * Math.sin(swayPhase);
+      // How far into the zigzag they are: eased in as they set off and out as they stop, or
+      // every halt would jump the body 20 cm back onto the route.
+      f.lurch = (f.lurch || 0) + ((walking && sway ? 1 : 0) - (f.lurch || 0)) * Math.min(1, dt * 3);
+      const stagger = sway * f.lurch;
+      const zig = 0.65 * Math.sin(swayPhase * 0.6) + 0.35 * Math.sin(swayPhase * 0.23 + 2);
+      const stumble = stagger ? stagger * Math.pow(Math.max(0, Math.sin(time * 1.3 + f.phase * 2)), 12) : 0;
+      const swayNod = sway * SWAY_NOD * Math.sin(swayPhase * 0.7 + 1.1) + stumble * STUMBLE_PITCH;
+      // Sideways from where they face: half as fast as the roll standing, so they lean into
+      // each lurch; the zigzag on the move, and a stumble throws them further the way they
+      // were already going.
+      const swaySide = sway * SWAY_SIDE * Math.sin(swayPhase * 0.5)
+        + stagger * STAGGER_SIDE * zig + stumble * STUMBLE_SIDE * Math.sign(zig);
+      const sx = f.pos[0] + Math.cos(f.yaw) * swaySide, sz = f.pos[1] - Math.sin(f.yaw) * swaySide;
+      // The nose follows the zigzag - pointing where the lurch is taking them, which is the
+      // zigzag's slope - so they look like they are walking it rather than sliding along it.
+      const drawnYaw = f.yaw + stagger * STAGGER_YAW * Math.cos(swayPhase * 0.6);
 
-      if (hammering && hammerCount < 60) {
+      if (hammering && !drunk && hammerCount < 60) {
         // The hammer is held in a hand, so it hangs off whatever size that settler is:
         // an apprentice's is a small hammer at an apprentice's height.
         const s = f.baseScale * f.look.height;
         const swing = -1.15 + 0.75 * (0.5 + 0.5 * Math.sin(time * 8 + f.phase));
-        tmpObj.position.set(f.pos[0] + Math.sin(f.yaw) * 0.16 * s, f.y + 0.26 * s, f.pos[1] + Math.cos(f.yaw) * 0.16 * s);
+        tmpObj.position.set(sx + Math.sin(f.yaw) * 0.16 * s, f.y + 0.26 * s, sz + Math.cos(f.yaw) * 0.16 * s);
         tmpObj.rotation.set(0, f.yaw, swing);
         tmpObj.scale.setScalar(s);
         tmpObj.updateMatrix();
@@ -387,9 +493,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
 
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
-      tmpObj.position.set(f.pos[0], f.y + bob * f.baseScale, f.pos[1]);
+      tmpObj.position.set(sx, f.y + bob * f.baseScale, sz);
       const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
-      tmpObj.rotation.set(-FLINCH_LEAN * flinchK, f.yaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01));
+      tmpObj.rotation.set(-FLINCH_LEAN * flinchK + swayNod, drawnYaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01) + swayRoll);
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
@@ -407,16 +513,23 @@ export function createFigures(scene, material, { armed = false } = {}) {
         f.strike = Math.max(0, f.strike - dt);
         rightArmAngle = strikeArm(1 - f.strike / STRIKE_S, rightArmAngle);
       }
+      // The drinking arm blends from whatever it would have been doing into the pose and back.
+      let rightTurn = 0;
+      if (drunk) {
+        rightArmAngle += (drunk.x - rightArmAngle) * drunk.w;
+        rightTurn = -drunk.z * drunk.w;       // inward, which for the right arm is -z
+      }
       setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, stride);
       setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
-      setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle);
-      setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+      setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
+      setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle, rightTurn);
+      if (drunk && pintCount < PINTS) setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
       if (armed) {
         // A settler at work puts the sword away for the hammer rather than holding both in
-        // one fist; the torch stays lit in the other hand.
-        if (hammering) swords.setMatrixAt(f.slot, HIDDEN);
+        // one fist - and for a beer; the torch stays lit in the other hand.
+        if (hammering || drunk) swords.setMatrixAt(f.slot, HIDDEN);
         else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
         setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       }
@@ -429,6 +542,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
     for (const h of hats.values()) if (h.slots) h.mesh.instanceMatrix.needsUpdate = true;
     hammers.count = hammerCount;
     hammers.instanceMatrix.needsUpdate = true;
+    pints.count = pintCount;
+    if (pintCount) pints.instanceMatrix.needsUpdate = true;
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
@@ -448,7 +563,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...body, hammers, pints, ...[...hats.values()].map((h) => h.mesh)]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();
@@ -458,5 +573,5 @@ export function createFigures(scene, material, { armed = false } = {}) {
     spare.length = 0;
   }
 
-  return { enrol, hide, free, flinch, strike, draw, pickables, figureAt, dispose };
+  return { enrol, hide, free, flinch, strike, drinkBeer, draw, pickables, figureAt, dispose };
 }
