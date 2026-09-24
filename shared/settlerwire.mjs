@@ -223,6 +223,35 @@ export function decodeHeld(flat, half, into = new Map()) {
   return into;
 }
 
+// Who is carrying a bar of gold home from the pit (shared/settlerwalk.mjs, the gold errand;
+// Plans/goudkuil.md), as a flat list of indices.
+//
+// The same shape of answer as `encodeHeld`, for the same reasons. A carrier's row says
+// 'walk' like anybody else's, so nothing about the row changes and an older page reads it as
+// it always has; a fifth word in ANIMS would have been read as 'still' by that page - a
+// settler gliding home without moving their legs - and would have cost a SEA_V. And a bar is
+// picked up and put down a few times a minute on a busy island, which is no business of the
+// beat's: the sea sends the whole set, only when it changes (lib/sea.mjs), so every message
+// is the complete truth on its own and an empty one is how the last bar is put down.
+export function encodeCarry(crowd) {
+  const out = [];
+  let idx = -1;
+  for (const f of crowd.figures.values()) {
+    idx++;
+    if (!f.visible || f.aboard || !f.carry) continue;
+    out.push(idx);
+  }
+  return out;
+}
+
+// Replaces rather than merges, like decodeHeld: this message is the whole set.
+export function decodeCarry(flat, into = new Set()) {
+  into.clear();
+  if (!Array.isArray(flat)) return into;
+  for (const i of flat) if (Number.isInteger(i) && i >= 0) into.add(i);
+  return into;
+}
+
 // Who the indices mean. Sent when an island arrives and again when its village changes -
 // which is the only time the order can move, because it is the order of the buildings in
 // the bundle. Colours are deliberately absent: see the header.

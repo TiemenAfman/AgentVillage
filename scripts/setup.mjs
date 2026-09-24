@@ -5,20 +5,25 @@
 //   node scripts/setup.mjs --uninstall  take the hook back out
 //   node scripts/setup.mjs --dry-run    say what it would do and change nothing
 //
-// The only thing that touches anything outside this folder is the session hook, which
-// is added to ~/.claude/settings.json. That file is backed up first and every other
-// setting in it is left exactly as it was.
+// The only things that touch anything outside this folder are the session hook and the
+// status line, which are added to ~/.claude/settings.json. That file is backed up first and
+// every other setting in it is left exactly as it was - a status line that was already
+// there included: ours goes in front of it in a pipe (see lib/statusline.mjs).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CONFIG_FILE, FOUNDING } from '../lib/paths.mjs';
+import { installStatusLine, uninstallStatusLine, readStatusLine } from '../lib/statusline.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const SETTINGS = path.join(CLAUDE_HOME, 'settings.json');
 const HOOK = path.join(ROOT, 'hooks', 'on-session.mjs');
+// The gold pit's reading: Claude Code gives the five-hour usage window to a status line and
+// to nothing else (Plans/goudkuil.md).
+const STATUS_LINE = path.join(ROOT, 'hooks', 'statusline.mjs');
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry-run');
@@ -134,6 +139,41 @@ function uninstallHook() {
   step(`removed ${removed} hook entr${removed === 1 ? 'y' : 'ies'}; every other setting was left alone`);
 }
 
+// ---------------------------------------------------------------- the status line
+function installStatus() {
+  if (!fs.existsSync(STATUS_LINE)) throw new Error(`the status line is missing at ${STATUS_LINE}`);
+  const settings = readJson(SETTINGS, {});
+  // A first run leaves an existing entry of ours alone, for the session hook's reason: it may
+  // point at a checkout's island, and an unpacked release is not the one to take it over.
+  if (FIRST_RUN && readStatusLine(settings.statusLine).ours) {
+    step('the Promptholm status line is already installed; left as it is');
+    return;
+  }
+  const { settings: next, did } = installStatusLine(settings, STATUS_LINE);
+  if (did === 'unchanged') { step('the status line was already installed and up to date'); return; }
+  if (did === 'kept') {
+    step('you have a status line that is not a command, so it was left alone; the gold pit');
+    step(`  gets no reading until one runs: node "${STATUS_LINE.replace(/\\/g, '/')}" --pass | <yours>`);
+    return;
+  }
+  backup();
+  writeJson(SETTINGS, next);
+  step(did === 'wrapped'
+    ? 'status line put in front of your own (it still prints exactly what it did), for the gold pit'
+    : did === 'updated' ? 'status line pointed here' : 'status line added, for the gold pit by the square');
+  step(`  ${next.statusLine.command}`);
+}
+
+function uninstallStatus() {
+  const settings = readJson(SETTINGS, null);
+  if (!settings) return;
+  const { settings: next, did } = uninstallStatusLine(settings);
+  if (did === 'absent') { step('the island status line was not installed'); return; }
+  backup();
+  writeJson(SETTINGS, next);
+  step(did === 'unwrapped' ? 'status line taken out; yours is back as it was' : 'status line removed');
+}
+
 function backup() {
   if (DRY || !fs.existsSync(SETTINGS)) return;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -160,10 +200,12 @@ try {
   say(DRY ? '\nPromptholm setup (dry run, nothing will change)\n' : '\nPromptholm setup\n');
   if (UNINSTALL) {
     uninstallHook();
+    uninstallStatus();
     say('\nThe island itself is untouched. Delete the folder to remove it entirely.\n');
   } else {
     ensureConfig();
     installHook();
+    installStatus();
     checks();
     // On a first run the islander is about to start the island itself, and there is no
     // npm in an unpacked release to point anybody at.

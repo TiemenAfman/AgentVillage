@@ -16,6 +16,7 @@ import {
   loadLayout, saveLayout, placeAll, clearRoads, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
+import { GOLDPIT_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
@@ -289,6 +290,23 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       id: 'civic:mailbox', kind: 'civic', civicType: 'mailbox', district: null,
       plot: boxPlot, door: null, name: 'The postbox', label: 'Postbox',
       title: 'Mail from off the island',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The gold pit (Plans/goudkuil.md). The spec says where it stands and nothing more: how
+  // much gold is in it is the keeper's usage window, which is read live by their own page
+  // (/api/gold) and is never written in here - village.json is a file a visitor may be
+  // shown, and the bundle made from it goes to the sea.
+  const pitPlot = plot(GOLDPIT_ID);
+  if (pitPlot) {
+    civics.push({
+      id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit', district: null,
+      plot: pitPlot, door: doorOf(pitPlot), name: 'The gold pit', label: 'Gold pit',
+      title: 'The five-hour usage window, one bar a percent',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },

@@ -26,6 +26,7 @@ import { lerpAngle } from 'shared/settlerwalk.mjs';
 // second model of them: an armed resident carries exactly what the player can pick up.
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
+import { goldBarGeometry } from './goldpit.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -42,6 +43,8 @@ const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
 const rollMat = new THREE.Matrix4();
+const carryOffMat = new THREE.Matrix4();
+const carryMat = new THREE.Matrix4();
 // Out of sight: the same parking spot hide() puts a whole figure in.
 const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
   new THREE.Vector3(0.0001, 0.0001, 0.0001));
@@ -204,6 +207,22 @@ function pintGeometry() {
 // How many settlers can be seen drinking at once: one instanced mesh for all of them, like
 // the hammers. A beer is handed over one at a time, so this is only ever a handful.
 const PINTS = 32;
+// A bar of gold carried home from the pit (Plans/goudkuil.md): both arms out in front at the
+// same angle, and the bar resting across the two fists. The arms do not swing while they hold
+// it - the legs still walk - which is what makes it read as something with weight.
+//
+// Where the fists end up is the hand's grip swung about the shoulder by CARRY_ARM, worked
+// out once here; the bar is drawn level there rather than tipped with the forearms, the way
+// the pint is kept upright (setPint below), and a little above the fists so it sits on them.
+// How many can be seen carrying at once: MAX_GOLD on each of a few islands.
+const CARRY_ARM = -1.05;
+const CARRY_BARS = 48;
+const CARRY_AT = (() => {
+  const piv = RESIDENT_PIVOTS.rightHand;
+  const dy = RESIDENT_GRIP[1] - piv[1], dz = RESIDENT_GRIP[2] + 0.02 - piv[2];
+  const c = Math.cos(CARRY_ARM), s = Math.sin(CARRY_ARM);
+  return [0, piv[1] + dy * c - dz * s + 0.018, piv[2] + dy * s + dz * c];
+})();
 // How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
 // Enough that the sword and the torch are held out rather than hanging against the leg,
 // and the stride is halved on top of it so the blade does not windmill on a walk.
@@ -325,6 +344,14 @@ export function createFigures(scene, material, { armed = false } = {}) {
   pints.castShadow = true;
   pints.frustumCulled = false;
   scene.add(pints);
+  // Everybody's bar of gold on the way home from the pit (`f.carry`, crowd-view.js), the same
+  // bargain as the pints: count 0 - no draw call - while nobody is carrying one. The pile's
+  // own ingot (web/js/goldpit.js), a size down so it sits across a settler's two fists.
+  const bars = new THREE.InstancedMesh(goldBarGeometry({ l: 0.24, h: 0.05, w: 0.09 }), material, CARRY_BARS);
+  bars.count = 0;
+  bars.castShadow = true;
+  bars.frustumCulled = false;
+  scene.add(bars);
 
   let time = 0;
 
@@ -430,7 +457,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // own clock, and none of them can move a body.
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0, pintCount = 0;
+    let hammerCount = 0, pintCount = 0, barCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
@@ -459,6 +486,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
         f.drink = Math.max(0, f.drink - dt);
         drunk = drinkArm(SETTLER_DRINK_S - f.drink);
       }
+      // A bar of gold in both hands (see CARRY_ARM). Not over a hammer or a beer: each of
+      // those has the right arm, and a bar held in one fist is a bar held in none.
+      const carrying = !!f.carry && !hammering && !drunk;
       const sway = f.sway || 0;
       const swayPhase = time * 1.9 + f.phase;
       const swayRoll = sway * SWAY_ROLL * Math.sin(swayPhase);
@@ -505,10 +535,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
-      const leftArmAngle = (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
+      const leftArmAngle = carrying ? CARRY_ARM : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
       let rightArmAngle = hammering
         ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
-        : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
+        : carrying ? CARRY_ARM
+          : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       if (f.strike > 0) {
         f.strike = Math.max(0, f.strike - dt);
         rightArmAngle = strikeArm(1 - f.strike / STRIKE_S, rightArmAngle);
@@ -526,10 +557,18 @@ export function createFigures(scene, material, { armed = false } = {}) {
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
       setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle, rightTurn);
       if (drunk && pintCount < PINTS) setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
+      if (carrying && barCount < CARRY_BARS) {
+        // Off the person's own transform rather than bodyMat, so the bar is stretched by
+        // neither their build nor their height - only moved to where their fists are.
+        carryOffMat.makeTranslation(CARRY_AT[0] * f.look.build, CARRY_AT[1] * f.look.height, CARRY_AT[2] * f.look.build);
+        carryMat.multiplyMatrices(tmpObj.matrix, carryOffMat);
+        bars.setMatrixAt(barCount++, carryMat);
+      }
       if (armed) {
         // A settler at work puts the sword away for the hammer rather than holding both in
-        // one fist - and for a beer; the torch stays lit in the other hand.
-        if (hammering || drunk) swords.setMatrixAt(f.slot, HIDDEN);
+        // one fist - and for a beer, and for a bar of gold; the torch stays lit in the other
+        // hand.
+        if (hammering || drunk || carrying) swords.setMatrixAt(f.slot, HIDDEN);
         else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
         setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       }
@@ -544,6 +583,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
     hammers.instanceMatrix.needsUpdate = true;
     pints.count = pintCount;
     if (pintCount) pints.instanceMatrix.needsUpdate = true;
+    bars.count = barCount;
+    if (barCount) bars.instanceMatrix.needsUpdate = true;
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
@@ -563,7 +604,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, pints, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...body, hammers, pints, bars, ...[...hats.values()].map((h) => h.mesh)]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();

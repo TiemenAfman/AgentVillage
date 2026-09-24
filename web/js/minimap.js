@@ -105,7 +105,7 @@ export const LANDMARKS = {
   'civic:market': 'Market', 'civic:school': 'School', 'civic:chapel': 'Chapel',
   'civic:windmill': 'Windmill', 'civic:castle': 'Castle', 'civic:watertower': 'Water tower',
   'civic:clocktower': 'Clock tower', 'civic:board': 'Sprint board', 'civic:issues': "The island's own board",
-  'civic:mailbox': 'Postbox',
+  'civic:mailbox': 'Postbox', 'civic:goldpit': 'Gold pit',
 };
 
 // How far from the town centre, in cells, a civic building still counts as "on the square".

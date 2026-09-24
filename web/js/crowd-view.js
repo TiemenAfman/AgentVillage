@@ -121,6 +121,10 @@ export function createCrowdView({
   // rather than on a body, because it is the sea's word about a number - it can land before
   // our own roster has been translated and the body exists, and it is kept across a re-dress.
   const talkers = new Map();
+  // Who is carrying a bar home from the gold pit (`fc`, decodeCarry; Plans/goudkuil.md), by
+  // index, for the same reasons as `talkers`: the sea's word about a number, which can arrive
+  // before the body it names.
+  const carriers = new Set();
 
   // The volcano's guards, drawn as lava imps instead of as members of the crowd.
   //
@@ -311,6 +315,13 @@ export function createCrowdView({
   function held(rows) {
     talkers.clear();
     for (const [idx, at] of rows) talkers.set(idx, [at.x + ox, at.z + oz]);
+  }
+
+  // Who has a bar of gold in their hands: the whole set every time, like `held`. draw() puts
+  // it on the figure as `carry`, and settler-figures.js draws the bar and the arms under it.
+  function carrying(set) {
+    carriers.clear();
+    for (const idx of set) carriers.add(idx);
   }
 
   // A blow landing on somebody here - the sea's `{t:'agent', a:'hit'}` (lib/combat.mjs),
@@ -534,6 +545,7 @@ export function createCrowdView({
       const gait = f.said === 'walk' || f.came === 'walk' ? 'walk' : 'step';
       f.anim = f.said === 'hammer' ? 'hammer' : !moving ? 'still' : gait;
       f.mode = f.anim === 'walk' ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
+      f.carry = carriers.has(idx);
       // Only turn when actually going somewhere: a body nudged a centimetre by a late
       // message should not spin to face it. Towards the word rather than along this
       // frame's step, as briskly as the walk turned - it took its corners at 0.2 and its
@@ -573,10 +585,11 @@ export function createCrowdView({
     hulls.clear();
     rides.clear();
     talkers.clear();
+    carriers.clear();
   }
 
   return {
-    roster, apply, applyRides, held, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
+    roster, apply, applyRides, held, carrying, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

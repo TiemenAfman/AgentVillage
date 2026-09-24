@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [goudkuil.md](goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
+  5-uurs usage limit, één staaf per procent, dat slinkt terwijl je werkt. Het getal komt uit
+  de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
+  settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
+  overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
 - [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
   hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
   desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande

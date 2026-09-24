@@ -79,12 +79,14 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   const material = new THREE.MeshStandardMaterial();
   const terrain = { half: 32, size: 64, worldHeight: () => 0 };
   const settlers = createSettlers(scene, material, terrain);
-  assert.equal(scene.children.length, 19, 'eleven articulated body, six hats, one hammer batch, one pint batch');
+  // The gold bars (a bar carried home from the gold pit, Plans/goudkuil.md) are one more
+  // batch, and like the pints they cost no draw call while nobody is carrying one.
+  assert.equal(scene.children.length, 20, 'eleven articulated body, six hats, one hammer batch, one pint batch, one gold-bar batch');
   for (let i = 0; i < 100; i++) settlers.add(`resident:${i}`, { style: 'sonnet', kind: 'hut' }, [i,0,0]);
   const walker = settlers.figures.get('resident:0');
   walker.mode = 'walk'; walker.path = [[0, 0], [2, 0]]; walker.pathI = 0; walker.pos = [0, 0];
   settlers.update(0.1, 0);
-  assert.equal(scene.children.length, 19, 'no mesh per person');
+  assert.equal(scene.children.length, 20, 'no mesh per person');
   const [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details] = scene.children;
   const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
   for (const mesh of body) assert.equal(mesh.count, 100);

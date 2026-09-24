@@ -12,7 +12,7 @@ import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
-import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
+import { decodeCrowd, decodeRides, decodeHeld, decodeCarry } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
@@ -56,6 +56,8 @@ import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
+import { attachGoldPile } from './goldpit.js';
+import { GOLD_BARS, GOLDPIT_ID } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
@@ -374,6 +376,11 @@ const state = {
   // What the postbox on the town hall pavement knows: one unread count per account, as the
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
   mailbox: null, mailCounts: [], mailAt: 0, borrel: null, sound: null,
+  // What the gold pit holds: the keeper's five-hour usage window as /api/gold and
+  // `event: gold` last said it (shared/gold.mjs goldOf, Plans/goudkuil.md). Null until then,
+  // and for good on a visitor's page - the island only tells its own keeper - which draws a
+  // full pit, the same as an island that has never had a reading.
+  gold: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -596,6 +603,10 @@ function interactables() {
         id: rec.id, kind: 'mailbox', x: p.x, z: p.z, r: 2.0, label: 'the postbox',
         prompt: waiting ? `open the postbox — ${waiting} new` : 'open the postbox',
       });
+    } else if (rec.spec.civicType === 'goldpit') {
+      // The count over the keys, like the postbox's: walking past the pit tells you how
+      // much is left without anything to open.
+      out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
     } else if (rec.spec.civicType === 'tavern') {
@@ -902,6 +913,52 @@ async function pollMail(force = false) {
   } catch { /* no postbox on this island, or the server is older than the page */ }
 }
 
+// --------------------------------------------------------------- the gold pit
+// The keeper's five-hour usage window as a pile of bars by the square (Plans/goudkuil.md).
+// Asked for once at boot and then told: serve.mjs sends `event: gold` whenever the status
+// line writes a new reading down or a window runs out. A visitor is told nothing - the
+// server refuses /api/gold to anybody but the keeper - so their pit stays full, and so does
+// every guest island's (attachExtras, `gold: false`): whose limit it is stays on their
+// machine.
+
+const hhmm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const goldBarsNow = () => (state.gold && Number.isFinite(state.gold.bars) ? state.gold.bars : GOLD_BARS);
+
+// The line over the keys when you walk up to it.
+function goldPrompt() {
+  const g = state.gold;
+  if (!g || !g.known) return 'the gold pit';
+  return `the gold pit — ${g.bars} of ${g.max} bars left`;
+}
+
+// What the pit says when you ask it - in the dossier and on E.
+function goldWords(g) {
+  if (state.guest) return 'Whose gold this is stays on their own machine: every visitor sees a full pit.';
+  if (!g || !g.known) {
+    return 'A full pit, because nothing has said otherwise yet. Claude Code tells its status line how much of the five-hour window is used, and <b>npm run setup</b> puts one in that writes it down here.';
+  }
+  if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
+  const used = Math.round(g.used);
+  const refill = g.resetsAt ? ` Full again at <b>${hhmm(g.resetsAt)}</b>.` : '';
+  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${refill}`;
+}
+
+// Everything that shows the count, from one place.
+function showGold(g) {
+  state.gold = g && typeof g === 'object' ? g : null;
+  const bars = goldBarsNow();
+  for (const rec of state.byId.values()) if (rec.goldPile && !rec.goldPile.foreign) rec.goldPile.setBars(bars);
+  if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
+  if (state.selected === GOLDPIT_ID) select(GOLDPIT_ID);
+}
+
+async function fetchGold() {
+  if (state.guest) return;
+  try {
+    showGold(await answerOf(await mine('/api/gold', { cache: 'no-store' })));
+  } catch { /* an islander from before the pit, or none at all: a full pit */ }
+}
+
 // Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
@@ -979,6 +1036,7 @@ function walkCallbacks() {
       else if (it.kind === 'townhall') openTownHall();
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'mailbox') openMailbox();
+      else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -989,7 +1047,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -2224,6 +2282,8 @@ const crowdRosters = new Map();
 // And who on it is in the middle of a conversation (`fh`), for the same reason: the join
 // hands it over straight after the roster, long before the bundle is in.
 const crowdHeld = new Map();
+// And who on it is carrying gold home from the pit (`fc`), for the same reason again.
+const crowdCarry = new Map();
 
 // Our own roster, in the sea's names and then in ours.
 //
@@ -2320,6 +2380,15 @@ function onCrowdMessage(m) {
       if (state.settlers && state.region) state.settlers.held(decodeHeld(m.h, state.region.half));
     } else if (g && g.crowd) g.crowd.held(decodeHeld(m.h, g.region.half));
     else crowdHeld.set(m.island, m.h);
+    return;
+  }
+  // Who is carrying a bar of gold (Plans/goudkuil.md). By index too, and kept the same way.
+  if (m.kind === 'carry') {
+    if (home) {
+      state.homeCarry = m.c;
+      if (state.settlers) state.settlers.carrying(decodeCarry(m.c));
+    } else if (g && g.crowd) g.crowd.carrying(decodeCarry(m.c));
+    else crowdCarry.set(m.island, m.c);
     return;
   }
   if (home) {
@@ -2551,6 +2620,8 @@ function raiseGuestIslands() {
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     const talking = crowdHeld.get(region.id);
     if (talking) { g.crowd.held(decodeHeld(talking, region.half)); crowdHeld.delete(region.id); }
+    const carrying = crowdCarry.get(region.id);
+    if (carrying) { g.crowd.carrying(decodeCarry(carrying)); crowdCarry.delete(region.id); }
     state.guests.push(g);
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
@@ -2771,7 +2842,9 @@ function makeRecord(spec) {
   return rec;
 }
 
-function attachExtras(rec, { mail = true, signs = true } = {}) {
+// `gold` follows `mail` unless it is said: a guest island's records come through here with
+// the mail off, and the count its pit would show is OUR five-hour window.
+function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   const { spec, built, group } = rec;
   if (built.animated && built.animated.blades) {
     const m = new THREE.Mesh(bladesGeo, buildingMat);
@@ -2796,6 +2869,13 @@ function attachExtras(rec, { mail = true, signs = true } = {}) {
   if (mail && built.animated && built.animated.mailflag) {
     rec.mailFlag = attachMailFlag(group, built.animated.mailflag.at, buildingMat);
     setMailFlag(rec.mailFlag, unreadTotal() > 0);
+  }
+  // The gold in the pit (web/js/goldpit.js): as many bars as the keeper's window has left on
+  // our own island, and a full pit on anybody else's - see showGold.
+  if (built.animated && built.animated.goldpile) {
+    rec.goldPile = attachGoldPile(group, built.animated.goldpile.at, buildingMat);
+    rec.goldPile.setBars(gold ? goldBarsNow() : GOLD_BARS);
+    if (!gold) rec.goldPile.foreign = true;
   }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
@@ -2871,6 +2951,7 @@ function disposeRecord(rec) {
     rec.fountain.jets.geometry.dispose();
   }
   if (rec.nameplate) rec.nameplate.dispose();
+  if (rec.goldPile) rec.goldPile.dispose();
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -3056,6 +3137,7 @@ function buildScene(village) {
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
   if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
+  if (state.homeCarry) state.settlers.carrying(decodeCarry(state.homeCarry));
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
@@ -4096,7 +4178,11 @@ function humanSince(msv) {
 }
 function decorate(spec) {
   const d = state.districts.get(spec.district);
-  return { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
+  const out = { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
+  // The gold pit's line is the count, which is this page's to know and not village.json's
+  // (see showGold). The dossier escapes a title, so the words go in without their markup.
+  if (spec.id === GOLDPIT_ID) out.title = goldWords(state.gold).replace(/<[^>]+>/g, '');
+  return out;
 }
 function select(id) {
   state.selected = id;
@@ -4779,6 +4865,8 @@ async function boot() {
   // background, and never runs for a visitor, who has no postbox to look at.
   pollMail(true);
   setInterval(() => pollMail(), MAIL_POLL_MS);
+  // The gold pit's count, once; `event: gold` carries every change after this.
+  fetchGold();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollMail(); });
 
   state.studio = createAvatarStudio(document.body, {
@@ -5243,6 +5331,11 @@ function connect() {
       } catch { /* malformed, ignore */ }
     });
     // The server can ask for a reload after its own code changed underneath us.
+    // The gold pit's count moved: a new reading from the status line, or a window that ran
+    // out. Only ever sent to the keeper's own pages (serve.mjs, localOnly).
+    es.addEventListener('gold', (e) => {
+      try { showGold(JSON.parse(e.data)); } catch { /* keep what we had */ }
+    });
     es.addEventListener('reload', () => location.reload());
     es.onerror = () => { state.ui.setLive('off'); };
   };

@@ -1585,6 +1585,41 @@ function civic(parts, spec, rng) {
       });
       return { anchors, animated, height: HEAD + 0.12 };
     }
+    case 'goldpit': {
+      // The gold pit (Plans/goudkuil.md): a trench silo in poured concrete, the kind a farm
+      // keeps its silage in, open at the end that faces the town - which is +z here, the
+      // front of every building - and holding the keeper's five-hour usage window as a heap
+      // of bars against the back wall.
+      //
+      // The walls step down towards the open end the way a real bunker silo's do, which is
+      // also what lets the heap be seen from the square rather than only from the air, and
+      // they stop short of the heap's top course: a berg goud should look like more than
+      // the silo can hold. The gold itself is not in here. It shrinks while the building
+      // stands, and a merged geometry cannot lose a piece of itself, so it is published as
+      // `animated.goldpile` and hung on the group as an InstancedMesh (web/js/goldpit.js).
+      // tests/goldpit.test.mjs holds the heap inside these walls.
+      const concrete = 0xa9a59c, lip = 0x8c887f;
+      // The slab, top at 0.02. Flat colour, not the stone sheet: with it the floor read as
+      // flagstones from the square, and a silo floor is one pour of concrete.
+      parts.push(box(2.5, 0.16, 2.72, lip, { y: -0.14 }));
+      for (const x of [-1.18, 1.18]) {
+        parts.push(box(0.14, 0.3, 1.9, concrete, { x, y: 0.02, z: -0.41 }));          // high, beside the heap
+        parts.push(box(0.14, 0.17, 0.82, concrete, { x, y: 0.02, z: 0.95 }));         // low, at the mouth
+        parts.push(box(0.18, 0.025, 1.92, lip, { x, y: 0.32, z: -0.41 }));
+      }
+      parts.push(box(2.5, 0.3, 0.14, concrete, { y: 0.02, z: -1.29 }));               // the back wall
+      parts.push(box(2.54, 0.025, 0.18, lip, { y: 0.32, z: -1.29 }));
+      // A board on a post at the mouth, picked out in gold, so the pit reads as somewhere
+      // before anybody has hovered it.
+      parts.push(box(0.035, 0.44, 0.035, C.darkWood, { x: -1.32, z: 1.3 }));
+      parts.push(box(0.32, 0.15, 0.03, C.plank, { x: -1.32, y: 0.34, z: 1.32, sheet: 'plank' }));
+      parts.push(box(0.22, 0.05, 0.036, C.gold, { x: -1.32, y: 0.39, z: 1.33, emissive: 0.2 }));
+      // And the pick somebody left leaning on the low wall.
+      parts.push(box(0.022, 0.36, 0.022, C.wood, { x: 1.04, y: 0.02, z: 1.12, rz: 0.35 }));
+      parts.push(box(0.2, 0.028, 0.028, C.iron, { x: 0.92, y: 0.35, z: 1.12, rz: 0.35 }));
+      animated.goldpile = { at: [0, 0.02, 0] };
+      return { anchors, animated, height: 0.5 };
+    }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
       return { anchors, animated, height: 0.5 };
@@ -1760,6 +1795,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
   // round it would be a plinth under a letter box.
   'mailbox',
+  // The gold pit is a slab with walls on it, open at the front so a barrow could be run in;
+  // a step across that mouth is the one thing a silo is built not to have.
+  'goldpit',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',

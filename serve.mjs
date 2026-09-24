@@ -35,6 +35,8 @@ import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
+import { readUsage, USAGE_FILE } from './lib/usage.mjs';
+import { goldOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
 
@@ -514,6 +516,13 @@ async function handle(req, res) {
       build: BUILD,
     });
   }
+
+  // How much gold is left in the pit by the square: the keeper's five-hour usage window,
+  // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
+  // public path, so only the keeper's own page gets it - how much of somebody's
+  // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
+  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold.
+  if (p === '/api/gold') return json(res, 200, goldNow());
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
   // see lib/access.mjs, where the API is deny-by-default.
@@ -1431,6 +1440,30 @@ function watchData() {
   }
 }
 
+// The gold pit's count, and telling the keeper's own pages when it changes.
+//
+// Polled rather than watched. The status line rewrites data/usage.json only when the
+// reading moves, which is every minute or two while somebody works and never otherwise; and
+// the count also changes with no write at all, the moment a window's `resetsAt` goes by and
+// the pit fills up again. Reading a two-hundred-byte file every few seconds catches both
+// for nothing, where a second fs.watch on DATA beside watchData's would still need a timer
+// for the reset. readFileSync, like everything here that reads a data/*.json: a handle held
+// across a turn is what makes the writer's rename fail with EPERM on Windows.
+const goldNow = () => goldOf(readUsage(USAGE_FILE), Date.now());
+const GOLD_POLL_MS = 5000;
+function watchGold() {
+  let said = JSON.stringify(goldNow());
+  const t = setInterval(() => {
+    const g = goldNow();
+    const text = JSON.stringify(g);
+    if (text === said) return;
+    said = text;
+    // localOnly: a visitor's page draws a full pit and is never told otherwise.
+    broadcast(g, 'gold', { localOnly: true });
+  }, GOLD_POLL_MS);
+  t.unref?.();
+}
+
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     process.stderr.write(`[promptholm] the island is already being served at http://localhost:${PORT}\n`);
@@ -1666,6 +1699,7 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   }
   fs.mkdirSync(DATA, { recursive: true });
   watchData();
+  watchGold();
   await rescan('startup');
   // So the island board has the right number of notes pinned to it before anyone walks
   // up to it. refreshIssues throttles itself and hands back the cache untouched when it

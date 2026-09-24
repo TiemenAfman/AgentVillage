@@ -72,8 +72,10 @@ function talk(url) {
     next,
     // The sea says more than one kind of thing on one socket - the roster's joins and
     // leaves ride the same wire as the fleet's news - so a test that wants a particular
-    // one has to say so rather than taking whatever arrives first.
-    until: async (pred, tries = 12) => {
+    // one has to say so rather than taking whatever arrives first. Room for the join dump
+    // itself, which is four messages per island (`fr`, `f`, `fh`, and `fc` for who is
+    // carrying gold), on a sea with the volcano and two islands on it, plus the beat's own.
+    until: async (pred, tries = 20) => {
       for (let i = 0; i < tries; i++) {
         const m = await next();
         if (pred(m)) return m;

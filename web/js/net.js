@@ -236,6 +236,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // And `fh`, who is being spoken to and where the talker stands: the whole set, sent
         // when it changes (shared/settlerwire.mjs encodeHeld).
         case 'fh': onCrowd({ kind: 'held', island: m.i, h: m.h }); break;
+        // And `fc`, who is carrying a bar home from the gold pit: the whole set, sent when
+        // it changes (shared/settlerwire.mjs encodeCarry, Plans/goudkuil.md).
+        case 'fc': onCrowd({ kind: 'carry', island: m.i, c: m.c }); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a
