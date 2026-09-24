@@ -191,7 +191,12 @@ same scan, and records the hash before placing again; a house with no room in it
 hamlet waits one ring instead of taking the commons (`waited`), and the polder ladder waits
 until the island has reached its grid. What the new ground drowns moves on purpose: the
 quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads left leading
-nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
+nowhere go through `pruneUnreachable` (now in layout.mjs). What it closes in is taken in:
+`absorbDikes` levels every polder dike with no water left beside it by taking those cells
+out of `p.dike` (so every reader - makeTerrain, heldOf, world.js, older seas - sees the
+shorter wall with no new field), keeping any dike cell within one of a plot or bridge (the
+poldermill's) and giving a dike back whole if levelling would let water in; `p.absorbed`
+(the step's index, provenance, off the bundle) makes `unpolder` refuse it. The planner's Grow button is the
 `grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 32 island on a
 64 grid; both grow) - deliberately not the defaults, which also fill in old configs.
 **The grid is the layout's; `gridSize` is what a new island is founded on and
