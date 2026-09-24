@@ -55,10 +55,18 @@ This regenerates the blend file and render, replacing any manual Blender edits:
 `agentvillage-villager.blend` contains the residents' shorter body, rolled sleeves,
 waistcoat, pocket apron and compact work hats. They share the player's facial style
 but have no expedition pack or bedroll. `villager-preview.png` shows one resident;
-`/characters.html` compares the runtime models, including an apprentice and sailor.
+`/characters.html` compares the runtime models, including women in work trousers and
+skirts, an apprentice and a sailor. `villager-woman-preview.png` and
+`villager-woman-trousers-preview.png` show the women's outfits. All residents have folded shirt collars and slimmer
+waistcoats; the swept hair and bun sit below the hats.
+
+`settlerLook` assigns roughly half the fictional residents a women's presentation using
+an independent `:appearance` seed. It never infers anything about a session's author.
+The original `:look` draw order, body proportions and walking stride stay unchanged.
 
 The population uses eleven fixed articulated body batches (core clothing, paired arms,
-hands and legs, neck, head and face details) and six hat batches, plus the hammer batch.
+hands and legs, neck, head and face details), two optional appearance batches (hair and
+skirt), six hat batches, four chore-tool batches and a hammer batch: 24 in total.
 The count is constant regardless of population: adding a resident still adds no draw
 call. Skin colours, model-based clothing colours, seeded proportions and picking remain
 supported, while walking residents now swing opposite arms and legs and workers lift the
@@ -73,7 +81,7 @@ node --test tests/*.test.mjs
 ```
 
 The scene property `avatar_mesh_name` directs this export to `web/js/villager-mesh.js`.
-Keep the `avatar_variant` tags (`torso`, `limbs`, `hands`, `head`, `detail`, or a hat ID)
+Keep the `avatar_variant` tags (`torso`, `limbs`, `hands`, `head`, `detail`, `womanHair`, `skirt`, or a hat ID)
 and `avatar_slot` on edited meshes. The head and facial details pivot around game
 Y=0.350; hands and neck follow the body. Hat, shirt, workwear and skin colours are
 replaced by each resident's wardrobe at runtime, while facial detail colours are baked.
