@@ -201,3 +201,27 @@ test('a beer is drunk from by its own hand, one swallow per drink', () => {
   for (const rig of [lone, armed]) rig.dispose();
   material.dispose();
 });
+
+// Handing the beer to a settler (main.js giveBeer): the arm reaches out, the glass leaves the
+// fist while they drink it - no drinking from a glass that is not there - and a fresh one is
+// back in the hand afterwards.
+test('a beer handed over leaves the hand for as long as it is being drunk', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const rig = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'beer' } }, material);
+  const arm = rig.handAttach.rightArm.parent, glass = () => rig.handAttach.rightArm.children[0];
+  rig.update(still, 1);
+  assert.equal(rig.handOver('leftArm', 2), false, 'handed over a beer from an empty hand');
+  assert.equal(rig.handOver('rightArm', 2), true);
+  assert.equal(rig.handOver('rightArm', 2), false, 'handed over the same glass twice');
+  rig.update(still, 0.3);
+  assert.ok(arm.rotation.x < -1.2, 'the arm did not reach out: ' + arm.rotation.x);
+  rig.update(still, 0.3);
+  assert.equal(glass().visible, false, 'the glass is still in the hand after it was taken');
+  assert.equal(rig.drink('rightArm'), false, 'drank from a glass somebody else has');
+  rig.update(still, 1.5);
+  assert.equal(glass().visible, true, 'no fresh glass once theirs was down');
+  assert.equal(rig.drink('rightArm'), true);
+  rig.dispose();
+  material.dispose();
+});

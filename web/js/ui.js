@@ -753,6 +753,15 @@ export function createUI(handlers) {
     p.innerHTML = html;
   }
 
+  // What a beer in your hand offers the settler in front of you (main.js giveTarget), or
+  // nothing. Called every frame on foot, so it writes only on a change.
+  function setGive(name) {
+    const p = el('walk-give');
+    if (!name) { p.hidden = true; return; }
+    p.hidden = false;
+    once('walk-give', `<b>G</b> give ${esc(name)} a beer 🍺`);
+  }
+
   function setWalkPrompt(near) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
@@ -843,7 +852,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse,
+    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas, setIslandSize,
