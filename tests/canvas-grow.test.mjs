@@ -134,3 +134,22 @@ test('a layout on a different grid from the setting is kept, not thrown away', (
   assert.equal(loadLayout(file, SEED + 1, 256).town, null, 'a different seed is still a new island');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// A new install is founded small on a small grid (FOUNDING) and both grow with the village:
+// the grid a step of 32 at a time, only when a ring does not fit, and never past the cap.
+test('an island founded on a small grid grows the grid only as far as its village needs', () => {
+  const layout = emptyLayout(SEED, 64, { base: 32, steps: [] });
+  const sizes = [];
+  for (let n = 10; n <= 150; n += 10) {
+    const m = withQuay(n);
+    placeAll(layout, m, { seed: SEED, size: layout.size, cap: 384 });
+    if (sizes[sizes.length - 1] !== layout.size) sizes.push(layout.size);
+    assert.equal(houses(layout), n + 3, `${n}: not everybody was housed`);
+    assert.equal(layout.terrainHash, groundOf(layout).hash, `${n}: the hash on record`);
+  }
+  for (const s of sizes) assert.equal((s - 64) % 32, 0, `a grid of ${s} is not 64 plus steps of 32`);
+  assert.ok(layout.size < 384, `150 settlers took the whole cap (${sizes.join(' -> ')})`);
+  const once = JSON.stringify(layout);
+  placeAll(layout, withQuay(150), { seed: SEED, size: layout.size, cap: 384 });
+  assert.equal(JSON.stringify(layout), once);
+});

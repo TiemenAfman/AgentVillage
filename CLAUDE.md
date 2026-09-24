@@ -192,8 +192,8 @@ hamlet waits one ring instead of taking the commons (`waited`), and the polder l
 until the island has reached its grid. What the new ground drowns moves on purpose: the
 quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads left leading
 nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
-`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (256 grid,
-`minGridSize` 32) - deliberately not the defaults, which also fill in old configs.
+`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 32 island on a
+64 grid; both grow) - deliberately not the defaults, which also fill in old configs.
 **The grid is the layout's; `gridSize` is what a new island is founded on and
 `maxGridSize` (default 384, Settings → Island size, `/api/island-size`) the most it may
 become** - `islandCap(config)` in lib/paths.mjs is the one reading, and being a default it

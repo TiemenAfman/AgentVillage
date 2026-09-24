@@ -4,7 +4,7 @@
 > uitgroeit, of ik wil iets van 50×50 inpolderen." — en daarna: "Die 256 kan dan wel voor
 > nieuwe mensen eerst 16×16 worden, en dan laten we het eiland écht groeien."
 
-**Status:** fase 1 (het terrein), fase 2 (de layout, de Grow-knop, klein stichten) en fase 4 (het doek groeit, ook voor een bestaand eiland) gebouwd op 24 september 2026, zie "Fase 1/2/4, gebouwd". Ook gebouwd, los hiervan,
+**Status:** alle fasen gebouwd of bewust afgewogen op 24 september 2026 (1 terrein, 2 layout + Grow-knop, 3 gemeten, 4 doek groeit, 5 zee + Settings, 7 klein beginnen), zie de secties "gebouwd"; wat nog open staat, staat onder "Bekend, nog niet gedaan". Ook gebouwd, los hiervan,
 op dezelfde dag: een handmatige polder mag nu ook een super-cel nemen waar de kustlijn doorheen
 loopt (`polderCandidate(…, { shore: true })`). Dat was de reden dat polderen langs een kust
 met een strook ondiep water vóór het strand onmogelijk was.
@@ -334,6 +334,44 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
   versie draaien voordat iemand daarop groeit.
 - **Ook de bereikgrens** van bomen, bedden en de speler gaat nu over `islandCap`. Anders lag
   de nieuwe grond buiten `gridSize / 2 + 20`.
+
+## Fase 3 en 7, gemeten en gebouwd (24 september 2026): wat een doek kost, en klein beginnen
+
+**Gemeten (fase 3).** Hetzelfde dorp van 300 settlers op een steeds groter doek:
+
+| doek | vaste scan (`placeAll`) | layout.json | grondmesh |
+|---|---|---|---|
+| 256 | 67 ms | 144 kB | 66k hoekpunten |
+| 320 | 92 ms | 148 kB | 103k |
+| 384 | 101 ms | 149 kB | 148k |
+| 512 | 149 ms | 150 kB | 263k |
+
+- Op de server kost het doek bijna niets. De prijs zit in de pagina: het grondmesh groeit met N²,
+  en dat betaalt ook iedereen die langsvaart.
+- Daarom groeit het doek stapsgewijs (`GRID_STEP` 32, alleen als een ring niet past), in plaats
+  van meteen een groot doek. En de Settings-tekst zegt het er ook bij.
+
+**Klein beginnen (fase 7).** `FOUNDING` sticht een nieuw eiland nu op 32 binnen een doek van 64
+in plaats van 256. Beide groeien mee. Gemeten, 10 settlers per scan erbij:
+
+| settlers | doek | kust |
+|---|---|---|
+| 40 | 96 | 45 |
+| 80 | 128 | 59 |
+| 120 | 192 | 77 |
+| 200 | 288 | 132 |
+| 340 | 384 | 172 |
+
+Alle huizen staan, en `tests/canvas-grow.test.mjs` houdt dat vast. Eerlijk erbij: groeien op
+vraag kost meer land dan een eiland dat meteen groot gesticht is. Je live eiland huist 344
+settlers binnen kust 120 (plus polders), het groeiende eiland heeft daar 172 voor nodig.
+Wijken die klein begonnen, worden ingesloten en krijgen aanbouwwijken verderop. Dat is de prijs
+van "zo klein als het dorp nu is". Beter verdelen kan later, bijvoorbeeld door een wijk
+bij het stichten ruimte te reserveren.
+
+**Bewust niet gedaan:** een bestaand doek inkrimpen tot het land. Een stap onthoudt het grid
+waarop hij berekend is (`grid`), en op een kleiner doek is hij niet meer te tekenen zonder zijn
+grond te veranderen. Het live eiland vult zijn 256 bovendien al tot de rand.
 
 ## Fasen
 
