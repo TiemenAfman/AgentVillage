@@ -2,17 +2,20 @@
 // Lays out a release as one folder that can stand anywhere:
 //
 //   dist/Promptholm/
-//     promptholm.exe           the viewer
-//     promptholm-island.exe    the islander (tray)
+//     promptholm.exe           the one to start: the window, which starts the islander
 //     README.txt
 //     app/                     the island itself: what node runs, and nothing else
+//       promptholm-island.exe  the islander (tray), out of the way so nobody has to ask
+//                              which of two exes is the one - the window finds it here
 //       release.json           marks this as an unpacked release, not a checkout
 //
-// Both exes find app/ beside themselves (find_root in src-tauri/src/island.rs), and
-// release.json is what makes lib/paths.mjs keep config.json and data/ in
-// %LOCALAPPDATA%\Promptholm rather than in app/ - so unpacking the next version over this
-// folder, or moving it, keeps the island. Run after `npm run app:build`; the release
-// workflow zips what this leaves behind.
+// The window finds app/ beside itself and the islander finds it as its own folder
+// (find_root in src-tauri/src/island.rs). The island
+// itself is never in here: config.json and data/ live in ~/.promptholm, the home a checkout
+// uses too (HOME in lib/paths.mjs) - so unpacking the next version over this folder, or
+// moving it, keeps the island. release.json says which code this is, and tells an older
+// island's old home (%LOCALAPPDATA%\Promptholm) from a checkout's when one is moved in. Run
+// after `npm run app:build`; the release workflow zips what this leaves behind.
 //
 // app/ is a list, not the tree. The tree holds the Blender sources (32 MB), the tests,
 // the Tauri crate and the docs, none of which a running island reads - the same reasoning
@@ -30,7 +33,8 @@ const RELEASE = path.join(ROOT, 'src-tauri', 'target', 'release');
 
 const FILES = ['serve.mjs', 'scan.mjs', 'package.json', 'config.example.json', 'scripts/setup.mjs'];
 const DIRS = ['lib', 'shared', 'hooks', 'web', 'docs/screenshots'];
-const EXES = ['promptholm.exe', 'promptholm-island.exe'];
+// Where each exe goes in the folder: the window on top, the islander in app/.
+const EXES = { 'promptholm.exe': '.', 'promptholm-island.exe': 'app' };
 
 function need(file, why) {
   if (!fs.existsSync(file)) {
@@ -39,13 +43,13 @@ function need(file, why) {
   }
 }
 
-for (const exe of EXES) need(path.join(RELEASE, exe), 'run `npm run app:build` first');
+for (const exe of Object.keys(EXES)) need(path.join(RELEASE, exe), 'run `npm run app:build` first');
 need(path.join(ROOT, 'web', 'vendor', 'three.module.js'), 'run `npm install` first (it vendors three.js)');
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(APP, { recursive: true });
 
-for (const exe of EXES) fs.copyFileSync(path.join(RELEASE, exe), path.join(OUT, exe));
+for (const [exe, dir] of Object.entries(EXES)) fs.copyFileSync(path.join(RELEASE, exe), path.join(OUT, dir, exe));
 fs.copyFileSync(path.join(ROOT, 'src-tauri', 'release-readme.txt'), path.join(OUT, 'README.txt'));
 for (const f of FILES) {
   fs.mkdirSync(path.dirname(path.join(APP, f)), { recursive: true });

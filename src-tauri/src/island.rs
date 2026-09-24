@@ -66,11 +66,14 @@ pub fn plan() -> Plan {
     Plan { url: format!("http://localhost:{port}/"), port, root, remote: false }
 }
 
-/// The folder serve.mjs lives in. Five places to look, in the order they are likely to be
+/// The folder serve.mjs lives in. Six places to look, in the order they are likely to be
 /// right:
 ///   PROMPTHOLM_ROOT          somebody said so
-///   app\ beside the exe    an unpacked release: both exes and the island they run, in one
-///                          folder that can stand anywhere
+///   app\ beside the exe    an unpacked release's window: promptholm.exe on top, the island
+///                          it runs in app\, in one folder that can stand anywhere
+///   the exe's own folder   an unpacked release's islander, which lives in that app\ - before
+///                          CARGO_MANIFEST_DIR, or a pack made on the machine that built it
+///                          would run the checkout instead of itself
 ///   CARGO_MANIFEST_DIR/..  where this binary was built from - correct for `tauri dev` and
 ///                          for a build that stays on this machine
 ///   above the executable   an exe dropped into a checkout, or into a folder next to it
@@ -87,9 +90,11 @@ pub fn find_root() -> Option<PathBuf> {
         }
     }
 
-    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("app")));
-    if let Some(p) = beside.filter(|p| is_root(p)) {
-        return Some(p);
+    let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
+    for p in [exe_dir.as_ref().map(|d| d.join("app")), exe_dir.clone()].into_iter().flatten() {
+        if is_root(&p) {
+            return Some(p);
+        }
     }
 
     let built_from = Path::new(env!("CARGO_MANIFEST_DIR")).parent().map(Path::to_path_buf);
@@ -110,30 +115,35 @@ pub fn find_root() -> Option<PathBuf> {
     remembered_root().filter(|p| is_root(p))
 }
 
-/// %LOCALAPPDATA%\Promptholm - where an unpacked release keeps its config and data, and
-/// where the islander leaves a note of which folder it ran from.
-fn local_home() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|b| PathBuf::from(b).join("Promptholm"))
+/// %USERPROFILE%\.promptholm - the one home a release and a checkout share, and where the
+/// islander leaves a note of which folder it ran from. Not AppData: from the Claude desktop
+/// app, every AppData write lands in its MSIX package's own copy (Plans/een-thuis-voor-het-eiland.md).
+fn shared_home() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .filter(|v| !v.is_empty())
+        .map(|b| PathBuf::from(b).join(".promptholm"))
 }
 
 /// Where the island in `root` keeps config.json and data/. The same rule as HOME in
 /// lib/paths.mjs, and it has to stay the same rule: the log the tray opens and the one the
-/// server writes are only one file while the two agree. A checkout keeps them in itself; a
-/// release (release.json beside serve.mjs) in %LOCALAPPDATA%\Promptholm.
+/// server writes are only one file while the two agree. PROMPTHOLM_HOME when it is set; a
+/// linked worktree (a .git *file*) in itself, as a sandbox; everybody else ~/.promptholm.
+/// The one place the two may differ is a move into ~/.promptholm that failed, after which
+/// node runs on the old home until the next start tries again - moving is node's job
+/// (settleHome), and the tray only ever looks.
 pub fn home(root: &Path) -> PathBuf {
     if let Some(v) = std::env::var_os("PROMPTHOLM_HOME").filter(|v| !v.is_empty()) {
         return PathBuf::from(v);
     }
-    if root.join("release.json").is_file() {
-        if let Some(h) = local_home() {
-            return h;
-        }
+    if root.join(".git").is_file() {
+        return root.to_path_buf();
     }
-    root.to_path_buf()
+    shared_home().unwrap_or_else(|| root.to_path_buf())
 }
 
 fn memory_file() -> Option<PathBuf> {
-    local_home().map(|h| h.join("checkout.txt"))
+    shared_home().map(|h| h.join("checkout.txt"))
 }
 
 fn remembered_root() -> Option<PathBuf> {
@@ -224,8 +234,9 @@ pub fn wait(port: u16, timeout: Duration) -> Option<Duration> {
 /// The flag the window hands a second copy of its own executable to make it the go-between.
 const SPAWN_FLAG: &str = "--spawn-island";
 
-/// The islander's own executable, which lives next to the window's: one crate, one build,
-/// two binaries (Plans/islander-als-eigen-exe.md).
+/// The islander's own executable: one crate, one build, two binaries
+/// (Plans/islander-als-eigen-exe.md). In a build folder it stands next to the window's; in
+/// an unpacked release it is in app\, so the one exe on top is the one to start.
 pub const ISLANDER_EXE: &str = "promptholm-island.exe";
 
 /// Start the islander in `root`. Returns once the process exists; whether it comes up is
@@ -319,9 +330,11 @@ pub fn spawn_if_asked() -> bool {
     true
 }
 
+/// app\ first: a release unpacked over one from before the move still has the old islander
+/// on top, and that is the older code.
 fn islander_exe() -> Option<PathBuf> {
-    let p = std::env::current_exe().ok()?.with_file_name(ISLANDER_EXE);
-    p.is_file().then_some(p)
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    [dir.join("app").join(ISLANDER_EXE), dir.join(ISLANDER_EXE)].into_iter().find(|p| p.is_file())
 }
 
 /// CREATE_NO_WINDOW: a GUI app has no console to hand down, and without this flag Windows

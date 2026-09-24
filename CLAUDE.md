@@ -58,10 +58,11 @@ Copy that preamble when adding a test that touches `web/js/`.
 worktree without colliding with the island already running on 4747. Pitfall: the preview
 tool reads `launch.json` from the directory the session was *launched* in and starts the
 server there, so from a worktree made by hand (`git worktree add`) it runs the main
-checkout's code on the main checkout's `data/` — the live island's own `layout.json`, and a
+checkout's code on the live island in `~/.promptholm` — its own `layout.json`, and a
 `POST /api/plan` against it is a real move. To try server code from such a worktree, run
 `node serve.mjs --port <free> --no-rescan --no-open` from inside it: `ROOT` is resolved from
-`import.meta.url`, so that process uses the worktree's own `data/` and `config.json`.
+`import.meta.url`, and a linked worktree keeps its island in itself (see HOME below), so
+that process uses the worktree's own `data/` and `config.json`.
 
 A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
 process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
@@ -647,7 +648,14 @@ commit: bump it when an old peer would misread a message, not for an addition it
 two equal). The page knows its own release from `/api/hello` (`build`) or, in the app, from
 what the pack baked in, and compares it with the welcome's on every connect: older is a
 banner with the release link, newer says the sea is behind - by `version`, never by commit,
-which differs between players on the same release all the time.
+which differs between players on the same release all the time, and by the *line* only
+(`compareLines`, major.minor): a patch apart says nothing. **A patch release never breaks
+compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
+any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
+`ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
+a bundle that an older 0.4.x would misread - a release and a checkout share one island in
+`~/.promptholm`, and an older one on a newer layout plans the town again. Any of those is
+the next minor.
 
 The sea also serves its own front page — no file on disk (the disk rule above forbids
 that), an inline string in `lib/sea.mjs` that fetches its own `/health` and `/world`. Its
@@ -883,28 +891,52 @@ and keeps a tray icon (open / browser / stop-start / restart / log / quit). `--s
 makes serve.mjs `shutdown()` when its stdin closes: Windows has no SIGTERM to send from
 outside, so that pipe is how Stop is polite, and why a killed islander exe leaves no node
 behind. One islander per port (named mutex); an island started by hand is adopted, and its
-Stop is `kill_listener` (netstat for the pid, `taskkill /f`). `src/island.rs` is shared by both
+Stop is `kill_listener` (netstat for the pid, `taskkill /f`). A tray whose island was
+stopped from its menu still holds the mutex, so a second copy that finds nothing listening
+*knocks* (a named event beside the mutex, `Local\Promptholm-island-<port>-knock`) and the
+keeper starts its island; a keeper from before the knock gets a message box instead.
+Exiting there without a word was the "the exes are broken" of 0.4.0: double-click, nothing,
+and the window's minute ran out. `src/island.rs` is shared by both
 through `#[path]`, so it must never reach for Tauri. Neither exe has a console, in debug too.
 **A release is a folder, not a checkout**: `npm run app:pack` (`scripts/pack-release.mjs`)
-lays out `dist/Promptholm/` - both exes, and the island in `app/` beside them, copied *by
+lays out `dist/Promptholm/` - `promptholm.exe` alone on top, and the island in `app/` beside
+it with `promptholm-island.exe` in there too, so nobody has to ask which of two exes to start;
+the window looks for the islander in `app\` before beside itself (a release unpacked over an
+old one keeps the old islander on top), and the islander finds its root as its own folder
+*before* `CARGO_MANIFEST_DIR`. The island is copied *by
 name* like `Dockerfile.sea` (a runtime import from a new top-level folder must be added to
-its list). `app/release.json` is the marker, and it moves the island's own files: `HOME` in
-`lib/paths.mjs` (config.json, data/, .env) is `%LOCALAPPDATA%\Promptholm` for a release and
-`ROOT` for a checkout, decided from the files alone because the session hook runs with none
-of our environment; `home()` in `src/island.rs` is the same rule and must stay it, or the
-tray's log and the server's are two files. `PROMPTHOLM_HOME` overrides both - use it to try
-a pack without founding a second island. The islander runs `setup.mjs --first-run` when
+its list). `app/release.json` is its marker. **The island's own files live in one home
+for a release and a checkout alike** ([Plans/een-thuis-voor-het-eiland.md](Plans/een-thuis-voor-het-eiland.md)):
+`HOME` in `lib/paths.mjs` (config.json, data/, .env) is `PROMPTHOLM_HOME`, else the checkout
+itself for a *linked worktree* (a `.git` file - a sandbox, or a preview server in one works on
+the real island and publishes under its sea token), else `~/.promptholm` - so a new release
+runs on the island the debug build left. Decided from the files alone because the session
+hook runs with none of our environment; `home()` in `src/island.rs` is the same rule and
+must stay it, or the tray's log and the server's are two files. Not AppData, measured: the
+Claude desktop app is an MSIX package, and every AppData write by it *and by anything it
+starts* - the session hook, which scans and so writes layout.json on every session, and an
+islander a session restarts - lands in `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\`, a
+second layout.json that Explorer and an exe the user starts never see. Importing
+`lib/paths.mjs` moves an island into `~/.promptholm` when it has no config.json yet
+(`settleHome`): copied, not moved, from the island the session hook points at (the real
+one), else this code's old home (the checkout, or `%LOCALAPPDATA%\Promptholm` for a
+release), logs/locks/`guests`/`print` left behind, config.json last, one process under
+`moving.lock` while the rest wait, and a failed copy runs on the old home rather than
+founding an empty island beside it. **Importing lib/paths.mjs outside a worktree is
+therefore not free**: a `node -e` probe of it moves the island, so `tests/home.test.mjs`
+copies the module into a scratch checkout and imports it in a child with its own profile.
+The islander runs `setup.mjs --first-run` when
 HOME has no config.json (leaves an existing hook alone, since it may be a checkout's), tells
 the user in a message box when there is no node, and leaves the folder it ran from in
-`%LOCALAPPDATA%\Promptholm\checkout.txt` so a stray exe elsewhere can still find the island.
-Pitfall when testing this from a Claude desktop session: that app is an MSIX package, and
-Windows redirects every AppData write by it *and by anything it starts* (the exes included)
-to `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\`. The session sees a merged view, so the
-folder looks written; Explorer and an exe started by the user do not see it at all. Test
-AppData behaviour with `PROMPTHOLM_HOME` pointed at a real folder, or let the user start the
-exe. Shortcuts made through the `WScript.Shell` COM object are not redirected.
+`~/.promptholm\checkout.txt` so a stray exe elsewhere can still find the island. Testing
+AppData behaviour itself (the WebView2 profile, an old release home) from a Claude desktop
+session hits the same redirect: a process made through WMI (`Invoke-CimMethod
+Win32_Process -MethodName Create`) runs outside the package and sees and writes the real
+AppData, exactly like a double-click. Shortcuts made through the `WScript.Shell` COM object
+are not redirected either.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
-starts the islander exe next to it (node directly when that exe is missing).
+starts the islander exe (in `app\`, or next to it in a build folder; node directly when that
+exe is missing).
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
@@ -964,7 +996,9 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
 
-`data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
+`data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
+window above) - and a checkout's own `data/` is only the backup an island moved out of
+(`data/MOVED.txt` says so). `data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
 `garden.json` (the walker's purse and beds — the scanner never touches it) and `mail.json`
 (mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
