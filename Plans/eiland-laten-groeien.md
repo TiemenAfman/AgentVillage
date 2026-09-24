@@ -373,6 +373,33 @@ bij het stichten ruimte te reserveren.
 waarop hij berekend is (`grid`), en op een kleiner doek is hij niet meer te tekenen zonder zijn
 grond te veranderen. Het live eiland vult zijn 256 bovendien al tot de rand.
 
+## Ingesloten dijken, gebouwd (24 september 2026)
+
+Een ring die een polder insluit, liet zijn dijk als rug midden in de wei staan: DIKE_H, en
+RESERVED, dus niemand mocht erop bouwen of er een weg over leggen. Nu neemt de groeistap zo'n
+dijk op (`absorbDikes` in `lib/layout.mjs`).
+
+- **Wanneer:** geen enkele dijkcel ligt nog naast water (8-buren, zee of niet). Strenger dan
+  "open zee", zodat een plas die de ring afsneed zijn muur houdt, en er geen flood nodig is.
+- **Hoe:** de cellen gaan uit `p.dike`. Dat is precies wat makeTerrain stempelt en wat heldOf,
+  replayGrid, world.js en de planner "de dijk" noemen. De grond eronder is dan die van de ring
+  (buiten) en de polderbodem (op de gedeelde hoeken).
+- **Waarom niet `step.absorb = [indices]`:** `unpolder` splitst de lijst, dus een index op een
+  stap kan later naar een andere polder wijzen. En een nieuw veld in `grow` negeert een zee
+  van vóór deze code, die dan de dijk terug hasht en het eiland weigert. Een kortere `dike`
+  leest elke versie hetzelfde.
+- **Wat blijft staan:** elke dijkcel binnen één cel van een plot of brug (de poldermolen, een
+  polderhuis aan de voet van de dijk deelt zijn hoeken), en een hele dijk als het slechten
+  land in water zou veranderen.
+- **`p.absorbed`** is de index van de stap (herkomst, niet in de bundel). `unpolder` weigert
+  zo'n polder: er is geen zee meer om hem aan terug te geven.
+- **Gemeten op een kopie van het live eiland** (256 → 352, kust 156): polder 0 van 82 naar 3
+  dijkcellen (de molen), polder 1 van 74 naar 0, polder 2 blijft staan: één hoek raakt nog
+  diagonaal open zee.
+
+**Bekend, nog niet gedaan:** een dijk die op één plek nog zee raakt, blijft helemaal staan.
+Gedeeltelijk slechten (alleen de cellen ver van het water) kan later.
+
 ## Fasen
 
 1. **Vorm los van het doek.** Voeg `makeTerrain(seed, { size, radius })` toe, met als default
