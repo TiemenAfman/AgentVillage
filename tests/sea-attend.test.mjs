@@ -15,7 +15,7 @@ import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
 const { SEA_V, afloat, island, post, talk, until } = await import('./support/sea.mjs');
-const { decodeCrowd } = await import('../shared/settlerwire.mjs');
+const { decodeCrowd, decodeHeld, GRID } = await import('../shared/settlerwire.mjs');
 
 test('an attend lands in the island’s own frame, wherever the island is moored', async () => {
   await afloat(async ({ sea, base, wsUrl }) => {
@@ -95,6 +95,95 @@ test('somebody who has just joined is handed the whole village at once', async (
     const rows = decodeCrowd(where.k, 32, decodeCrowd(where.a, 32));
     assert.equal(rows.size, lives, `placed ${rows.size} of ${lives} on the first message`);
 
+    // And who is being spoken to, even when that is nobody: a page coming back from another
+    // sea may still be holding somebody, and nothing else would ever tell it they were let go.
+    const held = await me.until((m) => m.t === 'fh' && m.i === a.id, 4);
+    assert.deepEqual(held.h, []);
+
+    me.close();
+    await me.closed;
+  });
+});
+
+// A held settler is 'still' and a row has no heading, so without the held list nobody but the
+// sea knew they had turned - the talker included. Plans/aangesproken-settler-draait-zich-om.md.
+test('everybody watching is told who is held and where the talker stands, and when it ends', async () => {
+  await afloat(async ({ sea, base, wsUrl }) => {
+    const a = island({ port: 4747, name: 'Promptholm' });
+    const b = island({ port: 4748, name: 'Buurholm' });
+    await post(base, `/island/${a.id}`, a.bundle);
+    const moored = await (await post(base, `/island/${b.id}`, b.bundle)).json();
+    const [ox, oz] = moored.origin;
+
+    // Somebody from the other island, watching - not the one talking.
+    const them = talk(wsUrl);
+    await them.ready;
+    them.say({ t: 'join', v: SEA_V, as: 'client', island: a.id, name: 'Tiemen' });
+    await them.until((m) => m.t === 'welcome');
+
+    const me = talk(wsUrl);
+    await me.ready;
+    me.say({ t: 'join', v: SEA_V, as: 'client', island: b.id, name: 'Martijn' });
+    await me.until((m) => m.t === 'welcome');
+
+    const figures = [...sea.crowds.get(b.id).figures.values()];
+    const idx = 2;
+    const f = figures[idx];
+    const at = [f.pos[0] - 0.8, f.pos[1] + 1.1];
+    me.say({ t: 'attend', b: f.id, x: at[0] + ox, z: at[1] + oz });
+
+    // Both screens hear it - the talker's own is one of the screens that could not see it.
+    const heard = (sock) => sock.until((m) => m.t === 'fh' && m.i === b.id && m.h.length > 0, 600);
+    for (const [who, sock] of [['the watcher', them], ['the talker', me]]) {
+      const rows = decodeHeld((await heard(sock)).h, 32);
+      assert.deepEqual([...rows.keys()], [idx], `${who} was told the wrong settler is held`);
+      const got = rows.get(idx);
+      assert.ok(Math.abs(got.x - at[0]) <= 0.5 / GRID && Math.abs(got.z - at[1]) <= 0.5 / GRID,
+        `${who} was told the talker stands at ${got.x},${got.z}, not ${at} in the island's own frame`);
+    }
+    // Said once, not on every beat: a conversation that does not change is not news.
+    const extra = [];
+    for (let i = 0; i < 30; i++) extra.push(await them.next());
+    assert.equal(extra.filter((m) => m.t === 'fh').length, 0, 'the held list is being repeated on the beat');
+
+    // Somebody who arrives in the middle of it is handed it with everything else.
+    const late = talk(wsUrl);
+    await late.ready;
+    late.say({ t: 'join', v: SEA_V, as: 'client', island: null, name: 'Phone' });
+    const told = await late.until((m) => m.t === 'fh' && m.i === b.id, 12);
+    assert.deepEqual([...decodeHeld(told.h, 32).keys()], [idx], 'a late joiner sees the settler looking away');
+
+    // The talker leaves: everybody is told the set is empty now.
+    me.close();
+    await me.closed;
+    const over = await them.until((m) => m.t === 'fh' && m.i === b.id, 600);
+    assert.deepEqual(over.h, [], 'the settler is still being held on everybody else’s screen');
+
+    them.close(); late.close();
+    await Promise.all([them.closed, late.closed]);
+  });
+});
+
+test('a settler let go of by something other than a goodbye is let go of on the wire too', async () => {
+  // f.attend is cleared in more places than release - a republish builds a new crowd that
+  // holds nobody - which is why the sea works the list out from the walk rather than from
+  // attend and release.
+  await afloat(async ({ sea, base, wsUrl }) => {
+    const a = island();
+    await post(base, `/island/${a.id}`, a.bundle);
+    const me = talk(wsUrl);
+    await me.ready;
+    me.say({ t: 'join', v: SEA_V, as: 'client', island: a.id, name: 'Martijn' });
+    await me.until((m) => m.t === 'welcome');
+    const f = [...sea.crowds.get(a.id).figures.values()][0];
+    me.say({ t: 'attend', b: f.id, x: f.pos[0] + 1, z: f.pos[1] });
+    await me.until((m) => m.t === 'fh' && m.i === a.id && m.h.length > 0, 600);
+
+    // The island publishes again: a fresh crowd, and the conversation with it is gone.
+    const again = await post(base, `/island/${a.id}`, a.bundle);
+    assert.equal(again.status, 200, `the republish was refused: ${await again.text()}`);
+    const over = await me.until((m) => m.t === 'fh' && m.i === a.id, 600);
+    assert.deepEqual(over.h, []);
     me.close();
     await me.closed;
   });

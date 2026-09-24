@@ -5,7 +5,7 @@
 // notice a stutter on a laptop six months later and blame the graphics.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeCrowd, decodeCrowd, encodeRides, decodeRides, crowdRoster, sliceCount, walkerEvery, GRID, TURNS, KEYFRAME_S, WALKER_HZ, ANIMS } from '../shared/settlerwire.mjs';
+import { encodeCrowd, decodeCrowd, encodeRides, decodeRides, encodeHeld, decodeHeld, crowdRoster, sliceCount, walkerEvery, GRID, TURNS, KEYFRAME_S, WALKER_HZ, ANIMS } from '../shared/settlerwire.mjs';
 import { createWalk, MAX_STROLL } from '../shared/settlerwalk.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
@@ -252,4 +252,68 @@ test('what an outing costs, as a number rather than a feeling', () => {
   const rideBytes = JSON.stringify({ b }).length;
   assert.ok(rideBytes < crowdBytes / 2,
     `both boats out is ${rideBytes} B against the crowd's ${crowdBytes} B a beat`);
+});
+
+// ---- being spoken to ------------------------------------------------------------------
+//
+// A held settler is 'still', so no row says it has turned; this list is the only thing that
+// does. Plans/aangesproken-settler-draait-zich-om.md has the reasoning for a separate list.
+
+test('who is held travels with where the talker stands, and nobody else does', () => {
+  const c = crowd(12);
+  c.walk.advance(200, 0);
+  assert.deepEqual(encodeHeld(c, HALF), [], 'nobody is talking, and the list says somebody is');
+  const fs = [...c.figures.values()];
+  const at = [fs[3].pos[0] + 1.2, fs[3].pos[1] - 0.4];
+  c.walk.attend(fs[3].id, at);
+  c.walk.attend(fs[7].id, null);   // held where they stand, the way an attend with no point is
+  const h = encodeHeld(c, HALF);
+  assert.equal(h.length, 6, 'two held, three numbers each');
+  assert.ok(h.every(Number.isInteger), 'a held row is small integers, like every other row');
+  const back = decodeHeld(h, HALF);
+  assert.deepEqual([...back.keys()], [3, 7]);
+  const got = back.get(3);
+  const step = 0.5 / GRID;
+  assert.ok(Math.abs(got.x - at[0]) <= step && Math.abs(got.z - at[1]) <= step,
+    `the talker came back at ${got.x},${got.z} instead of ${at}`);
+
+  // Let go of, and gone from the list; a body out of sight is never held on the wire.
+  c.walk.unattend(fs[3].id);
+  c.walk.setVisible(fs[7].id, false);
+  assert.deepEqual(encodeHeld(c, HALF), []);
+});
+
+test('somebody standing in a boat is not held on the wire, whatever the slot says', () => {
+  // The walk tests `aboard` before `attend`: a hull decides which way its rider faces.
+  const c = crowd(4);
+  const f = [...c.figures.values()][0];
+  c.walk.attend(f.id, [0, 0]);
+  c.walk.charter(f.id);
+  c.walk.carry(f.id, () => ({ x: 1, z: 2, yaw: 0, y: 0.05 }));
+  assert.deepEqual(encodeHeld(c, HALF), []);
+});
+
+test('the held list is the whole set: an empty one lets everybody go', () => {
+  const into = decodeHeld([2, 1000, 1100, 5, 900, 900], HALF);
+  assert.equal(into.size, 2);
+  decodeHeld([5, 900, 900], HALF, into);
+  assert.deepEqual([...into.keys()], [5], 'a list is the truth, not an addition to the last one');
+  decodeHeld([], HALF, into);
+  assert.equal(into.size, 0);
+  decodeHeld(null, HALF, into);
+  assert.equal(into.size, 0, 'nonsense is nobody held, not the last set kept');
+  assert.equal(decodeHeld([1, 2], HALF).size, 0, 'a half row is no row');
+  assert.equal(decodeHeld([1, 'x', 3], HALF).size, 0, 'a word where a number goes is no row');
+});
+
+test('what a conversation costs, as a number rather than a feeling', () => {
+  // Said once when it starts and once when it ends, so it is the message that is priced,
+  // not a rate. The island id is the sixteen hex characters a beacon id has.
+  const c = crowd(274);
+  const f = [...c.figures.values()].pop();   // the last index: the longest one to write
+  c.walk.attend(f.id, [f.pos[0] + 1, f.pos[1]]);
+  const said = JSON.stringify({ t: 'fh', i: '0123456789abcdef', h: encodeHeld(c, HALF) });
+  assert.ok(said.length <= 60, `one conversation is ${said.length} B to say`);
+  const done = JSON.stringify({ t: 'fh', i: '0123456789abcdef', h: [] });
+  assert.ok(done.length <= 45, `letting go is ${done.length} B`);
 });

@@ -178,6 +178,51 @@ export function decodeCrowd(flat, half, into = new Map()) {
   return into;
 }
 
+// Who is being spoken to, and where whoever is speaking stands.
+//
+// A settler held by a conversation (shared/settlerwalk.mjs `attend`) stops and turns to the
+// talker, and neither shows in a crowd row: they are 'still', so they are sent once a
+// KEYFRAME_S like everybody else standing about, and a row has no heading in it. The far
+// end turns a body by the way it is going, and a body going nowhere kept looking the way it
+// had been walking - on every screen, the talker's included.
+//
+// The point rather than a heading, because it is what the walk itself holds and it needs no
+// atan2 here: the far end faces the body from where it is drawn towards it, exactly the
+// `face` the walk writes. And the whole set rather than "held" and "let go", sent only when
+// it changes (lib/sea.mjs): a conversation lasts seconds to minutes with the point never
+// moving, which is no business of the beat's, and a message that is the whole truth on its
+// own cannot fall out of step with the one before it. An empty set is a real statement - it
+// is how the last settler is let go of.
+//
+// Measured on a village of 274: one conversation is `"h":[273,1302,1601]`, a 53 B message per
+// viewer when it starts and 40 B when it ends, and working the set out costs the sea about a
+// microsecond a beat against encodeCrowd's four and a half. A heading on held rows instead
+// would have had to ride every beat for its absence to mean anything, the way the dinghies
+// do - 15 B on a beat that goes anyway and 67 B on one that would have been silent, so up to
+// 1 kB/s per viewer for as long as anybody is talking, against the crowd's own 1.3.
+export function encodeHeld(crowd, half) {
+  const out = [];
+  let idx = -1;
+  for (const f of crowd.figures.values()) {
+    idx++;
+    // Aboard is tested before attend by the walk too: a hull decides where a rider faces.
+    if (!f.visible || f.aboard || !f.attend) continue;
+    out.push(idx, quant(f.attend[0], half), quant(f.attend[1], half));
+  }
+  return out;
+}
+
+// Replaces rather than merges, the opposite of decodeCrowd: this message is the whole set.
+export function decodeHeld(flat, half, into = new Map()) {
+  into.clear();
+  if (!Array.isArray(flat)) return into;
+  for (let i = 0; i + 2 < flat.length; i += 3) {
+    if (![flat[i], flat[i + 1], flat[i + 2]].every(Number.isFinite)) continue;
+    into.set(flat[i], { x: unquant(flat[i + 1], half), z: unquant(flat[i + 2], half) });
+  }
+  return into;
+}
+
 // Who the indices mean. Sent when an island arrives and again when its village changes -
 // which is the only time the order can move, because it is the order of the buildings in
 // the bundle. Colours are deliberately absent: see the header.

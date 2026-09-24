@@ -84,6 +84,9 @@ const STANDING_U_S = 0.05;
 // show: the figures have no swimming pose, and an upright body at the player's own
 // SWIM_SINK (walk.js) reads as walking on the water.
 const WADE_Y = -0.22;
+// How briskly somebody held by a conversation turns to the talker: the walk's own number
+// for it, in the `attend` branch of shared/settlerwalk.mjs, where it is a literal.
+const HELD_TURN = 0.12;
 
 // `player` is where this page's own walker is (scene frame, like every position here), or
 // null when nobody is on foot, and `eye` where the camera is - only the volcano's imps use
@@ -113,6 +116,11 @@ export function createCrowdView({
   // ours and the row is theirs and only one of the two survives a message.
   const rides = new Map();
   const hulls = new Map();
+  // Who is in the middle of a conversation, and where the talker stands, by index: what the
+  // sea last said about it, whole (`held` below). Kept apart from the figures, and by index
+  // rather than on a body, because it is the sea's word about a number - it can land before
+  // our own roster has been translated and the body exists, and it is kept across a re-dress.
+  const talkers = new Map();
 
   // The volcano's guards, drawn as lava imps instead of as members of the crowd.
   //
@@ -294,6 +302,15 @@ export function createCrowdView({
     }
     rides.clear();
     for (const [idx, r] of rows) rides.set(idx, r);
+  }
+
+  // Who the sea is holding in a conversation (`fh`, decodeHeld): index -> where whoever is
+  // talking to them stands, in the island's own frame like every row. The whole set every
+  // time, so whoever is not in it has been let go of. draw() turns a held body towards the
+  // talker once it has finished its last stride.
+  function held(rows) {
+    talkers.clear();
+    for (const [idx, at] of rows) talkers.set(idx, [at.x + ox, at.z + oz]);
   }
 
   // A blow landing on somebody here - the sea's `{t:'agent', a:'hit'}` (lib/combat.mjs),
@@ -524,6 +541,17 @@ export function createCrowdView({
       // faster than a stroll, which is how a newcomer's dash up from the beach has always
       // been drawn.
       if (moving) { f.face = [gx, gz]; f.turn = f.anim === 'walk' ? 0.2 : 0.12; f.speed = speed; }
+      // Standing, and somebody talking to them: round to face whoever it is, at the walk's
+      // own rate for it (the `attend` branch of shared/settlerwalk.mjs) - which the sea has
+      // already done, and no row could say. Only once they stand: the sea stops them dead
+      // and this screen is a word behind, so facing the talker during the stride that is
+      // still being glided reads as a sidestep. A talker standing on top of them gives no
+      // direction and leaves the head where it was.
+      else {
+        const hold = talkers.get(idx);
+        const hx = hold ? hold[0] - nx : 0, hz = hold ? hold[1] - nz : 0;
+        if (hx * hx + hz * hz > 1e-6) { f.face = [hx, hz]; f.turn = HELD_TURN; }
+      }
       const ground = groundAt ? groundAt(nx, nz) : 0;
       f.y = Math.max(WADE_Y, ground);
       // Out of their depth: the ground under them is below the sea - walk.js's own test for
@@ -544,10 +572,11 @@ export function createCrowdView({
     for (const hull of hulls.values()) hull.dispose();
     hulls.clear();
     rides.clear();
+    talkers.clear();
   }
 
   return {
-    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
+    roster, apply, applyRides, held, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

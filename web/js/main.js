@@ -12,7 +12,7 @@ import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
-import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
+import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
@@ -2221,6 +2221,9 @@ async function changeSea(what) {
 // milliseconds later, because the bundle has to be fetched first. Kept rather than dropped:
 // without the roster nobody on that island has a face.
 const crowdRosters = new Map();
+// And who on it is in the middle of a conversation (`fh`), for the same reason: the join
+// hands it over straight after the roster, long before the bundle is in.
+const crowdHeld = new Map();
 
 // Our own roster, in the sea's names and then in ours.
 //
@@ -2306,6 +2309,17 @@ function onCrowdMessage(m) {
     if (home) { ourRoster(m.ids); return; }
     if (g && g.crowd) g.crowd.roster(m.ids);
     else crowdRosters.set(m.island, m.ids);
+    return;
+  }
+  // Who is being spoken to. By index, like the positions, so our own needs no translating
+  // and is not held back while the roster is: the view keeps it by number until the body is
+  // there. Kept for a reseed like the roster (state.homeHeld).
+  if (m.kind === 'held') {
+    if (home) {
+      state.homeHeld = m.h;
+      if (state.settlers && state.region) state.settlers.held(decodeHeld(m.h, state.region.half));
+    } else if (g && g.crowd) g.crowd.held(decodeHeld(m.h, g.region.half));
+    else crowdHeld.set(m.island, m.h);
     return;
   }
   if (home) {
@@ -2535,6 +2549,8 @@ function raiseGuestIslands() {
     g.crops.apply((region.village && region.village.crops) || [], { animate: false });
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
+    const talking = crowdHeld.get(region.id);
+    if (talking) { g.crowd.held(decodeHeld(talking, region.half)); crowdHeld.delete(region.id); }
     state.guests.push(g);
     state.pickables.push(g.ground);
     console.info(`island: raised ${region.id} at [${region.origin}]`
@@ -3039,6 +3055,7 @@ function buildScene(village) {
   // always does, and after a reseed it is the scene that was rebuilt, not the island.
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
+  if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
