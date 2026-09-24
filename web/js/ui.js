@@ -445,7 +445,9 @@ export function createUI(handlers) {
       const said = o.up
         ? `${o.islands ?? 0} island${o.islands === 1 ? '' : 's'} · ${o.players ?? 0} online`
         : esc(o.why || 'no answer');
-      const from = o.from === 'network' ? 'on this network' : o.from === 'known' ? 'always on' : o.mine ? 'mine' : 'saved';
+      // 'open' is the always-on sea; 'known' used to be labelled that way from before it
+      // had its own entry, and called every saved address "always on".
+      const from = o.from === 'network' ? 'on this network' : o.from === 'open' ? 'always on' : o.mine ? 'mine' : 'saved';
       const name = o.name || String(o.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
       return `<div class="sea-row${here ? ' here' : ''}${o.up ? '' : ' down'}">`
         + `<i class="sea-dot" title="${o.up ? 'Answering' : 'Not answering'}"></i>`

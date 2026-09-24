@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, OPEN_SEA, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -926,8 +926,10 @@ if (req.url === '/api/command' && req.method === 'POST') {
       if (addr) offer({ url: seaUrlFor(req), name: seaNameOf(config), from: mode, mine: true });
     }
     offer({ url: OPEN_SEA, name: 'The open sea', from: 'open' });
-    for (const url of cfg.known || []) offer({ url: String(url), name: null, from: 'known' });
-    if (cfg.url) offer({ url: String(cfg.url), name: null, from: 'chosen' });
+    // Never the open sea again under another spelling: it has its own row above and its
+    // own card in the main menu, and among the saved (local) seas it does not belong.
+    for (const url of cfg.known || []) if (!isOpenSea(url)) offer({ url: String(url), name: null, from: 'known' });
+    if (cfg.url && !isOpenSea(cfg.url)) offer({ url: String(cfg.url), name: null, from: 'chosen' });
 
     const asked = await Promise.all([...candidates.values()].map(async (o) => {
       try {

@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { forgetSea, OPEN_SEA } from '../lib/paths.mjs';
+import { forgetSea, isOpenSea, OPEN_SEA } from '../lib/paths.mjs';
 
 const A = 'https://one.example/';
 const B = 'https://two.example/';
@@ -88,6 +88,18 @@ test('the last sea chosen, left behind in `url`, can be forgotten too', () => {
   assert.equal(sea.url, null);
   assert.deepEqual(sea.known, [A, B], 'the saved list is untouched');
   assert.equal(read(file).multiplayer.sea.url, null);
+});
+
+test('the open sea is recognised in any spelling, so it never lands among the local seas', () => {
+  assert.equal(isOpenSea(OPEN_SEA), true);
+  assert.equal(isOpenSea('http://agentvillage.xeroxmsj.freeddns.org:4750/'), true);
+  assert.equal(isOpenSea('HTTPS://AgentVillage.xeroxmsj.freeddns.org'), true);
+  assert.equal(isOpenSea('http://192.168.1.37:4750/'), false);
+  assert.equal(isOpenSea('not a url'), false);
+  // And /api/seas leaves such a spelling out of the saved rows (serve.mjs, the offer loop).
+  const src = fs.readFileSync(new URL('../serve.mjs', import.meta.url), 'utf8');
+  assert.match(src, /if \(!isOpenSea\(url\)\) offer\(/);
+  assert.match(src, /cfg\.url && !isOpenSea\(cfg\.url\)/);
 });
 
 test('the open sea cannot be forgotten', () => {
