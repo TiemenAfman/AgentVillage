@@ -11,7 +11,8 @@
 #panels {
   position: fixed;
   inset: 0;
-  z-index: 1;                 /* over the canvas, under every card and panel of the UI */
+  /* No z-index: it comes before #stage in the document and so lies under the canvas,
+     which lets it through at each board's hole (web/js/panels.js, HOLE). */
   overflow: hidden;
   /* Nothing on this layer ever takes the mouse - not the container, not a panel. Without
      it the layer lies over the whole island and nothing can be dragged, zoomed or

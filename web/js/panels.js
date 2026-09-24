@@ -8,12 +8,12 @@
 // above the canvas, and the browser does the perspective and the hit-testing.
 //
 // What that costs is depth. This layer knows nothing of the terrain, the buildings, the
-// shadows or the fog, so a panel cannot be hidden behind a hill or a roof. Two cheap
-// halves of the problem are dealt with here - a panel goes out past a few dozen paces,
-// and it goes out when you are standing behind it - and the expensive half, punching a
-// hole in the canvas where the glass is, is not. Stand a panel beside a house and walk
-// around it: what you see is the whole of the limitation, and it is the thing to know
-// before panels go up inside a room.
+// shadows or the fog. So it lies *under* the canvas, and each board punches a hole in the
+// canvas where its glass is (HOLE below): a roof, a well or a settler in front of a board
+// draws over the hole and hides the page, the way it would hide a painted one. It used to
+// lie over the canvas and hang in front of everything - the clock board over the well's
+// roof on the square. Two cheap rules stay: a panel goes out past a few dozen paces, and
+// when you are standing behind it.
 //
 // Nothing on this layer ever takes a pointer event - not the container, not a panel.
 // The container must not, or it swallows every drag and click meant for the island. The
@@ -65,12 +65,34 @@ const REACH = 2.4;
 // reads straight off as a position on the page.
 const GLASS = new THREE.PlaneGeometry(1, 1);
 
+// The hole. This layer lies *under* the canvas (panels.css), and every board has a pane of
+// nothing in the island's own scene where its glass is: it writes alpha 0 and depth, so the
+// canvas is see-through there - onto the page below - unless something nearer the camera
+// has drawn over it since. That is the depth this layer never had: a roof, a well or a
+// passer-by in front of a board now hides it, instead of the board hanging over them.
+// NoBlending rather than transparent: an opaque-pass mesh writes depth, and three only
+// forces alpha to 1 for an opaque material under NormalBlending. polygonOffset pulls it
+// just in front of the board's own woodwork, which stands in exactly the same plane.
+const HOLE = new THREE.MeshBasicMaterial({
+  color: 0x000000, opacity: 0, blending: THREE.NoBlending, fog: false, toneMapped: false,
+  polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+});
+function holeFor(object, world) {
+  if (!world) return null;
+  const hole = new THREE.Mesh(GLASS, HOLE);
+  hole.matrixAutoUpdate = false;
+  hole.raycast = () => {};          // nothing may pick a hole in place of what is behind it
+  hole.visible = false;
+  world.add(hole);
+  return hole;
+}
+
 // Everything a board says is the server's, not ours: a press sends an intent and the
 // answer comes back for every copy at once, including our own. That is what makes two
 // people at one panel agree without either of them winning, and what lets somebody who
 // walks up late be handed the whole board. lib/panelstate.mjs has the reasoning.
 export function createPanels({
-  camera, terrain, island, element,
+  camera, terrain, island, element, world = null,
   onAction = () => {}, onTake = () => {}, onDrop = () => {}, onCursor = () => {}, self = () => null,
 }) {
   const css = new CSS3DRenderer(element ? { element } : {});
@@ -117,7 +139,7 @@ export function createPanels({
     // no reason a neighbour's board should become readable at a different range than the
     // identical board on this side of the water.
     const see = Math.max(MAX_DIST, panelFace(p).w * SEE_WIDTHS);
-    records.set(p.id, { spec: p, el, object, foreign: true, see, driver: null, cursors: new Map(), state: {}, face: {} });
+    records.set(p.id, { spec: p, el, object, hole: holeFor(object, world), foreign: true, see, driver: null, cursors: new Map(), state: {}, face: {} });
   }
 
   function add(p) {
@@ -164,7 +186,7 @@ export function createPanels({
     place(object, p);
     scene.add(object);
     const see = Math.max(MAX_DIST, panelFace(p).w * SEE_WIDTHS);
-    const rec = { spec: p, object, el, face, glass, state, see, driver: null, hands, sign, cursors: new Map() };
+    const rec = { spec: p, object, el, face, glass, hole: holeFor(object, world), state, see, driver: null, hands, sign, cursors: new Map() };
     records.set(p.id, rec);
     fill(rec);
   }
@@ -192,6 +214,7 @@ export function createPanels({
     for (const hand of rec.cursors.values()) hand.remove();
     rec.cursors.clear();
     scene.remove(rec.object);      // CSS3DObject takes its element out of the page itself
+    if (rec.hole) rec.hole.removeFromParent();
     if (rec.face.dispose) rec.face.dispose();
     records.delete(id);
   }
@@ -428,6 +451,7 @@ export function createPanels({
 
   const toCamera = new THREE.Vector3();
   const facing = new THREE.Vector3();
+  const sizeOf = new THREE.Vector3();
 
   function update(dt) {
     for (const rec of records.values()) {
@@ -439,6 +463,15 @@ export function createPanels({
       // instead of hanging in the air the wrong way round.
       const visible = shown && toCamera.lengthSq() < rec.see * rec.see && toCamera.dot(facing) > 0;
       rec.object.visible = visible;
+      if (rec.hole) {
+        // A hole with no page under it is a window onto the page background.
+        rec.hole.visible = visible;
+        if (visible) {
+          rec.object.updateMatrixWorld();
+          rec.hole.matrix.copy(rec.object.matrixWorld).scale(sizeOf.set(FACE_W, FACE_H, 1));
+          rec.hole.matrixWorldNeedsUpdate = true;
+        }
+      }
       if (visible && rec.face.update) rec.face.update(dt);
     }
   }
@@ -447,7 +480,11 @@ export function createPanels({
   // on the island has no business floating through the wall of a room.
   function setVisible(v) {
     shown = !!v;
-    if (!shown) release();
+    if (!shown) {
+      release();
+      // Plan mode stops calling update(), so the holes are shut here rather than there.
+      for (const rec of records.values()) if (rec.hole) rec.hole.visible = false;
+    }
   }
 
   function render() { css.render(scene, camera); }

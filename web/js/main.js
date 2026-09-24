@@ -153,7 +153,10 @@ function makeRenderer() {
   let last = null;
   for (const opts of RENDERER_TRIES) {
     try {
-      const r = new THREE.WebGLRenderer({ canvas, ...opts });
+      // alpha: the boards' layer lies under the canvas and shows through where a board's
+      // hole wrote alpha 0 (web/js/panels.js). Everything else is cleared opaque.
+      const r = new THREE.WebGLRenderer({ canvas, alpha: true, ...opts });
+      r.setClearAlpha(1);
       if (opts !== RENDERER_TRIES[0]) console.warn('island running with reduced graphics', opts);
       return r;
     } catch (e) { last = e; }
@@ -4933,6 +4936,7 @@ async function boot() {
     camera,
     terrain: state.terrain,
     element: document.getElementById('panels'),
+    world: scene,
     island: {
       name: () => (state.village && state.village.island ? state.village.island.name : 'Promptholm'),
       hour: () => currentHour(),

@@ -83,12 +83,14 @@
 </script>
 </head>
 <body>
-<canvas id="stage"></canvas>
-
 <!-- The panels that stand on the island: real HTML, transformed into the scene by
      web/js/panels.js. Here rather than made in script so its place in the stacking
-     order - over the canvas, under the UI - is written down where it can be seen. -->
+     order is written down where it can be seen: UNDER the canvas, which is transparent
+     only where a board's hole is and nothing nearer the camera has drawn over it. Before
+     the canvas in the document, so both fixed layers stack in this order with no
+     z-index for the UI to fall between. -->
 <div id="panels"></div>
+<canvas id="stage"></canvas>
 
 <div id="boot" class="boot"><div class="boot-inner"><div class="boot-mark">🏝️</div><div id="boot-text">Charting the island…</div></div></div>
 

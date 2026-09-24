@@ -254,7 +254,10 @@ and for a long time nothing sent one, which is plumbing with no button; `scopePa
 `ourPanel` in `shared/panels.mjs` are the button, and they must stay exact inverses —
 `panels.all()` replaces the whole set, so one of somebody else's leaking in would empty
 ours rather than merely clutter it. There is **one** panels layer, not one per island: it
-is a CSS3D renderer over the whole canvas. A foreign board therefore carries what that
+is a CSS3D renderer *under* the whole canvas (`#panels` precedes `#stage`), seen through
+a hole each board writes into the island's scene (alpha 0 + depth, `HOLE` in
+`web/js/panels.js`) - which is why the renderer has `alpha: true` with clear alpha 1, and
+why an opaque material that writes alpha below 1 would open a window onto the page. A foreign board therefore carries what that
 layer cannot work out for it — world coordinates and its own `y`, because the layer was
 handed our terrain — and renders blank with a sentence naming whose machine reads it.
 That sentence is the feature: what a board says comes out of one islander's Jira token,
