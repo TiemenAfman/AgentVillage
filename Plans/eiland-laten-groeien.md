@@ -369,6 +369,31 @@ Wijken die klein begonnen, worden ingesloten en krijgen aanbouwwijken verderop. 
 van "zo klein als het dorp nu is". Beter verdelen kan later, bijvoorbeeld door een wijk
 bij het stichten ruimte te reserveren.
 
+**Nagemeten en gerepareerd (24 september 2026):** die 172 bleek niet de prijs van groeien,
+maar van ringen die niemand hielpen. Over 8 seeds (10 settlers per scan tot 340) stopten er 7
+al op kust 101; alleen seed 1337 liep door naar 172. De laatste drie ringen daar (77 → 101 →
+132 → 172) waren elk voor één huis waarvoor nieuwe kust niets doet: een wijk op `MAX_LOBES`
+(sticht geen aanbouw meer), of een wijk met genoeg cellen maar geen vrij blok (schuur, weg,
+oever). "Eén keer wachten" geldt per scan, dus zo'n wijk vroeg bij elk nieuw huis opnieuw een
+ring, en dat huis ging daarna toch naar de commons. Nu wacht een huis alleen als land zou
+helpen (`landWouldHelp`: `guest`, en nog een lobe over). Resultaat:
+
+| geval | voor | na |
+|---|---|---|
+| seed 1337, 10/scan tot 340 | kust 172, doek 384 | kust 101, doek 224 |
+| 7 andere seeds, idem | 101 | 101 |
+| seed 1337, 4/scan tot 240 | 132 | 101 |
+| seed 42, 4/scan tot 240 | 132 | 77 |
+| met kade, 10/scan tot 340 | 101 | 101 |
+
+Alle huizen staan, de scan daarna is byte-gelijk. Ter vergelijking: een eiland gesticht op
+het hele grid huist dit dorp op 192 (kust 90) met 8 polders, en niet op 160. Een eiland met
+`grow: null` plaatst byte voor byte als voorheen (4 seeds × 64/128/256, met en zonder ruimte
+om te groeien); pas zodra het gegroeid is, geldt de nieuwe regel. Ook geprobeerd en
+verworpen: fijnere ringen (+15% in plaats van +30%) gaven kust 104 en bij seed 1337 zelfs
+onbehuisde settlers. Ruimte reserveren bij het stichten is niet meer gedaan: het kan de laatste
+ring (77 → 101) hooguit uitstellen, niet overslaan. `tests/canvas-grow.test.mjs` houdt kust ≤ 120.
+
 **Bewust niet gedaan:** een bestaand doek inkrimpen tot het land. Een stap onthoudt het grid
 waarop hij berekend is (`grid`), en op een kleiner doek is hij niet meer te tekenen zonder zijn
 grond te veranderen. Het live eiland vult zijn 256 bovendien al tot de rand.

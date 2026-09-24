@@ -153,3 +153,26 @@ test('an island founded on a small grid grows the grid only as far as its villag
   placeAll(layout, withQuay(150), { seed: SEED, size: layout.size, cap: 384 });
   assert.equal(JSON.stringify(layout), once);
 });
+
+// Growing on demand used to cost far more land than founding big: a hamlet that no ring can
+// help (at MAX_LOBES, or short of a free block rather than of land) asked for a ring on every
+// scan it gained a house. Ten settlers a scan to 340 on this seed took the coast to 172 on a
+// grid of 384, three rings each for one house that went to the commons anyway; with only
+// `landWouldHelp` asking it stops at 101 on 224 (measured; seven other seeds too). 120 is the
+// coast of an island founded on a whole 256 grid, which is the bar it has to stay under.
+test('a village growing gradually needs no more coast than one founded on a whole grid', () => {
+  const layout = emptyLayout(SEED, 64, { base: 32, steps: [] });
+  for (let n = 10; n <= 340; n += 10) {
+    const m = village(n, { projects: Math.min(39, 3 + Math.floor(n / 9)) });
+    placeAll(layout, m, { seed: SEED, size: layout.size, cap: 384 });
+    const want = m.buildings.filter((b) => b.kind === 'house');
+    assert.ok(want.every((b) => layout.plots[b.id]), `${n}: not everybody was housed`);
+  }
+  const coast = layout.grow.steps[layout.grow.steps.length - 1].r;
+  assert.ok(coast <= 120, `340 settlers took a coast of ${coast} on a grid of ${layout.size}`);
+  assert.ok(layout.size <= 256, `and a grid of ${layout.size}`);
+  assert.equal(layout.terrainHash, groundOf(layout).hash);
+  const once = JSON.stringify(layout);
+  placeAll(layout, village(340, { projects: 39 }), { seed: SEED, size: layout.size, cap: 384 });
+  assert.equal(JSON.stringify(layout), once, 'the scan after that one changed the layout');
+});

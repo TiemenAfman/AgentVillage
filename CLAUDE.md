@@ -188,7 +188,9 @@ never touches a corner above `BEACH_MAX` or of a `hold` cell (what stood there, 
 coordinates), and remembers the grid it was worked out on so a bigger grid later reproduces
 it bit for bit. `placeAll` grows by itself (`growStep`) when houses are left over, in the
 same scan, and records the hash before placing again; a house with no room in its own
-hamlet waits one ring instead of taking the commons (`waited`), and the polder ladder waits
+hamlet waits one ring instead of taking the commons (`waited`) - but only when a ring could
+give it land (`landWouldHelp`; a hamlet at `MAX_LOBES` or short of a free block rather than
+of land asked for a whole ring per house, which took one seed from coast 101 to 172), and the polder ladder waits
 until the island has reached its grid. What the new ground drowns moves on purpose: the
 quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads left leading
 nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
