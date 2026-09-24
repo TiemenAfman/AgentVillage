@@ -19,10 +19,10 @@ mod island;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Tauri's own default (the msWebOOUI/msPdfOOUI/msSmartScreenProtection set) has to be
 /// repeated here, because `additional_browser_args` replaces it rather than adding to it.
@@ -30,6 +30,23 @@ use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 /// power, and on this machine that is the card whose driver keeps falling over.
 const BROWSER_ARGS: &str =
     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force-high-performance-gpu";
+
+/// How long a close the page was asked to confirm stays asked. A second Alt+F4 inside it
+/// closes without asking again - the way out when the page is hung or never answers, so a
+/// confirmation can slow a close down but never trap anybody in the window.
+const CLOSE_CONFIRM_WINDOW: Duration = Duration::from_secs(5);
+
+/// Told to every page this window loads, the island included: web/js/desktop.js only asks
+/// before F5 and before a close when it is here, never in an ordinary browser tab.
+const DESKTOP_FLAG: &str = "window.PROMPTHOLM_DESKTOP = true;";
+
+/// How the page says "yes, close": a navigation to this, which on_navigation turns into
+/// closing the window. A navigation rather than an invoke, because the island is a remote
+/// page (http://localhost) and this way it needs no IPC capability opened to it.
+const CLOSE_URL_SCHEME: &str = "promptholm";
+
+/// When the page was last asked to confirm a close (see CloseRequested below).
+struct CloseAsk(Mutex<Option<Instant>>);
 
 /// How long a freshly started islander gets to open its port. A cold start does a full scan
 /// before it listens, and a village of a few hundred sessions takes a while to read.
@@ -194,16 +211,57 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(Island { plan: Mutex::new(plan), busy: AtomicBool::new(false) })
+        .manage(CloseAsk(Mutex::new(None)))
+        // Alt+F4, the title bar's cross and the taskbar all arrive here. Closing the window
+        // never stops the island (the islander outlives it), but it drops you out of walk
+        // mode, a panel or a conversation, and it happened by accident often enough to be
+        // worth one question. So the first request is held and the page is asked
+        // (window.promptholmConfirmClose, web/js/desktop.js); a page that says yes navigates
+        // to promptholm://close. Not asked on the splash - there is nothing to lose there -
+        // and a second request within CLOSE_CONFIRM_WINDOW always goes through.
+        .on_window_event(|window, event| {
+            let WindowEvent::CloseRequested { api, .. } = event else { return };
+            let Some(webview) = window.app_handle().get_webview_window(window.label()) else { return };
+            let on_island = webview
+                .url()
+                .map(|u| matches!(u.scheme(), "http" | "https"))
+                .unwrap_or(false);
+            if !on_island {
+                return;
+            }
+            let state = window.app_handle().state::<CloseAsk>();
+            let mut asked = state.0.lock().unwrap();
+            if asked.map_or(false, |at| at.elapsed() < CLOSE_CONFIRM_WINDOW) {
+                *asked = None;
+                return;
+            }
+            *asked = Some(Instant::now());
+            api.prevent_close();
+            // An older page has no confirmation to show: close as before rather than hang.
+            let _ = webview.eval(
+                "window.promptholmConfirmClose ? window.promptholmConfirmClose() : (location.href = 'promptholm://close')",
+            );
+        })
         .invoke_handler(tauri::generate_handler![start_island, open_log])
         .setup(move |app| {
             // Built here rather than declared in tauri.conf.json because the browser
             // arguments and the two navigation hooks only exist on the builder.
+            let closer = app.handle().clone();
             let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Promptholm")
                 .inner_size(1600.0, 1000.0)
                 .min_inner_size(640.0, 400.0)
                 .center()
+                .initialization_script(DESKTOP_FLAG)
                 .on_navigation(move |url| {
+                    if url.scheme() == CLOSE_URL_SCHEME {
+                        if url.host_str() == Some("close") {
+                            if let Some(w) = closer.get_webview_window("main") {
+                                let _ = w.destroy();
+                            }
+                        }
+                        return false;
+                    }
                     if stays_here(url, &own_host) {
                         return true;
                     }

@@ -72,7 +72,11 @@ import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, 
 import { createTouchPad, eitherPad } from './touchpad.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
-import { updateNotice, refusalNotice, SEA_PROTOCOL } from './update.js';
+import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
+import { installDesktopGuards } from './desktop.js';
+
+// In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
+installDesktopGuards();
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -992,7 +996,14 @@ function onRefusedBySea(m) {
   lastRefusal = why;
   // Over the protocol it is worth saying which side has to move, and where the new
   // version is if it is us - and it goes in the banner, since nothing works until it is.
-  if (why === 'version') { state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE })); return; }
+  // In the app it is the whole-screen gate with a download button instead: a refused app
+  // has no island to fall back on, so nothing else on the screen is worth reaching.
+  if (why === 'version') {
+    const gate = STANDALONE ? updateGate({ speaks: m.speaks }) : null;
+    if (gate) state.ui.setGate(gate);
+    else state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE }));
+    return;
+  }
   state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
 }
 
@@ -4868,7 +4879,10 @@ async function boot() {
       // The sea says which release it is on every welcome, so a sea updated under us is
       // noticed on the reconnect its restart causes.
       state.seaBuild = build;
-      state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
+      // In the app a newer release is the gate with a Later; on a desktop island, the banner.
+      const gate = STANDALONE ? updateGate({ mine: state.build, sea: build }) : null;
+      if (gate) state.ui.setGate(gate);
+      else state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
     },
     peers: state.peers,
     walk: state.walk,

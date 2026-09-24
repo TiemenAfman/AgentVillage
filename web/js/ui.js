@@ -606,6 +606,25 @@ export function createUI(handlers) {
     box.hidden = !html || updateClosed;
   }
 
+  // The app's update gate (web/js/update.js, updateGate). Blocking means no Later: a refused
+  // app has nothing behind the card to go back to. A Later is kept for the visit, like the
+  // banner's ×, so the next welcome does not put the same card back up.
+  let gateLater = false;
+  el('update-gate-later').addEventListener('click', () => { gateLater = true; el('update-gate').hidden = true; });
+  function setGate(gate) {
+    const box = el('update-gate');
+    if (!gate || (!gate.blocking && gateLater)) { box.hidden = true; return; }
+    el('update-gate-title').textContent = gate.title;
+    el('update-gate-body').textContent = gate.body;
+    el('update-gate-steps').textContent = gate.steps;
+    el('update-gate-download').href = gate.download;
+    el('update-gate-notes').href = gate.notes;
+    el('update-gate-later').hidden = !!gate.blocking;
+    // The small banner says the same thing in fewer words; with the card up it is noise.
+    el('update').hidden = true;
+    box.hidden = false;
+  }
+
   // The two-step confirmation shown while walking, before anyone is sent away.
   function setConfirm(item) {
     const p = el('walk-confirm');
@@ -780,7 +799,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, buildEnabled: () => buildOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.

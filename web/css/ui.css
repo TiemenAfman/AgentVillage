@@ -998,6 +998,54 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .skew.update a { color: #ffc98a; }
 .update-close { background: none; border: 0; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 
+/* The app's update gate (web/js/update.js updateGate): the whole screen, over the touch
+   buttons and every banner, because a refused app has nothing behind it to reach. Sized for
+   a phone first - it only ever shows in the app. */
+.update-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(6, 12, 16, .82);
+  backdrop-filter: blur(3px);
+  font-family: var(--ui);
+}
+.update-gate[hidden] { display: none; }
+.update-gate-card {
+  width: min(440px, 100%);
+  padding: 22px 20px 18px;
+  border-radius: 14px;
+  background: #1c1410;
+  border: 1px solid rgba(233, 160, 90, .55);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+  color: #f2ddc8;
+  text-align: center;
+}
+.update-gate-card h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.25; color: #ffc98a; }
+.update-gate-card p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
+.update-gate-primary {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #e0894a;
+  color: #1c1410;
+  font-weight: 700;
+  font-size: 17px;
+  text-decoration: none;
+}
+.update-gate-primary:active { background: #f09a5a; }
+.update-gate-card .update-gate-steps { margin: 12px 0 14px; font-size: 12px; color: #c9b39d; }
+.update-gate-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.update-gate-row a { color: #ffc98a; font-size: 13px; }
+.update-gate-row button {
+  padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(233, 160, 90, .45);
+  background: none; color: #f2ddc8; font: inherit; font-size: 13px; cursor: pointer;
+}
+.update-gate-row button[hidden] { display: none; }
+
 @media (max-width: 520px) {
   .skew { bottom: 120px; font-size: 12px; }
 }

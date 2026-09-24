@@ -1,7 +1,7 @@
 // Who is behind, the page or the sea - and the one number that makes it a hard line.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareVersions, updateNotice, refusalNotice, SEA_PROTOCOL } from '../web/js/update.js';
+import { compareVersions, updateNotice, refusalNotice, updateGate, APK_URL, RELEASES, SEA_PROTOCOL } from '../web/js/update.js';
 import { SEA_V } from '../lib/sea.mjs';
 
 test('the page speaks the protocol the sea does', () => {
@@ -34,4 +34,20 @@ test('a refusal over the protocol says which side has to move', () => {
   assert.match(refusalNotice(SEA_PROTOCOL + 1), /moved on/);
   assert.match(refusalNotice(SEA_PROTOCOL - 1), /is behind/);
   assert.match(refusalNotice(undefined), /different version/);
+});
+
+test('the app gets a whole-screen gate: blocking when refused, with a Later when merely behind', () => {
+  const refused = updateGate({ speaks: SEA_PROTOCOL + 1 });
+  assert.equal(refused.blocking, true);
+  assert.equal(refused.download, APK_URL);
+  assert.ok(APK_URL.startsWith(RELEASES + '/download/') && APK_URL.endsWith('.apk'), 'the stable latest-download URL');
+  assert.match(refused.steps, /uninstall/i, 'says how to get past a release signed with a different key');
+
+  const behind = updateGate({ mine: { version: '0.2.0' }, sea: { version: '0.3.0' } });
+  assert.equal(behind.blocking, false);
+  assert.match(behind.title, /0\.3\.0/);
+
+  assert.equal(updateGate({ mine: { version: '0.3.0' }, sea: { version: '0.3.0' } }), null);
+  assert.equal(updateGate({ speaks: SEA_PROTOCOL - 1 }), null, 'an older sea is not for the app to fix');
+  assert.equal(updateGate({}), null);
 });
