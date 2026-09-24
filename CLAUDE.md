@@ -223,6 +223,14 @@ the first time, which is how raising `gridSize` lets the live island grow at all
 whose `grid.size` changes reloads (`applyVillage`); `diffLayouts` compares plots in local
 coordinates, or a grown grid reads as every house moved.
 
+**A growth step's ground is versioned per step.** A step (`layout.grow.steps`, `{ r, grid,
+hold, relief }`) decides the terrain hash like a polder does, so its look can never change in
+place: `relief` (`RELIEF_VERSION` in `shared/terrain.mjs`, written by `growStep`) opts a new
+step into `growRelief`'s hills and rivers, and a step without it draws the flat ring it always
+did. New shapes mean a new version beside the old, never an edit to it. The river rule there -
+cut only in corners this step makes, never below their height before it - is what keeps
+"accretion never lowers anything" true ([Plans/eiland-laten-groeien.md](Plans/eiland-laten-groeien.md)).
+
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
 `cos` or `pow`, which can differ in the last bit between runtimes. The viewer hashes the

@@ -128,4 +128,105 @@ test('a growth that does not fit or does not grow is refused', () => {
   // The volcano never grows: the option is ignored rather than honoured.
   const v = makeTerrain('volcano', { size: 192, volcano: true });
   assert.equal(makeTerrain('volcano', { size: 192, volcano: true, grow: { base: 64, steps: [] } }).hash, v.hash);
+  // A relief this code does not know is somebody else's ground, not ours drawn flat.
+  assert.throws(() => makeTerrain(1, { size: 128, grow: { base: 32, steps: [{ r: 30, relief: 2 }] } }), /relief 2/);
+});
+
+// ---- relief (growRelief) ------------------------------------------------------------------
+// The rings growStep takes from a 32 founding, nextCoast's third at a time.
+function chain(n) {
+  const rs = [];
+  let last = foundingCoast(32);
+  for (let i = 0; i < n; i++) { const r = Math.floor(last) + Math.max(4, Math.ceil(last * 0.3)); rs.push(r); last = r; }
+  return rs;
+}
+const RINGS = chain(7);                                      // 20 26 34 45 59 77 101
+const HOLD = [[-3, 14], [5, -15]];
+const stepsOf = (rs, relief) => rs.map((r) => ({ r, grid: Math.max(64, gridForCoast(r)), hold: HOLD, ...(relief ? { relief } : {}) }));
+const grown = (seed, rs, relief, size = 224) => makeTerrain(seed, { size, grow: { base: 32, steps: stepsOf(rs, relief) } });
+
+// Recorded before relief existed, on the code that drew every grown island there is. A
+// change here is every one of those islands re-planned from nothing on its next scan.
+test('islands without relief hash exactly as they did before relief existed', () => {
+  const plain = { '1337@256': '8737677c', '7@128': 'c3b8eb64', 'harbour@64': '697d1571', 'Hoogezand@32': 'e0e6a7e7' };
+  for (const [key, hash] of Object.entries(plain)) {
+    const [seed, size] = key.split('@');
+    assert.equal(makeTerrain(/^\d+$/.test(seed) ? Number(seed) : seed, { size: Number(size) }).hash, hash, key);
+  }
+  const old = { 1337: '731d6ca7', 7: 'ee0e3ad7', harbour: '89b625bb', Hoogezand: 'e7a52ca2' };
+  for (const [seed, hash] of Object.entries(old)) {
+    const s = /^\d+$/.test(seed) ? Number(seed) : seed;
+    assert.equal(grown(s, RINGS, 0, 256).hash, hash, `${seed}, grown with steps from before relief`);
+    assert.equal(grown(s, RINGS, 0, 256).hash, makeTerrain(s, { size: 256, grow: { base: 32, steps: stepsOf(RINGS).map((st) => ({ ...st, relief: 0 })) } }).hash,
+      `${seed}: relief 0 is not the same as no relief`);
+  }
+  const r = foundingCoast(32) * 1.7;
+  assert.equal(makeTerrain(1337, { size: gridForCoast(r), grow: { base: 32, steps: [r] } }).hash, '0f6e796f', 'a bare step');
+});
+
+test('a ring with relief keeps every promise a flat ring makes', () => {
+  for (const seed of SEEDS) {
+    for (let k = 1; k <= RINGS.length; k++) {
+      const before = grown(seed, RINGS.slice(0, k - 1), 1);
+      const after = grown(seed, RINGS.slice(0, k), 1);
+      const fixed = fixedCorners(before, HOLD);
+      for (let c = 0; c < before.H.length; c++) {
+        if (fixed.has(c)) assert.equal(after.H[c], before.H[c], `${seed} ring ${k}: corner ${c} above the beach or held moved`);
+        else assert.ok(after.H[c] >= before.H[c], `${seed} ring ${k}: corner ${c} was dug`);
+      }
+      // Every river the island had is still water along its whole course.
+      for (const course of before.rivers) {
+        for (const [gx, gz] of course) assert.ok(after.isWater(gx, gz), `${seed} ring ${k}: a river at ${gx},${gz} was filled`);
+      }
+    }
+  }
+});
+
+test('relief is the same on any grid the steps fit', () => {
+  for (const seed of SEEDS) {
+    const a = grown(seed, RINGS, 1, 224);
+    const b = grown(seed, RINGS, 1, 256);
+    const at = sameCorner(a, b);
+    for (let j = 0; j < a.N; j++) {
+      for (let i = 0; i < a.N; i++) assert.equal(at(i, j), a.H[i + j * a.N], `${seed} corner ${i},${j}`);
+    }
+    assert.equal(a.rivers.length, b.rivers.length);
+    assert.equal(grown(seed, RINGS, 1).hash, a.hash, 'the same steps drew a different island');
+  }
+});
+
+test('relief gives the new ground hills and rivers that reach the sea, and leaves it buildable', () => {
+  let hills = 0, rivers = 0, flat = 0, rough = 0;
+  for (const seed of SEEDS) {
+    const plain = grown(seed, RINGS, 0);
+    const t = grown(seed, RINGS, 1);
+    assert.notEqual(t.hash, plain.hash, `${seed}: relief drew the same ground`);
+    // High ground away from the founding hill, i.e. in the rings: the founding hill stands
+    // 11-15 cells off the middle, so anything past 30 is new.
+    const high = (x) => x.landCells.filter(([gx, gz]) => {
+      const [lx, lz] = [gx - x.half + 0.5, gz - x.half + 0.5];
+      return lx * lx + lz * lz > 30 * 30 && x.heightAt(gx, gz) > 3;
+    }).length;
+    hills += high(t) - high(plain);
+    rivers += t.rivers.length;
+    // A river is only worth drawing if it gets to the sea: flood the water from the grid's
+    // edge, and every relief river's last cell must be in or beside it.
+    const open = new Uint8Array(t.size * t.size);
+    const queue = [];
+    for (let g = 0; g < t.size; g++) for (const c of [[g, 0], [g, t.size - 1], [0, g], [t.size - 1, g]]) queue.push(c);
+    while (queue.length) {
+      const [gx, gz] = queue.pop();
+      if (!t.inGrid(gx, gz) || open[gx + gz * t.size] || !t.isWater(gx, gz)) continue;
+      open[gx + gz * t.size] = 1;
+      queue.push([gx + 1, gz], [gx - 1, gz], [gx, gz + 1], [gx, gz - 1]);
+    }
+    const nearOpen = ([gx, gz]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => t.inGrid(gx + dx, gz + dz) && open[gx + dx + (gz + dz) * t.size]);
+    for (const course of t.rivers) assert.ok(course.some(nearOpen), `${seed}: a river from ${course[0]} never reaches the sea`);
+    const buildable = (x) => x.landCells.filter(([gx, gz]) => x.isBuildable(gx, gz)).length;
+    flat += buildable(plain); rough += buildable(t);
+  }
+  assert.ok(hills > 100 * SEEDS.length, `only ${hills} cells of new high ground over ${SEEDS.length} islands`);
+  assert.ok(rivers >= SEEDS.length, `only ${rivers} rivers over ${SEEDS.length} islands`);
+  // Measured at 4.7% over seven seeds when this was written (3.3-6.5% per island).
+  assert.ok(rough > flat * 0.92, `relief cost ${((1 - rough / flat) * 100).toFixed(1)}% of the building ground`);
 });
