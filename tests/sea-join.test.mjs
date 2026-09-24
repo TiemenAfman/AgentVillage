@@ -99,6 +99,8 @@ test('an island published over HTTP turns up in the world', () => afloat(async (
   // live: it comes alive when its islander joins and claims it, and is swept after the
   // grace if nobody does. tests/sea-key.test.mjs has the why.
   assert.equal(owned(world)[0].live, false);
+  // And how many of its settlers are walking, for the front page's per-island count.
+  assert.equal(typeof owned(world)[0].settlers, 'number');
 
   // And the island itself is fetched separately, which is the whole reason the manifest
   // is small: 200 kB of island does not belong in a message everybody gets.
