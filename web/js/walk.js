@@ -11,6 +11,7 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
+import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -67,6 +68,13 @@ const SIT_HOLD_MS = 400;
 // A seated settler is this much of a standing one. Named because the camera needs it too:
 // the body folds down by this factor, so the eye the camera aims at folds with it.
 const SIT_SCALE = 0.74;
+// What a full purple bar does to a walk (web/js/tipsy.js). The heading swings by up to this
+// many radians either side of where you steer, the body rolls and nods with it, and all of
+// it scales with the bar, so one beer is a slight lilt and seven are a zigzag. Two sines at
+// unrelated rates for the heading, or the stagger is a metronome.
+const STAGGER = 0.6;
+const SWAY_ROLL = 0.16;
+const SWAY_NOD = 0.05;
 // How much room a settler needs over their feet. The same figure the buildings measure
 // themselves against, so a gap you can walk under is a gap you can walk under.
 const HEAD = WALK_CLEARANCE;
@@ -148,7 +156,12 @@ function loungeGeometry() {
 export function createWalkMode({
   scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null,
+  // The purple bar's pool. main.js hands the island's walk and the tavern's the same one and
+  // steps it itself, so the beer outlasts the door and wears off from the sky too; a walk
+  // mode given none (the workbench) keeps and steps its own.
+  tipsy = null,
 }) {
+  const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
   //
   // `terrain` is one island: local, origin-centred, and all a room or the workbench ever
@@ -236,6 +249,9 @@ export function createWalkMode({
     // What Shift spends. Running and swimming share the body's; the boat has its own, and
     // both fill whenever they are not being drawn on - see web/js/stamina.js.
     stamina: { body: createPool(BODY), boat: createPool(BOAT) },
+    // What the beer has done so far, and the clock the stagger runs on.
+    tipsy: tipsy || createTipsy(),
+    sway: 0,
     blocking: false, // a shield is up in either hand - what net.js puts in the pose
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
@@ -392,6 +408,16 @@ export function createWalkMode({
     state.blocking = state.guard.leftArm || state.guard.rightArm;
   }
   function lowerShields() { guardUp('leftArm', false); guardUp('rightArm', false); }
+  // A beer's button drinks instead (Plans/bier-en-dronken.md) - its own hand's button, like
+  // every hand's here. Everything that stops a fight stops a drink too, except a stool:
+  // sitting at the bar is what a beer is for. A glass is no shield, so a drink never goes
+  // near `guardUp` and never into `blocking`, which the sea would take for a raised guard.
+  const canDrink = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying
+    && !state.vehicle;
+  const beerIn = (side) => classicAvatar.held(side) === 'beer';
+  // What a hand's button does on the press or the click, for any hand that is not a shield
+  // (whose button holds rather than acts - guardUp above).
+  const act = (side) => { if (!beerIn(side)) fight(side); else if (canDrink()) classicAvatar.drink(side); };
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
@@ -422,8 +448,8 @@ export function createWalkMode({
     const side = SIDE_OF[e.button];
     if (!side) return;
     if (shieldIn(side) && canFight()) guardUp(side, true);
-    if (e.button === 2) { if (!shieldIn(side)) fight(side); return; }
-    if (document.pointerLockElement === dom) { if (!shieldIn(side)) fight(side); return; }
+    if (e.button === 2) { if (!shieldIn(side)) act(side); return; }
+    if (document.pointerLockElement === dom) { if (!shieldIn(side)) act(side); return; }
     pressLocks = wantLock() && !clickLockFailed;
     if (wantLock()) requestLock(true);
     dragging = true; pressMoved = false;
@@ -434,7 +460,7 @@ export function createWalkMode({
     if (!side) return;
     guardUp(side, false);
     if (e.button === 2) return;
-    if (dragging && !pressMoved && !pressLocks && !shieldIn(side)) fight(side);
+    if (dragging && !pressMoved && !pressLocks && !shieldIn(side)) act(side);
     dragging = false; pressLocks = false;
   };
   const onMove = (e) => {
@@ -760,6 +786,11 @@ export function createWalkMode({
 
   function update(dt) {
     if (!state.active) return null;
+    if (ownTipsy) stepTipsy(state.tipsy, dt);
+    // Quicker on the move and quicker still at a run, going by last frame's gait. A phase
+    // that is added to rather than a time that is multiplied, or every change of gait would
+    // jump the stagger to somewhere else in its swing.
+    state.sway += dt * (state.running ? 1.4 : state.moving ? 1 : 0.55);
     if (state.paused) {
       stick.x = 0; stick.z = 0;
       // A conversation is a rest: both pools go on filling behind it.
@@ -830,8 +861,18 @@ export function createWalkMode({
       // looking along +z with y up, the camera's right hand is -x: right = forward x up
       forward.set(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
       right.set(-Math.cos(state.camYaw), 0, Math.sin(state.camYaw));
-      const vx = forward.x * iz + right.x * ix;
-      const vz = forward.z * iz + right.z * ix;
+      let vx = forward.x * iz + right.x * ix;
+      let vz = forward.z * iz + right.z * ix;
+      // A drink in you pulls the step off to one side and then the other. Turned before the
+      // collision test below, so a stagger slides along a wall like any other step, and on
+      // land only - the water holds a swimmer up whatever is in them.
+      const drunk = state.tipsy.level;
+      if (drunk > 0 && !state.swimming) {
+        const s = state.sway;
+        const a = drunk * STAGGER * (0.65 * Math.sin(s * 1.9) + 0.35 * Math.sin(s * 0.71 + 2));
+        const c = Math.cos(a), sn = Math.sin(a);
+        [vx, vz] = [vx * c + vz * sn, vz * c - vx * sn];
+      }
       // try the full step, then each axis on its own, so you slide along walls
       const nx = state.pos.x + vx * speed, nz = state.pos.z + vz * speed;
       if (!blocked(nx, nz)) { state.pos.x = nx; state.pos.z = nz; }
@@ -894,6 +935,12 @@ export function createWalkMode({
   function afterMove(dt) {
     avatar.scale.setScalar(1);
     lounge.visible = state.lying;
+    // The body's share of the beer, on its own axes (rotation order YXZ: a nod and a roll
+    // about the settler's own forward): only upright, since lying down and swimming already
+    // turn the whole body and would be knocked off their own poses by it.
+    const drunk = state.tipsy.level;
+    const nod = drunk * SWAY_NOD * Math.sin(state.sway * 1.3 + 0.4);
+    const roll = drunk * SWAY_ROLL * Math.sin(state.sway * 1.9 + 0.6);
     if (state.lying) {
       // On the back with the head at -z, which is the end the parasol stands at. Negative
       // pitch turns the front face upwards; the positive one used for swimming is prone.
@@ -902,9 +949,9 @@ export function createWalkMode({
       lounge.position.set(state.pos.x, state.pos.y + 0.01, state.pos.z);
       lounge.rotation.set(0, state.yaw, 0);
     } else if (state.sitting) {
-      // The rig provides its own seated pose.
+      // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
-      avatar.rotation.set(0, state.yaw, 0);
+      avatar.rotation.set(nod * 0.5, state.yaw, roll * 0.5);
     } else if (state.swimming) {
       // Prone and rolling with the stroke. The figure is one merged mesh, so there are no
       // limbs to animate - the whole body leans into it instead, which at this scale is
@@ -918,18 +965,20 @@ export function createWalkMode({
       avatar.rotation.set(1.32 + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
-      avatar.rotation.set(0, state.yaw, 0);
+      avatar.rotation.set(nod, state.yaw, roll);
       if (state.crouching) avatar.scale.set(1, 0.82, 1);
     }
 
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded,
       crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
-      blocking: state.blocking ? state.guard : false, phase: state.bob,
+      swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob,
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');
     state.shields.right = shieldIn('rightArm');
+    // What the glass gave up this frame, if one is being drunk from.
+    drinkIn(state.tipsy, classicAvatar.swallowed());
 
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
@@ -995,6 +1044,8 @@ export function createWalkMode({
     // over a quay, because planks are a level rather than ground - and "can I step out
     // here" has to mean the same thing as "will my feet find something".
     groundAt: (x, z) => groundAt(x, z),
+    // What a hand's button does right now - 'attack', 'block' or 'drink' - for the key row.
+    handAction: (side) => (beerIn(side) ? 'drink' : shieldIn(side) ? 'block' : 'attack'),
     dispose, isActive: () => state.active };
 }
 

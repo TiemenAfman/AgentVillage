@@ -216,7 +216,13 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 /* The strip along the bottom of the screen, centred by spanning the full width rather than
    by a transform: a transformed element becomes the containing block for anything fixed
    inside it, and the prompt below needs its offsets measured against the window. */
-.walk-hud { position: fixed; left: 0; right: 0; bottom: 92px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none; }
+.walk-hud { position: fixed; left: 0; right: 0; bottom: 66px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none; }
+/* 66px is just over the fullscreen button (16px up, 44 tall) - on foot the chronicle bar is
+   hidden, so that button is all that is left under the strip. It used to sit at the 92px the
+   chronicle needed, with an empty band beneath it. Narrower screens keep 92: the buttons
+   step up to 74px there, and on a phone the touchpad's own buttons were measured against
+   it (harbour.css). */
+@media (max-width: 760px) { .walk-hud { bottom: 92px; } }
 /* Over the settler's head, not under his feet. The camera aims at his eyes, so he sits in
    the middle of the frame however it is turned - the centre of the screen is the one band
    that is reliably his, and this is the card that has to stay out of it. He stands about a
@@ -237,24 +243,30 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
 
-/* Health over stamina (web/js/vitals.js). The fill is a scaleX of a full-width bar rather
-   than a width, so the frame loop writes one custom property and nothing reflows; the
-   rounded ends belong to the track, which clips it. A full bar fades out on a delay and a
-   draining one comes straight back: the transition that applies is the one on the state
-   being entered, so `.full` carries the slow one and the plain rule the quick one. */
-.vitals { display: flex; flex-direction: column; gap: 4px; width: 184px; }
-.vital { height: 7px; border-radius: 99px; overflow: hidden; opacity: 1; transition: opacity .1s ease;
+/* Health over stamina over beer (web/js/vitals.js), each an emoji and a track. The fill is
+   a scaleX of a full-width bar rather than a width, so the frame loop writes one custom
+   property and nothing reflows; the rounded ends belong to the track (`b`), which clips it.
+   A bar with nothing to say - full for the first two, empty for the beer - fades out on a
+   delay, emoji and all, and one that moves comes straight back: the transition that applies
+   is the one on the state being entered, so `.full`/`.empty` carry the slow one and the
+   plain rule the quick one. */
+.vitals { display: flex; flex-direction: column; gap: 4px; width: 204px; }
+.vital { display: flex; align-items: center; gap: 6px; opacity: 1; transition: opacity .1s ease; }
+.vital span { flex: none; width: 14px; font-size: 11px; line-height: 1; text-align: center;
+  filter: drop-shadow(0 1px 2px rgba(5, 22, 24, .45)); }
+.vital b { flex: 1; display: block; height: 7px; border-radius: 99px; overflow: hidden;
   background: rgba(8, 16, 18, .62); border: 1px solid var(--edge); box-shadow: 0 2px 8px rgba(5, 22, 24, .25); }
 .vital i { display: block; height: 100%; transform-origin: left center; transform: scaleX(var(--f, 1)); }
 .vital.health i { background: linear-gradient(#ea7a68, #b93c30); }
 .vital.stamina i { background: linear-gradient(#f5d98a, #d9a441); }
+.vital.tipsy i { background: linear-gradient(#c79cf2, #7b3fc4); }
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
-.vital.full { opacity: 0; transition: opacity 1.2s ease 1.5s; }
+.vital.full, .vital.empty { opacity: 0; transition: opacity 1.2s ease 1.5s; }
 /* A hit: the red bar flares and its track flushes for a moment (web/js/vitals.js). Two names
    for one animation, taken in turn, so a second blow restarts it without a reflow. */
-.vital.health.hurt-a { animation: vital-hurt-a .45s ease-out; }
-.vital.health.hurt-b { animation: vital-hurt-b .45s ease-out; }
+.vital.health.hurt-a b { animation: vital-hurt-a .45s ease-out; }
+.vital.health.hurt-b b { animation: vital-hurt-b .45s ease-out; }
 @keyframes vital-hurt-a { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
 @keyframes vital-hurt-b { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
 

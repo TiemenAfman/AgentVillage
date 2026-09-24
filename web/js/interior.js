@@ -466,7 +466,7 @@ function snackGeometry() {
 // ------------------------------------------------------------------ the machinery
 // Built once per room and kept: a visit is enter() and leave(), not another scene. Walk mode
 // hangs listeners on the window, so churning one per visit would pile them up.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave }) {
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -606,9 +606,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // Over the shoulder, as everywhere else on the island, but closer in, lower, and aimed at
   // the chest rather than over the head: the island's camera looks down from 1.6 up and 2.7
   // back at a point 0.9 off the ground, and all three of those are taller than this room.
+  // `tipsy` is the island's own pool (main.js), so what is drunk at the bar goes out of the
+  // door with you.
   const walk = createWalkMode({
     scene, camera, terrain, material, dom,
-    camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam,
+    camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy,
   });
 
   // The stage, as a surface to stand on. Walk mode keeps a list of what stands above the

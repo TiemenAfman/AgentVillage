@@ -717,7 +717,14 @@ the left button is the left hand, the right button the right (`SIDE_OF` in walk.
 holding a shield blocks while its button is held; any other hand (sword, hammer, bare fist)
 attacks - the right on the press, the left on the press under a pointer lock and otherwise on a
 click that did not become a drag. `classic-avatar.js` takes `attack(side)` and a `blocking` of
-`{ leftArm, rightArm }` (a bare `true` still means the default hand).
+`{ leftArm, rightArm }` (a bare `true` still means the default hand). A hand holding a beer
+drinks instead (`act` in walk.js, `drink(side)` in classic-avatar.js) - and a glass is never a
+shield, so it must never reach `guardUp`/`state.blocking`, or the sea sees a raised guard
+([Plans/bier-en-dronken.md](Plans/bier-en-dronken.md)). The key row says per button what its
+hand does (`handAction` -> `ui.setMouse`). The purple bar is the page's, like stamina: **one**
+pool (`web/js/tipsy.js`) made in `main.js`, handed to the island's walk mode *and* every room's
+(or you walk out of the tavern sober) and stepped once in `frame()`; its blur is a CSS filter
+written on `#stage` and `#panels` together, only on foot.
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
@@ -727,7 +734,9 @@ after a lock the *page* released; after the user's Escape it needs a click, whic
 single click on the canvas takes it back and does not also swing. That first Escape only frees
 the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look is the fallback
 where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
-pointer lock cannot be tested there — use a real Chrome or the Tauri window.
+pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
+also runs no frames between screenshots: a drink or a walk only advances while one is taken,
+and a `setTimeout` loop polling the page sees time stand still.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -764,7 +773,8 @@ is not deterministic.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`. (`?sail` is gone with the
+Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?tipsy=0.8` (start that
+drunk). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 

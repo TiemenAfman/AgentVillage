@@ -484,6 +484,7 @@ export function createUI(handlers) {
       buildOn = !buildOn;
       try { if (buildOn) localStorage.setItem(BUILD_KEY, '1'); else localStorage.removeItem(BUILD_KEY); } catch { /* kept for this page only */ }
       applyBuild();
+      renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
     }));
@@ -644,9 +645,24 @@ export function createUI(handlers) {
   // Indoors most of the keys mean nothing - there is nothing to sow in a tavern and nobody
   // to send off the island from a bar stool - so the row says what there is instead.
   let indoors = false;
+  // What each mouse button does now - one button per hand (walk.js): 'attack', 'block' for a
+  // shield, 'drink' for a beer (Plans/bier-en-dronken.md). main.js asks the walk every frame,
+  // so only a change - something else picked up in the inventory, a room entered - redraws
+  // the row.
+  let lmbDoes = 'attack', rmbDoes = 'attack';
+  function setMouse(lmb, rmb) {
+    if (lmb === lmbDoes && rmb === rmbDoes) return;
+    lmbDoes = lmb; rmbDoes = rmb;
+    renderWalkKeys();
+  }
+  const MOUSE_SAYS = { attack: 'attack', block: 'hold to block', drink: 'drink' };
+  const mouseKey = (button, does) => `<span><kbd>${button}</kbd> ${MOUSE_SAYS[does] || MOUSE_SAYS.attack}</span>`;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
   function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
   function renderWalkKeys() {
+    // Indoors the room's row has no fight in it, but a pint at the bar is the point of the
+    // place, so a button that drinks is still said.
+    const drinks = (lmbDoes === 'drink' ? mouseKey('LMB', 'drink') : '') + (rmbDoes === 'drink' ? mouseKey('RMB', 'drink') : '');
     if (indoors) {
       el('walk-keys').innerHTML = padConnected
         ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
@@ -655,6 +671,7 @@ export function createUI(handlers) {
           + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
           + `<span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
+          + drinks
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
           + `<span><kbd>Esc</kbd><kbd>Esc</kbd> step outside</span>`;
       return;
@@ -668,10 +685,15 @@ export function createUI(handlers) {
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
-        + `<span><kbd>LMB</kbd><kbd>RMB</kbd> left / right hand: attack, or hold to block with a shield</span>`
+        // The left button is the left hand and the right the right, so each says what its
+        // own hand does rather than one line explaining the rule.
+        + mouseKey('LMB', lmbDoes) + mouseKey('RMB', rmbDoes)
         + `<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
-        + `<span class="lit"><kbd>B</kbd> build</span><span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
+        // Only while building by hand is switched on (Settings -> Debug): otherwise B says
+        // it is off, and a key in the row that only answers with a toast is a key too many.
+        + (buildOn ? '<span class="lit"><kbd>B</kbd> build</span>' : '')
+        + `<span><kbd>I</kbd> inventory</span><span><kbd>M</kbd> map</span>`
         + `<span><kbd>X</kbd> send away</span><span><kbd>Esc</kbd><kbd>Esc</kbd> back to the sky</span>`;
   }
   function setWalking(on, hasPad) {
@@ -802,7 +824,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors,
+    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas,
