@@ -94,6 +94,14 @@ data/village.json  -- serve.mjs -->  web/js/main.js   (SSE /events, WebSocket fo
 `serve.mjs` rescans on a timer (60 s by default) — that is how a new Cowork task appears
 without a hook firing.
 
+Pitfall: every `data/*.json` is replaced by rename (`writeJsonAtomic`, synchronous, retries
+without yielding), and on Windows a rename over a file that *any* handle has open fails with
+EPERM - Node's own handles included. So nothing in the islander may hold one of those files
+open across an event-loop turn: `sendFile` reads with `readFileSync`, never `fs.readFile` or a
+stream, which is what lost a scan to "rescan failed (issues): EPERM" whenever a page was
+mid-download of `village.json` (the issues rescan two seconds after a restart, while every
+open page refetches).
+
 ## Invariants worth knowing before changing anything
 
 **A house never moves by itself.** `data/layout.json` is append-only and is the only

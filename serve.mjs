@@ -185,41 +185,51 @@ const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '
 const GZIP_FROM = 1400;
 
 function sendFile(req, res, file, { noStore = false, cache = null } = {}) {
-  fs.readFile(file, (err, buf) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
-    const headers = { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' };
-    // three.js is pinned by package.json and never changes under the same name, so let
-    // the browser keep it instead of re-downloading 1.2 MB on every open.
-    headers['Cache-Control'] = cache || (noStore ? 'no-store' : 'public, max-age=31536000, immutable');
+  // Read in one synchronous call, not fs.readFile. The async read opens the file, reads it
+  // in steps and closes it, each step a turn of the event loop apart - and a scan writes
+  // village.json by rename *synchronously*, spinning through its retries without yielding
+  // (writeJsonAtomic). On Windows a rename over a file that any handle still has open fails
+  // with EPERM, so a page whose download of village.json had begun just before the scan
+  // wrote kept the handle open through every retry, and the scan was lost: "rescan failed
+  // (issues): EPERM" in data/server.log, fifteen times, nearly all on the issues rescan
+  // that lands two seconds after a restart - exactly when every open page fetches the
+  // fresh village.json. Measured with both in one process: readFile then write, EPERM;
+  // readFileSync then write, fine. The largest thing served is under a megabyte, so the
+  // synchronous read costs a millisecond or two; the gzip below stays asynchronous.
+  let buf;
+  try { buf = fs.readFileSync(file); } catch { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+  const headers = { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' };
+  // three.js is pinned by package.json and never changes under the same name, so let
+  // the browser keep it instead of re-downloading 1.2 MB on every open.
+  headers['Cache-Control'] = cache || (noStore ? 'no-store' : 'public, max-age=31536000, immutable');
 
-    const send = (body, encoding) => {
-      if (encoding) {
-        headers['Content-Encoding'] = encoding;
-        // Everything of ours is no-store and would not be cached anyway, but the vendor
-        // bundle is immutable for a year: without this a proxy could hand the packed copy
-        // to a client that never asked for one.
-        headers['Vary'] = 'Accept-Encoding';
-      }
-      // The length of the body that actually goes out. There is no streaming here - the
-      // file is already one buffer - so this can be exact rather than left to chunking.
-      headers['Content-Length'] = body.length;
-      res.writeHead(200, headers);
-      res.end(body);
-    };
-
-    // web/js/tavern-mesh.js is 386 kB of triangles and goes out as 12. Ours is served
-    // no-store, so that is the whole 386 kB on every reload, and the only thing between
-    // the page and the island is this function. Compressed per request and not cached:
-    // the file is in a buffer already, gzip of 386 kB is a few milliseconds, and a cache
-    // here would be a second copy of the disk to keep honest. If gzip fails for any
-    // reason the plain bytes still go out - nothing about compression is worth a 500.
-    const wants = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
-    if (wants && COMPRESSIBLE.has(path.extname(file).toLowerCase()) && buf.length >= GZIP_FROM) {
-      zlib.gzip(buf, (gzErr, packed) => send(gzErr ? buf : packed, gzErr ? null : 'gzip'));
-      return;
+  const send = (body, encoding) => {
+    if (encoding) {
+      headers['Content-Encoding'] = encoding;
+      // Everything of ours is no-store and would not be cached anyway, but the vendor
+      // bundle is immutable for a year: without this a proxy could hand the packed copy
+      // to a client that never asked for one.
+      headers['Vary'] = 'Accept-Encoding';
     }
-    send(buf, null);
-  });
+    // The length of the body that actually goes out. There is no streaming here - the
+    // file is already one buffer - so this can be exact rather than left to chunking.
+    headers['Content-Length'] = body.length;
+    res.writeHead(200, headers);
+    res.end(body);
+  };
+
+  // web/js/tavern-mesh.js is 386 kB of triangles and goes out as 12. Ours is served
+  // no-store, so that is the whole 386 kB on every reload, and the only thing between
+  // the page and the island is this function. Compressed per request and not cached:
+  // the file is in a buffer already, gzip of 386 kB is a few milliseconds, and a cache
+  // here would be a second copy of the disk to keep honest. If gzip fails for any
+  // reason the plain bytes still go out - nothing about compression is worth a 500.
+  const wants = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+  if (wants && COMPRESSIBLE.has(path.extname(file).toLowerCase()) && buf.length >= GZIP_FROM) {
+    zlib.gzip(buf, (gzErr, packed) => send(gzErr ? buf : packed, gzErr ? null : 'gzip'));
+    return;
+  }
+  send(buf, null);
 }
 
 function safeJoin(base, rel) {
