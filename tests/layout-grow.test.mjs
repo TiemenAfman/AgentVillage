@@ -26,10 +26,11 @@ function settled(n, grow = { base: BASE, steps: [] }) {
 }
 
 test('a small island grows until its village fits, and then stays put', () => {
-  // Three settlers take one ring at most: a hamlet of their own rather than the commons,
-  // which is what an island that can still grow prefers (see the waiting in placeAll).
+  // Three settlers take two rings at most: a hamlet of their own rather than the commons,
+  // which is what an island that can still grow prefers (see the waiting in placeAll) - and
+  // the founding island's first ring is nearly all town core, where no farm may stand.
   const small = settled(3);
-  assert.ok(small.grow.steps.length <= 1, `three settlers took ${small.grow.steps.length} rings`);
+  assert.ok(small.grow.steps.length <= 2, `three settlers took ${small.grow.steps.length} rings`);
   assert.equal(houses(small), 3);
 
   const layout = settled(36);
@@ -121,14 +122,14 @@ test('what stood before the island grew stands where it stood, on the same groun
 });
 
 test('an island stops growing at the edge of its grid, and that is stable too', () => {
-  const layout = settled(90);
+  const layout = settled(160);
   const last = layout.grow.steps[layout.grow.steps.length - 1].r;
   assert.ok(gridForCoast(nextCoast(layout.grow, SIZE)) > SIZE, `it stopped at ${last} with room to spare`);
   assert.equal(last, Math.floor(foundingCoast(SIZE)), 'the last ring stops short of the grid');
-  assert.ok(houses(layout) < 90, 'the test needs more settlers than the grid holds');
+  assert.ok(houses(layout) < 160, 'the test needs more settlers than the grid holds');
   assert.equal(growStep(clone(layout), opts), null);
   const before = JSON.stringify(layout);
-  placeAll(layout, model(90), opts);
+  placeAll(layout, model(160), opts);
   assert.equal(JSON.stringify(layout), before);
 });
 
@@ -192,4 +193,21 @@ test('the keeper can grow the island by hand, and it is the ring a scan would ha
   const no = runPlan(whole, model(3), parsePlan({ ops: [{ op: 'grow' }] }), { seed: SEED, size: BASE, dryRun: true });
   assert.equal(no.ok, false);
   assert.match(no.verdicts[0].reason, /whole grid/);
+});
+
+// The very first settler of a fresh install (FOUNDING: 32 on a 64 grid) is a farmstead,
+// and the founding island's first ring is nearly all town core, where no farmstead may go.
+// A district that stands nowhere keeps waiting for rings, rather than the one ring any
+// other house gets, so it founds its own farm instead of lodging on the commons for good.
+test("a fresh install's first settler gets a farm of its own, not the commons", () => {
+  for (const seed of [1337, 7, 42]) {
+    const layout = emptyLayout(seed, 64, { base: 32, steps: [] });
+    placeAll(layout, village(1, { projects: 1 }), { seed, size: 64, cap: 384 });
+    const p = layout.plots['house:proj:0:0'];
+    assert.ok(p && !p.commons, `${seed}: the first settler lodges on the commons`);
+    assert.equal(layout.districts['proj:0'].lobes.length, 1, `${seed}: no farm was founded`);
+    const once = JSON.stringify(layout);
+    placeAll(layout, village(1, { projects: 1 }), { seed, size: layout.size, cap: 384 });
+    assert.equal(JSON.stringify(layout), once, `${seed}: the next scan changed the layout`);
+  }
 });
