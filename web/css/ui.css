@@ -934,8 +934,8 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 
 /* A saved address, and the way back out of the list. The row is a row now rather than one
    button, because the cross is a button too and a button inside a button is not a thing.
-   Kept faint and only visible on hover over the row: it is housekeeping, not one of the
-   three choices, and the picker is already a page with enough to press on it. */
+   Kept faint: it is housekeeping, not one of the choices, and the picker is already a
+   page with enough to press on it. */
 .menu-sea-row { display: flex; align-items: stretch; gap: 4px; }
 .menu-sea-row .menu-sea { flex: 1; }
 .menu-forget {
@@ -943,8 +943,10 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   border: 0; border-radius: 9px; cursor: pointer;
   background: transparent; color: var(--ink-dim);
   font-size: 16px; line-height: 1;
-  opacity: 0; transition: opacity .12s, background .12s, color .12s;
+  opacity: .55; transition: opacity .12s, background .12s, color .12s;
 }
+/* Faint rather than invisible: hidden until hovered, nobody found it at all - and a phone
+   or a touchscreen has no hover to find it with. */
 .menu-sea-row:hover .menu-forget, .menu-forget:focus-visible { opacity: 1; }
 .menu-forget:hover { background: rgba(224, 138, 106, .16); color: #e08a6a; }
 .menu-forget[disabled] { opacity: .3; cursor: default; }

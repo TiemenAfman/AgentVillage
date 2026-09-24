@@ -122,7 +122,8 @@ export function createMainMenu({
     // Only the saved ones can be forgotten. One found on the network is not ours to
     // forget - it will be back the next time it is announced - and the sea we are in is
     // left by picking another world, which is what the three cards are for.
-    const droppable = o.from === 'known' && !o.mine && !here;
+    // A leftover `url` from the last join ('chosen') is as saved as anything in `known`.
+    const droppable = (o.from === 'known' || o.from === 'chosen') && !o.mine && !here;
     return `<div class="menu-sea-row">
       <button class="menu-sea${here ? ' on' : ''}" data-url="${esc(o.url)}"${o.up ? '' : ' disabled'}>
         <span class="menu-sea-name">${esc(o.name || o.url)}</span>

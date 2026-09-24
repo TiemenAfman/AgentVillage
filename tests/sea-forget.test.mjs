@@ -79,6 +79,17 @@ test('the same address written two ways is one address', () => {
   assert.deepEqual(forgetSea('https://one.example', { file }).known, [B]);
 });
 
+test('the last sea chosen, left behind in `url`, can be forgotten too', () => {
+  // Back on its own after a join, the island still remembers where it last sailed; the
+  // picker lists that as a row ('chosen'), and a row you can see is a row you can remove.
+  const C = 'https://three.example/';
+  const file = config({ mode: 'single', url: C });
+  const sea = forgetSea(C, { file });
+  assert.equal(sea.url, null);
+  assert.deepEqual(sea.known, [A, B], 'the saved list is untouched');
+  assert.equal(read(file).multiplayer.sea.url, null);
+});
+
 test('the open sea cannot be forgotten', () => {
   // It is offered by /api/seas whatever `known` says, so taking it off the list would be a
   // button that reports success and changes nothing. Refused, in whatever spelling, and
