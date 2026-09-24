@@ -186,12 +186,14 @@
 </footer>
 
 <div class="walk-hud" id="walk-hud" hidden>
-  <!-- Health and stamina (web/js/vitals.js). First in the strip so the bars sit on top of
-       it, and never hidden: a full bar fades to nothing but keeps its place, so the purse
-       and the keys under it do not jump each time Shift is let go. -->
+  <!-- Health, stamina and beer (web/js/vitals.js). First in the strip so the bars sit on top
+       of it, and never hidden: a bar with nothing to say fades to nothing but keeps its
+       place, so the purse and the keys under it do not jump each time Shift is let go. The
+       emoji is part of the row, so it fades with its bar. -->
   <div class="vitals" id="vitals" aria-hidden="true">
-    <div class="vital health full"><i></i></div>
-    <div class="vital stamina full"><i></i></div>
+    <div class="vital health full"><span>❤️</span><b><i></i></b></div>
+    <div class="vital stamina full"><span>⚡</span><b><i></i></b></div>
+    <div class="vital tipsy empty"><span>🍺</span><b><i></i></b></div>
   </div>
   <div class="card walk-prompt" id="walk-prompt" hidden></div>
   <div class="card walk-confirm" id="walk-confirm" hidden></div>

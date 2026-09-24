@@ -72,6 +72,7 @@ import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, 
 import { createTouchPad, eitherPad } from './touchpad.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
+import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
 import { installDesktopGuards } from './desktop.js';
 
@@ -349,7 +350,14 @@ const state = {
   // The health and stamina bars over the walking strip. Made with the state rather than at
   // boot, because the markup is already in the page and nothing about it waits on the sea.
   // Health stays full - and so out of sight - until the sea has a number for it to show.
-  vitals: createVitals(document.getElementById('vitals')),
+  // The beer's blur goes on the canvas and the panels layer under it together.
+  vitals: createVitals(document.getElementById('vitals'),
+    { haze: [document.getElementById('stage'), document.getElementById('panels')] }),
+  // The beer in you (web/js/tipsy.js): one pool for the page, handed to the island's walk and
+  // every room's, and stepped once a frame in frame() - so it outlasts the tavern door and
+  // wears off from the sky as well. `?tipsy=0.8` starts the page that drunk, for looking at
+  // the blur and the stagger without seven trips to the bar.
+  tipsy: drinkIn(createTipsy(), Number(params.get('tipsy')) / TIPSY.dose),
   peers: null, net: null, guest: false, horizon: null, sailing: null,
   // Whether the yard signs are standing. The island answers this at /api/hello before
   // anything is built, so a page that may not read them never makes them in the first
@@ -1060,7 +1068,7 @@ function enterInterior(room, at) {
   if (!inside) {
     try {
       inside = createInterior({
-        room, camera, material: buildingMat, dom: renderer.domElement,
+        room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
         onLeave: () => leaveInterior(),
       });
     } catch (e) {
@@ -4160,12 +4168,16 @@ function frame(nowMs) {
     const w = state.inside.update(dt);
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
+    state.ui.setMouse(state.inside.walk.holdsBeer('attack'), state.inside.walk.holdsBeer('block'));
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
+    // Which mouse button drinks, for the key row: a pint picked up in the inventory changes
+    // it mid-walk, and ui.js redraws only on a change.
+    state.ui.setMouse(state.walk.holdsBeer('attack'), state.walk.holdsBeer('block'));
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
     showMinimap(true);
@@ -4176,6 +4188,11 @@ function frame(nowMs) {
   // walk mode has the feet - and in orbit too, where the strip is hidden and this costs one
   // string compare.
   state.vitals.setHealth(state.net ? state.net.health() : 1);
+  // The beer wears off wherever you are, but only blurs the view from your own eyes: the sky
+  // is not the settler's.
+  stepTipsy(state.tipsy, dt);
+  state.vitals.setTipsy(state.tipsy.level);
+  state.vitals.setHaze(state.inside || state.mode === 'walk' ? hazePx(state.tipsy.level, nowMs / 1000) : 0);
   // A conversation borrows the camera, and this is where it writes it: after the feet,
   // because while it is running walk mode is paused and this is the only hand on it.
   faceToFace.update(dt);
@@ -4830,6 +4847,7 @@ async function boot() {
     // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function
     // because the line is opened after this.
     onSwing: () => { if (state.net) state.net.swing(); },
+    tipsy: state.tipsy,
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.

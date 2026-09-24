@@ -702,7 +702,13 @@ takes effect in fullscreen - that is the API, not a choice - so outside fullscre
 ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
 locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
 blocks while held, the left one attacks on the press under a pointer lock, and otherwise on a
-click that did not become a drag.
+click that did not become a drag. A beer in a hand takes over that hand's button
+(`holdsBeer`/`drink` in `classic-avatar.js`, via the same `attackSide`/`blockSide`) and drinks
+instead - and must never set `state.blocking`, or the sea sees a raised shield
+([Plans/bier-en-dronken.md](Plans/bier-en-dronken.md)). The purple bar is the page's, like
+stamina: **one** pool (`web/js/tipsy.js`) made in `main.js`, handed to the island's walk mode
+*and* every room's (or you walk out of the tavern sober) and stepped once in `frame()`; its
+blur is a CSS filter written on `#stage` and `#panels` together, only on foot.
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
@@ -712,7 +718,9 @@ after a lock the *page* released; after the user's Escape it needs a click, whic
 single click on the canvas takes it back and does not also swing. That first Escape only frees
 the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look is the fallback
 where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
-pointer lock cannot be tested there — use a real Chrome or the Tauri window.
+pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
+also runs no frames between screenshots: a drink or a walk only advances while one is taken,
+and a `setTimeout` loop polling the page sees time stand still.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -749,7 +757,8 @@ is not deterministic.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`. (`?sail` is gone with the
+Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?tipsy=0.8` (start that
+drunk). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 
