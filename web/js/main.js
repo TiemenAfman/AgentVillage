@@ -2080,6 +2080,7 @@ async function doSyncFleet() {
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       fairway: bundle.fairway || null,
+      grow: bundle.grow || null,
       volcano: bundle.island.volcano === true,
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
@@ -2088,7 +2089,6 @@ async function doSyncFleet() {
     });
     if (region) arrived.push(row.name);
   }
-      grow: bundle.grow || null,
   syncHorizon();
   raiseGuestIslands();
   buildDocks();
@@ -4967,6 +4967,7 @@ async function boot() {
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
+      onGrow: () => state.plan.grow(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),
@@ -4981,7 +4982,6 @@ async function boot() {
   // card asks you something is two things happening at once and neither reads.
   //
   // ?nointro skips it along with the sweep. That parameter has always meant "just show me
-      onGrow: () => state.plan.grow(),
   // the island", and it is what every measurement and every screenshot uses.
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro')) startIntro();
