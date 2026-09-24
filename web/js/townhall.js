@@ -86,6 +86,8 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
   function render() {
     const list = shown();
     const shownNote = counts.total > sessions.length ? ` The newest ${sessions.length} are listed.` : '';
+    // Counted over the whole register, not the listed 200: the server invites all of them.
+    const waiting = counts.total - counts.onIsland;
     el.innerHTML = `
       <div class="handover-panel wide">
         <button class="x" id="th-close">✕</button>
@@ -127,6 +129,8 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
     el.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; render(); }));
     el.querySelector('#th-close').addEventListener('click', close);
     el.querySelector('#th-new').addEventListener('click', () => { close(); onFound && onFound(); });
+    const all = el.querySelector('#th-all');
+    if (all) all.addEventListener('click', inviteAll);
     el.querySelectorAll('[data-invite]').forEach((b) => b.addEventListener('click', () => invite(b.dataset.invite, false)));
     el.querySelectorAll('[data-release]').forEach((b) => b.addEventListener('click', () => invite(b.dataset.release, true)));
   }
@@ -167,6 +171,30 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
       const who = sessions.find((s) => s.sessionId === sessionId);
       out.innerHTML = `<span class="good">${esc(who ? who.name : 'They')} ${remove ? 'left the register' : 'is moving in'}.</span>`;
       onInvited && onInvited({ sessionId, name: who && who.name, adopted: !remove });
+      await load();
+    } catch (e) {
+      out.innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // One request and one rescan for the lot, rather than a click and a rescan per session.
+  async function inviteAll() {
+    if (busy) return;
+    busy = true;
+    const out = el.querySelector('#th-out');
+    out.textContent = 'Inviting everybody…';
+    try {
+      const r = await mine('/api/adopt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      const body = await r.json();
+      if (!r.ok) { out.innerHTML = `<span class="bad">${esc(body.error || 'that did not work')}</span>`; return; }
+      out.innerHTML = `<span class="good">${body.added} settler${body.added === 1 ? ' is' : 's are'} moving in.</span>`;
+      if (body.added) onInvited && onInvited({ count: body.added, adopted: true });
       await load();
     } catch (e) {
       out.innerHTML = `<span class="bad">${esc(e.message)}</span>`;

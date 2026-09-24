@@ -4646,7 +4646,9 @@ async function boot() {
 
   state.townHall = createTownHall(document.body, {
     onInvited: (r) => {
-      state.ui.toast(r.adopted
+      state.ui.toast(r.count
+        ? `<b>${r.count} settlers</b> are moving in.`
+        : r.adopted
         ? `<b>${r.name || 'A settler'}</b> is moving in.`
         : `<b>${r.name || 'A settler'}</b> left the register.`);
       fetchVillage().then((v) => applyVillage(v, { animate: true })).catch(() => {});
