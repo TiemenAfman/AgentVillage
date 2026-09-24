@@ -66,15 +66,18 @@ export function updateNotice({ mine, sea, phone = false }) {
 // a refusal over the protocol is `blocking` (no Later), and a newer release on the same
 // protocol is the same card with a Later, since the app still works.
 //
-// The install hint is not decoration: until the APK is signed with one fixed key (the
-// release workflow's ANDROID_KEYSTORE secret), every release has a key of its own and
-// Android refuses to install it over the old one. Uninstalling first is the way through.
+// The install hint is for one crossing only. Up to 0.3.1 every release was signed with a
+// throwaway key of its own, and Android refuses to install a differently signed APK over
+// the old one ("conflicts with an existing package"). From 0.3.2 the release workflow signs
+// with one fixed key (the ANDROID_KEYSTORE secret), so coming from 0.3.1 or older needs the
+// uninstall once and every update after that installs straight over the top.
 export function updateGate({ speaks = null, mine = null, sea = null } = {}) {
   const common = {
     download: APK_URL,
     notes: RELEASES,
     steps: 'Tap the button, let the download finish, open it and allow the install. '
-      + 'If Android says the app cannot be installed, uninstall this one first and then open the download again.',
+      + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
+      + 'once and open the download again. After that, updates install over the top.',
   };
   if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
     return {
