@@ -603,12 +603,24 @@ is nobody's target. The page does not send poses at all until its berth is known
 guards' reach mask except under a bridge, so a flow is a wall to their A* with the bridges as its gates. The bar
 counts (`oneHit` is off by default and kept only as a way back): a guard in `GUARD_REACH`
 swings once per `GUARD_SWING_MS` of its own (a `WeakMap` by figure) - never once per beat,
-which emptied a bar in 200 ms - and a raised shield (pose bit `POSE.BLOCKING` = 16, the mask
-in `lib/players.mjs` is 31) facing the guard within `FRONT_ARC_COS` takes `BLOCK_FRACTION`;
-lava is never blocked. Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
+which emptied a bar in 200 ms - and at most `MAX_ATTACKERS` (3) at one player, the rest
+waiting in reach. A swing is **announced, then lands**: `{t:'agent', a:'swing', i, id}` goes
+out at once (every page plays the imp's `attack` clip, or a settler's sword arm,
+`settler-figures.js strike`) and the blow is resolved `GUARD_WINDUP_MS` (0.55 s, the clip's
+measured strike frame) later from where both stand *then* (`REACH_SLACK` of give) - so the
+page never guesses at an attack, and a shield raised or a step back during the wind-up counts.
+A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per hand the pose
+says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
+then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16; mask in
+`lib/players.mjs` 127) faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
+Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
-guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`. At
+guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`, also
+from behind a raised shield (one hand blocks while the other fights). The page keeps that
+`hp` on the figure (`crowd-view.js hit`) for the floating bars over every hostile in range
+(`web/js/agent-bars.js`: two InstancedMeshes billboarded on the CPU, two draw calls for all of
+them; a newcomer sees an already-hurt agent as whole until its next hit). At
 0 an agent falls only through its owner (`guards.guardDied`, `residents.died`), a hole in the
 roster and back 20 s later through the same running crowd, never a rebuild; a fallen resident
 is kept out of `place()` so a list arriving meanwhile cannot raise it early. A hostile island chases *everybody*, its own
@@ -675,9 +687,12 @@ page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboa
 (`navigator.keyboard.lock`) on the letters and digits the browser pairs with ctrl. The lock only
 takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
 ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
-locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight: the right one
-blocks while held, the left one attacks on the press under a pointer lock, and otherwise on a
-click that did not become a drag.
+locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight, one per hand:
+the left button is the left hand, the right button the right (`SIDE_OF` in walk.js). A hand
+holding a shield blocks while its button is held; any other hand (sword, hammer, bare fist)
+attacks - the right on the press, the left on the press under a pointer lock and otherwise on a
+click that did not become a drag. `classic-avatar.js` takes `attack(side)` and a `blocking` of
+`{ leftArm, rightArm }` (a bare `true` still means the default hand).
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,

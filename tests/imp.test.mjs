@@ -27,6 +27,9 @@ globalThis.fetch = (url) => { fetched.push(String(url)); return Promise.reject(n
 const THREE = await import('three');
 const imp = await import('../web/js/imp.js');
 const { createCrowdView } = await import('../web/js/crowd-view.js');
+const { STRIKE_S, strikeArm } = await import('../web/js/settler-figures.js');
+const bars = await import('../web/js/agent-bars.js');
+const { pickBars } = bars;
 const { buildBuilding } = await import('../web/js/buildings.js');
 const { GUARDHOUSE_REACH, GUARDS } = await import('../shared/volcano.mjs');
 delete globalThis.document;
@@ -66,13 +69,10 @@ test('the imp is 1.3 settlers tall, not its own metres', () => {
   assert.ok(Math.abs(tall - 0.430 * 1.3) < 1e-9, `the imp stands ${tall} units`);
 });
 
-test('a swing needs the walker in reach, no swing already going, and the cooldown run out', () => {
-  const idle = { attacking: false, readyAt: 0 };
-  assert.equal(imp.attackDue(idle, imp.ATTACK_RANGE, 10), true);
-  assert.equal(imp.attackDue(idle, imp.ATTACK_RANGE + 0.01, 10), false);
-  assert.equal(imp.attackDue({ attacking: true, readyAt: 0 }, 0.5, 10), false);
-  assert.equal(imp.attackDue({ attacking: false, readyAt: 5000 }, 0.5, 4999), false);
-  assert.equal(imp.attackDue({ attacking: false, readyAt: 5000 }, 0.5, 5000), true);
+test('an imp never swings on its own: only the sea starts one', () => {
+  // The page used to guess - its walker in range, a cooldown of its own - and what it drew
+  // and what hurt were unrelated. Nothing in imp.js may decide to attack any more.
+  assert.ok(!/attackDue|ATTACK_COOLDOWN/.test(SRC), 'the page-side guess at a swing is back');
 });
 
 test('each guard breathes at his own point of the idle, the same one on every page', () => {
@@ -203,9 +203,17 @@ test('an imp only animates when it was drawn, near enough to see - or in the mid
   const t1 = a.idleTime();
   frame(200);
   assert.equal(a.idleTime(), t1, 'animated past ANIMATE_RANGE');
-  // Not drawn at all this time, and a walker in reach: the swing runs regardless.
+  // Not drawn at all this time, and a walker in reach: nothing swings until the sea says so,
+  // and a swing it starts runs regardless.
   a.update({ x: 0, y: 0, z: 0, yaw: 0, dt: 0.1, now: 300, player: { x: 0.5, z: 0 } });
+  assert.equal(a.attacking(), false, 'the imp swung without the sea');
+  assert.equal(a.swing(), true);
+  assert.equal(a.swing(), false, 'a swing already playing was started again');
+  a.update({ x: 0, y: 0, z: 0, yaw: 0, dt: 0.1, now: 400, player: { x: 0.5, z: 0 } });
   assert.equal(a.attacking(), true);
+  assert.equal(a.clip(), 'attack');
+  for (let i = 0; i < 16; i++) a.update({ x: 0, y: 0, z: 0, yaw: 0, dt: 0.1, now: 500 + i * 100 });
+  assert.equal(a.attacking(), false, 'the swing never finished');
   a.dispose();
 });
 
@@ -314,8 +322,9 @@ const LODGER = 'codex:0123456789abcdef:house:s3';
 function stubImps() {
   const made = [];
   const make = (id) => {
-    const calls = { id, updates: [], disposed: 0, hits: 0 };
-    const actor = { update: (u) => calls.updates.push(u), dispose: () => { calls.disposed++; }, hit: () => { calls.hits++; } };
+    const calls = { id, updates: [], disposed: 0, hits: 0, swings: 0 };
+    const actor = { update: (u) => calls.updates.push(u), dispose: () => { calls.disposed++; }, hit: () => { calls.hits++; },
+      swing: () => { calls.swings++; return true; } };
     made.push({ id, calls, actor });
     return actor;
   };
@@ -388,6 +397,83 @@ test('a hit reaches the imp standing in for a guard, and makes an ordinary figur
   torso.getColorAt(f.slot, c);
   assert.equal(c.getHex(), before, 'the figure kept the flush');
   assert.equal(f.flinch, 0);
+});
+
+test('a swing the sea starts reaches the imp, or swings an ordinary figure\'s sword arm and puts it back', () => {
+  const s = stubImps();
+  const crowd = crowdWith(s.make);
+  crowd.draw(0.016, () => 0.5, 1000);
+  assert.equal(crowd.swing('guard:1'), true);
+  assert.equal(s.of('guard:1').calls.swings, 1);
+  assert.equal(s.of('guard:0').calls.swings, 0);
+  assert.equal(crowd.swing('guard:99'), false);
+  const f = crowd.figure(LODGER);
+  assert.equal(crowd.swing(LODGER), true);
+  assert.equal(f.strike, STRIKE_S);
+  assert.equal(s.of('guard:0').calls.swings + s.of('guard:1').calls.swings, 1, 'the lodger\'s swing reached an imp');
+  // Wound up over the head at the top, down in front at the blow, and back where it was.
+  const rest = strikeArm(0, -0.45);
+  assert.equal(rest, -0.45);
+  assert.ok(strikeArm(0.55, -0.45) < -2, 'not wound up at the top of the swing');
+  assert.ok(strikeArm(0.72, -0.45) > -0.3, 'not down in front at the blow');
+  assert.ok(Math.abs(strikeArm(1, -0.45) + 0.45) < 1e-9, 'the arm did not come back to where it was');
+  for (let i = 0; i < 60; i++) crowd.draw(0.016, () => 0.5, 1016 + i * 16);
+  assert.equal(f.strike, 0, 'the swing never ended');
+});
+
+test('everybody who can be fought is offered a health bar, at what the sea last said is left', () => {
+  const s = stubImps();
+  const crowd = crowdWith(s.make);
+  crowd.draw(0.016, () => 0.5, 1000);
+  const whole = crowd.bars();
+  assert.equal(whole.length, 3, 'two guards and a lodger');
+  assert.ok(whole.every((b) => b.frac === 1), 'somebody nobody has hit is not whole');
+  const [g0, , lodger] = whole;
+  assert.deepEqual([g0.x, g0.z], [41, -18], 'the bar is not over guard:0 (origin included)');
+  assert.ok(g0.top > lodger.top, 'the bar over an imp does not clear its horns');
+  crowd.hit('guard:0', 50, 100);
+  crowd.hit(LODGER, 25, 100);
+  const hurt = crowd.bars();
+  assert.equal(hurt[0].frac, 0.5);
+  assert.equal(hurt[1].frac, 1);
+  assert.equal(hurt[2].frac, 0.25);
+  // A hit with no numbers (an older sea) still flinches and leaves the bar alone.
+  crowd.hit('guard:1');
+  assert.equal(crowd.bars()[1].frac, 1);
+  // And nobody on a friendly island has one.
+  const friendly = createCrowdView({
+    scene: new THREE.Scene(), material: new THREE.MeshBasicMaterial(),
+    region: { ...volcano, village: { island: {} } }, buildings: [guardhouse],
+  });
+  friendly.roster(['guard:0']);
+  friendly.apply(new Map([[0, { x: 1, z: 2, anim: 'still' }]]), 1000);
+  assert.deepEqual(friendly.bars(), []);
+});
+
+test('the bars go to the nearest in range, a hurt one further out, in two draw calls', () => {
+  const eye = { x: 0, y: 0, z: 0 };
+  const at = (x, frac = 1) => ({ x, y: 0, z: 0, frac, top: 0.6 });
+  assert.deepEqual(pickBars([at(5), at(bars.SHOW_RANGE + 1)], eye).map((c) => c.x), [5]);
+  assert.deepEqual(pickBars([at(bars.SHOW_RANGE + 1, 0.5)], eye).map((c) => c.x), [bars.SHOW_RANGE + 1], 'a hurt guard lost its bar while you backed off');
+  assert.deepEqual(pickBars([at(bars.HURT_RANGE + 1, 0.5)], eye), []);
+  assert.deepEqual(pickBars([at(3), at(1), at(2)], eye, 2).map((c) => c.x), [1, 2]);
+  assert.deepEqual(pickBars([at(1)], null), []);
+  const scene = new THREE.Scene();
+  const drawn = bars.createAgentBars(scene);
+  const camera = new THREE.PerspectiveCamera();
+  camera.updateMatrixWorld();
+  const cands = Array.from({ length: 30 }, (_, i) => at(1 + i * 0.3, i === 0 ? 0 : 1));
+  assert.equal(drawn.update(cands, camera), bars.BAR_LIMIT);
+  const meshes = drawn.meshes();
+  assert.equal(meshes.length, 2, 'more than two meshes for every bar on the screen');
+  assert.ok(meshes.every((mesh) => mesh.isInstancedMesh && mesh.count === bars.BAR_LIMIT));
+  // A bar at nothing is a sliver, not a singular matrix.
+  meshes[1].getMatrixAt(0, m);
+  assert.ok(Number.isFinite(m.determinant()) && m.determinant() !== 0);
+  assert.equal(drawn.update([], camera), 0);
+  assert.ok(meshes.every((mesh) => mesh.count === 0));
+  drawn.dispose();
+  assert.equal(scene.children.length, 0);
 });
 
 test('a guard over water is told he is swimming, and one on land is not', () => {

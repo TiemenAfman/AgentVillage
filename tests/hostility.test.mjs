@@ -8,7 +8,10 @@ import { createRoster } from '../lib/players.mjs';
 // `coast`, when given, is the local x beyond which the island is sea: ground at 1 on the
 // near side, sea bed at -2 on the far side - deep enough that a guard's feet on the bottom
 // are well over a metre below a swimmer's.
-function setup({ coast = null, lava = null, oneHit = false } = {}) {
+// One hit is a capture here by default: these are about who gets chased and caught, not about
+// how many blows it takes (tests/combat.test.mjs holds those), and a retuned GUARD_HIT is no
+// reason for a chase to need a longer loop.
+function setup({ coast = null, lava = null, oneHit = true } = {}) {
   let time = 1000;
   const height = (x) => (coast == null || x < coast ? 1 : -2);
   const cellWorld = (x, z) => [x - 15.5, z - 15.5];

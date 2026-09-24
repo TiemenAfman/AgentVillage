@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHealth, MAX_HEALTH, REGEN_AFTER_MS, REGEN_PER_S, IMMUNE_MS } from '../lib/health.mjs';
-import { GUARD_HIT, BLOCK_FRACTION } from '../lib/hostility.mjs';
+import { BLOCK_FRACTION } from '../lib/hostility.mjs';
+
+// A blow of a third of the bar and a bit, for what the bar does with blows. Not GUARD_HIT: how
+// hard a guard hits is lib/hostility.mjs's to tune (tests/combat.test.mjs holds it), and a
+// retuned guard is no reason for the bar's own rules to read differently.
+const GUARD_HIT = 34;
 
 function setup(opts = {}) {
   let time = 10000;

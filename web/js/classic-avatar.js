@@ -265,9 +265,11 @@ export function createClassicAvatar(spec, material) {
   const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol']);
   let swing = null;   // { side, t, from } while an attack is playing
   const ease = (u) => u * u * (3 - 2 * u);
-  // The hand that swings: a weapon if there is one (right first), otherwise a free fist,
-  // otherwise whatever the right holds. The hand that blocks: the shield if there is one,
-  // otherwise the hand that would not be swinging.
+  // The hand that swings when nobody says which: a weapon if there is one (right first),
+  // otherwise a free fist, otherwise whatever the right holds. The hand that blocks when
+  // nobody says which: the shield if there is one, otherwise the hand that would not be
+  // swinging. walk.js says which - one mouse button per hand - so these are the defaults
+  // for anything that does not (the studio, a test).
   const attackSide = () => (WEAPONS.has(holding.rightArm) ? 'rightArm' : WEAPONS.has(holding.leftArm) ? 'leftArm'
     : holding.rightArm !== 'shield' ? 'rightArm' : 'leftArm');
   const blockSide = () => (holding.leftArm === 'shield' ? 'leftArm' : holding.rightArm === 'shield' ? 'rightArm'
@@ -277,11 +279,10 @@ export function createClassicAvatar(spec, material) {
   // swing()), so a click the arm refused - still winding up - is no blow on the sea either.
   // (The sea counts one per 0.45 s, the length of the swing; one that cuts the last short
   // past its strike is drawn but not sent - see SWING_MS in net.js.)
-  function attack() {
+  function attack(side = attackSide()) {
     // A swing past its strike can be cut short by the next one; one still winding up or
     // striking plays out, or mashing the button would jitter the arm at the top.
     if (swing && swing.t / SWING_S < 0.6) return false;
-    const side = attackSide();
     swing = { side, t: 0, from: pieces[side].pivot.rotation.x };
     return true;
   }
@@ -315,8 +316,12 @@ export function createClassicAvatar(spec, material) {
       leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
       rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? stride * 0.9 : -idle),
     };
-    const block = pose.blocking ? blockSide() : null;
-    if (block) targets[block] = BLOCK_ARM_X;
+    // `blocking` is either which hands are up ({ leftArm, rightArm }, from walk.js) or a bare
+    // true, which means the default hand.
+    const blocks = !pose.blocking ? []
+      : typeof pose.blocking === 'object' ? ['leftArm', 'rightArm'].filter((side) => pose.blocking[side])
+        : [blockSide()];
+    for (const side of blocks) targets[side] = BLOCK_ARM_X;
     if (swing && (swing.t += dt) >= SWING_S) swing = null;
     const swung = swing ? swingPose(swing, targets[swing.side]) : null;
     for (const [name, target] of Object.entries(targets)) {
@@ -338,7 +343,7 @@ export function createClassicAvatar(spec, material) {
       mesh.rotation.z = -pieces[side].pivot.rotation.z;
       // A shield turns to face forward while it blocks and back out to the side after;
       // the same mirrored sign setHeldItem gave it, so left and right both turn inward.
-      const yaw = block === side && holding[side] === 'shield' ? Math.PI / 2 : (ITEM_YAW[holding[side]] || 0);
+      const yaw = blocks.includes(side) && holding[side] === 'shield' ? Math.PI / 2 : (ITEM_YAW[holding[side]] || 0);
       mesh.rotation.y = damp(mesh.rotation.y, (side === 'leftArm' ? 1 : -1) * yaw, 12, dt);
       if (mesh.userData.light) {
         // Two sines at unrelated rates, so the flicker never settles into a visible beat;
@@ -370,5 +375,5 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
   }
 
-  return { object, update, set, dispose, handAttach, attack };
+  return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side] };
 }

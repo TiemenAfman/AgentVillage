@@ -28,7 +28,7 @@ globalThis.WebSocket = class {
   close() { this.readyState = 3; (this.handlers.close || []).forEach((h) => h()); }
   receive(m) { (this.handlers.message || []).forEach((h) => h({ data: JSON.stringify(m) })); }
 };
-const { createNet, healthAt, FLAG_BLOCKING, SWING_MS } = await import('../web/js/net.js');
+const { createNet, healthAt, FLAG_BLOCKING, FLAG_SHIELD_LEFT, FLAG_SHIELD_RIGHT, SWING_MS } = await import('../web/js/net.js');
 // classic-avatar.js reaches buildings.js for the held items, which builds a TextureLoader at
 // import time - the same stub tests/avatar.test.mjs uses.
 globalThis.document.createElementNS = () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} });
@@ -143,14 +143,16 @@ test('a swing goes out once, on foot on the sea, and nowhere else', async () => 
     walk.state.vehicle = { id: 'boat:x' };
     assert.equal(net.swing(), false, 'a pilot swung');
     walk.state.vehicle = null;
+    // One hand blocking and the other swinging: the sea takes that swing now.
     walk.state.blocking = true;
-    assert.equal(net.swing(), false, 'a swing went out behind a raised shield, which the sea ignores');
+    assert.equal(net.swing(), true, 'a swing behind a raised shield was held back');
     walk.state.blocking = false;
+    at(SWING_MS * 3);
     net.setRoom('tavern', walker());
     assert.equal(net.swing(), false, 'a swing went out from indoors');
     net.setRoom(null);
     assert.equal(net.swing(), true);
-    assert.equal(swings().length, 2);
+    assert.equal(swings().length, 3);
   } finally { net.dispose(); }
 });
 
@@ -180,6 +182,51 @@ test('the shield rides in the pose as bit 16, and not in the water', async () =>
     await wait(130);
     assert.equal(lastPose().f & FLAG_BLOCKING, 0, 'a swimmer said he was blocking');
   } finally { net.dispose(); }
+});
+
+test('the shields a hand carries ride in the pose as bits 32 and 64, raised or not', async () => {
+  const walk = walker({ shields: { left: true, right: false } });
+  const { net, sock } = await line({ walk });
+  const lastPose = () => sock.sent.filter((m) => m.t === 'p').at(-1);
+  try {
+    assert.equal(FLAG_SHIELD_LEFT, 32);
+    assert.equal(FLAG_SHIELD_RIGHT, 64);
+    net.setWalking(true);
+    await wait(130);
+    assert.equal(lastPose().f & (FLAG_SHIELD_LEFT | FLAG_SHIELD_RIGHT), FLAG_SHIELD_LEFT);
+    assert.equal(lastPose().f & FLAG_BLOCKING, 0, 'carrying a shield is not raising it');
+    walk.state.shields.right = true;
+    await wait(130);
+    assert.equal(lastPose().f & (FLAG_SHIELD_LEFT | FLAG_SHIELD_RIGHT), FLAG_SHIELD_LEFT | FLAG_SHIELD_RIGHT);
+  } finally { net.dispose(); }
+});
+
+// One mouse button per hand (web/js/walk.js): the rig is told which hand swings and which
+// shields are up, and says what each hand holds so walk.js can tell a shield from a weapon.
+test('an arm swings on the side it is asked for, a block raises only the hands asked for', () => {
+  const spec = { ...DEFAULT_AVATAR, equip: { ...(DEFAULT_AVATAR.equip || {}), leftHandItem: 'shield', rightHandItem: 'shield' } };
+  const rig = createClassicAvatar(spec, new MeshBasicMaterial({ vertexColors: true }));
+  assert.equal(rig.held('leftArm'), 'shield');
+  assert.equal(rig.held('rightArm'), 'shield');
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const rightArm = rig.handAttach.rightArm.parent, leftArm = rig.handAttach.leftArm.parent;
+  rig.update({ ...still, blocking: { leftArm: false, rightArm: true } }, 1);
+  rig.update({ ...still, blocking: { leftArm: false, rightArm: true } }, 1);
+  assert.ok(Math.abs(rightArm.rotation.x + 1.25) < 0.02, 'the right shield did not come up');
+  assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'the left shield came up unasked');
+  rig.update({ ...still, blocking: { leftArm: true, rightArm: true } }, 1);
+  rig.update({ ...still, blocking: { leftArm: true, rightArm: true } }, 1);
+  assert.ok(Math.abs(leftArm.rotation.x + 1.25) < 0.02 && Math.abs(rightArm.rotation.x + 1.25) < 0.02, 'two shields, both up');
+  rig.dispose();
+
+  const armed = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...(DEFAULT_AVATAR.equip || {}), leftHandItem: 'sword', rightHandItem: null } },
+    new MeshBasicMaterial({ vertexColors: true }));
+  armed.update(still, 1);
+  assert.equal(armed.attack('rightArm'), true);
+  armed.update(still, 0.12);
+  assert.ok(armed.handAttach.rightArm.parent.rotation.x < -2.0, 'the right fist did not wind up');
+  assert.ok(armed.handAttach.leftArm.parent.rotation.x > -2.0, 'the sword hand swung instead');
+  armed.dispose();
 });
 
 test('the arm says whether a swing started, so a mashed button is one blow', () => {

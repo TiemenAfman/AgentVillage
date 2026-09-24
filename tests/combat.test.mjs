@@ -9,7 +9,8 @@ import { VOLCANO, GUARDS, volcanoTerrain, codexId } from '../shared/volcano.mjs'
 import { crowdRoster } from '../shared/settlerwire.mjs';
 import { volcanoBundle } from '../lib/islandbundle.mjs';
 import {
-  createHostility, GUARD_HIT, RESIDENT_HIT, GUARD_REACH, GUARD_SWING_MS, BLOCK_FRACTION, inFront,
+  createHostility, GUARD_HIT, RESIDENT_HIT, GUARD_REACH, GUARD_SWING_MS, GUARD_WINDUP_MS, REACH_SLACK, MAX_ATTACKERS,
+  BLOCK_FRACTION, SHIELD_ARMOR, inFront, armorOf,
 } from '../lib/hostility.mjs';
 import { createHealth, MAX_HEALTH } from '../lib/health.mjs';
 import { createCombat, AGENT_HEALTH, PLAYER_HIT, SWING_MS, SWING_REACH } from '../lib/combat.mjs';
@@ -26,12 +27,17 @@ const yawTowards = (dx, dz) => Math.atan2(dx, dz);
 //
 // hostility.test.mjs's flat island: one figure at the middle of a hostile island at a berth
 // that is not the origin, and a player standing right in front of it.
-function brawl({ id = 'guard:0', flags = 0, facing = true } = {}) {
+function brawl({ id = 'guard:0', flags = 0, facing = true, more = 0 } = {}) {
   let time = 1000;
   const cellWorld = (x, z) => [x - 15.5, z - 15.5];
   const terrain = { size: 32, half: 16, seed: 1, slope: () => 0, isLand: () => true, worldHeight: () => 1, cellWorld };
   const walk = createWalk(terrain, { buildings: [], districts: [] });
   const f = walk.spawn(id, { plot: { gx: 15, gz: 15, w: 3, d: 3, rot: 0 } }, [0, 0, 0]);
+  // `more` guards standing on the first one's spot, every one of them in reach.
+  for (let i = 1; i <= more; i++) {
+    const g = walk.spawn(`guard:${i}`, { plot: { gx: 15, gz: 15, w: 3, d: 3, rot: 0 } }, [0, 0, 0]);
+    g.pos[0] = f.pos[0]; g.pos[1] = f.pos[1];
+  }
   const crowd = { id: 'enemy', walk, figures: walk.figures };
   const enemy = { id: 'enemy', terrain, origin: [-80, 20], bundle: { island: { hostile: true, name: 'De Vulkaan' } } };
   const home = { id: 'home', terrain, origin: [150, -40], bundle: { island: { town: { centre: [16, 16] } } } };
@@ -48,18 +54,55 @@ function brawl({ id = 'guard:0', flags = 0, facing = true } = {}) {
     blows.push({ at: time, amount, cause, d: Math.hypot(who.x - (-80 + f.pos[0]), who.z - (20 + f.pos[1])) });
     return health.hurt(who, amount, cause);
   } };
-  const hostility = createHostility({ fleet, crowds: { get: (i) => (i === 'enemy' ? crowd : null) }, roster, health: spy, now: () => time });
-  return { f, p, blows, evictions, health, tick() { time += 50; hostility.tick(); health.tick(); walk.advance(1); } };
+  const swings = [];
+  const broadcast = (m) => swings.push({ ...m, at: time });
+  const hostility = createHostility({ fleet, crowds: { get: (i) => (i === 'enemy' ? crowd : null) }, roster, health: spy, broadcast, now: () => time });
+  const s = { f, p, blows, swings, evictions, health, tick() { time += 50; hostility.tick(); health.tick(); walk.advance(1); } };
+  // Beats until the first blow has landed (its wind-up included), and that blow.
+  s.first = () => { for (let i = 0; i < 40 && !blows.length; i++) s.tick(); return blows[0]; };
+  return s;
 }
 
-test('a guard in reach swings once per GUARD_SWING_MS, not once per beat, and three blows send you back', () => {
+test('a guard swing is announced to everybody and lands GUARD_WINDUP_MS later', () => {
   const s = brawl();
-  for (let i = 0; i < 100 && !s.evictions.length; i++) s.tick();
+  s.tick();
+  assert.deepEqual(s.swings.map(({ t, a, i, id }) => ({ t, a, i, id })), [{ t: 'agent', a: 'swing', i: 'enemy', id: 'guard:0' }]);
+  assert.equal(s.blows.length, 0, 'the blow landed with the announcement: no swing to see before it hurts');
+  const b = s.first();
+  const late = b.at - s.swings[0].at;
+  assert.ok(late >= GUARD_WINDUP_MS && late < GUARD_WINDUP_MS + 100, `the blow landed ${late} ms after the swing`);
+});
+
+test('no more than MAX_ATTACKERS swing at one player, and it stays the same ones', () => {
+  const s = brawl({ more: 5 });
+  s.tick();
+  assert.equal(MAX_ATTACKERS, 3);
+  assert.equal(s.swings.length, MAX_ATTACKERS, `${s.swings.length} guards swung at once`);
+  const first = new Set(s.swings.map((w) => w.id));
+  for (let i = 0; i < Math.ceil(GUARD_SWING_MS / 50) + 2; i++) s.tick();
+  assert.equal(s.swings.length, 2 * MAX_ATTACKERS, 'the second round was not three swings');
+  assert.deepEqual(new Set(s.swings.slice(MAX_ATTACKERS).map((w) => w.id)), first, 'the ring traded places');
+});
+
+test('stepping out of reach during the wind-up makes the blow miss', () => {
+  const s = brawl();
+  s.tick();
+  assert.equal(s.swings.length, 1);
+  s.p.x += GUARD_REACH + REACH_SLACK + 0.2;
+  for (let i = 0; i < 14; i++) s.tick();
+  assert.equal(s.blows.length, 0, 'a blow followed somebody who had already stepped away');
+});
+
+test('a guard in reach swings once per GUARD_SWING_MS, not once per beat, and it takes ten blows to send you back', () => {
+  const s = brawl();
+  for (let i = 0; i < 400 && !s.evictions.length; i++) s.tick();
+  const need = Math.ceil(MAX_HEALTH / GUARD_HIT);
+  assert.equal(need, 10);
   assert.equal(s.evictions.length, 1, 'never sent back');
-  assert.equal(s.blows.length, 3, `${s.blows.length} blows landed`);
+  assert.equal(s.blows.length, need, `${s.blows.length} blows landed`);
   for (const b of s.blows) assert.equal(b.amount, GUARD_HIT);
-  assert.deepEqual(s.blows.map((b) => b.cause.kind), ['guard', 'guard', 'guard']);
-  for (let i = 1; i < 3; i++) {
+  assert.ok(s.blows.every((b) => b.cause.kind === 'guard'));
+  for (let i = 1; i < need; i++) {
     const gap = s.blows[i].at - s.blows[i - 1].at;
     assert.ok(gap >= GUARD_SWING_MS && gap < GUARD_SWING_MS + 100, `the blows came ${gap} ms apart`);
   }
@@ -72,26 +115,45 @@ test('a guard only lands a blow within its reach', () => {
   s.p.x += 1.5;
   for (let i = 0; i < 80; i++) s.tick();
   assert.ok(s.blows.length > 0, 'the guard never got there');
-  for (const b of s.blows) assert.ok(b.d < GUARD_REACH, `a blow landed from ${b.d.toFixed(2)} away`);
+  for (const b of s.blows) assert.ok(b.d < GUARD_REACH + REACH_SLACK, `a blow landed from ${b.d.toFixed(2)} away`);
 });
 
 test('a raised shield facing the guard takes seventy per cent off; turned away, or in the water, it does not', () => {
   const up = brawl({ flags: POSE.BLOCKING });
-  up.tick();
+  up.first();
   assert.equal(up.blows.length, 1);
   assert.ok(Math.abs(up.blows[0].amount - GUARD_HIT * BLOCK_FRACTION) < 1e-9);
-  assert.equal(Math.round(up.health.health(up.p)), MAX_HEALTH - Math.round(GUARD_HIT * BLOCK_FRACTION));
+  assert.ok(Math.abs(up.health.health(up.p) - (MAX_HEALTH - GUARD_HIT * BLOCK_FRACTION)) < 1e-9);
   for (const s of [brawl({ flags: POSE.BLOCKING, facing: false }), brawl({ flags: POSE.BLOCKING | POSE.SWIMMING }), brawl()]) {
-    s.tick();
-    assert.equal(s.blows[0].amount, GUARD_HIT);
+    assert.equal(s.first().amount, GUARD_HIT);
   }
+});
+
+test('a shield raised during the wind-up still catches the blow', () => {
+  const s = brawl();
+  s.tick();
+  s.p.f = POSE.BLOCKING;
+  assert.ok(Math.abs(s.first().amount - GUARD_HIT * BLOCK_FRACTION) < 1e-9);
+});
+
+test('a shield carried is armour, and two stack: raised or not, and a raised one on top', () => {
+  assert.equal(armorOf({ f: 0 }), 0);
+  assert.equal(armorOf({ f: POSE.SHIELD_LEFT }), SHIELD_ARMOR);
+  assert.equal(armorOf({ f: POSE.SHIELD_RIGHT }), SHIELD_ARMOR);
+  assert.equal(armorOf({ f: POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }), 2 * SHIELD_ARMOR);
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  assert.ok(near(brawl({ flags: POSE.SHIELD_LEFT }).first().amount, GUARD_HIT * (1 - SHIELD_ARMOR)));
+  const two = POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT;
+  assert.ok(near(brawl({ flags: two }).first().amount, GUARD_HIT * (1 - 2 * SHIELD_ARMOR)));
+  assert.ok(near(brawl({ flags: two | POSE.BLOCKING }).first().amount, GUARD_HIT * (1 - 2 * SHIELD_ARMOR) * BLOCK_FRACTION));
+  // Two shields and the arm up still hurt: armour takes the edge off, it does not make a wall.
+  assert.ok(GUARD_HIT * (1 - 2 * SHIELD_ARMOR) * BLOCK_FRACTION > 0);
 });
 
 test('a Codex resident hits softer than a guard', () => {
   assert.ok(RESIDENT_HIT > 0 && RESIDENT_HIT < GUARD_HIT);
   const s = brawl({ id: codexId('aaaaaaaaaaaaaaaa', 'house:s1') });
-  s.tick();
-  assert.equal(s.blows[0].amount, RESIDENT_HIT);
+  assert.equal(s.first().amount, RESIDENT_HIT);
 });
 
 test('the front arc is sixty degrees either side of the pose heading', () => {
@@ -190,10 +252,10 @@ test('only guards and Codex residents of a hostile island can be hit', () => {
   assert.equal(s.said.length, 0);
 });
 
-test('no swing in orbit, in a room, at a tiller, in the water, behind a shield, or before a pose', () => {
+test('no swing in orbit, in a room, at a tiller, in the water, or before a pose', () => {
   for (const change of [
     (s) => { s.p.walking = false; }, (s) => { s.p.room = 'tavern'; }, (s) => s.boats([{ pilot: 'hero' }]),
-    (s) => { s.p.f = POSE.SWIMMING; }, (s) => { s.p.f = POSE.BLOCKING | POSE.MOVING; }, (s) => { s.p.posed = false; },
+    (s) => { s.p.f = POSE.SWIMMING; }, (s) => { s.p.posed = false; },
   ]) {
     const s = arena();
     s.add('guard:0', 0, 0.5);
@@ -203,15 +265,23 @@ test('no swing in orbit, in a room, at a tiller, in the water, behind a shield, 
   }
 });
 
-test('the roster keeps BLOCKING in a pose, drops what is above it, and hands a swing on', () => {
+test('a swing from behind a raised shield lands: one hand blocks while the other fights', () => {
+  const s = arena();
+  s.add('guard:0', 0, 0.5);
+  s.p.f = POSE.BLOCKING | POSE.SHIELD_LEFT;
+  assert.equal(s.combat.swing(s.p), true);
+  assert.equal(s.said.length, 1);
+});
+
+test('the roster keeps BLOCKING and the shields in a pose, drops what is above them, and hands a swing on', () => {
   const swung = [];
   const roster = createRoster({ swing: (p) => swung.push(p.id) });
   const p = roster.attach({ id: 'aabbccdd', send() {}, close() {} }, { island: 'aaaaaaaa' });
   roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0.5, f: POSE.BLOCKING | POSE.MOVING }));
   assert.equal(p.f, 17);
   assert.equal(p.yaw, 0.5, 'the heading a swing is aimed by');
-  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 32 | POSE.BLOCKING }));
-  assert.equal(p.f, POSE.BLOCKING);
+  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 128 | POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }));
+  assert.equal(p.f, POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT, 'the shields are kept, and nothing above them');
   roster.message(p.conn, JSON.stringify({ t: 'swing', target: 'guard:0', hp: 0 }));
   assert.deepEqual(swung, ['aabbccdd']);
 });

@@ -57,6 +57,19 @@ const FLINCH_S = 0.3;
 const FLINCH_LEAN = 0.3;
 const FLINCH_TINT = 0.65;
 const FLINCH_RED = new THREE.Color(0xd8281c);
+// A swing the sea has started (crowd-view.js swing, `{t:'agent', a:'swing'}`): the sword arm
+// winds up over the head and comes down, timed so the blade falls where the sea lands the
+// blow - GUARD_WINDUP_MS (0.55 s) in lib/hostility.mjs, the imp's own strike frame too - and
+// then eases back to wherever the arm was. `strikeArm` is the arm's rotation.x at `u`
+// (0..1 of STRIKE_S), `rest` the angle it would have had without the swing.
+export const STRIKE_S = 0.8;
+const STRIKE_UP = -2.3, STRIKE_DOWN = -0.2, STRIKE_TOP = 0.55, STRIKE_HIT = 0.72;
+const smooth = (u) => u * u * (3 - 2 * u);
+export function strikeArm(u, rest) {
+  if (u < STRIKE_TOP) return rest + (STRIKE_UP - rest) * smooth(u / STRIKE_TOP);
+  if (u < STRIKE_HIT) return STRIKE_UP + (STRIKE_DOWN - STRIKE_UP) * smooth((u - STRIKE_TOP) / (STRIKE_HIT - STRIKE_TOP));
+  return STRIKE_DOWN + (rest - STRIKE_DOWN) * smooth((u - STRIKE_HIT) / (1 - STRIKE_HIT));
+}
 const HEAD_Y = RESIDENT_HEAD_Y;
 
 // How far above its own feet a figure's eyes are. A function rather than a constant
@@ -290,6 +303,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
     if (f.slot == null) return;
     f.flinch = FLINCH_S;
   }
+  // Somebody has started a swing. Only starts the clock, like a flinch; draw() moves the arm.
+  function strike(f) {
+    if (f.slot == null) return;
+    f.strike = STRIKE_S;
+  }
   // Their colours, pushed `k` of FLINCH_TINT towards red, or put back exactly when `k` is 0.
   function tintFlinch(f, k) {
     const t = k * FLINCH_TINT;
@@ -382,9 +400,13 @@ export function createFigures(scene, material, { armed = false } = {}) {
       const idle = walking || hammering ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
       const leftArmAngle = (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
-      const rightArmAngle = hammering
+      let rightArmAngle = hammering
         ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
         : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
+      if (f.strike > 0) {
+        f.strike = Math.max(0, f.strike - dt);
+        rightArmAngle = strikeArm(1 - f.strike / STRIKE_S, rightArmAngle);
+      }
       setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, stride);
       setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
@@ -436,5 +458,5 @@ export function createFigures(scene, material, { armed = false } = {}) {
     spare.length = 0;
   }
 
-  return { enrol, hide, free, flinch, draw, pickables, figureAt, dispose };
+  return { enrol, hide, free, flinch, strike, draw, pickables, figureAt, dispose };
 }

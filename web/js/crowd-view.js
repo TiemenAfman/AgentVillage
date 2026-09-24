@@ -38,7 +38,14 @@ import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
-import { impsOn, wantsImp, createImp, pickImps, IMP_LIMIT } from './imp.js';
+import { impsOn, wantsImp, createImp, pickImps, IMP_LIMIT, IMP_SCALE } from './imp.js';
+
+// How high over its feet an agent's health bar floats (agent-bars.js): over an imp's horns
+// (1.08 m of model at IMP_SCALE), or over a settler's hat - RESIDENT_HEIGHT 0.43 units times
+// its own look.height.
+const BAR_OVER_IMP = 1.08 * IMP_SCALE + 0.1;
+const BAR_OVER_SETTLER = 0.43;
+const BAR_CLEAR = 0.14;
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -159,6 +166,9 @@ export function createCrowdView({
         // Where it is coming from and going to, and when, and what the sea said it was
         // doing when it got there. See `apply` and `draw`.
         from: null, to: null, at: 0, took: 1, said: 'still', came: 'still',
+        // How tall they are drawn, for the bar over their head; and their health as the sea
+        // last told it (`hit`), null for "never hit": whole.
+        tall: look.height || 1, hp: null, hpMax: null,
       };
       if (!view.enrol(f, look, kind)) return;  // the crowd is full; better a gap than a lie
       figures.set(idx, f);
@@ -282,17 +292,50 @@ export function createCrowdView({
   // `codex:<island>:<id>`), so this is one lookup. An imp standing in for the body flinches
   // (imp.js hit); an ordinary figure flinches in settler-figures.js off `f.flinch`. Only one
   // of the two: a body under an imp is parked out of sight, and a flinch left on it would play
-  // the moment the imp was handed to a nearer guard. What is left (`hp`, `max`) is not
-  // drawn - there are no bars over strangers' heads - and a fall needs nothing from here: the
-  // roster's null hole retires the body and its imp together. Returns whether anybody here
-  // was hit, for the tests and a console.
-  function hit(id) {
+  // the moment the imp was handed to a nearer guard. What is left (`hp`, `max`) is kept on
+  // the figure for its health bar (`bars`, agent-bars.js), and a fall needs nothing from
+  // here: the roster's null hole retires the body and its imp together, and whoever comes back
+  // is a new figure and whole. Returns whether anybody here was hit, for the tests and a
+  // console.
+  function hit(id, hp = null, max = null) {
     const f = byIdx.get(id);
     if (!f) return false;
+    if (Number.isFinite(hp) && Number.isFinite(max) && max > 0) { f.hp = hp; f.hpMax = max; }
     const s = imps.get(id);
     if (s && s.f === f && s.actor.hit) s.actor.hit();
     else view.flinch(f);
     return true;
+  }
+
+  // A swing somebody here has started - the sea's `{t:'agent', a:'swing'}` (lib/hostility.mjs),
+  // sent when a guard or a Codex resident begins a blow, GUARD_WINDUP_MS before it lands. The
+  // imp plays its attack clip, a figure swings its sword arm (settler-figures.js strike): the
+  // same one-of-two as a hit. Returns whether anybody here swung.
+  function swing(id) {
+    const f = byIdx.get(id);
+    if (!f) return false;
+    const s = imps.get(id);
+    if (s && s.f === f && s.actor.swing) s.actor.swing();
+    else view.strike(f);
+    return true;
+  }
+
+  // Everybody here who could be fought, for the health bars: the guards and Codex residents
+  // of a hostile island, standing where they are drawn (an imp stands exactly where its body
+  // would have), in the scene frame. Appended to `out`, which main.js collects from every
+  // island before agent-bars.js picks the nearest.
+  function bars(out = []) {
+    if (!armed) return out;
+    for (const f of figures.values()) {
+      if (!f.to || f.hidden || !(isGuard(f.id) || isCodex(f.id))) continue;
+      const imp = imps.has(f.id);
+      out.push({
+        x: f.pos[0], y: f.y, z: f.pos[1],
+        top: imp ? BAR_OVER_IMP : BAR_OVER_SETTLER * f.tall + BAR_CLEAR,
+        frac: f.hp == null ? 1 : f.hp / f.hpMax,
+      });
+    }
+    return out;
   }
 
   function dropImp(id) {
@@ -462,7 +505,7 @@ export function createCrowdView({
   }
 
   return {
-    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit,
+    roster, apply, applyRides, draw, dispose, setVisible, setBuildings, hit, swing, bars,
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

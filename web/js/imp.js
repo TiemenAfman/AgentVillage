@@ -119,12 +119,14 @@ export function setImpNight(night) {
 // For the tests and a console: where the glow stands now.
 export const impGlow = () => ({ glow: glowUniforms.uLavaGlow.value, ember: glowUniforms.uLavaEmber.value });
 
-// When it lashes out: this page's own walker within ATTACK_RANGE units, and not again until
-// ATTACK_COOLDOWN_MS after the last swing finished - per imp, so a row of guards swings one
-// by one as you walk past rather than in a volley. Purely a show - the sea decides who is
-// hurt (lib/hostility.mjs), and nothing here reaches the wire.
+// When it lashes out: when the sea says so (`{t:'agent', a:'swing'}`, lib/hostility.mjs,
+// routed here by crowd-view.js swing()), at the start of the wind-up whose end is the blow.
+// It used to be this page's own guess - its walker within range, a cooldown of its own - so
+// the swings on the screen and the blows that cost health were two unrelated things, and a
+// bar could empty with no swing drawn at all. A swing turns the imp to this page's walker
+// if they are within ATTACK_RANGE: the sea does not say whom it swings at, and the one it
+// is nearest is almost always the one it means.
 export const ATTACK_RANGE = 1.5;
-export const ATTACK_COOLDOWN_MS = 2000;
 const FADE_S = 0.25;
 // How fast the in-place walk cycle walks at scale 1, from the handoff that came with the
 // model: 0.32 heights a second, 0.346 m/s. Scaled to the island and used to match the clip's
@@ -146,11 +148,6 @@ const UNUSED_CLIP = /rootmotion/i;
 // what stands between that clip and an imp culled with a paw still on the screen.
 // tests/imp.test.mjs samples every clip and fails if any vertex gets out.
 export const CULL_MARGIN = 1.1;
-
-// Whether a swing starts now. Its own function so the rule can be tested without a model.
-export function attackDue(state, dist, now) {
-  return !state.attacking && dist <= ATTACK_RANGE && now >= state.readyAt;
-}
 
 // Where in its idle an imp starts, from its guard's id: a row of guards breathing in
 // unison is the first thing anybody notices. A hash, so every page and every reload puts
@@ -347,10 +344,9 @@ export function standImp(t, scene, id) {
   const walkName = actions.walk ? 'walk' : null;
   const swimName = actions.swim ? 'swim' : null;
   let current = null;
-  const st = { attacking: false, readyAt: 0 };
+  const st = { attacking: false };
   // Seconds left of the flinch from the last blow; 0 when none is showing.
   let hurt = 0;
-  let lastNow = 0;
   let time = 0;
   let yaw = 0;
 
@@ -362,11 +358,10 @@ export function standImp(t, scene, id) {
     current = next;
   }
   // The attack clip ends in the rest pose, feet planted, so fading back into idle from its
-  // last frame is seamless; the cooldown counts from here rather than from the swing's start.
+  // last frame is seamless.
   mixer.addEventListener('finished', (e) => {
     if (e.action !== actions.attack) return;
     st.attacking = false;
-    st.readyAt = lastNow + ATTACK_COOLDOWN_MS;
     play('idle');
   });
   play('idle');
@@ -383,7 +378,6 @@ export function standImp(t, scene, id) {
     x, y, z, yaw: figureYaw, moving = false, speed = 0, swimming = false,
     visible = true, dt = 0, now = 0, player = null,
   }) {
-    lastNow = now;
     root.visible = visible;
     const drawn = seen;
     seen = false;
@@ -402,9 +396,8 @@ export function standImp(t, scene, id) {
     if (player) {
       const dx = player.x - x, dz = player.z - z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (actions.attack && attackDue(st, dist, now)) { st.attacking = true; play('attack'); }
       // A swing is aimed: while it lasts the imp turns to whoever it is swinging at.
-      if (st.attacking && dist > 1e-3) target = Math.atan2(dx, dz);
+      if (st.attacking && dist > 1e-3 && dist <= ATTACK_RANGE) target = Math.atan2(dx, dz);
     }
     let d = target - yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -456,8 +449,18 @@ export function standImp(t, scene, id) {
   // starts it again from the top.
   function hit() { hurt = HIT_S; }
 
+  // A swing the sea has started (see ATTACK_RANGE): the attack clip from the top. One still
+  // playing is left to finish - the sea's cooldown (GUARD_SWING_MS, 1.4 s) is longer than the
+  // clip, so a second one arriving mid-swing is a page that fell behind, not a new blow.
+  function swing() {
+    if (!actions.attack || st.attacking) return false;
+    st.attacking = true;
+    play('attack');
+    return true;
+  }
+
   return {
-    object: root, mesh, update, dispose, hit,
+    object: root, mesh, update, dispose, hit, swing,
     attacking: () => st.attacking,
     hurting: () => hurt > 0,
     // For the tests and a console: where this imp is in its idle, and what it is playing.

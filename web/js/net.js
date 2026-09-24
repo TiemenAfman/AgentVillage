@@ -16,12 +16,16 @@ const FLAG_MOVING = 1;
 const FLAG_SWIMMING = 2;
 const FLAG_RUNNING = 4;
 const FLAG_AIRBORNE = 8;
-// The right mouse button held (Plans/aanvallen-en-blokkeren.md). The sea's copy is POSE in
+// A mouse button held on a hand that carries a shield (walk.js; Plans/aanvallen-en-blokkeren.md). The sea's copy is POSE in
 // lib/players.mjs and web/js/peers.js mirrors it; lib/hostility.mjs is what reads it - a
 // guard's blow that lands on a shield raised towards it costs less. Only ever set on foot:
 // a swimmer's arms are busy and a pilot's are on the tiller, and the sea refuses a block
 // from a swimmer anyway, so saying one would only be a lie it has to see through.
 export const FLAG_BLOCKING = 16;
+// Which hands carry a shield, raised or not: armour, each one taking SHIELD_ARMOR off every
+// blow from an agent (lib/hostility.mjs armorOf). Walk mode's `shields`, off the avatar.
+export const FLAG_SHIELD_LEFT = 32;
+export const FLAG_SHIELD_RIGHT = 64;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -314,8 +318,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
 
   // Our body, if it has changed enough to be worth saying or the keepalive is due. On the
   // beat, and also straight before a swing (see swing()), so the sea measures the blow from
-  // where we are and which way we face now, and never from a pose still saying BLOCKING a
-  // tenth of a second after the shield came down - it ignores a swing from a blocker.
+  // where we are and which way we face now, not a tenth of a second ago.
   function sendPose() {
     if (!walking || !here || !here.state.active || !berthKnown()) return;
     const s = here.state;
@@ -323,7 +326,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.swimming ? FLAG_SWIMMING : 0)
       | (s.moving && !s.swimming && s.running ? FLAG_RUNNING : 0)
       | (s.grounded ? 0 : FLAG_AIRBORNE)
-      | (s.blocking && !s.swimming && !s.vehicle ? FLAG_BLOCKING : 0);
+      | (s.blocking && !s.swimming && !s.vehicle ? FLAG_BLOCKING : 0)
+      | (s.shields && s.shields.left ? FLAG_SHIELD_LEFT : 0)
+      | (s.shields && s.shields.right ? FLAG_SHIELD_RIGHT : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.
@@ -394,14 +399,14 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     //
     // Only on foot on the sea: in walk mode, outdoors (a room is nobody's battlefield), with
     // our own feet under us and not a hull or the water, and with a berth the sea knows, since
-    // the pose it measures the swing from is not sent before that either. Not behind a raised
-    // shield - the sea ignores a swing from a player whose pose says BLOCKING, as it does one
-    // from a swimmer - and not sooner than SWING_MS after the last. Every one of those the sea
+    // the pose it measures the swing from is not sent before that either. Not while swimming -
+    // the sea ignores that swing - and not sooner than SWING_MS after the last. A shield
+    // raised in the other hand is no reason not to: the sea takes a swing from a blocker. Every one of those the sea
     // would drop on arrival, so none of them is worth a token from the bucket. Returns whether
     // it went.
     swing() {
       const s = here && here.state;
-      if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.swimming || s.blocking || !berthKnown()) return false;
+      if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.swimming || !berthKnown()) return false;
       const t = clock();
       if (t - swungAt < SWING_MS) return false;
       sendPose();

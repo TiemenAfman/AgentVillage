@@ -10,6 +10,7 @@ import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, next
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
+import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
@@ -2257,15 +2258,30 @@ function onCrowdMessage(m) {
   g.crowd.applyRides(decodeRides(m.b, half), now);
 }
 
-// Something on an island was hit (lib/combat.mjs, `{t:'agent', a:'hit'}`): a guard or a Codex
-// resident on the volcano, told to everybody who can see it. The crowd view of the island it
-// names makes that body flinch. Only guests: the sea knows our own settlers by redacted
-// names (see ourRoster), and nothing on our own island can be hit. A fall needs nothing
-// here - the roster's null hole takes the body away.
+// Something on an island was hit (lib/combat.mjs, `{t:'agent', a:'hit'}`) or started a
+// swing (lib/hostility.mjs, `{t:'agent', a:'swing'}`): a guard or a Codex resident on the
+// volcano, told to everybody who can see it. The crowd view of the island it names makes that
+// body flinch - and keeps what is left for its health bar - or swing. Only guests: the sea
+// knows our own settlers by redacted names (see ourRoster), and nothing on our own island can
+// be hit. A fall needs nothing here - the roster's null hole takes the body away.
 function onAgentMessage(m) {
-  if (m.a !== 'hit') return;
   const g = state.guests.find((x) => x.region.id === m.i);
-  if (g && g.crowd) g.crowd.hit(m.id);
+  if (!g || !g.crowd) return;
+  if (m.a === 'hit') g.crowd.hit(m.id, m.hp, m.max);
+  else if (m.a === 'swing') g.crowd.swing(m.id);
+}
+
+// The health bars over every hostile near enough to fight (agent-bars.js), made on the first
+// frame that has any, since most islands never see the volcano. On foot and in orbit alike -
+// a fight watched from above is still a fight - but not in the planner or indoors.
+let agentBars = null;
+const barCands = [];
+function drawAgentBars(eye) {
+  barCands.length = 0;
+  if (state.mode !== 'plan' && !state.inside) for (const g of state.guests) if (g.crowd && g.crowd.bars) g.crowd.bars(barCands);
+  if (!barCands.length && !agentBars) return;
+  if (!agentBars) agentBars = createAgentBars(scene);
+  agentBars.update(barCands, eye);
 }
 
 // Take an island's ground back out of the world: its region, its buildings, its crowd. The
@@ -4334,6 +4350,7 @@ function frame(nowMs) {
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
+  drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
     // Colour pass only: three.js resets renderer.info after the shadow pass, so the

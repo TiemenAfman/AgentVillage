@@ -236,7 +236,9 @@ export function createWalkMode({
     // What Shift spends. Running and swimming share the body's; the boat has its own, and
     // both fill whenever they are not being drawn on - see web/js/stamina.js.
     stamina: { body: createPool(BODY), boat: createPool(BOAT) },
-    blocking: false, // the right mouse button is down: the shield arm is up
+    blocking: false, // a shield is up in either hand - what net.js puts in the pose
+    guard: { leftArm: false, rightArm: false }, // which hand's shield is up
+    shields: { left: false, right: false },     // which hands carry one at all: armour
     paused: false,   // true while an overlay owns the input
   };
 
@@ -357,10 +359,14 @@ export function createWalkMode({
   //
   // Where a lock is refused outright (an embedded webview, a page without the permission)
   // the old drag-to-look is still there, which is also what a press does while the lock is
-  // on its way. The buttons themselves fight (Plans/aanvallen-en-blokkeren.md): the right one
-  // blocks for as long as it is held and never looks; the left one attacks - on the press
-  // under a lock, and otherwise on a click that did not turn into a drag. The one click that
-  // takes the lock does not also swing.
+  // on its way. The buttons themselves fight (Plans/aanvallen-en-blokkeren.md), one button per
+  // hand: the left button is the left hand and the right button the right. A hand holding a
+  // shield blocks for as long as its button is held; any other hand - a sword, a hammer, a
+  // bare fist - attacks. It used to be the left button attacks and the right one blocks,
+  // whatever you held, so a sword in the right hand raised an arm with nothing in it. The
+  // right button never looks and acts on the press; the left attacks on the press under a
+  // lock, and otherwise on a click that did not turn into a drag - and the one click that
+  // takes the lock does not also swing. Its shield goes up on the press either way.
   let dragging = false, lastX = 0, lastY = 0, pressX = 0, pressY = 0, pressMoved = false, pressLocks = false;
   const CLICK_PX = 6;
   let lockRefused = !dom.requestPointerLock;
@@ -373,13 +379,19 @@ export function createWalkMode({
   // Not with the arms already busy: swimming, lying down, sitting, or at a tiller.
   const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting
     && !state.vehicle;
-  // One press of the left button, if it may fight at all. `onSwing` hears of every swing
-  // the arm actually started - main.js puts it on the wire (net.js swing()), which is what
-  // makes the button hit something on the sea rather than only move an arm - and of none
-  // it refused, so a mashed button is not a volley the sea sees and nobody else does. Not
-  // behind a raised shield: the sea ignores a swing from a blocking player
-  // (lib/combat.mjs), so the arm does not pretend otherwise - you lower the shield to hit.
-  const fight = () => { if (canFight() && !state.blocking && classicAvatar.attack() && onSwing) onSwing(); };
+  // One swing of `side`'s hand, if it may fight at all. `onSwing` hears of every swing the
+  // arm actually started - main.js puts it on the wire (net.js swing()), which is what makes
+  // the button hit something on the sea rather than only move an arm - and of none it
+  // refused, so a mashed button is not a volley the sea sees and nobody else does. A shield
+  // up in the other hand is no reason not to: the sea takes a swing from a blocker.
+  const fight = (side) => { if (canFight() && classicAvatar.attack(side) && onSwing) onSwing(); };
+  const SIDE_OF = { 0: 'leftArm', 2: 'rightArm' };
+  const shieldIn = (side) => classicAvatar.held(side) === 'shield';
+  function guardUp(side, on) {
+    state.guard[side] = on;
+    state.blocking = state.guard.leftArm || state.guard.rightArm;
+  }
+  function lowerShields() { guardUp('leftArm', false); guardUp('rightArm', false); }
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
@@ -407,18 +419,22 @@ export function createWalkMode({
   document.addEventListener('pointerlockchange', onLockChange);
   const onDown = (e) => {
     if (!state.active) return;
-    if (e.button === 2) { if (canFight()) state.blocking = true; return; }
-    if (e.button !== 0) return;
-    if (document.pointerLockElement === dom) { fight(); return; }
+    const side = SIDE_OF[e.button];
+    if (!side) return;
+    if (shieldIn(side) && canFight()) guardUp(side, true);
+    if (e.button === 2) { if (!shieldIn(side)) fight(side); return; }
+    if (document.pointerLockElement === dom) { if (!shieldIn(side)) fight(side); return; }
     pressLocks = wantLock() && !clickLockFailed;
     if (wantLock()) requestLock(true);
     dragging = true; pressMoved = false;
     lastX = pressX = e.clientX; lastY = pressY = e.clientY;
   };
   const onUp = (e) => {
-    if (e.button === 2) { state.blocking = false; return; }
-    if (e.button !== 0) return;
-    if (dragging && !pressMoved && !pressLocks) fight();
+    const side = SIDE_OF[e.button];
+    if (!side) return;
+    guardUp(side, false);
+    if (e.button === 2) return;
+    if (dragging && !pressMoved && !pressLocks && !shieldIn(side)) fight(side);
     dragging = false; pressLocks = false;
   };
   const onMove = (e) => {
@@ -571,7 +587,7 @@ export function createWalkMode({
     standUp();
     // Both hands to the tiller: a shield held up on the way aboard is let go of, or it
     // would ride along in the pose (net.js drops the flag afloat, but the arm would not).
-    state.blocking = false;
+    lowerShields();
     state.crouching = false;
     state.lying = false;
     state.swimming = false;
@@ -643,7 +659,7 @@ export function createWalkMode({
     // Inactive before the release, or release() would ask for the lock back on the way out.
     state.active = false;
     release();
-    state.blocking = false;
+    lowerShields();
     lockKeys(false);
     avatar.visible = false;
     lounge.visible = false;
@@ -901,8 +917,11 @@ export function createWalkMode({
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded,
       crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
-      blocking: state.blocking, phase: state.bob,
+      blocking: state.blocking ? state.guard : false, phase: state.bob,
     }, dt);
+    // What the hands carry, for the pose: a shield is armour on the sea (net.js).
+    state.shields.left = shieldIn('leftArm');
+    state.shields.right = shieldIn('rightArm');
 
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
