@@ -65,9 +65,9 @@ Er zijn dus twee losse assen:
 
 | Vraag | Voorstel | Waarom |
 |---|---|---|
-| Hoe groeit de vorm? | Stap *n* heeft straal `r_n`. De nieuwe cellen zijn die welke in de terrein-functie met straal `r_n` land zijn en in alle vorige stappen zee. Alleen die cellen krijgen de hoogte uit de grotere vorm, als lijst in `layout.growth[n].cells`. | Bestaande cellen worden nooit aangeraakt, dus geen huis zakt of zweeft. Het werkt als een polder: sticky, gehasht, reproduceerbaar. |
-| Wanneer groeit het? | Op het aantal settlers, een ladder zoals `POLDER_AT` / `POLDER_EVERY`. | Om dezelfde reden als bij de polders: de terrein-vraag moet vóór de plaatsing beantwoord zijn. Een tweede scan mag niets veranderen. |
-| Hoe loopt de nieuwe rand over in de oude? | Een blend-band van een paar cellen, alléén in water dat nog zee is. | Anders ontstaat er een trede in het strand. |
+| Hoe groeit de vorm? | **Gebouwd, zie Fase 1.** Een stap is `{ r, hold }`: straal plus de cellen waar iets staat. De grond wordt uit de stappen afgeleid, er wordt geen cellenlijst bewaard. | Compact in `layout.json` en de bundel. Een grotere versie van dezelfde formule, dus reproduceerbaar. |
+| Wanneer groeit het? | **Besloten: op vraag** (zie boven). | De stap valt een scan later, en de scan daarna moet byte-gelijk zijn. |
+| Hoe loopt de nieuwe rand over in de oude? | **Gebouwd:** een helling vanaf de oude kust (`GROW_SHORE` + `GROW_RISE`), en het oude strand groeit mee. | Anders ontstaat er een trede, of een zandring in de wei. |
 | Rivieren | Blijven waar ze zijn. Een rivier wordt niet verlengd naar de nieuwe kust. De aanwas sluit hem af of laat hem in een meer eindigen. | Verlengen hasht op grid-indices en verandert het oude verloop. Uitstellen, want het is fase 5+. |
 | Het doek groeien | Centraal met `+2k`: elke opgeslagen index `+k`, in één migratiefunctie `growLayout(layout, k)`. | De lokale wereldposities blijven gelijk (`cellWorld = gx - half + 0.5`), dus er verschuift niets zichtbaars. |
 | Of: meteen een groot doek? | Alternatief: elk eiland krijgt eenmalig `GRID_MAX` en alleen de vorm groeit. | Geen tweede migratie ooit. Maar 512² is 4× de cellen van 256², voor terrein, A*, het mesh en elke gast. Kiezen na een meting (fase 3). |
