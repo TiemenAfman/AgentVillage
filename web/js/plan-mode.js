@@ -215,7 +215,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const p = ops.find((o) => o.op === 'polder');
     return new Set((p ? p.supers : []).map(([i, j]) => key(i, j)));
   }
-  // Water the ladder would take: the survey's own `polderCandidate` bit per super-cell.
+  // Water a keeper may reclaim: the survey's own `polderCandidate` bit per super-cell, in
+  // its shore form - a super-cell the coastline runs through counts, its sand left as is.
   function reclaimable(i, j) {
     if (!survey) return false;
     const row = survey.water[j + survey.R];
