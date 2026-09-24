@@ -76,6 +76,7 @@ import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
 import { installDesktopGuards } from './desktop.js';
+import { captionCell } from './captions.js';
 
 // In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
 installDesktopGuards();
@@ -3286,7 +3287,9 @@ function syncHamlets(village) {
       live.add(key);
       // Over the road where it leaves the hamlet's land, square to it, so you read the
       // name walking through rather than passing a placard in a field. The green it used
-      // to stand on is gone.
+      // to stand on is gone. One per lobe, deliberately: each annex has its own way in and
+      // you meet its arch there on foot - unlike the aerial caption, which goes up once per
+      // hamlet (captionCell in web/js/captions.js).
       const gate = gateOf(village, d, li, lobe);
       const [gx, gz] = gate ? gate.at : (lobe.green || d.center);
       const [x, z] = terrain.cellWorld(gx, gz);
@@ -4481,8 +4484,9 @@ function updateLabels() {
   document.body.style.cursor = hoverId ? 'pointer' : '';
 }
 
-// Names over the greens, crossfaded against the wooden boards: readable from the air,
-// gone by the time you can read the sign itself.
+// Names over the hamlets, crossfaded against the wooden boards: readable from the air,
+// gone by the time you can read the sign itself. One per hamlet, not one per lobe - the
+// arches are per lobe on purpose, the caption is not (web/js/captions.js says why).
 function hamletCaptions() {
   const v = state.shot || state.village;
   if (!v || !state.terrain) return [];
@@ -4492,18 +4496,16 @@ function hamletCaptions() {
   if (opacity < 0.02) return [];
   const out = [];
   for (const d of v.districts) {
-    if (!d.center || d.tier === 'farmstead') continue;
-    for (const lobe of d.lobes || []) {
-      const [gx, gz] = lobe.green || d.center;
-      const [x, z] = state.terrain.cellWorld(gx, gz);
-      projected.set(x, groundAt(x, z) + 1.9, z).project(camera);
-      if (projected.z > 1) continue;
-      out.push({
-        text: titleCaseName(d.name), hue: d.hue, opacity,
-        x: (projected.x + 1) / 2 * innerWidth,
-        y: (1 - projected.y) / 2 * innerHeight,
-      });
-    }
+    const at = captionCell(d);
+    if (!at) continue;
+    const [x, z] = state.terrain.cellWorld(at[0], at[1]);
+    projected.set(x, groundAt(x, z) + 1.9, z).project(camera);
+    if (projected.z > 1) continue;
+    out.push({
+      text: titleCaseName(d.name), hue: d.hue, opacity,
+      x: (projected.x + 1) / 2 * innerWidth,
+      y: (1 - projected.y) / 2 * innerHeight,
+    });
   }
   return out;
 }
