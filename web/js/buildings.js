@@ -1700,22 +1700,36 @@ function mergeRects(rects, gap) {
 }
 
 // The solid rectangles of a shape, in its own frame, as centre plus half extents.
-export function footprintOf(parts, clearance = WALK_CLEARANCE) {
+export function footprintOf(parts, clearance = WALK_CLEARANCE, { merge = true } = {}) {
   const rects = [];
   for (const g of parts) {
     if (!g) continue;
     const r = partRect(g, clearance);
     if (r) rects.push(r);
   }
-  return mergeRects(rects, WALK_GAP).map((r) => ({
+  return (merge ? mergeRects(rects, WALK_GAP) : rects).map((r) => ({
     x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2,
     hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2,
   }));
 }
 
 function scaleSolids(solids, s) {
-  return solids.map((r) => ({ x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s }));
+  return solids.map((r) => ({ x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s, ...(r.r ? { r: r.r * s } : {}) }));
 }
+
+// What is round is walked round, not into the corners of the square it fits in. A box
+// round the fountain reaches 0.78 out along a diagonal where the stone stops at 0.54, and
+// with the tables set down on the next cell corner to corner, those two box corners met
+// and closed the diagonal between them - a gap you could see through and not walk. So a
+// round thing's solid also carries `r`, and walk.js tests a circle for it; hx/hz stay as
+// its bounds for everything that only wants a rectangle.
+const ROUND = new Set(['well', 'fountain', 'flowerbed']);
+// And what stands in an L is walked round the L. The two trestle tables and their benches
+// overlap at one corner, so merging closes the empty corner of the L into one box - and on
+// the square that corner faces the fountain one cell away, diagonally, which with the
+// fountain's own solid left no way between them. Unmerged, a gap narrower than a body
+// still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
+const APART = new Set(['tables']);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -1939,7 +1953,7 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  const wallRects = footprintOf(parts, WALK_CLEARANCE / s);
+  const wallRects = footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
   if (wantsPorch(spec)) {
     porch(parts, anchors, animated, porchOverhang(spec));
     height += PORCH_RISE;
@@ -1955,6 +1969,9 @@ export function buildBuilding(spec, ctx = {}) {
   for (const g of yard) parts.push(g);
   const yardRects = yard.length ? footprintOf(yard, WALK_CLEARANCE / s) : [];
 
+  if (spec.kind === 'civic' && ROUND.has(spec.civicType)) {
+    for (const r of wallRects) r.r = Math.max(r.hx, r.hz);
+  }
   const geometry = merge(parts);
   let walls = wallRects, solids = wallRects.concat(yardRects);
   if (s !== 1) {

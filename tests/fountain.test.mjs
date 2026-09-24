@@ -42,3 +42,17 @@ test('fountain water ripples from its authored shape without drifting', () => {
     assert.ok(Math.abs(later[i] - authored[i]) <= 0.0061);
   }
 });
+
+// The square put the tables one cell from the fountain, corner to corner, and the walker
+// could see between them and not walk it: the fountain's solid was the square round its
+// basin, and the tables' was one box over an L of two trestles whose empty corner faces
+// the fountain. A round solid and the L kept as its parts open the diagonal again.
+test('the fountain is walked round as a circle, and the tables leave the corner of their L', () => {
+  const f = buildBuilding({ id: 'civic:fountain', kind: 'civic', civicType: 'fountain', style: 'unknown' });
+  assert.equal(f.solids.length, 1);
+  assert.ok(f.solids[0].r > 0.5 && f.solids[0].r < 0.6, 'the fountain has a radius');
+  const t = buildBuilding({ id: 'civic:tables', kind: 'civic', civicType: 'tables', style: 'unknown' });
+  const at = (x, z) => t.solids.some((r) => Math.abs(x - r.x) < r.hx && Math.abs(z - r.z) < r.hz);
+  assert.ok(at(-0.2, -0.15) && at(0.2, 0.2), 'both tables are still solid');
+  assert.ok(!at(-0.3, 0.35), 'the empty corner of the L is closed off again');
+});

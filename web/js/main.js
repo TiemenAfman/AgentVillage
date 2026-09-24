@@ -469,6 +469,7 @@ function blockersOf(rec) {
     z: rec.group.position.z - r.x * s + r.z * c,
     hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
     hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
+    ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
     id: rec.id,
   }));
 }
