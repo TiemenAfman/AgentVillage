@@ -895,7 +895,7 @@ const flatTerrain = {
 
 const KEYS_OUT = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
   + '<span>mouse to look, Esc frees it, click takes it back</span>'
-  + '<span><kbd>Shift</kbd> run</span><span><kbd>Space</kbd> jump</span>'
+  + '<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>Space</kbd> jump</span>'
   + '<span><kbd>Ctrl</kbd> crouch</span><span><kbd>E</kbd> step inside</span>'
   + '<span><kbd>Esc</kbd> back to the sky</span>';
 const KEYS_IN = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
@@ -924,7 +924,7 @@ function doors() {
 
 function enterField(at, facing) {
   if (!walk) {
-    walk = createWalkMode({ scene, camera, terrain: flatTerrain, material, dom: renderer.domElement });
+    walk = createWalkMode({ scene, camera, terrain: flatTerrain, material, dom: renderer.domElement, bikes: true });
   }
   walk.enter({
     at, facing,

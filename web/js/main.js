@@ -4948,6 +4948,7 @@ async function boot() {
     // because the line is opened after this.
     onSwing: () => { if (state.net) state.net.swing(); },
     tipsy: state.tipsy,
+    bikes: true,
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.

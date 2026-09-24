@@ -26,6 +26,7 @@ export const MAPS = {
     sprint:    { hit: BTN.L3, down: BTN.L3, label: 'L3' },   // tap to keep running, hold to run
     exit:      { hit: BTN.BACK, label: 'BACK' },
     exitAlt:   { hit: BTN.START },
+    bike:      { hit: BTN.Y, label: 'Y' },                    // on and off the bicycle, like F
   },
   // Indoors. There is nothing to sow in a tavern and nobody to send off the island from
   // a bar stool, so those actions are left out and the buttons go quiet on their own.
