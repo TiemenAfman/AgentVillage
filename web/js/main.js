@@ -427,11 +427,16 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
+  // Named to the sea by the name the sea walks them under (seaIdOf). With our own
+  // `house:<uuid>` the sea found nobody to hold, and the settler walked on mid-sentence
+  // while the camera stayed on them. Worked out once, here, so the letting go names the
+  // same body as the holding did even if a roster arrives in between.
+  const onSea = seaIdOf(id);
+  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => { if (state.net) state.net.unattend(id); },
+    onLetGo: () => { if (state.net) state.net.unattend(onSea); },
   });
 }
 
@@ -2195,6 +2200,13 @@ let ourIds = null;
 // message big enough to matter is the one guaranteed to arrive at the wrong moment.
 let namingIds = null;
 let heldWhere = null;
+// The other way round: the name the sea knows one of our settlers by, for a message that
+// names somebody to it (`attend`). The sea's crowd is built from the redacted bundle, so our
+// own `house:<uuid>` is nobody there. The page's id when there is no map yet.
+function seaIdOf(id) {
+  if (ourIds) for (const k in ourIds) if (ourIds[k] === id) return k;
+  return id;
+}
 async function ourRoster(ids) {
   const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
   if (unknown) {
