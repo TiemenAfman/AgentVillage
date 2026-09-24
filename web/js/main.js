@@ -429,11 +429,16 @@ function standingSpotFor(fig, rec) {
 function faceUp(id, fig) {
   if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
   const w = state.walk.state;
-  if (state.net) state.net.attend(id, w.pos.x, w.pos.z);
+  // Named to the sea by the name the sea walks them under (seaIdOf). With our own
+  // `house:<uuid>` the sea found nobody to hold, and the settler walked on mid-sentence
+  // while the camera stayed on them. Worked out once, here, so the letting go names the
+  // same body as the holding did even if a roster arrives in between.
+  const onSea = seaIdOf(id);
+  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
   faceToFace.begin({
     subject: fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => { if (state.net) state.net.unattend(id); },
+    onLetGo: () => { if (state.net) state.net.unattend(onSea); },
   });
 }
 

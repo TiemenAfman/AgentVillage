@@ -415,6 +415,12 @@ request would undo all of it. `tests/crowd-ids.test.mjs` asserts both halves.
 A settler with no face is what a broken mapping looks like, and the temptation is to make
 the route public to fix it. Don't.
 
+The other direction needs the same map: anything that names one of our settlers *to* the
+sea (`net.attend` from `faceUp`) goes through `seaIdOf` in main.js, because our own
+`house:<uuid>` is nobody on the sea - it was sent raw for a while and every conversation let
+the settler walk on. A crowd row on the wire is `[idx, x, z, anim]` with no heading, so the
+sea turning a held settler towards you is not seen on any page; what a page sees is them stop.
+
 **The settlers walk in `shared/settlerwalk.mjs` and are drawn in
 `web/js/settler-figures.js`, and two things cross between them.** The walk writes `f.anim`
 each step — `walk`, `step`, `hammer` or `still` — and the renderer derives the bob, the
