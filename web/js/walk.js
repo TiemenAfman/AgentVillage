@@ -10,7 +10,7 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
-import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE } from './bicycle.js';
+import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 
@@ -72,6 +72,12 @@ const SIT_SCALE = 0.74;
 // How far a rider leans forward over the bars, about the hips (positive is head forward, the
 // swimmer's sign). The arms do the rest of the reach - classic-avatar.js's RIDE_ARM.
 const RIDE_PITCH = 0.28;
+// How much higher a rider's head is than a walker's: the saddle lifts the whole figure.
+const RIDE_HEAD = 0.07;
+// A camera turned by hand is left alone for this much riding, then eases back behind the bike
+// over the next RECENTRE_EASE seconds.
+const RECENTRE_AFTER = 0.5;
+const RECENTRE_EASE = 0.5;
 const seatAt = new THREE.Vector3();
 // What a full purple bar does to a walk (web/js/tipsy.js). The heading swings by up to this
 // many radians either side of where you steer, the body rolls and nods with it, and all of
@@ -287,6 +293,7 @@ export function createWalkMode({
   // Jumping and crouching live here rather than in the key handler because the controller
   // does both as well, and two copies of "only from the ground" would drift apart.
   function jump() {
+    if (state.bike) { hopWanted = true; return; }   // taken by the next stepBike, tyres down
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
   }
@@ -340,8 +347,8 @@ export function createWalkMode({
     }
     // On or off the bike. Not on a repeat, or holding F would bounce you on and off it.
     if (k === 'f' && !e.repeat) { e.preventDefault(); toggleBike(); }
-    // Only from the ground, so holding space does not climb the sky - and not from a saddle.
-    if (k === ' ') { e.preventDefault(); if (!state.bike) jump(); }
+    // Only from the ground, so holding space does not climb the sky. On the bike it is a hop.
+    if (k === ' ') { e.preventDefault(); jump(); }
     // Not on a repeat: crouchToggle() is a toggle, and the OS keeps sending keydown for
     // 'c' the whole time it is held. Without this, holding C past LIE_AFTER_MS meant the
     // very next repeat found the settler just lain down and stood them straight back up
@@ -491,6 +498,7 @@ export function createWalkMode({
     if (locked) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
     if (dragging && !pressMoved && Math.hypot(e.clientX - pressX, e.clientY - pressY) > CLICK_PX) pressMoved = true;
     if (!dx && !dy) return;
+    if (dx) lookedAround();
     state.camYaw -= dx * 0.0042;
     state.camPitch = clamp(state.camPitch + dy * 0.0032, -0.25, 0.95);
   };
@@ -680,6 +688,10 @@ export function createWalkMode({
   // else in your hands' way. The camera pulls back a little; a bicycle is longer than a
   // settler and you steer it rather than walk it.
   let bikeMesh = null;
+  let hopWanted = false;
+  // Seconds ridden since the camera was last turned by hand (see the bike branch of update).
+  let riddenSinceLook = Infinity;
+  function lookedAround() { riddenSinceLook = 0; }
   function mount() {
     if (!bikes || !state.active || state.paused || state.working || state.vehicle || state.bike) return false;
     if (!state.grounded || state.swimming || state.sitting || state.lying) return false;
@@ -719,6 +731,7 @@ export function createWalkMode({
 
   // The bike gone without a step: for leaving walk mode, boarding a boat, sitting down.
   function putBikeAway() {
+    hopWanted = false;
     if (!state.bike) return;
     state.bike = null;
     if (bikeMesh) bikeMesh.visible = false;
@@ -813,10 +826,11 @@ export function createWalkMode({
     if (!stick.x && !stick.z) stick.run = false;
     if (p.hit('sprint')) stick.run = !stick.run;
     if (p.down('sprint')) stick.run = true;
+    if (Math.abs(p.look.x) > 0.05) lookedAround();
     state.camYaw -= p.look.x * 2.6 * dt;
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
     if (p.hit('bike')) toggleBike();
-    if (p.hit('jump') && !state.bike) jump();
+    if (p.hit('jump')) jump();
     if (p.hit('crouch') && !state.bike) crouchToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
@@ -926,19 +940,43 @@ export function createWalkMode({
       const turbo = stepPool(state.stamina.body, boost && iz > 0.02, dt);
       stepPool(state.stamina.boat, false, dt);
       state.turbo = turbo;
-      stepBike(b, { pedal: iz, turn: ix, turbo }, dt, {
-        ground: (x, z) => groundAt(x, z, b.y),
+      // In the air the ground is asked from the floor the hop left, as a jump's is, so a hop
+      // cannot change which storey you are on; the lid is a deck overhead, less a rider's head.
+      stepBike(b, { pedal: iz, turn: ix, turbo, hop: hopWanted }, dt, {
+        ground: (x, z) => groundAt(x, z, b.air ? b.floor : b.y),
         blocked: (x, z) => blocked(x, z, b.y),
+        ceiling: (x, z) => ceilingAt(x, z, b.floor) - HEAD - RIDE_HEAD,
       });
+      hopWanted = false;
+      // Came down in the water: the bike goes back in the satchel and you are swimming where it
+      // landed - the next frame's feet take it from there.
+      if (b.splash) {
+        putBikeAway();
+        state.pos.set(b.x, WATER_Y - SWIM_SINK, b.z);
+        state.floor = groundAt(b.x, b.z, b.y);
+        state.grounded = true;
+        state.swimming = true;
+        state.vy = 0;
+        return afterMove(dt);
+      }
       state.pos.set(b.x, b.y, b.z);
-      state.floor = b.y;
+      state.floor = b.floor;
       state.yaw = b.yaw;
-      state.camYaw = lerpAngle(state.camYaw, b.yaw, Math.min(1, dt * 2.5));
       state.moving = Math.abs(b.v) > 0.05;
+      // The camera is yours to turn, as it is on foot; it swings back behind the bike only
+      // once you have ridden RECENTRE_AFTER without touching it, easing in over RECENTRE_EASE
+      // and quicker the faster you go - the third-person vehicle camera most games have.
+      // Standing still it stays wherever you left it, so you can look the bike over.
+      if (state.moving) riddenSinceLook += dt;
+      const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
+      if (ease > 0) {
+        const pull = (0.8 + 2.2 * Math.min(1, Math.abs(b.v) / BIKE_TOP)) * ease;
+        state.camYaw = lerpAngle(state.camYaw, b.yaw, Math.min(1, dt * pull));
+      }
       state.running = false;
-      state.grounded = true;
+      state.grounded = !b.air;      // what net.js sends as AIRBORNE, so a peer's bike hops too
       state.swimming = false;
-      state.vy = 0;
+      state.vy = b.vy;
       state.bob += dt * 1.2;
       return afterMove(dt);
     }
@@ -1063,7 +1101,7 @@ export function createWalkMode({
       seatAt.set(RIDER.saddle[0], RIDER.saddle[1] - HIP_Y, RIDER.saddle[2]);
       bikeMesh.object.localToWorld(seatAt);
       avatar.position.copy(seatAt);
-      avatar.rotation.set(RIDE_PITCH, b.yaw, b.lean + roll * 0.3);
+      avatar.rotation.set(RIDE_PITCH - b.pitch, b.yaw, b.lean + roll * 0.3);
     } else if (state.sitting) {
       // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);

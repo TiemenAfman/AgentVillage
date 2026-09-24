@@ -132,7 +132,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       want: null,
       cursor: null,       // where their hand is on a board, if it is on one
       bike: null,         // their bicycle, made the first time they are seen riding
-      ride: { wheel: 0, crank: 0, steer: 0, lean: 0, x: 0, z: 0, yaw: 0 },
+      ride: { wheel: 0, crank: 0, steer: 0, lean: 0, pitch: 0, x: 0, y: 0, z: 0, yaw: 0 },
       shown: false,
       fade: 0,             // seconds left of the leaving animation
       leaving: false,
@@ -339,7 +339,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     const r = p.ride;
     if (!p.bike) {
       p.bike = createBicycle({ scene, material });   // outdoors only: nobody rides indoors
-      r.x = x; r.z = z; r.yaw = yaw;
+      r.x = x; r.y = y; r.z = z; r.yaw = yaw;
     }
     const step = Math.hypot(x - r.x, z - r.z);
     // Forwards or backwards along the heading, and never a jump from a teleport or a respawn.
@@ -354,7 +354,11 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     const k = 1 - Math.exp(-8 * dt);
     r.steer += (Math.max(-0.5, Math.min(0.5, rate * 0.25)) - r.steer) * k;
     r.lean += (Math.max(-0.3, Math.min(0.3, rate * speed * 0.03)) - r.lean) * k;
-    r.x = x; r.z = z; r.yaw = yaw;
+    // A hop (their pose says AIRBORNE and carries the height): nose up rising, down falling,
+    // by bicycle.js's own 0.07 per unit of vertical speed.
+    const climb = dt > 0 && Math.abs(y - r.y) < 1 ? (y - r.y) / dt : 0;
+    r.pitch += (Math.max(-0.3, Math.min(0.3, climb * 0.07)) - r.pitch) * k;
+    r.x = x; r.y = y; r.z = z; r.yaw = yaw;
 
     p.bike.visible = true;
     p.bike.place(x, y, z, yaw);
@@ -363,7 +367,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP, RIDER.saddle[2]);
     p.bike.object.localToWorld(seat);
     p.mesh.position.copy(seat);
-    p.mesh.rotation.set(RIDE_PITCH, yaw, r.lean);
+    p.mesh.rotation.set(RIDE_PITCH - r.pitch, yaw, r.lean);
   }
   const seat = new THREE.Vector3();
 
