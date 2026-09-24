@@ -313,9 +313,27 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
   zette het ook recht (`cf5202f`). `tests/syntax.test.mjs` draait nu `node --check` over
   `web/js` en `shared/`.
 
-**Nog open voor fase 5 (de zee):** een eiland dat groeit en daardoor een buur raakt, krijgt nu
-van `lib/fleet.mjs` een nieuwe ligplaats, en verhuist dus. Een eiland zou bij aankomst ruimte
-moeten reserveren voor zijn `gridSize` (`growCap`).
+## Fase 5, gebouwd (24 september 2026): ruimte op zee, en de grootte in Settings
+
+- **`maxGridSize`** (default 384) is hoe groot het eiland mag worden, instelbaar onder
+  Settings → Island size (256 … 512, niet kleiner dan het eiland al is).
+  - Als default wordt hij in elke bestaande `config.json` aangevuld. Zo krijgen ook eilanden
+    die al stonden ruimte om te groeien, zonder dat iemand een bestand hoeft aan te passen.
+  - `gridSize` blijft het grid waarop een nieuw eiland gesticht wordt. `islandCap` is de ene lezing.
+- **De zee reserveert die ruimte.**
+  - `village.island.room` reist mee in de bundel. Een oude bundel zonder `room` telt zijn
+    eigen grootte.
+  - `lib/fleet.mjs` legt ligplaatsen uit op `reach` = max(half, room/2). Een eiland dat binnen
+    zijn ruimte groeit, houdt daardoor zijn ligplaats. Alleen als de keeper de grootte hoger
+    zet dan de buren ruimte laten, zoekt de zee een nieuwe plek.
+  - De zee bewaart niets, dus bestaande ligplaatsen schuiven pas na de eerstvolgende
+    herstart van de zee mee.
+- **Let op, de open zee:** een zee van vóór deze code negeert `grow` in een bundel, rekent
+  daardoor andere grond en weigert een gegroeid eiland ("not running the same terrain").
+  `SEA_V` blijft 3, want niet-gegroeide eilanden merken niets. Maar de open zee moet deze
+  versie draaien voordat iemand daarop groeit.
+- **Ook de bereikgrens** van bomen, bedden en de speler gaat nu over `islandCap`. Anders lag
+  de nieuwe grond buiten `gridSize / 2 + 20`.
 
 ## Fasen
 

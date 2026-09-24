@@ -194,11 +194,20 @@ quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads lef
 nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
 `grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (256 grid,
 `minGridSize` 32) - deliberately not the defaults, which also fill in old configs.
-**The grid is the layout's, and `gridSize` is only the most it may be.** `loadLayout` no
-longer throws the town away when `layout.size` differs from the setting (only a new seed
-or `LAYOUT_VERSION` does), and every caller builds ground on `layout.size`: `scan.mjs`
-(`cap` = config, `size` = the layout's, read again after `placeAll`), `placeAll` and the
-planner (which re-read `layout.size` themselves), the garden, the survey and the parcel.
+**The grid is the layout's; `gridSize` is what a new island is founded on and
+`maxGridSize` (default 384, Settings → Island size, `/api/island-size`) the most it may
+become** - `islandCap(config)` in lib/paths.mjs is the one reading, and being a default it
+is filled into every old config, which is how islands that already stood got room to grow.
+`loadLayout` no longer throws the town away when `layout.size` differs from the setting
+(only a new seed or `LAYOUT_VERSION` does), and every caller builds ground on
+`layout.size`: `scan.mjs` (`cap` = islandCap, `size` = the layout's, read again after
+`placeAll`), `placeAll` and the planner (which re-read `layout.size` themselves), the
+garden, the survey and the parcel; the reach of props, beds and the player is islandCap too.
+The sea keeps that room free: `village.island.room` rides the bundle (absent = its size),
+and `lib/fleet.mjs` lays berths out on `reach` = max(half, room/2), so an island growing
+into its own room keeps its berth. A grown island's bundle carries `grow`, which a sea from
+before this ignores - it then hashes different ground and refuses the island - so the open
+sea has to run this code before anybody on it grows.
 When a ring does not fit, `growStep` first calls `growCanvas` - centred, in steps of 32,
 every grid index +k and every super-cell field left alone, since those hang off
 `lattice.anchor`; `tests/canvas-grow.test.mjs` walks the whole layout and fails on any

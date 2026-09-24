@@ -434,6 +434,22 @@ export function createUI(handlers) {
 
   function setSeas(data) { seas = data; renderSettings(); }
 
+  // How big the island may grow (Plans/eiland-laten-groeien.md): `maxGridSize`, asked of the
+  // islander when Settings opens. The island grows by itself when its village needs room and
+  // never shrinks, so a size below the one it already has is offered but cannot be chosen.
+  let islandSize = null;
+  function setIslandSize(data) { islandSize = data; renderSettings(); }
+
+  function sizeSection() {
+    if (!islandSize) return '';
+    const { size, max, choices = [] } = islandSize;
+    const km = (n) => `${(n * 4 / 1000).toFixed(1).replace(/.0$/, '')} km`;   // a cell is 4 m
+    return '<h3 class="sec">Island size</h3>'
+      + `<p class="muted" style="margin:0 0 9px">The island grows by itself when its village needs room: a ring of new coast, with the quay and the harbours moving out to it. It never shrinks. This is how far it may go.</p>`
+      + `<div class="chips wrap">${choices.map((n) => `<button class="chip${n === max ? ' on' : ''}" data-islandsize="${n}"${n < size ? ' disabled title="Smaller than the island already is"' : `title="${n} × ${n} cells, ${km(n)} across"`}>${n}</button>`).join('')}</div>`
+      + `<p class="muted" style="margin-top:9px">Now ${size} × ${size} cells (${km(size)} across), may grow to ${max} × ${max}. Bigger islands cost more to draw, for you and for everybody sailing past.</p>`;
+  }
+
   function seaSection() {
     if (!seas) return '<h3 class="sec">The sea</h3><p class="muted">Asking around…</p>';
     const chosen = MODES.find(([k]) => k === seas.mode) || MODES[0];
@@ -472,6 +488,7 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
+      + sizeSection()
       + seaSection()
       + '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
@@ -488,6 +505,8 @@ export function createUI(handlers) {
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
     }));
+    el('settings-body').querySelectorAll('[data-islandsize]')
+      .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
     el('settings-body').querySelectorAll('[data-sea]')
@@ -827,7 +846,7 @@ export function createUI(handlers) {
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse,
     closeDossier: () => close('dossier'),
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
-    setSeas,
+    setSeas, setIslandSize,
     closeOverlays: () => { close('dossier'); close('legend'); close('settings'); },
   };
 }

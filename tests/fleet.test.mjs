@@ -190,3 +190,27 @@ test('the manifest is small enough to ride a socket message', () => {
   const bytes = Buffer.byteLength(JSON.stringify(f.manifest()));
   assert.ok(bytes < 2048, `a four-island manifest is ${bytes} bytes; lib/ws.mjs caps a frame at 2048`);
 });
+
+// An island that may grow keeps room for it round its berth (Plans/eiland-laten-groeien.md):
+// the berths are laid out on `island.room`, so the island growing into that room never
+// reaches a neighbour and keeps its berth - an island never moves, also while it grows.
+test('an island that may grow is given room for it, and keeps its berth while it grows', () => {
+  const withRoom = (b, room) => { const c = JSON.parse(JSON.stringify(b)); c.island.room = room; return c; };
+  const f = createFleet();
+  const a = island({ port: 4747 });
+  const b = island({ port: 4748, seed: 99, name: 'Tiemenholm' });
+  f.publish(a.id, withRoom(a.bundle, 256), { token: 'a' });
+  const putB = f.publish(b.id, withRoom(b.bundle, 256), { token: 'b' });
+  // Room for two 256-grids between them, though each is 64 across today.
+  const apart = Math.max(Math.abs(putB.origin[0]), Math.abs(putB.origin[1]));
+  assert.ok(apart >= 128 + 128, `the second island is only ${apart} out`);
+
+  // A grows to 192 - inside its room - and stays exactly where it was.
+  const grown = island({ port: 4747, size: 192 });
+  const again = f.publish(grown.id, withRoom(grown.bundle, 256), { token: 'a' });
+  assert.deepEqual(again.origin, [0, 0]);
+  assert.equal(f.manifest().islands.find((i) => i.id === b.id).origin.join(','), putB.origin.join(','));
+
+  // A bundle from before islands grew asks for no more than it takes up.
+  assert.equal(a.bundle.island.room, 64);
+});

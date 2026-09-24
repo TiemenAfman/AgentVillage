@@ -4604,6 +4604,21 @@ async function boot() {
       try {
         state.ui.setSeas(await mine('/api/seas').then((r) => r.json()));
       } catch { state.ui.setSeas({ mode: 'single', seas: [] }); }
+      try { state.ui.setIslandSize(await mine('/api/island-size').then((r) => r.json())); } catch { /* an older islander: no section */ }
+    },
+    // Only asks, like the signs: the island writes the setting down and says what it now is.
+    onIslandSize: async (n) => {
+      try {
+        const r = await mine('/api/island-size', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: n }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { state.ui.toast(`The island size stayed as it was: ${escapeHtml(body.error || r.statusText)}`); return; }
+        state.ui.setIslandSize(body);
+        state.ui.toast(`The island may now grow to <b>${body.max} × ${body.max}</b>.`);
+      } catch { state.ui.toast('The island did not answer.'); }
     },
     onSeaMode: (mode) => changeSea({ mode }),
     onJoinSea: (url) => changeSea({ mode: 'join', url }),

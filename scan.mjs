@@ -3,7 +3,7 @@
 // the single file the island viewer consumes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ROOT, ensureData, loadConfig, fillConfig, islandNameOf, readJson, writeJsonAtomic, iso } from './lib/paths.mjs';
+import { DATA, ROOT, ensureData, loadConfig, fillConfig, islandNameOf, readJson, writeJsonAtomic, iso, islandCap } from './lib/paths.mjs';
 import { discover } from './lib/sources.mjs';
 import { discoverCodex, foldCodex } from './lib/codex-sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
@@ -74,9 +74,7 @@ async function runDeleteRoads(o) {
   ensureData();
   const config = loadConfig();
   const files = filesFor(o);
-  const cap = config.gridSize || 64;
-
-  const layout = loadLayout(files.layout, config.seed, cap, { minSize: o.codex ? null : config.minGridSize });
+  const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   clearRoads(layout);
   saveLayout(files.layout, layout);
 
@@ -108,8 +106,9 @@ async function runScan(o) {
     multiplayer: { ...base.multiplayer, sea: { ...base.multiplayer.sea, mode: 'single' } },
   } : base;
   const files = filesFor(o);
-  // The most this island may grow to; the grid it stands on is the layout's own, below.
-  const cap = config.gridSize || 64;
+  // The most this island may grow to (maxGridSize); the grid it stands on is the layout's
+  // own, below; and a brand-new one is founded on gridSize.
+  const cap = islandCap(config);
 
   const sources = o.codex ? discoverCodex(o.codexHome) : discover();
   const cache = loadCache(files.cache);
@@ -143,7 +142,7 @@ async function runScan(o) {
   const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
-  const layout = loadLayout(files.layout, config.seed, cap, { minSize: o.codex ? null : config.minGridSize });
+  const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   let size = layout.size;
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
@@ -447,6 +446,9 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       seed: config.seed,
       foundedAt: config.foundedAt,
       terrainHash: terrain.hash,
+      // How big the island may grow, which the sea keeps room for round its berth - or a
+      // ring of new coast would reach a neighbour and the island be given another berth.
+      room: Math.max(size, islandCap(config)),
       landing: layout.landing,
       // The island's harbours (lib/layout.mjs planHarbours): side, the shore cell the
       // planks start from, and the planks. The sides with none are left out; `side` says

@@ -6,6 +6,7 @@
   "port": 4747,
   "gridSize": 64,
   "minGridSize": null,
+  "maxGridSize": 384,
   "codexIsland": {
     "enabled": true
   },

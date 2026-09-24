@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -522,6 +522,25 @@ async function handle(req, res) {
       display: c.local ? display : null,
     }), 'display');
     return json(res, 200, { ok: true, display });
+  }
+
+  // How big the island may grow (Plans/eiland-laten-groeien.md), for Settings. Keeper-only
+  // like /api/display: the answer names nothing private, but the change is the keeper's.
+  if (p === '/api/island-size') {
+    const village = readJson(VILLAGE_FILE, null);
+    const size = (village && village.grid && village.grid.size) || config.gridSize || 64;
+    if (req.method === 'POST') {
+      let body;
+      try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+      let n;
+      try { n = setMaxGridSize((body || {}).value, { atLeast: size }); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+      config.maxGridSize = n;                         // the running server, not only the file
+      log(`the island may now grow to ${n}`);
+      // So the polder ladder and the sea hear it now rather than at the next timer: a scan
+      // reads the config afresh, and the bundle it publishes carries the new room.
+      rescan('island size').catch(() => {});
+    }
+    return json(res, 200, { size, max: islandCap(config), choices: MAX_GRID_CHOICES, grown: !!(village && village.grow) });
   }
 
   // Saves a picture the page took of itself, for the readme. Names are strict and the
@@ -1512,7 +1531,7 @@ function tellTheSea() {
   // refused whole and the tree never appears on anybody else's island.
   // The grid the bundle was packed on (the village's own, which a growing island enlarges),
   // not the setting: the sea checks a parcel against the island it holds.
-  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: (readJson(VILLAGE_FILE, null) || {}).grid?.size || config.gridSize });
+  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: (readJson(VILLAGE_FILE, null) || {}).grid?.size || islandCap(config) });
   seaClient.patch(parcel).catch(() => {});
 }
 
