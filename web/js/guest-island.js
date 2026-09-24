@@ -23,7 +23,7 @@
 // out of their data, and the only thing that makes it a guest is the offset it stands at.
 import * as THREE from 'three';
 import { createLandscape, seasonOf } from './world.js';
-import { buildBuilding } from './buildings.js';
+import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
 import { housePlacement } from './house-placement.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 
@@ -87,7 +87,30 @@ export function createGuestIsland({
   });
   const ground = land.ground;
 
-
+  // ---- their bridges -------------------------------------------------------
+  // The crossings their bundle carries, by the same buildBridgeGeometry main.js draws ours
+  // with, so a deck over there is the deck their own page shows. Until the volcano's lava
+  // bridges (shared/volcano.mjs volcanoBridges) nothing drew a neighbour's bridges at all -
+  // their roads simply stopped at the river - and a bridge nobody can see over a flow that
+  // burns is worse than none. All of an island's bridges are one geometry and one draw call:
+  // they are the building material, like a house, and ten of them are not worth ten calls.
+  // Built at [0, 0] so every deck is already in the island's own frame, the way the group
+  // wants it. What they ride at for whoever walks them is the bundle's `decks`, which
+  // main.js hands to walk mode and standHeightFor.
+  let bridgeMesh = null;
+  const bridgeList = ((region.village || EMPTY_VILLAGE).bridges) || [];
+  if (material && bridgeList.length) {
+    const parts = bridgeList.map((b) => buildBridgeGeometry(b.cells, terrain, [0, 0], b.axis)).filter(Boolean);
+    if (parts.length) {
+      const geo = parts.length === 1 ? parts[0] : mergeParts(parts);
+      if (geo !== parts[0]) for (const p of parts) p.dispose();
+      bridgeMesh = new THREE.Mesh(geo, material);
+      bridgeMesh.castShadow = true;
+      bridgeMesh.receiveShadow = true;
+      bridgeMesh.userData.id = `guest:${region.id}:bridges`;
+      group.add(bridgeMesh);
+    }
+  }
 
   // ---- their village -------------------------------------------------------
   // Placed exactly the way makeRecord places ours - same buildBuilding, same
@@ -246,6 +269,7 @@ export function createGuestIsland({
       land.dispose();
       scene.remove(group);
       for (const rec of records) rec.built.geometry.dispose();
+      if (bridgeMesh) bridgeMesh.geometry.dispose();
     },
   };
 }

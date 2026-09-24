@@ -16,9 +16,9 @@ import { makeTerrain } from '../shared/terrain.mjs';
 // Every sea raises the volcano at [0, 0] before anybody joins (lib/fleet.mjs raiseVolcano),
 // so "the world" is always one island more than anybody published. These are the ones that
 // belong to somebody, and FIRST_BERTH is where the first of them anchors: on the ring round
-// the volcano, its half (64) + SEA_GAP (48) + a 64-grid's half (32) due east.
+// the volcano, its half (96, a 192-grid) + SEA_GAP (48) + a 64-grid's half (32) due east.
 const owned = (world) => world.islands.filter((i) => !i.volcano);
-const FIRST_BERTH = [144, 0];
+const FIRST_BERTH = [176, 0];
 
 function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm' } = {}) {
   const terrain = makeTerrain(seed, { size });

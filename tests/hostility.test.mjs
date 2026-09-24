@@ -169,6 +169,25 @@ test("a guard's path never crosses lava: a stream across the island is a wall to
   assert.equal(open.evictions.length, 1);
 });
 
+// The same stream with one bridge over it, well off the straight line between them (cell
+// 17, row 10; the guard and the visitor are on row 16). The guard gets there, and every
+// step it takes in the stream is on the planks: a bridge is the one way across, which is
+// what the volcano's lava bridges are for (shared/volcano.mjs volcanoBridges).
+test('a bridge over the stream is the guard\'s way across, and the only one', () => {
+  const s = setup({ lava: (gx) => gx === 17 });
+  s.walk.setDecks(new Map([[17 + 10 * 32, 1.6]]));
+  s.p.x = -80 + 4;
+  const inStream = [];
+  for (let i = 0; i < 400 && !s.evictions.length; i++) {
+    s.tick();
+    const gx = Math.floor(s.f.pos[0] + 16), gz = Math.floor(s.f.pos[1] + 16);
+    if (gx === 17) inStream.push(gz);
+  }
+  assert.equal(s.evictions.length, 1, 'the guard never found the bridge');
+  assert.ok(inStream.length > 0, 'the guard got across without setting foot in the stream');
+  assert.ok(inStream.every((gz) => gz === 10), `the guard crossed the stream off the bridge, on rows ${[...new Set(inStream)]}`);
+});
+
 test('a visitor standing in the lava is not chased into it', () => {
   const s = setup({ lava: (gx) => gx === 17 });
   s.p.x = -80 + 1.5;                         // cell 17

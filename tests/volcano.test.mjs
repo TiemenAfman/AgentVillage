@@ -18,8 +18,10 @@ register('./support/shared-loader.mjs', import.meta.url);
 
 const { makeTerrain, SEA_LEVEL, BUILD_HEIGHT_MAX } = await import('../shared/terrain.mjs');
 const { findPath } = await import('../shared/settlerwalk.mjs');
+const { VOLCANO, volcanoBridges } = await import('../shared/volcano.mjs');
 
-const SIZE = 128;
+// The size the sea raises it at (192 since it was made higher and ruggeder; it was 128).
+const SIZE = VOLCANO.size;
 const volcano = () => makeTerrain('volcano', { size: SIZE, volcano: true });
 
 // Measured on the tree as it stood before `volcano` was added (commit 9eac940 plus the
@@ -56,7 +58,7 @@ test('the volcano is the same mountain every time it is made', () => {
   // on disk holds this number - the sea raises the volcano from its seed on every start -
   // but a page and a sea running different shapes disagree about where the lava is, and
   // the page says so only as a banner (ui.setSkew). Tune it on purpose and update this.
-  assert.equal(a.hash, 'd28fb90d');
+  assert.equal(a.hash, 'f103be8a');
   assert.deepEqual(a.lavaCells, b.lavaCells);
   assert.deepEqual(a.crater, b.crater);
 });
@@ -77,15 +79,28 @@ test('an ordinary island carries the lava fields too, empty, and a volcano the r
   assert.equal(t.isRiver(64, 64), false);
   assert.ok(Array.isArray(t.lakeCentre) && t.lakeCentre.length === 2, 'something reads a point off lakeCentre');
   assert.deepEqual(t.crater.centre, [0, 0]);
-  assert.ok(t.crater.r > 5 && t.crater.r < 20, `crater radius ${t.crater.r}`);
+  assert.ok(t.crater.r > 10 && t.crater.r < 20, `crater radius ${t.crater.r}`);
 });
 
 test('the mountain is a cone with a crater in it and open water all round', () => {
   const t = volcano();
-  const rim = t.worldHeight(t.crater.r, 0);
   const middle = t.worldHeight(0, 0);
-  assert.ok(rim > 9, `the rim stands only ${rim} high`);
-  assert.ok(rim - middle > 2, `the crater is ${rim - middle} deep`);
+  // The rim, round the whole circle: the highest ground within a few cells of it on each of
+  // 64 bearings. It was one circle 15.3 high with a crater 3.8 deep; now it is 35 to 45 at
+  // the summit, jagged, and notched where the flows leave it.
+  const rim = [];
+  for (let a = 0; a < 64; a++) {
+    const [ux, uz] = [Math.cos((a / 64) * 2 * Math.PI), Math.sin((a / 64) * 2 * Math.PI)];
+    let best = -Infinity;
+    for (let r = t.crater.r * 0.6; r < t.crater.r * 1.6; r += 0.25) best = Math.max(best, t.worldHeight(ux * r, uz * r));
+    rim.push(best);
+  }
+  rim.sort((p, q) => p - q);
+  const summit = Math.max(...t.H);
+  assert.ok(summit >= 35 && summit <= 45, `the summit stands ${summit} high`);
+  assert.equal(t.crater.top > 30, true, `the rim was drawn ${t.crater.top} high`);
+  assert.ok(rim[32] - middle > 8, `the crater is ${rim[32] - middle} deep`);
+  assert.ok(rim[63] - rim[0] > 5, `the rim is ${rim[63] - rim[0]} from its lowest notch to its highest crag - a circle, not a jagged edge`);
   assert.ok(Math.abs(middle - t.crater.floor) < 1e-9, 'the pool is not on the crater floor');
   // Every edge cell of the grid is sea, so a region at a berth fades into open water.
   for (let i = 0; i < SIZE; i++) {
@@ -96,9 +111,49 @@ test('the mountain is a cone with a crater in it and open water all round', () =
   assert.ok(t.beachCells.length > 200, `only ${t.beachCells.length} cells of beach`);
 });
 
+test('the flank is rugged: ridges and ravines stand well off the mean of their ring', () => {
+  // How far the ground stands above or below the mean of the ground at the same distance
+  // from the crater, as a standard deviation, over the flank between the crater and 70% of
+  // the way to the coast - the cone with its apron and beach left out. The 128-grid cone's
+  // ridges measured 0.50 here; this one's ridges, ravines, cliff bands and crags 1.51. And
+  // the slope varies with them: the steepest tenth of the land is over 2, where it was 0.74.
+  const t = volcano();
+  const { H, N, half } = t;
+  const sum = new Float64Array(half * 2), cnt = new Float64Array(half * 2);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const r = Math.floor(Math.sqrt((i - half) ** 2 + (j - half) ** 2));
+    if (r < half * 2) { sum[r] += H[i + j * N]; cnt[r]++; }
+  }
+  let dev = 0, n = 0;
+  const lo = t.crater.r + 3, hi = half * 0.8 * 0.7;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const rr = Math.sqrt((i - half) ** 2 + (j - half) ** 2);
+    if (rr < lo || rr > hi) continue;
+    const d = H[i + j * N] - sum[Math.floor(rr)] / cnt[Math.floor(rr)];
+    dev += d * d; n++;
+  }
+  const std = Math.sqrt(dev / n);
+  assert.ok(std > 1.2, `the flank stands only ${std.toFixed(2)} off its ring on average - smooth, not rugged`);
+  const slopes = t.landCells.map(([gx, gz]) => t.slope(gx, gz)).sort((p, q) => p - q);
+  assert.ok(slopes[Math.floor(slopes.length * 0.9)] > 2, `the steepest tenth is only ${slopes[Math.floor(slopes.length * 0.9)]}`);
+  // And the parasitic cones stand on the lower cone, where the page puts a wisp over each.
+  assert.ok(t.crater.vents.length >= 2, `${t.crater.vents.length} parasitic cones`);
+  for (const v of t.crater.vents) {
+    const r = Math.sqrt(v.x * v.x + v.z * v.z);
+    assert.ok(r > t.crater.r * 2 && r < half * 0.7, `a vent ${r.toFixed(1)} from the crater`);
+    // A pit in its top: the middle lower than the ring round the pit's edge, on average -
+    // on average, because the cone it stands on falls away downhill under one side of it.
+    let lip = 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+      lip += t.worldHeight(v.x + dx * v.pit * 1.1, v.z + dz * v.pit * 1.1) / 8;
+    }
+    assert.ok(lip - t.worldHeight(v.x, v.z) > 0.5, `a vent at ${v.x.toFixed(0)},${v.z.toFixed(0)} with no pit in its top`);
+  }
+});
+
 test('lava lies in gullies above the sea and nobody builds in it, beside it or in the crater', () => {
   const t = volcano();
-  assert.ok(t.lavaFlows.length >= 1 && t.lavaFlows.length <= 2, `${t.lavaFlows.length} flows`);
+  assert.equal(t.lavaFlows.length, 3, `${t.lavaFlows.length} flows`);
   assert.ok(t.lavaCells.length > 50);
   for (const [gx, gz] of t.lavaCells) {
     assert.equal(t.isLava(gx, gz), true);
@@ -123,14 +178,21 @@ test('lava lies in gullies above the sea and nobody builds in it, beside it or i
     let wet = false;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (t.isWater(gx + dx, gz + dz)) wet = true;
     assert.ok(wet, `a flow stops at (${gx}, ${gz}), short of the sea`);
-    // And it is a gully and not a canal: under the ground either side, by about LAVA_DEPTH.
-    const mid = course[Math.floor(course.length / 2)];
-    const prev = course[Math.floor(course.length / 2) - 1], next = course[Math.floor(course.length / 2) + 1];
-    const [x, z] = t.cellWorld(mid[0], mid[1]);
-    const dx = next[0] - prev[0], dz = next[1] - prev[1], L = Math.sqrt(dx * dx + dz * dz);
-    const side = (k) => t.worldHeight(x - (dz / L) * k, z + (dx / L) * k);
-    const depth = (side(2.5) + side(-2.5)) / 2 - t.worldHeight(x, z);
-    assert.ok(depth > 0.2 && depth < 1.2, `the gully halfway down is ${depth} deep`);
+    // And it is a gully and not a canal: under the ground either side, by about LAVA_DEPTH -
+    // more where the flow has found one of the ravines, which is what it looks for. Measured
+    // at five points down the middle of it rather than one, so a single ravine does not
+    // carry or sink the test.
+    const depths = [];
+    for (const u of [0.3, 0.4, 0.5, 0.6, 0.7]) {
+      const i = Math.floor(course.length * u);
+      const mid = course[i], prev = course[i - 1], next = course[i + 1];
+      const [x, z] = t.cellWorld(mid[0], mid[1]);
+      const dx = next[0] - prev[0], dz = next[1] - prev[1], L = Math.sqrt(dx * dx + dz * dz);
+      const side = (k) => t.worldHeight(x - (dz / L) * k, z + (dx / L) * k);
+      depths.push((side(2.5) + side(-2.5)) / 2 - t.worldHeight(x, z));
+    }
+    depths.sort((p, q) => p - q);
+    assert.ok(depths[2] > 0.15 && depths[2] < 3, `the gully down the middle is ${depths[2]} deep`);
   }
 });
 
@@ -138,10 +200,23 @@ test('a flow is an unbroken chain of cells that bends on its way down', () => {
   // Routed as a greedy walk the flows ran down the fall line, 52 cells straying at most five
   // from the straight line between their ends, and from orbit they were two ruled lines. What
   // lavaCourse promises instead: a chain the gully, the banks and the ribbon can all follow,
-  // that swings well off that line and to both sides of it, and never climbs back towards
-  // the crater. The bounds are this seed's: the greedy flows measured 4.7 one way and 0.1 the
-  // other, and 0.6 and 5.7; these measure 9.9 and 3.5, and 2.1 and 6.7.
+  // that swings well off that line and back again more than once, and never climbs back
+  // towards the crater. "Back again" is counted as turns of at least a cell and a half in
+  // its offset from that line (a zigzag with that much hysteresis): an arc out and home is
+  // one turn, a meander is several. It used to be "to both sides of the line", which the
+  // 128-grid flows met at 9.9/3.5 and 2.1/6.7; on the 192 one a flow can sweep round the
+  // cone to one side of its chord and still bend three times on the way, which is the thing
+  // worth holding. Measured: 5, 4 and 3 turns (the 128-grid flows made 2 and 4).
   const t = volcano();
+  const turnsOf = (off) => {
+    let turns = 0, up = null, ext = off[0];
+    for (const o of off) {
+      if (up === null) { if (o - ext >= 1.5) { up = true; ext = o; } else if (ext - o >= 1.5) { up = false; ext = o; } continue; }
+      if (up) { if (o > ext) ext = o; else if (ext - o >= 1.5) { turns++; up = false; ext = o; } }
+      else if (o < ext) ext = o; else if (o - ext >= 1.5) { turns++; up = true; ext = o; }
+    }
+    return turns;
+  };
   for (const course of t.lavaFlows) {
     for (let i = 1; i < course.length; i++) {
       const step = Math.abs(course[i][0] - course[i - 1][0]) + Math.abs(course[i][1] - course[i - 1][1]);
@@ -150,6 +225,7 @@ test('a flow is an unbroken chain of cells that bends on its way down', () => {
     const [a, b] = [course[0], course[course.length - 1]];
     const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz);
     let left = 0, right = 0, far = 0;
+    const offs = [];
     for (const [gx, gz] of course) {
       const [x, z] = t.cellWorld(gx, gz);
       const r = Math.sqrt(x * x + z * z);
@@ -157,9 +233,10 @@ test('a flow is an unbroken chain of cells that bends on its way down', () => {
       far = Math.max(far, r);
       const off = ((gx - a[0]) * dz - (gz - a[1]) * dx) / L;
       left = Math.max(left, off); right = Math.max(right, -off);
+      offs.push(off);
     }
     assert.ok(Math.max(left, right) >= 6, `a flow strays only ${Math.max(left, right).toFixed(1)} cells from a straight line`);
-    assert.ok(Math.min(left, right) >= 1.5, 'a flow bends to one side only: an arc, not a meander');
+    assert.ok(turnsOf(offs) >= 2, `a flow turns only ${turnsOf(offs)} times: an arc, not a meander`);
   }
 });
 
@@ -180,21 +257,41 @@ test('the lower flank is ground the sea can build on', () => {
   for (const q of quarter) assert.ok(q > 300, `a quarter of the mountain has only ${q} buildable cells`);
 });
 
-test('the crater rim can be walked to from the beach', () => {
+test('the crater rim can be walked to from the beach, all the way round, the way a guard walks', () => {
+  // On the ground lib/hostility.mjs hands a guard's search: land, with the lava left out
+  // except where one of the bridges (shared/volcano.mjs volcanoBridges) carries a deck over
+  // it. From the beach on eight bearings to the highest dry rim cell on the same bearing,
+  // so no side of the mountain is cut off by a flow or a cliff band.
+  //
+  // It is a climb now and not a stroll: the 128-grid volcano's every step was under 1.2,
+  // this one's upper cone has cliff bands and ravine walls a route may have to cross (the
+  // steepest measured is 3.7). A* prices slope rather than refusing it and a walker's feet
+  // have no slope rule at all, so what is held is that the way up exists, that it is mostly
+  // walking (median slope under one) and that it never goes up a sheer face.
   const t = volcano();
-  const rimCell = [Math.round(SIZE / 2 + t.crater.r - 0.5), SIZE / 2];
-  // From four sides of the island, so one lucky ridge does not carry the test.
-  for (const dir of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  const deck = new Set();
+  for (const b of volcanoBridges(t)) for (const [gx, gz] of b.cells) deck.add(gx + gz * SIZE);
+  const ground = { ...t, isLand: (gx, gz) => t.isLand(gx, gz) && (!t.isLava(gx, gz) || deck.has(gx + gz * SIZE)) };
+  for (const dir of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
     const beach = t.beachCells.reduce((best, c) => {
       const score = (c[0] - SIZE / 2) * dir[0] + (c[1] - SIZE / 2) * dir[1];
       const was = (best[0] - SIZE / 2) * dir[0] + (best[1] - SIZE / 2) * dir[1];
       return score > was ? c : best;
     });
-    const path = findPath(t, beach, rimCell, null);
-    assert.ok(path && path.length > 10, `no way up from the beach at (${beach})`);
+    let rim = null, high = -Infinity;
+    for (let r = t.crater.r - 1; r <= t.crater.r + 2; r += 0.5) {
+      const c = [Math.floor(SIZE / 2 + dir[0] * r), Math.floor(SIZE / 2 + dir[1] * r)];
+      if (ground.isLand(...c) && t.heightAt(...c) > high) { high = t.heightAt(...c); rim = c; }
+    }
+    assert.ok(high > 30, `the rim on bearing ${dir} is only ${high} up`);
+    const path = findPath(ground, beach, rim, null);
+    assert.ok(path && path.length > 30, `no way up from the beach at (${beach}) to the rim at (${rim})`);
+    const slopes = path.map(([x, z]) => t.slope(Math.floor(x + SIZE / 2), Math.floor(z + SIZE / 2))).sort((p, q) => p - q);
+    assert.ok(slopes[slopes.length >> 1] < 1, `the climb from (${beach}) is mostly steeper than one: ${slopes[slopes.length >> 1]}`);
+    assert.ok(slopes[slopes.length - 1] < 4.5, `the climb from (${beach}) goes up a face of ${slopes[slopes.length - 1]}`);
     for (const [x, z] of path) {
       const gx = Math.floor(x + SIZE / 2), gz = Math.floor(z + SIZE / 2);
-      assert.ok(t.slope(gx, gz) < 1.2, `the climb from (${beach}) crosses a slope of ${t.slope(gx, gz)} at (${gx}, ${gz})`);
+      if (t.isLava(gx, gz)) assert.ok(deck.has(gx + gz * SIZE), `the climb from (${beach}) wades the lava at (${gx}, ${gz})`);
     }
   }
 });

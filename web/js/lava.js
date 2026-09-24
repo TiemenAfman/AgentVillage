@@ -227,7 +227,15 @@ function plumeSources(terrain) {
   const out = [];
   const crater = terrain.crater;
   if (crater) {
-    out.push({ x: crater.centre[0], y: crater.floor, z: crater.centre[1], puffs: 16, rise: 22, drift: 12, size: 2.0, tone: 0x77726c, rate: 0.05 });
+    // Sized off the crater, so the plume out of a bowl fourteen cells across is not the
+    // wisp that came out of one of nine: it has to clear a rim ten units above the pool
+    // and still read as a column over it from the next island.
+    const k = Math.max(1, crater.r / 9);
+    out.push({ x: crater.centre[0], y: crater.floor, z: crater.centre[1], puffs: 18, rise: 22 * k, drift: 12 * k, size: 2.0 * k, tone: 0x77726c, rate: 0.05 });
+  }
+  // A thin wisp out of every parasitic cone's pit - still warm, not erupting.
+  for (const v of (crater && crater.vents) || []) {
+    out.push({ x: v.x, y: terrain.worldHeight(v.x, v.z), z: v.z, puffs: 5, rise: 7, drift: 3, size: 0.7, tone: 0xa9a49c, rate: 0.08 });
   }
   for (const course of terrain.lavaFlows || []) {
     const [gx, gz] = course[course.length - 1];

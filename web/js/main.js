@@ -3088,6 +3088,16 @@ function handOutDecks() {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
     }
   }
+  // And a neighbour's bridges, off the decks their bundle carries - the same numbers the sea
+  // stands their crowd on. Without them a walker crossing the volcano's lava bridges
+  // (shared/volcano.mjs volcanoBridges, drawn by guest-island.js) would wade the flow under
+  // the planks and burn for it. Each on its own region's storey, like the quays.
+  for (const r of state.sea ? state.sea.regions() : []) {
+    if (r === state.region || !r.village || !r.village.decks) continue;
+    for (const [cell, y] of Object.entries(r.village.decks)) {
+      if (!stacked.has(r.levelBase + Number(cell))) stacked.set(r.levelBase + Number(cell), [y]);
+    }
+  }
   if (state.walk) state.walk.setLevels(stacked);
   // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
   // the same keying createStandHeight wants - and it is built above for walk mode anyway.

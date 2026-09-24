@@ -50,33 +50,54 @@ const RIVER_MOUTH_REACH = 2;       // how near the sea has to be for the beach t
 // (Plans/vulkaan-in-het-midden.md). It is asked for by name - `volcano: true` - and never
 // derived from a seed, so every island that exists hashes exactly as it did.
 //
-// Every number is a share of `half`, so the same mountain comes out at 64 as at 128 and
-// only the test at 128 is the one it was drawn for. At 128:
+// Every length is a share of `half`, so the same mountain comes out at 64 as at 192 and
+// only the test at 192 (shared/volcano.mjs VOLCANO.size) is the one it was drawn for. The
+// first cut was a 128-grid cone 15.3 high with a 9-cell crater 3.8 deep and ridges that
+// stood half a unit off the mean - from the next island it read as a pudding. At 192:
 //
-//   - the coast lies at about r = 50 (VOLCANO_COAST of half, less the beach's own reach),
-//     with a shelf of sand two to four cells deep (VOLCANO_SHORE), and the grid edge is
-//     open water on every side;
-//   - the rim is a circle at r = 9 (VOLCANO_RIM), 15.3 up (VOLCANO_PEAK, capped at 16);
-//   - the flank between is concave, like every stratovolcano: 0.4 t + 0.6 t^2 of the peak,
-//     so it runs out onto the coastal flat at 0.15 a cell and is 0.6 a cell under the rim,
-//     with ridges on it. Measured over every land cell, `slope` has its median at 0.47 and
-//     its 99th percentile at 1.1. That is a climb and not a wall - A* in
-//     shared/settlerwalk.mjs prices slope, it never refuses it, and a settler's walk has no
-//     slope rule at all - and it leaves about 3,200 buildable cells on the lower flank, the
-//     ring from the beach up to BUILD_HEIGHT_MAX, which is where the sea will want houses;
-//   - the crater is a bowl about 4 deep with a flat floor across its inner 40%, which is a
-//     lava pool.
+//   - the coast lies at about r = 76 (VOLCANO_COAST of half, less the beach's own reach),
+//     with a shelf of sand about four cells deep (VOLCANO_SHORE), and the grid edge is open
+//     water on every side;
+//   - then the apron: foothills climbing gently to VOLCANO_APRON_H, just under
+//     BUILD_HEIGHT_MAX, over the first VOLCANO_APRON of the way in. That ring is where the
+//     guardhouse and the Codex houses stand (shared/volcano.mjs), and it is a number of its
+//     own rather than the foot of the cone because a concave cone steep enough to stand 40
+//     high has no foot flat enough to build on;
+//   - the cone rises out of it, concave like every stratovolcano (0.3 s + 0.7 s^2 of the
+//     climb), to a rim at r = 14 (VOLCANO_RIM) about 38 up (VOLCANO_PEAK, capped at
+//     VOLCANO_PEAK_MAX) - 150 m of mountain at four metres a unit;
+//   - the crater is a bowl about 10 deep with a flat floor across its inner 40%, which is a
+//     lava pool;
+//   - and on all of it the relief (volcanoRelief, below): radial ridges and V-shaped
+//     ravines, broken cliff bands on the upper cone, crags, a jagged rim breached where each
+//     flow leaves it, parasitic cones on the lower cone and hummocky fields of old lava.
+//
+// That is a climb and not a wall for anybody walking - A* in shared/settlerwalk.mjs prices
+// slope, it never refuses it, and a settler's walk has no slope rule at all - but it is a
+// wall for building, which is the point: only the apron is ground a house can stand on.
 //
 // Squares are the only powers: `pow` is one of the functions this module may not call.
 const VOLCANO_COAST = 0.80;        // coast radius, as a share of half
-const VOLCANO_RIM = 0.14;          // crater rim radius, as a share of half
-const VOLCANO_PEAK = 0.24;         // rim height, as a share of half...
-const VOLCANO_PEAK_MAX = 16;       // ...capped, or a 512 grid is a pillar in the sky
-const VOLCANO_DEPTH = 0.28;        // crater depth, as a share of the rim height
+const VOLCANO_RIM = 0.15;          // crater rim radius, as a share of half
+const VOLCANO_PEAK = 0.40;         // rim height, as a share of half...
+const VOLCANO_PEAK_MAX = 44;       // ...capped, or a 512 grid is a pillar in the sky
+const VOLCANO_DEPTH = 0.27;        // crater depth, as a share of the rim height
 const VOLCANO_POOL = 0.4;          // the flat floor, as a share of the rim radius
-const VOLCANO_SHORE = 0.1;         // the beach shelf, as a share of the way from coast to rim
-const VOLCANO_RIDGE = 0.11;        // how high the radial ridges stand at mid-flank, of the peak
-const VOLCANO_ROUGH = 0.025;       // plain bumpiness, everywhere there is land, of the peak
+const VOLCANO_SHORE = 0.06;        // the beach shelf, as a share of the way from coast to rim
+const VOLCANO_APRON = 0.3;         // where the foothills have finished rising, of the same way
+// The apron's height, in units rather than as a share: it is measured against
+// BUILD_HEIGHT_MAX (4.2), which is a unit too, and a share would put the whole apron over
+// the line on a big grid and leave the sea nowhere to build.
+const VOLCANO_APRON_H = 3.1;
+const VOLCANO_CONE = 0.26;         // where the cone starts to rise out of the apron
+const VOLCANO_RIDGE = 0.08;        // how high the radial ridges stand, of the peak
+const VOLCANO_RAVINE = 0.09;       // how deep the ravines between them cut, of the peak
+const VOLCANO_CRAG = 0.05;         // the crags on the upper cone, of the peak
+const VOLCANO_JAG = 0.06;          // how far the rim wanders up and down, of the peak
+const VOLCANO_BREACH = 0.13;       // how deep the rim is notched where a flow leaves it, of the peak
+const VOLCANO_TERRACE = 4;         // the height of one cliff band, in units
+const VOLCANO_ROUGH = 0.012;       // plain bumpiness, everywhere there is land, of the peak
+const VOLCANO_VENTS = 3;           // parasitic cones on the lower cone
 
 // The lava. A flow runs from a cell on the rim to a mouth a little round the coast, like a
 // river from its source (the route is `lavaCourse`, below) - but it is not carved the way a river is: a
@@ -233,31 +254,32 @@ function carveRiver(H, N, size, course) {
   }
 }
 
-// The mountain, before any lava has run down it. See VOLCANO_* above for the shape; what is
-// here is the order it is put together in and why.
+// The mountain's big shape, before the relief and before any lava has run down it: beach
+// shelf, apron, cone and bowl, all smooth, because this is what makeTerrain blurs like any
+// other island's ground. See VOLCANO_* above for the numbers.
 //
 // The coast is warped by noise the way an island's is, but the warp is faded out towards
 // the middle: `t` is measured from the warped coast, so a warp that reached the rim would
 // raise one side of it two units above the other and leave a step where the outer flank
 // met a bowl that had been cut to a round number.
-//
-// The ridges run down the mountain rather than round it, and they get there without an
-// angle: the noise is sampled on the unit direction (x/r, z/r), which is the same point for
-// every r along a ray, so whatever it does it does in stripes down the fall line. A share of
-// r is added to the sample so they bend on the way down instead of being spokes - and the
-// bend is what gives the lava its curves, because a flow finds the valley between two ridges
-// and follows it: with straight ridges the flows came out ruled lines from rim to sea. `0.5 - |n|` turns the smooth noise into creases, and `4 t (1 - t)` keeps them off
-// the beach and off the rim, where they would notch the one line that has to read clearly.
 function volcanoGround(seed, size, N, half) {
-  const nRidge = makeSimplex2D(hash32(seed + ':ridge'));
-  const nRough = makeSimplex2D(hash32(seed + ':rough'));
   const nCoast = makeSimplex2D(hash32(seed + ':coast'));
   const coast = half * VOLCANO_COAST;
   const rim = Math.max(3, half * VOLCANO_RIM);
   const peak = Math.min(VOLCANO_PEAK_MAX, half * VOLCANO_PEAK);
   const depth = peak * VOLCANO_DEPTH;
-  const flank = (t) => peak * (0.4 * t + 0.6 * t * t);
+  // The way from the coast (t = 0) to the rim (t = 1), as heights: sand, apron, cone. The
+  // apron is eased in and out so it has no edge, and the cone starts inside it at no slope
+  // of its own, so there is no crease where the foothills stop and the mountain starts.
+  const profile = (t) => {
+    const s = clamp((t - VOLCANO_CONE) / (1 - VOLCANO_CONE), 0, 1);
+    return -0.25 + 0.55 * smoothstep(0, 0.04, t)
+      + (VOLCANO_APRON_H - 0.3) * smoothstep(VOLCANO_SHORE, VOLCANO_APRON, t)
+      + (peak - VOLCANO_APRON_H) * (0.3 * s + 0.7 * s * s);
+  };
+  const top = profile(1);
   const H = new Float64Array(N * N);
+  const T = new Float64Array(N * N);                 // t per corner, for the relief
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const x = i - half, z = j - half;
@@ -266,33 +288,181 @@ function volcanoGround(seed, size, N, half) {
       const warp = 0.08 * fbm2(nCoast, nx * 1.9, nz * 1.9, { octaves: 2 }) * smoothstep(0.3, 0.6, r / coast);
       const dw = r / coast + warp;
       const t = clamp((1 - dw) / (1 - rim / coast), 0, 1);
-      // The beach is a shelf of its own and not the foot of the cone: the cone alone runs
+      // The beach is a shelf of its own and not the foot of the cone: the slope alone runs
       // through the band between the waterline and BEACH_MAX in under two cells, which on a
       // coast this long is a line and not a beach. So the first VOLCANO_SHORE of the way up
-      // is sand held just under BEACH_MAX, and the cone starts from its back edge.
-      let h = -0.25 + 0.55 * smoothstep(0, 0.04, t)
-        + flank(clamp((t - VOLCANO_SHORE) / (1 - VOLCANO_SHORE), 0, 1));
-      // Both kept off the beach shelf, where a third of a unit either way is the whole
-      // difference between sand, meadow and sea.
-      const inland = smoothstep(VOLCANO_SHORE * 0.5, VOLCANO_SHORE * 2, t);
-      if (r > 0) {
-        const ux = x / r, uz = z / r;
-        const n = fbm2(nRidge, ux * 3.2 + (r / half) * 2.4, uz * 3.2 - (r / half) * 1.7, { octaves: 3 });
-        h += peak * VOLCANO_RIDGE * 4 * t * (1 - t) * (0.5 - Math.abs(n)) * 2 * inland;
-      }
-      h += peak * VOLCANO_ROUGH * fbm2(nRough, nx * 7, nz * 7, { octaves: 3 }) * (0.15 + 0.85 * inland) * (t > 0 ? 1 : 0);
+      // is sand held just under BEACH_MAX, and the apron starts from its back edge.
+      let h = profile(t);
       h -= 2.2 * smoothstep(1.0, 1.3, dw);             // off the shelf into deep water
       // The bowl, inside the rim: down from the rim's own height to a flat floor.
       if (r < rim) {
         const s = r / rim;
         const up = bump(clamp((s - VOLCANO_POOL) / (1 - VOLCANO_POOL), 0, 1));
-        h = flank(1) + 0.3 - depth * (1 - up)
-          + peak * VOLCANO_ROUGH * 0.5 * fbm2(nRough, nx * 7, nz * 7, { octaves: 3 }) * up;
+        h = top + 0.3 - depth * (1 - up);
       }
       H[i + j * N] = h;
+      T[i + j * N] = t;
     }
   }
-  return { H, rim, peak, depth, pool: rim * VOLCANO_POOL, floor: flank(1) + 0.3 - depth };
+  return { H, T, coast, rim, peak, depth, pool: rim * VOLCANO_POOL, floor: top + 0.3 - depth };
+}
+
+// Where the parasitic cones stand: VOLCANO_VENTS of them on the lower cone, on bearings the
+// lava leaves alone. A flow starts on its own bearing and swings two sixteenths towards its
+// side on the way down, so those three bearings and one more beyond them (its bends swing
+// it up to nine cells further) are taken; the vents go on what is left, the first at random and each after it as far round from the others as it
+// can get. Their own fork of the seed, so nothing else moves if these numbers do.
+function volcanoVents(seed, vol, flows) {
+  const vr = makeRng(seed).fork('vents');
+  const taken = new Uint8Array(16);
+  for (const { k, side } of flows) {
+    for (let s = 0; s <= 3; s++) taken[(k + side * s + 32) % 16] = 1;
+  }
+  const free = [];
+  for (let k = 0; k < 16; k++) if (!taken[k]) free.push(k);
+  const gap = (a, b) => { const d = Math.abs(a - b) % 16; return d > 8 ? 16 - d : d; };
+  const picked = [];
+  while (picked.length < VOLCANO_VENTS && free.length) {
+    let best = -1, bestGap = -1;
+    if (!picked.length) best = free[vr.int(free.length)];
+    else {
+      for (const k of free) {
+        let g = 16;
+        for (const p of picked) g = Math.min(g, gap(k, p));
+        if (g > bestGap) { bestGap = g; best = k; }
+      }
+      if (bestGap < 2) break;
+    }
+    picked.push(best);
+    free.splice(free.indexOf(best), 1);
+  }
+  const span = vol.coast - vol.rim;
+  return picked.map((k) => {
+    const t = vr.range(0.36, 0.5);
+    const r = vol.coast - t * span;
+    const R = span * vr.range(0.075, 0.1);         // its foot, in cells
+    return {
+      x: DIRS16[k][0] * r, z: DIRS16[k][1] * r, r: R,
+      h: vol.peak * vr.range(0.1, 0.15),           // how high it stands off the flank
+      pit: R * 0.38,                               // its own little crater
+    };
+  });
+}
+
+// The relief, on the blurred ground: everything that makes the mountain rugged rather than
+// a smooth cone with creases in it. After the blur and not before it, because two box
+// blurs take out every feature a few cells across, which is exactly the size a ravine, a
+// crag or a cliff band is. In order:
+//
+//   - Radial ridges and ravines. They run down the mountain rather than round it, and they
+//     get there without an angle: the noise is sampled on the unit direction (x/r, z/r),
+//     which is the same point for every r along a ray, so whatever it does it does in
+//     stripes down the fall line. A share of r is added to the sample, and a domain warp
+//     over the whole island, so they bend and branch on the way down instead of being
+//     spokes - and the bends are what give the lava its curves, because a flow finds the
+//     valley between two ridges and follows it: with straight ridges the flows came out
+//     ruled lines from rim to sea. `1 - |n|`, squared, is a sharp crest on a broad back; a
+//     narrow `1 - 5|n|` of a second noise is a V cut into it, which is a ravine. Both grow
+//     up the cone and are faded off the apron, where they would eat the building ground,
+//     and eased near the rim, which has relief of its own.
+//   - The rim: wandering up and down round the circle, crags on it, and a breach where
+//     each flow leaves - measured as the dot product of the direction with the flow's own
+//     bearing, which is the cosine without asking for one. Faded out down the outer flank
+//     and down the bowl wall, never onto the floor, which is flattened to one level later.
+//   - The parasitic cones (volcanoVents), each with a pit in its top.
+//   - Cliff bands on the upper cone: the height is terraced - a bench, then a riser - and
+//     blended in through a noise mask, so the bands are broken ledges rather than contour
+//     rings painted round the whole mountain.
+//   - Crags: a thresholded noise, so what comes out is separate spikes of rock, not a
+//     bumpy blanket.
+//   - Old lava fields: a patch mask over the cone and the top of the apron, hummocky ground
+//     inside it. The mask is handed back per corner (0..255) so web/js/world.js paints the
+//     same patches dark that are rough here.
+//
+// Only + - * /, floor, abs, sqrt and the simplex noise, like the rest of this module.
+function volcanoRelief(H, vol, seed, size, N, half, flows, vents) {
+  const nRidge = makeSimplex2D(hash32(seed + ':ridge'));
+  const nRavine = makeSimplex2D(hash32(seed + ':ravine'));
+  const nWarp = makeSimplex2D(hash32(seed + ':warp'));
+  const nRim = makeSimplex2D(hash32(seed + ':rim'));
+  const nBand = makeSimplex2D(hash32(seed + ':band'));
+  const nCrag = makeSimplex2D(hash32(seed + ':crag'));
+  const nField = makeSimplex2D(hash32(seed + ':field'));
+  const nRough = makeSimplex2D(hash32(seed + ':rough'));
+  const { rim, peak, pool, T } = vol;
+  const fields = new Uint8Array(N * N);
+  const breach = flows.map(({ k }) => DIRS16[k]);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const k = i + j * N;
+      const t = T[k];
+      if (t <= 0) continue;                          // the sea keeps its floor
+      const x = i - half, z = j - half;
+      const r = Math.sqrt(x * x + z * z);
+      const nx = x / half, nz = z / half;
+      const inland = smoothstep(VOLCANO_SHORE * 0.5, VOLCANO_SHORE * 2, t);
+      const cone = smoothstep(VOLCANO_CONE - 0.02, VOLCANO_CONE + 0.2, t);
+      let h = H[k];
+      h += peak * VOLCANO_ROUGH * fbm2(nRough, nx * 7, nz * 7, { octaves: 3 }) * (0.15 + 0.85 * inland);
+      if (r > 0.5) {
+        const ux = x / r, uz = z / r;
+        const wx = 0.4 * fbm2(nWarp, nx * 2.3, nz * 2.3, { octaves: 2 });
+        const wz = 0.4 * fbm2(nWarp, nx * 2.3 + 17.3, nz * 2.3 - 9.1, { octaves: 2 });
+        const along = r / half;
+        // Ridges and ravines, outside the bowl.
+        if (r >= rim) {
+          const n1 = fbm2(nRidge, ux * 3.0 + along * 2.2 + wx, uz * 3.0 - along * 1.6 + wz, { octaves: 2, gain: 0.3 });
+          const a = Math.max(0, 1 - Math.abs(n1) * 1.5);
+          const n2 = nRavine(ux * 2.3 + along * 1.4 + wz, uz * 2.3 + along * 2.1 - wx);
+          const v = Math.max(0, 1 - Math.abs(n2) * 3.2);
+          const amp = peak * cone * (0.55 + 0.45 * t) * (1 - 0.6 * smoothstep(0.9, 1, t));
+          h += amp * (VOLCANO_RIDGE * (a * a - 0.3) - VOLCANO_RAVINE * v * v);
+        }
+        // The rim: jagged, crowned with crags, breached by every flow.
+        const nearRim = r < rim ? smoothstep(pool, rim, r) : 1 - smoothstep(rim, rim + 9, r);
+        if (nearRim > 0) {
+          let d = peak * VOLCANO_JAG * fbm2(nRim, ux * 2.6, uz * 2.6, { octaves: 3 });
+          d += peak * VOLCANO_JAG * 1.6 * Math.max(0, fbm2(nRim, ux * 7 + 31.7, uz * 7 - 5.3, { octaves: 2 }) - 0.1);
+          for (const [bx, bz] of breach) {
+            const c = ux * bx + uz * bz;             // cos of the angle to the flow's bearing
+            d -= peak * VOLCANO_BREACH * smoothstep(0.955, 0.995, c);
+          }
+          h += d * nearRim;
+        }
+      }
+      // The parasitic cones, and the pit in each.
+      for (const v of vents) {
+        const dx = x - v.x, dz = z - v.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (d >= v.r) continue;
+        h += v.h * bump(1 - d / v.r);
+        if (d < v.pit) h -= v.h * 0.7 * bump(1 - d / v.pit);
+      }
+      // Cliff bands on the upper cone, broken up by a mask.
+      if (r >= rim) {
+        const band = smoothstep(peak * 0.22, peak * 0.34, h) * (1 - smoothstep(peak * 0.9, peak, h));
+        const mask = smoothstep(0.05, 0.35, fbm2(nBand, nx * 3.4, nz * 3.4, { octaves: 2 }));
+        const w = 0.55 * band * mask;
+        if (w > 0) {
+          const q = h / VOLCANO_TERRACE, f = Math.floor(q);
+          const ter = (f + smoothstep(0.5, 0.85, q - f)) * VOLCANO_TERRACE;
+          h += (ter - h) * w;
+        }
+        // Crags: separate spikes on the upper half of the cone.
+        const c = fbm2(nCrag, nx * 10, nz * 10, { octaves: 2 });
+        h += peak * VOLCANO_CRAG * Math.max(0, c - 0.46) * 6 * smoothstep(0.4, 0.6, t);
+      }
+      // Old lava fields: hummocky ground in patches.
+      const fm = smoothstep(0.1, 0.28, fbm2(nField, nx * 2.7, nz * 2.7, { octaves: 2 }))
+        * smoothstep(VOLCANO_CONE - 0.06, VOLCANO_CONE + 0.06, t) * (1 - smoothstep(0.8, 0.9, t));
+      if (fm > 0) {
+        h += 0.35 * fm * fbm2(nField, nx * 18 + 3.1, nz * 18 - 7.7, { octaves: 2 });
+        fields[k] = Math.round(fm * 255);
+      }
+      H[k] = h;
+    }
+  }
+  return fields;
 }
 
 // Where one lava flow runs, from the rim cell in direction `d0` to the sea round the coast in
@@ -329,7 +499,9 @@ function volcanoGround(seed, size, N, half) {
 // arithmetic is +, -, *, / and sqrt, and ties go to the lower index, so both runtimes pick the
 // same curve. Measured at 128 on the sea's own seed: 66 and 69 cells (they were 52 and 53),
 // straying up to ten cells either side of the straight line from rim to mouth (was five), three
-// bends each; 239 lava cells against 198, and the Codex pool (shared/volcano.mjs) is 137 lots.
+// bends each. On the 192-grid volcano, rugged and with three flows: 97, 93 and 89 cells, 516
+// lava cells, each turning three to five times on the way down, and they have found the
+// ravines - which is where a flow should run.
 function lavaCourse(H, N, size, vol, d0, d1, mouthR, reachR, rng) {
   const half = size / 2;
   const rim = vol.rim;
@@ -609,27 +781,35 @@ export function makeTerrain(seed, opts) {
     }
   }
   H = boxBlur(boxBlur(H, N), N);
+
+  // ---- lava, and the volcano's relief ----------------------------------------
+  // Where the flows leave the rim is decided before the relief, because the relief breaches
+  // the rim there and keeps the parasitic cones off their way down. Three flows, leaving the
+  // rim at least ninety degrees apart so they never merge into one, each with its mouth two
+  // sixteenths of a turn round the coast from where it started - the same trick the rivers
+  // use to cross ground rather than drop straight to the nearest shore, turned down because
+  // a flow is meant to reach the sea, not wander. A fork of its own, like the rivers', so
+  // nothing else here moves if these numbers change. (The 128-grid volcano had two; on a
+  // mountain half as big again a third is what keeps it from looking half asleep.)
+  const lavaFlows = [];
+  let floorQ = 0, fields = null, vents = [];
+  let flowPlan = [];
+  const lr = makeRng(seed).fork('lava');
+  if (vol) {
+    const k1 = lr.int(16);
+    const k2 = (k1 + 5 + lr.int(2)) % 16;
+    const k3 = (k2 + 5 + lr.int(2)) % 16;
+    flowPlan = [k1, k2, k3].map((k) => ({ k, side: lr.chance(0.5) ? 1 : -1 }));
+    vents = volcanoVents(seed, vol, flowPlan);
+    fields = volcanoRelief(H, vol, seed, size, N, half, flowPlan, vents);
+  }
   for (let k = 0; k < H.length; k++) H[k] = Math.max(-2.5, Math.round(H[k] * 256) / 256);
 
-  // ---- lava -----------------------------------------------------------------
-  // Before the rivers would be, and in their place: a volcano has none. Two flows, leaving
-  // the rim at least ninety degrees apart so they never merge into one, each with its mouth
-  // two sixteenths of a turn round the coast from where it started - the same trick the
-  // rivers use to cross ground rather than drop straight to the nearest shore, turned down
-  // because a flow is meant to reach the sea, not wander. A fork of its own, like the
-  // rivers', so nothing else here moves if these numbers change.
-  const lavaFlows = [];
-  let floorQ = 0;
   if (vol) {
-    const lr = makeRng(seed).fork('lava');
-    const k1 = lr.int(16);
-    const k2 = (k1 + 5 + lr.int(7)) % 16;
-    const coast = half * VOLCANO_COAST;
-    for (const k of [k1, k2]) {
-      const side = lr.chance(0.5) ? 1 : -1;
+    const coast = vol.coast;
+    for (const { k, side } of flowPlan) {
       const kEnd = (k + side * 2 + 16) % 16;
-      // Its bends from a fork of their own, so that the second flow's `side` above is the
-      // draw it always was however many numbers the first one's bends took.
+      // Its bends from a fork of their own, so that one flow's bends never shift another's.
       const course = lavaCourse(H, N, size, vol, DIRS16[k], DIRS16[kEnd], coast + 2, coast + 8, lr.fork(`bends:${k}`));
       if (course.length >= 6) lavaFlows.push(course);
     }
@@ -819,7 +999,13 @@ export function makeTerrain(seed, opts) {
   const lavaCells = [], lavaBankCells = [];
   let crater = null;
   if (vol) {
-    crater = { centre: [0, 0], r: vol.rim, floor: floorQ, pool: vol.pool };
+    // `top` is the rim's own height before the relief, which web/js/world.js scales its
+    // colour bands by; `vents` the parasitic cones, local like `centre`, which lava.js puts
+    // a wisp of smoke over.
+    crater = {
+      centre: [0, 0], r: vol.rim, floor: floorQ, pool: vol.pool, top: vol.peak,
+      vents: vents.map((v) => ({ x: v.x, z: v.z, r: v.r, pit: v.pit })),
+    };
     const lines = lavaFlows.map((course) => course.map(([gx, gz]) => [gx + 0.5, gz + 0.5]));
     const aboveSea = (gx, gz) => {
       const c = cornersOf(gx, gz);
@@ -863,6 +1049,9 @@ export function makeTerrain(seed, opts) {
     landCells, beachCells, coastCells,
     rivers: courses, riverCells, riverBankCells, isRiver,
     volcano, crater, lavaFlows, lavaCells, lavaBankCells, isLava,
+    // The old lava fields, per corner, 0..255 - rough ground here, painted dark in
+    // web/js/world.js. Null on every island but the volcano.
+    oldLava: fields,
     fairway,
     hash: hashHeights(H),
   };

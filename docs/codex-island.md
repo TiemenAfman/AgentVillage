@@ -57,8 +57,9 @@ duplicate, a number where a word goes or more than 60 entries refuses the whole 
 
 ## Houses, lodgers and residents
 
-The volcano has 137 building plots on its flank (`codexPlots`): three-by-three lots with a
-cell of path between them, clear of the crater, the lava, the beach and the guardhouse,
+The volcano has 300 building plots on its apron (`codexPlots`): three-by-three lots with a
+cell of path between them, clear of the crater, the lava, the beach, the guardhouse and the
+bridges over the lava,
 with the door facing downhill. A settler's plot is a hash of its full id,
 `codex:<island id>:<redacted id>`. If that plot is taken it gets the next free plot in a
 fixed order. A plot stays with its settler until that settler leaves, so a new house never

@@ -52,7 +52,8 @@ test('a guest island with no town and no landing raises its guardhouse without c
   // Standing on its own lot, in the island's frame, and solid to a walker - at the berth.
   const { gx, gz } = bundle.buildings[0].plot;
   const pos = g.records[0].group.position;
-  assert.ok(Math.abs(pos.x - (gx + 1.5 - 64)) < 0.8 && Math.abs(pos.z - (gz + 1.5 - 64)) < 0.8);
+  const h = region.terrain.half;
+  assert.ok(Math.abs(pos.x - (gx + 1.5 - h)) < 0.8 && Math.abs(pos.z - (gz + 1.5 - h)) < 0.8);
   const solid = g.blockers();
   assert.ok(solid.length > 0);
   assert.ok(solid.every((b) => b.id === `guest:${region.id}:civic:guardhouse`));
@@ -61,6 +62,25 @@ test('a guest island with no town and no landing raises its guardhouse without c
   assert.deepEqual(g.group.position.toArray(), [-144, 0, 0], 'drawn at its berth in the scene');
   g.update(0.016, 8);
   g.dispose();
+});
+
+test('the bridges over the lava are drawn, as one draw call, where the bundle says they are', () => {
+  const { region, bundle, terrain } = raise();
+  assert.ok(bundle.bridges.length >= 6, `${bundle.bridges.length} bridges in the bundle`);
+  const g = createGuestIsland({ scene: new THREE.Scene(), region, buildings: bundle.buildings, material: new THREE.MeshBasicMaterial(), month: 8 });
+  const drawn = g.group.children.filter((o) => o.userData.id === `guest:${region.id}:bridges`);
+  assert.equal(drawn.length, 1, 'every bridge in one mesh');
+  // In the island's own frame inside the group, over the cells they cross.
+  drawn[0].geometry.computeBoundingBox();
+  const box = drawn[0].geometry.boundingBox;
+  for (const b of bundle.bridges) {
+    const [x, z] = terrain.cellWorld(...b.cells[0]);
+    assert.ok(x > box.min.x - 1 && x < box.max.x + 1 && z > box.min.z - 1 && z < box.max.z + 1, `${b.id} is outside what was drawn`);
+  }
+  // Without a building material there is nothing to draw them with, and no crash either.
+  const bare = createGuestIsland({ scene: new THREE.Scene(), region, buildings: bundle.buildings, material: null, month: 8 });
+  assert.equal(bare.group.children.filter((o) => o.userData.id === `guest:${region.id}:bridges`).length, 0);
+  g.dispose(); bare.dispose();
 });
 
 test('its crowd view takes an empty roster, and dresses each guard from their own id', () => {
@@ -130,7 +150,7 @@ test('a Codex house going up or coming down touches that house and nothing else 
   const s1 = g.records.find((x) => x.id === codexId(island, 'house:s1'));
   assert.ok(s1.group.parent === g.group, 'not standing in the volcano\'s own group');
   const { gx, gz } = three[1].plot;
-  assert.ok(Math.abs(s1.group.position.x - (gx + 1.5 - 64)) < 0.8 && Math.abs(s1.group.position.z - (gz + 1.5 - 64)) < 0.8);
+  assert.ok(Math.abs(s1.group.position.x - (gx + 1.5 - terrain.half)) < 0.8 && Math.abs(s1.group.position.z - (gz + 1.5 - terrain.half)) < 0.8);
   assert.ok(g.blockers().some((b) => b.id === `guest:${region.id}:${codexId(island, 'house:s1')}`), 'a new house is not solid');
 
   // s0 comes down, s1 is left alone (only its settler's `active` moved), s3 goes up.

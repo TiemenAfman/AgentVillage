@@ -21,7 +21,11 @@ export const VOLCANO = Object.freeze({
   // word is what the terrain was tuned on (shared/terrain.mjs, `volcano`), and it is also
   // what lets parseBundle tell the one island that may carry a word from every other.
   seed: 'volcano',
-  size: 128,
+  // Half as big again as the 128 it was raised at first, to hold a mountain nearly 40 high
+  // with an apron round it wide enough to build on (shared/terrain.mjs, the volcano). 256
+  // was measured too: a ground mesh of 131k triangles for a place nobody lives, and the apron
+  // only needs 192 to give the Codex houses more plots than RESIDENTS can fill.
+  size: 192,
   name: 'De Vulkaan',
   keeper: 'the sea',
   hostile: true,
@@ -32,10 +36,161 @@ export const isVolcano = (id) => id === VOLCANO.id;
 
 // Its ground, the same call every side makes. `volcano: true` is what separates this
 // terrain from an ordinary island of the same seed; until shared/terrain.mjs knows the
-// flag it is ignored and this is a normal 128-grid island, which everything downstream
-// also has to survive.
+// flag it is ignored and this is a normal island of the same size, which everything
+// downstream also has to survive.
 export function volcanoTerrain() {
   return makeTerrain(VOLCANO.seed, { size: VOLCANO.size, volcano: true });
+}
+
+// ---- the bridges over the lava ------------------------------------------------------
+//
+// Three flows run from the rim to the sea, and a flow is a wall: it hurts to stand in, and
+// the guards' search leaves it out altogether (lib/hostility.mjs). So each flow gets
+// BRIDGES.PER_FLOW crossings, and they are the chokepoints: one down on the apron among the
+// Codex houses, one halfway up the cone and one high on it, on the way to the rim.
+//
+// They are ordinary island bridges - `{ id, axis, cells }` in the bundle, their deck heights
+// in `decks` - so everything that already knows a bridge knows these: parseBundle holds them
+// to the same whitelist, the sea's crowd stands figures on them and the lava leaves anybody
+// on one alone (lib/crowd.mjs setDecks, lib/lava.mjs), and a page draws them with the same
+// buildBridgeGeometry its own river crossings come out of (web/js/guest-island.js).
+//
+// Worked out from the ground alone, like the guardhouse, so a restarted sea builds the same
+// ones. Along each flow, in each height band, every cell of it is tried: the crossing goes
+// along the axis the flow runs least along, over exactly the run of lava and basalt bank
+// there, and lands on the first plain cell either side. The shortest, squarest run with the
+// most level banks wins; a crossing whose banks differ by more than MAX_STEP, or whose run is
+// longer than MAX_RUN, or that lands on lava, the crater or out of the grid, is never taken.
+export const BRIDGES = Object.freeze({
+  PER_FLOW: 3,
+  // Height bands, as shares of the rim's height (terrain.crater.top), apron first. The
+  // apron's is in units, up to BUILD_HEIGHT_MAX, because that is where the houses are.
+  BANDS: Object.freeze([[1.2, 4.2, 'u'], [0.3, 0.52, 's'], [0.56, 0.84, 's']]),
+  MAX_RUN: 7,
+  MAX_STEP: 2.6,
+  APART: 12,                     // cells down the flow between two crossings of it
+});
+
+// The deck heights along a crossing - the numbers web/js/buildings.js bridgeStops gives a
+// crossing over land, where spanToBanks has nothing to extend, so the planks the page draws
+// and the floor the sea stands people on are the same planks. Its constants are repeated
+// here because this side may not import web/: DECK_LIP, the 0.08 over the abutment, DECK_MIN
+// and BRIDGE_ARCH. The arch there is `0.5 - 0.5 cos(2 pi u)`, which is sin^2(pi u); this
+// module may not call either, so sin(pi u) is Bhaskara's 16u(1-u) / (5 - 4u(1-u)), which is
+// within 0.0016 of it - under a millimetre of deck at the crown.
+const DECK_LIP = 0.6, DECK_OVER = 0.08, DECK_MIN = 0.34, BRIDGE_ARCH = 0.34;
+// How far every deck cell has to ride over the ground under its middle: over the lava's own
+// surface (web/js/lava.js floats it 0.1 up) and past DECK_CLEAR (lib/hostility.mjs), with
+// room to spare, so the planks are a floor to everybody who asks.
+const DECK_RIDE = 0.2;
+function deckHeights(cells, terrain, axis) {
+  const k = axis === 'x' ? 0 : 1;
+  const n = cells.length;
+  const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) : 1;
+  const abut = (end, sign) => { const c = [...end]; c[k] += sign * dir; return c; };
+  const at = (c) => terrain.cellWorld(c[0], c[1]);
+  const a = at(abut(cells[0], -1)), b = at(abut(cells[n - 1], 1));
+  const y0 = terrain.worldHeight(a[0], a[1]) + DECK_OVER, y1 = terrain.worldHeight(b[0], b[1]) + DECK_OVER;
+  const centres = cells.map(at);
+  const s0 = centres[0][k] - DECK_LIP * dir, s1 = centres[n - 1][k] + DECK_LIP * dir;
+  const rise = BRIDGE_ARCH * Math.min(1, (n + 1) / 5);
+  return centres.map((p, i) => {
+    const t = b[k] === a[k] ? 0 : (p[k] - a[k]) / (b[k] - a[k]);
+    const u = s1 === s0 ? 0 : Math.min(1, Math.max(0, (p[k] - s0) / (s1 - s0)));
+    const q = u * (1 - u), sine = (16 * q) / (5 - 4 * q);
+    return [cells[i][0], cells[i][1], Math.max(DECK_MIN, y0 + (y1 - y0) * t) + rise * sine * sine];
+  });
+}
+
+const bridgesOf = new WeakMap();
+export function volcanoBridges(terrain) {
+  if (!terrain || !terrain.volcano || !terrain.lavaFlows) return [];
+  if (bridgesOf.has(terrain)) return bridgesOf.get(terrain);
+  const { size } = terrain;
+  const bank = new Uint8Array(size * size);
+  for (const [gx, gz] of terrain.lavaBankCells) bank[gx + gz * size] = 1;
+  const hot = (gx, gz) => terrain.inGrid(gx, gz) && (terrain.isLava(gx, gz) || bank[gx + gz * size] === 1);
+  const top = terrain.crater.top || 15.3;
+  const inCrater = (gx, gz) => {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    return x * x + z * z < (terrain.crater.r + 1) * (terrain.crater.r + 1);
+  };
+  const out = [];
+  terrain.lavaFlows.forEach((course, f) => {
+    const n = course.length;
+    let made = 0;
+    const taken = [];                                // where down the flow the others went
+    for (const [lo, hi, unit] of BRIDGES.BANDS) {
+      const from = unit === 'u' ? lo : lo * top, to = unit === 'u' ? hi : hi * top;
+      let best = null;
+      for (let s = 4; s < n - 4; s++) {
+        const [gx, gz] = course[s];
+        const h = terrain.heightAt(gx, gz);
+        if (h < from || h > to) continue;
+        // Two crossings of one flow a few cells apart are one crossing twice.
+        if (taken.some((t) => Math.abs(t - s) < BRIDGES.APART)) continue;
+        const dx = course[s + 3][0] - course[s - 3][0], dz = course[s + 3][1] - course[s - 3][1];
+        // Across the flow: along z where it runs along x, and the other way round. A flow
+        // running on the diagonal is crossed too, but pays for it (`skew`, below): the run
+        // is longer and the deck meets the banks at an angle.
+        const major = Math.max(Math.abs(dx), Math.abs(dz)), minor = Math.min(Math.abs(dx), Math.abs(dz));
+        if (!major) continue;
+        const axis = Math.abs(dx) >= Math.abs(dz) ? 'z' : 'x';
+        const skew = minor / major;
+        const [sx, sz] = axis === 'x' ? [1, 0] : [0, 1];
+        let a = 0, b = 0;
+        while (a < BRIDGES.MAX_RUN && hot(gx - (a + 1) * sx, gz - (a + 1) * sz)) a++;
+        while (b < BRIDGES.MAX_RUN && hot(gx + (b + 1) * sx, gz + (b + 1) * sz)) b++;
+        const cells = [];
+        for (let i = -a; i <= b; i++) cells.push([gx + i * sx, gz + i * sz]);
+        if (cells.length > BRIDGES.MAX_RUN) continue;
+        const ends = [[gx - (a + 1) * sx, gz - (a + 1) * sz], [gx + (b + 1) * sx, gz + (b + 1) * sz]];
+        if (ends.some(([ex, ez]) => !terrain.inGrid(ex, ez) || !terrain.isLand(ex, ez) || hot(ex, ez) || inCrater(ex, ez))) continue;
+        if (cells.some(([cx, cz]) => inCrater(cx, cz))) continue;
+        const step = Math.abs(terrain.heightAt(...ends[0]) - terrain.heightAt(...ends[1]));
+        if (step > BRIDGES.MAX_STEP) continue;
+        // The deck ramps straight from bank to bank, so where the flow is crossed on the
+        // slant of the cone the uphill bank can stand above the planks. Over the lava itself
+        // they have to ride clear, or the crossing is not taken; over a bank cell they may
+        // run into the basalt - cut into the slope, the way a footbridge's end is - and that
+        // cell keeps its ground as the floor (no deck is recorded for it), paid for in the
+        // score so the crossing that buries least of itself wins.
+        const all = deckHeights(cells, terrain, axis);
+        const ground = ([cx, cz]) => terrain.worldHeight(...terrain.cellWorld(cx, cz));
+        if (all.some((d) => terrain.isLava(d[0], d[1]) && d[2] < ground(d) + DECK_RIDE)) continue;
+        let buried = 0;
+        const decks = all.filter((d) => {
+          if (d[2] >= ground(d) + DECK_RIDE) return true;
+          buried += Math.max(0, ground(d) + DECK_RIDE - d[2]);
+          return false;
+        });
+        const score = cells.length + 2 * step + 3 * skew + 2 * buried;
+        if (!best || score < best.score) best = { score, s, axis, cells, ends, decks };
+      }
+      if (!best) continue;
+      taken.push(best.s);
+      out.push({
+        id: `bridge:lava:${f}:${made}`,
+        axis: best.axis,
+        cells: best.cells,
+        ends: best.ends,
+        decks: best.decks,
+      });
+      made++;
+    }
+  });
+  bridgesOf.set(terrain, out);
+  return out;
+}
+
+// Every cell a bridge stands on or lands on, keyed `gx + gz * size`: a plot may not take one,
+// or the planks would run into somebody's front wall.
+function bridgeFoot(terrain) {
+  const foot = new Set();
+  for (const b of volcanoBridges(terrain)) {
+    for (const [gx, gz] of [...b.cells, ...b.ends]) foot.add(gx + gz * terrain.size);
+  }
+  return foot;
 }
 
 // ---- the guardhouse and its guards ---------------------------------------------------
@@ -93,11 +248,12 @@ const GUARDHOUSE_BEARING = [0.6, 0.8];
 //
 // Out along GUARDHOUSE_BEARING from the crater rim, half a cell at a time, trying at each
 // step the three-by-three lot under the ray and then lots up to six cells to either side of
-// it; the first lot whose nine cells are all buildable and whose front step is dry,
-// lava-free ground wins. `isBuildable` on the volcano already refuses lava, the basalt beside
-// it, the crater, the beach and anything too steep or too high, so the first hit outward is
-// as high up the lower flank as a whole lot will go - measured, 36 cells out and 3.8 up
-// (lot 79,95 facing +z), where the flank has flattened enough for nine buildable cells in a block. Searching
+// it; the first lot whose nine cells are all buildable, clear of every bridge
+// (volcanoBridges), and whose front step is dry, lava-free ground wins. `isBuildable` on the
+// volcano already refuses lava, the basalt beside it, the crater, the beach and anything too
+// steep or too high, so the first hit outward is as high up the apron as a whole lot will go
+// - measured on the 192-grid volcano, 58 cells out and 3.7 up (lot 132,139 facing +z), at
+// the top of the foothills where the cone starts; on the 128 one it was lot 79,95. Searching
 // sideways at each step rather than the whole ray first is what keeps it that high: straight
 // down the bearing the first clean lot is on the beach shelf. Its door faces downhill, away
 // from the crater, so the guards come out towards the coast.
@@ -109,9 +265,10 @@ export function guardhouseSite(terrain) {
   const [bx, bz] = GUARDHOUSE_BEARING;
   const from = (terrain.crater ? terrain.crater.r : 0) + 1;
   const ok = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const foot = bridgeFoot(terrain);
   function lot(gx, gz) {
     for (let dz = 0; dz < 3; dz++) for (let dx = 0; dx < 3; dx++) {
-      if (!ok(gx + dx, gz + dz) || !terrain.isBuildable(gx + dx, gz + dz)) return null;
+      if (!ok(gx + dx, gz + dz) || !terrain.isBuildable(gx + dx, gz + dz) || foot.has(gx + dx + (gz + dz) * size)) return null;
     }
     const cx = gx + 1.5 - half, cz = gz + 1.5 - half;
     const rot = Math.abs(cx) >= Math.abs(cz) ? (cx >= 0 ? 1 : 3) : (cz >= 0 ? 2 : 0);
@@ -193,17 +350,21 @@ export const codexIsland = (id) => (isCodex(id) ? id.split(':')[1] : null);
 // them. A lot is taken if all nine of its cells are buildable (which on the volcano already
 // refuses the crater, the lava and the basalt beside it, the beach, and anything too steep
 // or too high), it keeps CLEAR cells away from the guardhouse, and the cell its door steps
-// out onto is dry, lava-free land. The door faces away from the crater - downhill, the way
-// the guardhouse's does - by the same dominant-axis rule, so a settler comes out of the house
-// facing the sea. Measured: 136 lattice lots are buildable on the volcano, and 134 are left
-// once the guardhouse's clearance and the door steps that would open onto lava have had theirs.
+// out onto is dry, lava-free land, and none of its cells is under a bridge or where one
+// lands (volcanoBridges). The door faces away from the crater - downhill, the way the
+// guardhouse's does - by the same dominant-axis rule, so a settler comes out of the house
+// facing the sea. Measured on the 192-grid volcano: 301 lattice lots are buildable, and 300
+// are left once the guardhouse, the bridges and the door steps have had theirs - nearly
+// CODEX.RESIDENTS, where the 128 one had 137, so the guardhouse lodges almost nobody now.
 //
-// The offset of 2 is the one that fits the most of them (0 gives 131, 1 and 3 give 135).
+// The offset of 2 is the one that fitted the most of them on the 128-grid volcano; it is kept
+// because moving it moves every plot and there are plots to spare.
 export function codexPlots(terrain) {
   const { half, size } = terrain;
   const { PITCH, CLEAR } = CODEX;
   const ok = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
   const gh = guardhouseSite(terrain);
+  const foot = bridgeFoot(terrain);
   const nearGuardhouse = (gx, gz) => {
     if (!gh) return false;
     const p = gh.plot;
@@ -215,7 +376,7 @@ export function codexPlots(terrain) {
       if (nearGuardhouse(gx, gz)) continue;
       let clear = true;
       for (let dz = 0; dz < 3 && clear; dz++) for (let dx = 0; dx < 3; dx++) {
-        if (!terrain.isBuildable(gx + dx, gz + dz)) { clear = false; break; }
+        if (!terrain.isBuildable(gx + dx, gz + dz) || foot.has(gx + dx + (gz + dz) * size)) { clear = false; break; }
       }
       if (!clear) continue;
       const cx = gx + 1.5 - half, cz = gz + 1.5 - half;

@@ -63,37 +63,91 @@ const GATHER_PER_TICK = 8;
 // door and has to know which way is "in front" by exactly the rule spawn uses.
 export const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
-// 4-neighbour A* over the cell grid, used when a settler walks in from the beach.
+// 4-neighbour A* over the cell grid: a settler walking in from the beach, and every guard's
+// chase (lib/hostility.mjs).
+//
+// The open list is a binary heap ordered by (f, insertion order). It used to be an array
+// sorted on every pop and shifted from the front - fine on a 64-grid, but the 192-grid
+// volcano's ridges made a beach-to-rim search 30-65 ms, and the chase runs up to three a
+// beat, so one player near the summit stalled the whole sea. The insertion counter is what
+// keeps the order the sort gave: Array.prototype.sort is stable, so among equal f the
+// earliest pushed came out first, and the heap breaks ties the same way. An entry whose
+// cost has since been beaten is skipped when it comes out rather than expanded again,
+// which is also all the old re-expansion ever amounted to (it relaxed with the best cost,
+// which the fresher entry had already done). The 12000 budget counts expansions, as it
+// always meant to; stale entries no longer eat it.
 export function findPath(terrain, from, to, blocked) {
   const size = terrain.size;
   const key = (x, z) => x + z * size;
-  const open = [[0, key(from[0], from[1])]];
-  const g = new Map([[key(from[0], from[1]), 0]]);
-  const prev = new Map();
+  const start = key(from[0], from[1]);
   const goal = key(to[0], to[1]);
+  const g = new Map([[start, 0]]);
+  const prev = new Map();
+  // Three parallel arrays rather than an array of pairs: no allocation per push.
+  const hf = [0], hc = [0], hk = [start];
+  let seq = 1;
+  const less = (a, b) => hf[a] < hf[b] || (hf[a] === hf[b] && hc[a] < hc[b]);
+  const swap = (a, b) => {
+    let t = hf[a]; hf[a] = hf[b]; hf[b] = t;
+    t = hc[a]; hc[a] = hc[b]; hc[b] = t;
+    t = hk[a]; hk[a] = hk[b]; hk[b] = t;
+  };
+  const push = (f, k) => {
+    let i = hf.length;
+    hf.push(f); hc.push(seq++); hk.push(k);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!less(i, p)) break;
+      swap(i, p); i = p;
+    }
+  };
+  // Pops into `top` rather than returning a pair, for the same no-allocation reason.
+  const top = { f: 0, k: 0 };
+  const pop = () => {
+    top.f = hf[0]; top.k = hk[0];
+    const last = hf.length - 1;
+    if (last > 0) { hf[0] = hf[last]; hc[0] = hc[last]; hk[0] = hk[last]; }
+    hf.pop(); hc.pop(); hk.pop();
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1;
+      let m = i;
+      if (l < hf.length && less(l, m)) m = l;
+      if (r < hf.length && less(r, m)) m = r;
+      if (m === i) break;
+      swap(i, m); i = m;
+    }
+  };
+  const h = (x, z) => Math.abs(x - to[0]) + Math.abs(z - to[1]);
   let guard = 0;
-  while (open.length && guard++ < 12000) {
-    open.sort((a, b) => a[0] - b[0]);
-    const [, cur] = open.shift();
-    if (cur === goal) break;
+  while (hf.length && guard < 12000) {
+    pop();
+    const cur = top.k;
     const cx = cur % size, cz = (cur - (cur % size)) / size;
-    for (const [nx, nz] of [[cx + 1, cz], [cx - 1, cz], [cx, cz + 1], [cx, cz - 1]]) {
+    const gc = g.get(cur) || 0;
+    // Stale: this cell was reached more cheaply after this entry went in.
+    if (top.f > gc + h(cx, cz)) continue;
+    guard++;
+    if (cur === goal) break;
+    for (let d = 0; d < 4; d++) {
+      const nx = d === 0 ? cx + 1 : d === 1 ? cx - 1 : cx;
+      const nz = d === 2 ? cz + 1 : d === 3 ? cz - 1 : cz;
       if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
       if (!terrain.isLand(nx, nz)) continue;
       const k = key(nx, nz);
       if (blocked && blocked.has(k) && k !== goal) continue;
-      const cost = (g.get(cur) || 0) + 1 + 4 * terrain.slope(nx, nz);
+      const cost = gc + 1 + 4 * terrain.slope(nx, nz);
       if (g.has(k) && g.get(k) <= cost) continue;
       g.set(k, cost);
       prev.set(k, cur);
-      open.push([cost + Math.abs(nx - to[0]) + Math.abs(nz - to[1]), k]);
+      push(cost + h(nx, nz), k);
     }
   }
-  if (!prev.has(goal) && key(from[0], from[1]) !== goal) return null;
+  if (!prev.has(goal) && start !== goal) return null;
   const out = [];
   for (let k = goal; k !== undefined; k = prev.get(k)) {
     out.push(terrain.cellWorld(k % size, (k - (k % size)) / size));
-    if (k === key(from[0], from[1])) break;
+    if (k === start) break;
   }
   return out.reverse();
 }

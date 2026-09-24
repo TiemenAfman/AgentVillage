@@ -131,18 +131,29 @@ export function bandColour(h, season) {
 // reads as a ring painted on it. Grey-brown sand, a fringe of hardy olive scrub on the
 // coastal flat, dark ash and rock up the flank, and a paler weathered top; inside the
 // crater it goes dark and then scorched towards the pool. The basalt either side of a flow
-// is painted separately, in paintGround.
+// is painted separately, in paintGround, and so are the cliffs and the old lava fields,
+// which need the ground round a vertex and not only its height.
+//
+// The bands are shares of the rim's height (`crater.top`, shared/terrain.mjs), not units:
+// the mountain went from 15 to nearly 40 high, and bands measured in units put the pale top
+// a third of the way up and left the upper cone one colour. The scrub is kept to the apron,
+// the foothills the houses stand on, and a pale ash cap sits on the last tenth.
 const VOLCANO = {
   deep: new THREE.Color(0x2f4c58), wet: new THREE.Color(0x5b574e), sand: new THREE.Color(0x9a8c77),
-  scrub: new THREE.Color(0x6a6a48), ash: new THREE.Color(0x544e49), top: new THREE.Color(0x7b736b),
+  scrub: new THREE.Color(0x6a6a48), ash: new THREE.Color(0x5f5852), top: new THREE.Color(0x7b736b),
+  cap: new THREE.Color(0xb3aa9c), cliff: new THREE.Color(0x35302c), field: new THREE.Color(0x2b2624),
   crater: new THREE.Color(0x3a302b), scorch: new THREE.Color(0x5a2c1c), basalt: new THREE.Color(0x1f1c1b),
 };
 export function volcanoColour(h, out, r = Infinity, crater = null) {
   if (h < -0.6) return out.copy(VOLCANO.deep);
   if (h < 0) return out.copy(VOLCANO.wet);
+  // A terrain from before `top` existed was 15.3 at the rim, and that is what the bands
+  // below were first drawn for.
+  const P = crater && crater.top > 0 ? crater.top : 15.3;
   out.copy(VOLCANO.sand).lerp(VOLCANO.scrub, smoothstep(SHORE[0], SHORE[1], h));
-  out.lerp(VOLCANO.ash, smoothstep(1.2, 3.0, h));
-  out.lerp(VOLCANO.top, smoothstep(6.5, 10, h));
+  out.lerp(VOLCANO.ash, smoothstep(P * 0.08, P * 0.17, h));
+  out.lerp(VOLCANO.top, smoothstep(P * 0.42, P * 0.66, h));
+  out.lerp(VOLCANO.cap, 0.8 * smoothstep(P * 0.86, P * 0.98, h));
   if (crater && r < crater.r) {
     out.lerp(VOLCANO.crater, smoothstep(crater.r, crater.r * 0.8, r));
     out.lerp(VOLCANO.scorch, smoothstep(crater.pool * 1.9, crater.pool, r));
@@ -378,13 +389,26 @@ export function createLandscape({
 
   function paintVolcano() {
     findBasalt();
+    const H = terrain.H;
+    const at = (i, j) => H[Math.min(N - 1, Math.max(0, i)) + Math.min(N - 1, Math.max(0, j)) * N];
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const k = i + j * N;
         const x = i - half, z = j - half;
-        volcanoColour(terrain.H[k], tmpColor, Math.sqrt(x * x + z * z), terrain.crater);
+        const h = H[k];
+        volcanoColour(h, tmpColor, Math.sqrt(x * x + z * z), terrain.crater);
+        if (h >= 0.6) {
+          // The cliffs: the steepest drop to any neighbour, per unit across. A riser in a
+          // cliff band or the wall of a ravine goes to dark bare rock, which is most of
+          // what makes the relief read from across the water - lit alone, a sharp crease
+          // and a gentle one are nearly the same grey.
+          const steep = Math.max(Math.abs(at(i + 1, j) - at(i - 1, j)), Math.abs(at(i, j + 1) - at(i, j - 1))) * 0.5;
+          tmpColor.lerp(VOLCANO.cliff, 0.75 * smoothstep(1.5, 3.2, steep));
+          // The old lava fields, dark and rough where shared/terrain.mjs made them rough.
+          if (terrain.oldLava && terrain.oldLava[k]) tmpColor.lerp(VOLCANO.field, 0.7 * (terrain.oldLava[k] / 255));
+        }
         // Mottled like the meadow is, and a little harder: ash is patchier than grass.
-        if (terrain.H[k] >= 0) tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.1);
+        if (h >= 0) tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.1);
         if (basalt[k] > 0) tmpColor.lerp(VOLCANO.basalt, basalt[k]);
         col[k * 3] = tmpColor.r; col[k * 3 + 1] = tmpColor.g; col[k * 3 + 2] = tmpColor.b;
       }
@@ -427,8 +451,11 @@ export function createLandscape({
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
 
+  // Faceted on the volcano: a mountain of broken rock wants its planes, and smooth normals
+  // rounded every ravine and cliff band back into the pudding it was before it had them.
+  // Every other island keeps its rolling meadow.
   const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    vertexColors: true, flatShading: false, roughness: 0.96, metalness: 0,
+    vertexColors: true, flatShading: !!terrain.volcano, roughness: 0.96, metalness: 0,
   }));
   const wearResolution = Math.min(2048, size * 8);
   const wearTexture = new THREE.DataTexture(new Uint8Array(wearResolution * wearResolution), wearResolution, wearResolution, THREE.RedFormat);
@@ -804,9 +831,20 @@ export function createLandscape({
     const [wx, wz] = terrain.cellWorld(gx, gz);
     if (barren) {
       if (cleared.has(k) || terrain.isLava(gx, gz)) continue;
-      const steep = terrain.slope(gx, gz) > 0.7;
-      if (rng.chance(steep ? 0.12 : 0.05)) {
-        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(steep ? 0.6 : 0.4, steep ? 1.5 : 1.0)]);
+      // More of them, and bigger, the higher and the steeper: scree under the cliff bands,
+      // blocks the size of a house on the upper cone, and hardly any on the apron where
+      // the houses go. `up` is the share of the way to the rim, off the rim's own height.
+      const s = terrain.slope(gx, gz);
+      const top = terrain.crater && terrain.crater.top > 0 ? terrain.crater.top : 15.3;
+      const up = smoothstep(top * 0.12, top * 0.7, h);
+      const steep = smoothstep(0.7, 2.2, s);
+      const field = terrain.oldLava ? terrain.oldLava[gx + gz * N] / 255 : 0;
+      if (rng.chance(0.03 + 0.07 * steep + 0.06 * up + 0.05 * field)) {
+        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3),
+          rng.range(0.45, 1.0) * (1 + 1.2 * up + 0.4 * steep),
+          // Some stand up as crags rather than lying as boulders - from the cell's hash, so
+          // not one draw is added to `rng` and nothing after it on the island moves.
+          1 + up * ((hash32(`crag:${gx},${gz}`) % 100) / 100) * 1.4]);
       }
       continue;
     }
@@ -938,7 +976,7 @@ export function createLandscape({
   rocks.forEach((r, i) => {
     tmpObj.position.set(r[0], terrain.worldHeight(r[0], r[1]) - 0.04, r[1]);
     tmpObj.rotation.set(rng.range(0, 1), rng.range(0, 6.28), rng.range(0, 1));
-    tmpObj.scale.setScalar(r[2]);
+    tmpObj.scale.set(r[2], r[2] * (r[3] || 1), r[2]);
     tmpObj.updateMatrix();
     rockMesh.setMatrixAt(i, tmpObj.matrix);
     // Basalt on a volcano: the same stone, most of the light taken out of it.

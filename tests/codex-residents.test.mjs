@@ -107,7 +107,7 @@ test('an islander with more Codex settlers than the cap sends the busiest and th
 
 test('the plots are buildable lots on the flank, clear of the guardhouse, the crater and each other', () => {
   const pool = codexPlots(terrain);
-  assert.ok(pool.length >= 100, `only ${pool.length} plots`);
+  assert.ok(pool.length >= 120, `only ${pool.length} plots`);
   assert.deepEqual(codexPlots(volcanoTerrain()), pool, 'not the same plots on a second start');
   const gh = guardhouseSite(terrain).plot;
   const cells = new Set();
@@ -192,11 +192,15 @@ test('a house arriving or leaving never moves one that is standing', () => {
 test('when the plots run out the rest lodge in the guardhouse, and move into a house when one comes free', () => {
   const s = sea();
   const pool = codexPlots(terrain).length;
-  s.residents.set(A, settlers(CODEX.PER_ISLANDER));
-  s.residents.set(B, settlers(CODEX.PER_ISLANDER));
-  s.residents.set(C, settlers(CODEX.PER_ISLANDER));
-  const all = 3 * CODEX.PER_ISLANDER;
+  // As many islanders as it takes to overfill the pool - six on the 192-grid volcano, whose
+  // 300 plots three could fill on the 128 one - and never more bodies than the mountain
+  // carries, or the wait list below would be a second thing this test measures.
+  const islanders = Math.ceil((pool + 1) / CODEX.PER_ISLANDER);
+  const ids = [A, B, ...'defghijk'.split('').map((c) => c.repeat(16))].slice(0, islanders - 1).concat(C);
+  for (const id of ids) s.residents.set(id, settlers(CODEX.PER_ISLANDER));
+  const all = islanders * CODEX.PER_ISLANDER;
   assert.ok(all > pool, 'the fixture does not fill the pool');
+  assert.ok(all <= CODEX.RESIDENTS, 'the fixture has more bodies than the mountain carries');
   assert.equal(s.residents.housed(), pool);
   assert.equal(s.residents.bodies(), all, 'somebody without a house got no body');
   const lodgers = s.crowd.residents().filter((f) => !f.dead && f.spec.id === GUARDHOUSE_ID);
@@ -223,8 +227,10 @@ test('when the plots run out the rest lodge in the guardhouse, and move into a h
   // C goes home: every lodger left has a house now, and nobody housed before moved.
   const before = new Map(s.volcano.bundle.buildings.map((b) => [b.id, JSON.stringify(b.plot)]));
   s.residents.drop(C);
-  assert.equal(s.residents.bodies(), 2 * CODEX.PER_ISLANDER);
-  assert.equal(s.residents.housed(), 2 * CODEX.PER_ISLANDER);
+  const left = (islanders - 1) * CODEX.PER_ISLANDER;
+  assert.ok(left <= pool, 'the fixture leaves lodgers even after one goes home');
+  assert.equal(s.residents.bodies(), left);
+  assert.equal(s.residents.housed(), left);
   for (const f of s.crowd.residents()) {
     if (f.dead) continue;
     assert.equal(f.spec.id, f.id, `${f.id} is still in the guardhouse`);

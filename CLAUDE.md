@@ -433,7 +433,7 @@ only for a sea raised with `volcano: false` (tests). Poses still travel in world
 coordinates; the local terrain is still origin-centred and `layout.json` is still local.
 
 **The sea's one island is the volcano, and it is nobody's.** `shared/volcano.mjs` is its whole
-identity (id `0000000000000000`, seed `'volcano'`, size 128, `hostile`, `volcano`);
+identity (id `0000000000000000`, seed `'volcano'`, size 192, `hostile`, `volcano`);
 `createSea` raises it through `fleet.raiseVolcano()` at `[0,0]` before anybody joins, so a
 restart raises it bit for bit and the disk rule survives. Everything that makes an island
 somebody's is refused for it (`sea: true` on the fleet row): no token, so `publish`/`patch`/
@@ -445,9 +445,31 @@ dock and no boat. Nobody else may publish `volcano: true`. It travels like any i
 the horizon row, which carries `volcano` because a silhouette never sees the bundle), or the
 middle of the world is an ordinary island and a skew banner. Its seed is the one word
 `parseBundle` accepts, and only beside `volcano: true`. `nextOrigin` treats whoever holds
-`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half (144 for
-64-grids round the volcano, eight to a ring, bearings first), later rings one ordinary pitch
-further, so the volcano does not spread everybody else out.
+`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half (176 for
+64-grids round the 192-grid volcano, 208 for 128s, 272 for 256s; eight to a ring, bearings
+first), later rings one ordinary pitch further, so the volcano does not spread everybody else
+out. Its shape (`volcanoGround` + `volcanoRelief` in `shared/terrain.mjs`): a buildable apron
+up to ~3.5, then a concave cone to a rim ~38 up (summit 41, crater ~10 deep), with radial
+ridges and ravines, broken cliff bands, crags, a jagged rim breached where each of its three
+flows leaves, three parasitic cones (`crater.vents`) and old lava fields (`terrain.oldLava`,
+painted dark by world.js). The relief is added *after* makeTerrain's box blur - blurred, a
+feature a few cells across is gone - and world.js paints its bands off `crater.top`, not in
+units. A* on it is ~5-10x dearer than on the 128 cone (30-65 ms beach-to-rim, `findPath`'s
+`open.sort`), which the hostility tick's 3 searches per 650 ms pay for.
+
+**The volcano's lava has bridges, and they are ordinary bridges.** `volcanoBridges()` in
+`shared/volcano.mjs` picks three crossings per flow (apron, mid-cone, high cone) from the
+terrain alone - axis-aligned, exactly over the lava + bank run, landing on plain ground -
+and `volcanoBundle()` ships them as `bridges` + `decks`, so the sea's crowd stands on them
+(`setDecks`), `lib/lava.mjs` lets anybody on one off, and the guards' reach mask
+(`lib/hostility.mjs reachOf`) keeps a *bridged* lava cell walkable: the bridges are the
+chokepoints. Both use `DECK_CLEAR` (hostility.mjs, the one copy). Deck heights repeat
+`bridgeStops` from `web/js/buildings.js` (the sea may not import `web/`), with Bhaskara's
+sine for the arch because `shared/` may not call `cos` - under a millimetre off what the page
+draws. `guest-island.js` draws any guest's `bridges` (one merged mesh, one draw call - no
+neighbour's bridges were drawn before) and `handOutDecks` in main.js gives walk mode every
+guest region's bundle `decks`. `codexPlots` and `guardhouseSite` refuse any lot on a bridge
+cell or where one lands.
 
 **One building has many residents: the volcano's guardhouse and its guards.** The bundle
 carries one building, `civic:guardhouse` (drawn as `civicType: 'castle'` until there is a
@@ -477,7 +499,7 @@ when its hash changed, and forced on every welcome; a 404 is repaired by publish
 The sea's door checks the key first (`keyOpens`), then **`fleet.vouch`** - the island's own
 claim token, and an untokened island cannot be spoken for at all - then `parseCodex`, which is
 stricter than `parseParcel`: an unknown field, a duplicate, a number for a word or 61 entries
-refuses the lot. `lib/residents.mjs` puts them up: a house on `codexPlots()` (137 3x3 lots on
+refuses the lot. `lib/residents.mjs` puts them up: a house on `codexPlots()` (300 3x3 lots on
 a pitch-4 lattice, off the guardhouse by `CODEX.CLEAR`, doors downhill) at `hash32('codex:<island>:<id>')
 % pool`, linear probe when taken, assignments kept until their own settler leaves - so neither
 an arrival nor a departure moves a standing house; the rest **lodge in the guardhouse**
@@ -578,7 +600,7 @@ use `afoot()` from hostility, which also demands `p.posed` (`lib/players.mjs`): 
 that said "walking" but never sent a pose is at a default [0,0], the volcano's crater, and
 is nobody's target. The page does not send poses at all until its berth is known
 (`state.homeOrigin` is null until then; `frame` in `web/js/net.js`). Lava is out of the
-guards' reach mask, so a flow is a wall to their A*. The bar
+guards' reach mask except under a bridge, so a flow is a wall to their A* with the bridges as its gates. The bar
 counts (`oneHit` is off by default and kept only as a way back): a guard in `GUARD_REACH`
 swings once per `GUARD_SWING_MS` of its own (a `WeakMap` by figure) - never once per beat,
 which emptied a bar in 200 ms - and a raised shield (pose bit `POSE.BLOCKING` = 16, the mask

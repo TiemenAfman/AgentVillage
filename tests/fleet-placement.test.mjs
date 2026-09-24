@@ -12,6 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nextOrigin, clearOf, berthOf, SEA_GAP, createArchipelago, placeIsland, nearestFirst } from '../shared/regions.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
+import { VOLCANO } from '../shared/volcano.mjs';
 
 const isle = (half, origin) => ({ half, origin });
 
@@ -147,7 +148,10 @@ test('nearest is measured from home, not from the middle of the world', () => {
 
 // ---- the middle -----------------------------------------------------------------------
 
-const VOLCANO_HALF = 64;
+// The volcano's own half - 96 since it grew to a 192-grid (it was 64). Ring 1 lies at that
+// plus SEA_GAP plus the biggest other island's half: 176 round 64-grids, 208 round 128s and
+// 272 round 256s.
+const VOLCANO_HALF = VOLCANO.size / 2;
 const withVolcano = (halves) => {
   const placed = [isle(VOLCANO_HALF, [0, 0])];
   for (const half of halves) {
@@ -168,6 +172,10 @@ const allClear = (placed, what) => {
 test('the first island hugs the volcano across exactly one sea gap, due east', () => {
   const [, first] = withVolcano([32]);
   assert.deepEqual(first.origin, [VOLCANO_HALF + SEA_GAP + 32, 0]);
+  // Written out, so a change to the volcano's size is seen to move everybody's berth.
+  assert.deepEqual(first.origin, [176, 0]);
+  assert.deepEqual(withVolcano([64])[1].origin, [208, 0]);
+  assert.deepEqual(withVolcano([128])[1].origin, [272, 0]);
 });
 
 test('eight 64-grids fit on the first ring round the volcano, and the ninth starts the next', () => {
@@ -222,7 +230,7 @@ test('a phone looking for open water gets a free berth on the ring, not the volc
 
 test('the archipelago takes a volcano and its ring without complaint', () => {
   const sea = createArchipelago();
-  const volcano = makeTerrain('volcano', { size: 128, volcano: true });
+  const volcano = makeTerrain('volcano', { size: VOLCANO.size, volcano: true });
   sea.add(placeIsland(volcano, { id: 'volcano', origin: [0, 0] }));
   const placed = [isle(volcano.half, [0, 0])];
   for (let n = 0; n < 9; n++) {

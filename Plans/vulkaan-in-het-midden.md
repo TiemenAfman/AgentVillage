@@ -8,22 +8,8 @@ tellen, en de bewegingsbeperking in open zee gaat eruit. Nieuwe settler-modellen
 Codex-agents komen later van Martijn zelf.
 
 Het hele plan is gebouwd op 23 september 2026. Stap 0 t/m 4: vrij zwemmen, stamina met Shift-turbo en de balken (`web/js/stamina.js`, `web/js/vitals.js`), `hurt()` op de zee (`lib/health.mjs`) met de omgebouwde hostility, het vulkaanterrein met meanderende lavastromen (`shared/terrain.mjs` met `volcano: true`, `lavaCourse`, `web/js/lava.js`) en de vulkaan van de zee zelf op [0,0] (`shared/volcano.mjs`, `fleet.raiseVolcano()`) met de eilanden in ringen eromheen. Stap 5 en 6: het wachthuis met bewakers die meeschalen met de islanders, lava die pijn doet, en de Codex-huisjes van alle islanders door elkaar op de helling (`lib/residents.mjs`; het Codex-eiland per islander is weg). Stap 7: elke bewaker is de lava-imp uit de img2threejs-pipeline (`web/js/imp.js`, `web/models/hostile-settler.glb`, lazy geladen), health telt echt (100, een bewaker 34 per klap, lava 60/s, herstel na 3 s), je slaat terug (`{t:'swing'}`, `lib/combat.mjs`), blokken scheelt 70%, bewakers en bewoners vallen om en komen na 20 s terug, en een bewaker onder de muis heeft een naam (`web/js/guest-pick.js`).
-(`guardhouseSite()` in `shared/volcano.mjs`, voorlopig getekend als het kasteel), bewakers
-`guard:<n>` die meeschalen met het aantal online islanders (`lib/guards.mjs`; Codex-eilanden
-tellen niet mee, dus één islander telt één keer), lava die pijn doet (`lib/lava.mjs`) en die
-de A* van de bewakers mijdt, en geen pose meer vóór de pagina haar ligplaats kent. Stap 6 ook
-(dezelfde dag): elke islander stuurt een lijstje van zijn Codex-settlers door een nieuwe deur
-`POST /island/:id/codex` (`packCodex`/`parseCodex`, max. 60, achter de key en het claim-token),
-en de zee zet de huisjes op 137 vaste bouwplekken op de helling (`codexPlots`, hash op
-`codex:<island>:<id>` met lineair doorzoeken), de rest woont in het wachthuis, en de bewoners
-komen erbij in de lopende crowd (`lib/residents.mjs`). De pagina krijgt de huisjes via een
-`codex`-bericht zonder `rev` te verzetten. Het Codex-eiland per islander is weg. Stap 7 is
-ontwerp. Wel alvast (niet gecommit): elke bewaker (`guard:<n>`) op de vulkaan wordt op de pagina getekend als de
-geriggde lava-imp (`web/js/imp.js`, `web/models/hostile-settler.glb`, lui geladen na de boot, idle met een fase per
-id, walk, swim in het water en attack als je eigen walker binnen 1,5 komt) in plaats van als instanced figuur (`syncImps` in
-`web/js/crowd-view.js`): SkeletonUtils-clones met gedeelde geometrie, frustum culling via een vaste bol, geen
-animatie buiten beeld of verder dan 40, en alleen de dichtstbijzijnde 16 (telefoon 6). De rijen bewakers staan nu
-voor het kasteel in plaats van erin (`GUARDHOUSE_REACH` 1,2 + 0,5: eerste rij 1,7 uit het midden, was 0,85).
+
+Op 24 september is de vulkaan groter, hoger en ruiger gemaakt: een 192-grid stratovulkaan met de top op 41 (was 15), een grillige kraterrand, ribbels, ravijnen, rotsbanden en drie bijkraters, drie meanderende lavastromen met elk drie bruggen erover (de enige plekken waar bewakers de lava oversteken), en 300 bouwplekken op de voet.
 
 ## Hoe het nu zit (gemeten in de sessie van 23-09)
 
@@ -139,9 +125,22 @@ los van de rest en kan als eerste.
 - Een brede kegel rond het midden met een krater erin (een kleinere bump eraf), met de bestaande
   `fbm2`-noise voor ruggen. Alleen `sqrt` en `smoothstep`, geen `sin`/`cos`/`pow` (de regel van
   `shared/`).
-- **De helling moet beloopbaar blijven**: `slope()` bepaalt waar je kunt lopen en bouwen. Een te
-  steile kegel kun je niet beklimmen, en de bewakers dan ook niet. Eventueel paden omhoog.
-- **Lavastromen**:
+- **De helling moet beloopbaar blijven**: `slope()` bepaalt waar je kunt bouwen; lopen kan overal
+  (A* rekent helling mee, weigert haar niet; de speler heeft geen hellingregel). Bouwen kan alleen
+  op de voet (de *apron*), niet op de kegel.
+- **Vorm (24 sept, tweede versie, op verzoek van Martijn veel hoger, ruiger en groter):** grid 192
+  (was 128; 256 gemeten maar 131k grondtriangles voor een plek waar niemand woont). Een strand, dan
+  een glooiende voet tot ~3,5 hoog waar het wachthuis en de Codex-huisjes staan (300 bouwplekken),
+  dan een holle kegel naar een kraterrand op ~38 (top 41, was 15,3), krater r 14 en ~10 diep (was 9
+  en 3,8). Daarop, ná de blur (anders zijn ze weg): radiale ruggen en V-ravijnen (ridged noise,
+  domain-warped), gebroken rotsbanden (getrapte hoogte door een ruismasker), losse rotspieken, een
+  grillige kraterrand met een bres waar elke stroom eruit loopt, drie parasitaire kegeltjes met een
+  eigen kratertje (`crater.vents`, rookpluimpje erboven) en velden oude lava (`terrain.oldLava`,
+  hobbelig en donker geverfd). Gemeten: de helling wijkt 1,51 af van haar ringgemiddelde (was 0,50),
+  het steilste tiende is > 2,3 (was 0,74). De grond is op de vulkaan flat-shaded en de kleurbanden
+  schalen mee met `crater.top`, met een lichte askap. Eilanden liggen daardoor verder weg: ring 1 op
+  176 voor 64-grids (was 144).
+- **Lavastromen** (nu drie):
   - de route kwam eerst uit `riverCourse`, met de start op de kraterrand - dat gaf op een kegel
     kaarsrechte stromen; nu kiest `lavaCourse` de hele stroom in één keer (bochten om en om,
     de rest bepaald door de dalen tussen de ruggen), zie het commentaar in `shared/terrain.mjs`;
@@ -149,7 +148,11 @@ los van de rest en kan als eerste.
     `carveRiver` onder zeeniveau;
   - het levert `lavaCells` en `lavaBankCells` op, zoals `riverCells`: die zijn niet bebouwbaar,
     en de zee gebruikt ze voor de schade.
-- Grootte: voorstel grid 128. Nog te bepalen.
+  - **bruggen**: drie per stroom (op de voet, halverwege, hoog op de kegel), `volcanoBridges` in
+    `shared/volcano.mjs`, gewone eiland-bruggen in de bundle (`bridges` + `decks`). Op een brug doet
+    lava geen pijn, en de A* van de bewakers mag over een brug en verder nergens over lava: de
+    bruggen zijn de doorgangen. Geen bouwplek of wachthuis op of naast een brugkop.
+- Grootte: grid 192 (zie Vorm hierboven).
 
 ### 5. De vulkaan tekenen (`web/js/world.js`, `horizon.js`)
 
@@ -160,7 +163,10 @@ los van de rest en kan als eerste.
   zijn zwart basalt in plaats van riet.
 - Rook uit de krater, en stoom waar de lava de zee raakt: een paar sprites of low-poly blobs,
   zoals de wolken.
-- `horizon.js` moet de vulkaanvorm ook kennen voor het silhouet op afstand.
+- `horizon.js` moet de vulkaanvorm ook kennen voor het silhouet op afstand (doet het: hij neemt
+  `worldHeight`, dus de nieuwe kegel staat vanzelf in het silhouet).
+- Gastbruggen: `guest-island.js` tekent nu de `bridges` van elk gast-eiland (één mesh), en
+  walk mode krijgt hun `decks` (`handOutDecks` in main.js).
 - De vulkaan-bewoners dragen al wapens (`armed` in `crowd-view.js`); de nieuwe settler-modellen
   van Martijn komen er later bij als een eigen soort in `settler-figures.js` (één material,
   één draw call per soort).
