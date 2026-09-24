@@ -331,10 +331,22 @@ export function createClassicAvatar(spec, material) {
   const DRINK_S = 1.6, GULP = [0.45, 1.25], DRINK_ARM = { x: -2.05, z: 0.35 }, DRINK_ROLL = [0.8, 1.2];
   const drinks = { leftArm: null, rightArm: null };
   let gulped = 0;
+  // A beer handed to a settler (main.js giveBeer): the arm reaches out with it, the glass
+  // leaves the hand as they take it, and a fresh one is back in the fist once theirs is down,
+  // `away` seconds later - the pint in a hand is a thing you carry, not a thing you run out of.
+  const HAND_OVER = { reach: 0.5, x: -1.5 };
+  const given = { leftArm: null, rightArm: null };
+  function handOver(side, away) {
+    if (holding[side] !== 'beer' || given[side]) return false;
+    drinks[side] = null;
+    given[side] = { t: 0, away };
+    return true;
+  }
+
   // Whether `side` ('leftArm' or 'rightArm') started a drink: not without a glass in it, and
-  // not while it is still drinking the last one.
+  // not while it is still drinking the last one or has just handed it over.
   function drink(side) {
-    if (holding[side] !== 'beer' || drinks[side]) return false;
+    if (holding[side] !== 'beer' || drinks[side] || given[side]) return false;
     drinks[side] = { t: 0, from: pieces[side].pivot.rotation.x, fromZ: pieces[side].pivot.rotation.z };
     return true;
   }
@@ -384,6 +396,21 @@ export function createClassicAvatar(spec, material) {
       : typeof pose.blocking === 'object' ? ['leftArm', 'rightArm'].filter((side) => pose.blocking[side])
         : [blockSide()];
     for (const side of blocks) targets[side] = BLOCK_ARM_X;
+    // A glass being handed over: reached out for the first half second, through the same
+    // damping as any held pose, and not in the hand at all until the settler has drunk it.
+    for (const side of ['leftArm', 'rightArm']) {
+      const g = given[side];
+      if (!g) continue;
+      g.t += dt;
+      const mesh = heldMesh[side];
+      if (holding[side] !== 'beer' || g.t >= g.away) {
+        given[side] = null;
+        if (mesh) mesh.visible = true;
+        continue;
+      }
+      if (g.t < HAND_OVER.reach) targets[side] = HAND_OVER.x;
+      if (mesh) mesh.visible = g.t < HAND_OVER.reach * 0.8;
+    }
     if (swing && (swing.t += dt) >= SWING_S) swing = null;
     const swung = swing ? swingPose(swing, targets[swing.side]) : null;
     // Stepped before it is posed, like the swing. A drink is put down with the glass, or
@@ -457,5 +484,5 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
   }
 
-  return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed };
+  return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed, handOver };
 }

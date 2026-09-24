@@ -760,7 +760,11 @@ shield, so it must never reach `guardUp`/`state.blocking`, or the sea sees a rai
 hand does (`handAction` -> `ui.setMouse`). The purple bar is the page's, like stamina: **one**
 pool (`web/js/tipsy.js`) made in `main.js`, handed to the island's walk mode *and* every room's
 (or you walk out of the tavern sober) and stepped once in `frame()`; its blur is a CSS filter
-written on `#stage` and `#panels` together, only on foot.
+written on `#stage` and `#panels` together, only on foot. G hands a beer to one of our own
+settlers within `GIVE_R` (`giveBeer` in main.js, `crowd-view.js giveBeer`): the drink, the
+pint and the sway are this page's alone and live per house id in the crowd view, never on
+`f.pos`; the settler is held with `attend` under the name the **sea** knows them by
+(`seaIdOf`, the inverse of `/api/crowd-ids`) - our own `house:<uuid>` is nobody on the sea.
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,

@@ -61,3 +61,17 @@ test('the view is sharp sober, swims when drunk, and never past HAZE_PX', () => 
   assert.ok(hazePx(0.5, 1) < hazePx(0.8, 1));
   assert.equal(hazePx(3, 1), hazePx(1, 1), 'past a full bar is a full bar');
 });
+
+test('a settler has a pool of their own: a quarter a glass, and the sway starts at the third', async () => {
+  const { SETTLER_TIPSY, settlerSway } = await import('../web/js/tipsy.js');
+  const t = createTipsy(SETTLER_TIPSY);
+  const sways = [];
+  for (let i = 0; i < 4; i++) { drinkIn(t, 1); sways.push(settlerSway(t.level)); }
+  assert.deepEqual(sways.map((s) => Math.round(s * 100) / 100), [0, 0, 0.5, 1]);
+  stepTipsy(t, SETTLER_TIPSY.delay - 1);
+  assert.equal(t.level, 1, 'wore off inside the delay');
+  stepTipsy(t, 1 + SETTLER_TIPSY.sober);
+  assert.equal(t.level, 0);
+  // The player's pool is untouched by any of that.
+  assert.equal(createTipsy().spec, TIPSY);
+});

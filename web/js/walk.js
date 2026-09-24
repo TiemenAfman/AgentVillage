@@ -235,6 +235,7 @@ export function createWalkMode({
     onNextSeed: null,
     onPrevSeed: null,
     onBuild: null,
+    onGive: null,
     onAvatar: null,
     onExit: null,
     // The board you are standing at and working, or null. While one is held the page on
@@ -346,6 +347,9 @@ export function createWalkMode({
     if (k === 'i') { e.preventDefault(); state.onAvatar && state.onAvatar(); }
     // The radar: on by default, M cycles it to the chart of the sea and then to neither.
     if (k === 'm') { e.preventDefault(); state.onToggleMinimap && state.onToggleMinimap(); }
+    // Hand the settler in front of you a beer, when there is a glass in your hand and
+    // somebody within reach - main.js decides both and puts the offer on screen.
+    if (k === 'g' && !e.repeat) { e.preventDefault(); state.onGive && state.onGive(); }
     // The first Escape only frees the mouse (the browser ends the lock itself); the next one
     // leaves walk mode.
     if (k === 'escape') {
@@ -653,8 +657,9 @@ export function createWalkMode({
   }
 
   function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
-    onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap }) {
+    onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive }) {
     state.blockers = blockers || [];
+    state.onGive = onGive;
     state.interactables = interactables || [];
     state.working = null;
     state.onInteract = onInteract;
@@ -1046,6 +1051,10 @@ export function createWalkMode({
     groundAt: (x, z) => groundAt(x, z),
     // What a hand's button does right now - 'attack', 'block' or 'drink' - for the key row.
     handAction: (side) => (beerIn(side) ? 'drink' : shieldIn(side) ? 'block' : 'attack'),
+    // Which hand a beer could be handed over from, the right first, or null; and handing it
+    // over (classic-avatar.js handOver), gone from the fist for `away` seconds.
+    beerHand: () => (beerIn('rightArm') ? 'rightArm' : beerIn('leftArm') ? 'leftArm' : null),
+    handOver: (side, away) => classicAvatar.handOver(side, away),
     dispose, isActive: () => state.active };
 }
 

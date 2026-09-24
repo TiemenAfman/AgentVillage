@@ -330,3 +330,35 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
   assert.ok(glow.some((v) => v > 0), 'the torch has no flame');
   assert.ok(!extra[0].geometry.attributes.aEmissive.array.some((v) => v > 0), 'the sword is glowing');
 });
+
+// Plans/bier-en-dronken.md: a beer handed over by the player. The settler turns to whoever
+// gave it, drinks it, lets go of their face once it is down, and from the third glass sways -
+// all of it on this page, keyed by the house they live in so a re-dress keeps it.
+test('a settler handed beers turns to the giver, drinks one at a time and sways from the third', async () => {
+  const { SETTLER_DRINK_S } = await import('../web/js/settler-figures.js');
+  const crowd = view();
+  place(crowd, 1000);
+  crowd.draw(0.016, ground, 1000);
+  const f = crowd.figure('house:a');
+  assert.equal(crowd.giveBeer('house:nobody', [0, 0], 1000), false);
+  assert.equal(crowd.giveBeer('house:a', [f.pos[0], f.pos[1] + 2], 1000), true);
+  assert.ok(Math.abs(f.faceAngle) < 1e-9, 'did not turn to the giver standing due +z: ' + f.faceAngle);
+  assert.equal(crowd.giveBeer('house:a', [0, 0], 1100), false, 'a second beer before the first was down');
+  // Drawn through the drink: the glass goes down, the face is let go of.
+  let now = 1000;
+  const step = (s) => { for (let t = 0; t < s; t += 0.05) { now += 50; crowd.draw(0.05, ground, now); } };
+  step(SETTLER_DRINK_S + 0.2);
+  assert.equal(f.faceAngle, null, 'still turned to the giver after the glass was down');
+  assert.equal(f.sway || 0, 0, 'one beer and already swaying');
+  for (let i = 0; i < 2; i++) { assert.equal(crowd.giveBeer('house:a', null, now), true); step(SETTLER_DRINK_S + 0.2); }
+  assert.ok(Math.abs(crowd.beersIn('house:a') - 3) < 0.05, 'three beers in: ' + crowd.beersIn('house:a'));
+  assert.ok(f.sway > 0.4 && f.sway < 0.6, 'the third should start the sway: ' + f.sway);
+  assert.equal(crowd.giveBeer('house:a', null, now), true);
+  step(SETTLER_DRINK_S + 0.2);
+  assert.ok(f.sway > 0.95, 'the fourth should have them rocking: ' + f.sway);
+  // And it wears off.
+  for (let i = 0; i < 300; i++) { now += 1000; crowd.draw(1, ground, now); }
+  assert.equal(f.sway, 0, 'still swaying five minutes on');
+  assert.equal(crowd.beersIn('house:a'), 0);
+  crowd.dispose();
+});

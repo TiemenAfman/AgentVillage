@@ -74,6 +74,7 @@ import { createTouchPad, eitherPad } from './touchpad.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
+import { SETTLER_DRINK_S } from './settler-figures.js';
 import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
 import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
@@ -434,6 +435,48 @@ function faceUp(id, fig) {
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
     onLetGo: () => { if (state.net) state.net.unattend(id); },
   });
+}
+
+// ------------------------------------------------------------ a beer for a settler
+// A glass in your hand and one of our own settlers within reach: G hands it over
+// (Plans/bier-en-dronken.md). They stop and turn to you on the sea - the same `attend` a
+// conversation uses, so everybody watching sees that much - and drink it on this page:
+// the pint, the gulp and, from the third, the sway are ours alone (crowd-view.js giveBeer).
+// Reach is measured to the body, not to their house, and one gift is going at a time.
+const GIVE_R = 1.6;
+let gift = null;   // { id, until } while a beer is going down
+function giveTarget() {
+  if (!state.settlers || state.inside || state.mode !== 'walk' || !state.walk) return null;
+  const w = state.walk.state;
+  if (state.walk.aboard() || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
+  let best = null, bestD = GIVE_R * GIVE_R;
+  for (const f of state.settlers.figures().values()) {
+    if (!f.visible || f.hidden || !f.to) continue;
+    const dx = f.pos[0] - w.pos.x, dz = f.pos[1] - w.pos.z, d = dx * dx + dz * dz;
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  return best;
+}
+function giveBeer() {
+  if (gift) return;
+  const f = giveTarget();
+  const side = f && state.walk.beerHand();
+  if (!f || !side) return;
+  const w = state.walk.state;
+  const now = performance.now();
+  if (!state.settlers.giveBeer(f.id, [w.pos.x, w.pos.z], now)) return;
+  state.walk.handOver(side, SETTLER_DRINK_S);
+  const onSea = seaIdOf(f.id);
+  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
+  gift = { id: onSea, until: now + SETTLER_DRINK_S * 1000 };
+  // Said once, at the glass that tips them over: the rest shows.
+  const had = Math.round(state.settlers.beersIn(f.id));
+  if (had === 3) state.ui.toast(`${escapeHtml((f.spec && f.spec.name) || 'They')} is starting to sway. 🍺`);
+}
+function endGift() {
+  if (!gift) return;
+  if (state.net) state.net.unattend(gift.id);
+  gift = null;
 }
 
 // Addressing a settler opens their session and lets you carry it on.
@@ -957,6 +1000,7 @@ function walkCallbacks() {
     // Escape on the chart goes back to the radar rather than all the way up to the sky.
     onExit: () => { if (minimapMode === 'map') setMinimapMode('radar'); else exitWalk(); },
     onToggleMinimap: () => setMinimapMode(MINIMAP_NEXT[minimapMode]),
+    onGive: () => giveBeer(),
   };
 }
 
@@ -2196,6 +2240,13 @@ let ourIds = null;
 // message big enough to matter is the one guaranteed to arrive at the wrong moment.
 let namingIds = null;
 let heldWhere = null;
+// The other way round: the name the sea knows one of our settlers by, for a message that
+// names somebody to it (`attend`). The sea's crowd is built from the redacted bundle, so our
+// own `house:<uuid>` is nobody there. The page's id when there is no map yet.
+function seaIdOf(id) {
+  if (ourIds) for (const k in ourIds) if (ourIds[k] === id) return k;
+  return id;
+}
 async function ourRoster(ids) {
   const unknown = ids.some((id) => id && !state.byId.has(id) && !(ourIds && ourIds[id]));
   if (unknown) {
@@ -4198,6 +4249,7 @@ function frame(nowMs) {
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
+    state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
@@ -4207,12 +4259,16 @@ function frame(nowMs) {
     // What each mouse button does, for the key row: its hand's item picked up or put down in
     // the inventory changes it mid-walk, and ui.js redraws only on a change.
     state.ui.setMouse(state.walk.handAction('leftArm'), state.walk.handAction('rightArm'));
+    const offer = gift ? null : giveTarget();
+    state.ui.setGive(offer ? (offer.spec && offer.spec.name) || 'them' : null);
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
     showMinimap(true);
     if (minimapMode === 'radar') state.minimap.update(minimapData());
     else if (minimapMode === 'map') state.worldMap.update(worldMapData());
   }
+  // A beer handed over is let go of on the sea once it is down, wherever you are by then.
+  if (gift && nowMs >= gift.until) endGift();
   // Health is the sea's (net.js keeps its last word and fills the bar from it), whichever
   // walk mode has the feet - and in orbit too, where the strip is hidden and this costs one
   // string compare.

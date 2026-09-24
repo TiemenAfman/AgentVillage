@@ -23,6 +23,20 @@ erbij: de drie balkjes krijgen een emoji ervoor — ❤️ gezondheid, ⚡ stami
 | De toetsenstrip | Zegt per knop wat zijn hand nu doet: `attack`, `hold to block` (schild) of `drink` (`ui.setMouse`, elke frame gevoed uit `walk.handAction(side)`, alleen hertekend bij een wijziging); binnen staat alleen een drinkende knop erbij. `B build` staat er alleen als bouwen met de hand aan staat (Settings → Debug). De strip zit op 66 px i.p.v. 92 (net boven de fullscreen-knop; de chronicle is te voet weg), ≤760 px blijft 92. | Een knop die iets anders doet dan er staat, of een toets die alleen "staat uit" antwoordt, is ruis. |
 | Zien anderen het? | Het zwalkende pad wel (dat is gewoon je positie), het glas en de rol niet. | Anderen zien je als één mesh zonder armen of items (`peers.js`); een extra pose-bit is een wijziging aan de zee. |
 
+## Een biertje voor een settler
+
+Later erbij: sta je met een bier in een hand vlak bij een settler, dan komt er een popup
+"geef bier aan settler"; die drinkt hem op, en na 3 à 4 gaat hij ook schommelen.
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Wanneer de popup? | Te voet op ons eigen eiland, een bier in een van beide handen, en een settler (het lichaam, niet zijn huis) binnen `GIVE_R` (1,6). Een eigen kaartje `#walk-give` onder de gewone prompt: **G** give *naam* a beer. | De prompt gaat over het dichtstbijzijnde bruikbare ding - meestal het huis - en de settler vóór je is dat zelden. G is vrij en betekent "give". |
+| Wat doet G? | De settler draait zich naar je toe en drinkt (2,2 s, een pint via één instanced mesh voor de hele crowd, `count` 0 als niemand drinkt). Jouw arm steekt het glas uit, het is weg uit je hand tot hij het op heeft, en dan staat er een vol glas in. Eén tegelijk, niet opnieuw zolang hij nog drinkt. | De pint in je hand is iets wat je draagt, niet iets wat opraakt. |
+| Staat hij stil? | Ja, via hetzelfde `attend` als een gesprek, dus iedereen op de zee ziet hem stoppen en omdraaien. Met de naam die de zee kent (`seaIdOf`, het omgekeerde van `/api/crowd-ids`): de zee kent onze settlers als `house:s3`, niet als `house:<uuid>`. | Met de pagina-id vond de zee hem niet. |
+| Schommelen | Per settler een eigen pool (`SETTLER_TIPSY`: een kwart per glas, 45 s vertraging, 180 s tot nuchter), per huis-id in `crowd-view.js`, zodat een nieuwe aankleding hem niet nuchter maakt. `settlerSway`: niets tot twee glazen, half bij drie, helemaal bij vier. Rol, knik en een paar cm heen en weer; lopend een zigzag tot ±20 cm om zijn route, zijn neus draait mee, en om de paar seconden een struikelaar (ruk naar voren en opzij), in- en uitgefaded bij vertrek en stilstaan - alleen in de getekende matrix, nooit in `f.pos`. | De zee bepaalt waar hij is; dit is alleen hoe hij daar staat. De eerste versie liet hem "nog steeds netjes zijn route volgen". |
+| Zien anderen het? | Het stoppen wel, het glas en het schommelen niet. | Dat is zee-protocol (een bericht en een broadcast); later, als het gewenst is. |
+| De pint van een settler | De pint van de speler, 4,5 cm vóór de vuist (`PINT_OUT`) en zachter gekanteld. | Gemeten in de browser: met de greep van de speler zat het midden van het glas 5 cm ín het gezicht. |
+
 ## Bestanden
 
 - `web/js/tipsy.js` (nieuw) — pool, `drinkIn`, `stepTipsy`, `hazePx`.

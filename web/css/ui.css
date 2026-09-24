@@ -240,6 +240,8 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease;
 }
 .walk-prompt b { color: var(--accent); }
+/* The beer offer, one card's height under the prompt (web/index.html #walk-give). */
+.walk-give { bottom: calc(56% - 46px); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
 
