@@ -194,6 +194,18 @@ quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads lef
 nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
 `grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (256 grid,
 `minGridSize` 32) - deliberately not the defaults, which also fill in old configs.
+**The grid is the layout's, and `gridSize` is only the most it may be.** `loadLayout` no
+longer throws the town away when `layout.size` differs from the setting (only a new seed
+or `LAYOUT_VERSION` does), and every caller builds ground on `layout.size`: `scan.mjs`
+(`cap` = config, `size` = the layout's, read again after `placeAll`), `placeAll` and the
+planner (which re-read `layout.size` themselves), the garden, the survey and the parcel.
+When a ring does not fit, `growStep` first calls `growCanvas` - centred, in steps of 32,
+every grid index +k and every super-cell field left alone, since those hang off
+`lattice.anchor`; `tests/canvas-grow.test.mjs` walks the whole layout and fails on any
+pair that did neither. An island founded on its whole grid becomes `grow.base` = that grid
+the first time, which is how raising `gridSize` lets the live island grow at all. A page
+whose `grid.size` changes reloads (`applyVillage`); `diffLayouts` compares plots in local
+coordinates, or a grown grid reads as every house moved.
 
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
@@ -217,8 +229,8 @@ makes every existing caller correct for free is that **`cellWorld` adds the orig
 own positions out of `half` (`world.js`, `hamlets.js`) wants the RAW local terrain and an
 offset group, not the facade. Outside every region, `archipelago.height` is `OPEN_SEA`
 (-2.5), not the nearest coast — which is what `makeTerrain`'s own clamp would hand back.
-`gridSize` still cannot grow (`loadLayout` throws the town away when `size` changes): two
-islands means two terrains at an offset, never one bigger heightfield.
+Two islands means two terrains at an offset, never one bigger heightfield. One island's
+own grid *can* grow now, but only by `growCanvas` (below), never by a setting.
 
 **A visiting island is a place, not a village.** `web/js/guest-island.js` draws a region at a
 berth: its ground, its buildings, its moving parts, its collision. It deliberately does not

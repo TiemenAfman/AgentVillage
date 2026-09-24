@@ -2081,6 +2081,7 @@ async function doSyncFleet() {
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       fairway: bundle.fairway || null,
+      grow: bundle.grow || null,
       volcano: bundle.island.volcano === true,
       terrainHash: bundle.island.terrainHash || null,
       name: bundle.island.name,
@@ -2089,7 +2090,6 @@ async function doSyncFleet() {
     });
     if (region) arrived.push(row.name);
   }
-      grow: bundle.grow || null,
   syncHorizon();
   raiseGuestIslands();
   buildDocks();
@@ -3675,6 +3675,16 @@ function specById(village) {
 
 function applyVillage(next, { animate }) {
   const prev = state.village;
+  // The grid itself grew (growCanvas in lib/layout.mjs): every grid index in the village is
+  // somewhere else now, and the ground mesh, the water patch, the haze, the camera range and
+  // the minimap were all built on the old one - `reshape` cannot take a different N. It
+  // happens a handful of times in an island's life, so the page starts again rather than
+  // growing a second, rarely-walked path through every one of those.
+  if (prev && prev.grid && next.grid && prev.grid.size !== next.grid.size) {
+    console.info(`[promptholm] the island's grid grew from ${prev.grid.size} to ${next.grid.size}; reloading`);
+    location.reload();
+    return;
+  }
   state.village = next;
   if (state.region) state.region.village = next;
   for (const d of next.districts) state.districts.set(d.id, d);
@@ -4984,6 +4994,7 @@ async function boot() {
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
+      onGrow: () => state.plan.grow(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),
@@ -4998,7 +5009,6 @@ async function boot() {
   // card asks you something is two things happening at once and neither reads.
   //
   // ?nointro skips it along with the sweep. That parameter has always meant "just show me
-      onGrow: () => state.plan.grow(),
   // the island", and it is what every measurement and every screenshot uses.
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro')) startIntro();

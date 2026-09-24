@@ -74,9 +74,9 @@ async function runDeleteRoads(o) {
   ensureData();
   const config = loadConfig();
   const files = filesFor(o);
-  const size = config.gridSize || 64;
+  const cap = config.gridSize || 64;
 
-  const layout = loadLayout(files.layout, config.seed, size, { minSize: o.codex ? null : config.minGridSize });
+  const layout = loadLayout(files.layout, config.seed, cap, { minSize: o.codex ? null : config.minGridSize });
   clearRoads(layout);
   saveLayout(files.layout, layout);
 
@@ -108,7 +108,8 @@ async function runScan(o) {
     multiplayer: { ...base.multiplayer, sea: { ...base.multiplayer.sea, mode: 'single' } },
   } : base;
   const files = filesFor(o);
-  const size = config.gridSize || 64;
+  // The most this island may grow to; the grid it stands on is the layout's own, below.
+  const cap = config.gridSize || 64;
 
   const sources = o.codex ? discoverCodex(o.codexHome) : discover();
   const cache = loadCache(files.cache);
@@ -142,7 +143,8 @@ async function runScan(o) {
   const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
   const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
 
-  const layout = loadLayout(files.layout, config.seed, size, { minSize: o.codex ? null : config.minGridSize });
+  const layout = loadLayout(files.layout, config.seed, cap, { minSize: o.codex ? null : config.minGridSize });
+  let size = layout.size;
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
   if (o.clearRoads) clearRoads(layout);
@@ -187,15 +189,17 @@ async function runScan(o) {
   const tp = Date.now();
   if (o.plan) {
     plan = runPlan(layout, model, o.plan, {
-      seed: config.seed, size, dryRun: !!o.dryRun, layoutFile: files.layout, placementsFile: files.placements, now: o.now,
+      seed: config.seed, size, cap, dryRun: !!o.dryRun, layoutFile: files.layout, placementsFile: files.placements, now: o.now,
     });
     if (!plan.ok || o.dryRun) {
       return { plan, settlers: model.stats.settlers, districts: model.stats.districts, files: jobs.length, changedFiles, ms: Date.now() - t0 };
     }
     ({ terrain, unplaced } = plan);
   } else {
-    ({ terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size }));
+    ({ terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size, cap }));
   }
+  // A growth step may have enlarged the grid under it (growCanvas).
+  size = layout.size;
   const placeMs = Date.now() - tp;
 
   const village = assemble({ config, model, layout, terrain, size, all: o.all, boats: o.codex ? {} : builtBoats() });

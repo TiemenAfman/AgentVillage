@@ -342,7 +342,12 @@ export function createArchipelago() {
       const gapZ = Math.abs(region.origin[1] - other.origin[1]) - (region.half + other.half);
       if (gapX < 0 && gapZ < 0) throw new Error(`region ${region.id} overlaps ${other.id}`);
     }
+    const resized = strideOf(region) !== strideOf(list[i]);
     list[i] = region;
+    // A grid that grew (Plans/eiland-laten-groeien.md) needs a wider stride, and keeping the
+    // old base would run its level keys into the next region's. The deck-under-foot worry
+    // above is moot then: every cell index on the island moved with the grid anyway.
+    if (resized) reissueStrides();
     return region;
   }
 

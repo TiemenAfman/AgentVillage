@@ -4,7 +4,7 @@
 > uitgroeit, of ik wil iets van 50×50 inpolderen." — en daarna: "Die 256 kan dan wel voor
 > nieuwe mensen eerst 16×16 worden, en dan laten we het eiland écht groeien."
 
-**Status:** fase 1 (het terrein) en fase 2 (de layout, de Grow-knop, klein stichten) gebouwd op 24 september 2026, zie "Fase 1/2, gebouwd". Ook gebouwd, los hiervan,
+**Status:** fase 1 (het terrein), fase 2 (de layout, de Grow-knop, klein stichten) en fase 4 (het doek groeit, ook voor een bestaand eiland) gebouwd op 24 september 2026, zie "Fase 1/2/4, gebouwd". Ook gebouwd, los hiervan,
 op dezelfde dag: een handmatige polder mag nu ook een super-cel nemen waar de kustlijn doorheen
 loopt (`polderCandidate(…, { shore: true })`). Dat was de reden dat polderen langs een kust
 met een strook ondiep water vóór het strand onmogelijk was.
@@ -277,6 +277,45 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
 - Je huidige eiland is op het hele grid gesticht (`grow: null`) en kan pas groeien als het
   doek kan groeien (fase 4). Zijn kust ligt al op de rand van 256.
 - Heuvels en rivieren in de aangegroeide grond.
+
+## Fase 4, gebouwd (24 september 2026): het doek groeit, ook onder een bestaand eiland
+
+- **`gridSize` is het maximum, het doek is van de layout.**
+  - `loadLayout` gooit het dorp niet meer weg om een andere grootte. Alleen een nieuw zaad of
+    `LAYOUT_VERSION` doet dat nog.
+  - `scan.mjs` rekent met `cap` (de config) en `size` (`layout.size`, opnieuw gelezen na
+    `placeAll`). `placeAll`, de planner, de tuin, de survey en het parcel lezen zelf `layout.size`.
+- **`growCanvas(layout, newSize)`** schuift het doek centraal op, in stappen van 32.
+  - Elke grid-index gaat +k. Super-celvelden (lobes, commons, zones, de `supers` en `seed` van
+    een polder) blijven staan, want die hangen aan `lattice.anchor`.
+  - Een eiland gesticht op het hele grid krijgt de eerste keer `grow.base` = dat grid.
+  - `tests/canvas-grow.test.mjs` loopt de hele layout door en faalt op elk paar dat niet
+    meeschoof en ook geen bekend super-celveld is.
+- **`growStep`** vergroot eerst het doek als de ring niet past maar binnen `cap` valt.
+  `canGrowFurther` is de ene vraag die `placeAll`, de polder-ladder en de knop stellen.
+- **`diffLayouts`** vergelijkt plots in lokale coördinaten. Anders leest een groter doek als
+  "elk huis verhuisd" en weigert de planner de knop.
+- **Een brugsteen gaat mee met de kade:** `planBridge` legt de brug opnieuw als de nieuwe kade
+  ernaast komt te liggen. Gemeten op de kopie van het live eiland.
+- **De pagina herlaadt** als `grid.size` verandert. Het grondmesh, het water, de mist, de camera
+  en de minimap zijn allemaal op de oude N gebouwd, en een doek groeit zelden.
+- **`regions.replace`** deelt de strides opnieuw uit als het formaat verandert. Dat was de
+  `levelBase`-bug uit de verkenning.
+- **Gemeten op een kopie van het live eiland** (`gridSize` 384, eigen zee):
+  - Een gewone scan verandert niets.
+  - Grow zet het doek van 256 naar 352 en de kust van 120 naar 156.
+  - 12 gebouwen verhuizen: 9 kadehuizen, vuurtoren, kraan, brugsteen.
+  - Alle andere staan in de wereld op dezelfde plek, en beide scans erna zijn byte-gelijk.
+  - In de browser ziet het er goed uit, en het eiland houdt zijn ligplaats (320,0).
+- **Ook gevonden en gerepareerd:** bij het splitsen van hunks in fase 2 waren `onGrow` en
+  `grow: bundle.grow` op de verkeerde plek in `main.js` beland. Het eerste was een
+  syntaxfout, het tweede geldig JavaScript (een label), dus onzichtbaar. De andere sessie
+  zette het ook recht (`cf5202f`). `tests/syntax.test.mjs` draait nu `node --check` over
+  `web/js` en `shared/`.
+
+**Nog open voor fase 5 (de zee):** een eiland dat groeit en daardoor een buur raakt, krijgt nu
+van `lib/fleet.mjs` een nieuwe ligplaats, en verhuist dus. Een eiland zou bij aankomst ruimte
+moeten reserveren voor zijn `gridSize` (`growCap`).
 
 ## Fasen
 

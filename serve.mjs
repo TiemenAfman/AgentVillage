@@ -144,8 +144,8 @@ function survey() {
   let key = null;
   try { key = `${fs.statSync(files.layout).mtimeMs}|${fs.statSync(files.village).mtimeMs}`; } catch { return null; }
   if (surveyCache.key === key) return surveyCache.body;
-  const size = config.gridSize || 64;
-  const layout = loadLayout(files.layout, config.seed, size, { minSize: config.minGridSize });
+  const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: config.minGridSize });
+  const size = layout.size;
   const village = readJson(files.village, null);
   const body = buildSurvey({ layout, village, seed: config.seed, size });
   surveyCache = { key, body };
@@ -1510,7 +1510,9 @@ function tellTheSea() {
   // lists. A prop in props.json carries only what whoever built it gave it - `scale` is
   // usually not among them - and the sea's side of this door is strict, so raw props are
   // refused whole and the tree never appears on anybody else's island.
-  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: config.gridSize });
+  // The grid the bundle was packed on (the village's own, which a growing island enlarges),
+  // not the setting: the sea checks a parcel against the island it holds.
+  const parcel = packParcel({ props: listProps(), crops: cropsView(), gridSize: (readJson(VILLAGE_FILE, null) || {}).grid?.size || config.gridSize });
   seaClient.patch(parcel).catch(() => {});
 }
 
