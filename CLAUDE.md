@@ -162,7 +162,12 @@ nothing to dig, and the difference is what stops the search running on every sca
 A polder the keeper drains by hand (`polder` op in `lib/plan.mjs`) goes through the same
 `polderFromSupers` + `digPolder` the ladder uses and records the hash itself, straight after
 digging; it carries `manual`, `at` and `dugAt` (provenance, kept off the bundle), counts as a
-rung for `poldersWanted`, and `scan.mjs` dates the planned ones around it. Every polder also
+rung for `poldersWanted`, and `scan.mjs` dates the planned ones around it. Unlike the
+ladder's, a hand-drawn polder may take a super-cell the coastline runs through
+(`polderCandidate(…, { shore: true })`, also the survey's `water` bit): its land cells are
+left out of `p.cells`, which is what makes a coast with shallows before the sand
+reclaimable at all. The ladder keeps the strict all-water rule, or islands that already
+have polders would dig different ones. Every polder also
 gets one sticky approach road (`road:polder:<n>:approach`) from its causeway to the square,
 or an empty polder is orphaned paving until somebody builds on it. The sea can take a polder
 back (`unpolder`): refused while anything stands on or owns it or another polder leans on
