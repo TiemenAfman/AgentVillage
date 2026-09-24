@@ -1,6 +1,6 @@
 [package]
 name = "promptholm-android"
-version = "0.4.0"
+version = "0.4.1"
 description = "Promptholm on a phone: web/ carried inside the app, joining one sea - see Plans/eiland-op-android.md"
 authors = ["Martijn Jansen"]
 edition = "2021"
