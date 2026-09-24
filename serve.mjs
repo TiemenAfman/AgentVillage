@@ -145,7 +145,7 @@ function survey() {
   try { key = `${fs.statSync(files.layout).mtimeMs}|${fs.statSync(files.village).mtimeMs}`; } catch { return null; }
   if (surveyCache.key === key) return surveyCache.body;
   const size = config.gridSize || 64;
-  const layout = loadLayout(files.layout, config.seed, size);
+  const layout = loadLayout(files.layout, config.seed, size, { minSize: config.minGridSize });
   const village = readJson(files.village, null);
   const body = buildSurvey({ layout, village, seed: config.seed, size });
   surveyCache = { key, body };

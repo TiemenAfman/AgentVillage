@@ -5,6 +5,7 @@
   "seed": 1337,
   "port": 4747,
   "gridSize": 64,
+  "minGridSize": null,
   "codexIsland": {
     "enabled": true
   },

@@ -151,7 +151,7 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     // `volcano` off the manifest row, the one thing about the volcano's shape its seed and
     // size do not say: without it the sea's mountain would be drawn out here as whatever
     // ordinary island the seed 'volcano' happens to make.
-    const terrain = makeTerrain(info.seed, { size: info.gridSize, volcano: !!info.volcano });
+    const terrain = makeTerrain(info.seed, { size: info.gridSize, grow: info.grow || null, volcano: !!info.volcano });
     const geo = islandGeometry(terrain);
     const mesh = new THREE.Mesh(geo, material);
     mesh.userData.id = `neighbour:${info.id}`;              // so the existing picking finds it

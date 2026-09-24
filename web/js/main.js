@@ -1544,9 +1544,9 @@ function freeBerth(theirHalf) {
 // different code. `volcano` is the third of those and the bluntest: the sea's own island
 // (shared/volcano.mjs) is a different heightfield from the same seed, and without the flag
 // it would be drawn as an ordinary island and flagged as skew.
-function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, volcano = false, terrainHash = null, name = null, village = null, origin = null }) {
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, grow = null, volcano = false, terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway, volcano });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway, grow, volcano });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -2088,6 +2088,7 @@ async function doSyncFleet() {
     });
     if (region) arrived.push(row.name);
   }
+      grow: bundle.grow || null,
   syncHorizon();
   raiseGuestIslands();
   buildDocks();
@@ -2790,7 +2791,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null, open: !!village.island.open });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null, grow: village.grow || null, open: !!village.island.open });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
     // Our own island, against our own scanner: the page is newer or older than the server
@@ -3446,7 +3447,7 @@ function layLandscape(shot) {
     shownPolders = shot.polders;
     shownFairway = shot.fairway || null;
     const v = state.village;
-    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), fairway: shownFairway });
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), fairway: shownFairway, grow: v.grow || null });
     state.terrain = next;
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
@@ -3474,7 +3475,7 @@ function layLandscape(shot) {
 
 // What the heightfield is made of, as one string: the polders' three lists and the channel.
 // Compared between two villages to know whether the ground has to be built again.
-const groundSig = (v) => JSON.stringify([(v.polders || []).map((p) => [p.cells, p.pools, p.dike]), v.fairway ? v.fairway.cells : null]);
+const groundSig = (v) => JSON.stringify([(v.polders || []).map((p) => [p.cells, p.pools, p.dike]), v.fairway ? v.fairway.cells : null, v.grow || null]);
 
 function applyLandscape(force = false) {
   if (!state.world || !state.village) return;
@@ -4980,6 +4981,7 @@ async function boot() {
   // card asks you something is two things happening at once and neither reads.
   //
   // ?nointro skips it along with the sweep. That parameter has always meant "just show me
+      onGrow: () => state.plan.grow(),
   // the island", and it is what every measurement and every screenshot uses.
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro')) startIntro();

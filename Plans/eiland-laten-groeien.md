@@ -4,7 +4,7 @@
 > uitgroeit, of ik wil iets van 50×50 inpolderen." — en daarna: "Die 256 kan dan wel voor
 > nieuwe mensen eerst 16×16 worden, en dan laten we het eiland écht groeien."
 
-**Status:** fase 1 (het terrein) gebouwd op 24 september 2026, zie "Fase 1, gebouwd". Ook gebouwd, los hiervan,
+**Status:** fase 1 (het terrein) en fase 2 (de layout, de Grow-knop, klein stichten) gebouwd op 24 september 2026, zie "Fase 1/2, gebouwd". Ook gebouwd, los hiervan,
 op dezelfde dag: een handmatige polder mag nu ook een super-cel nemen waar de kustlijn doorheen
 loopt (`polderCandidate(…, { shore: true })`). Dat was de reden dat polderen langs een kust
 met een strook ondiep water vóór het strand onmogelijk was.
@@ -229,6 +229,54 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
   mag worden (1,53 r + 4 aan elke kant, zodat de rand in vlak diep water ligt). Een groter
   doek geeft exact dezelfde hoogtes.
 - **Nog niet:** heuvels en rivieren in het aangegroeide land. Dat land is nu vooral glooiende wei.
+
+## Fase 2, gebouwd (24 september 2026): de layout groeit mee
+
+- **`layout.grow`** (`{ base, steps }`, `null` op een eiland gesticht op het hele grid) reist
+  overal mee waar grond gebouwd wordt:
+  - `lib/layout.mjs`, `plan.mjs`, `survey.mjs`, `garden.mjs`, `fleet.mjs`;
+  - `village.json` (`grow`) en de bundel (`growth` in `lib/islandbundle.mjs`, strikt;
+    stralen zijn hele getallen, omdat `real` afrondt en de hash dat niet overleeft);
+  - `main.js` (eigen eiland, buren, geschiedenis, `groundSig`) en `horizon.js`.
+  - De grootte in de bundel komt nu uit `village.grid.size` in plaats van uit de config.
+- **Een stap onthoudt zijn grid** (`{ r, grid, hold }`). De marge van 1,53 r uit fase 1 is weg:
+  op 256 stopte die bij een kust van 77, nu bij 120, precies wat een eiland heeft dat op dat
+  grid gesticht is. Een later groter doek legt de stap ongewijzigd in het midden, net als `base`.
+- **Groeien op vraag** (`growStep`, onderaan `placeAll`): blijven er huizen over, dan zet hij
+  een ring, legt de hash vast en plaatst opnieuw. Dat gebeurt in dezelfde scan, tot 12 stappen.
+  - `nextCoast`: een derde erbij, minimaal 4. De laatste stap wordt afgekapt op de kust van
+    het grid.
+  - Een huis zonder plek in zijn eigen wijk **wacht één ring** in plaats van het plein te
+    nemen (`waited`). Anders stonden 38 van de eerste 41 huizen rond het plein. Maar het wacht
+    maar één keer, anders joeg één ingesloten wijk het eiland in één scan van 59 naar 120.
+  - De polder-ladder wacht tot het eiland volgroeid is. Anders groef hij 8 polders rond een
+    kust van 15, waarvan de dijken daarna midden in de wei lagen.
+- **Wat de nieuwe grond verdrinkt, verhuist** (`doomedBy`):
+  - de kade (`unsettleQuay`, uit `migrateQuay` getild, met kraan);
+  - de havens (`layout.harbours = null`, en wegen die daardoor nergens meer heen gaan
+    verdwijnen via `pruneUnreachable`, nu in `layout.mjs`);
+  - de landing en de vuurtoren.
+
+  Alles wat blijft staan en een lage hoek heeft, gaat in `hold`.
+- **De Grow-knop:** plan-op `grow` (`opGrow`), dezelfde `growStep`, met wat er verhuist als
+  `touched`. Hij staat alleen in de planner als het eiland `grow` heeft.
+- **Stichten:** `config.minGridSize`. Nieuwe eilanden krijgen `FOUNDING` (256 / 32) in
+  `loadConfig` zonder config, en via `setup.mjs --first-run`. Bewust niet als default,
+  want een oude config zonder `gridSize` zou dan 256 krijgen en opnieuw gesticht worden.
+- **Gemeten**, geleidelijk groeiend (4 settlers per scan, tot 240):
+  - Alle huizen staan. Er zijn 7-10 op het plein, tegen 3-11 op een eiland gesticht op het
+    hele grid.
+  - Het eiland blijft veel kleiner: kust 77 bij 200 huizen, tegen 120.
+- **Het zwaarste geval**, het hele register (344) in één keer op een nieuw eiland: 326 huizen,
+  49 op het plein, 18 zonder plek, 8 polders. Byte-gelijk vanaf de tweede scan. Beoordeeld
+  in de browser (`PROMPTHOLM_HOME` op een proefmap, eigen zee).
+
+**Bekend, nog niet gedaan:**
+- Een wijk die meegroeit krijgt aanbouwwijken (lobes), en `hamletCaptions` zet boven elke
+  aanbouw een naam. Op het proefeiland stond CLAUDE drie keer.
+- Je huidige eiland is op het hele grid gesticht (`grow: null`) en kan pas groeien als het
+  doek kan groeien (fase 4). Zijn kust ligt al op de rand van 256.
+- Heuvels en rivieren in de aangegroeide grond.
 
 ## Fasen
 

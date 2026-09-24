@@ -726,17 +726,19 @@ export function hashHeights(H) {
 // become ground - the way a polder is, except shaped like a bigger island of the same seed
 // rather than walled and flat. Plans/eiland-laten-groeien.md has the argument.
 //
-// A step is a radius - where the coast of the bigger island lies, in cells, exactly what
-// `coastScale` is for an island founded on a grid (half * 0.9375) - and `hold`, the cells
-// something stood on when it was taken, in local coordinates (gx - half) so that growing
-// the grid round them later does not move them. A bare number is a step holding nothing. Its ground comes from
-// the founding formula with that radius in place of the grid's, and the one condition that
-// makes it independent of the grid it is drawn on is that the grid's edge lies in water deep
-// enough to be flat: past dw = 1.35 every corner is exactly -2.5 before the blur, so the
-// blur there averages equal numbers and gives them back unchanged. With the coast noise at
-// most 0.18 either way, that is 1.53 radii out, and the blur reaches two corners further.
-const GROW_REACH = 1.53;
-const GROW_EDGE = 4;
+// A step is three things:
+//   r     where the coast of the bigger island lies, in cells - exactly what `coastScale` is
+//         for an island founded on a grid (half * 0.9375);
+//   grid  the grid its ground was worked out on, which is the grid the island had when it
+//         took the step. A bigger grid later sets that ground down in its middle unchanged,
+//         the way `base` is set down, so a step is the same ring on every grid it is ever
+//         drawn on. The first version asked instead for a grid wide enough that its edge
+//         lay in flat deep water - 1.53 radii - which made the ground independent of the
+//         grid, and on a 256 grid stopped the island at a coast of 77 where an island
+//         founded on the same grid has 120. Remembering the grid costs one number;
+//   hold  the cells something stood on when it was taken, in local coordinates (gx - half)
+//         so that growing the grid round them later does not move them.
+// A bare number is a step on the smallest grid it fits, holding nothing - for tests.
 // How a new strip rises from the old shore: a corner next to the old land is at most this
 // high, and every corner further out may rise this much more, until the bigger island's own
 // ground is lower than that. Without the ramp the new land starts at the bigger island's
@@ -750,8 +752,8 @@ const GROW_RIVER_KEEP = 4;
 
 // The founding coast of a grid, in the same units as a step.
 export function foundingCoast(size) { return (size / 2) * 0.9375; }
-// The smallest grid a coast of `r` may be drawn on without the grid's edge showing in it.
-export function gridForCoast(r) { return 2 * (Math.ceil(GROW_REACH * r) + GROW_EDGE); }
+// The smallest grid a coast of `r` fits on: the one an island founded on it would have.
+export function gridForCoast(r) { return 2 * Math.ceil(r / 0.9375); }
 
 function checkGrow(grow, size) {
   const base = grow.base;
@@ -765,8 +767,11 @@ function checkGrow(grow, size) {
     const r = typeof s === 'number' ? s : s && s.r;
     const hold = (s && typeof s === 'object' && Array.isArray(s.hold)) ? s.hold : [];
     if (!(typeof r === 'number' && r > last)) throw new Error(`a growth step of ${r} does not grow the island`);
-    if (gridForCoast(r) > size) throw new Error(`a coast of ${r} needs a grid of ${gridForCoast(r)}, not ${size}`);
-    out.push({ r, hold });
+    const grid = s && typeof s === 'object' && s.grid !== undefined ? s.grid : gridForCoast(r);
+    if (!Number.isInteger(grid) || grid < 16 || (size - grid) % 2) throw new Error(`a growth step on a grid of ${grid} cannot be drawn on ${size}`);
+    if (gridForCoast(r) > grid) throw new Error(`a coast of ${r} needs a grid of ${gridForCoast(r)}, not ${grid}`);
+    if (grid > size) throw new Error(`a coast of ${r} needs a grid of ${grid}, not ${size}`);
+    out.push({ r, grid, hold });
     last = r;
   }
   return { base, steps: out };
@@ -819,9 +824,10 @@ function groundForCoast(seed, size, r, g) {
 // grid's edge - so the lake, and anything else the tide never reached, is left as it is; and never within
 // reach of a founding river, so the river keeps its bed and ends where it always did. A
 // corner is only ever raised, never lowered.
-function accrete(H, size, seed, { r, hold }, g) {
+function accrete(H, size, seed, { r, grid, hold }, g) {
   const N = size + 1;
-  const F = groundForCoast(seed, size, r, g);
+  const F0 = groundForCoast(seed, grid, r, g);
+  const F = grid === size ? F0 : embed(F0, grid, size);
   // What stays exactly as it is: everything above the beach, and every corner of a cell the
   // step was told something stands on (`hold`). The rest of the old shore - the sand, and
   // the low lip of the meadow behind it - rises with the new ground; holding all of it was

@@ -178,6 +178,23 @@ Everything that builds ground has to be handed it — `lib/layout.mjs`, `lib/gar
 deliberately is not is `horizon.js`, which ignores the polders too because a silhouette at
 that range is every other cell.
 
+**An island founded small grows, by accretion** ([Plans/eiland-laten-groeien.md](Plans/eiland-laten-groeien.md)).
+`layout.grow = { base, steps }` (null on an island founded on its whole grid, which never
+grows) is makeTerrain's `grow` and travels wherever ground is built, exactly like the
+polders - bundle (`growth`, strict, radii whole numbers), `village.grow`, every page and
+the sea. The founding ground is built on `base` (`groundOf`) and set down in the middle of
+the grid; each step `{ r, grid, hold }` raises only sea and beach joined to open water,
+never touches a corner above `BEACH_MAX` or of a `hold` cell (what stood there, in local
+coordinates), and remembers the grid it was worked out on so a bigger grid later reproduces
+it bit for bit. `placeAll` grows by itself (`growStep`) when houses are left over, in the
+same scan, and records the hash before placing again; a house with no room in its own
+hamlet waits one ring instead of taking the commons (`waited`), and the polder ladder waits
+until the island has reached its grid. What the new ground drowns moves on purpose: the
+quay (`unsettleQuay`), the harbours, the landing, the lighthouse - and roads left leading
+nowhere go through `pruneUnreachable` (now in layout.mjs). The planner's Grow button is the
+`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (256 grid,
+`minGridSize` 32) - deliberately not the defaults, which also fill in old configs.
+
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
 `cos` or `pow`, which can differ in the last bit between runtimes. The viewer hashes the
