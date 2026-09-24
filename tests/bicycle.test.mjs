@@ -17,7 +17,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const {
   stepBike, bikeAt, createBicycle, GEOMETRY, RIDER,
-  BIKE_TOP, BIKE_TURBO, BIKE_REVERSE, BIKE_SHORE,
+  BIKE_TOP, BIKE_TURBO, BIKE_REVERSE, BIKE_SHORE, BIKE_HOP, BIKE_GRAVITY,
 } = await import('../web/js/bicycle.js');
 const { BOAT_TOP } = await import('../web/js/boat.js');
 const { BICYCLE } = await import('../web/js/bicycle-mesh.js');
@@ -152,6 +152,70 @@ test('it is a function of what it is handed: the same ride twice is the same rid
   leap.v = BIKE_TOP;
   stepBike(leap, { pedal: 1 }, 3, { ground: MEADOW, blocked: (x, z) => z > 1 && z < 1.5 });
   assert.ok(leap.z < 1.5, 'one long frame jumped a wall');
+});
+
+// ---- the hop --------------------------------------------------------------------------
+
+test('Space on the bike is the jump the feet make: as high, and back down on its tyres', () => {
+  // Not a copy that can drift: walk.js's numbers, read out of its source.
+  assert.equal(BIKE_HOP, feetSpeed('JUMP_V'));
+  assert.equal(BIKE_GRAVITY, feetSpeed('GRAVITY'));
+  const b = ride(bike(), { pedal: 1 }, 2);
+  stepBike(b, { pedal: 1, hop: true }, FRAME, { ground: MEADOW });
+  assert.ok(b.air && b.y > 0.5, 'the hop did not leave the ground');
+  let top = b.y, t = 0;
+  const v = b.v;
+  while (b.air && t < 2) { stepBike(b, { pedal: 1 }, FRAME, { ground: MEADOW }); top = Math.max(top, b.y); t += FRAME; }
+  // The feet's jump integrated the way walk.js integrates it, frame by frame - not the ideal
+  // parabola, which is a couple of centimetres higher than either of them ever gets.
+  let feet = 0, fvy = BIKE_HOP, peak = 0;
+  while (fvy > 0 || feet > 0) { fvy -= BIKE_GRAVITY * FRAME; feet += fvy * FRAME; peak = Math.max(peak, feet); }
+  assert.ok(Math.abs(top - 0.5 - peak) < 0.005, `it rose ${(top - 0.5).toFixed(3)}, the feet ${peak.toFixed(3)}`);
+  assert.ok(!b.air && b.y === 0.5 && b.vy === 0, 'it did not land back on the meadow');
+  assert.ok(Math.abs(b.v - v) < 1e-9 || b.v >= v, 'the pedals pushed or braked in the air');
+  // A hop is a press: held, it does not bounce, and in the air a second press does nothing.
+  stepBike(b, { hop: true }, FRAME, { ground: MEADOW });
+  const vy = b.vy;
+  stepBike(b, { hop: true }, FRAME, { ground: MEADOW });
+  assert.ok(b.vy < vy, 'a press in the air hopped again');
+});
+
+test('a hop clears what a ride cannot: a kerb above a step, and a brook', () => {
+  // A ledge 0.6 up at z = 2: ridden at, it is a wall; hopped at, it is somewhere to land.
+  const kerb = { ground: (x, z) => (z > 2 ? 1.1 : 0.5) };
+  const walled = ride(bike(), { pedal: 1 }, 3, kerb);
+  assert.ok(walled.z <= 2);
+  const hopper = bikeAt(0, 0.5, 0, 0.5);
+  hopper.v = 5;
+  stepBike(hopper, { pedal: 1, hop: true }, FRAME, kerb);
+  ride(hopper, { pedal: 1 }, 1, kerb);
+  assert.ok(hopper.z > 2 && hopper.y === 1.1 && !hopper.air, `hopped to z = ${hopper.z.toFixed(2)}, y = ${hopper.y}`);
+  // A brook half a unit wide at z = 3: hopped at speed, the bike comes down on the far bank.
+  const brook = { ground: (x, z) => (z > 3 && z < 3.5 ? -0.4 : 0.5) };
+  const b = bikeAt(0, 1.5, 0, 0.5);
+  b.v = BIKE_TOP;
+  stepBike(b, { pedal: 1, hop: true }, FRAME, brook);
+  ride(b, { pedal: 1 }, 1, brook);
+  assert.ok(b.z > 3.5 && !b.splash, `came down at z = ${b.z.toFixed(2)}`);
+});
+
+test('coming down in the water ends the ride, and a deck overhead stops the hop', () => {
+  const sea = { ground: (x, z) => (z > 2.3 ? -1.2 : 0.5) };
+  const b = bikeAt(0, 1.5, 0, 0.5);
+  b.v = BIKE_TOP;
+  stepBike(b, { pedal: 1, hop: true }, FRAME, sea);
+  ride(b, { pedal: 1 }, 2, sea);
+  assert.ok(b.splash && b.v === 0, 'landed in the sea and rode on');
+  const splashed = { ...b };
+  stepBike(b, { pedal: 1, hop: true }, FRAME, sea);
+  assert.deepEqual(b, splashed, 'a splashed bike still moved');
+  // A lid 0.2 over the road: the hop rises that far and no further.
+  const under = { ground: MEADOW, ceiling: () => 0.7 };
+  const c = bike();
+  stepBike(c, { hop: true }, FRAME, under);
+  let top = 0;
+  for (let i = 0; i < 60; i++) { stepBike(c, {}, FRAME, under); top = Math.max(top, c.y); }
+  assert.ok(top <= 0.7 + 1e-9 && !c.air, `rose to ${top}`);
 });
 
 // ---- the model ------------------------------------------------------------------------

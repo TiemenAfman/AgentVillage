@@ -470,7 +470,12 @@ boat's stamina pool), so a second kind of vehicle in it would make them all lie.
 mounts and dismounts in any walk mode created with `bikes: true` (the island and `/demo`, not
 rooms); the bike comes out of the satchel and goes back in, so no server state exists for it.
 `stepBike` (`web/js/bicycle.js`) is pure like `stepBoat` and takes walk.js's own `groundAt` and
-`blocked`, so water, walls and ledges above `STEP_UP` stop it exactly as they stop feet. The mesh
+`blocked`, so water, walls and ledges above `STEP_UP` stop it exactly as they stop feet. Space hops with
+the feet's own `JUMP_V`/`GRAVITY` (copied into `BIKE_HOP`/`BIKE_GRAVITY`, the test reads walk.js);
+in the air water is no wall, and a landing in it sets `splash`, on which walk.js puts the bike
+away and leaves a swimmer. The camera on a bike is free: any look input resets
+`riddenSinceLook`, and it only trails the bike again after `RECENTRE_AFTER` of riding (the boat
+still trails every frame). The mesh
 hangs each baked part (`scripts/build-bicycle.py`) on its Blender origin, and the steering axis
 is read off the steer and front-axle origins - move a pivot in the builder, not in JS. Peers
 see a rider through `FLAG_RIDING` (128; `POSE_MASK` is 255 now); a sea still running the old

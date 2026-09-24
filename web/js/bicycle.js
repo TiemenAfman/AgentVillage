@@ -39,6 +39,16 @@ export const BIKE_SHORE = 0.06;
 // The highest ledge it rolls up without a jump: walk.js's STEP_UP, so a bridge you walk
 // onto is a bridge you ride onto and a storey is still a wall.
 const STEP_UP = 0.45;
+// Space is a hop: walk.js's own jump (JUMP_V, GRAVITY - tests/bicycle.test.mjs reads both out
+// of it), so the bike leaves the ground exactly as high as the feet do, about 0.38. In the air
+// the pedals push nothing, the bars still turn, and a ledge is measured from where the tyres
+// are rather than from the road - which is what lets a hop take you up a kerb a plain ride
+// would stop at, or over a brook. Coming down in the water ends the ride (`splash`).
+export const BIKE_HOP = 3.1;
+export const BIKE_GRAVITY = 12.5;
+// How far the frame tips nose up on the way up and nose down on the way down, per unit of
+// vertical speed: a hop you can see, not a lift.
+const HOP_PITCH = 0.07;
 // How much way the handlebars need before they have their full say.
 const TURN_FULL = 3.0;
 // A hard turn spends way, less than a hull's (0.25) - a bicycle corners.
@@ -131,25 +141,31 @@ const damp = (from, to, rate, dt) => to + (from - to) * Math.exp(-rate * dt);
 // A bike at (x, z) facing `yaw`, standing still. The rest is what `stepBike` keeps: the way
 // on (`v`), and the three angles the mesh is drawn with.
 export function bikeAt(x, z, yaw = 0, y = 0) {
-  return { x, y, z, yaw, v: 0, steer: 0, lean: 0, wheel: 0, crank: 0, bumped: false };
+  return { x, y, z, yaw, v: 0, steer: 0, lean: 0, wheel: 0, crank: 0, bumped: false,
+    vy: 0, air: false, floor: y, pitch: 0, splash: false };
 }
 
 // One step of the bike. `b` is mutated and returned. `ground(x, z)` is the height underfoot
 // at a world point, asked from the bike's own height (walk.js's groundAt, so decks and
 // bridges carry it); `blocked(x, z)` is walk.js's own solid test. Deterministic for a fixed
 // sequence of dt, and `turbo` is decided by the caller, whose pool has the clock in it.
-export function stepBike(b, { pedal = 0, turn = 0, turbo = false } = {}, dt, { ground, blocked = () => false } = {}) {
+// `hop` is a press, not a hold: taken once, and only with both tyres down. `ceiling(x, z)` is
+// the highest the bike may rise there (a deck overhead, less the rider's head), or omitted for
+// the open sky.
+export function stepBike(b, { pedal = 0, turn = 0, turbo = false, hop = false } = {}, dt,
+  { ground, blocked = () => false, ceiling = null } = {}) {
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0 || typeof ground !== 'function') return b;
+  if (hop === true && !b.air && !b.splash) { b.vy = BIKE_HOP; b.air = true; b.floor = b.y; }
   let left = dt;
-  while (left > 1e-9) {
+  while (left > 1e-9 && !b.splash) {
     const step = Math.min(left, MAX_STEP);
     left -= step;
-    slice(b, axis(pedal), axis(turn), turbo === true, step, ground, blocked);
+    slice(b, axis(pedal), axis(turn), turbo === true, step, ground, blocked, ceiling);
   }
   return b;
 }
 
-function slice(b, p, r, boost, step, ground, blocked) {
+function slice(b, p, r, boost, step, ground, blocked, ceiling) {
   const top = boost ? BIKE_TOP * BIKE_TURBO : BIKE_TOP;
   const speed = Math.abs(b.v);
 
@@ -165,8 +181,11 @@ function slice(b, p, r, boost, step, ground, blocked) {
   b.v *= 1 - TURN_BITE * Math.abs(r) * step;
 
   // ---- the pedals and the brakes -------------------------------------------------
+  // Only with the tyres on something: in the air the way is whatever it was at take-off.
   const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
-  if (p > 0) {
+  if (b.air) {
+    // nothing to push against
+  } else if (p > 0) {
     const want = p * top;
     if (b.v < want) b.v = Math.min(want, b.v + BIKE_ACCEL * (top / BIKE_TOP) * step);
     // Eased off, or the turbo ran out: freewheel down to what the legs are still asking for.
@@ -180,13 +199,13 @@ function slice(b, p, r, boost, step, ground, blocked) {
     b.v -= b.v * BIKE_ROLL * step;
   }
   // The hill, measured along the heading half a wheel ahead and behind.
-  if (b.v !== 0) {
+  if (b.v !== 0 && !b.air) {
     const d = 0.1;
     const grade = (ground(b.x + fx * d, b.z + fz * d) - ground(b.x - fx * d, b.z - fz * d)) / (2 * d);
     b.v -= clamp(grade, -1.5, 1.5) * SLOPE_PULL * step;
   }
   b.v = clamp(b.v, -BIKE_REVERSE, BIKE_TOP * BIKE_TURBO);
-  if (!p && Math.abs(b.v) < CREEP) b.v = 0;
+  if (!p && !b.air && Math.abs(b.v) < CREEP) b.v = 0;
 
   // ---- the ride ------------------------------------------------------------------
   b.bumped = false;
@@ -194,10 +213,11 @@ function slice(b, p, r, boost, step, ground, blocked) {
     const run = b.v * step;
     const nx = b.x + fx * run, nz = b.z + fz * run;
     const here = b.y;
-    // Somewhere a tyre can be: dry, not solid, and not a wall of a ledge.
+    // Somewhere a tyre can be: dry, not solid, and not a wall of a ledge. In the air, water
+    // is no wall - it is what a hop clears - and the ledge is measured from the tyres.
     const rideable = (x, z) => {
       const h = ground(x, z);
-      return h >= BIKE_SHORE && h - here <= STEP_UP && !blocked(x, z);
+      return (b.air || h >= BIKE_SHORE) && h - here <= STEP_UP && !blocked(x, z);
     };
     if (rideable(nx, nz)) {
       b.x = nx; b.z = nz;
@@ -213,8 +233,30 @@ function slice(b, p, r, boost, step, ground, blocked) {
       b.v -= b.v * SCRAPE_DRAG * step;
       if (Math.abs(b.v) < CREEP) b.v = 0;
     }
-    b.y = ground(b.x, b.z);
+    if (!b.air) b.y = ground(b.x, b.z);
   }
+
+  // ---- up and down ---------------------------------------------------------------
+  if (b.air) {
+    b.vy -= BIKE_GRAVITY * step;
+    b.y += b.vy * step;
+    // The rider's head against a deck overhead: the hop stops rising there, as a jump does.
+    const lid = b.vy > 0 && ceiling ? ceiling(b.x, b.z) : Infinity;
+    if (b.y > lid) { b.y = lid; b.vy = 0; }
+    const under = ground(b.x, b.z);
+    if (b.vy <= 0 && b.y <= under) {
+      b.y = under;
+      b.vy = 0;
+      b.air = false;
+      b.floor = under;
+      // Landed in the water: there is no riding on from there. walk.js puts the bike away and
+      // leaves a swimmer where it came down.
+      if (under < BIKE_SHORE) { b.splash = true; b.v = 0; }
+    }
+  } else {
+    b.floor = b.y;
+  }
+  b.pitch = b.air ? clamp(b.vy * HOP_PITCH, -0.3, 0.3) : damp(b.pitch, 0, 12, step);
 
   // ---- what turns ----------------------------------------------------------------
   const rolled = b.v * step / GEOMETRY.tyre;
@@ -275,8 +317,9 @@ export function createBicycle({ scene, material }) {
       root.position.set(x, y, z);
       root.rotation.y = yaw;
     },
-    pose({ wheel = 0, crank: turned = 0, steer: bars = 0, lean = 0 } = {}) {
+    pose({ wheel = 0, crank: turned = 0, steer: bars = 0, lean = 0, pitch = 0 } = {}) {
       root.rotation.z = lean;
+      root.rotation.x = -pitch;        // positive pitch is nose up: +x rotation tips the front down
       if (rear) rear.rotation.x = wheel;
       if (front) front.rotation.x = wheel;
       if (crank) crank.rotation.x = turned;

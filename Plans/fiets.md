@@ -12,9 +12,15 @@ in walk-mode, fietst over het eiland, en andere spelers zien je fietsen.
   anders ergens geparkeerd, en de server hoeft niets over fietsen te onthouden.
 - W/S trappen en remmen (S bij stilstand is achteruit lopen met de fiets), A/D sturen,
   Shift gaat staand op de pedalen en kost het lichaamsuithoudingsvermogen, net als rennen.
+- Spatie is een sprong (bunny hop), even hoog als de sprong te voet. Daarmee kom je op een
+  rand die te hoog is om op te rijden en spring je over een beekje; kom je in het water neer,
+  dan gaat de fiets weg en zwem je.
 - Water is een muur: de fiets stopt aan de waterlijn. Gebouwen en mensen zijn dezelfde
   muren als voor je voeten (`blocked` in walk.js), met langs de muur glijden en snelheid
   kwijt bij een botsing.
+- De camera draai je vrij met muis of rechter stick, ook stilstaand. Pas na 0,5 s rijden
+  zonder rondkijken zwaait hij weer achter de fiets, zacht beginnend en sneller naarmate je
+  harder gaat (`RECENTRE_AFTER`/`RECENTRE_EASE` in walk.js). De boot trekt nog wel meteen bij.
 - Andere spelers zien je op een fiets, met draaiende wielen.
 
 ## Besluiten
