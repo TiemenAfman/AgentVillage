@@ -720,20 +720,181 @@ export function hashHeights(H) {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-export function makeTerrain(seed, opts) {
-  const size = (opts && opts.size) || 64;
-  const polders = (opts && opts.polders) || [];
-  const fairway = (opts && opts.fairway) || null;
-  // No island at all: every corner open sea. For a page that stands in a world without an
-  // island of its own - the app on a phone, whose "home" is a free berth of water - so the
-  // page's one home-at-the-origin drawing path still has a terrain to draw, and it draws
-  // exactly the sea around it. Absent for every real island, which therefore hashes as
-  // it always did.
-  const open = !!(opts && opts.open);
-  // The volcano in the middle of the sea (Plans/vulkaan-in-het-midden.md): a mountain with a
-  // crater and lava instead of a hill, a lake and rivers. Absent for every other island, and
-  // everything below that it touches is behind it, so those still hash as they always did.
-  const volcano = !!(opts && opts.volcano) && !open;
+// ---- growing ----------------------------------------------------------------------------
+// An island grows by accretion, never by being worked out again at a bigger size: every
+// corner that was land stays exactly the height it was, and what is added is sea that has
+// become ground - the way a polder is, except shaped like a bigger island of the same seed
+// rather than walled and flat. Plans/eiland-laten-groeien.md has the argument.
+//
+// A step is a radius - where the coast of the bigger island lies, in cells, exactly what
+// `coastScale` is for an island founded on a grid (half * 0.9375) - and `hold`, the cells
+// something stood on when it was taken, in local coordinates (gx - half) so that growing
+// the grid round them later does not move them. A bare number is a step holding nothing. Its ground comes from
+// the founding formula with that radius in place of the grid's, and the one condition that
+// makes it independent of the grid it is drawn on is that the grid's edge lies in water deep
+// enough to be flat: past dw = 1.35 every corner is exactly -2.5 before the blur, so the
+// blur there averages equal numbers and gives them back unchanged. With the coast noise at
+// most 0.18 either way, that is 1.53 radii out, and the blur reaches two corners further.
+const GROW_REACH = 1.53;
+const GROW_EDGE = 4;
+// How a new strip rises from the old shore: a corner next to the old land is at most this
+// high, and every corner further out may rise this much more, until the bigger island's own
+// ground is lower than that. Without the ramp the new land starts at the bigger island's
+// height at that radius - its inland, a metre and more up - and the old beach becomes the
+// foot of a wall.
+const GROW_SHORE = BEACH_MAX + 0.05;
+const GROW_RISE = 0.18;
+// Rivers keep their banks: nothing within this many corners of a founding river's course
+// is accreted, or the first ring of new ground would fill the river bed to beach height.
+const GROW_RIVER_KEEP = 4;
+
+// The founding coast of a grid, in the same units as a step.
+export function foundingCoast(size) { return (size / 2) * 0.9375; }
+// The smallest grid a coast of `r` may be drawn on without the grid's edge showing in it.
+export function gridForCoast(r) { return 2 * (Math.ceil(GROW_REACH * r) + GROW_EDGE); }
+
+function checkGrow(grow, size) {
+  const base = grow.base;
+  const steps = Array.isArray(grow.steps) ? grow.steps : [];
+  if (!Number.isInteger(base) || base < 16 || base > size || (size - base) % 2) {
+    throw new Error(`an island founded on ${base} cannot be drawn on a grid of ${size}`);
+  }
+  let last = foundingCoast(base);
+  const out = [];
+  for (const s of steps) {
+    const r = typeof s === 'number' ? s : s && s.r;
+    const hold = (s && typeof s === 'object' && Array.isArray(s.hold)) ? s.hold : [];
+    if (!(typeof r === 'number' && r > last)) throw new Error(`a growth step of ${r} does not grow the island`);
+    if (gridForCoast(r) > size) throw new Error(`a coast of ${r} needs a grid of ${gridForCoast(r)}, not ${size}`);
+    out.push({ r, hold });
+    last = r;
+  }
+  return { base, steps: out };
+}
+
+// The founding grid set down in the middle of a bigger one. What lies outside it is open
+// sea, which is what the founding grid's own edge already treated it as.
+function embed(H0, base, size) {
+  const N0 = base + 1, N = size + 1, k = (size - base) / 2;
+  const H = new Float64Array(N * N).fill(-2.5);
+  for (let j = 0; j < N0; j++) {
+    for (let i = 0; i < N0; i++) H[i + k + (j + k) * N] = H0[i + j * N0];
+  }
+  return H;
+}
+
+// The bigger island's own ground, before any of it is laid: the founding loop with a coast
+// of `r` rather than the grid's, the same hill, shoulder and lake (they are measured from
+// the middle, not from the edge), blurred the same way.
+function groundForCoast(seed, size, r, g) {
+  const N = size + 1, half = size / 2;
+  const nShape = makeSimplex2D(hash32(seed + ':shape'));
+  const nCoast = makeSimplex2D(hash32(seed + ':coast'));
+  let F = new Float64Array(N * N);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = i - half, z = j - half;
+      const e01 = fbm2(nShape, x * 0.055, z * 0.055, { octaves: 4 }) * 0.5 + 0.5;
+      const d = Math.sqrt(x * x + z * z) / r;
+      const dw = d + 0.18 * fbm2(nCoast, x * 0.03, z * 0.03, { octaves: 2 });
+      const fall = 1 - smoothstep(0.55, 1.0, dw);
+      let h = (0.35 + 0.65 * e01) * fall * 3.2 - 0.6;
+      h -= 1.9 * smoothstep(0.9, 1.35, dw);
+      const th = clamp(1 - distTo(x, z, g.hillCentre) / 8, 0, 1);
+      h += 4.6 * bump(th);
+      const ts = clamp(1 - distTo(x, z, g.shoulderCentre) / 6, 0, 1);
+      h += 1.8 * bump(ts);
+      const tl = clamp(1 - distTo(x, z, g.lakeCentre) / 4, 0, 1);
+      const sl = bump(tl);
+      if (sl > 0) h = Math.min(h, lerp(0.3, -0.9, sl));
+      F[i + j * N] = h;
+    }
+  }
+  F = boxBlur(boxBlur(F, N), N);
+  for (let k = 0; k < F.length; k++) F[k] = Math.max(-2.5, Math.round(F[k] * 256) / 256);
+  return F;
+}
+
+// One ring of new ground. Only the sea and the beach it washes are touched - joined to the
+// grid's edge - so the lake, and anything else the tide never reached, is left as it is; and never within
+// reach of a founding river, so the river keeps its bed and ends where it always did. A
+// corner is only ever raised, never lowered.
+function accrete(H, size, seed, { r, hold }, g) {
+  const N = size + 1;
+  const F = groundForCoast(seed, size, r, g);
+  // What stays exactly as it is: everything above the beach, and every corner of a cell the
+  // step was told something stands on (`hold`). The rest of the old shore - the sand, and
+  // the low lip of the meadow behind it - rises with the new ground; holding all of it was
+  // the first version, and it left every old coastline behind as a ring of sand in the
+  // meadow, growth rings. The terrain cannot know what stands where, so the layout says so
+  // when it takes the step and the step keeps the list (Plans/eiland-laten-groeien.md).
+  const half = size / 2;
+  const land = new Uint8Array(N * N);
+  for (let k = 0; k < H.length; k++) if (H[k] >= BEACH_MAX) land[k] = 1;
+  for (const [lx, lz] of hold) {
+    const gx = lx + half, gz = lz + half;
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+    const a = gx + gz * N;
+    land[a] = 1; land[a + 1] = 1; land[a + N] = 1; land[a + N + 1] = 1;
+  }
+
+  const keep = new Uint8Array(N * N);
+  for (const course of g.courses || []) {
+    for (const [gx, gz] of course) {
+      for (let j = Math.max(0, gz - GROW_RIVER_KEEP); j <= Math.min(size, gz + 1 + GROW_RIVER_KEEP); j++) {
+        for (let i = Math.max(0, gx - GROW_RIVER_KEEP); i <= Math.min(size, gx + 1 + GROW_RIVER_KEEP); i++) keep[i + j * N] = 1;
+      }
+    }
+  }
+
+  // The sea: every corner that is not land and is joined to the edge through corners that
+  // are not land either.
+  const sea = new Uint8Array(N * N);
+  const queue = new Int32Array(N * N);
+  let head = 0, tail = 0;
+  const seaSeed = (i, j) => { const k = i + j * N; if (!land[k] && !sea[k]) { sea[k] = 1; queue[tail++] = k; } };
+  for (let i = 0; i < N; i++) { seaSeed(i, 0); seaSeed(i, size); seaSeed(0, i); seaSeed(size, i); }
+  while (head < tail) {
+    const k = queue[head++], i = k % N, j = (k - i) / N;
+    if (i > 0) seaSeed(i - 1, j);
+    if (i < size) seaSeed(i + 1, j);
+    if (j > 0) seaSeed(i, j - 1);
+    if (j < size) seaSeed(i, j + 1);
+  }
+
+  // How far out from the land each sea corner lies, in steps of one corner, diagonals
+  // included, so the ramp runs out evenly round a headland.
+  const dist = new Int32Array(N * N).fill(-1);
+  head = 0; tail = 0;
+  for (let k = 0; k < H.length; k++) if (land[k]) { dist[k] = 0; queue[tail++] = k; }
+  while (head < tail) {
+    const k = queue[head++], i = k % N, j = (k - i) / N;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const ni = i + di, nj = j + dj;
+        if (ni < 0 || nj < 0 || ni > size || nj > size) continue;
+        const n = ni + nj * N;
+        if (dist[n] >= 0 || !sea[n]) continue;
+        dist[n] = dist[k] + 1;
+        queue[tail++] = n;
+      }
+    }
+  }
+
+  for (let k = 0; k < H.length; k++) {
+    if (!sea[k] || keep[k] || dist[k] < 1) continue;
+    const v = Math.min(F[k], GROW_SHORE + (dist[k] - 1) * GROW_RISE);
+    if (v > H[k]) H[k] = Math.round(v * 256) / 256;
+  }
+}
+
+// The island as it was founded: the ground, the hill, the lake, the rivers - or the
+// volcano's mountain and its lava - all on a grid of `size`, which for an island that has
+// never grown is the whole of it. Split out of makeTerrain so a grown island can still be
+// built on the grid it was founded on and set down in the middle of a bigger one: the
+// coast here is measured off `half`, so the same seed on a bigger grid is a different
+// island (Plans/eiland-laten-groeien.md).
+function groundOf(seed, size, volcano) {
   const N = size + 1, half = size / 2;
   let H = new Float64Array(N * N);
   const nShape = makeSimplex2D(hash32(seed + ':shape'));
@@ -856,6 +1017,40 @@ export function makeTerrain(seed, opts) {
   for (const course of courses) carveRiver(H, N, size, course);
   if (courses.length) {
     for (let k = 0; k < H.length; k++) H[k] = Math.max(-2.5, Math.round(H[k] * 256) / 256);
+  }
+  return { H, courses, hillCentre, shoulderCentre, lakeCentre, vol, lavaFlows, floorQ, fields, vents };
+}
+
+export function makeTerrain(seed, opts) {
+  const size = (opts && opts.size) || 64;
+  const polders = (opts && opts.polders) || [];
+  const fairway = (opts && opts.fairway) || null;
+  // No island at all: every corner open sea. For a page that stands in a world without an
+  // island of its own - the app on a phone, whose "home" is a free berth of water - so the
+  // page's one home-at-the-origin drawing path still has a terrain to draw, and it draws
+  // exactly the sea around it. Absent for every real island, which therefore hashes as
+  // it always did.
+  const open = !!(opts && opts.open);
+  // The volcano in the middle of the sea (Plans/vulkaan-in-het-midden.md): a mountain with a
+  // crater and lava instead of a hill, a lake and rivers. Absent for every other island, and
+  // everything below that it touches is behind it, so those still hash as they always did.
+  const volcano = !!(opts && opts.volcano) && !open;
+  // An island that has grown (Plans/eiland-laten-groeien.md): founded on a grid of
+  // `grow.base`, set down in the middle of this one, and every ring of ground it has gained
+  // since laid round it by `accrete`. Absent - or a base the size of the grid and no steps -
+  // is the island as it always was, bit for bit. The volcano does not grow.
+  const grow = opts && opts.grow && !volcano && !open ? checkGrow(opts.grow, size) : null;
+  const N = size + 1, half = size / 2;
+  const g = groundOf(seed, grow ? grow.base : size, volcano);
+  const { hillCentre, lakeCentre, vol, lavaFlows, floorQ, fields, vents } = g;
+  let H = g.H, courses = g.courses;
+  if (grow) {
+    const k = (size - grow.base) / 2;
+    if (k) {
+      H = embed(g.H, grow.base, size);
+      courses = courses.map((c) => c.map(([gx, gz]) => [gx + k, gz + k]));
+    }
+    for (const step of grow.steps) accrete(H, size, seed, step, { ...g, courses });
   }
 
   const setCell = (gx, gz, v) => {

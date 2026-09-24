@@ -4,7 +4,7 @@
 > uitgroeit, of ik wil iets van 50×50 inpolderen." — en daarna: "Die 256 kan dan wel voor
 > nieuwe mensen eerst 16×16 worden, en dan laten we het eiland écht groeien."
 
-**Status:** ontwerp, 24 september 2026. Er is nog niets van gebouwd. Wel gebouwd, los hiervan,
+**Status:** fase 1 (het terrein) gebouwd op 24 september 2026, zie "Fase 1, gebouwd". Ook gebouwd, los hiervan,
 op dezelfde dag: een handmatige polder mag nu ook een super-cel nemen waar de kustlijn doorheen
 loopt (`polderCandidate(…, { shore: true })`). Dat was de reden dat polderen langs een kust
 met een strook ondiep water vóór het strand onmogelijk was.
@@ -48,6 +48,18 @@ Er zijn dus twee losse assen:
 |---|---|---|
 | **vorm** (`layout.growth`) | welke ringen zee al land zijn geworden, en met welke straal | per stap, net als de polder-ladder: een zuivere functie van het aantal settlers |
 | **doek** (`layout.size`) | hoe groot het vierkant is waarin dat past | alleen als de aanwas de rand bijna raakt |
+
+## Besloten door Martijn (24 september 2026)
+
+- **Startgrootte `minSize` = 32 cellen** (8×8 super-cellen). Eerst meten of het plein met
+  zijn civic-kavels daarop past. Past het niet, dan is dat de eerste groeistap, niet een
+  grotere `minSize`.
+- **Groeien op vraag:** alleen als de volgende wijk niet meer past (open vraag 5). De stap
+  valt één scan later, en de scan daarna is byte-gelijk.
+- **Havens schuiven mee** (open vraag 4). Haven, kade, vuurtoren en de kadewijk verhuizen
+  als geheel naar de nieuwe kust. De corridor-variant vervalt.
+- **Een Grow-knop in de planner, meteen** (open vraag 2). Die komt in de eerste fase die
+  echt land maakt (fase 2), als plan-op `grow`, net als `polder`.
 
 ## Besluiten (voorstel, nog te bevestigen)
 
@@ -188,6 +200,35 @@ wijk krijgt land waar het vlak genoeg is, en een kleiner eiland heeft minder vla
 dezelfde plek. Kleinst mogelijk wordt dus iteratief: kleine straal → plaatsen → past het
 niet → één stap groter. Hetzelfde `placeAllToFixedPoint`-idee als in `lib/plan.mjs`, met een
 harde bovengrens op het aantal iteraties (`maxSize`).
+
+## Fase 1, gebouwd (24 september 2026): het terrein kan groeien
+
+`makeTerrain(seed, { size, grow: { base, steps } })` in `shared/terrain.mjs`. Nog niemand roept
+het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt de beloften vast.
+
+- **`base`** is het grid waarop het eiland gesticht is. `groundOf` bouwt het daar precies zoals
+  altijd (hill, meer, rivieren) en `embed` legt het in het midden van het grotere doek. Zonder
+  `grow`, of met `base === size` en geen stappen, is de hash bit voor bit die van vandaag.
+  Dat is gecontroleerd op 5 seeds × 5 groottes, de vulkaan, open zee en het live eiland.
+- **Een stap is `{ r, hold }`.**
+  - `r` is de kustafstand van het grotere eiland, in dezelfde eenheid als `coastScale`
+    (`foundingCoast(size)` = `half * 0.9375`).
+  - `hold` is de lijst met cellen waar iets staat, in **lokale** coördinaten (`gx - half`),
+    zodat een groter doek ze niet verschuift.
+- **Wat een stap belooft:**
+  - Alles boven strandhoogte (`BEACH_MAX`) en elke hoek van een `hold`-cel blijft exact gelijk.
+  - Verder wordt alleen zee en strand die met de rand verbonden zijn opgehoogd, nooit
+    verlaagd. Het meer en de rivierbedding (4 hoeken ruimte) blijven met rust.
+  - De nieuwe grond is die van `groundForCoast(r)`: dezelfde formule met `r` op de plaats van
+    de gridkust, met hetzelfde hill, schouder en meer. Aan de oude kust loopt hij op met een
+    helling (`GROW_SHORE` + `GROW_RISE` per hoek).
+- **Waarom `hold` en niet "alle bouwgrond vast":** dat was de eerste versie. Elke oude
+  kustlijn bleef dan als zandring in de wei staan: jaarringen. Het terrein weet niet wat er
+  staat, dus de layout geeft het mee wanneer hij de stap zet.
+- **Doek-onafhankelijk:** `gridForCoast(r)` is het kleinste doek waarop een kust `r` getekend
+  mag worden (1,53 r + 4 aan elke kant, zodat de rand in vlak diep water ligt). Een groter
+  doek geeft exact dezelfde hoogtes.
+- **Nog niet:** heuvels en rivieren in het aangegroeide land. Dat land is nu vooral glooiende wei.
 
 ## Fasen
 
