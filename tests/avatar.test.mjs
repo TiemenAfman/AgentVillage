@@ -150,3 +150,54 @@ test('a swing takes the weapon arm up behind the shoulder and back, a block turn
   assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm back down');
   rig.dispose();
 });
+
+// Plans/bier-en-dronken.md: a beer's hand drinks where any other would swing - each hand has
+// its own mouse button (walk.js) - lifting the glass to the face and handing the swallow out
+// a frame at a time: exactly one drink's worth, however the frames fall.
+test('a beer is drunk from by its own hand, one swallow per drink', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const withHands = (rightHandItem, leftHandItem) => createClassicAvatar(
+    { ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem, leftHandItem } }, material);
+
+  // Only the hand with the glass in it drinks: not the sword beside it, not an empty fist.
+  const lone = withHands('beer', null), armed = withHands('sword', 'beer');
+  assert.equal(lone.held('rightArm'), 'beer');
+  assert.equal(lone.drink('leftArm'), false, 'drank from an empty hand');
+  assert.equal(armed.drink('rightArm'), false, 'drank from a sword');
+  assert.equal(armed.drink('leftArm'), true, 'the left hand\'s beer');
+
+  const rightArm = lone.handAttach.rightArm.parent, glass = lone.handAttach.rightArm.children[0];
+  lone.update(still, 1);
+  assert.ok(Math.abs(rightArm.rotation.x + 0.7) < 0.02, 'a beer is held in front of the chest: ' + rightArm.rotation.x);
+  assert.ok(Math.abs(glass.rotation.x + rightArm.rotation.x) < 1e-9, 'and upright');
+  assert.equal(lone.swallowed(), 0);
+
+  assert.equal(lone.drink('rightArm'), true);
+  assert.equal(lone.drink('rightArm'), false, 'a second click mid-drink started another');
+  let down = 0;
+  const step = 1 / 60;
+  for (let t = 0; t < 0.9; t += step) { lone.update(still, step); down += lone.swallowed(); }
+  // Mid-swallow: up at the face, turned in towards it, the glass rolled towards the mouth.
+  assert.ok(rightArm.rotation.x < -1.9, 'glass at the face: ' + rightArm.rotation.x);
+  assert.ok(rightArm.rotation.z < -0.3, 'turned inward: ' + rightArm.rotation.z);
+  assert.ok(glass.rotation.z + rightArm.rotation.z > 0.8, 'glass tipped to the mouth');
+  assert.ok(down > 0.3 && down < 0.8, 'half-way through the swallow: ' + down);
+  for (let t = 0; t < 1.5; t += step) { lone.update(still, step); down += lone.swallowed(); }
+  assert.ok(Math.abs(down - 1) < 1e-9, 'one drink is one swallow: ' + down);
+  assert.ok(Math.abs(rightArm.rotation.x + 0.7) < 0.05, 'back in front of the chest');
+  assert.ok(Math.abs(rightArm.rotation.z) < 0.05);
+  assert.equal(lone.drink('rightArm'), true, 'could not drink again once the glass was down');
+
+  // Into the water with it: the drink is put down, and what was not swallowed is not.
+  lone.update(still, 0.5);
+  lone.swallowed();
+  lone.update({ ...still, swimming: true }, 0.2);
+  assert.equal(lone.swallowed(), 0, 'swallowed while swimming');
+  lone.update(still, 1);
+  assert.equal(lone.swallowed(), 0);
+  assert.equal(lone.drink('rightArm'), true, 'the interrupted drink was still going');
+
+  for (const rig of [lone, armed]) rig.dispose();
+  material.dispose();
+});

@@ -43,13 +43,15 @@ export const DEFAULT_AVATAR = {
 // hip as a core part and is now the same kind of held state everything else here is; 'sword'
 // and 'shield' are the first purely cosmetic pair, added the same way - see classic-
 // avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from. 'torch' is the first one
-// that does something after dark: its flame glows (GLOWING below).
+// that does something after dark: its flame glows (GLOWING below). 'beer' is the first one
+// its hand's mouse button uses instead of fighting with (Plans/bier-en-dronken.md).
 export const HAND_ITEMS = [
   { id: 'parasol', name: 'Parasol', icon: '⛱️' },
   { id: 'hammer', name: 'Hammer', icon: '🔨' },
   { id: 'sword', name: 'Sword', icon: '⚔️' },
   { id: 'shield', name: 'Shield', icon: '🛡️' },
   { id: 'torch', name: 'Torch', icon: '🔥' },
+  { id: 'beer', name: 'Beer', icon: '🍺' },
 ];
 
 // The seven hat shapes plus the one the player alone can wear. A helmet replaces a hat

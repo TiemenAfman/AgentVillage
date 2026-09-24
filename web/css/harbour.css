@@ -113,7 +113,8 @@ select option { color: var(--ink); background: var(--panel-solid); }
      reads as the bar being part of the button. The left edge is the stick's side, but that
      stick floats wherever the thumb lands and is drawn over whatever is there. */
   .vitals { align-self: flex-start; margin-left: 16px; width: min(160px, 42vw); gap: 3px; }
-  .vital { height: 6px; }
+  .vital b { height: 6px; }
+  .vital span { width: 12px; font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
