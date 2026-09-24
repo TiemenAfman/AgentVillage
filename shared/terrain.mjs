@@ -771,7 +771,13 @@ function checkGrow(grow, size) {
     if (!Number.isInteger(grid) || grid < 16 || (size - grid) % 2) throw new Error(`a growth step on a grid of ${grid} cannot be drawn on ${size}`);
     if (gridForCoast(r) > grid) throw new Error(`a coast of ${r} needs a grid of ${gridForCoast(r)}, not ${grid}`);
     if (grid > size) throw new Error(`a coast of ${r} needs a grid of ${grid}, not ${size}`);
-    out.push({ r, grid, hold });
+    // Which relief the ring was drawn with (growRelief, below). Absent is 0, the flat meadow
+    // every step taken before it existed was drawn with; a number this code does not know is
+    // refused rather than drawn as something else, because the ground it would draw is not
+    // the ground whoever took the step recorded the hash of.
+    const relief = s && typeof s === 'object' && s.relief !== undefined ? s.relief : 0;
+    if (relief !== 0 && relief !== RELIEF_VERSION) throw new Error(`a growth step drawn with relief ${relief} is not one this code knows`);
+    out.push({ r, grid, hold, relief, prev: last });
     last = r;
   }
   return { base, steps: out };
@@ -824,7 +830,10 @@ function groundForCoast(seed, size, r, g) {
 // grid's edge - so the lake, and anything else the tide never reached, is left as it is; and never within
 // reach of a founding river, so the river keeps its bed and ends where it always did. A
 // corner is only ever raised, never lowered.
-function accrete(H, size, seed, { r, grid, hold }, g) {
+//
+// Returns the courses of any river the step's relief cut (grid indices of `size`), which the
+// caller adds to the island's rivers - so a later step keeps its bed like a founding one's.
+function accrete(H, size, seed, { r, grid, hold, relief, prev }, g) {
   const N = size + 1;
   const F0 = groundForCoast(seed, grid, r, g);
   const F = grid === size ? F0 : embed(F0, grid, size);
@@ -844,11 +853,19 @@ function accrete(H, size, seed, { r, grid, hold }, g) {
     land[a] = 1; land[a + 1] = 1; land[a + N] = 1; land[a + N + 1] = 1;
   }
 
+  // A step with relief keeps less: a round RELIEF_RIVER_KEEP about each course cell rather
+  // than the square of GROW_RIVER_KEEP, because it carries the river on to its new coast
+  // (growRelief) and the square only ever left a square pond at the old mouth - which is
+  // all a flat step can do, so it keeps the square, and every old step hashes as it did.
   const keep = new Uint8Array(N * N);
+  const kr = relief ? RELIEF_RIVER_KEEP : GROW_RIVER_KEEP, kc = Math.ceil(kr);
   for (const course of g.courses || []) {
     for (const [gx, gz] of course) {
-      for (let j = Math.max(0, gz - GROW_RIVER_KEEP); j <= Math.min(size, gz + 1 + GROW_RIVER_KEEP); j++) {
-        for (let i = Math.max(0, gx - GROW_RIVER_KEEP); i <= Math.min(size, gx + 1 + GROW_RIVER_KEEP); i++) keep[i + j * N] = 1;
+      for (let j = Math.max(0, gz - kc); j <= Math.min(size, gz + 1 + kc); j++) {
+        for (let i = Math.max(0, gx - kc); i <= Math.min(size, gx + 1 + kc); i++) {
+          if (relief) { const dx = i - gx - 0.5, dz = j - gz - 0.5; if (dx * dx + dz * dz > kr * kr) continue; }
+          keep[i + j * N] = 1;
+        }
       }
     }
   }
@@ -887,11 +904,317 @@ function accrete(H, size, seed, { r, grid, hold }, g) {
     }
   }
 
+  const before = relief ? H.slice() : null;
   for (let k = 0; k < H.length; k++) {
     if (!sea[k] || keep[k] || dist[k] < 1) continue;
     const v = Math.min(F[k], GROW_SHORE + (dist[k] - 1) * GROW_RISE);
     if (v > H[k]) H[k] = Math.round(v * 256) / 256;
   }
+  return relief ? growRelief(H, before, size, seed, r, prev, sea, keep, dist, g.courses || []) : [];
+}
+
+// ---- relief in the new ground ------------------------------------------------------------
+// Without this a ring is `groundForCoast` ramped up from the old shore, and that is the
+// founding formula with a bigger coast: the same one hill, shoulder and lake, all of them
+// near the middle, so every ring of new ground is gently rolling meadow and a grown island
+// is a founding island in a very wide lawn. A step that carries `relief: 1` gets hills of
+// its own, and sometimes a river from one of them to the new coast.
+//
+// Opt-in per step, and that is the whole migration story: a step's ground decides the
+// island's terrainHash, so drawing an old step differently would make every grown island's
+// recorded hash wrong and loadLayout would re-plan it from nothing. growStep in
+// lib/layout.mjs writes `relief: RELIEF_VERSION` on every step it takes from now on; a
+// step without it is the flat ring it always was. Change the shapes below and this number
+// has to move, with a second branch for the old one - never edit them in place.
+export const RELIEF_VERSION = 1;
+// Where the coast of a step actually lies, as a share of its `r`: groundForCoast's ground
+// crosses the water at about dw = 0.85 for middling noise. Only used to find the middle of
+// the ring, so it need not be exact.
+const RELIEF_COAST_AT = 0.85;
+const RELIEF_HILL_MIN = 4;         // a ring too narrow for a hill this wide gets none
+// The founding hill is 8 across and 4.6 high, blurred twice. Held to that the first time,
+// a ring of 20 cells got pimples: from a hundred cells out a grown island read as the
+// founding island in a lawn. Wider rings get wider hills, up to this.
+const RELIEF_HILL_MAX = 13;
+const RELIEF_HILL_OF = 0.55;       // a hill's radius, as a share of the ring's width
+// Hill radii of ring between one hill and the next. At 5 a wide ring was a string of
+// moles, evenly spaced; at 8 it is a few hills with meadow between.
+const RELIEF_HILL_SPACE = 8;
+const RELIEF_HILLS = 5;            // the most one ring gets
+// Height, as a share of the hill's own radius. A bump's steepest fall is 1.5 x height /
+// radius per unit, so 0.25 puts the steepest flank of the gentlest just under
+// BUILD_SLOPE_MAX across a cell's diagonal: most of a hill stays ground to build on, and
+// only the flanks and tops of the steep ones are lost (tests/terrain-grow.test.mjs holds
+// the loss). At 0.28-0.42 the hills alone took 4% of a grown island's building ground.
+const RELIEF_HILL_H = [0.25, 0.38];
+// A hill's foot comes in over this many corners from the old land, so it never stands on
+// the old shore as a wall - the same job GROW_RISE does for the ring itself.
+const RELIEF_FADE = 6;
+// And it fades out over this much ground height towards the new coast, so the new beach
+// stays a beach instead of the foot of a cliff.
+const RELIEF_COAST = 0.8;
+// The most new rivers one ring gets, and the chance per hill until it has them. Two a
+// ring, with every older river carried on as well, cost 7% of the buildable ground of an
+// island grown from 32 to a coast of 101 (valleys are a strip of bank either side nobody
+// can build on); one costs about half that, and the rivers still add up ring on ring.
+const RELIEF_RIVERS = 1;
+const RELIEF_RIVER_CHANCE = 0.5;
+const RELIEF_RIVER_CLEAR = 2;      // corners a river cell keeps clear of old ground
+// How much of an older river a ring with relief leaves unfilled, in corners from a course
+// cell's middle: its bed and the foot of its banks. Beyond that the estuary it had is new
+// ground like any other sea, and the river is carried on across it.
+const RELIEF_RIVER_KEEP = 2.5;
+// How far past an older river's end a ring looks for made ground to carry it on from.
+const RELIEF_RIVER_JUMP = 8;
+// How a river in new ground winds. riverCourse's pull and per-cell wobble were tried first:
+// on a gentle meadow there is no fall to follow, so the pull wins every step and the river
+// came out as a ruler line from the hill to the sea. A smooth noise field added to the
+// score is a valley to follow a few cells wide, which bends the course in long curves
+// rather than a zigzag, and a weaker pull lets it.
+const RELIEF_RIVER_PULL = 0.3;
+const RELIEF_MEANDER = 0.9;
+const RELIEF_MEANDER_SCALE = 0.07;
+
+// The rule for a river in new ground, which is a lowering: accretion promises never to
+// lower anything, so a river may only be cut in corners this very step is making - corners
+// that were under water (below SEA_LEVEL, not merely beach) before it - and there never
+// below the height the corner had before the step, which was water already. So a river
+// can neither dig into ground somebody saw standing, nor into a held cell (held corners are
+// land to the step and never made), nor into an earlier ring. Its course is kept
+// RELIEF_RIVER_CLEAR corners clear of anything else, or the valley would be clipped into a
+// slot where it meets the old shore; a course that cannot reach the new coast that way is
+// dropped whole rather than left as a pond. And because it runs from a hill in the ring to
+// the ring's own coast and never touches the old island, nothing is ever cut off by it:
+// the ground on either side joins round its source. An older river carried on (below) only
+// lengthens a division the island already had.
+//
+// Everything is measured in local coordinates (the corner minus `half`) and from the
+// step's own `r` and `prev`, and every mask it reads is the step's (`sea`, `dist`), which
+// are the same on any grid the step fits - so a bigger grid draws the same hills.
+function growRelief(H, before, size, seed, r, prev, sea, keep, dist, rivers) {
+  const N = size + 1, half = size / 2;
+  const inner = prev * RELIEF_COAST_AT, outer = r * RELIEF_COAST_AT, width = outer - inner;
+  const R = Math.min(RELIEF_HILL_MAX, width * RELIEF_HILL_OF);
+  // Of its own, keyed by the ring's radius, so no draw here moves anything the founding
+  // rngs decide and two rings of one island never share their hills.
+  const rng = makeRng(`${seed}:relief:${r}`);
+  const nRough = makeSimplex2D(hash32(`${seed}:relief`));
+  const nBend = makeSimplex2D(hash32(`${seed}:relief:bends`));
+  const mid = inner + width * 0.5;
+  // A ring too narrow for a hill still carries the island's rivers on to its coast, below.
+  const n = R < RELIEF_HILL_MIN ? 0
+    : clamp(Math.floor((6.283185307179586 * mid) / (R * RELIEF_HILL_SPACE)), 1, RELIEF_HILLS);
+  const k0 = rng.int(16);
+  const hills = [];
+  for (let h = 0; h < n; h++) {
+    // Spread round the ring, with a sixteenth of a turn either way when there is room for it:
+    // past five hills the jitter could put two on the same bearing.
+    const jitter = rng.int(3) - 1;
+    const k = (k0 + Math.round((h * 16) / n) + (n <= 5 ? jitter : 0) + 16) % 16;
+    const rad = mid + rng.range(-0.12, 0.12) * width;
+    const radius = R * rng.range(0.8, 1.1);
+    const height = radius * rng.range(RELIEF_HILL_H[0], RELIEF_HILL_H[1]);
+    const c = [DIRS16[k][0] * rad, DIRS16[k][1] * rad];
+    // A shoulder, like the founding hill's: half as high, off to one side along the ring,
+    // so a hill reads as a little range rather than a pudding basin turned over.
+    const ks = (k + (rng.chance(0.5) ? 4 : 12)) % 16;
+    const s = [c[0] + DIRS16[ks][0] * radius * 0.7, c[1] + DIRS16[ks][1] * radius * 0.7];
+    hills.push({ k, c, radius, height, s, sRadius: radius * 0.65, sHeight: height * 0.5 });
+  }
+
+  for (let j = 0; j <= size; j++) {
+    for (let i = 0; i <= size; i++) {
+      const k = i + j * N;
+      if (!sea[k] || keep[k] || dist[k] < 1 || H[k] <= SEA_LEVEL) continue;
+      const x = i - half, z = j - half;
+      let add = 0;
+      for (const hl of hills) {
+        add += hl.height * bump(clamp(1 - distTo(x, z, hl.c) / hl.radius, 0, 1));
+        add += hl.sHeight * bump(clamp(1 - distTo(x, z, hl.s) / hl.sRadius, 0, 1));
+      }
+      if (add <= 0) continue;
+      add *= 0.8 + 0.4 * (fbm2(nRough, x * 0.12, z * 0.12, { octaves: 2 }) * 0.5 + 0.5);
+      add *= bump(clamp((dist[k] - 1) / RELIEF_FADE, 0, 1)) * bump(clamp(H[k] / RELIEF_COAST, 0, 1));
+      H[k] = Math.round((H[k] + add) * 256) / 256;
+    }
+  }
+
+  // The corners a river may be cut in (see above).
+  const made = new Uint8Array(N * N);
+  for (let k = 0; k < H.length; k++) if (sea[k] && !keep[k] && dist[k] >= 1 && before[k] < SEA_LEVEL) made[k] = 1;
+  // Old ground: a corner this step does not make and that stands out of the water - the
+  // island as it was, a held cell, an older river's banks. A river cell keeps
+  // RELIEF_RIVER_CLEAR corners away from all of it. Old *water* is no obstacle: a river may
+  // run through a pond (nothing is cut there, since no corner of it is made), and the first
+  // version, which asked for made corners all round, could never leave the pond round an
+  // older mouth - the two corners between its edge and the made ground were neither.
+  const solid = (k) => !made[k] && H[k] >= SEA_LEVEL;
+  const clear = (gx, gz) => {
+    for (let j = gz - RELIEF_RIVER_CLEAR; j <= gz + 1 + RELIEF_RIVER_CLEAR; j++) {
+      for (let i = gx - RELIEF_RIVER_CLEAR; i <= gx + 1 + RELIEF_RIVER_CLEAR; i++) {
+        if (i < 0 || j < 0 || i > size || j > size) continue;   // open sea, on any grid
+        if (solid(i + j * N)) return false;
+      }
+    }
+    return true;
+  };
+  const cellH = (gx, gz) =>
+    0.25 * (H[gx + gz * N] + H[gx + 1 + gz * N] + H[gx + (gz + 1) * N] + H[gx + 1 + (gz + 1) * N]);
+  // The open sea, as the ring leaves it: corners under water and joined to the grid's edge
+  // through water. Not merely "below SEA_LEVEL" - that was the first version, and a river
+  // then stopped at the first pond on its way, which is often the mouth of an older river
+  // this very ring has just walled in, and ended in the middle of a meadow. Past the grid is
+  // open sea, and on a bigger grid it is open sea too, so this is the same on any grid.
+  // Cells, not corners, and on the cell's average, because that is what isWater asks: water
+  // joined through corners alone was open to the walk and a pond to everything else.
+  const open = new Uint8Array(size * size);
+  {
+    const q = new Int32Array(size * size);
+    let head = 0, tail = 0;
+    const add = (gx, gz) => { const c = gx + gz * size; if (!open[c] && cellH(gx, gz) < SEA_LEVEL) { open[c] = 1; q[tail++] = c; } };
+    for (let g = 0; g < size; g++) { add(g, 0); add(g, size - 1); add(0, g); add(size - 1, g); }
+    while (head < tail) {
+      const c = q[head++], gx = c % size, gz = (c - gx) / size;
+      if (gx > 0) add(gx - 1, gz);
+      if (gx < size - 1) add(gx + 1, gz);
+      if (gz > 0) add(gx, gz - 1);
+      if (gz < size - 1) add(gx, gz + 1);
+    }
+  }
+  const openCell = (gx, gz) => gx < 0 || gz < 0 || gx >= size || gz >= size || open[gx + gz * size] === 1;
+  // A course may end on a cell beside the open sea: carving it makes it water, and joined.
+  const touchesOpen = (gx, gz) => openCell(gx, gz) || openCell(gx + 1, gz) || openCell(gx - 1, gz) || openCell(gx, gz + 1) || openCell(gx, gz - 1);
+  // The same walk as riverCourse - steepest descent, a pull to the mouth, a hashed wobble -
+  // but clear of old ground, to the open sea rather than to any water, a
+  // limit set by the ring rather than the grid, and the wobble hashed on local coordinates,
+  // since riverCourse's grid indices would move with the grid. Null if it never gets there.
+  //
+  // And it backs up out of a dead end instead of giving up: between a hill of this ring and
+  // an older river's banks there are pockets with no clear way on, and a river that walked
+  // into one was dropped - and its older half, walled in by this ring, left as a pond. Each
+  // cell keeps its other ways, best first, and the walk takes the next one when it has to
+  // back up; where nothing is in the way this is exactly the greedy walk.
+  const walk = (start, mouth) => {
+    const toMouth = (gx, gz) => distTo(gx - half + 0.5, gz - half + 0.5, mouth);
+    const seen = new Set([start[0] + ',' + start[1]]);
+    const ways = (cur) => {
+      const d0 = toMouth(cur[0], cur[1]);
+      const out = [];
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cur[0] + dx, nz = cur[1] + dz;
+        if (seen.has(nx + ',' + nz) || !clear(nx, nz)) continue;
+        const lx = nx - half + 0.5, lz = nz - half + 0.5;
+        const wob = ((hash32(`relief-river:${nx - half}:${nz - half}`) % 1000) / 1000 - 0.5) * 2 * RIVER_WOBBLE;
+        const bend = RELIEF_MEANDER * fbm2(nBend, lx * RELIEF_MEANDER_SCALE, lz * RELIEF_MEANDER_SCALE, { octaves: 2 });
+        out.push({ c: [nx, nz], score: cellH(nx, nz) + RELIEF_RIVER_PULL * (toMouth(nx, nz) - d0) + wob + bend });
+      }
+      // Stable, so a tie goes the way the four directions are listed, on every runtime.
+      return out.sort((a, b) => a.score - b.score).map((w) => w.c);
+    };
+    // All the way into the sea, not riverCourse's "beach within reach of it": the valley is
+    // under water only a corner or so either side of the course, so stopping two cells short
+    // left a bar of sand across the mouth, and the next ring walled the river in.
+    if (touchesOpen(start[0], start[1])) return [start];
+    const stack = [{ c: start, next: ways(start) }];
+    for (let tries = 0; tries < 16 * r && stack.length; tries++) {
+      const top = stack[stack.length - 1];
+      const c = top.next.shift();
+      if (!c) { stack.pop(); continue; }
+      const key = c[0] + ',' + c[1];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (touchesOpen(c[0], c[1])) return [...stack.map((f) => f.c), c];
+      if (stack.length >= 4 * r) continue;
+      stack.push({ c, next: ways(c) });
+    }
+    return null;
+  };
+
+  const courses = [];
+  // First the rivers the island already has. A ring walls every mouth in - GROW_RIVER_KEEP
+  // keeps a pond of it, no more - so a river that ended at the old coast now ends in a
+  // meadow; this carries it on from there, straight out, to the new one. Only through made
+  // ground, so a river whose mouth an older, flat ring has already buried stays as it is.
+  //
+  // The old end itself is never clear - its own banks are old ground within a corner or
+  // two - so the course is linked from it to the nearest cell that is, and walks on from
+  // there. The cells in between are the river too; only their made corners are cut, which
+  // is what joins the old bed to the new one.
+  // An end that another course starts from was carried on by an earlier ring already; trying
+  // it again would branch the river into a delta wherever the new ground allowed.
+  const carried = new Set(rivers.map((c) => c[0][0] + ',' + c[0][1]));
+  for (const old of rivers) {
+    const end = old[old.length - 1];
+    if (carried.has(end[0] + ',' + end[1]) || touchesOpen(end[0], end[1])) continue;
+    // The nearest clear cell, breadth first over cells with no old ground at any corner - a
+    // link across old ground would be a dam, since its corners cannot be cut. A straight
+    // line out was the first version and failed on one river in three: the old coast's
+    // beach lies right beside a mouth, and a line a few degrees off ran into it.
+    const link = new Map([[end[0] + ',' + end[1], null]]);
+    let frontier = [end], start = null;
+    for (let s = 0; s < RELIEF_RIVER_JUMP && frontier.length && !start; s++) {
+      const next = [];
+      for (const c of frontier) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n2 = [c[0] + dx, c[1] + dz], key = n2[0] + ',' + n2[1];
+          if (link.has(key) || n2[0] < 0 || n2[1] < 0 || n2[0] >= size || n2[1] >= size) continue;
+          // Water already (a cell is water on its average, so one corner of the old
+          // river's sandy bank does not make it a dam), or nothing old at any corner.
+          const a = n2[0] + n2[1] * N;
+          if (cellH(n2[0], n2[1]) >= SEA_LEVEL && (solid(a) || solid(a + 1) || solid(a + N) || solid(a + N + 1))) continue;
+          link.set(key, c);
+          if (clear(n2[0], n2[1])) { start = n2; break; }
+          next.push(n2);
+        }
+        if (start) break;
+      }
+      frontier = next;
+    }
+    if (!start) continue;
+    const path = [];
+    for (let c = link.get(start[0] + ',' + start[1]); c && c !== end; c = link.get(c[0] + ',' + c[1])) path.unshift(c);
+    // On from there, away from the middle of the island.
+    const [x, z] = [start[0] - half + 0.5, start[1] - half + 0.5];
+    const d = Math.sqrt(x * x + z * z) || 1;
+    const more = walk(start, [(x / d) * (r + 2), (z / d) * (r + 2)]);
+    if (more) courses.push([end, ...path, ...more]);
+  }
+  let fresh = 0;
+  for (const hl of hills) {
+    if (fresh >= RELIEF_RIVERS) break;
+    if (!rng.chance(RELIEF_RIVER_CHANCE)) continue;
+    const side = rng.chance(0.5) ? 1 : -1;
+    // From the seaward flank, to a mouth a sixteenth round the coast from straight out.
+    const src = [hl.c[0] + DIRS16[hl.k][0] * hl.radius * 0.35, hl.c[1] + DIRS16[hl.k][1] * hl.radius * 0.35];
+    const kEnd = (hl.k + side + 16) % 16;
+    const start = [Math.round(src[0] + half - 0.5), Math.round(src[1] + half - 0.5)];
+    if (!clear(start[0], start[1])) continue;
+    const course = walk(start, [DIRS16[kEnd][0] * (r + 2), DIRS16[kEnd][1] * (r + 2)]);
+    if (!course || course.length < 6) continue;
+    courses.push(course);
+    fresh++;
+  }
+
+  // carveRiver's valley, cut only where `made` says and never below `before`.
+  for (const course of courses) {
+    const n2 = course.length;
+    const reach = Math.ceil(RIVER_W1 - RIVER_BED / RIVER_RISE) + 2;
+    for (let s = 0; s < n2; s++) {
+      const [gx, gz] = course[s];
+      const w = RIVER_W0 + (RIVER_W1 - RIVER_W0) * (n2 > 1 ? s / (n2 - 1) : 1);
+      const cx = gx + 0.5, cz = gz + 0.5;
+      for (let j = Math.max(0, gz - reach); j <= Math.min(size, gz + reach); j++) {
+        for (let i = Math.max(0, gx - reach); i <= Math.min(size, gx + reach); i++) {
+          const k = i + j * N;
+          if (!made[k]) continue;
+          const dx = i - cx, dz = j - cz;
+          const t = RIVER_BED + RIVER_RISE * Math.max(0, Math.sqrt(dx * dx + dz * dz) - w);
+          if (t < H[k]) H[k] = Math.round(Math.max(before[k], t) * 256) / 256;
+        }
+      }
+    }
+  }
+  return courses;
 }
 
 // The island as it was founded: the ground, the hill, the lake, the rivers - or the
@@ -1056,7 +1379,12 @@ export function makeTerrain(seed, opts) {
       H = embed(g.H, grow.base, size);
       courses = courses.map((c) => c.map(([gx, gz]) => [gx + k, gz + k]));
     }
-    for (const step of grow.steps) accrete(H, size, seed, step, { ...g, courses });
+    // A river a ring's relief cut joins the island's own, so the next ring keeps its bed
+    // (GROW_RIVER_KEEP) and the reeds, the bridges and the dredger see it like any other.
+    for (const step of grow.steps) {
+      const cut = accrete(H, size, seed, step, { ...g, courses });
+      if (cut.length) courses = courses.concat(cut);
+    }
   }
 
   const setCell = (gx, gz, v) => {

@@ -229,6 +229,7 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
   mag worden (1,53 r + 4 aan elke kant, zodat de rand in vlak diep water ligt). Een groter
   doek geeft exact dezelfde hoogtes.
 - **Nog niet:** heuvels en rivieren in het aangegroeide land. Dat land is nu vooral glooiende wei.
+  Inmiddels gebouwd, zie "Reliëf in de aangegroeide grond" hieronder.
 
 ## Fase 2, gebouwd (24 september 2026): de layout groeit mee
 
@@ -276,7 +277,55 @@ het aan, dus op het eiland verandert niets. `tests/terrain-grow.test.mjs` houdt 
   aanbouw een naam. Op het proefeiland stond CLAUDE drie keer.
 - Je huidige eiland is op het hele grid gesticht (`grow: null`) en kan pas groeien als het
   doek kan groeien (fase 4). Zijn kust ligt al op de rand van 256.
-- Heuvels en rivieren in de aangegroeide grond.
+- ~~Heuvels en rivieren in de aangegroeide grond.~~ Gebouwd, zie hieronder.
+
+## Reliëf in de aangegroeide grond, gebouwd (24 september 2026)
+
+`growRelief` in `shared/terrain.mjs`. Een ring was tot nu toe `groundForCoast` met de kust
+verder weg: dezelfde ene heuvel, schouder en meer als het stichtingseiland, allemaal bij het
+midden. Van buitenaf leek een gegroeid eiland daardoor op het stichtingseiland in een grasveld.
+
+- **Opt-in per stap: `{ r, grid, hold, relief: 1 }`.** `growStep` zet `relief: RELIEF_VERSION`
+  op elke nieuwe stap. Een stap zonder `relief` (of met `0`) tekent precies zoals vroeger.
+  Anders klopt de `terrainHash` van elk gegroeid eiland niet meer en wordt het opnieuw
+  gesticht. Gecontroleerd: 51 hashes (7 seeds × 32/64/128/256, gegroeide eilanden met oude
+  stappen, vulkaan, open zee) zijn bit voor bit gelijk, en een deel daarvan staat vast in
+  `tests/terrain-grow.test.mjs`. Een onbekende versie wordt geweigerd, door `makeTerrain` en
+  strikt door de bundel-parser. De vormen aanpassen betekent `RELIEF_VERSION` ophogen met een
+  tweede tak, nooit de oude in-place wijzigen.
+- **Heuvels:** alleen in de ring van deze stap (tussen de oude en de nieuwe kust).
+  - Straal ongeveer de halve ringbreedte, tot 13. Hoogte 0,25 tot 0,38 × de straal. Plus een
+    schouder langs de ring. Maximaal 5 per ring, gespreid over de windrichtingen.
+  - Ze lopen uit naar de oude grond (`RELIEF_FADE`) en naar de nieuwe kust (`RELIEF_COAST`).
+    Zo komt er geen muur op het oude strand en blijft het nieuwe strand strand.
+  - Een ring smaller dan zo'n 10 cellen krijgt geen heuvels.
+- **Rivieren**, en de regel die ze mogelijk maakt. Een rivier is een verlaging, en aanwas
+  belooft nooit iets te verlagen. Dus een rivier wordt alleen gegraven in hoeken die deze
+  stap zelf maakt (hoeken die vóór de stap onder water lagen) en nooit dieper dan die hoek
+  vóór de stap was. Daardoor kan een rivier niet graven in grond die al stond, niet in een
+  `hold`-cel en niet in een oudere ring. Een loop die de open zee niet haalt vervalt helemaal.
+  - Maximaal 1 nieuwe rivier per ring: vanaf de zeekant van een heuvel naar de nieuwe kust.
+  - **Bestaande rivieren lopen mee door.** Een ring sluit elke monding in. Een stap met reliëf
+    houdt daarom maar 2,5 hoeken rond de loop vrij, in plaats van het vierkant van 4 dat een
+    vlakke stap vrijhoudt en dat een vierkante vijver achterliet. Vanaf de oude monding zoekt
+    hij de dichtstbijzijnde vrije cel en loopt daarvandaan door naar de nieuwe kust. Het
+    stuk wordt een eigen `course` in `terrain.rivers`, zodat de volgende ring het ook vrijhoudt.
+  - De loop is die van `riverCourse` met een zwakkere trek naar de monding en een gladde
+    ruisbocht (`RELIEF_MEANDER`). Met alleen trek en wiebel werd het een liniaal van heuvel
+    naar zee. Bij een doodlopend stuk loopt hij terug in plaats van op te geven.
+  - Een rivier snijdt nooit land af: hij begint in de ring en raakt het oude eiland niet, dus
+    de grond aan beide kanten hangt samen rond de bron.
+- **Doek-onafhankelijk:** alles in lokale coördinaten, uit `r` en de vorige kust, en uit
+  maskers die op elk doek gelijk zijn. De test legt dezelfde stappen op 224 en 256.
+- **Gemeten**, eiland gesticht op 32 en gegroeid naar kust 101 (7 ringen, doek 224, 7 seeds):
+  - Bebouwbare cellen: −4,8% in totaal, −3,3% tot −6,5% per eiland (bijv. 20958 → 20187).
+  - 1 tot 10 rivierstukken per eiland. Een eiland gesticht op 32 had er eerst 0.
+  - Twee rivieren per ring kostte 7%, en met heuvels tot 0,42 × de straal kostte het nog 1%
+    meer. Daarom 1 rivier per ring en lagere heuvels.
+  - De test houdt het verlies onder 8%.
+- **Bekend:** de open zee moet deze code draaien voordat iemand erop groeit met reliëf, net als
+  bij `grow` zelf (fase 5). Een oude zee tekent een reliëfstap vlak en weigert het eiland.
+  Verder zijn rivieren 4-verbonden en lopen ze op vlak land soms een stuk recht langs een as.
 
 ## Fase 4, gebouwd (24 september 2026): het doek groeit, ook onder een bestaand eiland
 

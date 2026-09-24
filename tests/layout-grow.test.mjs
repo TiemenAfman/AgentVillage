@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { placeAll, emptyLayout, nextCoast, growStep } from '../lib/layout.mjs';
-import { makeTerrain, foundingCoast, gridForCoast } from '../shared/terrain.mjs';
+import { makeTerrain, foundingCoast, gridForCoast, RELIEF_VERSION } from '../shared/terrain.mjs';
 import { buildBundle, parseBundle } from '../lib/islandbundle.mjs';
 import { village, clone, stands, movedBetween } from './support/village.mjs';
 
@@ -158,6 +158,18 @@ test('a grown island sails: its bundle carries the growth and hashes the same', 
   const lie = JSON.parse(JSON.stringify(packed));
   lie.grow.steps[0].r += 1;
   assert.throws(() => parseBundle(lie), /hashes to/);
+  // Every step growStep takes carries its relief, and a relief this code does not know is
+  // refused before anybody draws it. (That relief changes the ground is the terrain test's;
+  // these rings, 20 to 34, are too narrow for a hill and there is no river to carry on.)
+  assert.ok(layout.grow.steps.every((s) => s.relief === RELIEF_VERSION), 'a new step without relief');
+  const newer = JSON.parse(JSON.stringify(packed));
+  newer.grow.steps[0].relief = RELIEF_VERSION + 1;
+  assert.throws(() => parseBundle(newer), /outside/);
+  // And a step from before relief sails as it was, with no relief field added on the way.
+  const old = { base: BASE, steps: layout.grow.steps.map(({ relief, ...s }) => s) };
+  const oldTerrain = makeTerrain(SEED, { size: SIZE, grow: old });
+  const was = buildBundle({ config: { seed: SEED }, village: { ...v, grow: old, island: { ...v.island, terrainHash: oldTerrain.hash } }, keeper: 'Martijn' });
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(was))).grow, old);
 });
 
 // The Grow button: the same step a scan takes, only earlier. Through runPlan like every other
