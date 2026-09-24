@@ -16,24 +16,27 @@ you are looking at. This is the rest.
 The island is two programs, built together from `src-tauri/` by `npm run app:build` into
 `src-tauri/target/release/` (`npx tauri build --debug --no-bundle` for the debug pair in
 `src-tauri/target/debug/`). Built like that they run the checkout they were built from.
-The release zip (`npm run app:pack` lays it out) is the other way round: one folder with
-both exes and the island in `app\`, unpacked anywhere, keeping its config and data in
-`%LOCALAPPDATA%\Promptholm`.
+The release zip (`npm run app:pack` lays it out) is the other way round: one folder,
+unpacked anywhere, with `promptholm.exe` on top and the islander in `app\` with the rest of
+the island. Either way the island itself - its
+config and data - lives in `%USERPROFILE%\.promptholm`, one island for the release and the
+checkout alike; a git worktree keeps its own.
 
 | | |
 |---|---|
 | `promptholm-island.exe` | **The islander**: runs `serve.mjs` - the scan, the sea, the mail, the agents - with a tray icon and no window. The tray menu opens the island, stops, starts and restarts it, and shows its log; **Quit** stops the island with it. |
 | `promptholm.exe` | **The window**: the island's page in a window of its own (Tauri, WebView2). Starts the islander if nothing is listening; closing it leaves the island running. |
 
-There is only ever one islander per port - a second copy notices the first and exits - and
-an island started some other way (`npm run dev`, `node serve.mjs`) is taken over by the
+There is only ever one islander per port - a second copy notices the first, asks it to
+start its island if it was stopped from the tray, and exits - and an island started some
+other way (`npm run dev`, `node serve.mjs`) is taken over by the
 tray rather than started twice. Without Rust, `npm run dev` is the whole island in a
 terminal: ctrl+C stops it.
 
 | | |
 |---|---|
 | Stop the island | Tray → **Stop the island**, or `taskkill /f /im promptholm-island.exe` |
-| Start it at logon | A shortcut to `promptholm-island.exe` in `shell:startup` |
+| Start it at logon | A shortcut to `promptholm-island.exe` (in `app\` of a release) in `shell:startup` |
 
 ### As a window of its own
 

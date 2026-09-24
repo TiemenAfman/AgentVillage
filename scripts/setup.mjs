@@ -51,8 +51,9 @@ function writeJson(file, value) {
 
 // ---------------------------------------------------------------- config
 function ensureConfig() {
-  // CONFIG_FILE, not ROOT: an unpacked release keeps its config in %LOCALAPPDATA%\Promptholm
-  // (see HOME in lib/paths.mjs), and this has to write where the server will read.
+  // CONFIG_FILE, not ROOT: the island keeps its config in ~/.promptholm (see HOME in
+  // lib/paths.mjs, which has already moved an existing island in by the time this runs),
+  // and this has to write where the server will read.
   const file = CONFIG_FILE;
   if (fs.existsSync(file)) {
     const cfg = readJson(file, {});

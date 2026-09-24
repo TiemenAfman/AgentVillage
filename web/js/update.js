@@ -33,6 +33,15 @@ export function compareVersions(a, b) {
   return 0;
 }
 
+// The same, on the release line only - major.minor. A patch is compatible with the island and
+// with the sea by promise (0.4.x runs on any 0.4.y's island and meets it on any sea; CLAUDE.md
+// says what that forbids a patch to change), so a patch apart is nothing to tell anybody: it
+// is a client-side fix, and a run of them would be a banner a day for everybody on the sea.
+export function compareLines(a, b) {
+  const line = (v) => (typeof v === 'string' ? v.split('.').slice(0, 2).join('.') : v);
+  return compareVersions(line(a), line(b));
+}
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // A link out of the page. In the Android app there is no second window to open, so a
 // plain link is followed and src-android/src/lib.rs hands it to the phone's browser; in a
@@ -42,7 +51,7 @@ const link = (text, phone) => `<a href="${RELEASES}"${phone ? '' : ' target="_bl
 // What to say, or null when there is nothing worth saying. `mine` is this page's build
 // ({ version, commit }), `sea` the sea's from its welcome, `phone` whether this is the app.
 export function updateNotice({ mine, sea, phone = false }) {
-  const order = compareVersions(mine && mine.version, sea && sea.version);
+  const order = compareLines(mine && mine.version, sea && sea.version);
   if (order === null || order === 0) return null;
   const me = phone ? 'this app' : 'this island';
   if (order < 0) {
@@ -87,7 +96,7 @@ export function updateGate({ speaks = null, mine = null, sea = null } = {}) {
       body: 'This sea has moved on to a newer version and will not let this app in until it is updated.',
     };
   }
-  if (compareVersions(mine && mine.version, sea && sea.version) === -1) {
+  if (compareLines(mine && mine.version, sea && sea.version) === -1) {
     return {
       ...common,
       blocking: false,

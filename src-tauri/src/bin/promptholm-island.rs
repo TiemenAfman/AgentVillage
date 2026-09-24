@@ -24,11 +24,12 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use tao::event::{Event, StartCause};
-use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-/// The window's exe, which stands next to this one.
+/// The window's exe: next to this one in a build folder, one folder up in an unpacked
+/// release, where this one lives in app\.
 const WINDOW_EXE: &str = "promptholm.exe";
 
 /// How often the tray looks at the island: is our node still alive, is the port answering.
@@ -41,6 +42,8 @@ const STOP_GRACE: Duration = Duration::from_secs(5);
 enum UserEvent {
     Menu(MenuEvent),
     Tray(TrayIconEvent),
+    /// A second copy found this one keeping the port with nothing listening (`knock`).
+    Knock,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -123,13 +126,22 @@ fn main() {
         return;
     };
     let port = plan.port;
-    // Before the mutex: a second copy that is about to exit still knows where the island is,
-    // and saying so again costs nothing.
-    island::remember_root(&root);
     let Some(_one) = only_islander(port) else {
-        // Another islander already keeps this port. It has the tray; this one has nothing to do.
+        // Another islander already keeps this port, and it has the tray. Usually its island
+        // is up and there is nothing to do - but a tray whose island was stopped from its
+        // menu still holds the port, and exiting here without a word left nothing listening:
+        // the double-click did nothing, and the window waited out its minute and failed.
+        // Measured with a checkout's tray stopped and a release unpacked beside it.
+        if !island::listening(port) {
+            wake_keeper(port);
+        }
         return;
     };
+    // After the mutex, not before: a copy that exits above may be from another folder than
+    // the islander that keeps the port, and would leave checkout.txt pointing at an island
+    // nobody runs.
+    island::remember_root(&root);
+    let knocks = knock_door(port);
 
     if !node_answers() {
         // Everything else is written to server.log, but somebody who has just unpacked a
@@ -158,6 +170,7 @@ fn main() {
     TrayIconEvent::set_event_handler(Some(move |e| {
         let _ = proxy.send_event(UserEvent::Tray(e));
     }));
+    listen_for_knocks(knocks, event_loop.create_proxy());
 
     // Which code this island is, at the top of the menu and in the tooltip. Read again on
     // every restart from the menu, since that is when a pulled checkout becomes what runs.
@@ -205,6 +218,8 @@ fn main() {
                 button_state: MouseButtonState::Up,
                 ..
             })) => open_window(&keeper),
+            // Starting is a no-op for an island that is already starting or up.
+            Event::UserEvent(UserEvent::Knock) => keeper.start(),
             Event::UserEvent(UserEvent::Menu(e)) => {
                 let id = e.id();
                 if id == open.id() {
@@ -266,17 +281,19 @@ fn node_answers() -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// An island with no config.json has never been founded: run setup once, the same
-/// scripts/setup.mjs a checkout runs by hand, before the server starts. For an unpacked
-/// release that is the whole install - config.json in %LOCALAPPDATA%\Promptholm, founded
-/// as of now, and the session hook. `--first-run` makes setup leave a hook that is already
-/// there alone (it may belong to a checkout on the same machine). Waited for, output to
-/// server.log, and a failure only noted: the server still starts, and says the rest itself.
+/// A home with no config.json has no island yet: run setup once, the same scripts/setup.mjs
+/// a checkout runs by hand, before the server starts. Importing lib/paths.mjs moves an
+/// island that stood somewhere else before ~/.promptholm existed into it, so on a machine
+/// with an island this is a move and setup finds the config already there; on a fresh one
+/// it is the whole install - config.json founded as of now, and the session hook.
+/// `--first-run` makes setup leave a hook that is already there alone (it may belong to a
+/// checkout on the same machine). Waited for, output to server.log, and a failure only
+/// noted: the server still starts, and says the rest itself.
 fn first_run(root: &Path) {
     if island::home(root).join("config.json").is_file() {
         return;
     }
-    note(root, "first start: running setup");
+    note(root, "no island in this home yet: running setup, which moves one in or founds one");
     let log = island::home(root).join("data").join("server.log");
     let out = std::fs::OpenOptions::new().create(true).append(true).open(&log);
     let mut cmd = Command::new(island::node_exe());
@@ -305,9 +322,14 @@ fn alert(title: &str, text: &str) {
 #[cfg(not(windows))]
 fn alert(_title: &str, _text: &str) {}
 
-/// The window, pointed at this island. The browser when the window's exe is not next to us.
+/// The window, pointed at this island. The browser when there is no window's exe to start.
 fn open_window(keeper: &Keeper) {
-    let exe = std::env::current_exe().ok().map(|e| e.with_file_name(WINDOW_EXE)).filter(|p| p.is_file());
+    let dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
+    let exe = dir
+        .iter()
+        .flat_map(|d| [Some(d.join(WINDOW_EXE)), d.parent().map(|up| up.join(WINDOW_EXE))])
+        .flatten()
+        .find(|p| p.is_file());
     let Some(exe) = exe else {
         shell_open(&keeper.url());
         return;
@@ -380,4 +402,87 @@ fn only_islander(port: u16) -> Option<impl Drop> {
 #[cfg(not(windows))]
 fn only_islander(_port: u16) -> Option<()> {
     Some(())
+}
+
+/// The second copy's side of the knock. A keeper with the door has its island started by it.
+/// One without is an islander from before the door - a checkout's tray beside a newer
+/// release - and can only be told about. It gets a few seconds first, since a keeper that
+/// is only starting has nothing listening yet either, and the message says "not answering"
+/// rather than "stopped" because a slow cold start can outlast those seconds.
+fn wake_keeper(port: u16) {
+    if knock(port) || island::wait(port, Duration::from_secs(5)).is_some() {
+        return;
+    }
+    alert(
+        "Promptholm is already running",
+        &format!(
+            "Another Promptholm is keeping port {port}, but its island is not answering - most \
+             likely it was stopped from its tray icon.\n\n\
+             Start it again there (perhaps behind the ^), or choose Quit there and start this \
+             one again."
+        ),
+    );
+}
+
+/// Beside the mutex, a named event a second copy can knock on.
+#[cfg(windows)]
+fn knock_name(port: u16) -> Vec<u16> {
+    format!("Local\\Promptholm-island-{port}-knock").encode_utf16().chain([0]).collect()
+}
+
+/// The keeper's side: an auto-reset event, made straight after the mutex, so a knock that
+/// lands before the loop runs is not lost - it stays signalled until a wait takes it. Held
+/// for the life of the process, like the mutex. None when Windows would not make one; a
+/// second copy then says its piece in a message box instead.
+#[cfg(windows)]
+fn knock_door(port: u16) -> Option<usize> {
+    use windows_sys::Win32::System::Threading::CreateEventW;
+    let name = knock_name(port);
+    let handle = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
+    // A HANDLE is a raw pointer and not Send, so the listening thread is handed a number.
+    (!handle.is_null()).then_some(handle as usize)
+}
+
+/// One thread blocked on the door, turning every knock into a Knock for the loop.
+#[cfg(windows)]
+fn listen_for_knocks(door: Option<usize>, proxy: EventLoopProxy<UserEvent>) {
+    use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
+    let Some(raw) = door else { return };
+    std::thread::spawn(move || loop {
+        if unsafe { WaitForSingleObject(raw as HANDLE, INFINITE) } != WAIT_OBJECT_0 {
+            return;
+        }
+        if proxy.send_event(UserEvent::Knock).is_err() {
+            return; // the loop has gone
+        }
+    });
+}
+
+/// False when there is no door to knock on.
+#[cfg(windows)]
+fn knock(port: u16) -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenEventW, SetEvent, EVENT_MODIFY_STATE};
+    let name = knock_name(port);
+    let handle = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr()) };
+    if handle.is_null() {
+        return false;
+    }
+    let rang = unsafe { SetEvent(handle) } != 0;
+    unsafe { CloseHandle(handle) };
+    rang
+}
+
+#[cfg(not(windows))]
+fn knock_door(_port: u16) -> Option<usize> {
+    None
+}
+
+#[cfg(not(windows))]
+fn listen_for_knocks(_door: Option<usize>, _proxy: EventLoopProxy<UserEvent>) {}
+
+#[cfg(not(windows))]
+fn knock(_port: u16) -> bool {
+    false
 }

@@ -42,12 +42,21 @@ with `npm install` (the Tauri CLI is a devDependency); WebView2 is part of Windo
 
 **Without a checkout at all:** download `promptholm-windows-x64.zip` from
 [Releases](https://github.com/TiemenAfman/AgentVillage/releases), unblock it (right click →
-Properties → Unblock), unpack it into any folder and start `promptholm-island.exe`. The zip
-carries the island itself in `app\` beside the two exes, so all it needs from the machine is
-Node 22+. The first start founds the island in `%LOCALAPPDATA%\Promptholm` (config and
+Properties → Unblock), unpack it into any folder and start `promptholm.exe`, the only exe on
+top; it starts the islander, which is in `app\` with the rest of the island, so all it needs
+from the machine is Node 22+. The first start founds the island in `%USERPROFILE%\.promptholm` (config and
 data live there, not in the folder, so a newer version unpacks over the old one), and adds
 the session hook unless one is already there. The exes are unsigned, so SmartScreen may ask
 once: *More info* → *Run anyway*.
+
+**One island, whichever way you run it.** A release and a checkout (`npm run dev`, a debug
+build, the session hook) share `~/.promptholm`, so a new release can be tried on your own
+village straight away and a debug build sees what the release did. An island that stood
+somewhere else before - in the checkout, or in `%LOCALAPPDATA%\Promptholm` from 0.4.0 and
+earlier - is copied in on the first start, and the old copy is left as a backup with a
+`MOVED.txt` in its `data\`. A git worktree keeps an island of its own. Only run code on it
+that is as new as whatever ran on it last: a layout version it does not know makes it plan
+the town again.
 
 **With Rust**, building them yourself:
 

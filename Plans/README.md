@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
+  hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
+  desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande
+  eiland verhuist bij de eerste start vanzelf, gekopieerd vanaf het eiland waar de
+  session-hook naartoe wijst. Gebouwd op 24 september 2026.
 - [aangesproken-settler-draait-zich-om.md](aangesproken-settler-draait-zich-om.md) — een
   settler die je aanspreekt draait zich op elk scherm naar je toe: de zee stuurt wie er
   vastgehouden wordt en waar de spreker staat als eigen bericht (`fh`, alleen bij verandering),
