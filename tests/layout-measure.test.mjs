@@ -26,7 +26,7 @@ import path from 'node:path';
 import { scan } from '../scan.mjs';
 import { DATA, readJson, loadConfig } from '../lib/paths.mjs';
 import { outsideDoor, TOWN_CORE_R } from '../lib/layout.mjs';
-import { makeTerrain } from '../shared/terrain.mjs';
+import { makeTerrain, foundingCoast } from '../shared/terrain.mjs';
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'promptholm-layout-'));
 const files = {
@@ -299,9 +299,16 @@ test('the village is spread over the island, and nobody is a guest', () => {
   assert.ok(new Set(rings).size > 1, `all ${rings.length} hamlets are on ring ${rings[0]}`);
 });
 
+// Sixty cells, on an island that never grew. A harbour's approach on one that did may be as
+// much longer as its coast moved out (Plans/eiland-laten-groeien.md): the harbour moves out
+// with the coast, and the fresh ring it now stands on has no hamlet lane yet to braid onto.
+// Measured on the live island's first ring (coast 120 to 156): an approach of 64.
 test('a road is a road and not a kilometre of one', () => {
+  const steps = (L.grow && L.grow.steps) || [];
+  const outward = steps.length ? steps[steps.length - 1].r - foundingCoast(L.grow.base) : 0;
   for (const p of L.paths.filter((q) => String(q.id).startsWith('road:'))) {
-    assert.ok(p.cells.length < 60, `${p.id} is ${p.cells.length} cells long`);
+    const most = /^road:harbour:\d+:approach$/.test(p.id) ? 60 + outward : 60;
+    assert.ok(p.cells.length < most, `${p.id} is ${p.cells.length} cells long`);
   }
 });
 
