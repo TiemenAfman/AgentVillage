@@ -46,8 +46,9 @@ function createSettlers(scene, material, terrain) {
 }
 
 test('all resident hats render with finite normals and no expedition equipment', () => {
+  for (const [presentation, outfit] of [['man','trousers'], ['woman','trousers'], ['woman','skirt']]) {
   for (const { id } of HAT_SHAPES) {
-    const look = { ...settlerLook('resident', 'sonnet'), hatShape: id };
+    const look = { ...settlerLook('resident', 'sonnet'), hatShape: id, presentation, outfit };
     const g = figureGeometry('sonnet', { look });
     g.computeBoundingBox();
     assert.equal(g.groups.length, 0);
@@ -65,6 +66,54 @@ test('all resident hats render with finite normals and no expedition equipment',
     }
     g.dispose();
   }
+  }
+});
+
+test('women are represented across roles with both skirts and trousers', () => {
+  for (const kind of ['adult','apprentice','sailor']) {
+    const looks = Array.from({ length: 1000 }, (_, i) => settlerLook(`population:${i}`, 'sonnet', kind));
+    const women = looks.filter((look) => look.presentation === 'woman');
+    assert.ok(women.length > 400 && women.length < 600);
+    assert.ok(women.some((look) => look.outfit === 'skirt'));
+    assert.ok(women.some((look) => look.outfit === 'trousers'));
+    if (kind === 'sailor') assert.ok(looks.every((look) => look.hatShape === 'sailor'));
+  }
+});
+
+test('women clothing and hair follow their owner and are hidden on other residents', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
+  const view = createFigures(scene, material);
+  const figures = new Map();
+  for (const [id, presentation, outfit] of [['woman-skirt','woman','skirt'],['woman-trousers','woman','trousers'],['man','man','trousers']]) {
+    const f = { id, visible: true, pos: [2,3], y: .2, yaw: .6, anim: 'walk', mode: 'walk', speed: 1 };
+    view.enrol(f, { ...settlerLook(id,'sonnet'), presentation, outfit }, 'adult');
+    figures.set(id,f);
+  }
+  const skirt=scene.getObjectByName('resident-skirts'), hair=scene.getObjectByName('resident-woman-hair');
+  const actual=new THREE.Matrix4(), expected=new THREE.Matrix4();
+  for (const dt of [.1,.2]) {
+    view.draw(figures,dt);
+    for (const f of figures.values()) {
+      skirt.getMatrixAt(f.slot,actual);
+      if (f.look.outfit === 'skirt') {
+        scene.children[0].getMatrixAt(f.slot,expected);
+        assert.deepEqual(actual.elements,expected.elements);
+      } else assert.equal(actual.elements[13],-999);
+      hair.getMatrixAt(f.slot,actual);
+      if (f.look.presentation === 'woman') {
+        scene.children[9].getMatrixAt(f.slot,expected);
+        assert.deepEqual(actual.elements,expected.elements);
+      } else assert.equal(actual.elements[13],-999);
+    }
+  }
+  view.hide(figures.get('woman-skirt'));
+  for (const mesh of [skirt,hair]) {
+    mesh.getMatrixAt(0,actual);
+    assert.equal(actual.elements[13],-999);
+  }
+  view.dispose();
+  assert.equal(scene.children.length,0);
+  material.dispose();
 });
 
 test('resident identity stays deterministic and sailors keep their uniform', () => {
@@ -81,12 +130,12 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   const settlers = createSettlers(scene, material, terrain);
   // Four chore batches (hoe, axe, rod, a bundle of sticks) sit between the hats and the hammer,
   // hidden outright while nobody holds one - see createFigures.
-  assert.equal(scene.children.length, 22, 'eleven articulated body, six hats, four chore tools, one hammer batch');
+  assert.equal(scene.children.length, 24, 'eleven articulated body, two appearance layers, six hats, four chore tools, one hammer batch');
   for (let i = 0; i < 100; i++) settlers.add(`resident:${i}`, { style: 'sonnet', kind: 'hut' }, [i,0,0]);
   const walker = settlers.figures.get('resident:0');
   walker.mode = 'walk'; walker.path = [[0, 0], [2, 0]]; walker.pathI = 0; walker.pos = [0, 0];
   settlers.update(0.1, 0);
-  assert.equal(scene.children.length, 22, 'no mesh per person');
+  assert.equal(scene.children.length, 24, 'no mesh per person');
   const [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details] = scene.children;
   const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
   for (const mesh of body) assert.equal(mesh.count, 100);

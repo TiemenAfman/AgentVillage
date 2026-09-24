@@ -120,7 +120,14 @@ export function settlerLook(seed, style, kind = 'adult') {
   const base = styleLook(style, kind === 'sailor');
   const rng = makeRng(hash32(`${seed}:look`));
   const young = kind === 'apprentice';
+  // Cosmetic identity has its own stream: inserting a draw into :look would change
+  // everybody's height and therefore the sea's walking stride. These are fictional
+  // resident designs, never genders inferred from the people behind their sessions.
+  const appearance = makeRng(hash32(`${seed}:appearance`));
+  const presentation = appearance.chance(0.5) ? 'woman' : 'man';
+  const outfit = presentation === 'woman' && appearance.chance(0.65) ? 'skirt' : 'trousers';
   return {
+    presentation, outfit,
     hatShape: kind === 'sailor' || rng.chance(0.45) ? base.hatShape : rng.pick(CIVILIAN_HATS),
     hat: kind === 'sailor' ? SAILOR_HAT : (rng.chance(0.35) ? pal.roof : rng.pick(SWATCHES.hat).hex),
     skin: rng.pick(SWATCHES.skin).hex,

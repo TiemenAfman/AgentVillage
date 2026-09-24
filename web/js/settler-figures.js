@@ -1,11 +1,10 @@
-// What a settler looks like, and the eleven meshes the whole crowd is drawn with. The
+// What a settler looks like, and the fixed mesh batches that draw the whole crowd. The
 // other half of what used to be web/js/settlers.js; settler-walk.js decides where the
 // bodies are and this file decides what stands there.
 //
-// Residents share the player's faceted Blender style, but wear waistcoats, short aprons
-// and compact work hats. Five instanced body meshes keep skin, dyed clothing and facial
-// details separate; six hat buckets preserve each resident's wardrobe. The whole crowd
-// costs eleven meshes, regardless of population. Working hammers retain their own bucket.
+// Residents share the player's faceted Blender style. Articulated body parts,
+// optional skirts and swept hair, and six hat buckets are instanced across the
+// whole crowd: population growth never adds a draw call. Tools have their own buckets.
 // Movement is still sine waves and lerps - and all of those sine waves live here, run off
 // this file's own clock, and feed nothing but a matrix. That is what let the two halves
 // come apart: the walk tells us one word per figure (`f.anim`) and everything cosmetic is
@@ -80,7 +79,7 @@ function mergeParts(parts) {
 }
 
 const RESIDENT_PIECES = {
-  torso: ['Work shirt'],
+  torso: ['Work shirt', 'Left collar', 'Right collar'],
   trim: ['Left waistcoat', 'Right waistcoat', 'Short work apron', 'Apron pocket', 'Waist tie',
     'Shirt button', 'Shirt button.001', 'Shirt button.002'],
   leftLeg: ['Left clog', 'Left trousers'],
@@ -107,10 +106,12 @@ export function figureGeometry(style, { sailor = false, look = null } = {}) {
     torsoGeometry(lk.tunic),
     ...limbParts(lk.trim),
     handGeometry(lk.skin),
+    ...(lk.outfit === 'skirt' ? [residentPart('skirt', lk.tunic)] : []),
   ].map((g) => g.scale(build, height, build));
   const headParts = [
     headGeometry(lk.skin, -HEAD_Y),
     detailGeometry(-HEAD_Y),
+    ...(lk.presentation === 'woman' ? [residentPart('womanHair', null, -HEAD_Y)] : []),
     ...hatParts(lk.hatShape, lk.hat, -HEAD_Y),
   ].map((g) => g.scale(head, head, head).translate(0, HEAD_Y * height, 0));
   return mergeParts([...bodyParts, ...headParts]);
@@ -204,8 +205,8 @@ function hipLift(lean, look) {
 }
 
 // `armed` gives every resident a sword in the right hand and a torch in the left: two more
-// instanced meshes for the whole crowd, not two per settler, so a hostile island costs 13
-// draw calls where a friendly one costs 11. No light of its own per torch, unlike the
+// instanced meshes for the whole crowd, not two per settler. No light of its own per
+// torch, unlike the
 // player's (classic-avatar.js): a PointLight per resident would be hundreds of lights, and
 // three.js recompiles every material whenever that number changes. The flame glows after
 // dark through the same per-vertex night mask the player's does, which is what reads from
@@ -239,12 +240,20 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
   const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  // Optional clothing and hair remain two population-wide batches, never a mesh
+  // per woman. They share the resident slot and follow its body/head respectively.
+  const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
+  const womanHair = makeMesh(mergeParts([residentPart('womanHair', null, -HEAD_Y)]));
+  skirts.name = 'resident-skirts';
+  womanHair.name = 'resident-woman-hair';
   // Untinted: the baked parts carry their own brass, steel and flame in the vertex colours,
   // and setColorAt is never called on these two, so there is no instance colour to multiply.
   const swords = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.sword, RESIDENT_GRIP)) : null;
   const torches = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.torch,
     [-RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]])) : null;
-  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details,
+  if (swords) swords.name = 'resident-swords';
+  if (torches) torches.name = 'resident-torches';
+  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details, skirts, womanHair,
     ...(armed ? [swords, torches] : [])];
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
@@ -349,6 +358,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
     slots++;
     for (const m of body) m.count = slots;
     tint(torso, slot, look.tunic);
+    tint(skirts, slot, look.tunic);
+    skirts.setMatrixAt(slot, HIDDEN);
+    womanHair.setMatrixAt(slot, HIDDEN);
     for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
     for (const mesh of [trim, leftLeg, rightLeg]) tint(mesh, slot, look.trim);
     tint(head, slot, look.skin);
@@ -427,6 +439,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
       torso.setMatrixAt(f.slot, bodyMat);
+      skirts.setMatrixAt(f.slot, f.look.outfit === 'skirt' ? bodyMat : HIDDEN);
       trim.setMatrixAt(f.slot, bodyMat);
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
@@ -465,6 +478,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);
+      womanHair.setMatrixAt(f.slot, f.look.presentation === 'woman' ? headMat : HIDDEN);
       if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.mesh.setMatrixAt(f.hatSlot, headMat);
     }
     for (const m of body) m.instanceMatrix.needsUpdate = true;
@@ -496,7 +510,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
 
   // Everything this crowd put into the scene, taken back out again. There was no way to
   // do that while a crowd lasted as long as the page did; now one is built per island and
-  // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
+  // rebuilt on every reseed, and instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
     for (const m of [...body, hammers, hoes, axes, rods, bundles, ...[...hats.values()].map((h) => h.mesh)]) {

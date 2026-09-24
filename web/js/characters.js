@@ -24,8 +24,8 @@ const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness:
 const entries = [
   ['Jij', 'Reiziger · volledige uitrusting', avatarPlayerGeometry(DEFAULT_AVATAR), 1],
   ['Dorpswerker', 'Werkjas & schort', figureGeometry('sonnet', { look: { ...styleLook('sonnet'), hatShape: 'cap', hat: 0x5c8a4a } }), 1],
-  ['Ambachtsman', 'Eigen kleur & lichaamsbouw', figureGeometry('opus', { look: settlerLook('showcase:opus', 'opus') }), 1],
-  ['Verhalenverteller', 'Zachte puntmuts', figureGeometry('fable'), 1],
+  ['Ambachtsvrouw', 'Opgestoken haar & werkbroek', figureGeometry('opus', { look: { ...settlerLook('showcase:opus', 'opus'), presentation: 'woman', outfit: 'trousers', hatShape: 'none' } }), 1],
+  ['Dorpsbewoonster', 'Werkrok & hoofddoek', figureGeometry('fable', { look: { ...styleLook('fable'), presentation: 'woman', outfit: 'skirt', hatShape: 'band' } }), 1],
   ['Leerling', 'Kleiner, met groter hoofd', figureGeometry('haiku', { look: settlerLook('showcase:child', 'haiku', 'apprentice') }), .62],
   ['Zeeman', 'Herkenbare havenpet', figureGeometry('sonnet', { sailor: true }), 1],
 ];
