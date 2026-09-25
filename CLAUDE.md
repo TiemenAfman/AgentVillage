@@ -113,7 +113,13 @@ queue), which moves **whole hamlets** (lobes, with every house, shed and the lan
 a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
 what is added, never below the hamlet's population or `ensureParcel` grows it straight
 back), and paints `layout.zones` (no-build super-cells, countryside only,
-enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). A plan is tried on a
+enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). It also moves or turns
+**one of the town's own buildings** (`civic`: the three by three lots in `MOVABLE_CIVICS`, cell
+by cell, onto the town's ground only, never half on a free lot - `takeCivicLot` reads corners -
+and a nudge takes its lot along; the hall takes its postbox) and gives the town ground
+(`commons`, only more). Where each may stand is `civicSites`, baked into the survey and every
+dry run that moves one, a hex digit per corner with a bit per door direction, so the planner
+never judges a drag itself (`Plans/gebouwen-verplaatsen.md`). A plan is tried on a
 copy first, all or nothing; `diff.plots.otherMoved` must be empty and no house may be newly
 left without a way to the square (`stranded` in `lib/plan.mjs` — `placeAll` roads a hamlet
 as far as the router gets and says nothing) or nothing is written; `layout.before-plan-

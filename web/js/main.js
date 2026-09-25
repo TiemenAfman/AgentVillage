@@ -2880,6 +2880,22 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
   [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
 
 // --------------------------------------------------------------- records
+// Where a building stands on its plot and which way it looks: the yard nudge, the loosened
+// building line (house-placement.js) and the ground under it. One function because the
+// planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
+// web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
+// breadth from where the building then turns up.
+function poseOnPlot(spec, built) {
+  const nudge = yardNudge(spec, built);
+  const pose = housePlacement(spec, built.bbox, state.village.buildings);
+  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
+  return { x, y: groundAt(x, z), z, yaw: pose.yaw };
+}
+function ghostPose(id, plot) {
+  const rec = state.byId.get(id);
+  return rec && plot ? poseOnPlot({ ...rec.spec, plot }, rec.built) : null;
+}
+
 function makeRecord(spec) {
   const group = new THREE.Group();
   // Built before it is set down, because where a shed goes on its cell depends on how
@@ -2887,10 +2903,9 @@ function makeRecord(spec) {
   // turret are luxuries drawn three hundred times over, and buildings.js leaves them off
   // when the card cannot afford them.
   const built = buildBuilding(spec, { modest });
-  const nudge = yardNudge(spec, built);
-  const pose = housePlacement(spec, built.bbox, state.village.buildings);
-  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  let y = groundAt(x, z);
+  const pose = poseOnPlot(spec, built);
+  const { x, z } = pose;
+  let y = pose.y;
   // The quay's ground is cut away by world.js, so its houses share the waterline instead
   // of sampling the former meadow that is deliberately no longer drawn. A harbour house
   // that overflowed onto the town commons keeps the ordinary ground under it.
@@ -5301,13 +5316,13 @@ async function boot() {
   state.plan = createPlanMode({
     dom: renderer.domElement,
     terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
-    pickables: () => state.pickables, bounds: () => state.bounds,
+    pickables: () => state.pickables, bounds: () => state.bounds, ghostPose,
     overlay: createPlanOverlay({ scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId }),
     panel: createPlanPanel({
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
-      onGrow: () => state.plan.grow(),
+      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),

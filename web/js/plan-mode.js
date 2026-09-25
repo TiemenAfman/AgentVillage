@@ -27,8 +27,16 @@
 // river, its banks - because a deck has nowhere to turn and the server refuses one that
 // bends (`opRoad` in lib/plan.mjs). Whether the road may be there at all, and how long
 // the bridge is, is the server's answer, as with every other op.
+//
+// The town's own buildings - the hall, the tavern and the rest of the three by three lots -
+// move one at a time and cell by cell, and turn (R) where they stand (`civic`,
+// Plans/gebouwen-verplaatsen.md). Which ones may, and every corner each may be set down on,
+// comes baked from the server like the rest: the survey's `civics` for the island as it
+// stands, a dry run's for the island as the draft leaves it. With the town picked, the Land
+// tool paints ground for the town (`commons`) instead of for a hamlet.
 import * as THREE from 'three';
 import { blockOf, superOf, superComplete } from 'shared/lattice.mjs';
+import { DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { mine } from './api.js';
 
 const DRAFT_KEY = 'promptholm.plan.draft';
@@ -42,7 +50,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 const key = (i, j) => `${i},${j}`;
 const lkey = (l) => `${l.district}#${l.lobe}`;
 
-export function createPlanMode({ dom, terrain, village, byId, pickables, bounds, overlay, panel, toast, onExit }) {
+export function createPlanMode({ dom, terrain, village, byId, pickables, bounds, ghostPose, overlay, panel, toast, onExit }) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1000);
   camera.up.set(0, 0, -1);
   const view = { cx: 0, cz: 0, hh: 60 };
@@ -56,6 +64,8 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   let islandZones = new Set();     // 'i,j' zoned on the island today
   let polderAt = new Map();        // 'i,j' -> index into village.polders, for the ones standing
   let selPolder = null;            // a standing polder picked with the Polder tool
+  let selCivic = null;             // one of the town's own buildings, picked: its id
+  let selTown = false;             // the town itself, picked, for the Land tool
   let groundSeen = null;           // the terrain the overlay was last laid on
   let survey = null;
   let snapshots = 0;
@@ -65,7 +75,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   let press = null, drag = null, band = null, paint = null, pan = null, stroke = null;
   let dragOk = new Map();          // 'i,j' -> 'ok' | 'bad' during a drag
   const keys = new Set();
-  let dry = { seq: 0, timer: null, state: 'idle', verdicts: null, error: null };
+  let dry = { seq: 0, timer: null, state: 'idle', verdicts: null, error: null, civics: null };
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
 
@@ -169,9 +179,11 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     // A draft may name a hamlet the island no longer has.
     const before = ops.length;
     ops = ops.filter((o) => (o.op !== 'move' || o.lobes.every((l) => lobes.has(lkey(l))))
-      && (o.op !== 'parcel' || lobes.has(lkey(o))));
+      && (o.op !== 'parcel' || lobes.has(lkey(o)))
+      && (o.op !== 'civic' || !!specOf(o.id)));
     for (const k of [...sel]) if (!lobes.has(k)) sel.delete(k);
-    if (ops.length !== before) toast('A hamlet in your draft has left the island; that step was dropped.');
+    if (selCivic && !specOf(selCivic)) selCivic = null;
+    if (ops.length !== before) toast('Something in your draft has left the island; that step was dropped.');
   }
 
   // The cumulative super-cell shift of a lobe in the draft.
@@ -202,11 +214,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   // Who owns (i, j) once the draft is applied: the moved lobes at their new place, the
   // rest where they are. A lobe's old ground is nobody's the moment it has been moved.
   let projAt = new Map();
+  let draftTown = new Set();       // 'i,j' the draft gives the town (`commons`)
   function project(list = ops) {
     projAt = new Map();
     for (const rec of lobes.values()) for (const [i, j] of supersOf(lkey(rec), list)) projAt.set(key(i, j), rec);
+    draftTown = new Set();
+    for (const o of list) if (o.op === 'commons') for (const [i, j] of o.add) draftTown.add(key(i, j));
   }
-  const ownerAt = (i, j) => (townAt.has(key(i, j)) ? TOWN : projAt.has(key(i, j)) ? projAt.get(key(i, j)).k : NONE);
+  const isTown = (i, j) => townAt.has(key(i, j)) || draftTown.has(key(i, j));
+  const ownerAt = (i, j) => (isTown(i, j) ? TOWN : projAt.has(key(i, j)) ? projAt.get(key(i, j)).k : NONE);
   function zoneSets() {
     const z = ops.find((o) => o.op === 'zone');
     return { add: new Set((z ? z.add : []).map(([i, j]) => key(i, j))), remove: new Set((z ? z.remove : []).map(([i, j]) => key(i, j))) };
@@ -221,6 +237,57 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (!survey) return false;
     const row = survey.water[j + survey.R];
     return !!row && row.charAt(i + survey.R) === '1';
+  }
+
+  // ------------------------------------------------------------------ the town's buildings
+  // Where each may be set down is a bitmap per building from the server: the draft's own when
+  // it moves one or gives the town ground (the dry run's), else the island's (the survey's).
+  const FACING = ['north', 'east', 'south', 'west'];
+  const hasCivicOps = () => ops.some((o) => o.op === 'civic' || o.op === 'commons');
+  const sites = () => (hasCivicOps() && dry.civics) || (survey && survey.civics) || null;
+  const movable = (id) => !!(id && survey && survey.civics && survey.civics.sites[id]);
+  function specOf(id) {
+    const v = village();
+    return ((v && v.buildings) || []).find((b) => b.id === id) || null;
+  }
+  // "the town hall", "the tavern": its label, as it reads in the middle of a sentence.
+  function civicName(id) {
+    const b = specOf(id);
+    const label = String((b && (b.label || b.name)) || id.slice('civic:'.length));
+    return `the ${label.replace(/^the /i, '').toLowerCase()}`;
+  }
+  // Where a town building stands once the draft is applied: its plot, then every step that
+  // names it, in order - each one says where it goes, so the last one wins.
+  function civicPos(id, list = ops) {
+    const b = specOf(id);
+    if (!b || !b.plot) return null;
+    let at = { gx: b.plot.gx, gz: b.plot.gz, rot: b.plot.rot || 0 };
+    for (const o of list) if (o.op === 'civic' && o.id === id) at = { gx: o.gx, gz: o.gz, rot: o.rot };
+    return at;
+  }
+  // A hex digit per corner, one bit per way the door may face (`civicSites`).
+  function siteOk(id, gx, gz, rot) {
+    const S = sites();
+    const rows = S && S.sites[id];
+    if (!rows) return false;
+    const row = rows[gz - S.gz];
+    const mask = row ? parseInt(row.charAt(gx - S.gx) || '0', 16) || 0 : 0;
+    return !!((mask >> rot) & 1);
+  }
+  // The cell the door of a three by three opens onto (`outsideDoor` in lib/layout.mjs): two
+  // steps out from the middle along the door's own direction, the table the settlers use.
+  const doorstep = (gx, gz, rot) => [gx + 1 + 2 * DOOR_DIR[rot][0], gz + 1 + 2 * DOOR_DIR[rot][1]];
+  function judgeCivic() {
+    drag.ok = siteOk(drag.civic, drag.gx, drag.gz, drag.rot);
+    drag.why = drag.ok ? null : siteOk(drag.civic, drag.gx, drag.gz, (drag.rot + 1) % 4) || siteOk(drag.civic, drag.gx, drag.gz, (drag.rot + 2) % 4) || siteOk(drag.civic, drag.gx, drag.gz, (drag.rot + 3) % 4)
+      ? 'its door would face a wall; R turns it' : "no room there, or not the town's ground";
+  }
+  function turn(dir = 1) {
+    if (!active) return;
+    if (drag && drag.civic) { drag.rot = (drag.rot + dir + 4) % 4; judgeCivic(); redraw(); return; }
+    if (!selCivic) { toast("Pick one of the town's buildings first (1), then turn it."); return; }
+    const at = civicPos(selCivic);
+    if (at) pushOp({ op: 'civic', id: selCivic, gx: at.gx, gz: at.gz, rot: (at.rot + dir + 4) % 4 });
   }
 
   // ------------------------------------------------------------------ judging a drop
@@ -247,12 +314,12 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
           // Ours if it is one of the moving lobes' ground (old or new), else nobody's.
           const at = projAt.get(key(i, j));
           const mine = at && ownKeys.has(lkey(at));
-          if (townAt.has(key(i, j)) || (at && !mine)) { good = false; why = why || `${townAt.has(key(i, j)) ? 'the town' : at.name}'s land`; }
+          if (isTown(i, j) || (at && !mine)) { good = false; why = why || `${isTown(i, j) ? 'the town' : at.name}'s land`; }
           else {
             for (let b = -1; b <= 1 && good; b++) {
               for (let a = -1; a <= 1 && good; a++) {
                 const n = projAt.get(key(i + a, j + b));
-                if (townAt.has(key(i + a, j + b)) || (n && !ownKeys.has(lkey(n)) && !ours.has(n.k))) { good = false; why = why || 'within the belt of a neighbour'; }
+                if (isTown(i + a, j + b) || (n && !ownKeys.has(lkey(n)) && !ours.has(n.k))) { good = false; why = why || 'within the belt of a neighbour'; }
               }
             }
           }
@@ -303,11 +370,45 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         }
       }
     }
+    // The town's buildings the draft moves or turns, the one being dragged and the one picked:
+    // a ghost where it will stand, facing the way it will face, its lot outlined, its doorstep
+    // boxed so the keeper can see which way it looks, and a tether back to where it stands.
+    const civicIds = new Set(ops.filter((o) => o.op === 'civic').map((o) => o.id));
+    if (drag && drag.civic) civicIds.add(drag.civic);
+    if (selCivic) civicIds.add(selCivic);
+    for (const id of civicIds) {
+      const b = specs.get(id);
+      const at = drag && drag.civic === id ? drag : civicPos(id);
+      if (!b || !b.plot || !at) continue;
+      // Red while it is being dragged somewhere the map says no, and red after the dry run
+      // refused its last step: the ledger says why, the island shows which one.
+      let last = -1;
+      for (let i = ops.length - 1; i >= 0 && last < 0; i--) if (ops[i].op === 'civic' && ops[i].id === id) last = i;
+      const refused = last >= 0 && dry.verdicts && dry.verdicts[last] && !dry.verdicts[last].ok;
+      const ok = drag && drag.civic === id ? drag.ok : !refused;
+      const color = new THREE.Color(ok ? 0xe8b45c : 0xe0574a);
+      if (at.gx !== b.plot.gx || at.gz !== b.plot.gz || at.rot !== (b.plot.rot || 0)) {
+        const pose = ghostPose && ghostPose(id, { ...b.plot, gx: at.gx, gz: at.gz, rot: at.rot });
+        if (pose) ghosts.push({ id, at: pose, ok });
+        if (at.gx !== b.plot.gx || at.gz !== b.plot.gz) {
+          lines.push({ from: [b.plot.gx + 1.5 - t.half, b.plot.gz + 1.5 - t.half], to: [at.gx + 1.5 - t.half, at.gz + 1.5 - t.half] });
+        }
+      }
+      rects.push({ gx: at.gx, gz: at.gz, w: 3, d: 3, color });
+      const [dx, dz] = doorstep(at.gx, at.gz, at.rot);
+      rects.push({ gx: dx, gz: dz, w: 1, d: 1, color });
+    }
     for (const o of ops) if (o.op === 'road') roadMarks(o.cells, lines, rects);
     if (stroke) roadMarks(stroke.cells, lines, rects);
     overlay.setGhosts(ghosts);
-    overlay.setMarks({ rects, lines, outlines: [...sel].map((k) => ({ supers: supersOf(k), color: new THREE.Color(0xe8b45c) })) });
-    panel.setSelection({ count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder });
+    const outlines = [...sel].map((k) => ({ supers: supersOf(k), color: new THREE.Color(0xe8b45c) }));
+    if (selTown) outlines.push({ supers: [...townAt, ...draftTown].map((k) => k.split(',').map(Number)), color: new THREE.Color(0xe8b45c) });
+    overlay.setMarks({ rects, lines, outlines });
+    const picked = selCivic ? civicName(selCivic) : null;
+    panel.setSelection({
+      count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder,
+      civic: picked && picked[0].toUpperCase() + picked.slice(1), town: selTown,
+    });
     ledger();
   }
   // A road as the overlay draws it: a line from cell middle to cell middle, the stretches
@@ -349,6 +450,12 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const spans = deckRuns(o.cells).map((r) => r.length);
       return `Road: ${o.cells.length} cells${spans.length ? `, ${spans.map((n) => `a bridge of ${n}`).join(', ')}` : ''}`;
     }
+    if (o.op === 'civic') {
+      const b = specOf(o.id);
+      const still = b && b.plot && b.plot.gx === o.gx && b.plot.gz === o.gz;
+      return still ? `Turn ${civicName(o.id)} to face ${FACING[o.rot]}` : `Move ${civicName(o.id)} to [${o.gx}, ${o.gz}], facing ${FACING[o.rot]}`;
+    }
+    if (o.op === 'commons') return `Ground for the town: +${o.add.length} super-cell${o.add.length === 1 ? '' : 's'}`;
     if (o.op === 'parcel') return `Land for ${(lobes.get(lkey(o)) || { name: o.district }).name}: ${[o.add.length ? `+${o.add.length}` : '', o.remove.length ? `−${o.remove.length}` : ''].filter(Boolean).join(' / ')}`;
     return `Zone: ${o.add.length ? `+${o.add.length}` : ''}${o.add.length && o.remove.length ? ' / ' : ''}${o.remove.length ? `−${o.remove.length}` : ''} super-cell${o.add.length + o.remove.length === 1 ? '' : 's'}`;
   }
@@ -409,6 +516,27 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       let at = 0;
       while (at < ops.length && ops[at].op === 'grow') at++;
       ops.splice(at, 0, o);
+    } else if (o.op === 'civic') {
+      // A building's drags in a row fold into one, the way `move` does for a hamlet: the op
+      // says where it goes, so the later one simply replaces the earlier - and a building put
+      // back where it stood before that step is no step at all.
+      const folding = last && last.op === 'civic' && last.id === o.id;
+      const before = civicPos(o.id, folding ? ops.slice(0, -1) : ops);
+      if (folding) ops.pop();
+      if (!before || before.gx !== o.gx || before.gz !== o.gz || before.rot !== o.rot) ops.push({ op: 'civic', id: o.id, gx: o.gx, gz: o.gz, rot: o.rot });
+    } else if (o.op === 'commons') {
+      // One in a draft, early in it: ground has to be the town's before a building later in
+      // the plan may be set down on it (lib/plan.mjs applies the ops in order).
+      const c = ops.find((x) => x.op === 'commons');
+      const have = new Set((c ? c.add : []).map(([i, j]) => key(i, j)));
+      for (const [i, j] of o.add) have.add(key(i, j));
+      const add = [...have].map((k) => k.split(',').map(Number)).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      if (c) c.add = add;
+      else {
+        let at = 0;
+        while (at < ops.length && (ops[at].op === 'grow' || ops[at].op === 'polder')) at++;
+        ops.splice(at, 0, { op: 'commons', add });
+      }
     } else if (o.op === 'polder') {
       // One polder in a draft, first in the list: the land it makes has to exist before a
       // move later in the plan may be set down on it (lib/plan.mjs applies ops in order).
@@ -431,6 +559,11 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   function removeForSelection() {
     // A standing polder picked with the Polder tool: Delete gives it back to the sea.
     if (selPolder !== null) { pushOp({ op: 'unpolder', index: selPolder }); return; }
+    // A picked town building: its last step in the draft goes.
+    if (selCivic) {
+      for (let i = ops.length - 1; i >= 0; i--) if (ops[i].op === 'civic' && ops[i].id === selCivic) { redo.push(...ops.splice(i, 1)); changed(); return; }
+      return;
+    }
     if (!sel.size) return;
     for (let i = ops.length - 1; i >= 0; i--) {
       const o = ops[i];
@@ -474,10 +607,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       body = await r.json().catch(() => ({}));
     } catch { if (seq === dry.seq) { dry.state = 'unreachable'; ledger(); } return; }
     if (seq !== dry.seq) return;
+    // Kept until the next one that has them: a refused draft bakes none, and the island's
+    // own survey would colour the next drag as if the draft's earlier steps were not there.
+    if (body.civics) dry.civics = body.civics;
     dry.verdicts = body.verdicts || null;
     dry.state = body.ok ? 'ok' : 'refused';
     dry.error = body.ok ? null : (body.error || (r.status === 423 ? 'The island is scanning; try again in a moment.' : `The island said no (${r.status}).`));
-    ledger();
+    // A town building's ghost is coloured by the verdict, so the island is drawn again.
+    if (hasCivicOps()) redraw(); else ledger();
   }
   async function applyDraft() {
     if (!ops.length || dry.state !== 'ok') return;
@@ -550,15 +687,21 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       redraw();
       return;
     }
-    if (tool === 'land' && sel.size !== 1) { toast('Land goes to one hamlet at a time: select it first (1), then paint.'); return; }
+    const forTown = tool === 'land' && sel.size !== 1 && selTown;
+    if (tool === 'land' && sel.size !== 1 && !forTown) { toast('Land goes to one hamlet at a time, or to the town: select it first (1), then paint.'); return; }
+    if (forTown && (e.button === 2 || e.altKey)) { toast("The town's ground is only ever given; there is nothing to take away here."); return; }
     if (painting && (e.button === 0 || e.button === 2)) {
-      paint = { kind: tool === 'land' ? 'parcel' : tool, lobe: tool === 'land' ? [...sel][0] : null, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
+      paint = { kind: tool === 'land' ? (forTown ? 'commons' : 'parcel') : tool, lobe: tool === 'land' && !forTown ? [...sel][0] : null, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
       paintStroke(e.clientX, e.clientY);
       return;
     }
     if (e.button !== 0) return;
-    const rec = lobeUnder(e.clientX, e.clientY);
-    press = { x: e.clientX, y: e.clientY, rec, onSelected: !!(rec && sel.has(lkey(rec))), shift: e.shiftKey };
+    // One of the town's buildings under the pointer is taken before the hamlet under it: it
+    // is picked, or carried, on its own.
+    const hit = pickBuilding(e.clientX, e.clientY);
+    const civic = movable(hit) ? hit : null;
+    const rec = civic ? null : lobeUnder(e.clientX, e.clientY);
+    press = { x: e.clientX, y: e.clientY, rec, civic, onSelected: !!(rec && sel.has(lkey(rec))), shift: e.shiftKey };
   }
   // A fast stroke arrives as a handful of pointer positions a long way apart, and a polder
   // painted from them would be beads on a string - which the server rightly refuses as
@@ -594,6 +737,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       else if (!paint.remove.has(k)) { paint.remove.add(k); paintPreview(); }
       return;
     }
+    if (paint.kind === 'commons') {
+      // Ground for the town grows from its edge, the way the commons grows by itself: nobody's,
+      // good to build on, four-connected to what the town has. `opCommons` is the judge, the
+      // belt round a hamlet included; this only keeps the stroke in one piece.
+      if (isTown(s[0], s[1]) || paint.add.has(k) || !usable(s[0], s[1]) || projAt.has(k)) return;
+      if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => isTown(s[0] + a, s[1] + b) || paint.add.has(key(s[0] + a, s[1] + b)))) return;
+      paint.add.add(k); paintPreview();
+      return;
+    }
     if (paint.kind === 'parcel') {
       // Land grows from the hamlet's edge, the way a scan grows it: ground nobody else holds,
       // good to build on, four-connected to what it has. Taking away is only its own.
@@ -601,7 +753,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       for (const a of paint.add) have.add(a);
       for (const r of paint.remove) have.delete(r);
       if (paint.mode === 'add') {
-        if (have.has(k) || townAt.has(k) || !usable(s[0], s[1])) return;
+        if (have.has(k) || isTown(s[0], s[1]) || !usable(s[0], s[1])) return;
         const at = projAt.get(k);
         if (at && lkey(at) !== paint.lobe) return;
         if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => have.has(key(s[0] + a, s[1] + b)))) return;
@@ -616,6 +768,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   }
   // The stroke so far as a parcel op, for the preview and for pushOp.
   function strokeOp() {
+    if (paint.kind === 'commons') return { op: 'commons', add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [] };
     const rec = lobes.get(paint.lobe);
     return { op: 'parcel', district: rec.district, lobe: rec.lobe, add: [...paint.add].map((k) => k.split(',').map(Number)), remove: [...paint.remove].map((k) => k.split(',').map(Number)) };
   }
@@ -626,7 +779,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (paint.kind === 'polder') {
       for (const k of paint.add) polder.add(k);
       for (const k of paint.remove) polder.delete(k);
-    } else {
+    } else if (paint.kind !== 'commons') {
       for (const k of paint.add) add.add(k);
       for (const k of paint.remove) { if (add.has(k)) add.delete(k); else remove.add(k); }
     }
@@ -637,11 +790,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const mine = new Set(supersOf(paint.lobe, list).map(([i, j]) => key(i, j)));
       selected = (i, j) => mine.has(key(i, j));
     }
+    if (paint.kind === 'commons') {
+      project([...ops, strokeOp()]);
+      selected = (i, j) => isTown(i, j);
+    }
     overlay.paint({
       owner: ownerAt, hueOf: (k) => ((village().districts[k] || {}).hue || 0),
       zones: islandZones, zoneAdd: add, zoneRemove: remove, polder, selected, moving: () => null,
     });
-    if (paint.kind === 'parcel') project();
+    if (paint.kind === 'parcel' || paint.kind === 'commons') project();
   }
   // Walk the stroke towards the cell under the pointer, one neighbouring cell at a time.
   // Dragging back over the road already drawn takes it back to there, which is how a
@@ -688,11 +845,25 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (!press || press.polder !== undefined) return;
     const far = Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_PX;
     if (!drag && !band && far) {
-      const carry = sel.size && (tool === 'move' || (tool === 'select' && press.onSelected));
-      if (carry) drag = { di: 0, dj: 0, ok: true, why: null };
-      else band = { x0: press.x, y0: press.y };
+      // A town building is carried by grabbing it, with either tool, or - with Move - by
+      // dragging anywhere once it is picked.
+      const civic = (tool === 'move' || tool === 'select') ? press.civic || (tool === 'move' && selCivic) || null : null;
+      const at = civic && civicPos(civic);
+      if (at) {
+        selCivic = civic; sel.clear(); selTown = false;
+        drag = { civic, base: at, gx: at.gx, gz: at.gz, rot: at.rot, ok: true, why: null };
+      } else {
+        const carry = sel.size && (tool === 'move' || (tool === 'select' && press.onSelected));
+        if (carry) drag = { di: 0, dj: 0, ok: true, why: null };
+        else band = { x0: press.x, y0: press.y };
+      }
     }
-    if (drag) {
+    if (drag && drag.civic) {
+      // Cell by cell: a world unit is a grid cell.
+      const [x0, z0] = toWorld(press.x, press.y), [x1, z1] = toWorld(e.clientX, e.clientY);
+      const gx = drag.base.gx + Math.round(x1 - x0), gz = drag.base.gz + Math.round(z1 - z0);
+      if (gx !== drag.gx || gz !== drag.gz) { drag.gx = gx; drag.gz = gz; judgeCivic(); redraw(); }
+    } else if (drag) {
       const [x0, z0] = toWorld(press.x, press.y), [x1, z1] = toWorld(e.clientX, e.clientY);
       const di = Math.round((x1 - x0) / lat.pitch), dj = Math.round((z1 - z0) / lat.pitch);
       if (di !== drag.di || dj !== drag.dj) {
@@ -725,6 +896,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       if (o.add.length || o.remove.length) pushOp(o); else redraw();
       return;
     }
+    if (drag && drag.civic) {
+      const { civic, gx, gz, rot } = drag;
+      drag = null; dragOk = new Map(); press = null;
+      const at = civicPos(civic);
+      if (at && (at.gx !== gx || at.gz !== gz || at.rot !== rot)) pushOp({ op: 'civic', id: civic, gx, gz, rot });
+      else redraw();
+      return;
+    }
     if (drag) {
       const { di, dj } = drag;
       drag = null; dragOk = new Map();
@@ -738,6 +917,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const x0 = Math.min(ax, bx), x1 = Math.max(ax, bx), z0 = Math.min(az, bz), z1 = Math.max(az, bz);
       band = null; panel.setBand(null);
       if (!press.shift) sel.clear();
+      selCivic = null; selTown = false;
       const t = terrain();
       for (const rec of lobes.values()) {
         const [di, dj] = deltaOf(lkey(rec));
@@ -754,7 +934,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     }
     if (press && press.polder !== undefined) {
       selPolder = selPolder === press.polder ? null : press.polder;
-      sel.clear();
+      sel.clear(); selCivic = null; selTown = false;
       press = null;
       redraw();
       return;
@@ -763,9 +943,22 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       // A click.
       const rec = press.rec;
       selPolder = null;
+      if (press.civic) {
+        sel.clear(); selTown = false;
+        selCivic = press.civic;
+        press = null;
+        redraw();
+        return;
+      }
+      selCivic = null; selTown = false;
       if (!press.shift) sel.clear();
       if (rec) { if (press.shift && sel.has(lkey(rec))) sel.delete(lkey(rec)); else sel.add(lkey(rec)); }
-      else if (pickBuilding(e.clientX, e.clientY)) toast('The town stays where it is; only hamlets move.');
+      else if (pickBuilding(e.clientX, e.clientY)) toast('That one belongs where it stands; the buildings round the square and the hamlets move.');
+      else {
+        // The town's own ground: the town is picked, for the Land tool to give it more.
+        const s = superAt(e.clientX, e.clientY);
+        if (s && isTown(s[0], s[1]) && !press.shift) selTown = true;
+      }
       press = null;
       redraw();
     }
@@ -802,13 +995,14 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (e.key === 'Escape') {
       take();
       if (drag || band || paint || pan || stroke) cancelGesture();
-      else if (sel.size || selPolder !== null) { sel.clear(); selPolder = null; redraw(); }
+      else if (sel.size || selPolder !== null || selCivic || selTown) { sel.clear(); selPolder = null; selCivic = null; selTown = false; redraw(); }
       else exit();
       return;
     }
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && e.key.toLowerCase() === 'z') { take(); if (e.shiftKey) redoOp(); else undoOp(); return; }
     if (ctrl && e.key.toLowerCase() === 'y') { take(); redoOp(); return; }
+    if (!ctrl && e.code === 'KeyR' && (selCivic || (drag && drag.civic))) { take(); turn(e.shiftKey ? -1 : 1); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { take(); removeForSelection(); return; }
     if (e.key === '1') { take(); setTool('select'); return; }
     if (e.key === '2') { take(); setTool('move'); return; }
@@ -827,7 +1021,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     // survey and the snapshot list with it: both describe the island as it was. A new
     // terrain (a polder dug or given back) needs the overlay's ground laid again, because
     // its vertices sit on the corners of the heightfield it was built from.
-    if (village() !== indexed) { index(); changed(); fetchIsland(); }
+    if (village() !== indexed) { index(); dry.civics = null; changed(); fetchIsland(); }
     if (terrain() !== groundSeen) { groundSeen = terrain(); overlay.rebuildGround(); redraw(); }
     let mx = 0, mz = 0;
     for (const k of keys) { const d = PAN_KEYS[k]; if (d) { mx += d[0]; mz += d[1]; } }
@@ -837,14 +1031,16 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     panel.setHud(hud(s));
   }
   function hud(s) {
-    const tip = tool === 'select' ? 'click a hamlet or drag a box; <kbd>Shift</kbd> adds; drag a selected hamlet to carry it'
-      : tool === 'move' ? 'drag to carry the selected hamlets; snaps to the super-grid'
+    const tip = tool === 'select' ? (selCivic ? 'drag it to carry it; <kbd>R</kbd> turns it; <kbd>Delete</kbd> takes its last step back'
+      : "click a hamlet, a town building or the town's ground; drag a box; <kbd>Shift</kbd> adds")
+      : tool === 'move' ? 'drag to carry the selected hamlets (super-grid) or town building (cell by cell); <kbd>R</kbd> turns it'
         : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
-          : tool === 'land' ? (sel.size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : 'select one hamlet first (1), then paint its land')
+          : tool === 'land' ? (sel.size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : selTown ? 'paint more ground onto the edge of the town' : 'select one hamlet or the town first (1), then paint its land')
           : tool === 'road' ? 'drag a road out from one that reaches the square; over a river it is bridged to size'
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
-    if (drag) where = `<span class="${drag.ok ? 'ok' : 'why'}">[${drag.di}, ${drag.dj}] ${drag.ok ? 'fits' : esc(drag.why || 'no')}</span>`;
+    if (drag && drag.civic) where = `<span class="${drag.ok ? 'ok' : 'why'}">${esc(civicName(drag.civic))} at [${drag.gx}, ${drag.gz}], facing ${FACING[drag.rot]} · ${drag.ok ? 'fits' : esc(drag.why)}</span>`;
+    else if (drag) where = `<span class="${drag.ok ? 'ok' : 'why'}">[${drag.di}, ${drag.dj}] ${drag.ok ? 'fits' : esc(drag.why || 'no')}</span>`;
     else if (stroke) {
       const spans = deckRuns(stroke.cells).map((r) => r.length);
       where = `<span class="muted">${stroke.cells.length} cells${spans.length ? ` · bridge ${spans.join(' + ')}` : ''}</span>`;
@@ -853,9 +1049,10 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const k = key(s[0], s[1]);
       const rec = projAt.get(k);
       const onPolder = polderAt.has(k) ? ` · polder ${polderAt.get(k) + 1}` : '';
-      const what = townAt.has(k) ? 'the town' : rec ? esc(rec.name) : usable(s[0], s[1]) ? 'open ground' : reclaimable(s[0], s[1]) ? 'shallows, reclaimable' : 'not for building';
+      const what = isTown(s[0], s[1]) ? 'the town' : rec ? esc(rec.name) : usable(s[0], s[1]) ? 'open ground' : reclaimable(s[0], s[1]) ? 'shallows, reclaimable' : 'not for building';
       where = `<span class="muted">[${s[0]}, ${s[1]}] · ${what}${onPolder}${islandZones.has(k) ? ' · zoned' : ''}</span>`;
       if (selPolder !== null) where += `<span>polder ${selPolder + 1} picked · <kbd>Delete</kbd> gives it back to the sea</span>`;
+      if (selCivic) where = `<span class="muted">${esc(civicName(selCivic))} picked</span>`;
     }
     return `<b>${tool[0].toUpperCase()}${tool.slice(1)}</b><span>${tip}</span>${where}<span class="muted"><kbd>Esc</kbd> back</span>`;
   }
@@ -913,5 +1110,6 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     resize: () => { if (active) applyView(); },
     undo: undoOp, redo: redoOp, clear: clearOps, apply: applyDraft, restore: restorePrevious,
     grow: () => { if (active) pushOp({ op: 'grow' }); },
+    turn: (dir = 1) => turn(dir),
   };
 }

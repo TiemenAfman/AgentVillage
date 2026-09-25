@@ -12,11 +12,11 @@ const el = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export const TOOLS = [
-  ['select', 'Select', '1', 'Click a house or its land to pick the whole hamlet. Drag on open ground for a box. Shift adds.'],
-  ['move', 'Move', '2', 'Drag the selected hamlets. Snaps to the super-grid.'],
+  ['select', 'Select', '1', "Click a house or its land to pick the whole hamlet, or one of the town's buildings to move it on its own. Click the town's ground to pick the town. Drag on open ground for a box. Shift adds."],
+  ['move', 'Move', '2', 'Drag the selected hamlets (they snap to the super-grid), or the selected town building (cell by cell; R turns it).'],
   ['zone', 'Zone', '3', 'Paint ground nothing may be built on. Right-drag releases it.'],
   ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Click a standing polder and press Delete to give it back.'],
-  ['land', 'Land', '5', 'Give the selected hamlet more land, painted onto its edge. Right-drag takes land away.'],
+  ['land', 'Land', '5', 'Give the selected hamlet more land, painted onto its edge; right-drag takes land away. With the town picked, paint more ground for the town.'],
   ['road', 'Road', '6', 'Drag a road out from one that reaches the square. Over a river it gets a bridge as long as the gap.'],
 ];
 
@@ -35,6 +35,9 @@ export function createPlanPanel(handlers) {
     // (Plans/eiland-laten-groeien.md). Hidden on an island founded on its whole grid,
     // which has nowhere to grow to until its grid can (setGrowable).
     + '<button class="btn tiny" id="plan-grow" hidden title="Grow the island by one ring of new coast. The quay and the harbours move out with it.">Grow</button>'
+    // A quarter turn for the picked town building. R does the same, but a key nobody told
+    // you about is a key nobody presses.
+    + '<button class="btn tiny" id="plan-turn" hidden title="Turn the picked building a quarter to the right (R; Shift+R to the left)">Turn</button>'
     + '</div>';
   ledger.querySelector('.panel-body').innerHTML = '<ol class="plan-ops" id="plan-ops"></ol>'
     + '<div class="plan-verdict muted" id="plan-verdict"></div>'
@@ -51,6 +54,7 @@ export function createPlanPanel(handlers) {
   tools.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => handlers.onTool(b.dataset.tool)));
   el('plan-overview').addEventListener('click', () => handlers.onOverview());
   el('plan-grow').addEventListener('click', () => handlers.onGrow && handlers.onGrow());
+  el('plan-turn').addEventListener('click', () => handlers.onTurn && handlers.onTurn());
   el('plan-undo').addEventListener('click', () => handlers.onUndo());
   el('plan-redo').addEventListener('click', () => handlers.onRedo());
   el('plan-clear').addEventListener('click', () => handlers.onClear());
@@ -71,11 +75,14 @@ export function createPlanPanel(handlers) {
     tools.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
   }
 
-  function setSelection({ count = 0, names = [], polder = null } = {}) {
+  function setSelection({ count = 0, names = [], polder = null, civic = null, town = false } = {}) {
     el('plan-sel').textContent = count
       ? `${count} hamlet${count === 1 ? '' : 's'}: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
-      : polder !== null ? `Polder ${polder + 1} picked — Delete gives it back to the sea`
-        : 'Nothing selected';
+      : civic ? `${civic} picked — drag it, R turns it`
+        : town ? 'The town picked — Land (5) paints more ground for it'
+          : polder !== null ? `Polder ${polder + 1} picked — Delete gives it back to the sea`
+            : 'Nothing selected';
+    el('plan-turn').hidden = !civic;
   }
 
   // `ops` as sentences; `verdicts` aligned with them from the dry run, or null while one is
