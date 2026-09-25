@@ -108,7 +108,11 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Five version gates
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Roads, unlike
+plots, the scan does take up by itself: every scan runs the planner's `pruneUnreachable` and
+lays again whatever no longer reaches the square, because a path records only the cells it
+paved itself - when a hamlet dies its road goes, and every road that had braided onto it was
+left ending in the grass (45 houses cut off, 25 September 2026). Five version gates
 in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
