@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [andere-spelers-zoals-jij.md](andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
+  als jij, in hun eigen uiterlijk en uitrusting (`{t:'look'}`), met liggen, hurken en zitten als
+  pose-bits en slaan en drinken als gebeurtenissen. Gebouwd op 25 september 2026.
 - [lopen-op-de-boot.md](lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
   boot (een nieuwe, grotere sloep): je plek ten opzichte van de romp (`state.deck`), een plat
   dek uit het model, en op de lijn romp en lokale plek samen zoals `encodeRides` het voor

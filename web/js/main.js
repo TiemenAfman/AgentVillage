@@ -1185,6 +1185,8 @@ function enterInterior(room, at) {
       inside = createInterior({
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
         onLeave: () => leaveInterior(),
+        // A glass raised at the bar is seen by everybody else in the room (net.js drink).
+        onDrink: (side) => { if (state.net) state.net.drink(side); },
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -4874,7 +4876,11 @@ async function boot() {
   state.studio = createAvatarStudio(document.body, {
     // Re-dress the avatar the instant a swatch is picked, so if you are already walking
     // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
-    onApply: (spec) => { if (state.walk) state.walk.setAvatar(spec); },
+    onApply: (spec) => {
+      if (state.walk) state.walk.setAvatar(spec);
+      // Everybody else sees the new look too (Plans/andere-spelers-zoals-jij.md).
+      if (state.net) state.net.setLook(spec);
+    },
     onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
@@ -5058,7 +5064,9 @@ async function boot() {
     // Every swing the arm starts goes to the sea, which decides what it reaches
     // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function
     // because the line is opened after this.
-    onSwing: () => { if (state.net) state.net.swing(); },
+    onSwing: (side) => { if (state.net) state.net.swing(side); },
+    // And a sip, which nobody fights with and everybody else should still see.
+    onDrink: (side) => { if (state.net) state.net.drink(side); },
     tipsy: state.tipsy,
     bikes: true,
   });
@@ -5109,6 +5117,9 @@ async function boot() {
     blocked: () => !!openPanel(),
   });
   state.net = createNet({
+    // What we look like to everybody else: our own wardrobe (web/js/avatar.js), said on
+    // every connect and again from the studio's Apply.
+    look: loadAvatar(),
     onEvicted: (m) => {
       exitWalk({ force: true });
       state.walk.setPaused(false);
