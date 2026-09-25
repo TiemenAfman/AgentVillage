@@ -429,6 +429,14 @@ position out itself, and sends decks as their own list `d` beside the rows - a r
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
 crew). None of it runs yet: no walk mode sets `state.deck`.
 
+**Other players are drawn with your own rig** (Plans/andere-spelers-zoals-jij.md): peers.js
+gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
+connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
+`identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
+`CROUCHING`, `SITTING` are 256/512/1024 (`POSE_MASK` 2047) - and by events for the arms:
+`{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}` as
+`drank`. Events, not bits: a swing is over in less than two pose beats.
+
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
 renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page

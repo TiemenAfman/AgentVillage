@@ -1,13 +1,19 @@
-// The other people on the island. One mesh each, not an instanced pool: there are two to
-// ten of them, capped at sixteen, and a mesh apiece is what lets a name hang above a head
-// without any bookkeeping.
+// The other people on the island. One figure each, not an instanced pool: there are two to
+// ten of them, capped at sixteen, and a figure apiece is what lets a name hang above a head
+// without any bookkeeping. The figure is the one you are drawn as yourself - classic-avatar.js,
+// in their own look (web/js/avatar.js, sent by their page) and driven by the pose their page
+// sends - so a body lies, crouches, sits, swings and drinks here as it does on its own screen
+// (Plans/andere-spelers-zoals-jij.md). A handful of meshes each rather than one, which sixteen
+// people can afford and three hundred settlers could not: those stay instanced.
 //
 // Positions arrive about ten times a second and are drawn an eighth of a second in the
 // past, interpolated between the last two we were told about - web/js/timeline.js, the one
 // timeline the boats somebody else is steering are drawn on too.
 import * as THREE from 'three';
-import { playerGeometry, lerpAngle } from './walk.js';
+import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
+import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
+import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
 
@@ -25,12 +31,18 @@ const FLAG_BLOCKING = 16;
 // wheels turn with how fast the peer is actually going, its bars and lean with how fast they
 // are turning - because the sea only ever relays the one bit (Plans/fiets.md).
 const FLAG_RIDING = 128;
-// A peer is one merged mesh with no hips to bend, so a rider sits on the saddle with the
-// legs hanging past the cranks, leaning over the bars as walk.js's own rider does.
+// On their back, crouched, on a seat: net.js's FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING.
+const FLAG_LYING = 256;
+const FLAG_CROUCHING = 512;
+const FLAG_SITTING = 1024;
+// A rider on the saddle, leaning over the bars as walk.js's own rider does (its RIDE_PITCH).
 const RIDE_PITCH = 0.28;
-const HIP = 0.14 * 1.12;          // the figure's hips over its soles, as classic-avatar.js has it
-// How far somebody behind their shield leans back into it. A peer is one mesh with no arms
-// (see the header), so a raised shield cannot be drawn; a braced stance can, for nothing.
+// The rest of these poses are walk.js's numbers for our own figure, copied rather than
+// imported so this file keeps its one import of walk.js: the tilt of somebody lying on their
+// back (head at -z, front face up), and how far a crouch folds the whole body.
+const LIE_PITCH = -1.5;
+const CROUCH_FOLD = 0.82;
+// How far somebody behind their shield leans back into it, on top of the raised arm.
 const BRACE_LEAN = -0.1;
 
 // The room a pilot's pose names (main.js `setRoom('boat')`). Not a place to be drawn in: a
@@ -98,14 +110,6 @@ function labelTexture(text) {
 // and never from their own world position, for the same reason a pilot is.
 export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null }) {
   const places = new Map([[null, { scene, terrain: ground || terrain }]]);
-  // One geometry per style, shared by everyone wearing it. Never disposed while the page
-  // lives: handing it to a peer and then throwing it away when that peer leaves is how
-  // the next arrival of the same style renders as garbage.
-  const geoByStyle = new Map();
-  function geometryFor(style) {
-    if (!geoByStyle.has(style)) geoByStyle.set(style, playerGeometry(style));
-    return geoByStyle.get(style);
-  }
 
   const peers = new Map();   // id -> peer
   const byRoom = new Map();  // room -> the people in it you can bump into
@@ -116,12 +120,22 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
   };
   let selfId = null;
 
+  // Somebody's look as their page sent it, through the wardrobe's own whitelist - the sea only
+  // checked its shape (lib/players.mjs lookOf). A page from before looks were sent says
+  // nothing, and gets the settler everybody starts as.
+  const lookOf = (info) => normalizeAvatar((info && info.look) || {});
+
   function makePeer(info) {
     // The shared building material, not a copy: main.js writes the night factor into its
     // uniforms once a frame, and a clone would stand in permanent daylight.
-    const mesh = new THREE.Mesh(geometryFor(info.style || 'unknown'), material);
+    const look = lookOf(info);
+    const avatar = createClassicAvatar(look, material);
+    // `mesh` is the body as a whole - the group every pose moves and turns, with the rig in it
+    // and the name over it - and kept under that name because that is what everything below
+    // has always moved.
+    const mesh = new THREE.Group();
     mesh.rotation.order = 'YXZ';       // yaw first, then the swimmer's pitch - as in walk.js
-    mesh.castShadow = true;
+    mesh.add(avatar.object);
     mesh.visible = false;
     scene.add(mesh);                   // outdoors until a pose says otherwise
 
@@ -137,6 +151,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       style: info.style,
       keeper: !!info.keeper,
       mesh,
+      avatar,
+      look,
+      lookKey: JSON.stringify(look),
       sprite,
       from: null,          // the two samples we interpolate between
       to: null,
@@ -165,6 +182,10 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         have.sprite.material.map.dispose();
         have.sprite.material.map = labelTexture(info.name);
       }
+      // And a change of clothes, or of what is in their hands.
+      const look = lookOf(info);
+      const key = JSON.stringify(look);
+      if (key !== have.lookKey) { have.avatar.set(look); have.look = look; have.lookKey = key; }
       have.leaving = false;
       return;
     }
@@ -206,7 +227,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     const from = places.get(p.room);
     if (from) from.scene.remove(p.mesh);
     p.mesh.remove(p.sprite);
-    // Only what belongs to this one peer. The geometry and the material are shared.
+    // Only what belongs to this one peer: their figure's own geometry, and their name. The
+    // material is the island's.
+    p.avatar.dispose();
     p.sprite.material.map.dispose();
     p.sprite.material.dispose();
     peers.delete(p.id);
@@ -327,6 +350,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const running = !!(f & FLAG_RUNNING);
       const airborne = !!(f & FLAG_AIRBORNE);
       const blocking = !!(f & FLAG_BLOCKING);
+      const lying = !!(f & FLAG_LYING) && !swimming;
+      const sitting = !!(f & FLAG_SITTING) && !swimming;
+      const crouching = !!(f & FLAG_CROUCHING) && !lying && !swimming;
 
       // Standing on our own ground rather than on the height we were sent. If a visitor
       // generated the island from a different seed the two terrains disagree, and this is
@@ -341,21 +367,41 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const ground = floor ? floor.worldHeight(x, z) : 0;
       // Aboard, the deck is what they stand on: the hull's own, or - for a hull this page
       // does not draw - the deck height their pose was sent with, rather than the sea bed.
+      // A seat is the one other place the height they were sent is the truth: a bar stool
+      // holds you above the floor, and the floor is all this page's ground knows of.
       const base = seat ? seat.y
-        : p.aboard || airborne ? (a.y + (b.y - a.y) * k)
+        : p.aboard || airborne || sitting ? (a.y + (b.y - a.y) * k)
           : (ground < 0 ? -0.07 : ground);
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
-      if (f & FLAG_RIDING && !swimming && !p.room) {
+      const riding = !!(f & FLAG_RIDING) && !swimming && !p.room;
+      if (riding) {
         ride(p, x, base, z, yaw, dt);
       } else if (swimming) {
         p.mesh.position.set(x, base + Math.sin(p.bob) * 0.03, z);
         p.mesh.rotation.set(1.32 + Math.sin(p.bob) * 0.1, yaw, Math.sin(p.bob * 0.5) * 0.16);
+      } else if (lying) {
+        p.mesh.position.set(x, base, z);
+        p.mesh.rotation.set(LIE_PITCH, yaw, 0);
+      } else if (sitting) {
+        p.mesh.position.set(x, base, z);
+        p.mesh.rotation.set(0, yaw, 0);
       } else {
-        const bobY = moving && !airborne ? Math.abs(Math.sin(p.bob)) * 0.045 : 0;
-        p.mesh.position.set(x, base + bobY, z);
-        p.mesh.rotation.set(blocking ? BRACE_LEAN : 0, yaw, moving ? Math.sin(p.bob) * 0.045 : 0);
+        // The legs walk now (the rig below), so the whole body only rocks a little with it.
+        p.mesh.position.set(x, base, z);
+        p.mesh.rotation.set(blocking ? BRACE_LEAN : 0, yaw, moving ? Math.sin(p.bob) * 0.02 : 0);
+        if (crouching) p.mesh.scale.set(1, CROUCH_FOLD, 1);
       }
+      // And the limbs, from the same pose our own figure is given by walk.js. The raised
+      // shield is whichever hand holds one, as walk.js decides it for us.
+      const eq = p.look.equip;
+      p.avatar.update({
+        moving: moving && !lying && !sitting, running, grounded: !airborne,
+        crouching, sitting, lying, swimming,
+        blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
+        phase: p.bob, firstPerson: false, pitch: 0,
+        riding: riding ? { crank: p.ride.crank, standing: false } : null,
+      }, dt);
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot
       // see standing in open water is worse than walking through a swimmer.
@@ -410,12 +456,22 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.bike.place(x, y, z, yaw);
     p.bike.pose(r);
     p.bike.object.updateMatrixWorld(true);
-    seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP, RIDER.saddle[2]);
+    seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP_Y, RIDER.saddle[2]);
     p.bike.object.localToWorld(seat);
     p.mesh.position.copy(seat);
     p.mesh.rotation.set(RIDE_PITCH - r.pitch, yaw, r.lean);
   }
   const seat = new THREE.Vector3();
+
+  // Somebody else's arm (net.js `swung`, `drank`): a swing coming down on the hand it was, a
+  // glass going up to the mouth. The rig refuses what it cannot do - a drink from a hand with
+  // no beer in it, a swing on top of one still winding up - exactly as it does for our own.
+  function act(id, kind, side) {
+    const p = peers.get(id);
+    if (!p || p.leaving) return;
+    if (kind === 'attack') p.avatar.attack(side || undefined);
+    else if (kind === 'drink' && side) p.avatar.drink(side);
+  }
 
   return {
     join,
@@ -423,6 +479,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     roster,
     snapshot,
     update,
+    act,
     setVisible,
     clear,
     place,
@@ -432,10 +489,6 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     nameOf: (id) => (peers.get(id) ? peers.get(id).name : 'Somebody'),
     setSelf: (id) => { selfId = id; if (peers.has(id)) drop(peers.get(id)); },
     count: () => peers.size,
-    dispose: () => {
-      clear();
-      for (const g of geoByStyle.values()) g.dispose();
-      geoByStyle.clear();
-    },
+    dispose: () => { clear(); },
   };
 }
