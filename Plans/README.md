@@ -16,6 +16,12 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [lopen-op-de-boot.md](lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
+  boot (een nieuwe, grotere sloep): je plek ten opzichte van de romp (`state.deck`), een plat
+  dek uit het model, en op de lijn romp en lokale plek samen zoals `encodeRides` het voor
+  settlers al doet, zodat niemand naast de boot zweeft. Fase 0 (de stuurder was voor anderen
+  onzichtbaar) en fase 1 (boten van anderen varen vloeiend, op één tijdlijn met de spelers)
+  gebouwd op 25 september 2026; de rest nog niet.
 - [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
   hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
   desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande

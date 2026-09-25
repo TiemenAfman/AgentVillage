@@ -414,6 +414,14 @@ new bundle, because a neighbour's landscape costs the same ~550 ms to build as o
 (trees, fields, hamlets, through the same `createLandscape`), and rebuilding it on every
 publish from an active neighbour stalled the frame — `dt` included — three times a minute.
 
+**Everything another machine moves is drawn on one timeline** (`web/js/timeline.js`:
+`LAG_MS`, `MAX_EXTRAPOLATE_MS`) - the other players in peers.js and every hull somebody else
+is steering (`glideBoats` in main.js, a short track of samples rather than a pair, run before
+the peers). A pilot is drawn standing on their hull (`seatOf`), never on their own pose: on
+two timelines they part by as far as the boat goes in the difference. `'boat'` in a pose is
+a room to the sea (`afoot` in lib/hostility.mjs) and a hull to peers.js (`BOAT_ROOM`), not a
+place - read as a place it hid every pilot. [Plans/lopen-op-de-boot.md](Plans/lopen-op-de-boot.md).
+
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
 renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page
