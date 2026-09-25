@@ -860,7 +860,7 @@ with no shallows to reclaim.
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, statue, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 70 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, statue, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70 and 100 settlers |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |

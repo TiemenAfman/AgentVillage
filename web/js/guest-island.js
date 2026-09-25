@@ -27,6 +27,8 @@ import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
 import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
+import { disposeSawmill } from './sawmill.js';
+import { disposeSmithy } from './smithy.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -280,8 +282,11 @@ export function createGuestIsland({
       scene.remove(group);
       for (const rec of records) {
         rec.built.geometry.dispose();
-        // The gold pit's bars, hung on by main.js's attachExtras (web/js/goldpit.js).
+        // The gold pit's bars, hung on by main.js's attachExtras (web/js/goldpit.js), and the
+        // trades' moving parts - the smithy's smith is a whole avatar of his own.
         if (rec.goldPile) rec.goldPile.dispose();
+        if (rec.sawmill) disposeSawmill(rec.sawmill);
+        if (rec.smithy) disposeSmithy(rec.smithy);
       }
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },

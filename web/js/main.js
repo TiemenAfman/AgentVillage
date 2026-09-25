@@ -57,6 +57,8 @@ import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mj
 import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
+import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -2951,6 +2953,16 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.fountain) {
     rec.fountain = attachFountain(group, built.animated.fountain.at, buildingMat);
   }
+  // The two trades (web/js/sawmill.js, web/js/smithy.js): what turns, pumps and walks there is
+  // hung on the record's own group, so the plot's rotation is already theirs and yaw stays 0.
+  // The smithy brings a light for its fire - one per island, so a neighbour with a smithy
+  // costs one more light, which is a recompile when it arrives and not a price every frame.
+  if (built.animated && built.animated.sawmill) {
+    rec.sawmill = attachSawmill(group, built.animated.sawmill.at, buildingMat);
+  }
+  if (built.animated && built.animated.smithy) {
+    rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
+  }
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
   if (mail && built.animated && built.animated.mailflag) {
@@ -3046,6 +3058,8 @@ function disposeRecord(rec) {
   }
   if (rec.nameplate) rec.nameplate.dispose();
   if (rec.goldPile) rec.goldPile.dispose();
+  if (rec.sawmill) disposeSawmill(rec.sawmill);
+  if (rec.smithy) disposeSmithy(rec.smithy);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -5485,6 +5499,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   // Real time, not `hour`: the refill is a fact about now, whatever the chronicle is showing.
   if (rec.resetClock) updateResetClock(rec.resetClock, rec.resetClock.foreign || state.guest ? null : state.gold, Date.now());
   if (rec.fountain) updateFountain(rec.fountain, dt);
+  if (rec.sawmill) updateSawmill(rec.sawmill, dt);
+  if (rec.smithy) updateSmithy(rec.smithy, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5492,7 +5508,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
-  const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
+  const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
+    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
