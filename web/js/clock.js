@@ -136,8 +136,9 @@ function setHands(clock, on) {
 
 // The hour the pit fills again, on this browser's own clock (the same one the dossier's
 // "Full again at 17:40" is written in), or null when there is no such hour to show. The
-// keeper's own wall clock on purpose - it is their usage window - and still through
-// worldTime, on `localZone`: web/js/ reads no local getter itself (tests/worldclock.test.mjs).
+// one clock on the island that is deliberately the reader's and not the sea's: the window
+// is this keeper's own and only ever reaches their own page - so the zone is named out loud
+// (localZone) rather than read off a local getter, which tests/worldclock.test.mjs refuses.
 export function refillHour(gold, now = Date.now()) {
   if (!gold || !gold.known || gold.reset || !gold.resetsAt || gold.resetsAt <= now) return null;
   return worldTime(gold.resetsAt, localZone(gold.resetsAt)).hour;

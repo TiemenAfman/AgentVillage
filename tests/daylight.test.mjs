@@ -98,18 +98,18 @@ test('the borrel keeps the time of the sea, summer and winter', () => {
   // lib/sea.mjs asks gatheringAt of worldTime on the sea clock's offset, and the page asks it
   // of the same worldTime on the welcome's `tz`. Europe/Amsterdam is what Dockerfile.sea
   // sets SEA_TZ to.
-  const at = (ms) => worldTime(ms, zoneOffset('Europe/Amsterdam', ms));
+  const seaTime = (ms) => worldTime(ms, zoneOffset('Europe/Amsterdam', ms));
   // Friday 25 September 2026 14:45 UTC is 16:45 in Amsterdam (CEST, +2).
-  const summer = at(Date.UTC(2026, 8, 25, 14, 45));
+  const summer = seaTime(Date.UTC(2026, 8, 25, 14, 45));
   assert.equal(summer.weekday, 5);
   assert.equal(summer.hour, 16.75);
   assert.equal(id(gatheringAt(summer.weekday, summer.hour)), 'borrel');
   // Friday 8 January 2027 15:45 UTC is 16:45 in Amsterdam (CET, +1).
-  const winter = at(Date.UTC(2027, 0, 8, 15, 45));
+  const winter = seaTime(Date.UTC(2027, 0, 8, 15, 45));
   assert.equal(winter.weekday, 5);
   assert.equal(winter.hour, 16.75);
   // And the day turns at the sea's midnight, not at UTC's.
-  assert.equal(at(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
+  assert.equal(seaTime(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
 });
 
 function island(id) {

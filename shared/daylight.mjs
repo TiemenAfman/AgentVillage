@@ -41,9 +41,9 @@ export function nightAt(hour) {
 // Friday borrel keeping its own half hour. A village that only ever met on Friday afternoon
 // was empty the rest of the week.
 //
-// worldTime()'s numbering (shared/worldclock.mjs `weekday`): Sunday is 0, so the working
-// week is 1..5, and Friday is 5. `from` and `until` are hours with their minutes as a
-// fraction, the way worldTime hands them back. The end is exclusive, so a quarter of an hour from ten is over at 10:15 sharp.
+// getDay()'s numbering: Sunday is 0, so the working week is 1..5, and Friday is 5. `from`
+// and `until` are hours with their minutes as a fraction, the way `worldTime` hands them
+// back. The end is exclusive, so a quarter of an hour from ten is over at 10:15 sharp.
 // `name` is what the sea's log calls it.
 export const WEEKDAYS = [1, 2, 3, 4, 5];
 

@@ -15,6 +15,7 @@ import { LIGHTHOUSE } from '../web/js/lighthouse-mesh.js';
 import { CLOCKTOWER } from '../web/js/clocktower-mesh.js';
 import { STATUE } from '../web/js/statue-mesh.js';
 import { CASTLE } from '../web/js/castle-mesh.js';
+import { GREATCASTLE } from '../web/js/greatcastle-mesh.js';
 import { TAVERN } from '../web/js/tavern-mesh.js';
 import { COTTAGE } from '../web/js/cottage-mesh.js';
 import { HOUSE } from '../web/js/house-mesh.js';
@@ -41,7 +42,7 @@ import { SMITHY } from '../web/js/smithy-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -261,7 +262,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'goldpit', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'goldpit', 'greatcastle', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
@@ -284,6 +285,9 @@ test('the register spans every set and answers by part name alone', () => {
     'clocktower',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
+    // The castle on its seven by seven, built at that size rather than the castle drawn at 7/3
+    // (scripts/build-greatcastle.py, Plans/groot-kasteel.md).
+    'greatcastle',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     'lighthouse',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets

@@ -6,8 +6,11 @@ dakkapel en stenen schoorsteen) met tegen de rechtergevel een open afdak waar ge
 
 ## Stand van zaken
 
-Model en animatie staan op `/demo` (rij "Civic", "Smithy"); gebruik het Night-schuifje. **Plek en
-moment op het eiland zijn nog niet besloten**, net als bij de zagerij.
+Model en animatie staan op `/demo` (rij "Civic", "Smithy"); gebruik het Night-schuifje. **Sinds 25
+september op het eiland: een trede op 60 settlers**, na de zagerij (55), op een 3x3-blok vlak
+buiten de kavels rond het plein - de afwegingen staan in `Plans/zagerij.md`. Het vuur heeft zijn
+eigen licht, dus een eiland met een smidse (ook dat van een buur) kost één licht meer: één keer
+opnieuw compileren als hij verschijnt, geen prijs per frame.
 
 ## Wat er gebeurt
 
@@ -40,5 +43,4 @@ moment op het eiland zijn nog niet besloten**, net als bij de zagerij.
 
 ## Later
 
-- Plek en trede op het eiland (samen met de zagerij beslissen).
 - Meer passieve settlers volgens dit patroon: de zager bij de zaagbank, iemand die de band vult.

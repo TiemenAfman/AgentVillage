@@ -26,7 +26,7 @@ import path from 'node:path';
 import { scan } from '../scan.mjs';
 import { DATA, readJson, loadConfig } from '../lib/paths.mjs';
 import { outsideDoor, TOWN_CORE_R } from '../lib/layout.mjs';
-import { makeTerrain, foundingCoast } from '../shared/terrain.mjs';
+import { makeTerrain } from '../shared/terrain.mjs';
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'promptholm-layout-'));
 const files = {

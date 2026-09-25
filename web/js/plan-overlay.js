@@ -291,19 +291,29 @@ export function createPlanOverlay({ scene, terrain, village, byId }) {
   // A building being carried: the real mesh's own geometry, shared, under the translucent
   // green or red, at where it would stand. The real group never moves - see the top of
   // plan-mode.js for why - so this is the only picture of the move until Apply.
-  // `list` is [{ id, dx, dz, ok }] in world units.
+  // `list` is [{ id, dx, dz, ok }] in world units - a hamlet only ever translates - or
+  // [{ id, at: { x, y, z, yaw }, ok }] for one of the town's buildings, which may also turn:
+  // `at` is where it would stand, worked out by main.js's own `poseOnPlot`.
+  const Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
   function setGhosts(list) {
     for (const g of ghosts.children) g.geometry = null;   // shared with the real building
     ghosts.clear();
     const t = terrain();
     const recs = byId();
     if (!t || !recs) return;
-    for (const { id, dx, dz, ok } of list) {
+    for (const { id, dx, dz, at, ok } of list) {
       const rec = recs.get(id);
       if (!rec || !rec.mesh) continue;
       rec.group.updateMatrixWorld(true);
       const m = new THREE.Mesh(rec.mesh.geometry, ok ? OK : BAD);
       m.matrixAutoUpdate = false;
+      if (at) {
+        m.matrix.compose(new THREE.Vector3(at.x, at.y, at.z), new THREE.Quaternion().setFromAxisAngle(Y, at.yaw), ONE);
+        m.renderOrder = 3;
+        m.castShadow = false;
+        ghosts.add(m);
+        continue;
+      }
       m.matrix.copy(rec.mesh.matrixWorld);
       const p = new THREE.Vector3().setFromMatrixPosition(m.matrix);
       const ground0 = t.worldHeight(p.x, p.z);

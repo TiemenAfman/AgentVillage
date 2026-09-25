@@ -203,7 +203,11 @@ export function keeperLook(spec) {
   return k ? { ...base, ...k.dress } : base;
 }
 
-// Whoever lives at this spec, as they look. The one call both halves make.
-export function residentLook(spec) {
-  return keeperOf(spec) ? keeperLook(spec) : settlerLook(spec.id, styleOf(spec), kindOf(spec));
+// Whoever lives at this spec, as they look. The one call both halves make. `id` is the
+// figure's own, which is the building's for a settler and a keeper; on the volcano a guard
+// (`guard:<n>`) and a lodging Codex settler are dressed against the guardhouse but hash
+// their face out of their own id (lib/crowd.mjs addGuard), and only the building's own
+// figure is ever its keeper.
+export function residentLook(spec, id = spec.id) {
+  return keeperOf(spec) && id === spec.id ? keeperLook(spec) : settlerLook(id, styleOf(spec), kindOf(spec));
 }

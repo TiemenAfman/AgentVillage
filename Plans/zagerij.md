@@ -7,11 +7,25 @@ eigen zaagsel.
 
 ## Stand van zaken
 
-Eerst alleen het model en de animatie, op `/demo` (rij "Civic", "Sawmill"). **Waar en wanneer hij
-op het eiland komt is nog niet besloten**: een nieuwe trede in `MILESTONES` (bv. 60 settlers,
-tussen de vuurtoren en het standbeeld) met een gewoon gemeentekavel rond het plein, of een eigen
-plek aan de bosrand. Dat laatste vraagt een bosregel op de server, want het bos wordt nu pas in
-de browser verspreid (`createLandscape`).
+Model en animatie op `/demo` (rij "Civic", "Sawmill"), en **sinds 25 september op het eiland:
+een trede op 55 settlers**, tussen de vuurtoren (50) en de smidse (60). De bosrand is het niet
+geworden; dat vroeg een bosregel op de server, want het bos wordt pas in de browser verspreid
+(`createLandscape`).
+
+Besloten bij het op het eiland zetten:
+
+- **Geen kavel op het plein.** `TRADES` in `lib/layout.mjs` geeft de zagerij en de smidse het
+  dichtstbijzijnde vrije 3x3-blok op het rooster van de stad (`findBlockAround`, de regel van de
+  goudkuil), nooit een van de kavels rond het plein. Die zijn voor het stadhuis, de kapel en de
+  school en vaak al te weinig (seed 1337 had er zes), en de school telt leerlingen in plaats van
+  settlers, dus op een jong eiland komt hij soms pas ná de zagerij. `tests/trades.test.mjs` houdt
+  vast dat de kavels met en zonder werkplaatsen precies hetzelfde bezet raken.
+- Geen versiepoort: een nieuwe trede zet een nieuw kavel en verschuift niets. Op de kopie van het
+  echte eiland (103 settlers) kwamen ze naast elkaar, ~8 cellen van het plein, en bleef elk ander
+  kavel staan.
+- `main.js` hangt de bewegende delen in `attachExtras` aan de groep van het gebouw (de draaiing van
+  het kavel zit daar al in, dus `yaw` blijft 0), `animateExtras` beweegt ze, `disposeRecord` en
+  `guest-island.js` ruimen ze op. De kachelpijp rookt zoals die van de herberg.
 
 ## Wat er beweegt
 
@@ -39,8 +53,6 @@ de browser verspreid (`createLandscape`).
 - De animatie loopt op de eigen klok van de zagerij en een vaste rng-seed, dus
   `tests/sawmill.test.mjs` kan hem twee keer draaien en hetzelfde verwachten.
 
-## Nog te doen voor het eiland
+## Later
 
-- De trede en de plek kiezen (zie boven), dan `lib/village.mjs` + `lib/layout.mjs`.
-- In `main.js` `attachSawmill` hangen zoals de fontein en de vuurtoren, gedraaid met het kavel
-  (`attachSawmill(..., yaw)` kan dat al).
+- Een zager bij de zaagbank, een passieve settler zoals de smid.

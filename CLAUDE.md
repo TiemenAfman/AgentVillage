@@ -113,7 +113,13 @@ queue), which moves **whole hamlets** (lobes, with every house, shed and the lan
 a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
 what is added, never below the hamlet's population or `ensureParcel` grows it straight
 back), and paints `layout.zones` (no-build super-cells, countryside only,
-enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). A plan is tried on a
+enforced exactly like a polder's dike: `heldOf` + `RESERVED`, no hash). It also moves or turns
+**one of the town's own buildings** (`civic`: the three by three lots in `MOVABLE_CIVICS`, cell
+by cell, onto the town's ground only, never half on a free lot - `takeCivicLot` reads corners -
+and a nudge takes its lot along; the hall takes its postbox) and gives the town ground
+(`commons`, only more). Where each may stand is `civicSites`, baked into the survey and every
+dry run that moves one, a hex digit per corner with a bit per door direction, so the planner
+never judges a drag itself (`Plans/gebouwen-verplaatsen.md`). A plan is tried on a
 copy first, all or nothing; `diff.plots.otherMoved` must be empty and no house may be newly
 left without a way to the square (`stranded` in `lib/plan.mjs` — `placeAll` roads a hamlet
 as far as the router gets and says nothing) or nothing is written; `layout.before-plan-
@@ -121,18 +127,19 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Roads, unlike
-plots, the scan does take up by itself: every scan runs the planner's `pruneUnreachable` and
-lays again whatever no longer reaches the square, because a path records only the cells it
-paved itself - when a hamlet dies its road goes, and every road that had braided onto it was
-left ending in the grass (45 houses cut off, 25 September 2026).
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
 The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
 exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
 paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
 house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/wegen-tekenen.md`).
 Building by hand (the Build chip, `B`, `buildmenu.js`/`ghost.js`) is off unless switched on
 under Settings → Debug (per browser, `promptholm.debug.build`): the planner keeps the town.
-Five version gates in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
+Roads, unlike plots, the scan does take up by itself: every scan runs the planner's
+`pruneUnreachable` and lays again whatever no longer reaches the square, because a path
+records only the cells it paved itself - when a hamlet dies its road goes, and every road
+that had braided onto it was left ending in the grass (45 houses cut off, 25 September
+2026). Five version gates in `lib/layout.mjs`, in descending order of violence:
+`LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
@@ -796,8 +803,9 @@ on any local `.getMonth()`/`.getDay()`/`.getHours()` in `web/js/` or `shared/` (
 workbench and real-date labels excepted). The sea reads its zone by name (`SEA_TZ`,
 `lib/seaclock.mjs`, offset per moment through `Intl`, so summer time is free) and broadcasts
 `{t:'clock'}` when the offset changes. The sea's own beat asks the same `worldTime` (on
-`clock.offset()`) whether it is night and whether it is the borrel - `nightAt` / `borrelAt`
-in `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
+`clock.offset()`) whether it is night and whether the village is due on the square - `nightAt`
+/ `gatheringAt` (coffee, lunch, tea and the Friday borrel, one `GATHERINGS` list) in
+`shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
 [Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
@@ -907,7 +915,11 @@ pit would be stood back at their door before ever reaching it.
 
 **The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
-`web/js/buildings.js` draws the baked castle at `plot.w / 3`, so read a civic lot's size off
+`web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
+`scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
+one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
+bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
+the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
 `p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
 `doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
 block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the

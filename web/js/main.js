@@ -57,6 +57,8 @@ import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mj
 import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
+import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -500,14 +502,14 @@ function endGift() {
 
 // The keepers have no session to carry on. You look them in the eye like anybody else;
 // the mayor then opens the register, which is their office's work, and the rest say
-// something about their own building - by the world's own clock (worldNow, the sea's), the
-// one the sea sends the village to the square by, and for the gold clerk by the pit's own count.
+// something about their own building - by the sea's clock, the one it sends the village
+// to the square by, and for the gold clerk by the pit's own count.
 function speakToKeeper(it) {
   const fig = state.settlers ? state.settlers.figure(it.id) : null;
   faceUp(it.id, fig);
   if (it.post === 'mayor') { openTownHall(); return; }
-  const c = worldNow();
-  const on = gatheringAt(c.weekday, c.hour);
+  const c = { day: worldNow().weekday, hour: currentHour() };
+  const on = gatheringAt(c.day, c.hour);
   const night = c.hour >= 22 || c.hour < 7;
   const said = {
     innkeeper: on
@@ -522,10 +524,10 @@ function speakToKeeper(it) {
     })(),
     headmistress: on ? `“The children are out for ${on.name}. Mind the chalk on your sleeves.”`
       : night ? '“School’s shut. Lessons again in the morning.”'
-        : c.weekday === 0 || c.weekday === 6 ? '“No lessons at the weekend — even the apprentices need a rest.”'
+        : c.day === 0 || c.day === 6 ? '“No lessons at the weekend — even the apprentices need a rest.”'
           : '“Lessons are on. The apprentices learn by watching, mostly.”',
     priest: on ? `“Go on, it’s ${on.name}. I’ll keep the chapel.”`
-      : c.weekday === 0 ? '“Sunday. The door is open for anyone.”'
+      : c.day === 0 ? '“Sunday. The door is open for anyone.”'
         : night ? '“A quiet night. The lamp stays lit.”'
           : '“Peace be with you. The bell keeps the island’s hours.”',
   };
@@ -2878,6 +2880,22 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
   [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
 
 // --------------------------------------------------------------- records
+// Where a building stands on its plot and which way it looks: the yard nudge, the loosened
+// building line (house-placement.js) and the ground under it. One function because the
+// planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
+// web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
+// breadth from where the building then turns up.
+function poseOnPlot(spec, built) {
+  const nudge = yardNudge(spec, built);
+  const pose = housePlacement(spec, built.bbox, state.village.buildings);
+  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
+  return { x, y: groundAt(x, z), z, yaw: pose.yaw };
+}
+function ghostPose(id, plot) {
+  const rec = state.byId.get(id);
+  return rec && plot ? poseOnPlot({ ...rec.spec, plot }, rec.built) : null;
+}
+
 function makeRecord(spec) {
   const group = new THREE.Group();
   // Built before it is set down, because where a shed goes on its cell depends on how
@@ -2885,10 +2903,9 @@ function makeRecord(spec) {
   // turret are luxuries drawn three hundred times over, and buildings.js leaves them off
   // when the card cannot afford them.
   const built = buildBuilding(spec, { modest });
-  const nudge = yardNudge(spec, built);
-  const pose = housePlacement(spec, built.bbox, state.village.buildings);
-  const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  let y = groundAt(x, z);
+  const pose = poseOnPlot(spec, built);
+  const { x, z } = pose;
+  let y = pose.y;
   // The quay's ground is cut away by world.js, so its houses share the waterline instead
   // of sampling the former meadow that is deliberately no longer drawn. A harbour house
   // that overflowed onto the town commons keeps the ordinary ground under it.
@@ -2950,6 +2967,16 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   }
   if (built.animated && built.animated.fountain) {
     rec.fountain = attachFountain(group, built.animated.fountain.at, buildingMat);
+  }
+  // The two trades (web/js/sawmill.js, web/js/smithy.js): what turns, pumps and walks there is
+  // hung on the record's own group, so the plot's rotation is already theirs and yaw stays 0.
+  // The smithy brings a light for its fire - one per island, so a neighbour with a smithy
+  // costs one more light, which is a recompile when it arrives and not a price every frame.
+  if (built.animated && built.animated.sawmill) {
+    rec.sawmill = attachSawmill(group, built.animated.sawmill.at, buildingMat);
+  }
+  if (built.animated && built.animated.smithy) {
+    rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
@@ -3046,6 +3073,8 @@ function disposeRecord(rec) {
   }
   if (rec.nameplate) rec.nameplate.dispose();
   if (rec.goldPile) rec.goldPile.dispose();
+  if (rec.sawmill) disposeSawmill(rec.sawmill);
+  if (rec.smithy) disposeSmithy(rec.smithy);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -4507,8 +4536,9 @@ function frame(nowMs) {
     // rest are carried out and taken back in with the gathering itself.
     //
     // The sea's clock, not this browser's, and the same list the sea reads
-    // (shared/daylight.mjs): the tables have to come out for exactly the minutes the people
-    // are there, or a viewer in another zone sees a borrel with no furniture.
+    // (gatheringAt in shared/daylight.mjs, asked by lib/sea.mjs of the same worldTime): the
+    // tables have to come out for exactly the minutes the people are there, or a viewer in
+    // another zone sees a borrel with no furniture.
     const gathering = gatheringAt(calendar.weekday, hour);
     if (state.borrel) {
       state.borrel.show(gathering ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
@@ -5286,13 +5316,13 @@ async function boot() {
   state.plan = createPlanMode({
     dom: renderer.domElement,
     terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
-    pickables: () => state.pickables, bounds: () => state.bounds,
+    pickables: () => state.pickables, bounds: () => state.bounds, ghostPose,
     overlay: createPlanOverlay({ scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId }),
     panel: createPlanPanel({
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
-      onGrow: () => state.plan.grow(),
+      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),
@@ -5484,6 +5514,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   // Real time, not `hour`: the refill is a fact about now, whatever the chronicle is showing.
   if (rec.resetClock) updateResetClock(rec.resetClock, rec.resetClock.foreign || state.guest ? null : state.gold, Date.now());
   if (rec.fountain) updateFountain(rec.fountain, dt);
+  if (rec.sawmill) updateSawmill(rec.sawmill, dt);
+  if (rec.smithy) updateSmithy(rec.smithy, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5491,7 +5523,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     rec.flame.scale.set(s, 1 + 0.22 * Math.sin(nowMs / 1000 * 13), s);
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
-  const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall';
+  const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
+    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
