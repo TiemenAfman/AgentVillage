@@ -1431,9 +1431,16 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('lighthouse') };
     }
     case 'castle': {
-      parts.push(...meshAsset('castle'));
-      Object.assign(anchors, meshAnchors('castle'));
-      return { anchors, animated, height: models.heightOf('castle') };
+      // Baked for a three by three and drawn at the size of the lot it stands on: seven
+      // (CASTLE_LOT in lib/layout.mjs, Plans/groot-kasteel.md) is 7/3 of it every way, and a
+      // castle from before that could not grow yet stays exactly the model it was. Scaled
+      // here rather than with the building's own `s`, so the porch is laid round it after
+      // and keeps a step a settler can walk up.
+      const k = Math.max(3, (spec.plot && spec.plot.w) || 3) / 3;
+      const o = { sx: k, sy: k, sz: k };
+      parts.push(...meshAsset('castle', 0xffffff, o));
+      Object.assign(anchors, meshAnchors('castle', o));
+      return { anchors, animated, height: models.heightOf('castle') * k };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.

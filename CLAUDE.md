@@ -508,6 +508,17 @@ the crowd before it (`walk.adopt`, only when their doorstep did not move): a wor
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
 
+**The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
+`CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
+`web/js/buildings.js` draws the baked castle at `plot.w / 3`, so read a civic lot's size off
+`p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
+`doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
+block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
+commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
+cells only - never over a road, its own included, because a road laid later over another's
+cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
+the gate.
+
 ## The Blender pipeline
 
 `assets/<set>/<set>.blend` → `npm run models` → `web/js/<set>-mesh.js` (committed).

@@ -92,7 +92,8 @@ const L = layout2;
 const key = (c) => `${c[0]},${c[1]}`;
 const plots = Object.entries(L.plots);
 const houses = plots.filter(([id]) => id.startsWith('house:'));
-const civicLots = plots.filter(([id, p]) => id.startsWith('civic:') && p.w === 3);
+// Three by three, or the castle's seven (CASTLE_LOT): every civic building with a door.
+const civicLots = plots.filter(([id, p]) => id.startsWith('civic:') && p.w >= 3);
 
 // Everything a door may open onto: road, the paving of the square and its frontage, and
 // the deck of a bridge. Read off the layout rather than off the cell grid, which is not
@@ -270,7 +271,7 @@ test('and can walk from that door to the town square', () => {
 });
 
 test('every civic lot keeps its road', () => {
-  // One road per three-by-three civic lot, no more and no fewer. A bump of
+  // One road per civic lot with a door, no more and no fewer. A bump of
   // PARCEL_VERSION empties `paths`, and a civic building is not placed again afterwards -
   // so without the block that relays these, the roads to the town hall, the market, the
   // tavern and the school go and never come back.
