@@ -38,6 +38,7 @@ import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
+import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createMinimap, createWorldMap } from './minimap.js';
@@ -1971,13 +1972,45 @@ function onBoatFromServer(m) {
   // Somebody else has the tiller: their word is where it is. Our own boat we are steering
   // ourselves, and taking the server's echo of our own message would jitter it back a
   // fifth of a second on every reply.
+  //
+  // Their word goes onto the timeline everybody's pose is drawn on (glideBoats) rather than
+  // setting the hull down where it was said to be: a hull that jumps up to a metre every
+  // tenth of a second, under a pilot drawn on it, is a boat nobody can watch sailing. Let go
+  // of, it glides the last stretch to where it was left and stops there - a jump there
+  // would be the whole lag's worth of way at once.
   if (!mine) {
-    craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw;
+    if (craft.pilot || craft.track) hullSample(craft, m, !craft.pilot);
+    else { craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw; }
     craft.v = 0;
-  }
+  } else craft.track = null;
   // And if it was ours and now is not, we are no longer sailing it.
   if (state.walk && state.walk.aboard() === craft && craft.pilot && !mine) {
     state.walk.unboard([craft.x, craft.z]);
+  }
+}
+
+// One more thing somebody else said about their hull, stamped on this page's own clock like
+// a peer's pose. A track starts with that sample on its own - never from wherever the hull
+// happened to be drawn, which would be a span of a millisecond to extrapolate along.
+function hullSample(b, m, final) {
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.z) || !Number.isFinite(m.yaw)) return;
+  pushSample(b.track || (b.track = []), { x: m.x, z: m.z, yaw: m.yaw, at: performance.now(), final });
+}
+
+// Every hull somebody else is steering, where the timeline says it is this frame
+// (web/js/timeline.js - the same LAG_MS the other people are drawn at). Before the peers,
+// which stand a pilot on their hull (`seatOf`); the fleet loop further down then only puts
+// each mesh where this has left it.
+const glide = {};
+function glideBoats() {
+  const render = performance.now() - LAG_MS;
+  const mine = state.walk && state.walk.aboard();
+  for (const b of state.boats) {
+    if (!b.track || b === mine) continue;
+    trackAt(b.track, render, glide);
+    b.x = glide.x; b.z = glide.z; b.yaw = glide.yaw;
+    const last = b.track[b.track.length - 1];
+    if (last.final && render >= last.at) b.track = null;
   }
 }
 
@@ -2538,6 +2571,8 @@ function rehome(origin) {
     dropRegion(region.id);
   }
   if (state.peers) state.peers.clear();
+  // A hull somebody is sailing is on the same footing: the next message puts it back.
+  for (const b of state.boats) b.track = null;
   console.info(`island: home is berthed at [${state.homeOrigin}]; the world is drawn from there`);
   return true;
 }
@@ -4305,6 +4340,7 @@ function frame(nowMs) {
   // condition rather than a second drawing path: `state.chronicle.t` is exactly "not on
   // Live", and it is the same test timeNow() already makes.
   const live = state.chronicle.t == null;
+  glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
     state.peers.update(dt);
@@ -5039,6 +5075,13 @@ async function boot() {
       if (!state.panels) return;
       const board = at ? ourPanel(at.board) : null;
       state.panels.peerCursor(who, board ? { ...at, board } : null);
+    },
+    // A pilot stands on the hull they are steering (Plans/lopen-op-de-boot.md, fase 0): the
+    // hull as glideBoats has put it this frame, on the deck the fleet loop last bobbed it to
+    // - exactly where walk.js stands our own pilot.
+    seatOf: (id) => {
+      const b = state.boats.find((x) => x.pilot === id);
+      return b ? { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw } : null;
     },
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.

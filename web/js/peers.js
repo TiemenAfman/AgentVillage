@@ -3,16 +3,13 @@
 // without any bookkeeping.
 //
 // Positions arrive about ten times a second and are drawn an eighth of a second in the
-// past, interpolated between the last two we were told about. Rendering slightly behind
-// is what turns a stream of samples into someone walking.
+// past, interpolated between the last two we were told about - web/js/timeline.js, the one
+// timeline the boats somebody else is steering are drawn on too.
 import * as THREE from 'three';
 import { playerGeometry, lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
+import { LAG_MS, progress } from './timeline.js';
 
-// How far behind the newest sample we draw. Two server ticks: enough to always have a
-// pair to interpolate between, short enough that nobody feels remote.
-const LAG_MS = 120;
-const MAX_EXTRAPOLATE_MS = 200;
 const FADE_S = 0.4;
 const BODY_R = 0.35;
 
@@ -34,6 +31,13 @@ const HIP = 0.14 * 1.12;          // the figure's hips over its soles, as classi
 // How far somebody behind their shield leans back into it. A peer is one mesh with no arms
 // (see the header), so a raised shield cannot be drawn; a braced stance can, for nothing.
 const BRACE_LEAN = -0.1;
+
+// The room a pilot's pose names (main.js `setRoom('boat')`). Not a place to be drawn in: a
+// boat is out of doors. The sea reads the room as "not on foot" (`afoot` in
+// lib/hostility.mjs), which is why it is sent at all; here it only says the body belongs
+// on its hull. Taken as a room it named a place this page never builds, and `moveTo` then
+// left the pilot hidden - everybody else saw the boat sail with nobody in it.
+const BOAT_ROOM = 'boat';
 
 const LABEL_W = 256;
 const LABEL_H = 64;
@@ -83,7 +87,11 @@ function labelTexture(text) {
 // archipelago's facade. It is what the outdoors stands on, and once there is more than one
 // island it has to be the archipelago - otherwise a peer walking the island to the east is
 // stood on the height our own coast happens to have at that x and z, which is the sea.
-export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {} }) {
+// `seatOf(id)` is where a pilot stands on the hull they are steering, in this scene's frame -
+// { x, y, z, yaw }, from main.js, which owns the boats - or null when this page draws no such
+// hull. The hull is drawn on the same timeline as everybody's pose (timeline.js), so a pilot
+// put on it stays on it; their own pose, drawn separately, trails the hull by the lag.
+export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null }) {
   const places = new Map([[null, { scene, terrain: ground || terrain }]]);
   // One geometry per style, shared by everyone wearing it. Never disposed while the page
   // lives: handing it to a peer and then throwing it away when that peer leaves is how
@@ -130,6 +138,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       bob: Math.random() * 6.28,
       room: null,
       want: null,
+      aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
       cursor: null,       // where their hand is on a board, if it is on one
       bike: null,         // their bicycle, made the first time they are seen riding
       ride: { wheel: 0, crank: 0, steer: 0, lean: 0, pitch: 0, x: 0, y: 0, z: 0, yaw: 0 },
@@ -208,7 +217,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       seen.add(id);
       p.leaving = false;
       p.fade = 0;
-      p.want = typeof r === 'string' ? r : null;
+      p.aboard = r === BOAT_ROOM;
+      p.want = typeof r === 'string' && !p.aboard ? r : null;
       moveTo(p, p.want);
       const pose = { x, y, z, yaw, f: f | 0, at };
       // Timestamps are our own clock, never the server's: nothing to synchronise and
@@ -285,16 +295,13 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       p.mesh.visible = true;
 
       const a = p.from || p.to, b = p.to;
-      const span = Math.max(1, b.at - a.at);
-      let k = (render - a.at) / span;
-      // Past the newest sample we carry on along the last direction for a moment, then
-      // hold. Better a step too far than a stutter every time a packet is late.
-      if (k > 1) k = Math.min(1 + MAX_EXTRAPOLATE_MS / span, k);
-      k = Math.max(0, k);
+      const k = progress(a, b, render);
+      const seat = p.aboard ? seatOf(p.id) : null;
 
-      const x = a.x + (b.x - a.x) * k;
-      const z = a.z + (b.z - a.z) * k;
-      const yaw = lerpAngle(a.yaw, b.yaw, Math.min(1, Math.max(0, k)));
+      let x = a.x + (b.x - a.x) * k;
+      let z = a.z + (b.z - a.z) * k;
+      let yaw = lerpAngle(a.yaw, b.yaw, Math.min(1, k));
+      if (seat) { x = seat.x; z = seat.z; yaw = seat.yaw; }
       const f = b.f;
       const moving = !!(f & FLAG_MOVING);
       const swimming = !!(f & FLAG_SWIMMING);
@@ -313,7 +320,11 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       // on THAT island's ground, and in the channel between them on nothing at all.
       const floor = (places.get(p.room) || {}).terrain;
       const ground = floor ? floor.worldHeight(x, z) : 0;
-      const base = airborne ? (a.y + (b.y - a.y) * k) : (ground < 0 ? -0.07 : ground);
+      // Aboard, the deck is what they stand on: the hull's own, or - for a hull this page
+      // does not draw - the deck height their pose was sent with, rather than the sea bed.
+      const base = seat ? seat.y
+        : p.aboard || airborne ? (a.y + (b.y - a.y) * k)
+          : (ground < 0 ? -0.07 : ground);
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
       if (f & FLAG_RIDING && !swimming && !p.room) {
@@ -327,9 +338,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         p.mesh.rotation.set(blocking ? BRACE_LEAN : 0, yaw, moving ? Math.sin(p.bob) * 0.045 : 0);
       }
 
-      // Somebody to bump into. Swimmers and jumpers are left out: a wall you cannot see
-      // standing in open water is worse than walking through a swimmer.
-      if (!swimming && !airborne) blockersIn(p.room).push({ x, z, r: BODY_R });
+      // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot
+      // see standing in open water is worse than walking through a swimmer.
+      if (!swimming && !airborne && !p.aboard) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
   }
 
