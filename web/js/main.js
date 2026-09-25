@@ -5083,6 +5083,13 @@ async function boot() {
       const b = state.boats.find((x) => x.pilot === id);
       return b ? { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw } : null;
     },
+    // And somebody standing on a deck is drawn on that hull too, at their place on it
+    // (shared/deck.mjs). Nobody stands on one yet - every boat is a Benchy with room for her
+    // pilot - but the page can already draw a crew the day a boat carries one.
+    hullOf: (id) => {
+      const b = boatAt(id);
+      return b ? { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw } : null;
+    },
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two

@@ -113,7 +113,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   let closed = false;
   let walking = false;
   let selfId = null;
-  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, r: null, at: 0 };
+  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, r: null, d: null, at: 0 };
   // Whose feet to report. Walking the island it is the island's walk mode; indoors the
   // room owns one of its own, and reporting the wrong one would leave your body standing
   // wherever you last were outside.
@@ -211,7 +211,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           // and z come into ours here, before anything draws them.
           const [hx, hz] = homeAt();
           if (hx || hz) for (const row of m.a || []) { row[1] -= hx; row[3] -= hz; }
-          peers.snapshot(m.a);
+          // `d` is who stands on which deck, in that hull's own frame, so it needs no
+          // translating: the hull it is measured from already came in through boatIn.
+          peers.snapshot(m.a, undefined, m.d);
           break;
         }
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
@@ -340,7 +342,13 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.
     const [hx, hz] = homeAt();
-    const still = Math.abs(s.pos.x - last.x) < MOVED
+    // On a deck (Plans/lopen-op-de-boot.md): which boat, and where on it, in its own frame -
+    // shared/deck.mjs. The world position still goes out beside it, for a sea from before
+    // this. No walk mode sets `deck` yet: every boat is a Benchy with room for her pilot.
+    const deck = s.deck || null;
+    const deckSig = deck ? `${deck.boat}:${deck.x.toFixed(3)},${deck.y.toFixed(3)},${deck.z.toFixed(3)},${deck.yaw.toFixed(3)}` : null;
+    const still = deckSig === last.d
+      && Math.abs(s.pos.x - last.x) < MOVED
       && Math.abs(s.pos.z - last.z) < MOVED
       && Math.abs(s.pos.y - last.y) < MOVED
       && Math.abs(s.yaw - last.yaw) < TURNED
@@ -351,8 +359,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     const [wx, wz] = outgoing(s.pos.x, s.pos.z);
     const pose = { t: 'p', x: wx, y: s.pos.y, z: wz, yaw: s.yaw, f, r: room || undefined };
     if (cursor) { pose.b = cursor.id; pose.u = cursor.u; pose.v = cursor.v; }
+    if (deck) { pose.on = deck.boat; pose.d = [deck.x, deck.y, deck.z, deck.yaw]; }
     if (!send(pose)) return;
     last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.r = room; last.at = now;
+    last.d = deckSig;
     last.hx = hx; last.hz = hz;
   }
 
@@ -453,6 +463,13 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       hull.live = false;
       send({ t: 'boat', a: 'drop', id });
     },
+    // A crew, for a boat with room for more than her pilot (Plans/lopen-op-de-boot.md, fase
+    // 4 to 6; lib/boats.mjs has the rules). Nothing calls these yet. Letting go of the tiller
+    // keeps the hull live: for a moment the sea still takes its position from us while it
+    // runs out its way (COAST_MS there).
+    boardBoat(id) { send({ t: 'boat', a: 'board', id }); },
+    leaveBoat(id) { send({ t: 'boat', a: 'leave', id }); },
+    letGoBoat(id) { sendHull(); send({ t: 'boat', a: 'letgo', id }); },
     // And where the hull has got to, on the pose beat rather than a beat of its own: the
     // pilot is already sending ten poses a second and the boat is under them, so this is
     // one more message on the same bucket and no new ceiling to reason about. Twenty a
