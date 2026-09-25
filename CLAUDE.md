@@ -480,13 +480,19 @@ under a pointer lock (double-click on the canvas) - so drag-to-look keeps its bu
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
-**The gold pit's count is the keeper's, and a status line is the only place it comes from**
+**The gold pit's count is the keeper's, and it comes from two places on this machine**
 ([Plans/goudkuil.md](Plans/goudkuil.md)). Claude Code hands the five-hour usage window
 (`rate_limits.five_hour`) to a `statusLine` command and to nothing else - not a hook, not a
 transcript - so `hooks/statusline.mjs` is the one writer of `data/usage.json`
-(`lib/usage.mjs`, only when the number moved) and `shared/gold.mjs goldOf` the one copy of
-what it comes to: `100 - round(used)` bars, and a full pit when there is no reading or the
-window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
+(`lib/usage.mjs`, only when the number moved). The desktop app runs no status line at all,
+so a keeper who works only in its Code tab never got a reading and saw a full pit; what the
+app does do is sample the same window every quarter of an hour into
+`%APPDATA%\Claude\plan-usage-history.json` (`fh`, no reset), which `readDesktopUsage` reads
+and gives a `resetsAt` estimated from the history - five hours after the window's first
+sample, an upper bound, because a pit that fills late is better than one that fills while
+the window is spent. `currentUsage` takes whichever spoke last. `shared/gold.mjs goldOf` is
+the one copy of what it comes to: `100 - round(used)` bars, and a full pit when there is no
+reading or the window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
 and with `--pass` (it is put *in front of* a status line the user already had,
 `lib/statusline.mjs`) stdin goes back out untouched before anything that could fail. Nobody
 runs anything to install it: the islander does, on start (`ensureStatusLine` from

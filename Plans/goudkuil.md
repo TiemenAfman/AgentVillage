@@ -15,6 +15,9 @@ meeslinkt, (3) settlers die goud halen voordat ze gaan hameren.
 
 ## 1. Waar het getal vandaan komt
 
+(Sinds 25 september is er een tweede bron, het eigen bestand van de desktop-app; zie
+"Wat er nog openstaat" onderaan.)
+
 Nagezocht in de documentatie van Claude Code (statusline-pagina, september 2026): het
 5-uurspercentage staat **alleen** in de JSON die Claude Code aan een `statusLine`-commando
 geeft:
@@ -76,10 +79,24 @@ hammer ──(goldIn op)──> lege kruiwagen naar de kuil ──> laden (1,6�
 
 ## Wat er nog openstaat
 
-- **Claude desktop / Cowork.** Of de desktop-app een statusLine draait is niet nagekeken
-  (vermoedelijk niet: dat is een terminal-ding). Wie alleen in de app werkt krijgt dan geen
-  meting en ziet een volle kuil. De OAuth-usage-API zou dat oplossen, met de kanttekening
-  hierboven; dat is Tiemens beslissing.
+- ~~**Claude desktop / Cowork.**~~ **Opgelost op 25 september.** De desktop-app draait
+  inderdaad geen statusLine: alle sessies sinds de installatie waren
+  `entrypoint: claude-desktop` en `data/usage.json` bestond niet, dus Tiemen zat op 11% met
+  een volle kuil. Maar de app houdt het venster zelf bij, in
+  `%APPDATA%\Claude\plan-usage-history.json`: elk kwartier een sample
+  `{ t, org, u: { fh, sd } }`, met `fh` het vijfuurspercentage. Dat is nu de tweede bron
+  (`readDesktopUsage` in `lib/usage.mjs`), zonder inloggegevens en zonder netwerk, dus de
+  OAuth-API blijft ongebouwd.
+
+  | Vraag | Besluit | Waarom |
+  |---|---|---|
+  | De reset | Er staat geen `resets_at` in het bestand, dus **geschat**: vijf uur na het eerste sample van het huidige venster (terug vanaf het laatste sample, zolang `fh` niet daalt, niet 0 is en niet verder dan vijf uur terug). | Dat sample had al gebruik, dus het venster was toen open: het is een bovengrens. Een kuil die een kwartier te laat volloopt is beter dan een die volloopt terwijl het venster nog op is. Teruggespeeld over een maand historie (26 resets met de app open): nooit te vroeg, hooguit een kwartier te laat, en later alleen als het venster opende terwijl de app dicht was. |
+  | Welke bron wint | **De jongste** (`currentUsage`); bij gelijk de statusLine. | De statusLine is exact maar schrijft alleen als het getal beweegt en zwijgt zonder terminal; de app loopt tot een kwartier achter maar blijft samplen. |
+  | Welk account | Alleen de `org` van het laatste sample. | Het bestand houdt elk account bij waarmee de app ooit ingelogd was. |
+  | Wat het dossier zegt | "As the desktop app saw it at 09:49", en "full again by 14:11 at the latest". | Het getal is tot een kwartier oud en de reset een schatting; dat hoort erbij te staan. |
+  | Het risico | Het bestandsformaat is niet gedocumenteerd en kan veranderen. | Dan geeft `readDesktopUsage` null (alles wordt veld voor veld gecontroleerd) en is de kuil weer vol, zoals voorheen - er gaat niets stuk. |
+
+  De kuil slinkt zo in stapjes van een kwartier, niet bij elk bericht.
 - **Bezoekers zien een volle kuil.** Als het getal ooit toch gedeeld moet worden, dan door een
   eigen deur zoals `/island/:id/codex`, nooit in de bundle.
 - **Een lege kuil.** Op 100% hameren settlers door en halen ze nog steeds een staaf; de zee

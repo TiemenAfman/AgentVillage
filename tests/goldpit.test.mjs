@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { register } from 'node:module';
 
 import { goldOf, GOLD_BARS, GOLDPIT_ID } from '../shared/gold.mjs';
-import { readingOf, readUsage, writeUsage, sameReading } from '../lib/usage.mjs';
+import { readingOf, readUsage, writeUsage, sameReading, readDesktopUsage, currentUsage } from '../lib/usage.mjs';
 import { installStatusLine, uninstallStatusLine, readStatusLine, statusLineCommand, ensureStatusLine } from '../lib/statusline.mjs';
 import { emptyLayout, placeAll, outsideDoor } from '../lib/layout.mjs';
 import { createCrowd, goldSite, GOLD_LOAD_IN, GOLD_PILE_BACK } from '../lib/crowd.mjs';
@@ -97,6 +97,78 @@ test('usage.json is written only when the reading moved, and read back field by 
   fs.writeFileSync(file, 'not json');
   assert.equal(readUsage(file), null);
   assert.equal(readUsage(path.join(dir, 'missing.json')), null);
+});
+
+// The desktop app's plan-usage-history.json, in its own shape: one sample a quarter hour.
+const Q = 15 * 60e3;
+const H = 3600e3;
+function history(fhs, { start = Date.UTC(2026, 8, 25, 7), org = 'o1', step = Q } = {}) {
+  return { version: 2, samples: fhs.map((fh, i) => ({ t: start + i * step, org, u: { fh, sd: 12 } })) };
+}
+function desktop(obj) {
+  const file = path.join(scratch(), 'plan-usage-history.json');
+  fs.writeFileSync(file, typeof obj === 'string' ? obj : JSON.stringify(obj));
+  return file;
+}
+
+test('the desktop app\'s last sample is a reading, its reset five hours after the window\'s first', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  // Yesterday's window ends at 23, overnight nothing, 0 on opening the app, then use.
+  const h = history([20, 23, 0, 6, 8, 10, 11], { start });
+  const r = readDesktopUsage(desktop(h));
+  assert.equal(r.source, 'desktop');
+  assert.equal(r.fiveHour.used, 11);
+  assert.equal(r.at, start + 6 * Q, 'when the app sampled it, not when we read it');
+  assert.equal(r.fiveHour.resetsAt, start + 3 * Q + 5 * H, 'the first sample with usage in it opened the window by then');
+  assert.equal(r.sevenDay, null, 'the app gives no reset for the seven days, and none is invented');
+  assert.equal(goldOf(r, start + 6 * Q).bars, 89);
+  assert.equal(goldOf(r, start + 6 * Q).source, 'desktop');
+
+  // A drop is a reset between two samples: the window after it starts at the drop.
+  const drop = readDesktopUsage(desktop(history([40, 63, 97, 2, 5], { start })));
+  assert.equal(drop.fiveHour.resetsAt, start + 3 * Q + 5 * H);
+  // Nothing reaches back more than five hours, even with no drop to see - the app was shut.
+  const gap = readDesktopUsage(desktop({ version: 2, samples: [
+    { t: start, org: 'o1', u: { fh: 5 } }, { t: start + 6 * H, org: 'o1', u: { fh: 9 } },
+  ] }));
+  assert.equal(gap.fiveHour.resetsAt, start + 11 * H);
+  // A window that has run out since the last sample is a full pit, as with the status line.
+  assert.equal(goldOf(r, start + 3 * Q + 5 * H).bars, GOLD_BARS);
+  assert.equal(goldOf(r, start + 3 * Q + 5 * H).reset, true);
+});
+
+test('the desktop history is read for the last account only, and never trusted', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  const mixed = { version: 2, samples: [
+    { t: start, org: 'mine', u: { fh: 3 } },
+    { t: start + Q, org: 'other', u: { fh: 1 } },
+    { t: start + 2 * Q, org: 'mine', u: { fh: 7 } },
+  ] };
+  const r = readDesktopUsage(desktop(mixed));
+  assert.equal(r.fiveHour.used, 7);
+  assert.equal(r.fiveHour.resetsAt, start + 5 * H, 'the other account\'s 1 is not a drop in this one\'s window');
+
+  const junk = { version: 2, samples: [{ t: start, org: 'o', u: { fh: 4 } }, { t: 'later', u: { fh: 9 } }, { t: start + Q, u: { fh: 'lots' } }] };
+  assert.equal(readDesktopUsage(desktop(junk)).fiveHour.used, 4, 'a sample that is not numbers is skipped');
+  assert.equal(readDesktopUsage(desktop(history([250]))).fiveHour.used, 100);
+  assert.equal(readDesktopUsage(desktop({ version: 2, samples: [] })), null);
+  assert.equal(readDesktopUsage(desktop({ samples: 'x' })), null);
+  assert.equal(readDesktopUsage(desktop('not json')), null);
+  assert.equal(readDesktopUsage(path.join(scratch(), 'missing.json')), null, 'no desktop app is no reading');
+});
+
+test('whichever of the status line and the desktop app spoke last is the reading', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  const line = path.join(scratch(), 'usage.json');
+  writeUsage(readingOf({ rate_limits: { five_hour: { used_percentage: 30, resets_at: (start + 4 * H) / 1000 } } }, start + 2 * Q), line);
+  const app = desktop(history([10, 20, 25], { start }));           // last sample at start + 2Q
+  assert.equal(currentUsage({ file: line, desktopFile: app }).source, 'statusline', 'a tie goes to the exact one');
+  const later = desktop(history([10, 20, 25, 35], { start }));     // start + 3Q
+  assert.equal(currentUsage({ file: line, desktopFile: later }).fiveHour.used, 35);
+  const none = path.join(scratch(), 'missing.json');
+  assert.equal(currentUsage({ file: none, desktopFile: later }).source, 'desktop', 'the desktop app alone is enough');
+  assert.equal(currentUsage({ file: line, desktopFile: none }).source, 'statusline');
+  assert.equal(currentUsage({ file: none, desktopFile: none }), null);
 });
 
 // ---- the status line ------------------------------------------------------------------

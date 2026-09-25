@@ -833,7 +833,7 @@ async function pollMail(force = false) {
 // --------------------------------------------------------------- the gold pit
 // The keeper's five-hour usage window as a pile of bars by the square (Plans/goudkuil.md).
 // Asked for once at boot and then told: serve.mjs sends `event: gold` whenever the status
-// line writes a new reading down or a window runs out. A visitor is told nothing - the
+// line or the desktop app writes a new reading down, or a window runs out. A visitor is told nothing - the
 // server refuses /api/gold to anybody but the keeper - so their pit stays full, and so does
 // every guest island's (attachExtras, `gold: false`): whose limit it is stays on their
 // machine.
@@ -852,12 +852,16 @@ function goldPrompt() {
 function goldWords(g) {
   if (state.guest) return 'Whose gold this is stays on their own machine: every visitor sees a full pit.';
   if (!g || !g.known) {
-    return 'A full pit, because nothing has said otherwise yet. Claude Code tells its status line how much of the five-hour window is used - the island put one in when it started - and the first answer in a Claude Code session writes the number down here.';
+    return 'A full pit, because nothing has said otherwise yet. The Claude desktop app notes how much of the five-hour window is used every quarter of an hour, and a Claude Code status line on every answer - the island put one in when it started - and neither has written a number down on this machine yet.';
   }
   if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
   const used = Math.round(g.used);
-  const refill = g.resetsAt ? ` Full again at <b>${hhmm(g.resetsAt)}</b>.` : '';
-  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${refill}`;
+  // The app's sample is up to a quarter of an hour old and its reset an estimate that errs
+  // late (lib/usage.mjs readDesktopUsage), so it is said as one; the status line's is exact.
+  const app = g.source === 'desktop';
+  const seen = app && g.at ? ` As the desktop app saw it at ${hhmm(g.at)}.` : '';
+  const refill = g.resetsAt ? ` Full again ${app ? 'by' : 'at'} <b>${hhmm(g.resetsAt)}</b>${app ? ' at the latest' : ''}.` : '';
+  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${seen}${refill}`;
 }
 
 // Everything that shows the count, from one place.
