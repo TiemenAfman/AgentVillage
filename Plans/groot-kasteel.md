@@ -19,7 +19,7 @@ super-cellen grond, en een model dat twee keer zo breed is.
 | Vraag | Besluit | Waarom |
 |---|---|---|
 | Hoe groot is de kavel | **7 bij 7** (`CASTLE_LOT = 2 * PITCH - 1`): twee kavels en de laan ertussen, in beide richtingen. De buitenste laan blijft laan. | Dat is precies wat twee bij twee super-cellen aan bouwgrond hebben; een 8 bij 8 zou de lanen van de buren opeten, en de lanen zijn waar de wegen van de wijkjes lopen. |
-| Hoe groot is het model | **Meegeschaald met de kavel: `w / 3`** (7/3 ≈ 2,33), in alle drie de richtingen, in `buildings.js` via `meshAsset`'s eigen `sx/sy/sz`. Het staat dan ~5,6 cel breed en ~7 hoog op zijn 7 bij 7, zoals het ~2,4 breed op een 3 bij 3 stond. Geen nieuwe bake. | Het rode kader was ~5,7 cel: dit is het. Schalen met de kavel in plaats van met een vast getal betekent dat een kasteel dat (nog) niet kon groeien gewoon op zijn oude maat blijft staan, en nooit over zijn buren heen wordt getekend. Uniform, omdat een kasteel dat alleen breder wordt dikke stompe torens krijgt; het staat nu ruim boven het stadhuis uit, wat bij een kasteel hoort. |
+| Hoe groot is het model | ~~Meegeschaald met de kavel: `w / 3`~~ - zie *Het kasteel op zijn echte maat* hieronder: **een eigen bake, `assets/greatcastle`, gebouwd op 7 bij 7**, met een poort en ramen op de maat van het stadhuis. Een 3 bij 3 houdt de oude bake. | Uniform schalen maakte de muren goed en alles waar je een gebouw aan afmeet fout: de poort werd een cel breed en anderhalve verdieping hoog. |
 | De stoep eromheen | **Niet meegeschaald.** De porch wordt ná het schalen om het model gelegd, dus de trede blijft `PORCH_RISE` hoog en de rand `PORCH_OVER` breed. | Een trede van 2,33 keer zo hoog is een muur, en een settler loopt de trede op. |
 | Een nieuw kasteel (100 settlers) | **Het dichtstbijzijnde blok van twee bij twee super-cellen op het rooster** rond het plein waarvan alle 49 cellen `FREE` zijn, de grond van de stad of van niemand is (geen wijkje), en het hoogteverschil binnen de kavel hooguit `CASTLE_RELIEF` (0,6) is. Niet meer via `takeCivicLot`. | De acht civic-kavels zijn drie bij drie en liggen met opzet naast het rooster; daar past een 7 bij 7 niet in. Het hoogteverschil moet mee, omdat de stoep maar `PORCH_SKIRT` (0,7) de grond in reikt en een 7 bij 7 op een helling die elke 3 bij 3 goedkeurt toch een hoek in de lucht heeft. |
 | Van wie is die grond | Super-cellen die van niemand waren gaan naar **de commons** (`layout.town.commons`, en in dezelfde scan `sup.claim(…, TOWN)`). | Anders ziet een wijkje een super-cel waar een kasteel op staat als vrije grond om te claimen, en kan het er nooit een huis op kwijt. Commons is waar de stad haar grond al bijhoudt; de planner (`plan.mjs`, `survey.mjs`) leest het daar ook. |
@@ -36,7 +36,8 @@ super-cellen grond, en een model dat twee keer zo breed is.
   `growCastle`; `doorCell`/`outsideDoor` met breedte; de milestone-lus, de civic-road-relay en
   de frontage lezen `p.w` in plaats van een vaste 3.
 - `scan.mjs` - `doorOf` is `doorCell`.
-- `web/js/buildings.js` - het kasteel schaalt met zijn kavel.
+- `web/js/buildings.js` - het kasteel schaalt met zijn kavel. (Later dezelfde dag vervangen door
+  een eigen bake, zie *Het kasteel op zijn echte maat*.)
 - `tests/castle.test.mjs` - de deuren, een nieuw kasteel op drie seeds, het groeien, het
   niet-groeien en het model. `tests/layout-measure.test.mjs` telt een civic-kavel vanaf 3 breed.
 
@@ -52,6 +53,29 @@ tweede scan is byte-voor-byte gelijk.
 plein, 10 civic-wegen tegen 9 kavels, `road:quay:0` 97 cellen) - **met en zonder deze
 wijziging**, dezelfde drie in de hele suite, dus dat is het wegennet van het live eiland en
 niet het kasteel.
+
+## Het kasteel op zijn echte maat
+
+**Gebouwd op 25 september 2026**, dezelfde dag, na Tiemen:
+
+> pas the castle aan zodat de deuren in verhouding staan. het kasteel is 4 keer zo groot
+> gemaakt maar past daarom niet bij de rest van het dorp
+
+Het uniforme `w / 3` hierboven schaalde niet alleen de muren maar alles: de poort werd 1,00 breed
+en 1,50 hoog, tegen de dubbele deur van het stadhuis van 0,48 bij 0,72 - bijna vier settlers
+hoog. De ramen waren zo groot als die deur, het wapenschild boven de poort breder dan de gevel
+van een huis. Een deur is een mens breed, wie hem ook bouwt (`build-village.py` zegt dat al van
+de kerk): een groter gebouw heeft meer ramen en meer verdiepingen, geen grotere.
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Schalen of opnieuw bouwen | **Opnieuw bouwen, op zijn echte maat**: `scripts/build-greatcastle.py` → `assets/greatcastle/greatcastle.blend` → `web/js/greatcastle-mesh.js`, een eigen hero-set (4000 driehoeken; hij gebruikt er 3849). | Een schaal kan een poort niet kleiner maken dan de muur eromheen. Hetzelfde kasteel - bakstenen donjon onder een crème bovenzaal, vier ronde torens met pannendaken, een stenen poortgebouw ervoor - met de massa van het 7/3-kasteel en elk detail op de maat van het stadhuis. |
+| Hoe groot is de poort | **0,56 bij 0,86**, tegen 0,48 bij 0,72 van het stadhuis. `tests/castle.test.mjs` houdt hem tussen 1 en 1,35 keer die deur. | Een kasteelpoort is grootser dan een raadhuisdeur, maar met een hand, niet met een verdieping. De test meet de gebakken onderdelen zelf, zodat een volgende bake dit niet stil terugdraait. |
+| De ramen | **Die van het stadhuis** (ruit 0,16 bij 0,25, kozijn, middenstijl, dorpel), twee rijen op elke gevel die de torens openlaten: drie vakken achter en op beide zijkanten, één naast het poortgebouw aan elke kant van de voorkant. Drie per toren, alleen naar buiten. | Verdiepingen zijn wat een groot gebouw van ver als groot laat lezen. Een raam aan de voorkant van een achtertoren kijkt de donjon in; het oude kasteel had ze wel, hier niet. |
+| Hoe hoog | **Iets lager dan het geschaalde**: dakgoot 2,44 (was 3,03), torens tot 4,5, de vlag op 5,16. Nog steeds ruim anderhalf keer het stadhuis (2,91). | Drie verdiepingen van dorpsramen - een bakstenen begane grond waar de poort in past en twee crème erboven op de 0,72 van het stadhuis - is wat een donjon van deze breedte draagt; de torens hebben er één meer. De plattegrond is die van het 7/3-kasteel, 4,7 breed op zijn 7 bij 7, dus de kavel en de laan eromheen veranderen niet. |
+| Het wapenschild | **Een schild**, brons met een groen veld, geen vierkant. | Een bronzen vierkant boven de poort las van over het plein als nog een raam. |
+| De 3 bij 3 | **Houdt de oude bake**, ongewijzigd. `buildings.js` kiest op `plot.w`: 7 of breder is het grote kasteel, al het andere het oude. | Het wachthuis op de vulkaan wordt als dat kasteel getekend (`GUARDHOUSE_LOOKS_LIKE`), en `GUARDHOUSE_REACH` is eraan gemeten; een kasteel dat nog niet kon groeien blijft wat het was. Het grote kasteel op 3/7 tekenen gaf een speelgoedpoort. |
+| Versie-poort | **Geen.** | Er verandert niets in `layout.json`, `config.json` of een bundel; het is alleen wat de pagina tekent, en een oudere pagina tekent een 7 bij 7 zoals hij dat al deed. |
 
 ## Open
 

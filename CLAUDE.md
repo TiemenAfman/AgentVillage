@@ -909,7 +909,11 @@ pit would be stood back at their door before ever reaching it.
 
 **The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
-`web/js/buildings.js` draws the baked castle at `plot.w / 3`, so read a civic lot's size off
+`web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
+`scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
+one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
+bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
+the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
 `p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
 `doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
 block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the

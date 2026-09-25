@@ -8,7 +8,9 @@
 //   an old one    a three by three castle grows where it stands and keeps its front, keeps
 //                 its old road and gets a stretch from the new gate onto it, moves nothing
 //                 else, and a second scan changes nothing. One with no room stays as it was.
-//   the model     drawn at w/3 of the bake, the porch's step the same height either way.
+//   the model     the great castle on a seven by seven, built at that size, with a gate the
+//                 size of the town hall's door; the old bake on a three by three; the
+//                 porch's step the same height under both.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -18,6 +20,7 @@ import { superOf } from '../shared/lattice.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { buildBuilding } = await import('../web/js/buildings.js');
+const models = await import('../web/js/models.js');
 
 function village(settlers, { castle = true } = {}) {
   const startedAt = Date.UTC(2026, 0, 2);
@@ -186,25 +189,46 @@ test('an old castle with no room stays the castle it was', () => {
   assert.equal(JSON.stringify(layout), again, 'and asking again every scan changes nothing');
 });
 
-test('the castle is drawn at the size of its lot, on a step of the same height', () => {
+// The size of one baked part, across and up.
+function sizeOf(name) {
+  const p = models.part(name);
+  assert.ok(p, `no baked part called "${name}"`);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < p.positions.length; i += 3) {
+    x0 = Math.min(x0, p.positions[i]); x1 = Math.max(x1, p.positions[i]);
+    y0 = Math.min(y0, p.positions[i + 1]); y1 = Math.max(y1, p.positions[i + 1]);
+  }
+  return { w: x1 - x0, h: y1 - y0 };
+}
+
+test('the castle on its seven by seven is built at that size, with a gate a settler walks through', () => {
   const spec = (w) => ({ id: CASTLE_ID, kind: 'civic', civicType: 'castle', style: 'unknown', tier: 'civic', plot: { gx: 0, gz: 0, w, d: w, rot: 2 } });
   const small = buildBuilding(spec(3)), big = buildBuilding(spec(CASTLE_LOT));
-  const k = CASTLE_LOT / 3;
-  // The walls - the footprint measured before the porch - scale, and the step round them
-  // does not: it shows the same fixed amount past the walls either way.
+  const hall = buildBuilding({ id: 'civic:townhall', kind: 'civic', civicType: 'townhall', style: 'unknown', tier: 'civic' });
+  // It was the three by three's bake at 7/3, gate and all: 1.00 across and 1.50 tall against
+  // the town hall's 0.48 by 0.72. The gate is a castle's, so a little grander than the hall's
+  // door - and a hand's width grander, not a storey.
+  const gate = sizeOf('Great castle arched oak gate'), door = sizeOf('Townhall door recess');
+  for (const k of ['w', 'h']) {
+    const r = gate[k] / door[k];
+    assert.ok(r >= 1 && r <= 1.35, `the gate is ${r.toFixed(2)}x the town hall's door ${k === 'w' ? 'across' : 'tall'}`);
+  }
+  // And its windows are the town hall's, not the gate's size.
+  assert.ok(sizeOf('Great castle hall window pane').h <= sizeOf('Townhall window pane').h, 'the castle has bigger windows than the town hall');
+  // The walls - the footprint measured before the porch - are the seven by seven's, and the
+  // step round them shows the same fixed amount past them as under the small one.
   const reach = (rects) => Math.max(...rects.map((r) => Math.max(Math.abs(r.x) + r.hx, Math.abs(r.z) + r.hz)));
-  const grew = reach(big.walls) / reach(small.walls);
-  assert.ok(Math.abs(grew - k) < 0.01, `the walls grew ${grew.toFixed(3)}x, not ${k.toFixed(3)}x`);
+  assert.ok(reach(big.walls) > reach(small.walls) * 2, `the walls reach ${reach(big.walls).toFixed(2)} against ${reach(small.walls).toFixed(2)}`);
   const over = (b) => Math.max(-b.bbox.min.x, b.bbox.max.x, -b.bbox.min.z, b.bbox.max.z);
   assert.ok(Math.abs((over(big) - reach(big.walls)) - (over(small) - reach(small.walls))) < 0.02, 'the porch grew with the castle');
   assert.ok(over(big) < CASTLE_LOT / 2, `the castle reaches ${over(big).toFixed(2)} past the middle of a lot ${CASTLE_LOT / 2} deep`);
   assert.ok(over(small) < 1.5, 'the old castle still fits its three by three');
-  // The gate stands on the step, which is the same height under both.
+  // The gate stands on the step, which is the same height under both, at the front.
   assert.ok(Math.abs(big.anchors.door[1] - small.anchors.door[1]) < 1e-6, 'the step under the gate is taller');
-  assert.ok(Math.abs(big.anchors.door[2] - small.anchors.door[2] * k) < 1e-6, 'the gate is not at the front of the bigger castle');
-  assert.ok(big.height > small.height * 2, 'it stands over the town hall now');
+  assert.ok(big.anchors.door[2] > reach(big.walls) * 0.75, `the gate is ${big.anchors.door[2].toFixed(2)} out, inside a castle ${reach(big.walls).toFixed(2)} deep`);
+  assert.ok(big.height > hall.height * 1.5, `it stands ${big.height.toFixed(2)} high, over a town hall of ${hall.height.toFixed(2)}`);
   // And it is solid all the way out, not a small hitbox inside a big castle.
   assert.ok(reach(big.solids) > reach(small.solids) * 2, `the castle's walls stop at ${reach(big.solids).toFixed(2)}`);
-  // A plot that is not the castle's own does not shrink it.
+  // A plot that is not the castle's own is the small castle, which is the guardhouse too.
   assert.equal(over(buildBuilding({ ...spec(3), plot: null })), over(small));
 });
