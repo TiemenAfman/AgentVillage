@@ -332,6 +332,8 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
+// And the bakery's fire (scripts/build-bakery.py, web/js/countryside.js).
+export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1443,6 +1445,18 @@ function civic(parts, spec, rng) {
       Object.assign(anchors, meshAnchors('civic_smithy'));
       animated.smithy = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('civic_smithy') };
+    }
+    case 'stable': {
+      // The stable and its paddock; the horse and the hens are stable.js's (web/js/fauna.js).
+      parts.push(...meshAsset('civic_stable'), ...meshAsset('civic_stable_yard'));
+      animated.stable = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_stable') };
+    }
+    case 'bakery': {
+      parts.push(...meshAsset('civic_bakery', 0xffffff, { skip: isBakeryMoving }));
+      Object.assign(anchors, meshAnchors('civic_bakery'));
+      animated.bakery = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_bakery') };
     }
     case 'windmill':
     case 'poldermill':

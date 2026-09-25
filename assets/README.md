@@ -170,6 +170,7 @@ and `scripts/model-rules.mjs` refuses anything over it:
 | `roof_` | 300 | one per house, and there are 300 houses |
 | `house_` | 600 | the body under that roof |
 | `civic_` | 1500 | a handful on the island, looked at up close |
+| `fauna_` | 1200 | an animal in moving parts: tens of them against 300 houses, never instanced |
 
 **The tavern is a deliberate exception.** It is a hero asset - a whole `.blend` authored
 as one building, drawn once - and it sits at 2684 triangles as baked, 2956 as it stands

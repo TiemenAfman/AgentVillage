@@ -26,6 +26,9 @@ import { attachGoldPile } from './goldpit.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
+import { attachStable, updateStable } from './stable.js';
+import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
+import { createAnimal } from './fauna.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -57,6 +60,9 @@ const CIVIC = [
   ['sawmill', 'Sawmill', 'not placed yet'],
   // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
   ['smithy', 'Smithy', 'not placed yet'],
+  // And a stable with its horse, and a bakery with its oven (Plans/stal-en-veld.md).
+  ['stable', 'Stable', 'not placed yet'],
+  ['bakery', 'Bakery', 'not placed yet'],
 ];
 
 const FURNITURE = [
@@ -169,6 +175,7 @@ const fountains = []; // separate water meshes, animated just as they are on the
 const beacons = [];   // the lighthouse's lamp, which is the one thing here the slider lights
 const sawmills = [];  // the saw, the feed, the belt and the sawdust
 const smithies = [];  // the smith, the bellows, the fire and the lantern
+const lives = [];     // everything else that moves on its own: animals, the stable, the countryside
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -227,6 +234,14 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.sawmill) {
     const at = built.animated.sawmill.at;
     sawmills.push(attachSawmill(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.stable) {
+    const stable = attachStable(scene, [x, 0, z], material);
+    if (stable) lives.push((dt) => updateStable(stable, dt));
+  }
+  if (built.animated && built.animated.bakery) {
+    const bakery = attachBakery(scene, [x, 0, z], material);
+    if (bakery) lives.push((dt) => updateBakery(bakery, dt));
   }
   if (built.animated && built.animated.smithy) {
     const at = built.animated.smithy.at;
@@ -290,6 +305,64 @@ for (let i = 0; i < CIVIC.length; i += 8) {
 line(FURNITURE, ([type, name, note], x, z) => {
   place({ id: `f:${type}`, kind: 'civic', civicType: type, tier: 'civic', style: 'unknown', ornaments: [] }, x, z, name, note);
 }, 'On the square');
+
+// The animals and the small things of the fields, each at its own business (web/js/fauna.js,
+// web/js/countryside.js): cows and a flock on a patch of grass, hens, a pond with ducks and
+// lilies and reeds, a scarecrow, a haystack, a pair of skeps with their bees, and gulls
+// circling. Nothing on the island places any of it yet (Plans/stal-en-veld.md).
+{
+  const z = row * ROW;
+  heading('Country life', z);
+  const at = (i) => (i - 2.5) * PITCH;
+  const grass = () => FIELD_Y;
+  const herd = (kind, n, x, r, note) => {
+    for (let i = 0; i < n; i++) {
+      const a = createAnimal(kind, material, { area: { x, z, r }, seed: `demo:${kind}:${i}`, ground: grass });
+      if (!a) continue;
+      scene.add(a.object);
+      lives.push((dt) => a.update(dt));
+    }
+    tag(x, z + 1.3, kind, note);
+  };
+  herd('cow', 2, at(0), 0.9, 'fauna.blend · grazes');
+  herd('sheep', 4, at(1), 0.8, 'fauna.blend · a flock');
+  herd('chicken', 3, at(2), 0.45, 'fauna.blend · pecks');
+  herd('goat', 2, at(2) + 0.9, 0.5, 'from a picture · Trellis');
+  herd('sparrow', 4, at(1) + 1.2, 0.7, 'from two pictures · hops, flies');
+  herd('pig', 2, at(0) + 1.3, 0.5, 'from four views · roots');
+  // The pond: a disc of water a little over the grass, ducks on it, lilies and reeds round it.
+  const px = at(3), pondY = FIELD_Y + 0.006;
+  const pond = new THREE.Mesh(new THREE.CircleGeometry(0.95, 28), new THREE.MeshStandardMaterial({ color: 0x4f7fa0, roughness: 0.25 }));
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.set(px, pondY, z);
+  pond.receiveShadow = true;
+  scene.add(pond);
+  for (let i = 0; i < 2; i++) {
+    const a = createAnimal('duck', material, { area: { x: px, z, r: 0.55 }, seed: `demo:duck:${i}`, ground: () => pondY });
+    if (a) { scene.add(a.object); lives.push((dt) => a.update(dt)); }
+  }
+  [[0.35, 0.3], [-0.4, -0.2], [0.1, -0.5]].forEach(([dx, dz], i) => {
+    const lily = attachProp('waterlily', scene, [px + dx, pondY + 0.002, z + dz], material, { seed: `demo:lily:${i}`, yaw: i * 2 });
+    if (lily) lives.push((dt) => updateProp(lily, dt));
+  });
+  [[-0.85, 0.35], [-0.7, 0.6], [0.8, -0.45]].forEach(([dx, dz], i) => {
+    const reeds = attachProp('reeds', scene, [px + dx, FIELD_Y, z + dz], material, { seed: `demo:reeds:${i}`, yaw: i });
+    if (reeds) lives.push((dt) => updateProp(reeds, dt));
+  });
+  tag(px, z + 1.3, 'pond', 'ducks, lilies, reeds');
+  const fx = at(4);
+  [['scarecrow', -0.6, 0], ['haystack', 0.1, -0.3], ['beehive', 0.55, 0.35]].forEach(([kind, dx, dz]) => {
+    const prop = attachProp(kind, scene, [fx + dx, FIELD_Y, z + dz], material, { seed: `demo:${kind}` });
+    if (prop) lives.push((dt) => updateProp(prop, dt));
+  });
+  tag(fx, z + 1.3, 'field', 'scarecrow, haystack, bees');
+  for (let i = 0; i < 2; i++) {
+    const gull = createAnimal('gull', material, { area: { x: at(5), z, r: 1 + i * 0.5 }, seed: `demo:gull:${i}`, ground: grass });
+    if (gull) { scene.add(gull.object); lives.push((dt) => gull.update(dt)); }
+  }
+  tag(at(5), z + 1.3, 'gulls', 'fauna.blend · circling');
+  row++;
+}
 
 // the little people, and a district plaque for scale
 line(STYLES, (style, x, z) => {
@@ -1035,6 +1108,7 @@ function frame(now) {
   for (const b of beacons) updateBeacon(b, dt, uniforms.uNight.value);
   for (const m of sawmills) updateSawmill(m, dt);
   for (const s of smithies) updateSmithy(s, dt);
+  for (const live of lives) live(dt);
 
   if (inside) {
     const w = inside.update(dt);
