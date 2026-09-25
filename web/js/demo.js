@@ -24,6 +24,8 @@ import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachGoldPile } from './goldpit.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
+import { attachSawmill, updateSawmill } from './sawmill.js';
+import { attachSmithy, updateSmithy } from './smithy.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -51,6 +53,10 @@ const CIVIC = [
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
+  // Not on the island yet: only here, until it has a rung and a site (Plans/zagerij.md).
+  ['sawmill', 'Sawmill', 'not placed yet'],
+  // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
+  ['smithy', 'Smithy', 'not placed yet'],
 ];
 
 const FURNITURE = [
@@ -161,6 +167,8 @@ const spinners = [];  // things with turning blades
 const clocks = [];    // things with hands, which on this page keep the wall's time
 const fountains = []; // separate water meshes, animated just as they are on the island
 const beacons = [];   // the lighthouse's lamp, which is the one thing here the slider lights
+const sawmills = [];  // the saw, the feed, the belt and the sawdust
+const smithies = [];  // the smith, the bellows, the fire and the lantern
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -215,6 +223,14 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.beacon) {
     const at = built.animated.beacon.at;
     beacons.push(attachBeacon(scene, [x + at[0], at[1], z + at[2]]));
+  }
+  if (built.animated && built.animated.sawmill) {
+    const at = built.animated.sawmill.at;
+    sawmills.push(attachSawmill(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.smithy) {
+    const at = built.animated.smithy.at;
+    smithies.push(attachSmithy(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -987,7 +1003,7 @@ function stepOutside(door) {
 window.__sheet = {
   get walk() { return inside ? inside.walk : walk; },
   get inside() { return inside; },
-  blockers, placed, doors, camera, scene,
+  blockers, placed, doors, camera, scene, controls,
 };
 
 walkBtn.addEventListener('click', () => {
@@ -1017,6 +1033,8 @@ function frame(now) {
   for (const f of fountains) updateFountain(f, dt);
   // The lamp sweeps on the night slider, which is the only clock this page has for it.
   for (const b of beacons) updateBeacon(b, dt, uniforms.uNight.value);
+  for (const m of sawmills) updateSawmill(m, dt);
+  for (const s of smithies) updateSmithy(s, dt);
 
   if (inside) {
     const w = inside.update(dt);

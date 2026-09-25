@@ -300,14 +300,17 @@ export function mesh(name, hex = 0xffffff, o = {}) {
 // answers with the colour the island wants there - or with null to keep the colour
 // Blender gave it. A roof needs both in one asset: the island owns the tiles and the
 // .blend owns the barge boards.
-export function meshAsset(name, hex = 0xffffff, o = {}) {
+//
+// `skip(partName)` leaves parts out of the merge: the ones that move and are hung on pivots of
+// their own, like the sawmill's blade (web/js/sawmill.js).
+export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
   const sx = o.sx ?? 1, sy = o.sy ?? 1, sz = o.sz ?? 1;
   const c = Math.cos(o.ry || 0), s = Math.sin(o.ry || 0);
   // Only a caller that asks per part is repainting. A plain colour multiplies, the way it
   // always has: `meshAsset(name)` is white times what Blender baked, which is Blender's
   // own colours, and that is what the model sheet has to show.
   const per = typeof hex === 'function' ? hex : null;
-  return models.assetParts(name).map((partName) => {
+  return models.assetParts(name).filter((n) => !skip || !skip(n)).map((partName) => {
     const part = models.part(partName);
     // Where Blender had this part, scaled and turned with the asset rather than on its
     // own: an asset turned a quarter has to take its chimney round with it.
@@ -322,6 +325,13 @@ export function meshAsset(name, hex = 0xffffff, o = {}) {
     });
   });
 }
+
+// The sawmill's parts that move (scripts/build-sawmill.py): baked inside the yard asset so it
+// stands on the ground, left out of its merge, and hung on their own pivots by sawmill.js. A
+// part with several colours bakes as `name:0`, `name:1`, which the optional tail allows.
+export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
+// The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
+export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1417,6 +1427,22 @@ function civic(parts, spec, rng) {
       parts.push(...meshAsset('school'));
       Object.assign(anchors, meshAnchors('school'));
       return { anchors, animated, height: models.heightOf('school') };
+    }
+    case 'sawmill': {
+      // The barn and the yard, less what turns and slides: sawmill.js hangs those on their own
+      // pivots, and a blade merged in here would stand still inside the one that spins.
+      parts.push(...meshAsset('civic_sawmill'), ...meshAsset('civic_sawmill_yard', 0xffffff, { skip: isSawmillMoving }));
+      Object.assign(anchors, meshAnchors('civic_sawmill'));
+      animated.sawmill = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_sawmill') };
+    }
+    case 'smithy': {
+      // The house and the lean-to, less the bellows, the fire and the lantern: smithy.js hangs
+      // those, and brings the smith who works there.
+      parts.push(...meshAsset('civic_smithy'), ...meshAsset('civic_smithy_yard', 0xffffff, { skip: isSmithyMoving }));
+      Object.assign(anchors, meshAnchors('civic_smithy'));
+      animated.smithy = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_smithy') };
     }
     case 'windmill':
     case 'poldermill':
