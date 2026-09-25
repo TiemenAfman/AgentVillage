@@ -298,7 +298,7 @@ export function coinSlots() {
     const under = onFloor.filter((c) => Math.hypot(c.x - x, c.z - z) <= 2 * COIN.r + 0.004);
     const below = under.length === 1 && coins.find((c) => c.x === under[0].x && c.z === under[0].z && c.level === 0);
     const gap = below ? Math.hypot(below.x - x, below.z - z) : 0;
-    if (!below || gap < COIN.r * 0.6 || !rng.chance(0.5)) continue;
+    if (!below || gap < COIN.r * 0.6 || gap > 2 * COIN.r - 0.01 || !rng.chance(0.5)) continue;
     // Faced away from the one under it, so its far edge is the one that droops.
     const face = Math.atan2(x - below.x, z - below.z);
     coins.push({ x, y: COIN.h, z, yaw: face, tilt: rng.range(0.05, 0.11), key: below.key, level: 1 });

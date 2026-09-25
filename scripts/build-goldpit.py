@@ -138,8 +138,8 @@ coin = collection('prop_goldcoin')
 # Loose change around the heap, oversized like the bar - a real coin would be a pixel from
 # the island camera. Ten sides is round enough at that size, and only the rims are
 # bevelled (the angle limit leaves the sides alone), so the bright edge is what catches the
-# sun and the triangle count stays a third of the budget: dozens of these are one instance
-# batch, and every one of them is drawn in the shadow pass too.
+# sun and the triangle count stays a third of the budget: seventy of these are one instance
+# batch (web/js/goldpit.js), kept out of the shadow pass because a coin's shadow is a hair.
 bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=.036, depth=.012)
 o = finish(bpy.context.object, 'disc', coin, gold)
 for v in o.data.vertices:

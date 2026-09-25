@@ -274,7 +274,7 @@ test('the register spans every set and answers by part name alone', () => {
     'lighthouse',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar'].sort(),
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar', 'prop_goldcoin'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'statue', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
