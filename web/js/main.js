@@ -49,7 +49,7 @@ import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
 import { createCrops } from './crops.js';
-import { attachClock, updateClock } from './clock.js';
+import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
@@ -2558,6 +2558,13 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
     rec.goldPile.setBars(gold ? goldBarsNow() : GOLD_BARS);
     if (!gold) rec.goldPile.foreign = true;
   }
+  // And the clock over the office door, at the hour the pit is full again. Ours only, like
+  // the count: on anybody else's pit it hangs there with no hands - see attachResetClock.
+  if (built.animated && built.animated.resetclock) {
+    const rc = built.animated.resetclock;
+    rec.resetClock = attachResetClock(group, rc.at, buildingMat, rc.r);
+    rec.resetClock.foreign = !gold;
+  }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
     fire.position.set(0.5, 0, 0.42);
@@ -4802,6 +4809,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (!rec.group.visible) return;
   if (rec.blades) rec.blades.rotation.z += dt * 0.55;
   if (rec.clock) updateClock(rec.clock, hour);
+  // Real time, not `hour`: the refill is a fact about now, whatever the chronicle is showing.
+  if (rec.resetClock) updateResetClock(rec.resetClock, rec.resetClock.foreign || state.guest ? null : state.gold, Date.now());
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
