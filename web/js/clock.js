@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, cylinder, C } from './buildings.js';
+import { worldTime, localZone } from 'shared/worldclock.mjs';
 
 // The baked clock dial publishes its centre as the anchor. Lift the marks and hands
 // beyond its front surface so the depth buffer never chooses between them and plaster.
@@ -30,8 +31,16 @@ function merge(parts) {
 // Twelve marks around the rim, the four quarters longer than the rest, and the cap over
 // the spindle. Without them the hands turn against nothing and there is no hour to read
 // off the tower from across the square.
-export function buildClockDialGeometry() {
+//
+// `face` adds the white disc and a dark rim behind the marks. The tower does not want one -
+// its dial is part of the baked tower - but the gold pit's clock hangs on a plastered gable
+// with nothing round to sit on (see attachResetClock).
+export function buildClockDialGeometry({ face = false } = {}) {
   const parts = [];
+  if (face) {
+    parts.push(cylinder(FACE_R, FACE_R, 0.014, 24, C.white, { rx: Math.PI / 2, z: -0.014 }));
+    parts.push(cylinder(FACE_R + 0.014, FACE_R + 0.014, 0.010, 24, HAND, { rx: Math.PI / 2, z: -0.022 }));
+  }
   for (let i = 0; i < 12; i++) {
     const quarter = i % 3 === 0;
     const len = quarter ? 0.036 : 0.020;
@@ -73,10 +82,14 @@ export function clockAngles(hour) {
 // Nothing here casts a shadow. A tick is twelve millimetres of iron a centimetre in front
 // of a white dial, and at the resolution the island's shadow map runs at, all it would
 // throw onto that dial is noise.
-export function attachClock(group, at, material) {
+//
+// `radius` scales the whole clock from the tower's FACE_R; `face` is buildClockDialGeometry's.
+export function attachClock(group, at, material, { face = false, radius = FACE_R } = {}) {
   const root = new THREE.Group();
-  root.position.set(at[0], at[1], at[2] + FACE_LIFT);
-  const dial = new THREE.Mesh(buildClockDialGeometry(), material);
+  const k = radius / FACE_R;
+  root.position.set(at[0], at[1], at[2] + FACE_LIFT * k);
+  root.scale.setScalar(k);
+  const dial = new THREE.Mesh(buildClockDialGeometry({ face }), material);
   const hourHand = new THREE.Mesh(buildClockHandGeometry('hour'), material);
   const minuteHand = new THREE.Mesh(buildClockHandGeometry('minute'), material);
   // The minute hand rides a hair in front of the hour hand, or the two fight over the same
@@ -97,4 +110,44 @@ export function updateClock(clock, hour) {
   const a = clockAngles(tick / 60);
   clock.hourHand.rotation.z = a.hour;
   clock.minuteHand.rotation.z = a.minute;
+}
+
+// ---- the gold pit's clock ---------------------------------------------------------------
+// Not the time: the time the pit is full again (Plans/goudkuil.md). It hangs in the gable of
+// the pit's office, over the door, and its hands stand at the hour the five-hour window
+// turns over - so from across the square the pit says both how much is left (the heap) and
+// when the rest comes back (this), without anybody opening anything.
+//
+// When there is nothing to say - no reading yet, the window already turned over, or somebody
+// else's pit, whose count never leaves their machine - the hands come off rather than
+// standing at twelve, because a clock at twelve says "noon", and that would be a lie with
+// a very confident face.
+export function attachResetClock(group, at, material, radius) {
+  const clock = attachClock(group, at, material, { face: true, radius });
+  clock.shows = undefined;
+  setHands(clock, false);
+  return clock;
+}
+
+function setHands(clock, on) {
+  clock.hourHand.visible = on;
+  clock.minuteHand.visible = on;
+}
+
+// The hour the pit fills again, on this browser's own clock (the same one the dossier's
+// "Full again at 17:40" is written in), or null when there is no such hour to show. The
+// keeper's own wall clock on purpose - it is their usage window - and still through
+// worldTime, on `localZone`: web/js/ reads no local getter itself (tests/worldclock.test.mjs).
+export function refillHour(gold, now = Date.now()) {
+  if (!gold || !gold.known || gold.reset || !gold.resetsAt || gold.resetsAt <= now) return null;
+  return worldTime(gold.resetsAt, localZone(gold.resetsAt)).hour;
+}
+
+// Called every frame with the keeper's reading (null for a foreign pit). Cheap: nothing is
+// written unless the minute shown changes or the hands come on or off.
+export function updateResetClock(clock, gold, now = Date.now()) {
+  const hour = refillHour(gold, now);
+  const on = hour != null;
+  if (on !== clock.shows) { setHands(clock, on); clock.shows = on; }
+  if (on) updateClock(clock, hour);
 }
