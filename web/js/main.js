@@ -11,6 +11,7 @@ import { decodeCrowd, decodeRides } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quayFor, mooringFor, planksOf } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
+import { gatheringAt, worldClock } from 'shared/gatherings.mjs';
 import { createWorld, seasonOf } from './world.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
@@ -2203,13 +2204,22 @@ function timeNow() {
   if (state.chronicle.t != null) return state.chronicle.t;
   return Date.now() + (state.seaSkewMs || 0);
 }
+// The world's weekday and hour together, worked out by shared/gatherings.mjs from the
+// same two numbers the sea works from - so this page and the sea agree, to the minute,
+// about whether it is lunchtime on the square.
+function worldTime() {
+  const t = timeNow();
+  const tz = state.seaTz == null ? -new Date(t).getTimezoneOffset() : state.seaTz;
+  return worldClock(t, tz);
+}
 function currentHour() {
   if (state.hourOverride != null) return state.hourOverride;
-  const d = new Date(timeNow());
-  const tz = state.seaTz == null ? -d.getTimezoneOffset() : state.seaTz;
-  // UTC plus the world's own offset, rather than this browser's idea of local time.
-  const mins = d.getUTCHours() * 60 + d.getUTCMinutes() + tz;
-  return (((mins % 1440) + 1440) % 1440) / 60;
+  return worldTime().hour;
+}
+// getDay()'s number, Sunday 0, for the world and not for this browser. `?hour=` has no
+// counterpart for the day, so a Saturday stays a Saturday whatever the hour is set to.
+function currentDay() {
+  return worldTime().day;
 }
 
 // Ground at or under this is shore: sea, shallows or beach. It is BEACH_MAX from
@@ -2833,12 +2843,11 @@ function passesFilter(spec) {
   if (spec.harbour) return state.filters.cowork;
   return state.filters.code;
 }
-// When the Friday borrel is on: half an hour, from half past four. One place rather than
-// three numbers in the middle of the frame loop, because this is the sort of thing that
-// gets asked for by the half hour and should be one line to move.
-const BORREL_DAY = 5;              // Sunday is 0, so Friday is 5
-const BORREL_FROM = 16.5;
-const BORREL_UNTIL = 17;
+// When the village is on the square - the three breaks on a working day and the Friday
+// borrel - is `gatheringAt` in shared/gatherings.mjs, and deliberately not three numbers
+// here: the sea reads the same list to decide who walks, and this page only reads it for
+// the furniture. The last time the two halves had separate clocks, the sea's half had none
+// and the tables came out on Fridays for nobody.
 
 function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
@@ -3568,15 +3577,15 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday afternoon: the whole village downs tools and heads for the square. Whether
-    // they go is the sea's decision - it keeps the clock everybody shares - and what is
-    // left here is the furniture, which is scenery and always was: one set of tables per
-    // ten islanders, of which the set the village earned is the first, so the rest are
-    // carried out and taken back in with the borrel itself.
-    const d = new Date(timeNow());
-    const borrel = d.getDay() === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+    // A break, or the Friday borrel: the whole village downs tools and heads for the
+    // square. Whether they go is the sea's decision - lib/crowd.mjs rings the bell off the
+    // clock everybody shares - and what is left here is the furniture, which is scenery
+    // and always was: one set of tables per ten islanders, of which the set the village
+    // earned is the first, so the rest are carried out and taken back in with the
+    // gathering itself. Same list, same clock, so the tables and the people agree.
+    const gathering = gatheringAt(currentDay(), hour);
     if (state.borrel) {
-      state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
+      state.borrel.show(gathering ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
     // And our own people, off the wire like any other island's. The ground is this island's
     // own, which is what stands somebody on a quay's planks rather than in the water beside
