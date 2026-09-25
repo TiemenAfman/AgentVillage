@@ -1592,6 +1592,11 @@ function civic(parts, spec, rng) {
       // Baked concrete and coping stay one draw call; the shrinking stock is instanced.
       parts.push(...meshAsset('civic_goldpit'));
       animated.goldpile = { at: [0, 0.031, 0] };
+      // The clock that says when the pit is full again (attachResetClock in clock.js), in
+      // the gable of the office over its door. The gable's face is the roof's front
+      // triangle in build-goldpit.py - eaves at 0.95, ridge at 1.20, front at z 1.19 - and a
+      // dial of 0.075 centred at 1.05 sits inside it with the eaves' width to spare.
+      animated.resetclock = { at: [-0.79, 1.05, 1.192], r: 0.075 };
       return { anchors, animated, height: 1.22 };
     }
     default:

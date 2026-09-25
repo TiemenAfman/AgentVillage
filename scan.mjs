@@ -18,7 +18,7 @@ import {
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
-import { runPlan } from './lib/plan.mjs';
+import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
 
 export function parseArgs(argv) {
@@ -181,6 +181,19 @@ async function runScan(o) {
       layout.paths = layout.paths.filter((p) => !String(p.id).startsWith(`road:${id}:`));
     }
   }
+  // And every stretch that only led to what was just taken up. A path records only the cells
+  // it paved itself, so a hamlet road that braided onto a neighbour's lane walks over cells
+  // that are on the neighbour's record - and when that neighbour's district goes, its road
+  // goes with it and everything that joined the island through it is left ending in the
+  // grass, every stone of its own still in place. Measured on 25 September 2026: the
+  // deskdisplay hamlet went quiet overnight, its 24-cell road went, and 45 houses in four
+  // hamlets could no longer walk to the square. It is the planner's own cure for the same
+  // thing after a move (lib/plan.mjs): drop whatever the square cannot reach, give the
+  // ground back to the forest, and let placeAll below lay it again from the doors that
+  // need it. On every scan rather than only when a district goes, because it costs one
+  // flood fill and an island that is already cut - that one was - heals on its next scan;
+  // on an island in one piece it drops nothing and the layout is byte for byte what it was.
+  if (pruneUnreachable(layout, size).length) layout.cleared = [];
   // The keeper's plan, if this scan carries one (POST /api/plan in serve.mjs). Same slot as
   // `clearRoads` and for the same reason: it wants the model built and the layout loaded,
   // and it wants `placeAll` to run after it to lay whatever it left unlaid. `runPlan` tries

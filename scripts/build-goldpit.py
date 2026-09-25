@@ -133,6 +133,25 @@ bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, .0752))
 o = finish(bpy.context.object, 'assay', bar, stamp)
 o.scale = (.043, .022, .0004)
 bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+coin = collection('prop_goldcoin')
+# Loose change around the heap, oversized like the bar - a real coin would be a pixel from
+# the island camera. Ten sides is round enough at that size, and only the rims are
+# bevelled (the angle limit leaves the sides alone), so the bright edge is what catches the
+# sun and the triangle count stays a third of the budget: seventy of these are one instance
+# batch (web/js/goldpit.js), kept out of the shadow pass because a coin's shadow is a hair.
+bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=.036, depth=.012)
+o = finish(bpy.context.object, 'disc', coin, gold)
+for v in o.data.vertices:
+    v.co.z += .006
+o.data.materials.append(bright)
+mod = o.modifiers.new('Milled rim', 'BEVEL')
+mod.width = .003
+mod.segments = 1
+mod.limit_method = 'ANGLE'
+mod.angle_limit = 1.0         # 57 degrees: the rims are 90, the ten sides meet at 36
+mod.material = 1
+bpy.ops.object.modifier_apply(modifier=mod.name)
 bpy.context.scene['building_height'] = 1.22
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'goldpit.blend'))

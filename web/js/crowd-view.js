@@ -35,7 +35,7 @@
 import { createFigures, SETTLER_DRINK_S } from './settler-figures.js';
 import { createTipsy, drinkIn, stepTipsy, settlerSway, SETTLER_TIPSY } from './tipsy.js';
 import { createBoat } from './boat.js';
-import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { kindOf, styleOf, residentLook } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
@@ -191,7 +191,11 @@ export function createCrowdView({
       const spec = specFor(id);
       if (!spec) return;                      // a settler whose house we have not got yet
       const kind = kindOf(spec);
-      const look = settlerLook(id, styleOf(spec), kind);
+      // residentLook, not settlerLook: the innkeeper and the mayor wear their dress over
+      // the face the id hashes to, and the sea sized their stride from the same call. Their
+      // own id and not the building's, so a guard dressed against the guardhouse is still
+      // somebody of their own.
+      const look = residentLook(spec, id);
       const f = {
         id, spec,
         // What the renderer reads. The walk would have written these; a socket does now.

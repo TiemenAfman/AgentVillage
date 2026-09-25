@@ -266,8 +266,13 @@ export function createWalk(terrain, village = null) {
     // shed is barely wider than it is, walks straight through them.
     const rot = (spec.plot ? spec.plot.rot : 0) | 0;
     const [ox, oz] = DOOR_DIR[rot] || DOOR_DIR[0];
-    const reach = spec.kind === 'shed' ? 0.46 : 0.85;
-    const home = [worldPos[0] + ox * reach, worldPos[2] + oz * reach];
+    // A building's keeper (`opts.post`, Plans/kroegbaas-en-burgemeester.md) says how far
+    // out their door is: a civic lot is three cells wide, and the house's 0.85 is inside it.
+    const reach = opts.reach != null ? opts.reach : (spec.kind === 'shed' ? 0.46 : 0.85);
+    // And to one side of the doorway if they are told to (`opts.aside`): (-oz, ox) is the
+    // door direction turned a quarter.
+    const aside = opts.aside || 0;
+    const home = [worldPos[0] + ox * reach - oz * aside, worldPos[2] + oz * reach + ox * aside];
     const f = {
       // ---- both halves read these
       id, spec,
@@ -278,11 +283,16 @@ export function createWalk(terrain, village = null) {
       pos: null,
       target: null, yaw: 0, pause: 0,
       mode: opts.mode || 'idle', speed: 0.34, rng,
-      radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
+      radius: opts.radius != null ? opts.radius : (spec.kind === 'shed' ? 0.14 : 0.3), visible: true, path: null, pathI: 0, onDone: null,
       y: 0,
       strollIn: 0, keepHome: false, gate: undefined, gathering: false,
       // At a chore, and walking home from one with a bundle of wood. See startChore.
       work: null, hauling: false,
+      // Kept by a building rather than housed by one: who they are ('innkeeper', 'mayor',
+      // 'clerk', 'headmistress', 'priest' - KEEPERS in shared/palette.mjs), or null. A keeper
+      // never strolls off, does chores, fetches gold or takes a boat; `serves` and `tours`
+      // are the two rounds they may walk instead - see startRound.
+      post: opts.post || null, serves: !!opts.serves, tours: !!opts.tours,
       // The two errand hooks, as records rather than closures - see walkRoute below.
       after: null, then: null,
       // Lent out. `chartered` means an errand planned somewhere else has this body and
@@ -558,7 +568,9 @@ export function createWalk(terrain, village = null) {
     } else if (a.kind === 'stroll-home') {
       f.keepHome = false;
       f.home = a.home;
-      f.strollIn = f.rng.range(40, 160);
+      // An innkeeper back from a table goes straight out to the next one; everybody else
+      // has had their walk for a while. One draw either way.
+      f.strollIn = f.serves ? f.rng.range(3, 9) : f.rng.range(40, 160);
       strolling--;
     } else if (a.kind === 'gather-home') {
       f.keepHome = false;
@@ -596,6 +608,31 @@ export function createWalk(terrain, village = null) {
     const out = dest === null ? null : roadRoute(gate, dest);
     if (!out || out.length < 3) { f.strollIn = f.rng.range(15, 50); return; }
 
+    strolling++;
+    walkRoute(f, out, { kind: 'stroll-out', route: out, home: [f.home[0], f.home[1]] });
+  }
+
+  // A keeper's round (Plans/kroegbaas-en-burgemeester.md): out to a cell of the square
+  // near their own door and back, the same two walks a stroll is. One who `tours` - the
+  // mayor, the priest - takes one now and then across the whole square; one who `serves` -
+  // the innkeeper - only while the village is gathered, and only as far as the tables by
+  // the tavern, bringing the drinks round rather than standing among the customers.
+  function startRound(f) {
+    const gate = gateOf(f);
+    if (gate == null || !squareList.length) { f.strollIn = f.rng.range(20, 60); return; }
+    const size = terrain.size;
+    const gx = gate % size, gz = (gate - (gate % size)) / size;
+    const reach = f.serves ? 7 : 12;
+    const near = squareList.filter((k) => {
+      const kx = k % size, kz = (k - kx) / size;
+      const d = dist(kx - gx, kz - gz);
+      return d > 1.5 && d <= reach;
+    });
+    const out = near.length ? roadRoute(gate, near[f.rng.int(near.length)]) : null;
+    if (!out || out.length < 2) { f.strollIn = f.rng.range(15, 40); return; }
+    // Not onto the middle of the cell, for the reason the borrel gives.
+    const last = out[out.length - 1];
+    out[out.length - 1] = [last[0] + f.rng.range(-0.34, 0.34), last[1] + f.rng.range(-0.34, 0.34)];
     strolling++;
     walkRoute(f, out, { kind: 'stroll-out', route: out, home: [f.home[0], f.home[1]] });
   }
@@ -923,7 +960,7 @@ export function createWalk(terrain, village = null) {
     const out = [];
     if (gatherActive) return out;          // Friday afternoon: the whole village is busy
     for (const f of figures.values()) {
-      if (!f.visible || f.chartered || f.gathering || f.attend || f.deckY) continue;
+      if (!f.visible || f.chartered || f.gathering || f.attend || f.deckY || f.post) continue;
       if (f.mode !== 'idle' || f.then) continue;
       if (gateOf(f) == null) continue;
       out.push(f);
@@ -1176,7 +1213,8 @@ export function createWalk(terrain, village = null) {
           const t = f.then; f.then = null; resume(f, t);
           continue;
         }
-        if (gatherActive && !f.gathering && !f.deckY && roads && squareList.length && starting < GATHER_PER_TICK) {
+        // The innkeeper does not come to the gathering: the gathering comes to the tavern.
+        if (gatherActive && !f.gathering && !f.serves && !f.deckY && roads && squareList.length && starting < GATHER_PER_TICK) {
           f.gathering = true;
           starting++;
           startGather(f);
@@ -1184,7 +1222,15 @@ export function createWalk(terrain, village = null) {
         }
         // Fewer errands after dark, and never more at once than the eye can follow.
         f.strollIn -= dt;
-        if (!gatherActive && f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
+        if (f.post) {
+          // A keeper keeps to their post: a round of the square, never a stroll or a chore.
+          const serving = f.serves && gatherActive;
+          const touring = f.tours && !gatherActive && nightAmount <= 0.55;
+          if ((serving || touring) && f.strollIn <= 0 && roads && strolling < MAX_STROLL) {
+            startRound(f);
+            if (f.mode === 'walk') continue;
+          }
+        } else if (!gatherActive && f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
           if (nightAmount > 0.55 && f.rng.next() < nightAmount) f.strollIn = f.rng.range(20, 70);
           else if (!tryChore(f, nightAmount)) startStroll(f);
           if (f.mode === 'walk') continue;

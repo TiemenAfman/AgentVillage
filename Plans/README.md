@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
+  kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
+  gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.
 - [andere-spelers-zoals-jij.md](andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
   als jij, in hun eigen uiterlijk en uitrusting (`{t:'look'}`), met liggen, hurken en zitten als
   pose-bits en slaan en drinken als gebeurtenissen. Gebouwd op 25 september 2026.

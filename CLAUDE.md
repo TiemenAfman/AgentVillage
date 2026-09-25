@@ -128,7 +128,12 @@ paved, because `clearRoads` throws every path away and no door re-routes a road 
 house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/wegen-tekenen.md`).
 Building by hand (the Build chip, `B`, `buildmenu.js`/`ghost.js`) is off unless switched on
 under Settings → Debug (per browser, `promptholm.debug.build`): the planner keeps the town.
-Five version gates in `lib/layout.mjs`, in descending order of violence: `LAYOUT_VERSION` (throws away the town
+Roads, unlike plots, the scan does take up by itself: every scan runs the planner's
+`pruneUnreachable` and lays again whatever no longer reaches the square, because a path
+records only the cells it paved itself - when a hamlet dies its road goes, and every road
+that had braided onto it was left ending in the grass (45 houses cut off, 25 September
+2026). Five version gates in `lib/layout.mjs`, in descending order of violence:
+`LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
 paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
@@ -792,8 +797,9 @@ on any local `.getMonth()`/`.getDay()`/`.getHours()` in `web/js/` or `shared/` (
 workbench and real-date labels excepted). The sea reads its zone by name (`SEA_TZ`,
 `lib/seaclock.mjs`, offset per moment through `Intl`, so summer time is free) and broadcasts
 `{t:'clock'}` when the offset changes. The sea's own beat asks the same `worldTime` (on
-`clock.offset()`) whether it is night and whether it is the borrel - `nightAt` / `borrelAt`
-in `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
+`clock.offset()`) whether it is night and whether the village is due on the square - `nightAt`
+/ `gatheringAt` (coffee, lunch, tea and the Friday borrel, one `GATHERINGS` list) in
+`shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
 [Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
@@ -860,13 +866,19 @@ and a `setTimeout` loop polling the page sees time stand still.
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
-**The gold pit's count is the keeper's, and a status line is the only place it comes from**
+**The gold pit's count is the keeper's, and it comes from two places on this machine**
 ([Plans/goudkuil.md](Plans/goudkuil.md)). Claude Code hands the five-hour usage window
 (`rate_limits.five_hour`) to a `statusLine` command and to nothing else - not a hook, not a
 transcript - so `hooks/statusline.mjs` is the one writer of `data/usage.json`
-(`lib/usage.mjs`, only when the number moved) and `shared/gold.mjs goldOf` the one copy of
-what it comes to: `100 - round(used)` bars, and a full pit when there is no reading or the
-window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
+(`lib/usage.mjs`, only when the number moved). The desktop app runs no status line at all,
+so a keeper who works only in its Code tab never got a reading and saw a full pit; what the
+app does do is sample the same window every quarter of an hour into
+`%APPDATA%\Claude\plan-usage-history.json` (`fh`, no reset), which `readDesktopUsage` reads
+and gives a `resetsAt` estimated from the history - five hours after the window's first
+sample, an upper bound, because a pit that fills late is better than one that fills while
+the window is spent. `currentUsage` takes whichever spoke last. `shared/gold.mjs goldOf` is
+the one copy of what it comes to: `100 - round(used)` bars, and a full pit when there is no
+reading or the window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
 and with `--pass` (it is put *in front of* a status line the user already had,
 `lib/statusline.mjs`) stdin goes back out untouched before anything that could fail. Nobody
 runs anything to install it: the islander does, on start (`ensureStatusLine` from

@@ -1,4 +1,5 @@
-// The island's clock, as its people keep it: how dark, and whether it is Friday borrel.
+// The island's clock, as its people keep it: how dark, and whether the village is due on
+// the square.
 //
 // Both were the browser's until the sea took the walking over, and neither came along -
 // the sea stepped every crowd at noon and never rang the bell. shared/daylight.mjs is where
@@ -7,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { NIGHT_CURVE, nightAt, borrelAt } from '../shared/daylight.mjs';
+import { NIGHT_CURVE, nightAt, GATHERINGS, WEEKDAYS, gatheringAt } from '../shared/daylight.mjs';
 import { worldTime } from '../shared/worldclock.mjs';
 import { zoneOffset } from '../lib/seaclock.mjs';
 import { createCrowds } from '../lib/crowd.mjs';
@@ -31,30 +32,84 @@ test('night falls and lifts along the curve', () => {
   assert.equal(nightAt(-4), nightAt(20), 'an hour wraps');
 });
 
+// The times are the ones that get asked for in words - "a coffee at ten, lunch at half
+// past twelve, tea at three" - and words are exactly what drifts a quarter of an hour the
+// first time somebody touches a decimal. So they are written out here as minutes.
+const at = (h, m) => h + m / 60;
+const id = (g) => (g ? g.id : null);
+
 test('the borrel is Friday from half past four until five', () => {
-  assert.equal(borrelAt(5, 16.5), true);
-  assert.equal(borrelAt(5, 16.99), true);
-  assert.equal(borrelAt(5, 17), false);
-  assert.equal(borrelAt(5, 16.4), false);
-  assert.equal(borrelAt(4, 16.75), false);
+  assert.equal(id(gatheringAt(5, 16.5)), 'borrel');
+  assert.equal(id(gatheringAt(5, 16.99)), 'borrel');
+  assert.equal(gatheringAt(5, 17), null);
+  assert.equal(gatheringAt(5, 16.4), null);
+  assert.equal(gatheringAt(4, 16.75), null, 'a Thursday borrel');
+});
+
+test('three breaks on every working day', () => {
+  for (const day of WEEKDAYS) {
+    assert.equal(id(gatheringAt(day, at(10, 0))), 'coffee', `coffee at ten on day ${day}`);
+    assert.equal(id(gatheringAt(day, at(10, 14))), 'coffee', 'still coffee at 10:14');
+    assert.equal(gatheringAt(day, at(10, 15)), null, 'and over at 10:15 sharp');
+
+    assert.equal(gatheringAt(day, at(12, 29)), null, 'not yet lunch at 12:29');
+    assert.equal(id(gatheringAt(day, at(12, 30))), 'lunch');
+    assert.equal(id(gatheringAt(day, at(12, 59))), 'lunch');
+    assert.equal(gatheringAt(day, at(13, 0)), null, 'lunch is half an hour');
+
+    assert.equal(id(gatheringAt(day, at(15, 0))), 'tea');
+    assert.equal(id(gatheringAt(day, at(15, 14))), 'tea');
+    assert.equal(gatheringAt(day, at(15, 15)), null, 'tea is a quarter of an hour');
+  }
+});
+
+test('the weekend is the weekend', () => {
+  for (const day of [0, 6]) {
+    for (const g of GATHERINGS) {
+      assert.equal(gatheringAt(day, g.from), null, `${g.id} rang on day ${day}`);
+      assert.equal(gatheringAt(day, (g.from + g.until) / 2), null);
+    }
+  }
+});
+
+test('no two gatherings are on at once, and every edge is a quarter of an hour', () => {
+  // Two at the same moment would leave one of them permanently losing the bell to
+  // whichever comes first in the list - and the list's order is not meant to mean anything.
+  for (const g of GATHERINGS) {
+    assert.ok(g.until > g.from, `${g.id} ends before it starts`);
+    for (const other of GATHERINGS) {
+      if (other === g) continue;
+      const shareADay = g.days.some((d) => other.days.includes(d));
+      const overlap = g.from < other.until && other.from < g.until;
+      assert.ok(!(shareADay && overlap), `${g.id} and ${other.id} are on at the same time`);
+    }
+    // A quarter of an hour is a whole number of minutes that divides by sixty exactly in
+    // binary, so the minute the bell goes is the same minute on the sea and on the page and
+    // no comparison in gatheringAt needs an epsilon.
+    for (const edge of [g.from, g.until]) {
+      const mins = Math.round(edge * 60);
+      assert.equal(mins % 15, 0, `${g.id} turns at ${edge}, which is not a quarter of an hour`);
+      assert.equal(mins / 60, edge, `${g.id}'s ${edge} does not survive the round trip`);
+    }
+  }
 });
 
 test('the borrel keeps the time of the sea, summer and winter', () => {
-  // lib/sea.mjs asks borrelAt of worldTime on the sea clock's offset, and the page asks it
+  // lib/sea.mjs asks gatheringAt of worldTime on the sea clock's offset, and the page asks it
   // of the same worldTime on the welcome's `tz`. Europe/Amsterdam is what Dockerfile.sea
   // sets SEA_TZ to.
-  const at = (ms) => worldTime(ms, zoneOffset('Europe/Amsterdam', ms));
+  const seaTime = (ms) => worldTime(ms, zoneOffset('Europe/Amsterdam', ms));
   // Friday 25 September 2026 14:45 UTC is 16:45 in Amsterdam (CEST, +2).
-  const summer = at(Date.UTC(2026, 8, 25, 14, 45));
+  const summer = seaTime(Date.UTC(2026, 8, 25, 14, 45));
   assert.equal(summer.weekday, 5);
   assert.equal(summer.hour, 16.75);
-  assert.equal(borrelAt(summer.weekday, summer.hour), true);
+  assert.equal(id(gatheringAt(summer.weekday, summer.hour)), 'borrel');
   // Friday 8 January 2027 15:45 UTC is 16:45 in Amsterdam (CET, +1).
-  const winter = at(Date.UTC(2027, 0, 8, 15, 45));
+  const winter = seaTime(Date.UTC(2027, 0, 8, 15, 45));
   assert.equal(winter.weekday, 5);
   assert.equal(winter.hour, 16.75);
   // And the day turns at the sea's midnight, not at UTC's.
-  assert.equal(at(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
+  assert.equal(seaTime(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
 });
 
 function island(id) {
