@@ -275,8 +275,16 @@ test('every civic lot keeps its road', () => {
   // PARCEL_VERSION empties `paths`, and a civic building is not placed again afterwards -
   // so without the block that relays these, the roads to the town hall, the market, the
   // tavern and the school go and never come back.
+  //
+  // The crossing is the one civic road with no lot at its end. `path:civic:bridge` is the
+  // road over the bridge, filed under the name of the rung that earned it (BRIDGE_ID in
+  // lib/layout.mjs), and the stone at its head is a single cell rather than a lot with a
+  // door - so counted against the lots it read as one road too many from the day the bridge
+  // was built, 10 against 9. It still has to lead to something that stands.
   const roads = L.paths.filter((p) => String(p.id).startsWith('path:civic:'));
-  assert.equal(roads.length, civicLots.length, 'a civic lot has no road, or has two');
+  for (const p of roads) assert.ok(L.plots[p.id.slice('path:'.length)], `${p.id} leads to a civic building that is not there`);
+  const lotRoads = roads.filter((p) => L.plots[p.id.slice('path:'.length)].w >= 3);
+  assert.equal(lotRoads.length, civicLots.length, 'a civic lot has no road, or has two');
   for (const [id] of civicLots) {
     assert.ok(L.paths.some((p) => p.id === `path:${id}`), `${id} has no road`);
   }
@@ -300,10 +308,28 @@ test('the village is spread over the island, and nobody is a guest', () => {
   assert.ok(new Set(rings).size > 1, `all ${rings.length} hamlets are on ring ${rings[0]}`);
 });
 
-test('a road is a road and not a kilometre of one', () => {
+// How far a road goes out of its way, rather than how long it is. The first version of this
+// capped every road at sixty cells, which was generous for the island it was written on -
+// and then the quay settled on the far south-west coast, and its road into town is 97 cells
+// over a span of 96: as straight as a road on a grid can be, and red for being long. What
+// the cap was standing in for is a road that wanders, so that is what is measured: each
+// piece against the shortest walk between its own two ends. Measured on 25 September 2026,
+// the island as it stands and the same village founded fresh: 1.00 for every piece but one,
+// a polder approach at 1.06. Half as far again is a road that has lost its way.
+const DETOUR = 1.5;
+
+test('a road is a road and not a kilometre of one', (t) => {
+  let worst = { ratio: 0 };
   for (const p of L.paths.filter((q) => String(q.id).startsWith('road:'))) {
-    assert.ok(p.cells.length < 60, `${p.id} is ${p.cells.length} cells long`);
+    for (const piece of pieces(p.cells)) {
+      const [a, b] = [piece[0], piece[piece.length - 1]];
+      const shortest = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + 1;
+      const ratio = piece.length / shortest;
+      if (ratio > worst.ratio) worst = { id: p.id, ratio, cells: piece.length, shortest };
+      assert.ok(ratio <= DETOUR, `${p.id} takes ${piece.length} cells to go ${shortest}`);
+    }
   }
+  if (worst.id) t.diagnostic(`most roundabout: ${worst.id}, ${worst.cells} cells for ${worst.shortest} (${worst.ratio.toFixed(2)})`);
 });
 
 test('how much of the island the village reaches', (t) => {
