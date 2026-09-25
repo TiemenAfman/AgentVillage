@@ -86,9 +86,10 @@ export const DT = 0.05;
 const GATHER_PER_TICK = 8;
 
 // Fetching gold before building (Plans/goudkuil.md). A settler whose session is running
-// hammers at their own door; with a gold pit on the island they first walk over to it, load
-// a bar, carry it home and only then set to work - and go again every few minutes of work
-// after that. All in seconds of walk time, drawn from the settler's own `<id>:gold` stream.
+// hammers at their own door; with a gold pit on the island they first wheel a barrow over to
+// it, load it, wheel it home and only then set to work - and go again every few minutes of
+// work after that. All in seconds of walk time, drawn from the settler's own `<id>:gold`
+// stream.
 //
 //   GOLD_FIRST  how long after setting to work the first trip starts: soon, but not all at
 //               once when a whole village is started at the same moment (a sea restart).
@@ -238,10 +239,11 @@ export function createWalk(terrain, village = null) {
       // The gold errand (see `startGold`). `active` is whether their session is running -
       // what they go back to doing when they get home with a bar; not `work`, which is an
       // idle settler's chore - and `goldIn` the seconds of work left before the next trip,
-      // null until the first tick of work sets it. `carry` is 'gold' while a bar is in
-      // their hands, which makes their walk the 'carry' animation on the wire (ANIMS in
-      // shared/settlerwire.mjs). `goldRng` is made on first use, off the id: a stream of its
-      // own so that nothing here draws from the middle of `rng`.
+      // null until the first tick of work sets it. `carry` is what they are wheeling:
+      // 'barrow' on the way out with it empty, 'gold' on the way home with it loaded, which
+      // makes their walk 'barrow' or 'carry' on the wire (ANIMS in shared/settlerwire.mjs).
+      // `goldRng` is made on first use, off the id: a stream of its own so that nothing here
+      // draws from the middle of `rng`.
       active: opts.mode === 'hammer', goldIn: null, goldRng: null, carry: null,
       // Which animation the body is in, for the drawing half: 'walk', 'step', 'hammer' or
       // 'still'. Written every frame by step() and read by nothing in here. This is the
@@ -775,11 +777,14 @@ export function createWalk(terrain, village = null) {
     const side = r.range(-0.3, 0.3);
     out.push([gold.at[0] - (dz / d) * side, gold.at[1] + (dx / d) * side]);
     goldTrips++;
+    // The barrow comes along from the first step: it is what the trip is for, and a settler
+    // who fetched it from nowhere at the pit would be carrying gold home in their arms.
+    f.carry = 'barrow';
     walkRoute(f, out, { kind: 'gold-out', route: out, home: [f.home[0], f.home[1]] }, null, goldPace(f));
     return true;
   }
 
-  // The same way back with the bar, and the doorstep on the end.
+  // The same way back with the barrow loaded, and the doorstep on the end.
   function carryHome(f, t) {
     f.carry = 'gold';
     walkRoute(f, [...t.route].reverse().concat([t.home]), { kind: 'gold-home', home: t.home }, null, goldPace(f));
@@ -1032,9 +1037,9 @@ export function createWalk(terrain, village = null) {
         // end of every errand in the village.
         // Home from the wood with a bundle on the shoulder: still a walk to everything that
         // asks, only drawn carrying something.
-        // And home from the gold pit with a bar in both hands (Plans/goudkuil.md): the
-        // same, drawn with the bar - 'carry' is a walk to everything on the wire too.
-        f.anim = f.carry ? 'carry' : f.hauling ? 'haul' : 'walk';
+        // And to and from the gold pit behind a wheelbarrow (Plans/goudkuil.md): 'barrow'
+        // with it empty, 'carry' with it loaded - both a walk to everything on the wire too.
+        f.anim = f.carry === 'gold' ? 'carry' : f.carry === 'barrow' ? 'barrow' : f.hauling ? 'haul' : 'walk';
         const t = f.path[Math.min(f.pathI + 1, f.path.length - 1)];
         const dx = t[0] - f.pos[0], dz = t[1] - f.pos[1];
         const d = dist(dx, dz);
@@ -1076,13 +1081,14 @@ export function createWalk(terrain, village = null) {
         if (gold && f.active && !gatherActive) {
           if (f.goldIn == null) f.goldIn = goldRngOf(f).range(GOLD_FIRST[0], GOLD_FIRST[1]);
           f.goldIn -= dt;
-          if (f.goldIn <= 0 && goldTrips < MAX_GOLD && startGold(f)) f.anim = 'walk';
+          if (f.goldIn <= 0 && goldTrips < MAX_GOLD && startGold(f)) f.anim = 'barrow';
         }
       } else if (f.mode === 'gold') {
-        // At the pile, loading. Facing the heap, standing still, and then home with the bar
-        // along the way they came. A trip carried over from an older crowd without its
-        // record (see `adopt`, which never does this, but a record is cheap to check) is
-        // simply ended where it stands.
+        // At the pile, loading the barrow: facing the heap, bent over it ('load' - the page
+        // parks the barrow in front of them), and then home with it along the way they came.
+        // A trip carried over from an older crowd without its record (see `adopt`, which
+        // never does this, but a record is cheap to check) is simply ended where it stands.
+        f.anim = 'load';
         if (gold) face(f, gold.pile[0] - f.pos[0], gold.pile[1] - f.pos[1], 0.15);
         f.pause -= dt;
         if (f.pause <= 0) {

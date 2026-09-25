@@ -37,6 +37,8 @@ register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { buildBuilding } = await import('../web/js/buildings.js');
 const { pileSlots, attachGoldPile, goldBarGeometry, BAR, PILE_PITCH, PILE_Z } = await import('../web/js/goldpit.js');
+const { createFigures } = await import('../web/js/settler-figures.js');
+const { settlerLook } = await import('../shared/palette.mjs');
 const THREE = await import('three');
 delete globalThis.document;
 
@@ -277,12 +279,12 @@ test('a settler at work walks to the pit, loads, carries a bar home and goes bac
   const it = island();
   const crowd = createCrowd(it);
   const seen = watch(crowd, 'house:000', 320);
-  const modes = seen.map((s) => `${s.mode}${s.carry ? '+gold' : ''}`);
-  const i = modes.indexOf('gold');
+  const modes = seen.map((s) => `${s.mode}${s.carry ? `+${s.carry}` : ''}`);
+  const i = modes.indexOf('gold+barrow');
   assert.ok(i > 0, `never loaded: ${modes.join(' → ')}`);
-  assert.equal(modes[i - 1], 'walk', 'walked to the pit');
-  assert.equal(modes[i + 1], 'walk+gold', 'left it with a bar');
-  assert.equal(modes[i + 2], 'hammer', 'and went back to work, bar put down');
+  assert.equal(modes[i - 1], 'walk+barrow', 'wheeled the barrow to the pit empty');
+  assert.equal(modes[i + 1], 'walk+gold', 'and home again loaded');
+  assert.equal(modes[i + 2], 'hammer', 'and went back to work, barrow put away');
   assert.ok(seen[i - 1].t <= 20, 'the first trip starts soon after setting to work');
   // Loading happens in the pit, at the loading spot, not at the road's end outside it.
   const site = goldSite(it.bundle, it.terrain);
@@ -362,26 +364,74 @@ test('a republish half-way to the pit does not stand them back at their door', (
   assert.equal(movedCrowd.walk.goldTrips(), 0);
 });
 
-test('a bar carried home goes over the wire as the carry walk, at the walker rate', () => {
+test('the barrow goes over the wire as barrow, load and carry', () => {
   // Develop_Tiemn's way for a walk with something in hand, the woodcutter's 'haul' beside it:
-  // a word at the end of ANIMS - so an older page reads a number it does not know as 'still'
-  // rather than misreading the ones it does - and in MOVING, so a carrier rides at the walker
-  // rate and is not smeared over a ten-second keyframe.
-  assert.equal(ANIMS[ANIMS.length - 1], 'carry', 'new words go on the end');
-  assert.ok(MOVING.has('carry'));
+  // words at the end of ANIMS - so an older page reads a number it does not know as 'still'
+  // rather than misreading the ones it does - and the two walks in MOVING, so a barrow rides
+  // at the walker rate and is not smeared over a ten-second keyframe. Loading is not a walk.
+  assert.deepEqual(ANIMS.slice(-3), ['carry', 'barrow', 'load'], 'new words go on the end');
+  assert.ok(MOVING.has('carry') && MOVING.has('barrow'));
+  assert.ok(!MOVING.has('load'));
   const it = island();
   const crowd = createCrowd(it);
   const idx = [...crowd.figures.keys()].indexOf('house:000');
-  let row = null;
-  for (let t = 0; t < 20 * 320 && !row; t++) {
+  const heard = [];
+  let carried = null;
+  for (let t = 0; t < 20 * 320 && !carried; t++) {
     crowd.advance(1, 0);
-    const { a } = encodeCrowd(crowd, { half: it.terrain.half });
-    const got = decodeCrowd(a, it.terrain.half).get(idx);
-    if (got && got.anim === 'carry') row = got;
+    // Every row, walkers and the pinned alike, the way a joiner is sent it.
+    const { a, k } = encodeCrowd(crowd, { half: it.terrain.half });
+    const got = decodeCrowd(k, it.terrain.half, decodeCrowd(a, it.terrain.half)).get(idx);
+    if (!got) continue;
+    if (heard[heard.length - 1] !== got.anim) heard.push(got.anim);
+    if (got.anim === 'carry') carried = got;
   }
-  assert.ok(row, 'the walk home with a bar was never sent as carry');
+  const trip = heard.filter((w) => w !== 'walk' && w !== 'hammer');
+  assert.deepEqual(trip, ['barrow', 'load', 'carry'], `the trip was heard as ${heard.join(' → ')}`);
   const f = crowd.figures.get('house:000');
-  assert.ok(Math.hypot(row.x - f.pos[0], row.z - f.pos[1]) < 0.1, 'and where they are rides with it');
+  assert.ok(Math.hypot(carried.x - f.pos[0], carried.z - f.pos[1]) < 0.1, 'and where they are rides with it');
+});
+
+test('a barrow is drawn for the trip, parked for loading, and loaded on the way home', () => {
+  const scene = new THREE.Scene();
+  const view = createFigures(scene, new THREE.MeshStandardMaterial());
+  const figures = new Map();
+  for (const [id, anim] of [['out', 'barrow'], ['loading', 'load'], ['home', 'carry'], ['stroll', 'walk']]) {
+    const f = { id, visible: true, pos: [0, 0], y: 0, yaw: 0, anim, mode: anim === 'load' ? 'idle' : 'walk', speed: 0.5 };
+    view.enrol(f, settlerLook(id, 'sonnet'), 'adult');
+    figures.set(id, f);
+  }
+  const barrows = scene.getObjectByName('resident-barrows');
+  const wheels = scene.getObjectByName('resident-barrow-wheels');
+  const gold = scene.getObjectByName('resident-barrow-gold');
+  view.draw(figures, 0.1);
+  assert.equal(barrows.count, 3, 'out, loading and home each have a barrow; a plain walk does not');
+  assert.equal(wheels.count, 3);
+  assert.equal(gold.count, 1 + 3, 'one bar in the tray being loaded, three in the one going home');
+  // Standing on the ground under them, whatever their stride's bob: the wheel sits on it.
+  const m = new THREE.Matrix4();
+  wheels.getMatrixAt(0, m);
+  assert.ok(Math.abs(m.elements[13] - 0.042 * figures.get('out').look.height) < 1e-6, 'the wheel is on the ground');
+  // Parked for loading, it is let down onto its legs: its back end is lower than a pushed one's.
+  const pushed = new THREE.Matrix4(), parked = new THREE.Matrix4();
+  barrows.getMatrixAt(0, pushed);
+  barrows.getMatrixAt(1, parked);
+  const back = new THREE.Vector3(0, 0.1, 0.1);
+  assert.ok(back.clone().applyMatrix4(parked).y < back.clone().applyMatrix4(pushed).y, 'a parked barrow rests on its legs');
+  // The wheel turns as the body travels, and only then.
+  const turned = figures.get('out').wheelTurn;
+  assert.ok(turned > 0);
+  view.draw(figures, 0.1);
+  assert.ok(figures.get('out').wheelTurn > turned);
+  assert.equal(figures.get('loading').wheelTurn, undefined, 'a parked barrow does not roll');
+  // Nobody fetching gold is no barrow at all, and no draw call for one.
+  for (const f of figures.values()) f.anim = 'walk';
+  view.draw(figures, 0.1);
+  for (const mesh of [barrows, wheels, gold]) {
+    assert.equal(mesh.count, 0);
+    assert.equal(mesh.visible, false);
+  }
+  view.dispose();
 });
 
 test('the islander puts the status line in once, and leaves it alone after that', () => {

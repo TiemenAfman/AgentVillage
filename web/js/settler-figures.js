@@ -41,8 +41,11 @@ const posedMat = new THREE.Matrix4();
 const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
-const carryOffMat = new THREE.Matrix4();
-const carryMat = new THREE.Matrix4();
+// The wheelbarrow's, see BARROW: where it stands, the wheel on its axle, a bar in its tray.
+const barrowObj = new THREE.Object3D();
+const frameMat = new THREE.Matrix4();
+const partMat = new THREE.Matrix4();
+const spinMat = new THREE.Matrix4();
 // Out of sight: the same parking spot hide() puts a whole figure in.
 const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
   new THREE.Vector3(0.0001, 0.0001, 0.0001));
@@ -139,23 +142,89 @@ function heldGeometry(names, grip) {
   g.computeBoundingSphere();
   return g;
 }
-// A bar of gold carried home from the pit (Plans/goudkuil.md), the 'carry' walk: both arms
-// out in front at the same angle, and the bar resting across the two fists. The arms do not
-// swing while they hold it - the legs still walk - which is what makes it read as something
-// with weight, the way the right hand stays up on a bundle of sticks.
+// The wheelbarrow the gold is fetched with (Plans/goudkuil.md): wheeled out empty ('barrow'),
+// parked in front of the pile while it is loaded ('load'), wheeled home full ('carry').
 //
-// Where the fists end up is the hand's grip swung about the shoulder by CARRY_ARM, worked
-// out once here; the bar is drawn level there rather than tipped with the forearms, and a
-// little above the fists so it sits on them. CARRY_BARS is how many can be seen carrying at
-// once: MAX_GOLD on each of a few islands.
-const CARRY_ARM = -1.05;
-const CARRY_BARS = 48;
-const CARRY_AT = (() => {
+// Built in the settler's own frame - feet at the origin, facing +z - at a resident's size, and
+// set down on the ground under them rather than hung off the body: a barrow runs on its wheel,
+// so it takes neither the walk's bob nor a chore's lean, only where they stand and which way
+// they face. The handles end where the fists are with both arms at BARROW_ARM - the grip
+// swung about the shoulder, worked out once here - a hair above the middle of the bob, so the
+// hands ride on them through a stride. Everything below is in a resident's own units.
+const BARROW_ARM = -0.5;
+const BARROW_GRIP = (() => {
   const piv = RESIDENT_PIVOTS.rightHand;
-  const dy = RESIDENT_GRIP[1] - piv[1], dz = RESIDENT_GRIP[2] + 0.02 - piv[2];
-  const c = Math.cos(CARRY_ARM), s = Math.sin(CARRY_ARM);
-  return [0, piv[1] + dy * c - dz * s + 0.018, piv[2] + dy * s + dz * c];
+  const dy = RESIDENT_GRIP[1] - piv[1], dz = RESIDENT_GRIP[2] - piv[2];
+  const c = Math.cos(BARROW_ARM), s = Math.sin(BARROW_ARM);
+  return { y: piv[1] + dy * c - dz * s + 0.012, z: piv[2] + dy * s + dz * c };
 })();
+export const BARROW = {
+  r: 0.042,          // the wheel
+  wheelZ: 0.37,      // its axle, ahead of the feet
+  trayZ: 0.235,      // the middle of the tray
+  trayY: 0.095,      // its floor
+  handleX: 0.095,    // each handle out from the middle, about where the fists are
+  legZ: 0.165,       // the two legs, under the back of the tray
+  legLift: 0.02,     // how far off the ground they ride while it is pushed
+};
+// Parked for loading: a step further on, and let down onto its legs - a turn about the axle,
+// back end down, by as much as lifts the legs off the ground while it is being pushed.
+const BARROW_PARK_AHEAD = 0.05;
+const BARROW_PARK_TILT = -Math.atan2(BARROW.legLift, BARROW.wheelZ - BARROW.legZ);
+// How many can be seen at once: MAX_GOLD on each of a few islands.
+const BARROWS = 64;
+// The gold in the tray: one bar while it is being loaded, all three once it is.
+const TRAY_BARS = [[-0.03, 0, -0.02, 0.1], [0.03, 0, 0.015, -0.08], [0, 0.034, 0, 0.05]];
+
+function barrowGeometry() {
+  const wood = 0x9a6b42, dark = 0x6b4a2e;
+  const box = (w, h, d, hex, x, y, z, rx = 0) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    if (rx) g.rotateX(rx);
+    g.translate(x, y, z);
+    return paintGeo(g, hex);
+  };
+  const { r, wheelZ, trayZ, trayY, handleX, legZ, legLift } = BARROW;
+  // A handle runs from the fist forwards and down past the tray to beside the wheel. A box
+  // laid along +z and turned about x by `pitch` points along (dy, dz): rotateX takes +z to
+  // (0, -sin, cos).
+  const gy = BARROW_GRIP.y, gz = BARROW_GRIP.z;
+  const fy = r + 0.03, fz = wheelZ - 0.02;
+  const dy = fy - gy, dz = fz - gz;
+  const len = Math.sqrt(dy * dy + dz * dz), pitch = Math.atan2(-dy, dz);
+  const parts = [];
+  for (const side of [-1, 1]) {
+    parts.push(box(0.014, 0.014, len, dark, side * handleX, (gy + fy) / 2, (gz + fz) / 2, pitch));
+    parts.push(box(0.012, trayY - legLift, 0.012, dark, side * 0.07, legLift + (trayY - legLift) / 2, legZ));
+    parts.push(box(0.01, fy - r + 0.01, 0.01, dark, side * 0.03, (r + fy) / 2, wheelZ));
+  }
+  // The tray: a floor and four sides, the front one highest, as a barrow is tipped from.
+  parts.push(box(0.15, 0.012, 0.17, wood, 0, trayY, trayZ));
+  parts.push(box(0.012, 0.055, 0.17, wood, -0.075, trayY + 0.03, trayZ));
+  parts.push(box(0.012, 0.055, 0.17, wood, 0.075, trayY + 0.03, trayZ));
+  parts.push(box(0.15, 0.065, 0.012, wood, 0, trayY + 0.035, trayZ + 0.085));
+  parts.push(box(0.15, 0.045, 0.012, wood, 0, trayY + 0.025, trayZ - 0.085));
+  const g = mergeGeometries(parts, false);
+  g.computeVertexNormals();
+  return g;
+}
+
+// The wheel on its own, because it turns: a rim with two spokes across it, which is what
+// shows it turning at all - a plain disc spun about its axle looks exactly like one standing
+// still. Centred on the axle, which runs along x.
+function wheelGeometry() {
+  const r = BARROW.r;
+  const rim = new THREE.CylinderGeometry(r, r, 0.02, 12);
+  rim.rotateZ(Math.PI / 2);
+  const g = mergeGeometries([
+    paintGeo(rim, 0x4a3322),
+    paintGeo(new THREE.BoxGeometry(0.024, r * 1.7, 0.01), 0x9a7a52),
+    paintGeo(new THREE.BoxGeometry(0.024, 0.01, r * 1.7), 0x9a7a52),
+  ], false);
+  g.computeVertexNormals();
+  return g;
+}
+
 // How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
 // Enough that the sword and the torch are held out rather than hanging against the leg,
 // and the stride is halved on top of it so the blade does not windmill on a walk.
@@ -363,15 +432,34 @@ export function createFigures(scene, material, { armed = false } = {}) {
   bundles.frustumCulled = false;
   bundles.visible = false;
   scene.add(bundles);
-  // Everybody's bar of gold on the way home from the pit, the same bargain as the tools:
-  // count 0 - no draw call - while nobody is carrying one. The pile's own ingot
-  // (web/js/goldpit.js), a size down so it sits across a settler's two fists.
-  const bars = new THREE.InstancedMesh(goldBarGeometry({ l: 0.24, h: 0.05, w: 0.09 }), material, CARRY_BARS);
-  bars.count = 0;
-  bars.castShadow = true;
-  bars.frustumCulled = false;
-  bars.visible = false;
-  scene.add(bars);
+  // Everybody's wheelbarrow on the way to and from the gold pit, its wheel, and the gold in
+  // its tray - three batches for the whole crowd, the same bargain as the tools: count 0 and
+  // no draw call while nobody is fetching any. The bars are the pile's own ingot
+  // (web/js/goldpit.js), a size down to lie in a tray.
+  const barrowMesh = (geo, n) => {
+    const m = new THREE.InstancedMesh(geo, material, n);
+    m.count = 0;
+    m.castShadow = true;
+    m.frustumCulled = false;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  };
+  const barrows = barrowMesh(barrowGeometry(), BARROWS);
+  const wheels = barrowMesh(wheelGeometry(), BARROWS);
+  const trayBars = barrowMesh(goldBarGeometry({ l: 0.1, h: 0.032, w: 0.05 }), BARROWS * TRAY_BARS.length);
+  barrows.name = 'resident-barrows';
+  wheels.name = 'resident-barrow-wheels';
+  trayBars.name = 'resident-barrow-gold';
+  // Fixed offsets inside a barrow's own frame, made once: the axle, the park (see
+  // BARROW_PARK_TILT) and where each bar lies in the tray.
+  const axleMat = new THREE.Matrix4().makeTranslation(0, BARROW.r, BARROW.wheelZ);
+  const parkMat = new THREE.Matrix4().makeTranslation(0, 0, BARROW_PARK_AHEAD)
+    .multiply(axleMat)
+    .multiply(new THREE.Matrix4().makeRotationX(BARROW_PARK_TILT))
+    .multiply(new THREE.Matrix4().makeTranslation(0, -BARROW.r, -BARROW.wheelZ));
+  const trayAt = TRAY_BARS.map(([x, y, z, turn]) => new THREE.Matrix4().makeRotationY(turn)
+    .setPosition(x, BARROW.trayY + 0.006 + y, BARROW.trayZ + z));
   const TOOL_OF = { hoe: hoes, chop: axes, fish: rods };
   // The hammer last, after the tools, where the rest of the island has always found it.
   scene.add(hammers);
@@ -442,7 +530,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0, bundleCount = 0, barCount = 0;
+    let hammerCount = 0, bundleCount = 0, barrowCount = 0, trayCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
@@ -451,11 +539,14 @@ export function createFigures(scene, material, { armed = false } = {}) {
       if (f.faceAngle != null) f.yaw = f.faceAngle;
       else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
       const hauling = f.anim === 'haul';
-      const carrying = f.anim === 'carry';
-      const walking = f.anim === 'walk' || f.anim === 'step' || hauling || carrying;
+      // Behind a wheelbarrow to or from the gold pit, or bent over it loading - which is the
+      // woodcutter's gathering stoop, pointed at a tray instead of the ground.
+      const pushing = f.anim === 'barrow' || f.anim === 'carry';
+      const loading = f.anim === 'load';
+      const walking = f.anim === 'walk' || f.anim === 'step' || hauling || pushing;
       const hammering = f.anim === 'hammer';
-      const work = workPose(f.anim, time + f.phase);
-      const bob = f.anim === 'walk' || hauling || carrying ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
+      const work = workPose(loading ? 'gather' : f.anim, time + f.phase);
+      const bob = f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : work ? work.drop + hipLift(work.lean, f.look) : 0;
@@ -475,15 +566,15 @@ export function createFigures(scene, material, { armed = false } = {}) {
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering || work ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
-      // Hauling, the right hand is up on the bundle and only the left arm swings. Carrying
-      // gold, both are out in front under the bar (CARRY_ARM).
+      // Hauling, the right hand is up on the bundle and only the left arm swings. Behind a
+      // barrow both are on the handles (BARROW_ARM) and neither swings.
       const leftArmAngle = work ? work.left
-        : carrying ? CARRY_ARM
+        : pushing ? BARROW_ARM
           : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
       const rightArmAngle = work ? work.right
         : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
           : hauling ? -2.5
-            : carrying ? CARRY_ARM
+            : pushing ? BARROW_ARM
               : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : stride);
       setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : -stride);
@@ -499,20 +590,33 @@ export function createFigures(scene, material, { armed = false } = {}) {
         toolCount.set(tool, n + 1);
       }
       if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
-      if (carrying && barCount < CARRY_BARS) {
-        // Off the person's own transform rather than bodyMat, so the bar is stretched by
-        // neither their build nor their height - only moved to where their fists are.
-        carryOffMat.makeTranslation(CARRY_AT[0] * f.look.build, CARRY_AT[1] * f.look.height, CARRY_AT[2] * f.look.build);
-        carryMat.multiplyMatrices(tmpObj.matrix, carryOffMat);
-        bars.setMatrixAt(barCount++, carryMat);
+      if ((pushing || loading) && barrowCount < BARROWS) {
+        // On the ground where they stand, turned the way they face, at their height - no
+        // bob, no lean, no roll: it is the barrow that runs on the wheel, not the person.
+        const size = f.baseScale * f.look.height;
+        barrowObj.position.set(f.pos[0], f.y, f.pos[1]);
+        barrowObj.rotation.set(0, f.yaw, 0);
+        barrowObj.scale.setScalar(size);
+        barrowObj.updateMatrix();
+        frameMat.copy(barrowObj.matrix);
+        if (loading) frameMat.multiply(parkMat);
+        barrows.setMatrixAt(barrowCount, frameMat);
+        // The wheel turns as far as the body travels: speed over its radius, and a positive
+        // turn about x takes the top of the wheel forwards, which is rolling ahead.
+        if (pushing) f.wheelTurn = ((f.wheelTurn || 0) + ((f.speed || 0.42) * dt) / (BARROW.r * size)) % (Math.PI * 2);
+        partMat.copy(frameMat).multiply(axleMat).multiply(spinMat.makeRotationX(f.wheelTurn || 0));
+        wheels.setMatrixAt(barrowCount, partMat);
+        barrowCount++;
+        const inTray = f.anim === 'carry' ? TRAY_BARS.length : loading ? 1 : 0;
+        for (let i = 0; i < inTray; i++) trayBars.setMatrixAt(trayCount++, partMat.copy(frameMat).multiply(trayAt[i]));
       }
       if (armed) {
         // A settler at work puts the sword away for the hammer or the tool rather than
         // holding both in one fist; the torch stays lit in the other hand unless that one
         // is at work too.
-        if (hammering || work || hauling || carrying) swords.setMatrixAt(f.slot, HIDDEN);
+        if (hammering || work || hauling || pushing) swords.setMatrixAt(f.slot, HIDDEN);
         else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
-        if (work && f.anim !== 'fish') torches.setMatrixAt(f.slot, HIDDEN);
+        if ((work && f.anim !== 'fish') || pushing) torches.setMatrixAt(f.slot, HIDDEN);
         else setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       }
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
@@ -534,9 +638,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
     bundles.count = bundleCount;
     bundles.visible = bundleCount > 0;
     if (bundleCount) bundles.instanceMatrix.needsUpdate = true;
-    bars.count = barCount;
-    bars.visible = barCount > 0;
-    if (barCount) bars.instanceMatrix.needsUpdate = true;
+    for (const [m, n] of [[barrows, barrowCount], [wheels, barrowCount], [trayBars, trayCount]]) {
+      m.count = n;
+      m.visible = n > 0;
+      if (n) m.instanceMatrix.needsUpdate = true;
+    }
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
@@ -556,7 +662,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // rebuilt on every reseed, and instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, hoes, axes, rods, bundles, bars, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...body, hammers, hoes, axes, rods, bundles, barrows, wheels, trayBars, ...[...hats.values()].map((h) => h.mesh)]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();

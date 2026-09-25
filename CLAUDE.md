@@ -501,9 +501,11 @@ every percent. The pit itself is an ordinary civic 3x3 (`civic:goldpit`, placed 
 the town hall's and the seven 3x3 milestones'), with its bars an InstancedMesh hung on
 from `animated.goldpile` (`web/js/goldpit.js`, `count` = bars). On the sea a settler at
 work fetches a bar first (`startGold` in `shared/settlerwalk.mjs`: its own `<id>:gold`
-stream, `MAX_GOLD` out at once) and walks home as the `'carry'` animation - appended to
-`ANIMS` and in `MOVING`, the same kind of word as a woodcutter's `'haul'`, drawn with a bar
-across both fists (`settler-figures.js`). `createCrowd(island, { known, before })` hands each settler's gold errand over from
+stream, `MAX_GOLD` out at once) behind a wheelbarrow: `'barrow'` out empty, `'load'` bent over
+it at the pile, `'carry'` home full - appended to `ANIMS`, the two walks in `MOVING`, the same
+kind of word as a woodcutter's `'haul'`. `settler-figures.js` sets the barrow on the ground
+under them (no bob, no lean: it runs on its wheel), turns the wheel by distance travelled and
+parks it on its legs for loading (`BARROW`, three batches for the whole crowd). `createCrowd(island, { known, before })` hands each settler's gold errand over from
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
