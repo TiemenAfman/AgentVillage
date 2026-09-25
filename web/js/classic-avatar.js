@@ -285,8 +285,8 @@ export function createClassicAvatar(spec, material) {
   // profile on the weapon arm - wind up behind the shoulder, strike forward and down,
   // recover to whatever the arm was doing - driven directly rather than through damp(),
   // which at 15/s would smear a 0.45 s swing into a wave. The held item stops standing
-  // upright for the duration and slashes with the arm, and the counter-rotation fades back
-  // in over the recovery. A block is a held pose, so it goes through the same targets and
+  // upright for the duration and turns about the fist with its own wrist (swingPose), and
+  // the counter-rotation takes over again at the end of the recovery. A block is a held pose, so it goes through the same targets and
   // damping as everything else: the shield arm comes up in front, and the shield turns from
   // its resting yaw to a quarter turn so its face points forward.
   const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol']);
@@ -314,15 +314,27 @@ export function createClassicAvatar(spec, material) {
     return true;
   }
 
-  // Where the swinging arm is, u of the way through, and how much of the item's upright
-  // counter-rotation is cancelled there (1: the item goes with the arm). `rest` is what the
-  // arm would be doing had it not swung, which is where the recovery lands.
+  // Where the swinging arm is, u of the way through, and the item's own turn about the fist
+  // (`wrist`, its rotation.x under the arm). `rest` is what the arm would be doing had it not
+  // swung, which is where the recovery lands. Every item points +y out of the fist, so the
+  // item is at arm + wrist in the arm's frame: held upright the wrist is -arm, and a wrist of
+  // 0 lays the item along the arm back towards the shoulder - which is what "the item goes
+  // with the arm" (w: 1, the old profile) drew: a hammer that struck upwards beside the head,
+  // having snapped from upright to that in the first frame. The wrist starts where the held
+  // pose left it and stays there on the way up, so the arm raised overhead cocks the head
+  // back behind the shoulder; it then snaps forward with the strike so the head comes down
+  // in front at waist height; the recovery hands it back to the upright counter-rotation.
+  const WIND_ARM = -2.7, STRIKE_ARM = -0.5, STRIKE_WRIST = 2.3;
   function swingPose(s, rest) {
-    const u = Math.min(1, s.t / SWING_S);
-    if (u < 0.3) { return { x: THREE.MathUtils.lerp(s.from, -2.4, ease(u / 0.3)), w: 1 }; }
-    if (u < 0.55) return { x: THREE.MathUtils.lerp(-2.4, -0.35, ease((u - 0.3) / 0.25)), w: 1 };
-    const r = ease((u - 0.55) / 0.45);
-    return { x: THREE.MathUtils.lerp(-0.35, rest, r), w: 1 - r };
+    const lerp = THREE.MathUtils.lerp, u = Math.min(1, s.t / SWING_S);
+    const cocked = -s.from;
+    if (u < 0.3) return { x: lerp(s.from, WIND_ARM, ease(u / 0.3)), wrist: cocked };
+    if (u < 0.55) {
+      const e = ease((u - 0.3) / 0.25);
+      return { x: lerp(WIND_ARM, STRIKE_ARM, e), wrist: lerp(cocked, STRIKE_WRIST, e) };
+    }
+    const r = ease((u - 0.55) / 0.45), x = lerp(STRIKE_ARM, rest, r);
+    return { x, wrist: lerp(STRIKE_WRIST, -x, r) };
   }
 
   // Drinking (Plans/bier-en-dronken.md). A beer's hand drinks where any other hand would swing
@@ -461,8 +473,7 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) {
       const mesh = heldMesh[side];
       if (!mesh) continue;
-      const w = swung && side === swing.side ? swung.w : 0;
-      mesh.rotation.x = -pieces[side].pivot.rotation.x * (1 - w);
+      mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x;
       // A glass being drunk from rolls in towards the mouth: +z tips the top to -x, which is
       // inward for the right hand and, through the left hand's mirror, for the left one too
       // once the sign is flipped.

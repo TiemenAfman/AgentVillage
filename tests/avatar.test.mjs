@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // can ask how tall somebody is from Node, without dragging three.js along.
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
-import { Color, MeshBasicMaterial } from 'three';
+import { Color, MeshBasicMaterial, Vector3 } from 'three';
 // Imported dynamically, and it has to be: a static import is hoisted above the register()
 // call and would resolve 'shared/…' before the loader that knows what that means exists.
 // classic-avatar.js now reaches web/js/buildings.js for the held-item primitives, which
@@ -129,12 +129,27 @@ test('a swing takes the weapon arm up behind the shoulder and back, a block turn
   assert.ok(Math.abs(shield.rotation.y - 0.6) < 0.02, 'shield a little forward');
   assert.equal(shield.scale.x, -1, 'left-hand item mirrored');
 
+  // Where the fist and the blade's far end are, in the body's own frame (+z is in front).
+  sword.geometry.computeBoundingBox();
+  const ends = () => {
+    rig.object.updateMatrixWorld(true);
+    const hand = new Vector3().setFromMatrixPosition(rig.handAttach.rightArm.matrixWorld);
+    const tip = new Vector3(0, sword.geometry.boundingBox.max.y, 0).applyMatrix4(sword.matrixWorld);
+    return { hand, tip };
+  };
+  const fromWrist = sword.rotation.x;
   rig.attack();
+  rig.update(still, 1 / 60);
+  assert.ok(Math.abs(sword.rotation.x - fromWrist) < 1e-9, 'the sword does not snap round as the swing starts');
   rig.update(still, 0.12);   // winding up
-  assert.ok(rightArm.rotation.x < -2.0, 'wound up behind the shoulder: ' + rightArm.rotation.x);
-  assert.ok(Math.abs(sword.rotation.x) < 0.3, 'the sword goes with the arm, not upright');
+  assert.ok(rightArm.rotation.x < -2.0, 'arm raised: ' + rightArm.rotation.x);
+  let { hand, tip } = ends();
+  assert.ok(tip.z < hand.z - 0.1, 'blade cocked back behind the shoulder');
   rig.update(still, 0.12);   // striking
   assert.ok(rightArm.rotation.x > -2.0 && rightArm.rotation.x < -0.3, 'mid-strike: ' + rightArm.rotation.x);
+  ({ hand, tip } = ends());
+  // It used to go with the arm, which laid it back along the arm and struck upwards.
+  assert.ok(tip.z > hand.z + 0.1 && tip.y < hand.y, 'blade comes down in front: ' + tip.toArray());
   rig.update(still, 0.3);    // over
   rig.update(still, 1);
   assert.ok(Math.abs(rightArm.rotation.x + 1.3) < 0.05, 'back to holding it out');
