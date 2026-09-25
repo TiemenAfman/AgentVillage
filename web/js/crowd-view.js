@@ -36,11 +36,16 @@ import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { MOVING } from 'shared/settlerwire.mjs';
+import { GOLDPIT_ID } from 'shared/gold.mjs';
 
 // What a body does standing still that is not merely standing: the hammer and the chores
 // (Plans/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
 // moving on this screen, exactly as the hammer always was.
-const AT_WORK = new Set(['hammer', 'hoe', 'weed', 'chop', 'gather', 'fish']);
+// 'load' is bent over a wheelbarrow at the gold pit (Plans/goudkuil.md).
+const AT_WORK = new Set(['hammer', 'hoe', 'weed', 'chop', 'gather', 'fish', 'load']);
+// Walks with something in hand, each kept to its own last stride rather than turned back
+// into a plain walk: a bundle of sticks, and a wheelbarrow to or from the gold pit.
+const LADEN = ['haul', 'carry', 'barrow'];
 
 // How long a body may take to reach the newest word about it. It is normally the time
 // since the word before - a walker's 200 ms - so that it arrives as the next one lands.
@@ -83,6 +88,11 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
   // bundle is already on the region; this is only a faster way to look one up.
   const byId = new Map(buildings.map((b) => [b.id, b]));
+  // On an island with a gold pit every house keeps a wheelbarrow (Plans/goudkuil.md): it goes
+  // along on a trip for gold and stands beside its settler while they hammer. Worked out here
+  // from the buildings rather than sent - the page already knows who is hammering and whether
+  // there is a pit, so every screen draws the same barrows, after a reload too.
+  const barrowsAtHome = byId.has(GOLDPIT_ID);
   const [ox, oz] = region.origin;
 
   // The afternoon boats. index -> what the last message said about that outing, and
@@ -302,13 +312,13 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       // A chore is taken at its word only when the body is not going anywhere here: the
       // glide towards the word that somebody has started hoeing is the last stride of the
       // walk that brought them, the same as the glide towards a stop.
-      // A bar of gold carried home from the pit (Plans/goudkuil.md) is kept the same way as
-      // a bundle of sticks: to its last stride.
-      const gait = f.said === 'haul' || (f.came === 'haul' && !MOVING.has(f.said)) ? 'haul'
-        : f.said === 'carry' || (f.came === 'carry' && !MOVING.has(f.said)) ? 'carry'
-          : MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step';
+      // A bundle of sticks, and a wheelbarrow to or from the gold pit, are kept the same way:
+      // to the last stride (LADEN).
+      const laden = LADEN.find((w) => f.said === w || (f.came === w && !MOVING.has(f.said)));
+      const gait = laden || (MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step');
       f.anim = f.said === 'hammer' ? 'hammer' : !moving ? (AT_WORK.has(f.said) ? f.said : 'still') : gait;
       f.mode = MOVING.has(f.anim) ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
+      f.barrowAtHome = barrowsAtHome && f.anim === 'hammer';
       // Only turn when actually going somewhere: a body nudged a centimetre by a late
       // message should not spin to face it. Towards the word rather than along this
       // frame's step, as briskly as the walk turned - it took its corners at 0.2 and its
