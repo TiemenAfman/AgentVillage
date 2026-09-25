@@ -16,8 +16,13 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-# Links out of the island (a new release, a Jira ticket) go to the phone's browser.
+# Links out of the island (a new release, a Jira ticket) go to the phone's browser, and
+# the new APK is handed to Android's installer through the same plugin.
 tauri-plugin-opener = "2"
+# Fetching that APK (install_update below). rustls rather than the system OpenSSL: nothing
+# to cross-compile for aarch64-linux-android, and the page cannot fetch it itself - it sits
+# on tauri.localhost and GitHub sends no CORS header with a release asset.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [profile.release]
 codegen-units = 1

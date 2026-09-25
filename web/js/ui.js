@@ -661,7 +661,33 @@ export function createUI(handlers) {
   // it on purpose and src-tauri/src/lib.rs hands links to the system browser instead.
   const ipc = globalThis.__TAURI_INTERNALS__;
   if (ipc && typeof ipc.invoke === 'function') {
+    // The download button never leaves the app: Rust fetches the APK and hands it to the
+    // phone's installer (src-android/src/lib.rs, install_update), so a tap is a download and
+    // an "install this app?" rather than a browser, a downloads folder and a notification.
+    // Its href stays what it was, because that is still the way out when this fails.
+    const button = el('update-gate-download');
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (button.dataset.busy) return;
+      button.dataset.busy = '1';
+      const said = button.textContent;
+      button.textContent = 'Fetching the update…';
+      ipc.invoke('install_update')
+        .then(() => { button.textContent = 'Opening the installer…'; })
+        .catch((err) => {
+          button.textContent = said;
+          toast(`Could not fetch the update (${esc(err)}). Trying the browser instead.`);
+          ipc.invoke('plugin:opener|open_url', { url: button.href }).catch(() => {});
+        })
+        .finally(() => { delete button.dataset.busy; });
+    });
+
+    // Everything else that points out of the app - "What is new", the banner's link. The
+    // page asks the opener plugin itself rather than leaving it to on_navigation in
+    // src-android/src/lib.rs: this is the documented way and it does not depend on the
+    // webview handing the click to Rust at all, which is what silently failed up to v0.5.0.
     document.addEventListener('click', (e) => {
+      if (e.defaultPrevented) return;
       const a = e.target && e.target.closest && e.target.closest('a[href^="http"]');
       if (!a) return;
       e.preventDefault();

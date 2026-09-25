@@ -84,9 +84,10 @@ export function updateGate({ speaks = null, mine = null, sea = null } = {}) {
   const common = {
     download: APK_URL,
     notes: RELEASES,
-    steps: 'Tap the button, let the download finish, open it and allow the install. '
+    steps: 'Tap the button; the app fetches it and the phone asks to install it. The first time, '
+      + 'Android sends you to settings to allow this app to install others. '
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
-      + 'once and open the download again. After that, updates install over the top.',
+      + 'once and tap the button again. After that, updates install over the top.',
   };
   if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
     return {

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The update button (src-android/src/lib.rs, install_update) hands the new APK to the
+         package installer. Without this the phone refuses to even ask; with it, it asks
+         once per install and the user allows this app in settings the first time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- From Android 11 an app sees no other app it has not asked about, and a plugin that
          resolves an intent before starting it gets null back and does nothing. The update
