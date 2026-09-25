@@ -647,6 +647,31 @@ export function createUI(handlers) {
     box.hidden = false;
   }
 
+  // Getting out of the app, for the two links on that card and the one in the banner.
+  //
+  // In the phone app the page is Tauri's own (tauri.localhost), so it can ask the opener
+  // plugin itself over IPC - the documented way, and the one that does not depend on
+  // src-android/src/lib.rs's on_navigation being handed the click by the webview. That is
+  // what the download button did up to v0.5.0, and what it did was nothing at all: the
+  // navigation was cancelled, `open_url` failed for want of "opener:default" in
+  // src-android/capabilities/default.json, and the error went into a `let _ =`.
+  //
+  // Nowhere else does this run. A browser tab has no __TAURI_INTERNALS__, and neither does
+  // the desktop window: its page is remote (http://localhost:4747), so no IPC is opened to
+  // it on purpose and src-tauri/src/lib.rs hands links to the system browser instead.
+  const ipc = globalThis.__TAURI_INTERNALS__;
+  if (ipc && typeof ipc.invoke === 'function') {
+    document.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest && e.target.closest('a[href^="http"]');
+      if (!a) return;
+      e.preventDefault();
+      // Said out loud when it fails. A button that quietly does nothing is exactly the bug
+      // this replaces, and on a phone there is no console anybody is going to look at.
+      ipc.invoke('plugin:opener|open_url', { url: a.href })
+        .catch(() => toast(`Could not open <b>${esc(a.href)}</b>. Copy it into your browser.`));
+    });
+  }
+
   // The two-step confirmation shown while walking, before anyone is sent away.
   function setConfirm(item) {
     const p = el('walk-confirm');

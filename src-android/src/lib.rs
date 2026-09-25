@@ -22,7 +22,14 @@ pub fn run() {
                     if url.host_str() == Some("tauri.localhost") || url.scheme() == "tauri" {
                         return true;
                     }
-                    let _ = handle.opener().open_url(url.as_str(), None::<&str>);
+                    // Not `let _ =`: that is how the update button came to do nothing at
+                    // all for three releases. The page asks the opener over IPC first now
+                    // (web/js/ui.js), so this is the fallback - and a fallback that fails
+                    // silently is no fallback. The window is still never navigated away
+                    // from: there is no back button here to return by.
+                    if let Err(e) = handle.opener().open_url(url.as_str(), None::<&str>) {
+                        eprintln!("promptholm: could not hand {url} to the phone: {e}");
+                    }
                     false
                 })
                 .build()?;
