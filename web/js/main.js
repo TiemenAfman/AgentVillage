@@ -458,12 +458,14 @@ function faceUp(id, fig) {
 // conversation uses, so everybody watching sees that much - and drink it on this page:
 // the pint, the gulp and, from the third, the sway are ours alone (crowd-view.js giveBeer).
 // Reach is measured to the body, not to their house, and one gift is going at a time.
+// Only on foot with both feet on the ground: not from the boat, the bicycle (`w.bike`,
+// never `aboard()`, which is the boat alone - Plans/fiets.md) or halfway through a jump.
 const GIVE_R = 1.6;
 let gift = null;   // { id, until } while a beer is going down
 function giveTarget() {
   if (!state.settlers || state.inside || state.mode !== 'walk' || !state.walk) return null;
   const w = state.walk.state;
-  if (state.walk.aboard() || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
+  if (state.walk.aboard() || w.bike || !w.grounded || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
   let best = null, bestD = GIVE_R * GIVE_R;
   for (const f of state.settlers.figures().values()) {
     if (!f.visible || f.hidden || !f.to) continue;
