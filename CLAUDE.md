@@ -951,6 +951,17 @@ The rules live once in `scripts/model-rules.mjs`, and `tests/models.test.mjs` ru
 no Blender. `npm run models` is idempotent; a second run that changes a byte means the bake
 is not deterministic.
 
+A part that moves but does not stand on the ground (the sawmill's blade, its log, its rollers)
+is baked *inside* an asset that does, with its Blender origin on its own axis, and the building
+leaves it out of the merge with `meshAsset(name, hex, { skip })` - `isSawmillMoving` in
+buildings.js is the example, `web/js/sawmill.js` hangs the parts on their `at`. A separate asset
+for it would fail the on-the-ground rule; the windmill's sails dodge that with a hard-coded lift.
+The smithy adds the other half of that pattern: a still part baked only to be *measured* (the
+anvil, whose `at` is where the smith strikes) and `anchor.door`, and a passive settler - the
+player rig (`createClassicAvatar`) with a hammer, nobody's agent - driven by `web/js/smithy.js`
+off `uNight` (Plans/smidse.md). A glow that dims at runtime sets `aEmissive` below 1 on its
+geometry; the bake still only allows 0 or 1.
+
 ## The two workbench pages
 
 - `/demo` — every object the island can build on one field, with a night slider and a
