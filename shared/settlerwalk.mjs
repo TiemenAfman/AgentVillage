@@ -213,7 +213,10 @@ export function createWalk(terrain, village = null) {
     // A building's keeper (`opts.post`, Plans/kroegbaas-en-burgemeester.md) says how far
     // out their door is: a civic lot is three cells wide, and the house's 0.85 is inside it.
     const reach = opts.reach != null ? opts.reach : (spec.kind === 'shed' ? 0.46 : 0.85);
-    const home = [worldPos[0] + ox * reach, worldPos[2] + oz * reach];
+    // And to one side of the doorway if they are told to (`opts.aside`): (-oz, ox) is the
+    // door direction turned a quarter.
+    const aside = opts.aside || 0;
+    const home = [worldPos[0] + ox * reach - oz * aside, worldPos[2] + oz * reach + ox * aside];
     const f = {
       // ---- both halves read these
       id, spec,
@@ -229,9 +232,11 @@ export function createWalk(terrain, village = null) {
       strollIn: 0, keepHome: false, gate: undefined, gathering: false,
       // At a chore, and walking home from one with a bundle of wood. See startChore.
       work: null, hauling: false,
-      // Kept by a building rather than housed by one: 'innkeeper' or 'mayor', or null. A
-      // keeper never strolls off, does chores, fetches gold or takes a boat - see startRound.
-      post: opts.post || null,
+      // Kept by a building rather than housed by one: who they are ('innkeeper', 'mayor',
+      // 'clerk', 'headmistress', 'priest' - KEEPERS in shared/palette.mjs), or null. A keeper
+      // never strolls off, does chores, fetches gold or takes a boat; `serves` and `tours`
+      // are the two rounds they may walk instead - see startRound.
+      post: opts.post || null, serves: !!opts.serves, tours: !!opts.tours,
       // The two errand hooks, as records rather than closures - see walkRoute below.
       after: null, then: null,
       // Lent out. `chartered` means an errand planned somewhere else has this body and
@@ -509,7 +514,7 @@ export function createWalk(terrain, village = null) {
       f.home = a.home;
       // An innkeeper back from a table goes straight out to the next one; everybody else
       // has had their walk for a while. One draw either way.
-      f.strollIn = f.post === 'innkeeper' ? f.rng.range(3, 9) : f.rng.range(40, 160);
+      f.strollIn = f.serves ? f.rng.range(3, 9) : f.rng.range(40, 160);
       strolling--;
     } else if (a.kind === 'gather-home') {
       f.keepHome = false;
@@ -552,17 +557,16 @@ export function createWalk(terrain, village = null) {
   }
 
   // A keeper's round (Plans/kroegbaas-en-burgemeester.md): out to a cell of the square
-  // near their own door and back, the same two walks a stroll is. The mayor takes one now
-  // and then across the whole square; the innkeeper only while the village is gathered,
-  // and only as far as the tables by the tavern - bringing the drinks round rather than
-  // standing among the customers.
-  const ROUND_REACH = { innkeeper: 7, mayor: 12 };
+  // near their own door and back, the same two walks a stroll is. One who `tours` - the
+  // mayor, the priest - takes one now and then across the whole square; one who `serves` -
+  // the innkeeper - only while the village is gathered, and only as far as the tables by
+  // the tavern, bringing the drinks round rather than standing among the customers.
   function startRound(f) {
     const gate = gateOf(f);
     if (gate == null || !squareList.length) { f.strollIn = f.rng.range(20, 60); return; }
     const size = terrain.size;
     const gx = gate % size, gz = (gate - (gate % size)) / size;
-    const reach = ROUND_REACH[f.post] || 8;
+    const reach = f.serves ? 7 : 12;
     const near = squareList.filter((k) => {
       const kx = k % size, kz = (k - kx) / size;
       const d = dist(kx - gx, kz - gz);
@@ -1154,7 +1158,7 @@ export function createWalk(terrain, village = null) {
           continue;
         }
         // The innkeeper does not come to the gathering: the gathering comes to the tavern.
-        if (gatherActive && !f.gathering && f.post !== 'innkeeper' && !f.deckY && roads && squareList.length && starting < GATHER_PER_TICK) {
+        if (gatherActive && !f.gathering && !f.serves && !f.deckY && roads && squareList.length && starting < GATHER_PER_TICK) {
           f.gathering = true;
           starting++;
           startGather(f);
@@ -1164,8 +1168,8 @@ export function createWalk(terrain, village = null) {
         f.strollIn -= dt;
         if (f.post) {
           // A keeper keeps to their post: a round of the square, never a stroll or a chore.
-          const serving = f.post === 'innkeeper' && gatherActive;
-          const touring = f.post === 'mayor' && !gatherActive && nightAmount <= 0.55;
+          const serving = f.serves && gatherActive;
+          const touring = f.tours && !gatherActive && nightAmount <= 0.55;
           if ((serving || touring) && f.strollIn <= 0 && roads && strolling < MAX_STROLL) {
             startRound(f);
             if (f.mode === 'walk') continue;

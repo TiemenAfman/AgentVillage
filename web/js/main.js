@@ -418,20 +418,38 @@ function faceUp(id, fig) {
   });
 }
 
-// The innkeeper and the mayor have no session to carry on. You look them in the eye like
-// anybody else; the mayor then opens the register, which is their office's work, and the
-// innkeeper says how the house is doing - by the island's own clock, the one the sea sends
-// the village to the square by.
+// The keepers have no session to carry on. You look them in the eye like anybody else;
+// the mayor then opens the register, which is their office's work, and the rest say
+// something about their own building - by the island's own clock, the one the sea sends
+// the village to the square by, and for the gold clerk by the pit's own count.
 function speakToKeeper(it) {
   const fig = state.settlers ? state.settlers.figure(it.id) : null;
   faceUp(it.id, fig);
   if (it.post === 'mayor') { openTownHall(); return; }
   const c = islandClock(timeNow());
   const on = gatheringAt(c.day, c.hour);
-  state.ui.toast(on
-    ? `“Busy — it’s ${on.name}. Grab a table on the square and I’ll bring it out.”`
-    : c.hour >= 22 || c.hour < 7 ? '“We’re closed. Come back when there’s light in the sky.”'
-      : '“Quiet in here. The door’s open, and the tables are yours.”');
+  const night = c.hour >= 22 || c.hour < 7;
+  const said = {
+    innkeeper: on
+      ? `“Busy — it’s ${on.name}. Grab a table on the square and I’ll bring it out.”`
+      : night ? '“We’re closed. Come back when there’s light in the sky.”'
+        : '“Quiet in here. The door’s open, and the tables are yours.”',
+    clerk: (() => {
+      const g = state.gold;
+      if (state.guest || !g || !g.known) return '“Every bar is on the books and every bar is in the pit. Nothing has been signed out yet.”';
+      if (g.reset) return `“All ${g.max} back in the pit — the window turned over. Fresh ledger.”`;
+      return `“${g.bars} of ${g.max} left in the pit${g.resetsAt ? `, and it fills again by ${hhmm(g.resetsAt)}` : ''}. I write down every bar that goes out.”`;
+    })(),
+    headmistress: on ? `“The children are out for ${on.name}. Mind the chalk on your sleeves.”`
+      : night ? '“School’s shut. Lessons again in the morning.”'
+        : c.day === 0 || c.day === 6 ? '“No lessons at the weekend — even the apprentices need a rest.”'
+          : '“Lessons are on. The apprentices learn by watching, mostly.”',
+    priest: on ? `“Go on, it’s ${on.name}. I’ll keep the chapel.”`
+      : c.day === 0 ? '“Sunday. The door is open for anyone.”'
+        : night ? '“A quiet night. The lamp stays lit.”'
+          : '“Peace be with you. The bell keeps the island’s hours.”',
+  };
+  if (said[it.post]) state.ui.toast(said[it.post]);
 }
 
 // Addressing a settler opens their session and lets you carry it on.

@@ -27,6 +27,10 @@ function island(n = 6) {
   buildings.push({ id: 'civic:tavern', kind: 'civic', civicType: 'tavern', name: 'The tavern', plot: { gx: mid + 1, gz: mid - 5, w: 3, d: 3, rot: 2 } });
   buildings.push({ id: 'civic:townhall', kind: 'civic', civicType: 'townhall', name: 'Town Hall', plot: { gx: mid - 4, gz: mid - 5, w: 3, d: 3, rot: 2 } });
   buildings.push({ id: 'civic:well', kind: 'civic', civicType: 'well', name: 'The well', plot: { gx: mid, gz: mid + 3, w: 1, d: 1, rot: 0 } });
+  // Facing -z, towards the lane from the other side.
+  buildings.push({ id: 'civic:goldpit', kind: 'civic', civicType: 'goldpit', name: 'The gold pit', plot: { gx: mid + 5, gz: mid + 2, w: 3, d: 3, rot: 0 } });
+  buildings.push({ id: 'civic:school', kind: 'civic', civicType: 'school', name: 'The school', plot: { gx: mid - 9, gz: mid + 2, w: 3, d: 3, rot: 0 } });
+  buildings.push({ id: 'civic:chapel', kind: 'civic', civicType: 'chapel', name: 'The chapel', plot: { gx: mid - 5, gz: mid + 2, w: 3, d: 3, rot: 0 } });
   return {
     id: 'testholm', terrain, mid, paved,
     bundle: {
@@ -48,7 +52,10 @@ test('the tavern and the town hall have somebody at the door, and the well does 
   assert.equal(crowd.figures.get('civic:well'), undefined);
   // After the houses on the wire, so nobody who was already here changes index.
   const ids = [...crowd.figures.keys()];
-  assert.deepEqual(ids.slice(-2), ['civic:tavern', 'civic:townhall']);
+  assert.deepEqual(ids.slice(-5), ['civic:tavern', 'civic:townhall', 'civic:goldpit', 'civic:school', 'civic:chapel']);
+  assert.equal(crowd.figures.get('civic:goldpit').post, 'clerk');
+  assert.equal(crowd.figures.get('civic:school').post, 'headmistress');
+  assert.equal(crowd.figures.get('civic:chapel').post, 'priest');
   // Out of the front of the lot, not inside it: a 3x3 lot's front is 1.5 from its middle.
   const t = island().bundle.buildings.find((b) => b.id === 'civic:tavern').plot;
   const cz = t.gz + 1.5 - SIZE / 2;
@@ -65,6 +72,11 @@ test('they look like what they keep, and the same on the sea as on the page', ()
   assert.equal(a.height, settlerLook('civic:townhall', 'unknown', 'adult').height);
   assert.equal(residentLook({ id: 'civic:tavern', kind: 'civic', civicType: 'tavern' }).hatShape, 'none');
   assert.equal(keeperOf({ id: 'house:1', kind: 'house' }), null);
+  // The headmistress was asked for as a woman, whatever her id would have hashed to.
+  const head = residentLook({ id: 'civic:school', kind: 'civic', civicType: 'school' });
+  assert.equal(head.presentation, 'woman');
+  assert.equal(head.outfit, 'skirt');
+  assert.equal(residentLook({ id: 'civic:chapel', kind: 'civic', civicType: 'chapel' }).tunic, KEEPERS.chapel.dress.tunic);
 });
 
 test('the innkeeper keeps to the door on an ordinary day; the mayor walks the square', () => {
@@ -101,4 +113,29 @@ test('at a gathering the innkeeper serves the tables, and the mayor comes too', 
   crowd.walk.setGather(false);
   for (let i = 0; i < 30000; i++) crowd.advance(1, 0);
   assert.ok(far(inn.pos, inn.home) < 0.6, 'the innkeeper did not go back behind the bar');
+});
+
+test('the gold clerk stands beside the open end of the pit, out of the way of the barrows', () => {
+  const v = island();
+  const crowd = createCrowd(v);
+  const clerk = crowd.figures.get('civic:goldpit');
+  const p = v.bundle.buildings.find((b) => b.id === 'civic:goldpit').plot;
+  const cx = p.gx + 1.5 - SIZE / 2, cz = p.gz + 1.5 - SIZE / 2;
+  // rot 0 opens to -z: out in front along z, and KEEPERS.goldpit.aside off to the side in x.
+  assert.ok(cz - clerk.home[1] > 1.5, 'the clerk is not out in front of the pit');
+  assert.ok(Math.abs(clerk.home[0] - cx - KEEPERS.goldpit.aside) < 1e-9, `the clerk stands ${(clerk.home[0] - cx).toFixed(2)} aside, not ${KEEPERS.goldpit.aside}`);
+});
+
+test('the priest walks the square, the headmistress keeps to her school', () => {
+  const crowd = createCrowd(island());
+  const priest = crowd.figures.get('civic:chapel');
+  const head = crowd.figures.get('civic:school');
+  let priestFurthest = 0, headFurthest = 0;
+  for (let i = 0; i < 40000; i++) {
+    crowd.advance(1, 0);
+    priestFurthest = Math.max(priestFurthest, far(priest.pos, priest.home));
+    headFurthest = Math.max(headFurthest, far(head.pos, head.home));
+  }
+  assert.ok(priestFurthest > 1.5, `the priest never left the chapel (${priestFurthest.toFixed(2)})`);
+  assert.ok(headFurthest < 0.6, `the headmistress wandered ${headFurthest.toFixed(2)} from the door`);
 });

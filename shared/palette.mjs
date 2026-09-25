@@ -152,23 +152,43 @@ export function styleOf(spec) {
   return PALETTE[spec.style] ? spec.style : 'unknown';
 }
 
-// ---- the two who keep a building rather than a house ------------------------------
-// The innkeeper stands at the tavern and the mayor at the town hall
+// ---- those who keep a building rather than a house --------------------------------
+// The innkeeper stands at the tavern, the mayor at the town hall, the gold clerk at the
+// gold pit, the headmistress at the school and the priest at the chapel
 // (Plans/kroegbaas-en-burgemeester.md). They go by the building's own id - `civic:tavern`,
 // `civic:townhall` - which is never redacted, so the roster, /api/crowd-ids and the page
 // all know them already. This table is the one list of which buildings have somebody.
 //
-// `post` is how they behave on the sea (shared/settlerwalk.mjs), `dress` what they wear
+// `post` is who they are, and two flags say how they behave on the sea
+// (shared/settlerwalk.mjs): `serves` brings the drinks round the square while the village
+// is gathered instead of joining it, `tours` walks a round of the square now and then.
+// Neither is staying at the door and going along when everybody else goes. `aside` stands
+// them that far to one side of the doorway: the gold pit's open end is where the barrows
+// go in. `dress` is what they wear
 // over their own hashed face and height: everybody's height sets their stride, so the sea
 // and the page both call residentLook below and arrive at the same person.
 export const KEEPERS = {
   tavern: {
-    post: 'innkeeper', name: 'The innkeeper',
+    post: 'innkeeper', name: 'The innkeeper', serves: true,
     dress: { hatShape: 'none', tunic: 0xe9e2d2, trim: 0x6a4526, build: 1.18 },
   },
   townhall: {
-    post: 'mayor', name: 'The mayor',
+    post: 'mayor', name: 'The mayor', tours: true,
     dress: { hatShape: 'dome', hat: 0x1d1c22, tunic: 0x28304a, trim: 0xb8923e, build: 1.04 },
+  },
+  goldpit: {
+    post: 'clerk', name: 'The gold clerk', aside: 1.2,
+    dress: { hatShape: 'cap', hat: 0x3b3a36, tunic: 0x6e7a5a, trim: 0x2e2a24 },
+  },
+  // Asked for as a woman, so the dress says so rather than leaving it to the id's hash.
+  school: {
+    post: 'headmistress', name: 'The headmistress',
+    dress: { presentation: 'woman', outfit: 'skirt', hatShape: 'none', tunic: 0x7a2f3a, trim: 0x2b2530 },
+  },
+  // A black cassock with the white of the collar in the trim.
+  chapel: {
+    post: 'priest', name: 'The priest', tours: true,
+    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'none', tunic: 0x18181c, trim: 0xe8e4da },
   },
 };
 

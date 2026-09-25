@@ -16,6 +16,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
+  kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
+  gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.
 - [groot-kasteel.md](groot-kasteel.md) — het kasteel op twee bij twee super-cellen: een kavel van
   7 bij 7 en het model 7/3 zo groot. Een nieuw kasteel neemt het dichtstbijzijnde vrije, vlakke
   blok van de stad; een bestaand kasteel groeit op zijn plek met de voorkant waar hij was, of
