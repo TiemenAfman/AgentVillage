@@ -453,3 +453,39 @@ Als ik jouw huidige versie als basis neem, zou ik de roadmap ongeveer zo doen:
 **8. Weer/fotomodus**
 
 Daarmee krijg je iets dat veel meer voelt als een **kleine multiplayer open-world game**, terwijl de bestaande Claude/Code-integratie juist de reden blijft waarom deze wereld anders is dan een gewone game.
+
+---
+
+# Wat er nog ontbreekt op het eiland (25 september 2026)
+
+Een rondgang langs wat het eiland kan tekenen. Gemaakt en op `/demo` te zien, nog niet
+geplaatst: de zagerij en de smidse (`Plans/zagerij.md`, `Plans/smidse.md`), en de stal met
+paard, de dieren en de veld- en dorpsspullen (`Plans/stal-en-veld.md`). Wat hieronder staat is
+nog alleen een idee.
+
+### 15. Werkplekken voor de gereedschapseconomie
+
+Hoort bij #13 Werkplaats: groenten → markt → munten → gereedschap. Elk gereedschap krijgt een
+plek waar je het gebruikt, met een passieve settler die daar werkt (zoals de smid):
+
+* **Zagerij en smidse echt plaatsen** — de modellen zijn af; nog kiezen welke trede en welke
+  plek (bij het plein, of de zagerij aan de bosrand; dat laatste vraagt een bosregel op de
+  server, want het bos wordt nu pas in de browser verspreid).
+* **Steengroeve of mijn** 🪨 — bij de houweel: een wand met een gat, een lorrie op rails, een
+  hoop stenen; een steenhouwer die hakt.
+* **Vissershut** 🎣 — bij de hengel, aan de haven: netten te drogen, een visrek, een roeibootje
+  op de kant; een visser die zijn net uitslaat.
+
+### 16. Trainingsveld
+
+Er ligt al een plaatje voor klaar (`Ideas/Images to Render/trainingarea.png`). Oefenpoppen van
+stro om op te slaan, schietschijven, een rek met houten zwaarden. Past bij het vechten dat er
+al is (zwaard, schild, aanvallen en blokkeren): een plek om te oefenen zonder dat een bewaker
+terugslaat.
+
+### 17. Een geheugenplek
+
+Uitwerking van #10 Museum / chronicle, maar als iets wat je op het eiland ziet staan: een
+monument of gedenksteen per afgerond project of grote mijlpaal, met de naam erop; of het
+Chronicle-gebouw zelf, waar binnen de tijdlijn hangt. Zo laat een project dat klaar is een spoor
+na op het eiland in plaats van alleen in de lijst.

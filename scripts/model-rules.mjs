@@ -36,7 +36,7 @@ export const ANCHORS = ['smoke', 'flag', 'door', 'sign'];
 
 // What an asset is for, taken from its name. A collection in a .blend has to start with
 // one of these, so the budget below can be found without anyone writing it down twice.
-export const CLASSES = ['house_', 'roof_', 'addon_', 'prop_', 'civic_', 'flora_'];
+export const CLASSES = ['house_', 'roof_', 'addon_', 'prop_', 'civic_', 'flora_', 'fauna_'];
 
 // Triangles per asset, longest prefix first. The cost of a shape is not its own size but
 // how often the island draws it: a rock is instanced by the thousand and a tavern stands
@@ -53,6 +53,11 @@ export const BUDGETS = [
   ['roof_', 300],
   ['house_', 600],
   ['civic_', 1500],
+  // An animal: a horse in its paddock, a few sheep on a field, hens by a hut. Tens of them at
+  // most - thirty at a thousand is 30k, under what the three hundred houses cost - each in a
+  // handful of parts that move (body, head, tail, four legs), and never instanced. The animals
+  // made from a picture (scripts/build-fauna.py) need the room: at 500 a cow's legs were sticks.
+  ['fauna_', 1200],
 ];
 
 // A whole .blend authored as one building is a hero asset: it is drawn a handful of times
@@ -131,7 +136,7 @@ export function checkSet(set, data) {
     // which is exactly too late.
     const { lo, hi } = boxOf(data, names);
     if (Math.abs(lo[1]) > GROUND) bad.push(`${set}/${asset}: sits ${lo[1].toFixed(3)} off the ground, not on it`);
-    if (asset.startsWith('prop_') || asset.startsWith('flora_')) {
+    if (asset.startsWith('prop_') || asset.startsWith('flora_') || asset.startsWith('fauna_')) {
       for (const [k, axis] of [[0, 'x'], [2, 'z']]) {
         const middle = (lo[k] + hi[k]) / 2;
         if (Math.abs(middle) > CENTRED) bad.push(`${set}/${asset}: its middle is ${middle.toFixed(3)} off the ${axis} origin, and props are placed by their middle`);

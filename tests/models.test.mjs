@@ -39,10 +39,14 @@ import { BENCHY } from '../web/js/benchy-mesh.js';
 import { BICYCLE } from '../web/js/bicycle-mesh.js';
 import { SAWMILL } from '../web/js/sawmill-mesh.js';
 import { SMITHY } from '../web/js/smithy-mesh.js';
+import { FAUNA } from '../web/js/fauna-mesh.js';
+import { STABLE } from '../web/js/stable-mesh.js';
+import { FARMYARD } from '../web/js/farmyard-mesh.js';
+import { BAKERY } from '../web/js/bakery-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -262,7 +266,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'goldpit', 'greatcastle', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'stable', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
@@ -271,7 +275,7 @@ test('the register spans every set and answers by part name alone', () => {
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
     // (scripts/build-bicycle.py, Plans/fiets.md).
     'bicycle', 'castle',
-    'civic_chapel', 'civic_fountain', 'civic_goldpit', 'civic_quay_platform',
+    'civic_bakery', 'civic_chapel', 'civic_fountain', 'civic_goldpit', 'civic_quay_platform',
     // The sawmill is two, the barn and its yard; what turns is parts inside the yard
     // (scripts/build-sawmill.py, Plans/zagerij.md).
     'civic_sawmill', 'civic_sawmill_yard',
@@ -279,10 +283,14 @@ test('the register spans every set and answers by part name alone', () => {
     // The smithy too: the house and the lean-to, with its bellows, fire and lantern inside the
     // lean-to's asset (scripts/build-smithy.py, Plans/smidse.md).
     'civic_smithy', 'civic_smithy_yard',
+    // The stable and its paddock (scripts/build-stable.py); the horse is fauna_horse.
+    'civic_stable', 'civic_stable_yard',
     'civic_tables', 'civic_watertower',
     // The mill is two assets, because its sails turn and the tower does not.
     'civic_windmill', 'civic_windmill_sails',
     'clocktower',
+    // The animals, each in moving parts (scripts/build-fauna.py, web/js/fauna.js).
+    'fauna_chicken', 'fauna_cow', 'fauna_duck', 'fauna_goat', 'fauna_gull', 'fauna_horse', 'fauna_pig', 'fauna_sheep', 'fauna_sparrow', 'fauna_sparrow_flying',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     // The castle on its seven by seven, built at that size rather than the castle drawn at 7/3
@@ -292,7 +300,9 @@ test('the register spans every set and answers by part name alone', () => {
     'lighthouse',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar', 'prop_goldcoin'].sort(),
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar', 'prop_goldcoin',
+      // The fields and the water's edge (scripts/build-farmyard.py).
+      'prop_beehive', 'prop_haystack', 'prop_reeds', 'prop_scarecrow', 'prop_waterlily'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'statue', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
