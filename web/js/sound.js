@@ -610,7 +610,7 @@ export function createSound({ camera, scene, island }) {
         for (const crowd of look.crowds) {
           if (!crowd) continue;
           for (const f of crowd.values()) {
-            if (!f.visible || f.hidden || f.anim === 'walk' || f.anim === 'step') continue;
+            if (!f.visible || f.hidden || f.anim === 'walk' || f.anim === 'haul' || f.anim === 'step') continue;
             const ex = f.pos[0] - tavernAt.x, ez = f.pos[1] - tavernAt.z;
             if (ex * ex + ez * ez < 11 * 11) busy++;
           }

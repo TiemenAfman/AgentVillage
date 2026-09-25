@@ -320,8 +320,8 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
   const friendly = meshes(false), hostile = meshes(true);
   assert.equal(hostile.length, friendly.length + 2);
   // Every resident gets one of each: the two extra meshes count exactly as far as the torso.
-  // They come straight after the eleven body meshes, before the hats and the hammer.
-  const extra = hostile.slice(11, 13);
+  // Clothing variants may add batches; the weapon identities do not depend on order.
+  const extra = ['resident-swords', 'resident-torches'].map((name) => hostile.find((m) => m.name === name));
   const torso = hostile[0];
   for (const m of extra) assert.equal(m.count, torso.count);
   assert.equal(torso.count, 2);

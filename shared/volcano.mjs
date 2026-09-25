@@ -216,14 +216,15 @@ export const guardId = (n) => `guard:${n}`;
 export const GUARDHOUSE_LOOKS_LIKE = 'castle';
 
 // How far the guardhouse reaches from the middle of its lot along the ground, the step it
-// stands on included: the castle's towers stand out to 0.97 either way and the porch shows
-// 0.23 past them (web/js/buildings.js, measured off buildBuilding - tests/imp.test.mjs holds
-// the model to this number, since this side may not load it). Everybody who lives at the
+// stands on included - 1.22 for the baked castle (assets/castle, scripts/build-castle.py),
+// measured off buildBuilding; the procedural one it replaced reached 1.2, its towers at 0.97
+// and the porch 0.23 past them. tests/imp.test.mjs holds the model to this number, since
+// this side may not load it. Everybody who lives at the
 // guardhouse stands outside it (lib/crowd.mjs, guardHome); before this number existed the
 // first row was put 0.85 out, which is between the front wall and the towers' front, and
 // the outer two guards of it stood inside a tower. A new guardhouse model means measuring
 // again.
-export const GUARDHOUSE_REACH = 1.2;
+export const GUARDHOUSE_REACH = 1.22;
 
 // How many guards there should be: BASE, and PER_ISLANDER more for every islander online,
 // never more than CAP. The cap is not decoration: the hostility tick has three path searches

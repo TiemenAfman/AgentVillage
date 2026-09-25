@@ -1,44 +1,7 @@
-"""Author the hamlet's dry stone wall in Blender. Run with:
+"""Model the hamlet walls: recessed bonds, weathered blocks and chamfered coping.
 
-    blender --background --python scripts/build-wall.py
-
-It writes assets/wall/promptholm-wall.blend and bakes it to web/js/wall-mesh.js.
-Running it again replaces both, so edits made by hand in the .blend are lost - export
-those with `npm run models` instead.
-
-The wall is the top rung of the boundary ladder in web/js/hamlets.js: what a hamlet of
-manors and keeps puts round its own land. It was a swept profile, and the profile leaned
-in as it rose, which is what a stacked thing does - but it leaned in by exactly the same
-amount for four hundred metres, and the one thing a dry stone wall is never is uniform.
-It is the stones now:
-
-    prop_wall_a       a bay one ground cell long: eight stones in three courses
-    prop_wall_b       the same wall laid by somebody else
-    prop_wallpier     the pier a gateway leaves behind where a road crosses
-
-A bay is one cell because that is how buildBorders() chains an edge - a run is a whole
-number of cells, and a bay of any other length would leave a stub at the end of every
-run. hamlets.js picks between the two bays off the same hash the jitter uses.
-
-The batter comes out of the courses rather than out of a profile: each course is narrower
-than the one below, so the wall leans in as it rises, which is what a stacked thing does.
-And the middle course is offset half a stone and hangs over both ends of the bay, which is
-the one thing a bay-per-cell scheme has to answer for. Two bays butting on the cell line
-put a straight joint the full height of the wall every four metres, dead straight, all the
-way round the hamlet; a course laid across that line covers it, exactly as a bond covers
-the joints inside a bay.
-
-What the model does not draw is the masonry. web/textures/stone-stacked.png already draws
-that - staggered rows, each stone its own tone, a deep joint between them - and it is the
-loudest sheet on the island. So the model is the mass and the silhouette, the sheet is the
-stonework, and between them there is no third opinion: see the note about two things
-deciding one thing in assets/README.md.
-
-Coordinates are the island's - Y up, the run along +Z - and every shape here is a box.
-The first version of this set used build-flora.py's `lobe()`, the knocked-about icosphere
-it makes its boulders out of, on the reasoning that a rock and a stone in a wall are the
-same object. They are not: a boulder is seen alone and a wall stone is seen in a course,
-and twenty facets apiece in a row read as a heap of gemstones. See stone() below.
+Run: node scripts/blender.mjs --background --python scripts/build-wall.py
+A one-cell bay stays within 120 triangles and the existing boundary footprint.
 """
 import bpy
 import runpy
@@ -57,7 +20,11 @@ bpy.ops.object.delete(use_global=False)
 # does not.
 COLORS = {
     'stone:wall': 0x8a857c,
-    'stone:coping': 0x9a958c,
+    'plain:coping': 0xafa48e,
+    'stone:warm': 0x9b907b,
+    'stone:pale': 0xa49b89,
+    'stone:shade': 0x827e70,
+    'plain:joint': 0x716e60,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -101,109 +68,63 @@ def adopt(name, mat, coll):
 
 
 def stone(name, mat, coll, at, size):
-    """One stone: a box, twelve triangles, centred on `at` and sized (w, h, d) in island
-    axes.
-
-    A box and not the knocked-about icosphere the rocks on the beach are made of, which is
-    the whole lesson of the first version of this set. An icosphere at one subdivision has
-    twenty faces and every one of them catches the light differently, so five of them in a
-    row read as a heap of gemstones - and worse, a ball tapers to a point at each end, so a
-    bay tapered too and a run came out beaded: fat in the middle of every cell and thin on
-    every cell line, the length of the island.
-
-    A box has flat ends that butt against the next bay exactly, flat sides for the sheet to
-    lie on, and eight fewer triangles - which is what pays for nine stones to the bay
-    instead of five. What it does not have is rubble's irregular face, and that is
-    web/textures/stone-stacked.png's job, not this file's.
-    """
     bpy.ops.mesh.primitive_cube_add(size=1, location=xyz(at))
     o = adopt(name, mat, coll)
     o.scale = scale_xyz(size)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     return o
 
-
-# The nominal wall, and the two numbers hamlets.js scales it by: WALL_T is the full width
-# of the run across its own line, taken at the footing where the wall is widest, and
-# WALL_H is the top of the coping. They are the middle of this rung's range in BOUNDARY.
-BAY = 1.0              # one ground cell, which is four metres
-WALL_H = 0.54
-WALL_T = 0.45
-
-# Three courses, from the footing up: how high the course sits, how tall it is, how wide
-# across the wall, and where along the bay its stones are centred. Two things are doing
-# work here and both are how a wall is actually laid.
-#
-# The batter: each course is narrower than the one under it, so the wall leans in as it
-# rises. That was the swept profile's whole job and it is three numbers now.
-#
-# The bond: the middle course is offset half a stone, so its joints land over the middle
-# of the stones below - and its two stones hang over the ends of the bay, which is what
-# hides the one seam a bay-per-cell scheme would otherwise show. Two bays butting on the
-# cell line put a straight joint the full height of the wall every four metres, all the
-# way round the hamlet; a course that straddles that line covers it, exactly as it covers
-# the joints inside the bay. The overhanging stones run into the neighbouring bay's stones
-# and are lost inside the mass, which costs nothing: solid inside solid draws nothing.
-COURSES = [
-    # y bottom, height, half-width, stones at
-    (0.00, 0.25, WALL_T / 2, [-1 / 3, 0, 1 / 3]),
-    (0.21, 0.22, WALL_T / 2 * 0.90, [-0.25, 0.25]),
-    (0.39, WALL_H - 0.39, WALL_T / 2 * 0.78, [-1 / 3, 0, 1 / 3]),
-]
+def coping(name, coll, at, width, height, depth):
+    # Only the upper longitudinal edges are bevelled: six profile corners give
+    # readable highlights for 20 triangles, rather than beveling every hidden edge.
+    w=width/2
+    profile=[(-w,0),(w,0),(w,height*.65),(w-.028,height),(-w+.028,height),(-w,height*.65)]
+    verts=[xyz((x+at[0],y+at[1],z+at[2])) for z in [-depth/2,depth/2] for x,y in profile]
+    faces=[tuple(reversed(range(6))),tuple(range(6,12))]
+    for i in range(6):
+        j=(i+1)%6
+        faces.append((i,j,j+6,i+6))
+    m=bpy.data.meshes.new(name);m.from_pydata(verts,[],faces);m.update()
+    o=bpy.data.objects.new(name,m);bpy.context.collection.objects.link(o)
+    bpy.context.view_layer.objects.active=o
+    adopt(name,'plain:coping',coll)
+    return o
 
 
-def bay(name, sizes):
-    """One bay: eight stones in three courses, ninety-six triangles.
+WALL_H=.54
+WALL_T=.45
+PIER_H=.66
+for name,flip in [('prop_wall_a',False),('prop_wall_b',True)]:
+    coll=asset(name)
+    # The dark inner core closes the narrow recessed joints; it never protrudes
+    # through the faces. Individual stones supply the relief and colour variation.
+    stone(name+' joint core','plain:joint',coll,(0,.205,0),(.35,.41,1.01))
+    courses=[(0,.205,[-.5,-.18,.17,.5]),(.202,.21,[-.5,.025,.5])]
+    tones=['stone:warm','stone:pale','stone:wall','stone:shade','stone:pale']
+    n=0
+    for row,(y,h,bounds) in enumerate(courses):
+        for a,b in zip(bounds,bounds[1:]):
+            z=(a+b)/2*(-1 if flip else 1)
+            width=WALL_T-(.025 if row else 0)-(.010 if n%2 else 0)
+            o=stone(f'{name} course {row} block {n}',tones[(n+(2 if flip else 0))%len(tones)],coll,
+                    (0,y+h/2,z),(width,h,(b-a)-.009))
+            # Uneven top corners interrupt the ruler-straight silhouette of a cube
+            # without extra triangles, while the bottom course stays on the ground.
+            for v in o.data.vertices:
+                if v.co.z>0:
+                    v.co.x*=.96 if n%2 else .985
+                    v.co.z-=.006 if v.co.y>0 and n%2 else 0
+            n+=1
+    for i,z in enumerate([-.25,.25]):
+        coping(f'{name} coping {i}',coll,(0,.414,z),.465,.126-(.012 if i==int(flip) else 0),.494)
 
-    `sizes` is a nudge per stone - a fraction of its own length and height - because a
-    course of identical blocks is brickwork and this is rubble. It is the only difference
-    between the two bays, and at the distance a boundary is read from it is enough: what
-    the eye picks up along a run is where the joints fall, not how big any one stone is.
-    """
-    coll = asset(name)
-    parts = []
-    nudge = iter(sizes)
-    for c, (y0, h, half, alongs) in enumerate(COURSES):
-        mat = 'stone:coping' if c == len(COURSES) - 1 else 'stone:wall'
-        span = BAY / len(alongs)
-        for i, at in enumerate(alongs):
-            long, tall = next(nudge)
-            # Longer than its share of the bay, so neighbours overlap rather than meet:
-            # a joint you can see through is a hole in a wall, and the sheet draws the
-            # joints that should be seen.
-            d = span * 1.18 * long
-            parts.append(stone(f'{name} course {c} stone {i}', mat, coll,
-                               (0, y0 + h * tall / 2, at), (half * 2, h * tall, d)))
-    return parts
-
-
-bay('prop_wall_a', [(1.00, 1.00), (0.92, 0.96), (1.06, 1.00),
-                    (1.00, 1.00), (0.96, 0.94),
-                    (0.94, 1.00), (1.08, 0.92), (0.98, 1.00)])
-# Laid by somebody else. Two rhythms is what a run needs to stop reading as one extruded
-# shape, and it is all a hundred and twenty triangles a bay will pay for.
-bay('prop_wall_b', [(1.08, 0.94), (1.00, 1.00), (0.92, 1.00),
-                    (0.94, 0.96), (1.04, 1.00),
-                    (1.02, 1.00), (0.94, 1.00), (1.04, 0.94)])
-
-# ---------------------------------------------------------------- prop_wallpier
-# Where a road crosses, the wall opens and leaves a pier either side. It is the wall's own
-# stone rather than the hewn cylinder the post-and-rail rung stands there: a gateway in a
-# dry stone wall is stone, and a smooth six-sided post against a bay of rubble is the one
-# place the two would plainly not be the same wall.
-#
-# Taller than the wall and narrower, which is what a pier is: it is the end of a run, so
-# it has to read as deliberate rather than as the place the stones ran out.
-PIER_H = 0.66
-pier = asset('prop_wallpier')
-for i, (y0, h, w, d, mat) in enumerate([
-    (0.00, 0.26, WALL_T * 1.04, WALL_T * 0.92, 'stone:wall'),
-    (0.23, 0.26, WALL_T * 0.96, WALL_T * 0.86, 'stone:wall'),
-    # The capstone is proud of the shaft on every side, which is the whole of what makes a
-    # pier read as finished rather than as the place the stones ran out.
-    (0.46, PIER_H - 0.46, WALL_T * 1.12, WALL_T * 1.00, 'stone:coping'),
-]):
-    stone(f'prop_wallpier course {i}', mat, pier, (0, y0 + h / 2, 0), (w, h, d))
+pier=asset('prop_wallpier')
+stone('prop_wallpier recessed shaft','plain:joint',pier,(0,.29,0),(.37,.58,.35))
+for i in range(3):
+    stone(f'prop_wallpier block {i}', ['stone:warm','stone:pale','stone:wall'][i],pier,
+          (0,.095+i*.169,0),(.425-i*.012,.161,.40-i*.008))
+coping('prop_wallpier foot',pier,(0,0,0),.47,.065,.44)
+coping('prop_wallpier cap',pier,(0,.555,0),.51,.105,.48)
 
 # The tallest thing in the set, which is the pier rather than the wall it ends. hamlets.js
 # scales the whole set by the bay's own WALL_H, so the pier keeps standing proud of the

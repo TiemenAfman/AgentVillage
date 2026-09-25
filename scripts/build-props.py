@@ -27,6 +27,7 @@ a plank is therefore four-sided, and the facets are spent on the two shapes wher
 roundness is the whole point: the barrel and the cart's wheels.
 """
 import bpy
+import bmesh
 import math
 import runpy
 from pathlib import Path
@@ -49,6 +50,8 @@ COLORS = {
     'plank:oak': 0x845335, 'plank:dark': 0x503728, 'plain:iron': 0x343638,
     'plain:canvas': 0xe9d8b4, 'plain:shade': 0x4a3d2e, 'plain:stripe': 0xc86b4a,
     'plain:rope': 0xb9a37e, 'plain:linen': 0xece4d2, 'plain:indigo': 0x8095ae,
+    'plain:bedroll': 0x667e68, 'plain:lampglass': 0xffca70,
+    'ground:turf': 0x91ad68, 'ground:earth': 0x9c9a70, 'ground:subsoil': 0x96926b,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -60,7 +63,7 @@ for name, hex in COLORS.items():
     shader = m.node_tree.nodes['Principled BSDF']
     shader.inputs['Base Color'].default_value = (*rgb, 1)
     shader.inputs['Roughness'].default_value = .86
-    m['emissive'] = 0.0
+    m['emissive'] = 1.0 if name == 'plain:lampglass' else 0.0
     materials[name] = m
 
 
@@ -143,8 +146,8 @@ def box(name, p, size, mat, coll, turn=0):
 def face(name, verts, faces, mat, coll):
     """A mesh given corner by corner, for the shapes no primitive makes.
 
-    The tent's canvas is the one thing in this set that has to be a specific seven
-    triangles: a prism with a hole in one end. Built out of primitives it would be two
+    The tent's canvas is the one thing in this set that needs an open surface
+    with folds rather than a solid primitive. Built out of primitives it would be two
     slopes and a gable and would cost four boxes; given point by point it costs what the
     surface actually is, and it can be left open where the door goes.
 
@@ -257,15 +260,22 @@ TENT_W, TENT_D, TENT_H = .38, .36, .58
 face('prop_tent canvas', [
     (-TENT_W, 0, -TENT_D), (TENT_W, 0, -TENT_D), (TENT_W, 0, TENT_D), (-TENT_W, 0, TENT_D),
     (0, TENT_H, -TENT_D), (0, TENT_H, TENT_D),
+    (-.19, .245, -.025), (.19, .245, -.025),
 ], [
-    (0, 3, 5), (0, 5, 4),      # the slope facing -x
-    (1, 4, 5), (1, 5, 2),      # the slope facing +x
+    # A little sag between the taut ridge and pegged hem catches the light as cloth,
+    # where the old two planar triangles read as a wooden roof painted beige.
+    (0, 3, 6), (3, 5, 6), (5, 4, 6), (4, 0, 6),
+    (1, 4, 7), (4, 5, 7), (5, 2, 7), (2, 1, 7),
     (0, 4, 1),                 # the gable at the back, walled up
     # The groundsheet faces up, unlike the underside of prismRoof() which this replaces.
     # Nothing is ever under a roof, so that one is wound downward and costs nothing; a tent
     # is open at the front and the floor is the first thing you see through the door.
-    (0, 2, 1), (0, 3, 2),
 ], 'plain:canvas', tent)
+# Keep the groundsheet above the mound, rather than coplanar with its top. Its
+# inset also keeps the raised edge inside the sloping canvas walls.
+face('prop_tent floor', [(-.36, .018, -.34), (.36, .018, -.34),
+                        (.36, .018, .34), (-.36, .018, .34)],
+     [(0, 2, 1), (0, 3, 2)], 'plain:canvas', tent)
 # One triangle of shadow a hair inside the back gable. Without it the open front looks
 # straight through that gable's own back face, which the single-sided material culls, and
 # a tent with a hole in the far end of it is what you get.
@@ -283,10 +293,91 @@ for sz, ez in [(-1, 'back'), (1, 'front')]:
     # it grows a hand's width on every side, so they land just clear of the poles.
     for sx, ex in [(-1, 'west'), (1, 'east')]:
         rod(f'prop_tent guy {ez} {ex}', (0, TENT_H - .015, sz * (TENT_D + .015)),
-            (sx * .26, .012, sz * .50), .008, 'plain:rope', tent, sides=4)
+            (sx * .26, .025, sz * .48), .008, 'plain:rope', tent, sides=3)
+        # Four faces make a split wooden peg. Keep them inside the existing guy-line
+        # envelope: enlarging a prop also enlarges the paving the island puts under it.
+        px, pz = sx * .26, sz * .48
+        face(f'prop_tent peg {ez} {ex}', [
+            (px - .016, 0, pz - .016), (px + .016, 0, pz - .016),
+            (px, 0, pz + .016), (px + sx * .012, .075, pz),
+        ], [(0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0)], 'plank:oak', tent)
 for sx, ex in [(-1, 'west'), (1, 'east')]:
     rod(f'prop_tent band {ex}', (sx * TENT_W, .016, TENT_D + .006), (0, TENT_H - .01, TENT_D + .006),
-        .022, 'plain:stripe', tent, sides=4)
+        .018, 'plain:stripe', tent, sides=3)
+    # Draw both sides of the turned-back flap: buildings use a single-sided material,
+    # so a cloth face visible from the lane otherwise vanishes from the opposite side.
+    face(f'prop_tent flap {ex}', [
+        (0, TENT_H - .035, TENT_D + .010),
+        (sx * .32, .045, TENT_D + .012),
+        (sx * .265, .215, TENT_D + .055),
+        (sx * .31, .16, TENT_D - .035),
+    ], [(0, 1, 2), (0, 2, 3), (2, 1, 0), (3, 2, 0)], 'plain:linen', tent)
+
+# Camping equipment is an add-on to the dwelling, not part of the loose tent prop.
+# Its ground is the tent's ground: the island lifts both onto the same mound.
+camp = asset('addon_tent_camp')
+# A low, faceted bedroll, with the pillow at the back and the foot visible from the door.
+sleeping_bag = face('addon_tent_camp sleeping bag', [
+    (.015, .021, -.27), (.20, .021, -.27), (.20, .021, .24), (.015, .021, .24),
+    (.035, .065, -.23), (.18, .065, -.23), (.18, .060, .20), (.035, .060, .20),
+], [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (4, 5, 6, 7), (0, 1, 2, 3)],
+     'plain:bedroll', camp)
+# A sleeping bag is a closed volume. Recalculate outward normals in Blender rather
+# than hiding inward-wound faces with a double-sided material for every building.
+bm = bmesh.new()
+bm.from_mesh(sleeping_bag.data)
+bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+bm.to_mesh(sleeping_bag.data)
+bm.free()
+box('addon_tent_camp pillow', (.107, .058, -.24), (.13, .042, .09), 'plain:linen', camp)
+box('addon_tent_camp folded rim', (.107, .072, -.155), (.15, .018, .045), 'plain:bedroll', camp)
+# A warm lantern beside the opening. Emissive glass uses the existing night mask,
+# so a village full of tents still needs only the island's shared lights.
+upright('addon_tent_camp lamp stake', (-.32, 0, .43), .012, .28, 'plank:oak', camp, sides=4)
+rod('addon_tent_camp lamp arm', (-.32, .275, .43), (-.22, .275, .43), .010, 'plain:iron', camp, sides=3)
+box('addon_tent_camp lamp glass', (-.22, .205, .43), (.055, .075, .055), 'plain:lampglass', camp)
+box('addon_tent_camp lamp foot', (-.22, .161, .43), (.07, .016, .07), 'plain:iron', camp)
+rod('addon_tent_camp lamp cap', (-.22, .242, .43), (-.22, .27, .43), .049,
+    'plain:iron', camp, top=.012, sides=4)
+
+# A normalized mound, including the buried skirt. The browser scales this baked
+# shape to the tent footprint and places its base below ground; it creates no faces.
+mound = asset('addon_tent_mound')
+def mound_ring(spread, y):
+    return [(-.5, y, -.5-spread), (.5, y, -.5-spread),
+            (.5+spread, y, -.5), (.5+spread, y, .5),
+            (.5, y, .5+spread), (-.5, y, .5+spread),
+            (-.5-spread, y, .5), (-.5-spread, y, -.5)]
+top = mound_ring(.035, 1)
+edge = mound_ring(.27, .7/.88)
+bottom = mound_ring(.27, 0)
+# Round the eight long facets into smaller shoulders, with a little unevenness in
+# the foot. The top remains flat and large enough for the pegs and groundsheet.
+def soften_ring(ring, uneven=False):
+    result = []
+    for i, a in enumerate(ring):
+        b = ring[(i+1) % len(ring)]
+        for t in (.18, .82):
+            x, y, z = [a[k] + (b[k]-a[k])*t for k in range(3)]
+            scale = (1 + [.015, -.018, .025, -.01][i % 4]) if uneven else 1
+            result.append((x*scale, y, z*scale))
+    return result
+top, edge, bottom = soften_ring(top), soften_ring(edge, True), soften_ring(bottom, True)
+count = len(top)
+face('addon_tent_mound turf', [(0, 1, 0)] + top,
+     [(0, (i+1)%count+1, i+1) for i in range(count)], 'ground:turf', mound)
+for name, upper, lower, mat in [('slope', top, edge, 'ground:earth'),
+                                ('skirt', edge, bottom, 'ground:subsoil')]:
+    shoulder = face(f'addon_tent_mound {name}', upper + lower,
+                    [(i, (i+1)%count, (i+1)%count+count, i+count) for i in range(count)], mat, mound)
+    # Interpolated corner colours remove the stripe where turf meets the shoulder.
+    # These are the baked linear colours, just as for an unpainted material slot.
+    colours = shoulder.data.color_attributes.new(name='Ground fade', type='FLOAT_COLOR', domain='CORNER')
+    upper_colour = materials['ground:turf' if name == 'slope' else 'ground:earth'].diffuse_color
+    lower_colour = materials[mat if name == 'slope' else 'ground:subsoil'].diffuse_color
+    for loop in shoulder.data.loops:
+        colours.data[loop.index].color = upper_colour if loop.vertex_index < count else lower_colour
+face('addon_tent_mound base', bottom, [tuple(range(count))], 'ground:subsoil', mound)
 
 # ---------------------------------------------------------------- prop_washline
 # Two posts, two lines and the washing on them, and nothing moves: the flags on this

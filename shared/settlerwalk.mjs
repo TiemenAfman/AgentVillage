@@ -39,6 +39,32 @@ import { GATE_REACH } from './roads.mjs';
 
 export const MAX_STROLL = 36;      // settlers out on an errand at the same time
 
+// ---- work ------------------------------------------------------------------
+// Somebody with nothing to do goes and does something: hoes a field, weeds a kitchen
+// garden, fells and gathers wood at the edge of the forest, or fishes off the coast and the
+// quay. Plans/inwoners-aan-het-werk.md has the why; the short version of the numbers:
+//
+// A cap of its own beside MAX_STROLL rather than a share of it, because a chore spends most
+// of its time standing still at the far end - a stroll is nearly all walking - and forty
+// people bent over their beds cost the wire nothing but a keyframe each.
+export const MAX_CHORES = 48;
+// How many may plan a chore in one tick. A chore's route is the road network and then
+// findPath over open ground, and findPath sorts its open list on every pop - the same
+// reason the borrel has GATHER_PER_TICK.
+const CHORES_PER_TICK = 2;
+// When the stroll timer fires and there is work within reach, how often it is work.
+const CHORE_SHARE = 0.65;
+export const CHORE_KINDS = ['garden', 'field', 'wood', 'fish'];
+// How far from their own street a settler will go for each, in cells. A kitchen garden is
+// the one behind the house; the sea is worth a walk.
+const CHORE_REACH = { garden: 12, field: 18, wood: 18, fish: 24 };
+const CHORE_WEIGHT = { garden: 3, field: 3, wood: 2, fish: 2 };
+// What the body does while at it - the renderer's word, like 'hammer'. Wood starts as
+// 'chop' and turns into 'gather' after the first bout; see nextBout.
+const CHORE_ANIM = { garden: 'weed', field: 'hoe', wood: 'chop', fish: 'fish' };
+// How briskly somebody shifts along their own furrow between two bouts.
+const SHUFFLE = 0.22;
+
 // The length of one tick, in seconds. Twenty a second: fine enough that a settler at
 // 0.34 units a second never visibly jumps, coarse enough that stepping a few thousand
 // figures is cheap. A constant rather than an argument because it is the thing both
@@ -58,9 +84,27 @@ export const DT = 0.05;
 // which reads as people drifting in rather than arriving in a block - and that is better
 // than what it replaced, not a compromise.
 const GATHER_PER_TICK = 8;
+
+// Fetching gold before building (Plans/goudkuil.md). A settler whose session is running
+// hammers at their own door; with a gold pit on the island they first walk over to it, load
+// a bar, carry it home and only then set to work - and go again every few minutes of work
+// after that. All in seconds of walk time, drawn from the settler's own `<id>:gold` stream.
+//
+//   GOLD_FIRST  how long after setting to work the first trip starts: soon, but not all at
+//               once when a whole village is started at the same moment (a sea restart).
+//   GOLD_AGAIN  how long they hammer between trips. A session works for hours, and a bar
+//               every few minutes keeps the lane to the pit busy without it becoming a
+//               procession.
+//   GOLD_LOAD   how long they stand at the pile.
+//   MAX_GOLD    how many of one island may be on the way at once, MAX_STROLL's idea.
+export const GOLD_FIRST = [2, 20];
+export const GOLD_AGAIN = [150, 330];
+export const GOLD_LOAD = [1.6, 3];
+export const MAX_GOLD = 12;
 // Which way a plot's door faces, by its rotation: 0 = -z, 1 = +x, 2 = +z, 3 = -x.
 // Exported for lib/crowd.mjs, which stands the volcano's guards in rows in front of one
-// door and has to know which way is "in front" by exactly the rule spawn uses.
+// door and finds the gold pit's open end, and has to know which way is "in front" by
+// exactly the rule spawn uses.
 export const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 // 4-neighbour A* over the cell grid: a settler walking in from the beach, and every guard's
@@ -236,6 +280,8 @@ export function createWalk(terrain, village = null) {
       radius: spec.kind === 'shed' ? 0.14 : 0.3, visible: true, path: null, pathI: 0, onDone: null,
       y: 0,
       strollIn: 0, keepHome: false, gate: undefined, gathering: false,
+      // At a chore, and walking home from one with a bundle of wood. See startChore.
+      work: null, hauling: false,
       // The two errand hooks, as records rather than closures - see walkRoute below.
       after: null, then: null,
       // Lent out. `chartered` means an errand planned somewhere else has this body and
@@ -245,6 +291,14 @@ export function createWalk(terrain, village = null) {
       chartered: false, aboard: null, rideY: 0,
       // Whoever is talking to them, as [x, z], or null. See `attend`.
       attend: null,
+      // The gold errand (see `startGold`). `active` is whether their session is running -
+      // what they go back to doing when they get home with a bar; not `work`, which is an
+      // idle settler's chore - and `goldIn` the seconds of work left before the next trip,
+      // null until the first tick of work sets it. `carry` is 'gold' while a bar is in
+      // their hands, which makes their walk the 'carry' animation on the wire (ANIMS in
+      // shared/settlerwire.mjs). `goldRng` is made on first use, off the id: a stream of its
+      // own so that nothing here draws from the middle of `rng`.
+      active: opts.mode === 'hammer', goldIn: null, goldRng: null, carry: null,
       // Which animation the body is in, for the drawing half: 'walk', 'step', 'hammer' or
       // 'still'. Written every frame by step() and read by nothing in here. This is the
       // whole of what the renderer needs beyond a position.
@@ -283,7 +337,12 @@ export function createWalk(terrain, village = null) {
   }
   function setMode(id, mode) {
     const f = figures.get(id);
-    if (f && f.mode !== 'walk' && f.mode !== 'sail') f.mode = mode;
+    if (!f) return;
+    if (mode === 'hammer' || mode === 'idle') f.active = mode === 'hammer';
+    // Not while they are out for gold either: a trip counts itself in and out of `goldTrips`,
+    // and a mode changed under it would leave the count one short for good. They pick up
+    // `active` when they get home.
+    if (f.mode !== 'walk' && f.mode !== 'sail' && f.mode !== 'gold') f.mode = mode;
   }
 
   // Being spoken to. The figure stops where it stands and turns towards `at` ([x, z] in
@@ -446,23 +505,42 @@ export function createWalk(terrain, village = null) {
   // `f.onDone` stays a function, and only for the two calls that come from outside this
   // file - walkIn and sendOut. Those are somebody else's errand and will move when
   // shared/boating.mjs does.
-  function walkRoute(f, points, after = null, onDone = null) {
+  // `speed` is for the gold errand, whose legs draw their pace from the gold stream: the
+  // draw here is from `rng`, and a new errand must not take numbers out of the middle of it.
+  function walkRoute(f, points, after = null, onDone = null, speed = null) {
     f.path = [[f.pos[0], f.pos[1]], ...points];
     f.pathI = 0;
     f.mode = 'walk';
     f.keepHome = true;
-    f.speed = (0.42 + f.rng.range(0, 0.14)) * f.stride;
+    f.speed = speed ?? (0.42 + f.rng.range(0, 0.14)) * f.stride;
     f.after = after;
     f.onDone = onDone;
   }
 
-  // The path ran out. Four kinds, two errands: out to the square or out along the roads,
-  // and the walk home from either.
+  // The path ran out. Six kinds, three errands: out to the square, out along the roads or
+  // out to the gold pit, and the walk home from each.
   function finishPath(f) {
     const a = f.after;
     f.after = null;
     if (!a) return;
-    if (a.kind === 'stroll-out') {
+    if (a.kind === 'gold-out') {
+      // At the pile. Loading is its own mode rather than the idle branch's stand-about,
+      // because that branch also starts strolls and the borrel, and a settler with a bar
+      // half lifted is not free for either.
+      f.target = null;
+      f.mode = 'gold';
+      f.pause = goldRngOf(f).range(GOLD_LOAD[0], GOLD_LOAD[1]);
+      f.then = { kind: 'gold-home', route: a.route, home: a.home };
+    } else if (a.kind === 'gold-home') {
+      // Home with the bar, and back to work - or, if their session ended while they were
+      // out, simply home.
+      f.keepHome = false;
+      f.home = a.home;
+      f.carry = null;
+      f.mode = f.active ? 'hammer' : 'idle';
+      f.goldIn = goldRngOf(f).range(GOLD_AGAIN[0], GOLD_AGAIN[1]);
+      goldTrips--;
+    } else if (a.kind === 'stroll-out') {
       f.target = null;
       f.pause = f.rng.range(3, 11);          // stand about wherever the errand led
       f.then = { kind: 'stroll-home', route: a.route, home: a.home };
@@ -484,6 +562,14 @@ export function createWalk(terrain, village = null) {
       f.keepHome = false;
       f.home = a.home;
       f.gathering = false;
+    } else if (a.kind === 'chore-out') {
+      beginWork(f, a);
+    } else if (a.kind === 'chore-home') {
+      f.keepHome = false;
+      f.home = a.home;
+      f.hauling = false;
+      f.strollIn = f.rng.range(30, 120);
+      choring--;
     }
   }
 
@@ -510,6 +596,291 @@ export function createWalk(terrain, village = null) {
 
     strolling++;
     walkRoute(f, out, { kind: 'stroll-out', route: out, home: [f.home[0], f.home[1]] });
+  }
+
+  // ---- chores ----------------------------------------------------------------
+  // Where the work is. Fields, kitchen gardens and the edge of the wood come from the
+  // keeper's page, which is the only thing that has planned them (web/js/hamlets.js,
+  // web/js/world.js); the fishing spots come from lib/crowd.mjs, which works them out of
+  // the coast and the quay. All of it is normalised here into one shape per site:
+  //
+  //   kind      'field' | 'garden' | 'wood' | 'fish'
+  //   cell      [gx, gz], the land cell a route is planned to
+  //   area      for a field or garden: [cx, cz, rx, rz], the rectangle worked over
+  //   at        for wood: the trunk; for fish: where to stand
+  //   via       for fish on the quay: plank points walked after `cell`, before `at`
+  let sites = null;
+  let choring = 0;
+  function setWork(work) {
+    const out = { field: [], garden: [], wood: [], fish: [] };
+    const half = terrain.half;
+    const rect = (kind) => (r) => {
+      if (!Array.isArray(r) || r.length < 4) return;
+      const [gx, gz, w, d] = r;
+      if (!(w > 0 && d > 0)) return;
+      // A margin off the edge so a hoe is never swung over the fence.
+      const rx = w / 2 > 0.45 ? w / 2 - 0.3 : 0.15, rz = d / 2 > 0.45 ? d / 2 - 0.3 : 0.15;
+      out[kind].push({ kind, cell: [gx, gz], size: [w, d], area: [gx + w / 2 - half, gz + d / 2 - half, rx, rz] });
+    };
+    for (const r of (work && work.fields) || []) rect('field')(r);
+    for (const r of (work && work.gardens) || []) rect('garden')(r);
+    for (const t of (work && work.trees) || []) {
+      if (!Array.isArray(t) || t.length < 2) continue;
+      const gx = Math.round(t[0] + half - 0.5), gz = Math.round(t[1] + half - 0.5);
+      if (!terrain.isLand(gx, gz)) continue;
+      out.wood.push({ kind: 'wood', cell: [gx, gz], at: [t[0], t[1]] });
+    }
+    for (const s of (work && work.fish) || []) {
+      if (!s || !Array.isArray(s.cell) || !Array.isArray(s.at)) continue;
+      out.fish.push({ kind: 'fish', cell: [s.cell[0], s.cell[1]], at: [s.at[0], s.at[1]], via: s.via || [] });
+    }
+    const any = out.field.length || out.garden.length || out.wood.length || out.fish.length;
+    sites = any ? out : null;
+  }
+
+  // Which kind, and which one of it. The kinds within reach of this settler's own street
+  // are weighed against each other, the favourite three times over; within a kind it is
+  // one of the four nearest. The favourite is a hash of the id rather than a draw, so it
+  // costs the walk's own stream nothing and the same person is the same fisherman on
+  // every island rebuild.
+  function pickSite(f, gate, nightAmount) {
+    const size = terrain.size;
+    const gx = gate % size, gz = (gate - (gate % size)) / size;
+    const favourite = CHORE_KINDS[hash32(f.id + ':trade') % CHORE_KINDS.length];
+    const near = {};
+    let total = 0;
+    for (const kind of CHORE_KINDS) {
+      // After dark the land is left alone; a line can be wet until it is properly night.
+      if (nightAmount > (kind === 'fish' ? 0.8 : 0.45)) continue;
+      const reach = CHORE_REACH[kind];
+      const list = [];
+      const all = sites[kind];
+      for (let i = 0; i < all.length; i++) {
+        const s = all[i];
+        const d = dist(s.cell[0] - gx, s.cell[1] - gz);
+        if (d <= reach) list.push([d, i]);
+      }
+      if (!list.length) continue;
+      list.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      near[kind] = list.slice(0, 4);
+      total += CHORE_WEIGHT[kind] * (kind === favourite ? 3 : 1);
+    }
+    if (!total) return null;
+    let roll = f.rng.next() * total;
+    for (const kind of CHORE_KINDS) {
+      if (!near[kind]) continue;
+      roll -= CHORE_WEIGHT[kind] * (kind === favourite ? 3 : 1);
+      if (roll > 0) continue;
+      const pick = near[kind][f.rng.int(near[kind].length)];
+      return sites[kind][pick[1]];
+    }
+    return null;
+  }
+
+  // Off to work. False if there was nothing to be had, so the caller falls back to a
+  // plain stroll rather than losing the turn.
+  function startChore(f, nightAmount) {
+    const gate = gateOf(f);
+    if (gate == null || !sites) return false;
+    const site = pickSite(f, gate, nightAmount);
+    if (!site) return false;
+    // A field is not worked from one corner: the walk goes to a cell of it picked out of
+    // the figure's own stream, and the bouts after that move about inside the rectangle.
+    let cell = site.cell;
+    if (site.area) cell = [site.cell[0] + f.rng.int(site.size[0]), site.cell[1] + f.rng.int(site.size[1])];
+    const route = routeTo(f.id, cell);
+    if (!route || !route.length) return false;
+    let stand;
+    if (site.kind === 'wood') {
+      // Beside the trunk, on the side the walk came from, so nobody chops from inside it.
+      const prev = route.length > 1 ? route[route.length - 2] : [f.pos[0], f.pos[1]];
+      const dx = prev[0] - site.at[0], dz = prev[1] - site.at[1];
+      const d = dist(dx, dz) || 1;
+      stand = [site.at[0] + (dx / d) * 0.34, site.at[1] + (dz / d) * 0.34];
+    } else if (site.kind === 'fish') {
+      for (const p of site.via) route.push([p[0], p[1]]);
+      stand = [site.at[0], site.at[1]];
+    } else {
+      const c = terrain.cellWorld(cell[0], cell[1]);
+      stand = [c[0] + f.rng.range(-0.3, 0.3), c[1] + f.rng.range(-0.3, 0.3)];
+    }
+    route.push(stand);
+    choring++;
+    walkRoute(f, route, { kind: 'chore-out', route, home: [f.home[0], f.home[1]], site });
+    return true;
+  }
+
+  // Arrived. The errand's second half is written down now, exactly as a stroll's is, and
+  // the work stands in for the stand-about in between.
+  function beginWork(f, a) {
+    const s = a.site;
+    f.target = null;
+    f.pause = 0;
+    const fishing = s.kind === 'fish';
+    f.work = {
+      kind: s.kind, anim: CHORE_ANIM[s.kind], site: s,
+      left: fishing ? f.rng.range(70, 160) : f.rng.range(45, 120),
+      bout: fishing ? f.rng.range(8, 16) : f.rng.range(3, 8),
+      move: null,
+    };
+    f.then = { kind: 'chore-home', route: a.route, home: a.home };
+  }
+
+  // One bout is over; where the next one is. A field or a garden: somewhere else inside
+  // the rectangle. Wood: the first bout is the axe, every one after it is bending for what
+  // came down, a step or so round the tree. Fish: the same spot, a fresh cast.
+  function nextBout(f, w) {
+    const s = w.site;
+    if (s.area) {
+      const [cx, cz, rx, rz] = s.area;
+      w.move = [cx + f.rng.range(-rx, rx), cz + f.rng.range(-rz, rz)];
+      w.bout = f.rng.range(3, 8);
+    } else if (s.kind === 'wood') {
+      w.anim = 'gather';
+      w.bout = f.rng.range(2.5, 4.5);
+      // A point in the ring round the trunk, drawn the way the idle wander draws its disc.
+      for (let tries = 0; tries < 12; tries++) {
+        const u = f.rng.range(-1, 1), v = f.rng.range(-1, 1);
+        const q = u * u + v * v;
+        if (q > 1 || q < 0.25) continue;
+        const r = 1.1 / Math.sqrt(q) * f.rng.range(0.55, 1);
+        const x = s.at[0] + u * r, z = s.at[1] + v * r;
+        const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
+        if (!terrain.isLand(gx, gz) || terrain.slope(gx, gz) > 1.3) continue;
+        w.move = [x, z];
+        break;
+      }
+    } else {
+      w.bout = f.rng.range(8, 16);
+    }
+  }
+
+  function workStep(f, dt) {
+    const w = f.work;
+    // The borrel is called: down tools and home first, then the square.
+    if (gatherActive) w.left = 0;
+    if (w.move && w.left > 0) {
+      const dx = w.move[0] - f.pos[0], dz = w.move[1] - f.pos[1];
+      const d = dist(dx, dz);
+      if (d >= 0.05) {
+        // 'walk', not 'step': only walkers travel at the walker rate (shared/settlerwire.mjs),
+        // and a shuffle along the furrow sent as a keyframe would arrive ten seconds late
+        // and be smeared over all ten.
+        f.anim = 'walk';
+        const stp = Math.min(d, SHUFFLE * f.stride * dt);
+        f.pos[0] += (dx / d) * stp;
+        f.pos[1] += (dz / d) * stp;
+        face(f, dx, dz, 0.2);
+        return;
+      }
+      w.move = null;
+    }
+    w.left -= dt;
+    w.bout -= dt;
+    if (w.left <= 0) {
+      f.work = null;
+      // Nobody comes back from the wood empty-handed.
+      if (w.kind === 'wood') f.hauling = true;
+      const t = f.then;
+      f.then = null;
+      if (t) resume(f, t);
+      return;
+    }
+    f.anim = w.anim;
+    if (w.site.kind === 'wood' && w.anim === 'chop') face(f, w.site.at[0] - f.pos[0], w.site.at[1] - f.pos[1], 0.15);
+    if (w.bout <= 0) nextBout(f, w);
+  }
+
+  // ---- gold ---------------------------------------------------------------------
+  // The gold pit by the square (Plans/goudkuil.md): where a settler goes before setting to
+  // work. `setGold` is handed the site by whoever knows the island - lib/crowd.mjs, out of
+  // the bundle - as three things in this island's own frame:
+  //
+  //   cell  the ground cell in front of the pit's open end, which the road leads to
+  //   at    where a settler stands to load, just inside that end
+  //   pile  the middle of the heap, which they face while loading
+  //
+  // No site, no trips: an island from before the pit, and the volcano, whose Codex settlers
+  // hammer at their doors exactly as they always did.
+  let gold = null;
+  let goldTrips = 0;
+  function setGold(site) {
+    gold = site && site.cell && site.at && site.pile
+      ? { cell: [site.cell[0], site.cell[1]], at: [site.at[0], site.at[1]], pile: [site.pile[0], site.pile[1]] }
+      : null;
+  }
+
+  function goldRngOf(f) {
+    if (!f.goldRng) f.goldRng = makeRng(hash32(f.id + ':gold'));
+    return f.goldRng;
+  }
+  // A walking pace for a gold leg: the one walkRoute would have drawn, from the gold stream.
+  const goldPace = (f) => (0.42 + goldRngOf(f).range(0, 0.14)) * f.stride;
+
+  // Off to the pit: the road as far as it goes, the last stretch over the ground to the cell
+  // in front of the pit, and a step inside. Every loader stands at a spot of their own
+  // across the mouth - a third of a unit either way - so two at the pile at once are two
+  // people and not one. No route (no road out of their yard yet, or none to the pit) puts
+  // the trip off rather than giving it up.
+  function startGold(f) {
+    const r = goldRngOf(f);
+    const out = routeTo(f.id, gold.cell);
+    if (!out || !out.length) { f.goldIn = r.range(40, 120); return false; }
+    const dx = gold.at[0] - gold.pile[0], dz = gold.at[1] - gold.pile[1];
+    const d = dist(dx, dz) || 1;
+    const side = r.range(-0.3, 0.3);
+    out.push([gold.at[0] - (dz / d) * side, gold.at[1] + (dx / d) * side]);
+    goldTrips++;
+    walkRoute(f, out, { kind: 'gold-out', route: out, home: [f.home[0], f.home[1]] }, null, goldPace(f));
+    return true;
+  }
+
+  // The same way back with the bar, and the doorstep on the end.
+  function carryHome(f, t) {
+    f.carry = 'gold';
+    walkRoute(f, [...t.route].reverse().concat([t.home]), { kind: 'gold-home', home: t.home }, null, goldPace(f));
+  }
+
+  // Carried over from the crowd this island had before it republished.
+  //
+  // The sea builds every crowd again from the bundle whenever an island publishes, and an
+  // island with anybody at work publishes every scan - a house's `lastAt` moves - so once a
+  // minute everybody is stood back at their own door. For most of what a settler does that
+  // is no loss. For this errand it is all of it: somebody who lives further from the pit
+  // than a minute's walk would set off, be put back, set off again, and never get there. So
+  // what the gold errand has - the countdown to the next trip, or the trip itself with its
+  // position, its path and the bar - is handed from the old figure to the new one, and only
+  // that. Only when their doorstep is where it was: a house that moved gets a settler at
+  // the new door, like everybody else. Returns whether anything was carried over.
+  function adopt(id, old) {
+    const f = figures.get(id);
+    if (!f || !old || !gold || !old.home) return false;
+    if (dist(old.home[0] - f.home[0], old.home[1] - f.home[1]) > 0.01) return false;
+    if (old.goldRng) f.goldRng = old.goldRng;
+    const kind = old.after && old.after.kind;
+    const out = old.mode === 'gold' || (old.mode === 'walk' && (kind === 'gold-out' || kind === 'gold-home'));
+    if (!out) {
+      // At work between trips: keep the count running, so a republish is not a new start.
+      if (f.active && old.active) f.goldIn = old.goldIn;
+      return f.active && old.active;
+    }
+    f.pos = [old.pos[0], old.pos[1]];
+    f.path = old.path;
+    f.pathI = old.pathI;
+    f.mode = old.mode;
+    f.speed = old.speed;
+    f.after = old.after;
+    f.then = old.then;
+    f.pause = old.pause;
+    f.target = null;
+    f.keepHome = old.keepHome;
+    f.carry = old.carry;
+    f.goldIn = old.goldIn;
+    f.face = old.face;
+    f.turn = old.turn;
+    f.y = old.y;
+    goldTrips++;
+    return true;
   }
 
   // Walk in from the shore to a plot.
@@ -678,6 +1049,16 @@ export function createWalk(terrain, village = null) {
   function step(dt, nightAmount) {
     // How many have set off for the square so far this tick - see GATHER_PER_TICK.
     let starting = 0;
+    // And how many have planned a chore - see CHORES_PER_TICK.
+    let planned = 0;
+    const tryChore = (f, night) => {
+      if (!sites || choring >= MAX_CHORES || planned >= CHORES_PER_TICK) return false;
+      // Drawn only when a chore is on offer at all, so an island with no work known to it
+      // takes exactly the draws it always took.
+      if (f.rng.next() >= CHORE_SHARE) return false;
+      planned++;
+      return startChore(f, night);
+    };
     for (const f of figures.values()) {
       if (!f.visible) continue;
       f.anim = 'still';
@@ -705,7 +1086,11 @@ export function createWalk(terrain, village = null) {
         // bob outside its own if/else, so an arrival still finishes the stride it was in
         // the middle of. Cutting to 'still' on that last frame puts a visible hitch on the
         // end of every errand in the village.
-        f.anim = 'walk';
+        // Home from the wood with a bundle on the shoulder: still a walk to everything that
+        // asks, only drawn carrying something.
+        // And home from the gold pit with a bar in both hands (Plans/goudkuil.md): the
+        // same, drawn with the bar - 'carry' is a walk to everything on the wire too.
+        f.anim = f.carry ? 'carry' : f.hauling ? 'haul' : 'walk';
         const t = f.path[Math.min(f.pathI + 1, f.path.length - 1)];
         const dx = t[0] - f.pos[0], dz = t[1] - f.pos[1];
         const d = dist(dx, dz);
@@ -725,20 +1110,52 @@ export function createWalk(terrain, village = null) {
         }
       } else if (f.mode === 'hammer') {
         f.anim = 'hammer';
-        const dx = f.home[0] - f.pos[0], dz = f.home[1] - f.pos[1];
+        // Home is the doorstep, not the centre of the house. A ring around it put
+        // half the builders through the wall and made the others hammer away from it.
+        // Work on its outward side and face the building, independent of spawn jitter.
+        const [ox, oz] = DOOR_DIR[f.spec.plot?.rot | 0] || DOOR_DIR[0];
+        const clearance = f.spec.kind === 'shed' ? 0.20 : 0.35;
+        const dx = f.home[0] + ox * clearance - f.pos[0];
+        const dz = f.home[1] + oz * clearance - f.pos[1];
         const d = dist(dx, dz);
-        const want = 0.52;
-        if (Math.abs(d - want) > 0.08) {
-          const dir = d > want ? 1 : -1;
-          f.pos[0] += (dx / (d || 1)) * dir * 0.5 * dt;
-          f.pos[1] += (dz / (d || 1)) * dir * 0.5 * dt;
+        if (d > 0) {
+          const step = Math.min(d, 0.5 * dt);
+          f.pos[0] += (dx / d) * step;
+          f.pos[1] += (dz / d) * step;
         }
-        face(f, dx, dz, 0.15);
+        face(f, -ox, -oz, 0.15);
+        // And, with a pit on the island, off for gold now and then - first thing after
+        // setting to work, then every few minutes of it. Not while the borrel is on: the
+        // square is full and the pit is next to it, and nobody fetches work to a party.
+        // A trip that cannot start because MAX_GOLD are already out waits here, a tick at
+        // a time, which costs one comparison.
+        if (gold && f.active && !gatherActive) {
+          if (f.goldIn == null) f.goldIn = goldRngOf(f).range(GOLD_FIRST[0], GOLD_FIRST[1]);
+          f.goldIn -= dt;
+          if (f.goldIn <= 0 && goldTrips < MAX_GOLD && startGold(f)) f.anim = 'walk';
+        }
+      } else if (f.mode === 'gold') {
+        // At the pile, loading. Facing the heap, standing still, and then home with the bar
+        // along the way they came. A trip carried over from an older crowd without its
+        // record (see `adopt`, which never does this, but a record is cheap to check) is
+        // simply ended where it stands.
+        if (gold) face(f, gold.pile[0] - f.pos[0], gold.pile[1] - f.pos[1], 0.15);
+        f.pause -= dt;
+        if (f.pause <= 0) {
+          const t = f.then;
+          f.then = null;
+          if (t && t.kind === 'gold-home') { carryHome(f, t); f.anim = 'carry'; }
+          else { f.mode = f.active ? 'hammer' : 'idle'; f.carry = null; goldTrips--; }
+        }
       } else if (f.chartered) {
         // Between the legs of somebody else's errand: off the planks and into the boat, or
         // standing on the quay waiting for a hull. Whoever chartered them says what happens
         // next, and a stroll started here would walk away from it mid-sentence.
         f.pause = 0;
+      } else if (f.work) {
+        // At a chore. Its own branch rather than a stand-about, because the wander below
+        // would walk them back towards their own doorstep one small step at a time.
+        workStep(f, dt);
       } else {
         f.pause -= dt;
         // The borrel ending cuts every wait short, so nobody lingers on the square
@@ -763,7 +1180,7 @@ export function createWalk(terrain, village = null) {
         f.strollIn -= dt;
         if (!gatherActive && f.strollIn <= 0 && roads && strolling < MAX_STROLL && !f.deckY) {
           if (nightAmount > 0.55 && f.rng.next() < nightAmount) f.strollIn = f.rng.range(20, 70);
-          else startStroll(f);
+          else if (!tryChore(f, nightAmount)) startStroll(f);
           if (f.mode === 'walk') continue;
         }
         if (!f.target && f.pause <= 0) {
@@ -811,8 +1228,9 @@ export function createWalk(terrain, village = null) {
 
   return {
     figures, spawn, setVisible, setMode, attend, unattend,
-    setRoads, setDecks, setGather, walkIn, step, advance,
+    setRoads, setDecks, setGather, setWork, walkIn, step, advance,
     available, charter, routeTo, sendOut, carry, release, has, where,
+    setGold, adopt, goldTrips: () => goldTrips,
     groundOrDeck,
     findPath: (a, b) => findPath(terrain, a, b, null),
   };

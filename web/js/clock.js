@@ -13,10 +13,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, cylinder, C } from './buildings.js';
 
-// The dial `buildings.js` draws is `cylinder(0.17, 0.17, 0.04, 14, …)` laid on its back at
-// z = 0.29, so its front face is at z = 0.33 while the anchor it publishes is 0.32 - a
-// hair behind its own glass. So the hands are not hung on the anchor but just in front of
-// it, far enough that the depth buffer never has to choose between a hand and the dial.
+// The baked clock dial publishes its centre as the anchor. Lift the marks and hands
+// beyond its front surface so the depth buffer never chooses between them and plaster.
 const FACE_R = 0.17;
 const FACE_LIFT = 0.028;
 const HAND = C.iron;

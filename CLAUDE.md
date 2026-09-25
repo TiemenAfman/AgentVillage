@@ -349,7 +349,8 @@ silently never appears anywhere else. It is the same asymmetry `buildBundle`/`pa
 have always had; it only became possible to get wrong when a second door was cut beside them.
 
 **A crowd is rebuilt on every publish, and the difference between two of them is the only
-thing that knows who is new.** `createCrowd(island, { known })` is handed the ids the crowd
+thing that knows who is new** (and the one thing carried over whole is the gold errand -
+see the gold pit below). `createCrowd(island, { known })` is handed the ids the crowd
 before it had; anybody not in that set walks up from the landing beach. `known` is null for
 the first crowd an island ever has — and after a sea restart — so a whole village never
 comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
@@ -767,7 +768,10 @@ moon phase, the one copy — via `worldNow()` in `main.js`; `tests/worldclock.te
 on any local `.getMonth()`/`.getDay()`/`.getHours()` in `web/js/` or `shared/` (the
 workbench and real-date labels excepted). The sea reads its zone by name (`SEA_TZ`,
 `lib/seaclock.mjs`, offset per moment through `Intl`, so summer time is free) and broadcasts
-`{t:'clock'}` when the offset changes. Without `SEA_TZ` it is the host's zone — which in a
+`{t:'clock'}` when the offset changes. The sea's own beat asks the same `worldTime` (on
+`clock.offset()`) whether it is night and whether it is the borrel - `nightAt` / `borrelAt`
+in `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
+hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
 [Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
 borrel, the clouds, the moon).
@@ -832,6 +836,36 @@ and a `setTimeout` loop polling the page sees time stand still.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
+
+**The gold pit's count is the keeper's, and a status line is the only place it comes from**
+([Plans/goudkuil.md](Plans/goudkuil.md)). Claude Code hands the five-hour usage window
+(`rate_limits.five_hour`) to a `statusLine` command and to nothing else - not a hook, not a
+transcript - so `hooks/statusline.mjs` is the one writer of `data/usage.json`
+(`lib/usage.mjs`, only when the number moved) and `shared/gold.mjs goldOf` the one copy of
+what it comes to: `100 - round(used)` bars, and a full pit when there is no reading or the
+window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
+and with `--pass` (it is put *in front of* a status line the user already had,
+`lib/statusline.mjs`) stdin goes back out untouched before anything that could fail. Nobody
+runs anything to install it: the islander does, on start (`ensureStatusLine` from
+serve.mjs), once per island - `data/statusline.json` records that it asked, and a line the
+user took out again stays out; a settings.json that does not parse is never rewritten. Never
+from a linked worktree (`WORKTREE`): its island is its own, so its marker says "never asked"
+and it would repoint the machine's one status line at the sandbox's script and data. The
+count reaches only the keeper's own page - `/api/gold` (not on `PUBLIC_API`) and the
+`localOnly` SSE `gold` event from `watchGold` - never `village.json` and never a bundle: a
+visitor and every other island draw a full pit (`attachExtras`' `gold` follows `mail`), and
+a count in the bundle would also be a republish, a rebuilt region and a crowd sent home on
+every percent. The pit itself is an ordinary civic 3x3 (`civic:goldpit`, placed once by
+`findBlockAround` after the milestones - never `takeCivicLot`, whose eight lots are exactly
+the town hall's and the seven 3x3 milestones'), with its bars an InstancedMesh hung on
+from `animated.goldpile` (`web/js/goldpit.js`, `count` = bars). On the sea a settler at
+work fetches a bar first (`startGold` in `shared/settlerwalk.mjs`: its own `<id>:gold`
+stream, `MAX_GOLD` out at once) and walks home as the `'carry'` animation - appended to
+`ANIMS` and in `MOVING`, the same kind of word as a woodcutter's `'haul'`, drawn with a bar
+across both fists (`settler-figures.js`). `createCrowd(island, { known, before })` hands each settler's gold errand over from
+the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
+republishes every scan (`lastAt`), and without that a settler living over a minute from the
+pit would be stood back at their door before ever reaching it.
 
 ## The Blender pipeline
 
@@ -985,7 +1019,7 @@ islander behind it either.
 | | |
 |---|---|
 | `scan.mjs` / `serve.mjs` | the two entry points |
-| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `ws.mjs` (hand-written, no dependency); on the sea side `guards.mjs` and `residents.mjs` (the volcano's guards, and every islander's Codex settlers housed on it) |
+| `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `usage.mjs` + `statusline.mjs` (the gold pit's reading, and putting the status line into `~/.claude/settings.json`), `ws.mjs` (hand-written, no dependency); on the sea side `guards.mjs` and `residents.mjs` (the volcano's guards, and every islander's Codex settlers housed on it) |
 | `shared/` | terrain, regions (the world/local contract), `lattice.mjs` (the super-grid arithmetic: `blockOf`, `superOf` — the one copy), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
 | `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is

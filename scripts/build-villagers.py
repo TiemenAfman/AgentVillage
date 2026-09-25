@@ -1,5 +1,6 @@
 """Build the residents from the same Blender face language, with working clothes."""
 import bpy
+import math
 import runpy
 from pathlib import Path
 from mathutils import Vector
@@ -66,13 +67,44 @@ for sign,side in [(-1,'Left'),(1,'Right')]:
     ball(side+' rolled sleeve',(sign*.091,.247,.002),(.035,.040,.038),'tunic','torso')
     rod(side+' rolled cuff',(sign*.108,.216,.010),(sign*.107,.232,.010),.029,'tunic','torso')
     ball(side+' hand',(sign*.113,.198,.015),(.024,.031,.026),'skin','hands')
-    box(side+' waistcoat',(sign*.048,.225,.051),(.048,.112,.027),'trim','limbs')
+    box(side+' waistcoat',(sign*.045,.229,.052),(.042,.105,.015),'trim','limbs')
+    o = box(side+' collar',(sign*.022,.279,.048),(.027,.032,.014),'tunic','torso',.003)
+    o.rotation_euler.y = sign*.35
 box('Short work apron',(0,.150,.066),(.128,.082,.015),'trim','limbs',.007)
 box('Apron pocket',(0,.155,.076),(.061,.030,.008),'trim','limbs',.003)
 rod('Waist tie',(0,.180,0),(0,.194,0),.091,'trim','limbs').scale.y = .73
 rod('Neck',(0,.282,0),(0,.309,0),.028,'skin','hands')
 for y in [.233,.255,.277]:
     ball('Shirt button',(0,y,.064),(.004,.004,.003),'trim','limbs')
+
+# Shared faces stay expressive at this scale; a swept hairstyle and low bun give
+# women a readable silhouette even in work trousers or a sailor's uniform.
+# The bun sits below the hat line, so every existing hat still fits.
+for sign,side in [(-1,'Left'),(1,'Right')]:
+    ball(side+' swept hair',(sign*.064,.347,-.024),(.026,.057,.049),'hair','womanHair')
+ball('Gathered hair',(0,.348,-.059),(.067,.053,.031),'hair','womanHair')
+ball('Low hair bun',(0,.350,-.092),(.039,.032,.028),'hair','womanHair')
+# A knee-length working skirt leaves the clogs and moving lower legs visible.
+# It is an optional clothing layer, so women can wear either skirts or trousers
+# without a second simulation, a different job, or a separate picking mesh.
+# The front remains behind the short apron until its hem; a simple cone pierced
+# the apron in the middle and left two brown corners hanging over the skirt.
+rings=[(.077,.115,.094),(.110,.106,.060),(.170,.087,.060),(.185,.082,.067)]
+verts=[xyz((rx*math.cos(i*math.tau/10),y,rz*math.sin(i*math.tau/10))) for y,rx,rz in rings for i in range(10)]
+faces=[tuple(range(10))]
+for j in range(3):
+    for i in range(10):
+        k=(i+1)%10
+        faces.append((j*10+i,(j+1)*10+i,(j+1)*10+k,j*10+k))
+faces.append(tuple(reversed(range(30,40))))
+mesh=bpy.data.meshes.new('Working skirt')
+mesh.from_pydata(verts,[],faces);mesh.update()
+o=bpy.data.objects.new('Working skirt',mesh)
+bpy.context.collection.objects.link(o)
+bpy.context.view_layer.objects.active=o
+finish('Working skirt','tunic','skirt')
+o=rod('Skirt hem',(0,.075,0),(0,.086,0),.116,'tunic','skirt',.113)
+o.scale.y=.82
 
 # Lower, softer headwear: work caps, wool caps and a compact felt brim.
 for shape in ['wide','band','cap','sailor','dome','wizard']:
@@ -110,3 +142,16 @@ scene.render.filepath = str(OUT / 'villager-preview.png')
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-villager.blend'))
 bpy.ops.render.render(write_still=True)
+
+# Preview the optional layers as well as the original outfit; these visibility
+# changes are studio-only and do not change what was saved or exported above.
+for outfit, filename in [('skirt','villager-woman-preview.png'),('trousers','villager-woman-trousers-preview.png')]:
+    shown={'torso','limbs','hands','head','detail','womanHair','band'}
+    if outfit=='skirt': shown.add('skirt')
+    for obj in scene.objects:
+        if 'avatar_variant' in obj:
+            hidden=obj['avatar_variant'] not in shown
+            obj.hide_render=hidden
+            obj.hide_set(hidden)
+    scene.render.filepath=str(OUT / filename)
+    bpy.ops.render.render(write_still=True)

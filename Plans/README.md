@@ -39,6 +39,17 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
+- [goudkuil.md](goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
+  5-uurs usage limit, één staaf per procent, dat slinkt terwijl je werkt. Het getal komt uit
+  de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
+  settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
+  overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
+- [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
+  een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
+  Gebouwd en op het eiland toegepast op 23 september 2026.
+- [inwoners-aan-het-werk.md](inwoners-aan-het-werk.md) — ledige inwoners schoffelen op de akkers,
+  wieden in de moestuin, hakken en sprokkelen hout en vissen; waarom de pagina de werkplekken meldt
+  (zoals de huisposities) en de zee alleen de visplekken zelf uitrekent. Gebouwd op 23 september 2026.
 - [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
   vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.

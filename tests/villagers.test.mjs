@@ -46,8 +46,9 @@ function createSettlers(scene, material, terrain) {
 }
 
 test('all resident hats render with finite normals and no expedition equipment', () => {
+  for (const [presentation, outfit] of [['man','trousers'], ['woman','trousers'], ['woman','skirt']]) {
   for (const { id } of HAT_SHAPES) {
-    const look = { ...settlerLook('resident', 'sonnet'), hatShape: id };
+    const look = { ...settlerLook('resident', 'sonnet'), hatShape: id, presentation, outfit };
     const g = figureGeometry('sonnet', { look });
     g.computeBoundingBox();
     assert.equal(g.groups.length, 0);
@@ -65,6 +66,54 @@ test('all resident hats render with finite normals and no expedition equipment',
     }
     g.dispose();
   }
+  }
+});
+
+test('women are represented across roles with both skirts and trousers', () => {
+  for (const kind of ['adult','apprentice','sailor']) {
+    const looks = Array.from({ length: 1000 }, (_, i) => settlerLook(`population:${i}`, 'sonnet', kind));
+    const women = looks.filter((look) => look.presentation === 'woman');
+    assert.ok(women.length > 400 && women.length < 600);
+    assert.ok(women.some((look) => look.outfit === 'skirt'));
+    assert.ok(women.some((look) => look.outfit === 'trousers'));
+    if (kind === 'sailor') assert.ok(looks.every((look) => look.hatShape === 'sailor'));
+  }
+});
+
+test('women clothing and hair follow their owner and are hidden on other residents', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
+  const view = createFigures(scene, material);
+  const figures = new Map();
+  for (const [id, presentation, outfit] of [['woman-skirt','woman','skirt'],['woman-trousers','woman','trousers'],['man','man','trousers']]) {
+    const f = { id, visible: true, pos: [2,3], y: .2, yaw: .6, anim: 'walk', mode: 'walk', speed: 1 };
+    view.enrol(f, { ...settlerLook(id,'sonnet'), presentation, outfit }, 'adult');
+    figures.set(id,f);
+  }
+  const skirt=scene.getObjectByName('resident-skirts'), hair=scene.getObjectByName('resident-woman-hair');
+  const actual=new THREE.Matrix4(), expected=new THREE.Matrix4();
+  for (const dt of [.1,.2]) {
+    view.draw(figures,dt);
+    for (const f of figures.values()) {
+      skirt.getMatrixAt(f.slot,actual);
+      if (f.look.outfit === 'skirt') {
+        scene.children[0].getMatrixAt(f.slot,expected);
+        assert.deepEqual(actual.elements,expected.elements);
+      } else assert.equal(actual.elements[13],-999);
+      hair.getMatrixAt(f.slot,actual);
+      if (f.look.presentation === 'woman') {
+        scene.children[9].getMatrixAt(f.slot,expected);
+        assert.deepEqual(actual.elements,expected.elements);
+      } else assert.equal(actual.elements[13],-999);
+    }
+  }
+  view.hide(figures.get('woman-skirt'));
+  for (const mesh of [skirt,hair]) {
+    mesh.getMatrixAt(0,actual);
+    assert.equal(actual.elements[13],-999);
+  }
+  view.dispose();
+  assert.equal(scene.children.length,0);
+  material.dispose();
 });
 
 test('resident identity stays deterministic and sailors keep their uniform', () => {
@@ -79,12 +128,15 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   const material = new THREE.MeshStandardMaterial();
   const terrain = { half: 32, size: 64, worldHeight: () => 0 };
   const settlers = createSettlers(scene, material, terrain);
-  assert.equal(scene.children.length, 19, 'eleven articulated body, six hats, one hammer batch, one pint batch');
+  // Four chore batches (hoe, axe, rod, a bundle of sticks) and the gold bar carried home from
+  // the gold pit (Plans/goudkuil.md) sit between the hats and the hammer, hidden outright while
+  // nobody holds one - see createFigures.
+  assert.equal(scene.children.length, 26, 'eleven articulated body, two appearance layers, six hats, four chore tools, one gold bar, one hammer batch, one pint batch');
   for (let i = 0; i < 100; i++) settlers.add(`resident:${i}`, { style: 'sonnet', kind: 'hut' }, [i,0,0]);
   const walker = settlers.figures.get('resident:0');
   walker.mode = 'walk'; walker.path = [[0, 0], [2, 0]]; walker.pathI = 0; walker.pos = [0, 0];
   settlers.update(0.1, 0);
-  assert.equal(scene.children.length, 19, 'no mesh per person');
+  assert.equal(scene.children.length, 26, 'no mesh per person');
   const [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details] = scene.children;
   const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details];
   for (const mesh of body) assert.equal(mesh.count, 100);
@@ -138,4 +190,40 @@ test('a drunk settler zigzags round their route on the move and not off it stand
   for (let i = 0; i < 60; i++) view.draw(figures, 0.05);
   assert.ok(Math.abs(side()) < 1e-9, 'a sober settler wandered off the route: ' + side());
   view.dispose();
+});
+
+test('working hammers stay in the posed hand for every body size and beyond sixty builders', () => {
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
+  const view = createFigures(scene, material);
+  const figures = new Map();
+  for (let i = 0; i < 80; i++) {
+    const f = { id: `builder:${i}`, visible: true, pos: [i, -i], y: 0.4,
+      yaw: i * 0.37, anim: 'hammer', mode: 'hammer' };
+    view.enrol(f, settlerLook(f.id, 'sonnet'), i % 2 ? 'apprentice' : 'settler');
+    figures.set(f.id, f);
+  }
+  const hand = scene.children[7], hammers = scene.getObjectByName('resident-hammers');
+  for (const dt of [0, 0.17, 0.31, 0.49]) {
+    view.draw(figures, dt);
+    assert.equal(hammers.count, figures.size);
+    for (const f of figures.values()) {
+      const handPose = new THREE.Matrix4(), hammerPose = new THREE.Matrix4();
+      hand.getMatrixAt(f.slot, handPose);
+      hammers.getMatrixAt(f.slot, hammerPose);
+      const grip = new THREE.Vector3(0.113, 0.19, 0.015);
+      assert.ok(grip.clone().applyMatrix4(handPose).distanceTo(grip.clone().applyMatrix4(hammerPose)) < 1e-6);
+      assert.deepEqual(hammerPose.elements, handPose.elements, 'the tool follows the full hand rotation and scale');
+      const vertices = hammers.geometry.attributes.position;
+      const head = new THREE.Vector3();
+      // The head is the second box: measure the actual geometry, not just its pose.
+      for (let i = 36; i < vertices.count; i++) head.add(new THREE.Vector3().fromBufferAttribute(vertices, i));
+      head.divideScalar(vertices.count - 36).applyMatrix4(hammerPose);
+      const fromHand = head.sub(grip.clone().applyMatrix4(handPose));
+      assert.ok(fromHand.dot(new THREE.Vector3(Math.sin(f.yaw), 0, Math.cos(f.yaw))) > .015,
+        'the hammer head stays in front of the fist, away from the shoulder');
+      assert.ok(fromHand.y > .015, 'the head is raised above the grip');
+    }
+  }
+  view.dispose();
+  material.dispose();
 });

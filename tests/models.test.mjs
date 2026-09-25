@@ -10,6 +10,10 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf } from '../scripts/model-rules.mjs';
 import { KINDS, knownShape } from '../shared/shapes.mjs';
+import { LIGHTHOUSE } from '../web/js/lighthouse-mesh.js';
+import { CLOCKTOWER } from '../web/js/clocktower-mesh.js';
+import { STATUE } from '../web/js/statue-mesh.js';
+import { CASTLE } from '../web/js/castle-mesh.js';
 import { TAVERN } from '../web/js/tavern-mesh.js';
 import { COTTAGE } from '../web/js/cottage-mesh.js';
 import { HOUSE } from '../web/js/house-mesh.js';
@@ -28,12 +32,13 @@ import { WALL } from '../web/js/wall-mesh.js';
 import { DOCKS } from '../web/js/docks-mesh.js';
 import { BOARDWALK } from '../web/js/boardwalk-mesh.js';
 import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
+import { BUOYS } from '../web/js/buoys-mesh.js';
 import { BENCHY } from '../web/js/benchy-mesh.js';
 import { BICYCLE } from '../web/js/bicycle-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE };
+const BAKED = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -175,7 +180,7 @@ test('the tent is walled up at the back and opens on +z', () => {
   // is the one prop with a front, it is the dwelling a session lives in before it builds
   // anything, and a tent whose opening came out on -z faces its own back garden.
   //
-  // The canvas is one mesh of seven triangles and exactly one of them lies flat in a plane
+  // The canvas is one folded mesh and exactly one triangle lies flat in a plane
   // of constant z: the gable that is walled up. Which end that is answers the question.
   const canvas = models.part('prop_tent canvas');
   const gables = [];
@@ -253,25 +258,27 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'manor', 'props', 'quaysteps', 'rail', 'school', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'school', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
-    'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_turret_a',
+    'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
     // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
     // (scripts/build-bicycle.py, Plans/fiets.md).
-    'bicycle',
+    'bicycle', 'castle',
     'civic_chapel', 'civic_fountain', 'civic_quay_platform', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
     // The mill is two assets, because its sails turn and the tower does not.
     'civic_windmill', 'civic_windmill_sails',
+    'clocktower',
     'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
-    // Six sets' worth of `prop_`, sorted back together: the register is flat across sets
+    'lighthouse',
+    // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS].sort(),
-    'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'tavern', 'townhall',
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green'].sort(),
+    'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'statue', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');
   assert.equal(models.assetSet('tavern'), 'tavern');
@@ -483,3 +490,53 @@ test('the roof add-ons carry the anchors main.js hangs things on', () => {
 
 
 
+
+test('a tent floor clears its mound and its camp has bedding and a night lamp', () => {
+  const floor = models.part('prop_tent floor');
+  const floorY = floor.positions.filter((_, i) => i % 3 === 1).map(y => y + floor.at[1]);
+  assert.ok(Math.min(...floorY) > .01, 'groundsheet must not share the mound surface');
+  const bag = models.part('addon_tent_camp sleeping bag');
+  assert.ok(Math.min(...bag.positions.filter((_, i) => i % 3 === 1).map(y => y + bag.at[1])) > Math.max(...floorY));
+  const lamp = models.part('addon_tent_camp lamp glass');
+  assert.equal(lamp.emissive, 1, 'the lantern must glow through the shared night mask');
+  assert.ok(lamp.at[2] > .36, 'the lantern is outside the entrance');
+  const tent = buildBuilding({ id: 'camp-test', kind: 'house', tier: 'tent', style: 'sonnet', ornaments: [] }, { keepParts: true });
+  const buried = tent.parts.filter(g => {
+    g.computeBoundingBox();
+    return g.boundingBox.min.y < -.5;
+  });
+  assert.ok(buried.length > 0, 'the mound needs a skirt on sloping ground');
+  for (const g of buried) {
+    assert.ok(!g.attributes.aSheet || g.attributes.aSheet.array.every(v => v !== 3), 'earth must not use the stone sheet');
+  }
+  assert.equal(tent.geometry.groups.length, 0, 'the camp is merged into the building');
+  tent.geometry.dispose();
+  for (const g of tent.parts) g.dispose();
+});
+
+test('the baked sleeping bag is closed and visible from every outside direction', async () => {
+  const THREE = await import('three');
+  const { mesh } = await import('../web/js/buildings.js');
+  const geometry = mesh('addon_tent_camp sleeping bag');
+  geometry.computeBoundingBox();
+  const center = geometry.boundingBox.getCenter(new THREE.Vector3());
+  const material = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
+  const bag = new THREE.Mesh(geometry, material);
+  bag.updateMatrixWorld();
+  for (const axis of [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]]) {
+    const direction = new THREE.Vector3(...axis);
+    const ray = new THREE.Raycaster(center.clone().add(direction), direction.negate());
+    assert.ok(ray.intersectObject(bag).length > 0, `no outward face from ${axis}`);
+  }
+  geometry.dispose(); material.dispose();
+});
+
+test('the Blender mound carries ground textures and a continuous shoulder colour', () => {
+  for (const name of models.assetParts('addon_tent_mound')) {
+    assert.equal(models.part(name).sheet, 'ground', name);
+  }
+  const slope = models.part('addon_tent_mound slope');
+  const colours = new Set();
+  for (let i = 0; i < slope.colors.length; i += 3) colours.add(slope.colors.slice(i, i+3).join(','));
+  assert.ok(colours.size >= 2, 'the shoulder must blend turf into earth');
+});

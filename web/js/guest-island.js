@@ -24,6 +24,7 @@
 import * as THREE from 'three';
 import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
+import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 
@@ -185,6 +186,7 @@ export function createGuestIsland({
     g.add(mesh);
     group.add(g);
     const rec = { id: spec.id, spec, group: g, built, mesh, sig: shapeOf(spec) };
+    if (spec.active) addScaffold(rec, material);
     records.push(rec);
     return rec;
   }
@@ -214,7 +216,14 @@ export function createGuestIsland({
     for (let i = records.length - 1; i >= 0; i--) {
       const rec = records[i];
       const spec = want.get(rec.id);
-      if (spec && shapeOf(spec) === rec.sig) { rec.spec = spec; continue; }
+      if (spec && shapeOf(spec) === rec.sig) {
+        // `active` is soft - it does not rebuild a house - but it is what the scaffold
+        // stands for, so a Codex settler setting to work gets one without a new mesh.
+        rec.spec = spec;
+        if (spec.active && material) addScaffold(rec, material);
+        else if (!spec.active && rec.scaffold) { rec.group.remove(rec.scaffold); rec.scaffold = null; }
+        continue;
+      }
       group.remove(rec.group);
       rec.built.geometry.dispose();
       records.splice(i, 1);
@@ -269,7 +278,11 @@ export function createGuestIsland({
     dispose: () => {
       land.dispose();
       scene.remove(group);
-      for (const rec of records) rec.built.geometry.dispose();
+      for (const rec of records) {
+        rec.built.geometry.dispose();
+        // The gold pit's bars, hung on by main.js's attachExtras (web/js/goldpit.js).
+        if (rec.goldPile) rec.goldPile.dispose();
+      }
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },
   };

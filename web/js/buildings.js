@@ -51,14 +51,9 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
-// The lighthouse's lamp: how many painted bands the tower is built of, and how high the
-// lamp therefore stands over its own foot. Hoisted out of the `lighthouse` case below,
-// where it is still the only arithmetic that decides it, because web/js/horizon.js has to
-// put a light on a tower it never builds - a silhouette has no mesh to read an anchor off.
-// A second, hand-copied 2.4 somewhere else is how a far island's lamp ends up buried in
-// its own lantern room the first time the tower gains a band.
-export const BEACON_BANDS = 4;
-export const BEACON_RISE = BEACON_BANDS * 0.55 + 0.2;
+// Both the nearby beam and horizon light use the baked lantern's centre. Reading
+// its actual origin keeps a future Blender edit from leaving the distant lamp behind.
+export const BEACON_RISE = models.part('Lighthouse lantern glass').at[1];
 
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
@@ -78,7 +73,7 @@ const texLoader = new THREE.TextureLoader();
 // multiplies out, so a building with no textures is the building the island always drew.
 const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 BLANK.needsUpdate = true;
-const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank' };
+const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank', grass: 'uGrass', earth: 'uEarthDetail' };
 const sheetUsers = [];               // the uniform block of every material handed out
 function loadSheet(name, slot) {
   texLoader.load(textureUrl(name), (tex) => {
@@ -94,6 +89,8 @@ loadSheet('wall-plaster', 'wall');
 loadSheet('roof-tile', 'roof');
 loadSheet('stone-stacked', 'stone');
 loadSheet('plank', 'plank');
+loadSheet('grass', 'grass');
+loadSheet('river-shingle', 'earth');
 
 // What a part is drawn on. Zero - no sheet at all - is the default and stays the default:
 // glass, ironwork, cloth, paper and every small painted thing are better flat.
@@ -101,7 +98,7 @@ loadSheet('plank', 'plank');
 // the sheet's own x, so a deck that runs north-south wants them turned a quarter, and
 // the shader does that by reading the position and the normal back to front rather than
 // by carrying a second copy of the wood.
-const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5 };
+const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5, ground: 6 };
 const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
 
 // ---------------------------------------------------------------- material
@@ -110,6 +107,7 @@ export function createBuildingMaterial() {
   mat.userData.uniforms = {
     uNight: { value: 0 },
     uWall: { value: BLANK }, uRoof: { value: BLANK }, uStone: { value: BLANK }, uPlank: { value: BLANK },
+    uGrass: { value: BLANK }, uEarthDetail: { value: BLANK },
   };
   sheetUsers.push(mat.userData.uniforms);
   mat.onBeforeCompile = (shader) => {
@@ -119,6 +117,8 @@ export function createBuildingMaterial() {
     shader.uniforms.uRoof = u.uRoof;
     shader.uniforms.uStone = u.uStone;
     shader.uniforms.uPlank = u.uPlank;
+    shader.uniforms.uGrass = u.uGrass;
+    shader.uniforms.uEarthDetail = u.uEarthDetail;
     const glsl = (...lines) => lines.join(String.fromCharCode(10));
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', glsl(
@@ -154,6 +154,8 @@ export function createBuildingMaterial() {
         'uniform sampler2D uRoof;',
         'uniform sampler2D uStone;',
         'uniform sampler2D uPlank;',
+        'uniform sampler2D uGrass;',
+        'uniform sampler2D uEarthDetail;',
         'vec3 islandSheet(sampler2D m, vec3 p, vec3 n, float s) {',
         '  vec3 w = n * n;',
         '  w /= max(1e-4, w.x + w.y + w.z);',
@@ -171,7 +173,16 @@ export function createBuildingMaterial() {
         // island, and the paving is meant to keep the deepest tone here, so a plinth takes
         // under two thirds of the sheet.
         '  float sk = 1.0;',
-        '  if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
+        // The same three-unit grass grain and shingle scale as the terrain. A noisy
+        // crossfade lets turf run down the shoulders instead of meeting a solid band.
+        '  if (vSheet > 5.5) {',
+        '    vec3 grass = texture2D(uGrass, vSheetPos.xz / 3.0).rgb;',
+        '    vec3 earth = islandSheet(uEarthDetail, vSheetPos, sn, .72) * 1.27;',
+        '    float fleck = texture2D(uGrass, vSheetPos.xz * 2.7).r;',
+        '    float turf = smoothstep(.015, .18, vSheetPos.y + (fleck-.5)*.10);',
+        '    sc = mix(earth, grass, turf);',
+        '  }',
+        '  else if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
         '  else if (vSheet > 3.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.3); }',
         '  else if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 1.0); sk = 0.62; }',
         '  else if (vSheet > 1.5) { sc = islandSheet(uRoof, vSheetPos, sn, 1.0); }',
@@ -182,7 +193,7 @@ export function createBuildingMaterial() {
         '#include <emissivemap_fragment>',
         'totalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);'));
   };
-  mat.customProgramCacheKey = () => 'settlers-emissive';
+  mat.customProgramCacheKey = () => 'settlers-emissive-ground-v1';
   return mat;
 }
 
@@ -769,6 +780,7 @@ function houseBody(parts, spec, pal, rng, ctx = {}) {
   if (tier === 0) {                                   // tent
     if (models.hasAsset('prop_tent')) {
       for (const g of meshAsset('prop_tent', tentTint(pal))) parts.push(g);
+      parts.push(...meshAsset('addon_tent_camp'));
       return { anchors, height: assetRise('prop_tent'), w: 0.8, yard: yard(parts) };
     }
     // The tent the island drew before Blender, and what a checkout with no props-mesh.js
@@ -1184,35 +1196,13 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 0.78 };
     }
     case 'clocktower':
-      parts.push(box(0.56, 2.3, 0.56, C.stone, { sheet: 'stone' }));
-      parts.push(box(0.6, 0.1, 0.6, 0x8f8a80, { y: 1.5, sheet: 'stone' }));
-      parts.push(cylinder(0.17, 0.17, 0.04, 14, C.white, { y: 1.85, z: 0.29, rx: Math.PI / 2 }));
-      parts.push(pyramidRoof(0.68, 0.68, 0.44, C.copper, { y: 2.3 }));
-      parts.push(sphere(0.06, C.gold, { y: 2.78 }));
-      for (let i = 0; i < 3; i++) parts.push(box(0.1, 0.16, 0.03, C.glass, { y: 0.5 + i * 0.45, z: 0.29, emissive: 1 }));
-      animated.clock = { at: [0, 1.85, 0.32] };
-      return { anchors, animated, height: 2.9 };
+      parts.push(...meshAsset('clocktower'));
+      Object.assign(anchors, meshAnchors('clocktower'));
+      animated.clock = { at: [...models.part('Clocktower clock dial').at] };
+      return { anchors, animated, height: models.heightOf('clocktower') };
     case 'statue': {
-      // A founder on a plinth, one arm out over the square. Bronze, so it reads warm
-      // against all the grey stone around it.
-      let y = 0;
-      parts.push(box(0.52, 0.09, 0.52, C.foundation, { y })); y += 0.09;
-      parts.push(box(0.42, 0.10, 0.42, C.stone, { y })); y += 0.10;
-      parts.push(box(0.32, 0.46, 0.32, C.stone, { y }));
-      parts.push(box(0.18, 0.12, 0.02, 0xcfc4a8, { y: y + 0.16, z: 0.161 }));   // the plaque
-      y += 0.46;
-      parts.push(box(0.38, 0.06, 0.38, C.stone, { y })); y += 0.06;
-      const bronze = 0x9c7a3c;
-      parts.push(box(0.05, 0.16, 0.05, bronze, { x: -0.045, y }));
-      parts.push(box(0.05, 0.16, 0.05, bronze, { x: 0.045, y }));
-      const hip = y + 0.14;
-      parts.push(box(0.15, 0.26, 0.11, bronze, { y: hip }));
-      parts.push(box(0.19, 0.08, 0.13, bronze, { y: hip + 0.2 }));
-      parts.push(box(0.045, 0.22, 0.045, bronze, { x: -0.11, y: hip + 0.06, rz: 0.55 }));
-      parts.push(box(0.045, 0.2, 0.045, bronze, { x: 0.1, y: hip + 0.05, rz: -0.15 }));
-      parts.push(sphere(0.072, bronze, { y: hip + 0.35 }));
-      parts.push(cylinder(0.016, 0.02, 0.34, 5, bronze, { x: 0.13, y: hip - 0.02 }));
-      return { anchors, animated, height: hip + 0.45 };
+      parts.push(...meshAsset('statue'));
+      return { anchors, animated, height: models.heightOf('statue') };
     }
     case 'lamp': {
       // The glass is emissive, so the square lights itself once the sun is down.
@@ -1429,36 +1419,21 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('school') };
     }
     case 'windmill':
+    case 'poldermill':
       parts.push(...meshAsset('civic_windmill'));
       // The entire sail disc stands ahead of the widest course of brickwork.
       animated.blades = { at: [0, 1.61, 0.64], r: 0.5 };
       return { anchors, animated, height: models.heightOf('civic_windmill') };
     case 'lighthouse': {
-      const bands = BEACON_BANDS;
-      for (let i = 0; i < bands; i++) {
-        parts.push(cylinder(0.24 - i * 0.02, 0.3 - i * 0.02, 0.55, 16, i % 2 ? C.white : C.red, { y: i * 0.55, sheet: 'wall' }));
-      }
-      const top = bands * 0.55;
-      parts.push(cylinder(0.3, 0.3, 0.06, 12, C.iron, { y: top }));
-      parts.push(cylinder(0.19, 0.19, 0.3, 8, 0xfff2b0, { y: top + 0.06, emissive: 1 }));
-      parts.push(cone(0.26, 0.28, 8, C.red, { y: top + 0.36 }));
-      animated.beacon = { at: [0, BEACON_RISE, 0] };   // = top + 0.2, and the only copy of it
-      return { anchors, animated, height: top + 0.7 };
+      parts.push(...meshAsset('lighthouse'));
+      Object.assign(anchors, meshAnchors('lighthouse'));
+      animated.beacon = { at: [0, BEACON_RISE, 0] };
+      return { anchors, animated, height: models.heightOf('lighthouse') };
     }
     case 'castle': {
-      parts.push(box(1.3, 1.5, 1.3, C.stone, { sheet: 'stone' }));
-      for (const [x, z] of [[-0.72, -0.72], [0.72, -0.72], [-0.72, 0.72], [0.72, 0.72]]) {
-        parts.push(cylinder(0.22, 0.25, 2.1, 12, C.stone, { x, z, sheet: 'stone' }));
-        parts.push(cone(0.3, 0.4, 12, C.slate, { x, y: 2.1, z, sheet: 'roof' }));
-      }
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        parts.push(box(0.14, 0.14, 0.14, C.stone, { x: Math.cos(a) * 0.62, y: 1.5, z: Math.sin(a) * 0.62 }));
-      }
-      parts.push(box(0.4, 0.6, 0.1, 0x3a2a20, { z: 0.66 }));
-      anchors.flag = [0.72, 2.75, -0.72];
-      parts.push(box(0.025, 0.5, 0.025, C.darkWood, { x: 0.72, y: 2.5, z: -0.72 }));
-      return { anchors, animated, height: 2.9 };
+      parts.push(...meshAsset('castle'));
+      Object.assign(anchors, meshAnchors('castle'));
+      return { anchors, animated, height: models.heightOf('castle') };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
@@ -1519,11 +1494,6 @@ function civic(parts, spec, rng) {
       parts.push(pyramidRoof(0.30, 0.30, 0.09, C.stone, { y, sheet: 'stone' }));
       return { anchors, animated, height: y + 0.09 };
     }
-    case 'poldermill':
-      parts.push(cylinder(0.3, 0.42, 1.2, 14, 0xd9b98c, { sheet: 'wall' }));
-      parts.push(dome(0.34, 0x5a3c28, { y: 1.2 }));
-      animated.blades = { at: [0, 1.3, 0.38], r: 0.5 };
-      return { anchors, animated, height: 1.8 };
     case 'crane': {
       // The harbour crane on the quayside, reaching out over the water. Every civic on
       // this island faces the town; this one faces the sea, which lib/layout.mjs arranges
@@ -1584,6 +1554,41 @@ function civic(parts, spec, rng) {
         parts.push(box(0.28, 0.035, 0.28, C.darkWood, { y: 0.62, z: TIP[2] }));
       });
       return { anchors, animated, height: HEAD + 0.12 };
+    }
+    case 'goldpit': {
+      // The gold pit (Plans/goudkuil.md): a trench silo in poured concrete, the kind a farm
+      // keeps its silage in, open at the end that faces the town - which is +z here, the
+      // front of every building - and holding the keeper's five-hour usage window as a heap
+      // of bars against the back wall.
+      //
+      // The walls step down towards the open end the way a real bunker silo's do, which is
+      // also what lets the heap be seen from the square rather than only from the air, and
+      // they stop short of the heap's top course: a berg goud should look like more than
+      // the silo can hold. The gold itself is not in here. It shrinks while the building
+      // stands, and a merged geometry cannot lose a piece of itself, so it is published as
+      // `animated.goldpile` and hung on the group as an InstancedMesh (web/js/goldpit.js).
+      // tests/goldpit.test.mjs holds the heap inside these walls.
+      const concrete = 0xa9a59c, lip = 0x8c887f;
+      // The slab, top at 0.02. Flat colour, not the stone sheet: with it the floor read as
+      // flagstones from the square, and a silo floor is one pour of concrete.
+      parts.push(box(2.5, 0.16, 2.72, lip, { y: -0.14 }));
+      for (const x of [-1.18, 1.18]) {
+        parts.push(box(0.14, 0.3, 1.9, concrete, { x, y: 0.02, z: -0.41 }));          // high, beside the heap
+        parts.push(box(0.14, 0.17, 0.82, concrete, { x, y: 0.02, z: 0.95 }));         // low, at the mouth
+        parts.push(box(0.18, 0.025, 1.92, lip, { x, y: 0.32, z: -0.41 }));
+      }
+      parts.push(box(2.5, 0.3, 0.14, concrete, { y: 0.02, z: -1.29 }));               // the back wall
+      parts.push(box(2.54, 0.025, 0.18, lip, { y: 0.32, z: -1.29 }));
+      // A board on a post at the mouth, picked out in gold, so the pit reads as somewhere
+      // before anybody has hovered it.
+      parts.push(box(0.035, 0.44, 0.035, C.darkWood, { x: -1.32, z: 1.3 }));
+      parts.push(box(0.32, 0.15, 0.03, C.plank, { x: -1.32, y: 0.34, z: 1.32, sheet: 'plank' }));
+      parts.push(box(0.22, 0.05, 0.036, C.gold, { x: -1.32, y: 0.39, z: 1.33, emissive: 0.2 }));
+      // And the pick somebody left leaning on the low wall.
+      parts.push(box(0.022, 0.36, 0.022, C.wood, { x: 1.04, y: 0.02, z: 1.12, rz: 0.35 }));
+      parts.push(box(0.2, 0.028, 0.028, C.iron, { x: 0.92, y: 0.35, z: 1.12, rz: 0.35 }));
+      animated.goldpile = { at: [0, 0.02, 0] };
+      return { anchors, animated, height: 0.5 };
     }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
@@ -1760,6 +1765,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
   // round it would be a plinth under a letter box.
   'mailbox',
+  // The gold pit is a slab with walls on it, open at the front so a barrow could be run in;
+  // a step across that mouth is the one thing a silo is built not to have.
+  'goldpit',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',
@@ -1860,7 +1868,7 @@ function turnAround(parts, anchors, animated) {
   for (const a of Object.values(animated)) if (a && a.at) a.at = [-a.at[0], a.at[1], -a.at[2]];
 }
 
-function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD]) {
+function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD], earthen = false) {
   const r = groundRect(parts);
   if (!r) return;
   for (const g of parts) lift(g, PORCH_RISE);
@@ -1868,6 +1876,15 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   for (const a of Object.values(animated)) if (a && a.at) a.at = [a.at[0], a.at[1] + PORCH_RISE, a.at[2]];
 
   const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
+  if (earthen) {
+    // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
+    // plateau to the actual tent, while keeping the top exactly under the groundsheet.
+    parts.push(...meshAsset('addon_tent_mound', 0xffffff, {
+      x, y: -PORCH_SKIRT, z,
+      sx: r.x1 - r.x0 + .05, sy: PORCH_SKIRT + PORCH_RISE, sz: r.z1 - r.z0 + .05,
+    }));
+    return;
+  }
   // Two courses, not one: the lower is wider and comes up half way, so whichever side the
   // door is on there is something to step onto before the floor. One tall kerb all round
   // would have left every door on the island opening onto a drop.
@@ -1955,7 +1972,7 @@ export function buildBuilding(spec, ctx = {}) {
   // keeps every settler on the island walking the lines it already walks.
   const wallRects = footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
   if (wantsPorch(spec)) {
-    porch(parts, anchors, animated, porchOverhang(spec));
+    porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
   }
   // And the yard last of all, which is the whole reason houseBody() handed it back rather

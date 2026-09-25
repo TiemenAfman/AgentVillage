@@ -16,6 +16,7 @@ import {
   loadLayout, saveLayout, placeAll, clearRoads, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
+import { GOLDPIT_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
@@ -140,10 +141,13 @@ async function runScan(o) {
   const arrivals = o.codex ? [] : readArrivals(files.arrivals);
   const banished = o.codex ? new Map() : readBanished();
   const dispatched = new Set((o.codex ? [] : readAssignments()).filter((a) => a.sessionId && !a.dryRun && a.issueKey).map((a) => a.sessionId));
-  const model = buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched });
-
+  // The layout before the model, for one thing in it: who the keeper has given a hamlet of
+  // their own (`layout.rehomed`, lib/plan.mjs's `rehome`). That is a word about the village,
+  // not about the ground, and buildVillage has to hear it before it counts the hamlets.
   const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   let size = layout.size;
+  const survey = (rehomed) => buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed });
+  let model = survey(layout.rehomed || null);
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
   if (o.clearRoads) clearRoads(layout);
@@ -189,11 +193,15 @@ async function runScan(o) {
   if (o.plan) {
     plan = runPlan(layout, model, o.plan, {
       seed: config.seed, size, cap, dryRun: !!o.dryRun, layoutFile: files.layout, placementsFile: files.placements, now: o.now,
+      remodel: survey,
     });
     if (!plan.ok || o.dryRun) {
       return { plan, settlers: model.stats.settlers, districts: model.stats.districts, files: jobs.length, changedFiles, ms: Date.now() - t0 };
     }
     ({ terrain, unplaced } = plan);
+    // A `rehome` changed who lives where, and the village is assembled from the model the
+    // plan placed the island against.
+    if (plan.model) model = plan.model;
   } else {
     ({ terrain, unplaced } = placeAll(layout, model, { seed: config.seed, size, cap }));
   }
@@ -211,7 +219,7 @@ async function runScan(o) {
     districts: model.stats.districts, files: jobs.length, changedFiles,
     unplaced: unplaced.length, ms: Date.now() - t0, placeMs, out: files.village,
   };
-  if (plan) result.plan = { ...plan, terrain: undefined, unplaced: plan.unplaced };
+  if (plan) result.plan = { ...plan, terrain: undefined, model: undefined, unplaced: plan.unplaced };
   if (!o.quiet) {
     process.stderr.write(
       `[promptholm] ${result.settlers} settlers, ${result.apprentices} apprentices, ${result.districts} districts` +
@@ -289,6 +297,23 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       id: 'civic:mailbox', kind: 'civic', civicType: 'mailbox', district: null,
       plot: boxPlot, door: null, name: 'The postbox', label: 'Postbox',
       title: 'Mail from off the island',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The gold pit (Plans/goudkuil.md). The spec says where it stands and nothing more: how
+  // much gold is in it is the keeper's usage window, which is read live by their own page
+  // (/api/gold) and is never written in here - village.json is a file a visitor may be
+  // shown, and the bundle made from it goes to the sea.
+  const pitPlot = plot(GOLDPIT_ID);
+  if (pitPlot) {
+    civics.push({
+      id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit', district: null,
+      plot: pitPlot, door: doorOf(pitPlot), name: 'The gold pit', label: 'Gold pit',
+      title: 'The five-hour usage window, one bar a percent',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },

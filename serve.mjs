@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -35,6 +35,9 @@ import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
+import { readUsage, USAGE_FILE } from './lib/usage.mjs';
+import { ensureStatusLine } from './lib/statusline.mjs';
+import { goldOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
 
@@ -515,6 +518,13 @@ async function handle(req, res) {
     });
   }
 
+  // How much gold is left in the pit by the square: the keeper's five-hour usage window,
+  // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
+  // public path, so only the keeper's own page gets it - how much of somebody's
+  // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
+  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold.
+  if (p === '/api/gold') return json(res, 200, goldNow());
+
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
   // see lib/access.mjs, where the API is deny-by-default.
   if (p === '/api/display' && req.method === 'POST') {
@@ -842,7 +852,10 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // for writes. A visitor's browser drew the same island and has nothing to add.
   if (p === '/api/placements' && req.method === 'POST') {
     let body;
-    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    // More than the default: since the work sites came along (the fields, the gardens and
+    // five hundred trees) a big village's report is past 64 kB. The caps in
+    // lib/placements.mjs are what bound it; this only has to let them be reached.
+    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     let saved;
     try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
     // Worth republishing at once rather than waiting for the next scan: until this arrives
@@ -1431,6 +1444,30 @@ function watchData() {
   }
 }
 
+// The gold pit's count, and telling the keeper's own pages when it changes.
+//
+// Polled rather than watched. The status line rewrites data/usage.json only when the
+// reading moves, which is every minute or two while somebody works and never otherwise; and
+// the count also changes with no write at all, the moment a window's `resetsAt` goes by and
+// the pit fills up again. Reading a two-hundred-byte file every few seconds catches both
+// for nothing, where a second fs.watch on DATA beside watchData's would still need a timer
+// for the reset. readFileSync, like everything here that reads a data/*.json: a handle held
+// across a turn is what makes the writer's rename fail with EPERM on Windows.
+const goldNow = () => goldOf(readUsage(USAGE_FILE), Date.now());
+const GOLD_POLL_MS = 5000;
+function watchGold() {
+  let said = JSON.stringify(goldNow());
+  const t = setInterval(() => {
+    const g = goldNow();
+    const text = JSON.stringify(g);
+    if (text === said) return;
+    said = text;
+    // localOnly: a visitor's page draws a full pit and is never told otherwise.
+    broadcast(g, 'gold', { localOnly: true });
+  }, GOLD_POLL_MS);
+  t.unref?.();
+}
+
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     process.stderr.write(`[promptholm] the island is already being served at http://localhost:${PORT}\n`);
@@ -1666,6 +1703,28 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   }
   fs.mkdirSync(DATA, { recursive: true });
   watchData();
+  watchGold();
+  // The status line that reads the gold pit its number (hooks/statusline.mjs), put into
+  // ~/.claude/settings.json by the islander itself so there is nothing to run by hand - once
+  // per island, backed up first, in front of a status line that was already there, and never
+  // again after that (lib/statusline.mjs ensureStatusLine). Never fatal: an island that could
+  // not write it is still an island, with a full pit.
+  //
+  // Not from a linked worktree. Its island is its own (HOME in lib/paths.mjs), so its marker
+  // says "never asked" and ensureStatusLine would point the one status line this machine has
+  // at the worktree's copy of the script - which then writes its readings into the sandbox,
+  // leaves the real island's pit full, and blanks the line once the worktree is removed.
+  if (!WORKTREE) try {
+    const r = ensureStatusLine({
+      settingsFile: path.join(CLAUDE_HOME, 'settings.json'),
+      script: path.join(ROOT, 'hooks', 'statusline.mjs'),
+      markerFile: path.join(DATA, 'statusline.json'),
+    });
+    if (r.did === 'added' || r.did === 'wrapped' || r.did === 'updated') log(`status line ${r.did} for the gold pit: ${r.command}`);
+    else if (r.did === 'unreadable') log('the gold pit gets no status line: ~/.claude/settings.json does not read as JSON, so it was left alone');
+  } catch (e) {
+    log(`the gold pit gets no status line: ${e.message}`);
+  }
   await rescan('startup');
   // So the island board has the right number of notes pinned to it before anyone walks
   // up to it. refreshIssues throttles itself and hands back the cache untouched when it

@@ -514,8 +514,9 @@ export function createBoundaryMaterial() {
     //
     // The third number is how many times the sheet repeats in a world unit, and a unit is
     // four metres: leaves at one to the unit come out a hand's width across, boards at 1.3
-    // about half a metre wide, and the rubble at 0.6 lands three stones across the width
-    // of a wall. All three were set by eye against a run standing on open ground.
+    // about half a metre wide. The wall models now carry recessed joints and coping;
+    // their finer, quieter stone sheet adds grain without drawing a second oversized
+    // network of cracks across those courses.
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', glsl(
         '#include <common>',
@@ -538,7 +539,7 @@ export function createBoundaryMaterial() {
         '  vec3 sn = normalize(vSheetNrm);',
         '  vec3 sc = vec3(1.0);',
         '  float k = 0.7, lift = 1.0;',
-        '  if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 0.60); k = 0.42; lift = 1.75; }',
+        '  if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 1.25); k = 0.24; lift = 1.75; }',
         '  else if (vSheet > 1.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.30); k = 0.70; lift = 1.32; }',
         '  else { sc = islandSheet(uLeaf, vSheetPos, sn, 1.00); k = 0.75; lift = 1.55; }',
         '  diffuseColor.rgb *= mix(vec3(1.0), sc * lift, k);',

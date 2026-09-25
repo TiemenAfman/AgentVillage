@@ -102,3 +102,27 @@ test('a landscape can be taken down again', () => {
   land.dispose();
   assert.equal(parent.children.length, 0, 'the landscape left its group behind');
 });
+
+test('active houses arrive with scaffolding, also when a guest island is rebuilt', async () => {
+  const { createGuestIsland } = await import('../web/js/guest-island.js');
+  const { addScaffold } = await import('../web/js/scaffold.js');
+  const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
+  const buildings = [true, false].map((active, i) => ({
+    id: `house:${i}`, kind: 'house', tier: 'cottage', style: 'sonnet', active,
+    plot: { gx: 30 + i * 4, gz: 30, w: 3, d: 3, rot: i },
+  }));
+  const region = { id: 'neighbour', origin: [80, 0], terrain: makeTerrain(SEED, { size: SIZE }), village: village() };
+  for (let pass = 0; pass < 2; pass++) {
+    const island = createGuestIsland({ scene, region, buildings, material });
+    const [working, idle] = island.records;
+    assert.ok(working.scaffold, 'an already active house needs no start event');
+    assert.equal(idle.scaffold, undefined);
+    assert.equal(working.scaffold.parent, working.group);
+    assert.ok(working.scaffold.scale.toArray().every(v => Number.isFinite(v) && v > 0));
+    const count = working.group.children.length;
+    addScaffold(working, material);
+    assert.equal(working.group.children.length, count, 'a later start event does not duplicate the frame');
+    island.dispose();
+  }
+  material.dispose();
+});

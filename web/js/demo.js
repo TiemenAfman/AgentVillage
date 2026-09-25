@@ -22,6 +22,7 @@ import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
+import { attachGoldPile } from './goldpit.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { modelUrl } from './assets.js';
 
@@ -30,6 +31,7 @@ const CIVIC = [
   ['board', 'Sprint board', 'always'],
   ['issues', 'Island board', 'always'],
   ['mailbox', 'Postbox', 'with the hall'],
+  ['goldpit', 'Gold pit', 'always'],
   ['well', 'Well', '5 settlers'],
   ['market', 'Market stalls', '10'],
   ['tavern', 'Tavern', '15'],
@@ -200,6 +202,12 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.fountain) {
     const at = built.animated.fountain.at;
     fountains.push(attachFountain(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  // The gold pit's bars, a full pile: this page has no keeper and no five-hour window, which
+  // is exactly the island's own answer for a pit nobody has read a number for.
+  if (built.animated && built.animated.goldpile) {
+    const at = built.animated.goldpile.at;
+    attachGoldPile(scene, [x + at[0], at[1], z + at[2]], material);
   }
   // The lighthouse. Hung straight on the scene rather than on a group of its own, which is
   // how this page places every other moving part - the field has no plots and nothing on it

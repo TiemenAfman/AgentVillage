@@ -1,3 +1,4 @@
+import { addScaffold as attachScaffold } from './scaffold.js';
 // Boot, camera, the live feed and the animation queue that turns a data diff into
 // something you can watch happen.
 import * as THREE from 'three';
@@ -6,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
+import { borrelAt } from 'shared/daylight.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -24,12 +26,13 @@ import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { projectVillage } from './history.js';
 import {
-  createBuildingMaterial, buildBuilding, buildScaffoldGeometry, buildBoatGeometry,
+  createBuildingMaterial, buildBuilding, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX,
 } from './buildings.js';
 import { createNameplate } from './nameplate.js';
+import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
@@ -56,6 +59,8 @@ import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
+import { attachGoldPile } from './goldpit.js';
+import { GOLD_BARS, GOLDPIT_ID } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
@@ -374,6 +379,11 @@ const state = {
   // What the postbox on the town hall pavement knows: one unread count per account, as the
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
   mailbox: null, mailCounts: [], mailAt: 0, borrel: null, sound: null,
+  // What the gold pit holds: the keeper's five-hour usage window as /api/gold and
+  // `event: gold` last said it (shared/gold.mjs goldOf, Plans/goudkuil.md). Null until then,
+  // and for good on a visitor's page - the island only tells its own keeper - which draws a
+  // full pit, the same as an island that has never had a reading.
+  gold: null,
 };
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
@@ -596,6 +606,10 @@ function interactables() {
         id: rec.id, kind: 'mailbox', x: p.x, z: p.z, r: 2.0, label: 'the postbox',
         prompt: waiting ? `open the postbox — ${waiting} new` : 'open the postbox',
       });
+    } else if (rec.spec.civicType === 'goldpit') {
+      // The count over the keys, like the postbox's: walking past the pit tells you how
+      // much is left without anything to open.
+      out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
     } else if (rec.spec.civicType === 'tavern') {
@@ -902,6 +916,52 @@ async function pollMail(force = false) {
   } catch { /* no postbox on this island, or the server is older than the page */ }
 }
 
+// --------------------------------------------------------------- the gold pit
+// The keeper's five-hour usage window as a pile of bars by the square (Plans/goudkuil.md).
+// Asked for once at boot and then told: serve.mjs sends `event: gold` whenever the status
+// line writes a new reading down or a window runs out. A visitor is told nothing - the
+// server refuses /api/gold to anybody but the keeper - so their pit stays full, and so does
+// every guest island's (attachExtras, `gold: false`): whose limit it is stays on their
+// machine.
+
+const hhmm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const goldBarsNow = () => (state.gold && Number.isFinite(state.gold.bars) ? state.gold.bars : GOLD_BARS);
+
+// The line over the keys when you walk up to it.
+function goldPrompt() {
+  const g = state.gold;
+  if (!g || !g.known) return 'the gold pit';
+  return `the gold pit — ${g.bars} of ${g.max} bars left`;
+}
+
+// What the pit says when you ask it - in the dossier and on E.
+function goldWords(g) {
+  if (state.guest) return 'Whose gold this is stays on their own machine: every visitor sees a full pit.';
+  if (!g || !g.known) {
+    return 'A full pit, because nothing has said otherwise yet. Claude Code tells its status line how much of the five-hour window is used - the island put one in when it started - and the first answer in a Claude Code session writes the number down here.';
+  }
+  if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
+  const used = Math.round(g.used);
+  const refill = g.resetsAt ? ` Full again at <b>${hhmm(g.resetsAt)}</b>.` : '';
+  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${refill}`;
+}
+
+// Everything that shows the count, from one place.
+function showGold(g) {
+  state.gold = g && typeof g === 'object' ? g : null;
+  const bars = goldBarsNow();
+  for (const rec of state.byId.values()) if (rec.goldPile && !rec.goldPile.foreign) rec.goldPile.setBars(bars);
+  if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
+  if (state.selected === GOLDPIT_ID) select(GOLDPIT_ID);
+}
+
+async function fetchGold() {
+  if (state.guest) return;
+  try {
+    showGold(await answerOf(await mine('/api/gold', { cache: 'no-store' })));
+  } catch { /* an islander from before the pit, or none at all: a full pit */ }
+}
+
 // Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
@@ -979,6 +1039,7 @@ function walkCallbacks() {
       else if (it.kind === 'townhall') openTownHall();
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'mailbox') openMailbox();
+      else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -989,7 +1050,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -2639,7 +2700,7 @@ function createParticles() {
 }
 
 // --------------------------------------------------------------- helpers
-const scaffoldGeo = buildScaffoldGeometry();
+
 const boatGeo = buildBoatGeometry();
 const campfireGeo = buildCampfireGeometry();
 const flameGeo = buildFlameGeometry();
@@ -2766,12 +2827,15 @@ function makeRecord(spec) {
     flame: null, fire: null, smokeT: 0,
   };
   attachExtras(rec);
+  if (spec.active) addScaffold(rec);
   state.byId.set(spec.id, rec);
   state.pickables.push(mesh);
   return rec;
 }
 
-function attachExtras(rec, { mail = true, signs = true } = {}) {
+// `gold` follows `mail` unless it is said: a guest island's records come through here with
+// the mail off, and the count its pit would show is OUR five-hour window.
+function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   const { spec, built, group } = rec;
   if (built.animated && built.animated.blades) {
     const m = new THREE.Mesh(bladesGeo, buildingMat);
@@ -2796,6 +2860,13 @@ function attachExtras(rec, { mail = true, signs = true } = {}) {
   if (mail && built.animated && built.animated.mailflag) {
     rec.mailFlag = attachMailFlag(group, built.animated.mailflag.at, buildingMat);
     setMailFlag(rec.mailFlag, unreadTotal() > 0);
+  }
+  // The gold in the pit (web/js/goldpit.js): as many bars as the keeper's window has left on
+  // our own island, and a full pit on anybody else's - see showGold.
+  if (built.animated && built.animated.goldpile) {
+    rec.goldPile = attachGoldPile(group, built.animated.goldpile.at, buildingMat);
+    rec.goldPile.setBars(gold ? goldBarsNow() : GOLD_BARS);
+    if (!gold) rec.goldPile.foreign = true;
   }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
@@ -2871,6 +2942,7 @@ function disposeRecord(rec) {
     rec.fountain.jets.geometry.dispose();
   }
   if (rec.nameplate) rec.nameplate.dispose();
+  if (rec.goldPile) rec.goldPile.dispose();
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -3220,7 +3292,7 @@ function handOutDecks() {
     : null;
 }
 
-// A hamlet's name, on a board at its green, and the quay's planks. A lone farmstead gets
+// A hamlet's name, on a board beside its entrance, and the quay's planks. A lone farmstead gets
 // neither: it is one house in the countryside, not a place with a name.
 const hamletGroup = new THREE.Group();
 const hamletSigns = new Map();
@@ -3231,7 +3303,7 @@ function titleCaseName(s) {
     .join(' ');
 }
 
-// Where a hamlet's road leaves its land - the gate the welcome sign stands over. Derived
+// Where a hamlet's road leaves its land - the entrance the welcome sign stands beside. Derived
 // rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
 // on the wire, and the parcel says which of them are still on the hamlet's own ground.
 // Deriving it also means the chronicle gets it for nothing, because it filters the roads
@@ -3322,6 +3394,7 @@ function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
   const live = new Set();
+  const signSite = hamletSignSites(village, terrain);
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
@@ -3357,32 +3430,33 @@ function syncHamlets(village) {
     if (!d.center || d.tier === 'farmstead') continue;
     for (const [li, lobe] of (d.lobes || []).entries()) {
       const key = `${d.id}#${li}`;
-      live.add(key);
-      // Over the road where it leaves the hamlet's land, square to it, so you read the
-      // name walking through rather than passing a placard in a field. The green it used
-      // to stand on is gone. One per lobe, deliberately: each annex has its own way in and
-      // you meet its arch there on foot - unlike the aerial caption, which goes up once per
-      // hamlet (captionCell in web/js/captions.js).
+      // Keep the entrance in sight, but put both posts on free ground beside it. One per
+      // lobe, deliberately: each annex has its own way in and you meet its arch there on
+      // foot - unlike the aerial caption, which goes up once per hamlet (captionCell in
+      // web/js/captions.js).
       const gate = gateOf(village, d, li, lobe);
-      const [gx, gz] = gate ? gate.at : (lobe.green || d.center);
+      const site = signSite(gate);
+      if (!site) continue;
+      live.add(key);
+      const { gx, gz, turn } = site;
       const [x, z] = terrain.cellWorld(gx, gz);
       const sx = x, sz = z;
-      const along = gate ? Math.abs(gate.next[0] - gate.at[0]) > Math.abs(gate.next[1] - gate.at[1]) : false;
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name && have.along === along) {
-        have.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
+      if (have && have.text === d.name) {
+        have.group.rotation.y = turn;
+        have.group.position.set(sx, groundAt(sx, sz), sz);
         continue;
       }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
         width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
       });
-      // The arch straddles the road: its posts sit either side of the way through.
-      sign.group.rotation.y = along ? Math.PI / 2 : 0;
-      sign.group.position.set(sx, d.kind === 'quay' ? QUAY_DECK : groundAt(sx, sz), sz);
+      // Face approaching walkers, with the whole frame clear of the paving.
+      sign.group.rotation.y = turn;
+      sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, along, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
     }
   }
   for (const [key, rec] of [...hamletSigns]) {
@@ -3505,12 +3579,6 @@ function passesFilter(spec) {
   if (spec.harbour) return state.filters.cowork;
   return state.filters.code;
 }
-// When the Friday borrel is on: half an hour, from half past four. One place rather than
-// three numbers in the middle of the frame loop, because this is the sort of thing that
-// gets asked for by the half hour and should be one line to move.
-const BORREL_DAY = 5;              // Sunday is 0, so Friday is 5
-const BORREL_FROM = 16.5;
-const BORREL_UNTIL = 17;
 
 function visibleAt(spec, t) {
   const start = new Date(spec.startedAt).getTime();
@@ -3651,37 +3719,7 @@ function updateFlagInstance(rec, visible) {
 }
 
 // --------------------------------------------------------------- scaffold
-// A builder's frame stands around the walls and on the step, not around the step: the
-// bounding box it used to be sized from already had the doorstep in it, so the frame came
-// out a full 0.26 wider again than the widest stone on the plot - 1.97 across on a 3-wide
-// plot - and the poles of a house still in the steigers went straight through the sheds in
-// its own yard, which is what the complaint was about. Sizing it to the walkable
-// rectangles instead puts it where a scaffold goes, inside the porch it stands on.
-function addScaffold(rec) {
-  if (rec.scaffold) return;
-  const m = new THREE.Mesh(scaffoldGeo, buildingMat);
-  const b = rec.built.bbox;
-  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-  // `walls` rather than `solids`: since a house puts a cart and a woodpile out in its own
-  // yard, the rectangles walk mode blocks on reach most of the way to the plot edge, and
-  // a frame round all of them would be back to standing in the neighbours - which is the
-  // complaint this function already carries a paragraph about.
-  for (const r of rec.built.walls || rec.built.solids) {
-    x0 = Math.min(x0, r.x - r.hx); x1 = Math.max(x1, r.x + r.hx);
-    z0 = Math.min(z0, r.z - r.hz); z1 = Math.max(z1, r.z + r.hz);
-  }
-  const walls = Number.isFinite(x0) ? { x: x1 - x0, z: z1 - z0 } : { x: b.max.x - b.min.x, z: b.max.z - b.min.z };
-  // Room for the builders to stand, as a share of what is being built rather than a flat
-  // 0.26 all round. That number is a fifth of a house and most of an apprentice's shed,
-  // and it put a frame half again as wide as the hut inside it: three sheds in one yard
-  // went back to touching through their own scaffolding while the huts had grass between
-  // them. A house 1.24 across still gets its full 0.26.
-  const room = (v) => { const w = Math.max(0.3, v); return w + Math.min(0.26, w * 0.21); };
-  m.scale.set(room(walls.x), Math.max(0.6, rec.built.height + 0.2), room(walls.z));
-  m.castShadow = true;
-  rec.group.add(m);
-  rec.scaffold = m;
-}
+function addScaffold(rec) { attachScaffold(rec, buildingMat); }
 function removeScaffold(rec, animate = true) {
   if (!rec.scaffold) return;
   const m = rec.scaffold;
@@ -3921,13 +3959,17 @@ function reportPlacements() {
   const decks = {};
   const size = state.terrain.size;
   for (const [cell, y] of deckMapForHome()) decks[cell] = Math.round(y * 1000) / 1000;
-  const key = JSON.stringify([at, decks]);
+  // And where the work is: the fields, the kitchen gardens and the edge of the wood, which
+  // only this page's own survey knows - the sea sends idle settlers out to them
+  // (Plans/inwoners-aan-het-werk.md).
+  const work = state.world && state.world.workSites ? state.world.workSites() : null;
+  const key = JSON.stringify([at, decks, work]);
   if (key === toldPlacements) return;
   toldPlacements = key;
   mine('/api/placements', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ at, decks }),
+    body: JSON.stringify({ at, decks, work }),
   }).catch(() => { toldPlacements = ''; });   // it will be sent again on the next rebuild
 }
 
@@ -4096,7 +4138,11 @@ function humanSince(msv) {
 }
 function decorate(spec) {
   const d = state.districts.get(spec.district);
-  return { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
+  const out = { ...spec, districtName: d ? d.name : null, subPath: subPathOf(spec, d) };
+  // The gold pit's line is the count, which is this page's to know and not village.json's
+  // (see showGold). The dossier escapes a title, so the words go in without their markup.
+  if (spec.id === GOLDPIT_ID) out.title = goldWords(state.gold).replace(/<[^>]+>/g, '');
+  return out;
 }
 function select(id) {
   state.selected = id;
@@ -4353,7 +4399,11 @@ function frame(nowMs) {
     // left here is the furniture, which is scenery and always was: one set of tables per
     // ten islanders, of which the set the village earned is the first, so the rest are
     // carried out and taken back in with the borrel itself.
-    const borrel = calendar.weekday === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+    // The sea's clock, not this browser's: the people go to the square on the world's own
+    // Friday afternoon (borrelAt in shared/daylight.mjs, asked by lib/sea.mjs of the same
+    // worldTime), and the tables have to come out for the same half hour or a viewer in
+    // another zone sees a borrel with no furniture.
+    const borrel = borrelAt(calendar.weekday, hour);
     if (state.borrel) {
       state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
@@ -4779,6 +4829,8 @@ async function boot() {
   // background, and never runs for a visitor, who has no postbox to look at.
   pollMail(true);
   setInterval(() => pollMail(), MAIL_POLL_MS);
+  // The gold pit's count, once; `event: gold` carries every change after this.
+  fetchGold();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollMail(); });
 
   state.studio = createAvatarStudio(document.body, {
@@ -5243,6 +5295,11 @@ function connect() {
       } catch { /* malformed, ignore */ }
     });
     // The server can ask for a reload after its own code changed underneath us.
+    // The gold pit's count moved: a new reading from the status line, or a window that ran
+    // out. Only ever sent to the keeper's own pages (serve.mjs, localOnly).
+    es.addEventListener('gold', (e) => {
+      try { showGold(JSON.parse(e.data)); } catch { /* keep what we had */ }
+    });
     es.addEventListener('reload', () => location.reload());
     es.onerror = () => { state.ui.setLive('off'); };
   };

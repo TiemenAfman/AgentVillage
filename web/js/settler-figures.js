@@ -1,11 +1,10 @@
-// What a settler looks like, and the eleven meshes the whole crowd is drawn with. The
+// What a settler looks like, and the fixed mesh batches that draw the whole crowd. The
 // other half of what used to be web/js/settlers.js; settler-walk.js decides where the
 // bodies are and this file decides what stands there.
 //
-// Residents share the player's faceted Blender style, but wear waistcoats, short aprons
-// and compact work hats. Five instanced body meshes keep skin, dyed clothing and facial
-// details separate; six hat buckets preserve each resident's wardrobe. The whole crowd
-// costs eleven meshes, regardless of population. Working hammers retain their own bucket.
+// Residents share the player's faceted Blender style. Articulated body parts,
+// optional skirts and swept hair, and six hat buckets are instanced across the
+// whole crowd: population growth never adds a draw call. Tools have their own buckets.
 // Movement is still sine waves and lerps - and all of those sine waves live here, run off
 // this file's own clock, and feed nothing but a matrix. That is what let the two halves
 // come apart: the walk tells us one word per figure (`f.anim`) and everything cosmetic is
@@ -26,13 +25,14 @@ import { lerpAngle } from 'shared/settlerwalk.mjs';
 // second model of them: an armed resident carries exactly what the player can pick up.
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
+import { goldBarGeometry } from './goldpit.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
 const tmpObj = new THREE.Object3D();
-// Yaw first, then pitch: a flinch rocks a body back about its own shoulders, whichever way
-// it faces. Every other rotation written through this object has no pitch, and for those the
-// two orders give the same matrix, so nothing that was drawn before moves.
+// Yaw first, then pitch: a flinch rocks a body back about its own shoulders, and a settler
+// bent over a furrow leans towards where they are facing, whichever way either faces. With
+// no pitch the two orders give the same matrix, so nothing else that was drawn before moves.
 tmpObj.rotation.order = 'YXZ';
 const tmpColor = new THREE.Color();
 const bodyMat = new THREE.Matrix4();
@@ -42,6 +42,8 @@ const pivotMat = new THREE.Matrix4();
 const rotateMat = new THREE.Matrix4();
 const unpivotMat = new THREE.Matrix4();
 const rollMat = new THREE.Matrix4();
+const carryOffMat = new THREE.Matrix4();
+const carryMat = new THREE.Matrix4();
 // Out of sight: the same parking spot hide() puts a whole figure in.
 const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
   new THREE.Vector3(0.0001, 0.0001, 0.0001));
@@ -133,7 +135,7 @@ function mergeParts(parts) {
 }
 
 const RESIDENT_PIECES = {
-  torso: ['Work shirt'],
+  torso: ['Work shirt', 'Left collar', 'Right collar'],
   trim: ['Left waistcoat', 'Right waistcoat', 'Short work apron', 'Apron pocket', 'Waist tie',
     'Shirt button', 'Shirt button.001', 'Shirt button.002'],
   leftLeg: ['Left clog', 'Left trousers'],
@@ -160,10 +162,12 @@ export function figureGeometry(style, { sailor = false, look = null } = {}) {
     torsoGeometry(lk.tunic),
     ...limbParts(lk.trim),
     handGeometry(lk.skin),
+    ...(lk.outfit === 'skirt' ? [residentPart('skirt', lk.tunic)] : []),
   ].map((g) => g.scale(build, height, build));
   const headParts = [
     headGeometry(lk.skin, -HEAD_Y),
     detailGeometry(-HEAD_Y),
+    ...(lk.presentation === 'woman' ? [residentPart('womanHair', null, -HEAD_Y)] : []),
     ...hatParts(lk.hatShape, lk.hat, -HEAD_Y),
   ].map((g) => g.scale(head, head, head).translate(0, HEAD_Y * height, 0));
   return mergeParts([...bodyParts, ...headParts]);
@@ -204,6 +208,23 @@ function pintGeometry() {
 // How many settlers can be seen drinking at once: one instanced mesh for all of them, like
 // the hammers. A beer is handed over one at a time, so this is only ever a handful.
 const PINTS = 32;
+// A bar of gold carried home from the pit (Plans/goudkuil.md), the 'carry' walk: both arms
+// out in front at the same angle, and the bar resting across the two fists. The arms do not
+// swing while they hold it - the legs still walk - which is what makes it read as something
+// with weight, the way the right hand stays up on a bundle of sticks.
+//
+// Where the fists end up is the hand's grip swung about the shoulder by CARRY_ARM, worked
+// out once here; the bar is drawn level there rather than tipped with the forearms, and a
+// little above the fists so it sits on them. CARRY_BARS is how many can be seen carrying at
+// once: MAX_GOLD on each of a few islands.
+const CARRY_ARM = -1.05;
+const CARRY_BARS = 48;
+const CARRY_AT = (() => {
+  const piv = RESIDENT_PIVOTS.rightHand;
+  const dy = RESIDENT_GRIP[1] - piv[1], dz = RESIDENT_GRIP[2] + 0.02 - piv[2];
+  const c = Math.cos(CARRY_ARM), s = Math.sin(CARRY_ARM);
+  return [0, piv[1] + dy * c - dz * s + 0.018, piv[2] + dy * s + dz * c];
+})();
 // How far forward an armed resident holds each arm, on the same rotation.x the stride uses.
 // Enough that the sword and the torch are held out rather than hanging against the leg,
 // and the stride is halved on top of it so the blade does not windmill on a walk.
@@ -222,9 +243,59 @@ function paintGeo(g, hex) {
   return flat;
 }
 
+// How a body stands at a chore, for the word the walk wrote (Plans/inwoners-aan-het-werk.md).
+// Null for anything that is not a chore, which leaves the walk, the wander and the hammer
+// exactly as they were. Angles are rotation.x, as the stride's are: negative is an arm
+// raised forwards, and `lean` tips the whole body forwards about the feet. `t` is this
+// file's clock plus the settler's own phase, so a field of people does not hoe in unison.
+//
+//   hoe     both hands on the handle, raised and brought down twice a second or so
+//   weed    one foot forward, bent low, hands plucking in turn
+//   chop    the axe over the shoulder and down into the trunk
+//   gather  bent double, both hands at the ground, picking up
+//   fish    rod held out, the odd twitch when something takes an interest
+export function workPose(anim, t) {
+  if (anim === 'hoe') {
+    const s = Math.sin(t * 3.4);
+    const arm = -0.95 - 0.45 * s;
+    return { lean: 0.16 + 0.06 * s, left: arm + 0.1, right: arm, legL: -0.18, legR: 0.12, drop: 0 };
+  }
+  if (anim === 'weed') {
+    const s = Math.sin(t * 2.6);
+    return { lean: 0.62, left: -0.75 + 0.22 * s, right: -0.75 - 0.22 * s, legL: -0.55, legR: 0.35, drop: -0.05 };
+  }
+  if (anim === 'chop') {
+    // Up slowly, down fast: the square of a sine spends longer near the top of the swing.
+    const s = Math.sin(t * 2.4);
+    const up = s > 0 ? s * s : 0;
+    const arm = -0.75 - 1.55 * up;
+    return { lean: 0.05 + 0.12 * (1 - up), left: arm + 0.15, right: arm, legL: -0.25, legR: 0.18, drop: 0 };
+  }
+  if (anim === 'gather') {
+    const s = Math.sin(t * 2.2);
+    return { lean: 0.78, left: -0.55 + 0.18 * s, right: -0.6 - 0.18 * s, legL: -0.2, legR: 0.2, drop: -0.03 };
+  }
+  if (anim === 'fish') {
+    // A twitch now and then: the top sliver of a slow wave, which comes round every seven
+    // seconds or so and lasts a fraction of one.
+    const w = Math.sin(t * 0.9);
+    const twitch = w > 0.94 ? (w - 0.94) * 6 : 0;
+    return { lean: 0, left: -0.42, right: -0.62 - twitch, legL: -0.05, legR: 0.05, drop: 0 };
+  }
+  return null;
+}
+
+// A lean tips the whole body about its feet, legs and all, which bent double is a plank
+// falling over. So the legs are turned back by the same angle about the hip and stand
+// plumb again, which puts the feet a little below the ground - by this much, which is what
+// the body is lifted by. The hip is at 0.14 in the resident's own parts, before the height.
+function hipLift(lean, look) {
+  return 0.14 * (1 - Math.cos(lean)) * ((look && look.height) || 1);
+}
+
 // `armed` gives every resident a sword in the right hand and a torch in the left: two more
-// instanced meshes for the whole crowd, not two per settler, so a hostile island costs 13
-// draw calls where a friendly one costs 11. No light of its own per torch, unlike the
+// instanced meshes for the whole crowd, not two per settler. No light of its own per
+// torch, unlike the
 // player's (classic-avatar.js): a PointLight per resident would be hundreds of lights, and
 // three.js recompiles every material whenever that number changes. The flame glows after
 // dark through the same per-vertex night mask the player's does, which is what reads from
@@ -264,12 +335,20 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
   const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  // Optional clothing and hair remain two population-wide batches, never a mesh
+  // per woman. They share the resident slot and follow its body/head respectively.
+  const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
+  const womanHair = makeMesh(mergeParts([residentPart('womanHair', null, -HEAD_Y)]));
+  skirts.name = 'resident-skirts';
+  womanHair.name = 'resident-woman-hair';
   // Untinted: the baked parts carry their own brass, steel and flame in the vertex colours,
   // and setColorAt is never called on these two, so there is no instance colour to multiply.
   const swords = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.sword, RESIDENT_GRIP)) : null;
   const torches = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.torch,
     [-RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]])) : null;
-  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details,
+  if (swords) swords.name = 'resident-swords';
+  if (torches) torches.name = 'resident-torches';
+  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details, skirts, womanHair,
     ...(armed ? [swords, torches] : [])];
   torso.userData.bucket = { figs: roster };
   head.userData.bucket = { figs: roster };
@@ -313,10 +392,84 @@ export function createFigures(scene, material, { armed = false } = {}) {
     paintGeo(new THREE.BoxGeometry(0.022, 0.16, 0.022), 0x8b5e3c),
     (() => { const g = new THREE.BoxGeometry(0.075, 0.05, 0.05); g.translate(0, 0.09, 0); return paintGeo(g, 0x3a3a3f); })(),
   ], false);
+  // Use the same rest grip and shoulder pose as the hand: a separate world-space
+  // swing loses contact as soon as the body turns, bobs or changes proportions.
+  // The resting fist points forward. An upright handle rotates back towards the
+  // shoulder when this arm rises; align it with the fist before posing the arm.
+  hammerGeo.rotateX(Math.PI / 2);
+  hammerGeo.translate(...RESIDENT_GRIP);
   hammerGeo.computeVertexNormals();
-  const hammers = new THREE.InstancedMesh(hammerGeo, material, 64);
+  const hammers = new THREE.InstancedMesh(hammerGeo, material, CAPACITY);
   hammers.count = 0;
   hammers.frustumCulled = false;
+  hammers.name = 'resident-hammers';
+
+  // The chores' tools (Plans/inwoners-aan-het-werk.md): one InstancedMesh each for the
+  // whole crowd, like the hammer, and hidden outright while nobody holds one so that a
+  // village with nobody at work costs the draw calls it always did. Built the way the
+  // hammer is - a handle pointing forward out of the resting fist - and then tipped so
+  // that the arm angles in `workPose` put the business end where the work is.
+  const toolMesh = (parts, tilt) => {
+    const g = mergeGeometries(parts, false);
+    g.rotateX(tilt);
+    g.translate(...RESIDENT_GRIP);
+    g.computeVertexNormals();
+    const m = new THREE.InstancedMesh(g, material, CAPACITY);
+    m.count = 0;
+    m.frustumCulled = false;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  };
+  const along = (w, h, len, hex, z0 = 0, y = 0) => {
+    const g = new THREE.BoxGeometry(w, h, len);
+    g.translate(0, y, z0 + len / 2);
+    return paintGeo(g, hex);
+  };
+  const WOOD = 0x8b5e3c, IRON = 0x4a4a50;
+  // A hoe: a long handle pointing forward and down, and a blade across its end facing the
+  // ground.
+  const hoes = toolMesh([
+    along(0.018, 0.018, 0.36, WOOD, -0.06),
+    along(0.07, 0.05, 0.012, IRON, 0.29, -0.02),
+  ], Math.PI / 4);
+  // An axe: the hammer's handle a little longer, with a blade on one side of its head.
+  const axes = toolMesh([
+    along(0.02, 0.02, 0.22, WOOD, -0.03),
+    along(0.012, 0.07, 0.05, IRON, 0.15, 0.03),
+  ], 0);
+  // A rod: long, thin, raised; the line hangs from the tip in the rod's own frame, which is
+  // near enough plumb for the few degrees the arm moves while waiting for a bite.
+  const rods = toolMesh([
+    along(0.014, 0.014, 0.62, WOOD, -0.04),
+    (() => { const g = new THREE.BoxGeometry(0.004, 0.004, 0.44); g.rotateX(0.7 + Math.PI / 2); g.translate(0, -0.168, 0.438); return paintGeo(g, 0xd8d2c0); })(),
+  ], -0.7);
+  // A bundle of sticks across the back, for the walk home from the wood. Hangs off the
+  // body rather than a hand, so it is built at the shoulders and not at the grip.
+  const bundleGeo = mergeGeometries([0, 1, 2, 3, 4].map((i) => {
+    const g = new THREE.CylinderGeometry(0.009, 0.011, 0.34, 5);
+    g.translate((i % 3 - 1) * 0.018, 0, (i < 3 ? 0 : 0.016));
+    return paintGeo(g, i % 2 ? 0x7a5234 : 0x96683f);
+  }), false);
+  bundleGeo.rotateZ(1.05);
+  bundleGeo.translate(0, 0.27, -0.075);
+  bundleGeo.computeVertexNormals();
+  const bundles = new THREE.InstancedMesh(bundleGeo, material, CAPACITY);
+  bundles.count = 0;
+  bundles.frustumCulled = false;
+  bundles.visible = false;
+  scene.add(bundles);
+  // Everybody's bar of gold on the way home from the pit, the same bargain as the tools:
+  // count 0 - no draw call - while nobody is carrying one. The pile's own ingot
+  // (web/js/goldpit.js), a size down so it sits across a settler's two fists.
+  const bars = new THREE.InstancedMesh(goldBarGeometry({ l: 0.24, h: 0.05, w: 0.09 }), material, CARRY_BARS);
+  bars.count = 0;
+  bars.castShadow = true;
+  bars.frustumCulled = false;
+  bars.visible = false;
+  scene.add(bars);
+  const TOOL_OF = { hoe: hoes, chop: axes, fish: rods };
+  // The hammer last, after the tools, where the rest of the island has always found it.
   scene.add(hammers);
   // Everybody's beer, drawn only while it is being drunk (count 0 the rest of the time, so
   // an island nobody has bought a round costs no draw call for it).
@@ -337,6 +490,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
     if (slot === slots) slots++;
     for (const m of body) m.count = slots;
     tint(torso, slot, look.tunic);
+    tint(skirts, slot, look.tunic);
+    skirts.setMatrixAt(slot, HIDDEN);
+    womanHair.setMatrixAt(slot, HIDDEN);
     for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
     for (const mesh of [trim, leftLeg, rightLeg]) tint(mesh, slot, look.trim);
     tint(head, slot, look.skin);
@@ -428,9 +584,10 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // Everything the eye sees, from where the walk has put everybody. `f.anim` is the whole
   // of what it is told: the four animations below are derived from it and from this file's
   // own clock, and none of them can move a body.
+  const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0, pintCount = 0;
+    let hammerCount = 0, pintCount = 0, bundleCount = 0, barCount = 0;
     for (const f of figures.values()) {
       if (!f.visible || f.slot == null) continue;
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
@@ -438,7 +595,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
       // it whole, with no easing, because the hull has already done the turning.
       if (f.faceAngle != null) f.yaw = f.faceAngle;
       else if (f.face) f.yaw = lerpAngle(f.yaw, Math.atan2(f.face[0], f.face[1]), f.turn);
-      const walking = f.anim === 'walk' || f.anim === 'step';
+      const hauling = f.anim === 'haul';
+      const carrying = f.anim === 'carry';
+      const walking = f.anim === 'walk' || f.anim === 'step' || hauling || carrying;
       const hammering = f.anim === 'hammer';
       // A flinch: `k` from 1 at the blow to 0, eased so it snaps back first and settles last.
       // The frame it runs out puts the real colours back and then it is forgotten.
@@ -449,10 +608,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
         tintFlinch(f, flinchK);
         flinchK *= flinchK;
       }
-      const bob = f.anim === 'walk' ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
+      const work = workPose(f.anim, time + f.phase);
+      const bob = f.anim === 'walk' || hauling || carrying ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
-            : 0;
+            : work ? work.drop + hipLift(work.lean, f.look) : 0;
       // A beer going down (drinkBeer), `t` seconds in, and what a few have done already.
       let drunk = null;
       if (f.drink > 0) {
@@ -479,36 +639,31 @@ export function createFigures(scene, material, { armed = false } = {}) {
       // zigzag's slope - so they look like they are walking it rather than sliding along it.
       const drawnYaw = f.yaw + stagger * STAGGER_YAW * Math.cos(swayPhase * 0.6);
 
-      if (hammering && !drunk && hammerCount < 60) {
-        // The hammer is held in a hand, so it hangs off whatever size that settler is:
-        // an apprentice's is a small hammer at an apprentice's height.
-        const s = f.baseScale * f.look.height;
-        const swing = -1.15 + 0.75 * (0.5 + 0.5 * Math.sin(time * 8 + f.phase));
-        tmpObj.position.set(sx + Math.sin(f.yaw) * 0.16 * s, f.y + 0.26 * s, sz + Math.cos(f.yaw) * 0.16 * s);
-        tmpObj.rotation.set(0, f.yaw, swing);
-        tmpObj.scale.setScalar(s);
-        tmpObj.updateMatrix();
-        hammers.setMatrixAt(hammerCount++, tmpObj.matrix);
-      }
-
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(sx, f.y + bob * f.baseScale, sz);
       const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
-      tmpObj.rotation.set(-FLINCH_LEAN * flinchK + swayNod, drawnYaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01) + swayRoll);
+      tmpObj.rotation.set((work ? work.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01) + swayRoll);
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
       torso.setMatrixAt(f.slot, bodyMat);
+      skirts.setMatrixAt(f.slot, f.look.outfit === 'skirt' ? bodyMat : HIDDEN);
       trim.setMatrixAt(f.slot, bodyMat);
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
-      const idle = walking || hammering ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
+      const idle = walking || hammering || work ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
-      const leftArmAngle = (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
-      let rightArmAngle = hammering
-        ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
-        : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
+      // Hauling, the right hand is up on the bundle and only the left arm swings. Carrying
+      // gold, both are out in front under the bar (CARRY_ARM).
+      const leftArmAngle = work ? work.left
+        : carrying ? CARRY_ARM
+          : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
+      let rightArmAngle = work ? work.right
+        : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
+          : hauling ? -2.5
+            : carrying ? CARRY_ARM
+              : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       if (f.strike > 0) {
         f.strike = Math.max(0, f.strike - dt);
         rightArmAngle = strikeArm(1 - f.strike / STRIKE_S, rightArmAngle);
@@ -519,23 +674,42 @@ export function createFigures(scene, material, { armed = false } = {}) {
         rightArmAngle += (drunk.x - rightArmAngle) * drunk.w;
         rightTurn = -drunk.z * drunk.w;       // inward, which for the right arm is -z
       }
-      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, stride);
-      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, -stride);
+      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : stride);
+      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
       setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle, rightTurn);
+      // The right fist holds one thing: a beer puts down the hammer or the tool.
+      if (hammering && !drunk) setPosed(hammers, hammerCount++, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+      const tool = drunk ? null : TOOL_OF[f.anim];
+      if (tool) {
+        const n = toolCount.get(tool) || 0;
+        setPosed(tool, n, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+        toolCount.set(tool, n + 1);
+      }
+      if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
+      if (carrying && barCount < CARRY_BARS) {
+        // Off the person's own transform rather than bodyMat, so the bar is stretched by
+        // neither their build nor their height - only moved to where their fists are.
+        carryOffMat.makeTranslation(CARRY_AT[0] * f.look.build, CARRY_AT[1] * f.look.height, CARRY_AT[2] * f.look.build);
+        carryMat.multiplyMatrices(tmpObj.matrix, carryOffMat);
+        bars.setMatrixAt(barCount++, carryMat);
+      }
       if (drunk && pintCount < PINTS) setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
       if (armed) {
-        // A settler at work puts the sword away for the hammer rather than holding both in
-        // one fist - and for a beer; the torch stays lit in the other hand.
-        if (hammering || drunk) swords.setMatrixAt(f.slot, HIDDEN);
+        // A settler at work puts the sword away for the hammer, the tool or a beer rather
+        // than holding both in one fist; the torch stays lit in the other hand unless that
+        // one is at work too.
+        if (hammering || work || hauling || carrying || drunk) swords.setMatrixAt(f.slot, HIDDEN);
         else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
-        setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+        if (work && f.anim !== 'fish') torches.setMatrixAt(f.slot, HIDDEN);
+        else setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       }
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);
+      womanHair.setMatrixAt(f.slot, f.look.presentation === 'woman' ? headMat : HIDDEN);
       if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.mesh.setMatrixAt(f.hatSlot, headMat);
     }
     for (const m of body) m.instanceMatrix.needsUpdate = true;
@@ -544,6 +718,18 @@ export function createFigures(scene, material, { armed = false } = {}) {
     hammers.instanceMatrix.needsUpdate = true;
     pints.count = pintCount;
     if (pintCount) pints.instanceMatrix.needsUpdate = true;
+    for (const m of [hoes, axes, rods]) {
+      m.count = toolCount.get(m) || 0;
+      m.visible = m.count > 0;
+      if (m.count) m.instanceMatrix.needsUpdate = true;
+    }
+    toolCount.clear();
+    bundles.count = bundleCount;
+    bundles.visible = bundleCount > 0;
+    if (bundleCount) bundles.instanceMatrix.needsUpdate = true;
+    bars.count = barCount;
+    bars.visible = barCount > 0;
+    if (barCount) bars.instanceMatrix.needsUpdate = true;
   }
 
   // The people are instanced, so a ray hit comes back as a mesh plus an instance
@@ -560,10 +746,10 @@ export function createFigures(scene, material, { armed = false } = {}) {
 
   // Everything this crowd put into the scene, taken back out again. There was no way to
   // do that while a crowd lasted as long as the page did; now one is built per island and
-  // rebuilt on every reseed, and eleven instanced meshes left standing empty per rebuild
+  // rebuilt on every reseed, and instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, pints, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...body, hammers, pints, hoes, axes, rods, bundles, bars, ...[...hats.values()].map((h) => h.mesh)]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();
