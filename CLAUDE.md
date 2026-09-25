@@ -121,7 +121,11 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
+feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`. Roads, unlike
+plots, the scan does take up by itself: every scan runs the planner's `pruneUnreachable` and
+lays again whatever no longer reaches the square, because a path records only the cells it
+paved itself - when a hamlet dies its road goes, and every road that had braided onto it was
+left ending in the grass (45 houses cut off, 25 September 2026).
 The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
 exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
 paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
@@ -413,6 +417,29 @@ On the drawing side `rev` only decides whether to refetch, never whether to rebu
 new bundle, because a neighbour's landscape costs the same ~550 ms to build as our own
 (trees, fields, hamlets, through the same `createLandscape`), and rebuilding it on every
 publish from an active neighbour stalled the frame — `dt` included — three times a minute.
+
+**Everything another machine moves is drawn on one timeline** (`web/js/timeline.js`:
+`LAG_MS`, `MAX_EXTRAPOLATE_MS`) - the other players in peers.js and every hull somebody else
+is steering (`glideBoats` in main.js, a short track of samples rather than a pair, run before
+the peers). A pilot is drawn standing on their hull (`seatOf`), never on their own pose: on
+two timelines they part by as far as the boat goes in the difference. `'boat'` in a pose is
+a room to the sea (`afoot` in lib/hostility.mjs) and a hull to peers.js (`BOAT_ROOM`), not a
+place - read as a place it hid every pilot. [Plans/lopen-op-de-boot.md](Plans/lopen-op-de-boot.md).
+Standing on a deck is a position in the hull's own frame (`shared/deck.mjs`, trig-free: a
+hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boat holds is
+`shared/crafts.mjs`, the one copy (every boat is a Benchy, `crew: 1`). The sea takes a deck
+pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works the world
+position out itself, and sends decks as their own list `d` beside the rows - a row's slots
+are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
+crew). None of it runs yet: no walk mode sets `state.deck`.
+
+**Other players are drawn with your own rig** (Plans/andere-spelers-zoals-jij.md): peers.js
+gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
+connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
+`identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
+`CROUCHING`, `SITTING` are 256/512/1024 (`POSE_MASK` 2047) - and by events for the arms:
+`{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}` as
+`drank`. Events, not bits: a swing is over in less than two pose beats.
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
@@ -837,13 +864,19 @@ and a `setTimeout` loop polling the page sees time stand still.
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
-**The gold pit's count is the keeper's, and a status line is the only place it comes from**
+**The gold pit's count is the keeper's, and it comes from two places on this machine**
 ([Plans/goudkuil.md](Plans/goudkuil.md)). Claude Code hands the five-hour usage window
 (`rate_limits.five_hour`) to a `statusLine` command and to nothing else - not a hook, not a
 transcript - so `hooks/statusline.mjs` is the one writer of `data/usage.json`
-(`lib/usage.mjs`, only when the number moved) and `shared/gold.mjs goldOf` the one copy of
-what it comes to: `100 - round(used)` bars, and a full pit when there is no reading or the
-window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
+(`lib/usage.mjs`, only when the number moved). The desktop app runs no status line at all,
+so a keeper who works only in its Code tab never got a reading and saw a full pit; what the
+app does do is sample the same window every quarter of an hour into
+`%APPDATA%\Claude\plan-usage-history.json` (`fh`, no reset), which `readDesktopUsage` reads
+and gives a `resetsAt` estimated from the history - five hours after the window's first
+sample, an upper bound, because a pit that fills late is better than one that fills while
+the window is spent. `currentUsage` takes whichever spoke last. `shared/gold.mjs goldOf` is
+the one copy of what it comes to: `100 - round(used)` bars, and a full pit when there is no
+reading or the window's `resetsAt` has passed. The script keeps the session hook's rules: always exit 0,
 and with `--pass` (it is put *in front of* a status line the user already had,
 `lib/statusline.mjs`) stdin goes back out untouched before anything that could fail. Nobody
 runs anything to install it: the islander does, on start (`ensureStatusLine` from

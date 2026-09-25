@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { register } from 'node:module';
 
 import { goldOf, GOLD_BARS, GOLDPIT_ID } from '../shared/gold.mjs';
-import { readingOf, readUsage, writeUsage, sameReading } from '../lib/usage.mjs';
+import { readingOf, readUsage, writeUsage, sameReading, readDesktopUsage, currentUsage } from '../lib/usage.mjs';
 import { installStatusLine, uninstallStatusLine, readStatusLine, statusLineCommand, ensureStatusLine } from '../lib/statusline.mjs';
 import { emptyLayout, placeAll, outsideDoor } from '../lib/layout.mjs';
 import { createCrowd, goldSite, GOLD_LOAD_IN, GOLD_PILE_BACK } from '../lib/crowd.mjs';
@@ -36,7 +36,10 @@ import { makeTerrain } from '../shared/terrain.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { buildBuilding } = await import('../web/js/buildings.js');
-const { pileSlots, attachGoldPile, goldBarGeometry, BAR, PILE_PITCH, PILE_Z } = await import('../web/js/goldpit.js');
+const {
+  pileSlots, coinSlots, coinsFor, attachGoldPile, goldBarGeometry, goldCoinGeometry, barCorners, outlinesMeet, restsOn,
+  BAR, COIN, COINS, PILE_Z, SILO, OFFICE, COUNTER, LOOSE_FRONT,
+} = await import('../web/js/goldpit.js');
 const { createFigures } = await import('../web/js/settler-figures.js');
 const { createCrowdView } = await import('../web/js/crowd-view.js');
 const { settlerLook } = await import('../shared/palette.mjs');
@@ -97,6 +100,78 @@ test('usage.json is written only when the reading moved, and read back field by 
   fs.writeFileSync(file, 'not json');
   assert.equal(readUsage(file), null);
   assert.equal(readUsage(path.join(dir, 'missing.json')), null);
+});
+
+// The desktop app's plan-usage-history.json, in its own shape: one sample a quarter hour.
+const Q = 15 * 60e3;
+const H = 3600e3;
+function history(fhs, { start = Date.UTC(2026, 8, 25, 7), org = 'o1', step = Q } = {}) {
+  return { version: 2, samples: fhs.map((fh, i) => ({ t: start + i * step, org, u: { fh, sd: 12 } })) };
+}
+function desktop(obj) {
+  const file = path.join(scratch(), 'plan-usage-history.json');
+  fs.writeFileSync(file, typeof obj === 'string' ? obj : JSON.stringify(obj));
+  return file;
+}
+
+test('the desktop app\'s last sample is a reading, its reset five hours after the window\'s first', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  // Yesterday's window ends at 23, overnight nothing, 0 on opening the app, then use.
+  const h = history([20, 23, 0, 6, 8, 10, 11], { start });
+  const r = readDesktopUsage(desktop(h));
+  assert.equal(r.source, 'desktop');
+  assert.equal(r.fiveHour.used, 11);
+  assert.equal(r.at, start + 6 * Q, 'when the app sampled it, not when we read it');
+  assert.equal(r.fiveHour.resetsAt, start + 3 * Q + 5 * H, 'the first sample with usage in it opened the window by then');
+  assert.equal(r.sevenDay, null, 'the app gives no reset for the seven days, and none is invented');
+  assert.equal(goldOf(r, start + 6 * Q).bars, 89);
+  assert.equal(goldOf(r, start + 6 * Q).source, 'desktop');
+
+  // A drop is a reset between two samples: the window after it starts at the drop.
+  const drop = readDesktopUsage(desktop(history([40, 63, 97, 2, 5], { start })));
+  assert.equal(drop.fiveHour.resetsAt, start + 3 * Q + 5 * H);
+  // Nothing reaches back more than five hours, even with no drop to see - the app was shut.
+  const gap = readDesktopUsage(desktop({ version: 2, samples: [
+    { t: start, org: 'o1', u: { fh: 5 } }, { t: start + 6 * H, org: 'o1', u: { fh: 9 } },
+  ] }));
+  assert.equal(gap.fiveHour.resetsAt, start + 11 * H);
+  // A window that has run out since the last sample is a full pit, as with the status line.
+  assert.equal(goldOf(r, start + 3 * Q + 5 * H).bars, GOLD_BARS);
+  assert.equal(goldOf(r, start + 3 * Q + 5 * H).reset, true);
+});
+
+test('the desktop history is read for the last account only, and never trusted', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  const mixed = { version: 2, samples: [
+    { t: start, org: 'mine', u: { fh: 3 } },
+    { t: start + Q, org: 'other', u: { fh: 1 } },
+    { t: start + 2 * Q, org: 'mine', u: { fh: 7 } },
+  ] };
+  const r = readDesktopUsage(desktop(mixed));
+  assert.equal(r.fiveHour.used, 7);
+  assert.equal(r.fiveHour.resetsAt, start + 5 * H, 'the other account\'s 1 is not a drop in this one\'s window');
+
+  const junk = { version: 2, samples: [{ t: start, org: 'o', u: { fh: 4 } }, { t: 'later', u: { fh: 9 } }, { t: start + Q, u: { fh: 'lots' } }] };
+  assert.equal(readDesktopUsage(desktop(junk)).fiveHour.used, 4, 'a sample that is not numbers is skipped');
+  assert.equal(readDesktopUsage(desktop(history([250]))).fiveHour.used, 100);
+  assert.equal(readDesktopUsage(desktop({ version: 2, samples: [] })), null);
+  assert.equal(readDesktopUsage(desktop({ samples: 'x' })), null);
+  assert.equal(readDesktopUsage(desktop('not json')), null);
+  assert.equal(readDesktopUsage(path.join(scratch(), 'missing.json')), null, 'no desktop app is no reading');
+});
+
+test('whichever of the status line and the desktop app spoke last is the reading', () => {
+  const start = Date.UTC(2026, 8, 25, 7);
+  const line = path.join(scratch(), 'usage.json');
+  writeUsage(readingOf({ rate_limits: { five_hour: { used_percentage: 30, resets_at: (start + 4 * H) / 1000 } } }, start + 2 * Q), line);
+  const app = desktop(history([10, 20, 25], { start }));           // last sample at start + 2Q
+  assert.equal(currentUsage({ file: line, desktopFile: app }).source, 'statusline', 'a tie goes to the exact one');
+  const later = desktop(history([10, 20, 25, 35], { start }));     // start + 3Q
+  assert.equal(currentUsage({ file: line, desktopFile: later }).fiveHour.used, 35);
+  const none = path.join(scratch(), 'missing.json');
+  assert.equal(currentUsage({ file: none, desktopFile: later }).source, 'desktop', 'the desktop app alone is enough');
+  assert.equal(currentUsage({ file: line, desktopFile: none }).source, 'statusline');
+  assert.equal(currentUsage({ file: none, desktopFile: none }), null);
 });
 
 // ---- the status line ------------------------------------------------------------------
@@ -521,45 +596,107 @@ test('the silo is one mesh on its three by three, and publishes where the gold g
   assert.ok(b.animated && b.animated.goldpile, 'the gold has to be hung on from outside the loaf');
 });
 
+const courseOf = (slot) => Math.floor(slot[1] / BAR.h + 0.25);
+const inOffice = ([x, z], m = 0) => x > OFFICE.x0 - m && x < OFFICE.x1 + m && z > OFFICE.z0 - m && z < OFFICE.z1 + m;
+
 test('a hundred bars, stacked inside the walls, the top going first', () => {
   const slots = pileSlots();
   assert.equal(slots.length, GOLD_BARS, 'one bar a percent');
-  // The inner faces of the walls in buildings.js: sides at ±1.18 and back at -1.29, each
-  // 0.14 thick.
-  for (const [x, , z] of slots) {
-    assert.ok(Math.abs(x) + BAR.l / 2 < 1.11, `a bar through a side wall at x ${x}`);
-    assert.ok(z - BAR.w / 2 > -1.22, `a bar through the back wall at z ${z}`);
+  assert.deepEqual(pileSlots(), slots, 'every page lays the same heap');
+  // The inner faces of the walls in build-goldpit.py: sides at ±1.18 and back at -1.29,
+  // each 0.14 thick - measured at the corners, now that bars are turned.
+  for (const slot of slots) {
+    for (const [x, z] of barCorners(slot)) {
+      assert.ok(Math.abs(x) < SILO.side, `a bar through a side wall at x ${x.toFixed(3)}`);
+      assert.ok(z > SILO.back, `a bar through the back wall at z ${z.toFixed(3)}`);
+      assert.ok(!inOffice([x, z]), `a bar inside the keeper's office at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    }
   }
   // Numbered bottom course first, so the first n are the pile with the top taken off.
-  for (let i = 1; i < slots.length; i++) assert.ok(slots[i][1] >= slots[i - 1][1], 'a higher course before a lower one');
-  assert.equal(slots[slots.length - 1][1], 4 * BAR.h, 'the last bar is the top of the heap');
+  for (let i = 1; i < slots.length; i++) assert.ok(courseOf(slots[i]) >= courseOf(slots[i - 1]), 'a higher course before a lower one');
+  assert.equal(courseOf(slots[slots.length - 1]), 4, 'the last bar is the top of the heap');
+  assert.ok(slots.every((s) => courseOf(s) <= 4), 'nothing that could not be put down was piled on top instead');
+});
+
+test('the heap is stacked by hand: no two bars in each other, none over nothing', () => {
+  const slots = pileSlots();
+  const courses = [0, 1, 2, 3, 4].map((k) => slots.filter((s) => courseOf(s) === k));
+  for (const [k, course] of courses.entries()) {
+    for (let a = 0; a < course.length; a++) {
+      for (let b = a + 1; b < course.length; b++) {
+        assert.ok(!outlinesMeet(barCorners(course[a]), barCorners(course[b])), `two bars of course ${k} run into each other`);
+      }
+    }
+    if (k) for (const s of course) assert.ok(restsOn(s, courses[k - 1]), `a bar of course ${k} has nothing under its middle`);
+  }
+  // And it is not the ruled block it was: turned, rocking, and some never stacked.
+  assert.ok(slots.filter((s) => Math.abs(s[3]) > 0.03).length > GOLD_BARS / 3, 'most bars are square to the grid');
+  assert.ok(slots.filter((s) => s[4] || s[5]).length > 20, 'the upper courses lie level');
+  // A loose bar is one on the floor that no grid spot explains: turned further than a hand
+  // turns one, or lying in front of or beside the floor course.
+  const loose = courses[0].filter((s) => Math.abs(s[3]) > 0.11 || s[2] > 0.03 || Math.abs(s[0]) > 0.63).length;
+  assert.ok(loose >= 4 && loose <= 12, `${loose} bars lying about beside the heap`);
 });
 
 test('the sea stands a loader where the page drew the heap', () => {
   // lib/crowd.mjs may not import web/, so it carries its own copy of where the heap is.
   assert.equal(GOLD_PILE_BACK, -PILE_Z, 'the heap the loader faces is the heap that is drawn');
-  const front = Math.max(...pileSlots().map(([, , z]) => z)) + BAR.w / 2;
+  const front = Math.max(...pileSlots().flatMap((s) => barCorners(s).map(([, z]) => z)));
+  assert.ok(front <= LOOSE_FRONT);
   assert.ok(GOLD_LOAD_IN > front + 0.2, 'a loader stands clear of the gold, not in it');
   assert.ok(GOLD_LOAD_IN < 1.2, 'and inside the pit, not outside it');
-  assert.ok(PILE_PITCH.x > BAR.l && PILE_PITCH.z > BAR.w, 'bars in one course do not overlap');
+});
+
+test('coins lie about the heap, never on a bar, and go with it', () => {
+  const coins = coinSlots();
+  assert.equal(coins.length, COINS);
+  assert.deepEqual(coinSlots(), coins, 'every page strews the same coins');
+  const floorBars = pileSlots().filter((s) => courseOf(s) === 0).map(barCorners);
+  const box = (x, z) => [[x - COIN.r, z - COIN.r], [x + COIN.r, z - COIN.r], [x + COIN.r, z + COIN.r], [x - COIN.r, z + COIN.r]];
+  for (const [i, [x, y, z]] of coins.entries()) {
+    assert.ok(Math.abs(x) + COIN.r < SILO.side && z - COIN.r > SILO.back, `a coin in a wall at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    if (y > 0.3) {
+      assert.ok(Math.abs(y - COUNTER.y) < 0.05 && Math.abs(x - COUNTER.x) < 0.02, 'the only coins off the floor are on the counter');
+      continue;
+    }
+    assert.ok(!inOffice([x, z], COIN.r), 'no coin under the office');
+    assert.ok(!floorBars.some((b) => outlinesMeet(b, box(x, z))), 'no coin under a bar');
+    assert.ok(y < 6 * COIN.h, 'a stack is a few coins, not a column');
+    // Anything raised lies on a coin that is kept at least as long as it is.
+    if (y > 0) {
+      const under = coins.slice(0, i).find(([ux, uy, uz]) => uy < y && Math.hypot(ux - x, uz - z) < 2 * COIN.r);
+      assert.ok(under, `a coin at ${y.toFixed(3)} with nothing under it`);
+    }
+  }
+  // The counter's go last, and the coins go with the bars.
+  assert.ok(coins.slice(0, 3).every(([, y]) => y > 0.3));
+  assert.equal(coinsFor(GOLD_BARS), COINS);
+  assert.equal(coinsFor(0), 0, 'an empty pit has no loose change in it either');
+  assert.ok(coinsFor(11) < coinsFor(89));
+  assert.ok(coins.filter(([, y]) => y > 0 && y < 0.3).length >= 5, 'some fell onto others, and some are stacked');
 });
 
 test('the pile shows as many bars as it is told, and none is no draw call', () => {
   const group = new THREE.Group();
   const pile = attachGoldPile(group, [0, 0.02, 0], new THREE.MeshStandardMaterial());
   assert.equal(pile.mesh.count, GOLD_BARS);
+  assert.equal(pile.coins.count, COINS);
+  assert.equal(pile.mesh.material, pile.coins.material, 'one material for all the gold');
+  assert.equal(pile.coins.castShadow, false);
   pile.setBars(73);
   assert.equal(pile.mesh.count, 73);
+  assert.equal(pile.coins.count, coinsFor(73));
   pile.setBars(-5);
   assert.equal(pile.mesh.count, 0);
   assert.equal(pile.mesh.visible, false);
+  assert.equal(pile.coins.visible, false, 'and no draw call for coins either');
   pile.setBars(1000);
   assert.equal(pile.mesh.count, GOLD_BARS);
+  assert.equal(pile.coins.count, COINS);
   pile.setBars(NaN);
   assert.equal(pile.mesh.count, GOLD_BARS, 'a count that is not a number is a full pit');
   pile.dispose();
   assert.equal(group.children.length, 0);
-  // The bar carries the attributes the building material reads.
-  const g = goldBarGeometry();
-  assert.ok(g.attributes.color && g.attributes.aEmissive);
+  // The bar and the coin carry the attributes the building material reads.
+  for (const g of [goldBarGeometry(), goldCoinGeometry()]) assert.ok(g.attributes.color && g.attributes.aEmissive);
 });

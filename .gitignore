@@ -35,3 +35,5 @@ data/placements.json
 
 # A release laid out by scripts/pack-release.mjs
 /dist/
+# Scratch measurements a session leaves in tests/ while it works; never part of the suite.
+tests/.tmp-*

@@ -15,6 +15,9 @@ meeslinkt, (3) settlers die goud halen voordat ze gaan hameren.
 
 ## 1. Waar het getal vandaan komt
 
+(Sinds 25 september is er een tweede bron, het eigen bestand van de desktop-app; zie
+"Wat er nog openstaat" onderaan.)
+
 Nagezocht in de documentatie van Claude Code (statusline-pagina, september 2026): het
 5-uurspercentage staat **alleen** in de JSON die Claude Code aan een `statusLine`-commando
 geeft:
@@ -49,6 +52,8 @@ sessie).
 | Vanaf wanneer | Vanaf de eerste scan, voor iedereen. Geen mijlpaal. | Het limiet hoort bij elke sessie, niet bij een verdiende rang. Een scan moet een pure functie van het model zijn, dus aan het getal zelf (dat niet in het model zit) kan de kuil niet hangen. |
 | Plakt het | Ja. Eén keer geschreven in `layout.plots`, nooit meer verplaatst; `scan.mjs` gooit nooit een `civic:*`-kavel weg. Een bestaand eiland krijgt hem bij de eerste scan met deze code op het dichtstbijzijnde vrije blok, en de scan daarna is weer byte-identiek. | "Een huis verhuist nooit vanzelf" geldt ook hiervoor. Geen versiepoort nodig: er verhuist niets, er komt één kavel bij. |
 | De staven | Eén `InstancedMesh` van precies 100 staven met een eigen metalen materiaal (`web/js/goldpit.js`), naast het ene samengevoegde silo-mesh. Gestapeld als een piramide van vijf lagen, 5×8 + 4×7 + 3×6 + 2×5 + 1×4 = 100, van onder naar boven genummerd; `setBars(n)` zet `count = n`. | Twee draw calls voor de hele kuil, hoe vol hij ook is. Van onder naar boven genummerd betekent dat de berg van bovenaf slinkt, zoals een echte stapel waar je van afpakt. Honderd staven maakt "één staaf is één procent" letterlijk. |
+| Met de hand gestapeld (25 september) | Tiemen: "minder strak, alsof het met de hand geplaatst is". De vijf lagen blijven het skelet, maar uit een vaste rng-stroom (`goldpit:pile`): elke laag ligt iets verschoven op de vorige, elke staaf is een paar centimeter geduwd en tot 0,1 rad gedraaid, de bovenste lagen kantelen een beetje, en een paar hoeken zijn nooit gestapeld: die staven (hooguit 9, plus wat niet meer steunt) liggen los naast de stapel, nooit in het kantoortje of waar de kruiwagen staat. Volgorde: vloerlaag, losse staven, dan de lagen erboven. | Harder duwen (0,16 rad, 3 cm) is geprobeerd: dan vond een derde van de bovenste lagen zijn plek bezet. Nu past de plek zonder duw altijd, dus bepaalt het duwen alleen hoe rommelig. Een staaf die niet steunt (`restsOn`: zijn midden moet binnen de staven eronder vallen) gaat op de vloer; tests houden dat geen twee staven in elkaar zitten. |
+| Goudstukken | `prop_goldcoin` (Blender, 38 driehoeken), 72 stuks in een tweede `InstancedMesh` met hetzelfde materiaal en zonder schaduw: dicht bij de voet van de stapel en verder weg steeds minder, een paar in het looppad, sommige half over een andere, een paar stapeltjes, en drie op de toonbank van het kantoortje. Ze slinken mee (`coinsFor`: hetzelfde aandeel van 72), de verste eerst en de toonbank het laatst. | Eén draw call extra. Mee laten slinken omdat een lege kuil vol munten nog "er is goud" zegt. Nooit op een staaf, want een staaf kan weg en dan zweeft de munt. |
 | Wie ziet welk getal | **Alleen de keeper ziet zijn eigen getal.** `GET /api/gold` en het SSE-event `gold` zijn keeper-only (`who.role === 'islander'`, `localOnly`). Het getal staat níet in `village.json` en níet in de bundle. Een bezoeker, en elk ander eiland op de zee, ziet een volle kuil. | Hoeveel iemand van zijn abonnement heeft opgemaakt is van hem, net zoals zijn Jira-token en zijn mail; het principe van deze code is dat zoiets de machine niet af gaat. En in de bundle zou het ook duur zijn: elke verandering is dan een republish (206 kB, elke kijker bouwt de regio opnieuw, en de zee zet elke settler terug voor zijn deur). |
 | Hoe het getal de pagina bereikt | `serve.mjs` kijkt elke 5 s of `usage.json` veranderd is (of een `resetsAt` verstreken) en stuurt dan `event: gold`. Bij het opstarten haalt de pagina `/api/gold` één keer op. | Een `stat` per 5 s kost niets. `fs.watch` op de data-map is er al voor `village.json`, maar een tweede luisteraar op dezelfde map met eigen debounce is meer code voor dezelfde uitkomst. |
 | Een oude pagina | Tekent een onbekend `civicType` als het grijze stenen blokje van `default:` in `buildings.js`. Crasht niet. | |
@@ -76,10 +81,24 @@ hammer ──(goldIn op)──> lege kruiwagen naar de kuil ──> laden (1,6�
 
 ## Wat er nog openstaat
 
-- **Claude desktop / Cowork.** Of de desktop-app een statusLine draait is niet nagekeken
-  (vermoedelijk niet: dat is een terminal-ding). Wie alleen in de app werkt krijgt dan geen
-  meting en ziet een volle kuil. De OAuth-usage-API zou dat oplossen, met de kanttekening
-  hierboven; dat is Tiemens beslissing.
+- ~~**Claude desktop / Cowork.**~~ **Opgelost op 25 september.** De desktop-app draait
+  inderdaad geen statusLine: alle sessies sinds de installatie waren
+  `entrypoint: claude-desktop` en `data/usage.json` bestond niet, dus Tiemen zat op 11% met
+  een volle kuil. Maar de app houdt het venster zelf bij, in
+  `%APPDATA%\Claude\plan-usage-history.json`: elk kwartier een sample
+  `{ t, org, u: { fh, sd } }`, met `fh` het vijfuurspercentage. Dat is nu de tweede bron
+  (`readDesktopUsage` in `lib/usage.mjs`), zonder inloggegevens en zonder netwerk, dus de
+  OAuth-API blijft ongebouwd.
+
+  | Vraag | Besluit | Waarom |
+  |---|---|---|
+  | De reset | Er staat geen `resets_at` in het bestand, dus **geschat**: vijf uur na het eerste sample van het huidige venster (terug vanaf het laatste sample, zolang `fh` niet daalt, niet 0 is en niet verder dan vijf uur terug). | Dat sample had al gebruik, dus het venster was toen open: het is een bovengrens. Een kuil die een kwartier te laat volloopt is beter dan een die volloopt terwijl het venster nog op is. Teruggespeeld over een maand historie (26 resets met de app open): nooit te vroeg, hooguit een kwartier te laat, en later alleen als het venster opende terwijl de app dicht was. |
+  | Welke bron wint | **De jongste** (`currentUsage`); bij gelijk de statusLine. | De statusLine is exact maar schrijft alleen als het getal beweegt en zwijgt zonder terminal; de app loopt tot een kwartier achter maar blijft samplen. |
+  | Welk account | Alleen de `org` van het laatste sample. | Het bestand houdt elk account bij waarmee de app ooit ingelogd was. |
+  | Wat het dossier zegt | "As the desktop app saw it at 09:49", en "full again by 14:11 at the latest". | Het getal is tot een kwartier oud en de reset een schatting; dat hoort erbij te staan. |
+  | Het risico | Het bestandsformaat is niet gedocumenteerd en kan veranderen. | Dan geeft `readDesktopUsage` null (alles wordt veld voor veld gecontroleerd) en is de kuil weer vol, zoals voorheen - er gaat niets stuk. |
+
+  De kuil slinkt zo in stapjes van een kwartier, niet bij elk bericht.
 - **Bezoekers zien een volle kuil.** Als het getal ooit toch gedeeld moet worden, dan door een
   eigen deur zoals `/island/:id/codex`, nooit in de bundle.
 - **Een lege kuil.** Op 100% hameren settlers door en halen ze nog steeds een staaf; de zee

@@ -166,7 +166,7 @@ function loungeGeometry() {
 // camera low and a low camera aiming at eye level is looking at the rafters.
 export function createWalkMode({
   scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
-  camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null,
+  camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null, onDrink = null,
   // The purple bar's pool. main.js hands the island's walk and the tavern's the same one and
   // steps it itself, so the beer outlasts the door and wears off from the sky too; a walk
   // mode given none (the workbench) keeps and steps its own.
@@ -428,7 +428,8 @@ export function createWalkMode({
   // the button hit something on the sea rather than only move an arm - and of none it
   // refused, so a mashed button is not a volley the sea sees and nobody else does. A shield
   // up in the other hand is no reason not to: the sea takes a swing from a blocker.
-  const fight = (side) => { if (canFight() && classicAvatar.attack(side) && onSwing) onSwing(); };
+  // `side` goes with it, so everybody else sees that arm come down (Plans/andere-spelers-zoals-jij.md).
+  const fight = (side) => { if (canFight() && classicAvatar.attack(side) && onSwing) onSwing(side); };
   const SIDE_OF = { 0: 'leftArm', 2: 'rightArm' };
   const shieldIn = (side) => classicAvatar.held(side) === 'shield';
   function guardUp(side, on) {
@@ -445,7 +446,8 @@ export function createWalkMode({
   const beerIn = (side) => classicAvatar.held(side) === 'beer';
   // What a hand's button does on the press or the click, for any hand that is not a shield
   // (whose button holds rather than acts - guardUp above).
-  const act = (side) => { if (!beerIn(side)) fight(side); else if (canDrink()) classicAvatar.drink(side); };
+  // A sip the rig actually took is told to `onDrink`, for everybody else to see it too.
+  const act = (side) => { if (!beerIn(side)) fight(side); else if (canDrink() && classicAvatar.drink(side) && onDrink) onDrink(side); };
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;

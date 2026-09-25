@@ -16,6 +16,17 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [andere-spelers-zoals-jij.md](andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
+  als jij, in hun eigen uiterlijk en uitrusting (`{t:'look'}`), met liggen, hurken en zitten als
+  pose-bits en slaan en drinken als gebeurtenissen. Gebouwd op 25 september 2026.
+- [lopen-op-de-boot.md](lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
+  boot (een nieuwe, grotere sloep): je plek ten opzichte van de romp (`state.deck`), een plat
+  dek uit het model, en op de lijn romp en lokale plek samen zoals `encodeRides` het voor
+  settlers al doet, zodat niemand naast de boot zweeft. Fase 0 (de stuurder was voor anderen
+  onzichtbaar) en fase 1 (boten van anderen varen vloeiend, op één tijdlijn met de spelers)
+  gebouwd op 25 september 2026, en het grondwerk voor 2 tot en met 6 (soorten boten, het
+  dekstelsel, crew op de zee, dekposities op de lijn); nog geen nieuwe boot en niets
+  aangezet in walk-mode.
 - [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
   hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
   desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande
@@ -39,6 +50,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
+- [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
+  kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
+  gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.
 - [groot-kasteel.md](groot-kasteel.md) — het kasteel op twee bij twee super-cellen: een kavel van
   7 bij 7 en het model 7/3 zo groot. Een nieuw kasteel neemt het dichtstbijzijnde vrije, vlakke
   blok van de stad; een bestaand kasteel groeit op zijn plek met de voorkant waar hij was, of

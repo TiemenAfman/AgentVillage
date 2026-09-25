@@ -1,10 +1,12 @@
-// The tables that come out for the Friday borrel, and go back in again at closing time.
+// The tables that come out for the Friday borrel - and for the three breaks on a working
+// day, which are the same party at other hours - and go back in again at closing time.
+// Which hours those are is shared/daylight.mjs's business, not this file's.
 //
 // One set stands on the square all week - that is the `tables` civic the village earns,
 // drawn in buildings.js - and it seats about ten people. A village of fifty needs five,
-// so the rest are carried out at half past four and are gone by five, which is also the
-// only honest way to draw them: a square permanently set for a party nobody is at reads
-// as a stage set rather than as a place.
+// so the rest are carried out when the bell goes and are gone when it is over, which is
+// also the only honest way to draw them: a square permanently set for a party nobody is
+// at reads as a stage set rather than as a place.
 //
 // They are one InstancedMesh sharing the civic's own geometry, so however many come out
 // they cost one draw call and no new material. The spots are worked out once per village

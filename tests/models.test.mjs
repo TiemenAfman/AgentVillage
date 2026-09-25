@@ -296,7 +296,7 @@ test('the register spans every set and answers by part name alone', () => {
     'lighthouse',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar',
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar', 'prop_goldcoin',
       // The fields and the water's edge (scripts/build-farmyard.py).
       'prop_beehive', 'prop_haystack', 'prop_reeds', 'prop_scarecrow', 'prop_waterlily'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'statue', 'tavern', 'townhall',

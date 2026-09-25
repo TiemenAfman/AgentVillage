@@ -7,7 +7,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { borrelAt } from 'shared/daylight.mjs';
+import { gatheringAt } from 'shared/daylight.mjs';
+import { keeperOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -38,6 +39,7 @@ import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
 import { createPeers } from './peers.js';
+import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createMinimap, createWorldMap } from './minimap.js';
@@ -53,7 +55,7 @@ import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
 import { createCrops } from './crops.js';
-import { attachClock, updateClock } from './clock.js';
+import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
@@ -458,12 +460,14 @@ function faceUp(id, fig) {
 // conversation uses, so everybody watching sees that much - and drink it on this page:
 // the pint, the gulp and, from the third, the sway are ours alone (crowd-view.js giveBeer).
 // Reach is measured to the body, not to their house, and one gift is going at a time.
+// Only on foot with both feet on the ground: not from the boat, the bicycle (`w.bike`,
+// never `aboard()`, which is the boat alone - Plans/fiets.md) or halfway through a jump.
 const GIVE_R = 1.6;
 let gift = null;   // { id, until } while a beer is going down
 function giveTarget() {
   if (!state.settlers || state.inside || state.mode !== 'walk' || !state.walk) return null;
   const w = state.walk.state;
-  if (state.walk.aboard() || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
+  if (state.walk.aboard() || w.bike || !w.grounded || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
   let best = null, bestD = GIVE_R * GIVE_R;
   for (const f of state.settlers.figures().values()) {
     if (!f.visible || f.hidden || !f.to) continue;
@@ -492,6 +496,40 @@ function endGift() {
   if (!gift) return;
   if (state.net) state.net.unattend(gift.id);
   gift = null;
+}
+
+// The keepers have no session to carry on. You look them in the eye like anybody else;
+// the mayor then opens the register, which is their office's work, and the rest say
+// something about their own building - by the world's own clock (worldNow, the sea's), the
+// one the sea sends the village to the square by, and for the gold clerk by the pit's own count.
+function speakToKeeper(it) {
+  const fig = state.settlers ? state.settlers.figure(it.id) : null;
+  faceUp(it.id, fig);
+  if (it.post === 'mayor') { openTownHall(); return; }
+  const c = worldNow();
+  const on = gatheringAt(c.weekday, c.hour);
+  const night = c.hour >= 22 || c.hour < 7;
+  const said = {
+    innkeeper: on
+      ? `“Busy — it’s ${on.name}. Grab a table on the square and I’ll bring it out.”`
+      : night ? '“We’re closed. Come back when there’s light in the sky.”'
+        : '“Quiet in here. The door’s open, and the tables are yours.”',
+    clerk: (() => {
+      const g = state.gold;
+      if (state.guest || !g || !g.known) return '“Every bar is on the books and every bar is in the pit. Nothing has been signed out yet.”';
+      if (g.reset) return `“All ${g.max} back in the pit — the window turned over. Fresh ledger.”`;
+      return `“${g.bars} of ${g.max} left in the pit${g.resetsAt ? `, and it fills again by ${hhmm(g.resetsAt)}` : ''}. I write down every bar that goes out.”`;
+    })(),
+    headmistress: on ? `“The children are out for ${on.name}. Mind the chalk on your sleeves.”`
+      : night ? '“School’s shut. Lessons again in the morning.”'
+        : c.weekday === 0 || c.weekday === 6 ? '“No lessons at the weekend — even the apprentices need a rest.”'
+          : '“Lessons are on. The apprentices learn by watching, mostly.”',
+    priest: on ? `“Go on, it’s ${on.name}. I’ll keep the chapel.”`
+      : c.weekday === 0 ? '“Sunday. The door is open for anyone.”'
+        : night ? '“A quiet night. The lamp stays lit.”'
+          : '“Peace be with you. The bell keeps the island’s hours.”',
+  };
+  if (said[it.post]) state.ui.toast(said[it.post]);
 }
 
 // Addressing a settler opens their session and lets you carry it on.
@@ -619,6 +657,23 @@ function interactables() {
       });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
+    }
+  }
+  // The innkeeper and the mayor (Plans/kroegbaas-en-burgemeester.md), wherever they are
+  // standing. Getters, because walk.js measures the distance every frame and a keeper does
+  // not stand still - and looked up by id each time, because a new roster enrols a new
+  // figure object under the same id.
+  if (state.settlers) {
+    for (const rec of state.byId.values()) {
+      const keeper = keeperOf(rec.spec);
+      if (!keeper || !rec.group.visible) continue;
+      const fig = () => state.settlers.figure(rec.id);
+      const who = keeper.name.replace(/^The /, 'the ');
+      out.push({
+        id: rec.id, kind: 'keeper', post: keeper.post, r: 1.4, label: who, prompt: `speak to ${who}`,
+        get x() { const f = fig(); return f && f.visible ? f.pos[0] : Infinity; },
+        get z() { const f = fig(); return f && f.visible ? f.pos[1] : Infinity; },
+      });
     }
   }
   // The boards with a page on them. They come from the panel layer rather than from the
@@ -919,7 +974,7 @@ async function pollMail(force = false) {
 // --------------------------------------------------------------- the gold pit
 // The keeper's five-hour usage window as a pile of bars by the square (Plans/goudkuil.md).
 // Asked for once at boot and then told: serve.mjs sends `event: gold` whenever the status
-// line writes a new reading down or a window runs out. A visitor is told nothing - the
+// line or the desktop app writes a new reading down, or a window runs out. A visitor is told nothing - the
 // server refuses /api/gold to anybody but the keeper - so their pit stays full, and so does
 // every guest island's (attachExtras, `gold: false`): whose limit it is stays on their
 // machine.
@@ -938,12 +993,16 @@ function goldPrompt() {
 function goldWords(g) {
   if (state.guest) return 'Whose gold this is stays on their own machine: every visitor sees a full pit.';
   if (!g || !g.known) {
-    return 'A full pit, because nothing has said otherwise yet. Claude Code tells its status line how much of the five-hour window is used - the island put one in when it started - and the first answer in a Claude Code session writes the number down here.';
+    return 'A full pit, because nothing has said otherwise yet. The Claude desktop app notes how much of the five-hour window is used every quarter of an hour, and a Claude Code status line on every answer - the island put one in when it started - and neither has written a number down on this machine yet.';
   }
   if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
   const used = Math.round(g.used);
-  const refill = g.resetsAt ? ` Full again at <b>${hhmm(g.resetsAt)}</b>.` : '';
-  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${refill}`;
+  // The app's sample is up to a quarter of an hour old and its reset an estimate that errs
+  // late (lib/usage.mjs readDesktopUsage), so it is said as one; the status line's is exact.
+  const app = g.source === 'desktop';
+  const seen = app && g.at ? ` As the desktop app saw it at ${hhmm(g.at)}.` : '';
+  const refill = g.resetsAt ? ` Full again ${app ? 'by' : 'at'} <b>${hhmm(g.resetsAt)}</b>${app ? ' at the latest' : ''}.` : '';
+  return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${seen}${refill}`;
 }
 
 // Everything that shows the count, from one place.
@@ -1041,6 +1100,7 @@ function walkCallbacks() {
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
       else if (it.kind === 'boat') takeBoat(it.id);
@@ -1050,7 +1110,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1182,6 +1242,8 @@ function enterInterior(room, at) {
       inside = createInterior({
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
         onLeave: () => leaveInterior(),
+        // A glass raised at the bar is seen by everybody else in the room (net.js drink).
+        onDrink: (side) => { if (state.net) state.net.drink(side); },
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -1969,13 +2031,45 @@ function onBoatFromServer(m) {
   // Somebody else has the tiller: their word is where it is. Our own boat we are steering
   // ourselves, and taking the server's echo of our own message would jitter it back a
   // fifth of a second on every reply.
+  //
+  // Their word goes onto the timeline everybody's pose is drawn on (glideBoats) rather than
+  // setting the hull down where it was said to be: a hull that jumps up to a metre every
+  // tenth of a second, under a pilot drawn on it, is a boat nobody can watch sailing. Let go
+  // of, it glides the last stretch to where it was left and stops there - a jump there
+  // would be the whole lag's worth of way at once.
   if (!mine) {
-    craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw;
+    if (craft.pilot || craft.track) hullSample(craft, m, !craft.pilot);
+    else { craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw; }
     craft.v = 0;
-  }
+  } else craft.track = null;
   // And if it was ours and now is not, we are no longer sailing it.
   if (state.walk && state.walk.aboard() === craft && craft.pilot && !mine) {
     state.walk.unboard([craft.x, craft.z]);
+  }
+}
+
+// One more thing somebody else said about their hull, stamped on this page's own clock like
+// a peer's pose. A track starts with that sample on its own - never from wherever the hull
+// happened to be drawn, which would be a span of a millisecond to extrapolate along.
+function hullSample(b, m, final) {
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.z) || !Number.isFinite(m.yaw)) return;
+  pushSample(b.track || (b.track = []), { x: m.x, z: m.z, yaw: m.yaw, at: performance.now(), final });
+}
+
+// Every hull somebody else is steering, where the timeline says it is this frame
+// (web/js/timeline.js - the same LAG_MS the other people are drawn at). Before the peers,
+// which stand a pilot on their hull (`seatOf`); the fleet loop further down then only puts
+// each mesh where this has left it.
+const glide = {};
+function glideBoats() {
+  const render = performance.now() - LAG_MS;
+  const mine = state.walk && state.walk.aboard();
+  for (const b of state.boats) {
+    if (!b.track || b === mine) continue;
+    trackAt(b.track, render, glide);
+    b.x = glide.x; b.z = glide.z; b.yaw = glide.yaw;
+    const last = b.track[b.track.length - 1];
+    if (last.final && render >= last.at) b.track = null;
   }
 }
 
@@ -2536,6 +2630,8 @@ function rehome(origin) {
     dropRegion(region.id);
   }
   if (state.peers) state.peers.clear();
+  // A hull somebody is sailing is on the same footing: the next message puts it back.
+  for (const b of state.boats) b.track = null;
   console.info(`island: home is berthed at [${state.homeOrigin}]; the world is drawn from there`);
   return true;
 }
@@ -2867,6 +2963,13 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
     rec.goldPile = attachGoldPile(group, built.animated.goldpile.at, buildingMat);
     rec.goldPile.setBars(gold ? goldBarsNow() : GOLD_BARS);
     if (!gold) rec.goldPile.foreign = true;
+  }
+  // And the clock over the office door, at the hour the pit is full again. Ours only, like
+  // the count: on anybody else's pit it hangs there with no hands - see attachResetClock.
+  if (built.animated && built.animated.resetclock) {
+    const rc = built.animated.resetclock;
+    rec.resetClock = attachResetClock(group, rc.at, buildingMat, rc.r);
+    rec.resetClock.foreign = !gold;
   }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, buildingMat);
@@ -3667,7 +3770,9 @@ function applyVisibility() {
   for (const rec of state.byId.values()) {
     const ok = passesFilter(rec.spec) && visibleAt(rec.spec, t) && !rec.popping;
     rec.group.visible = ok;
-    if (state.settlers) state.settlers.setVisible(rec.id, ok && rec.spec.kind !== 'civic');
+    // Nobody lives in a civic building, except the two who keep one (KEEPERS in
+    // shared/palette.mjs): the innkeeper and the mayor stand at the door of theirs.
+    if (state.settlers) state.settlers.setVisible(rec.id, ok && (rec.spec.kind !== 'civic' || !!keeperOf(rec.spec)));
     if (rec.flagIdx >= 0) updateFlagInstance(rec, ok);
   }
   // The bed holds the middle of the square for exactly as long as the fountain is not
@@ -4303,6 +4408,7 @@ function frame(nowMs) {
   // condition rather than a second drawing path: `state.chronicle.t` is exactly "not on
   // Live", and it is the same test timeNow() already makes.
   const live = state.chronicle.t == null;
+  glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
     state.peers.update(dt);
@@ -4394,18 +4500,18 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday afternoon: the whole village downs tools and heads for the square. Whether
-    // they go is the sea's decision - it keeps the clock everybody shares - and what is
-    // left here is the furniture, which is scenery and always was: one set of tables per
-    // ten islanders, of which the set the village earned is the first, so the rest are
-    // carried out and taken back in with the borrel itself.
-    // The sea's clock, not this browser's: the people go to the square on the world's own
-    // Friday afternoon (borrelAt in shared/daylight.mjs, asked by lib/sea.mjs of the same
-    // worldTime), and the tables have to come out for the same half hour or a viewer in
-    // another zone sees a borrel with no furniture.
-    const borrel = borrelAt(calendar.weekday, hour);
+    // A break, or the Friday borrel: the whole village downs tools and heads for the
+    // square. Whether they go is the sea's decision - it keeps the clock everybody shares -
+    // and what is left here is the furniture, which is scenery and always was: one set of
+    // tables per ten islanders, of which the set the village earned is the first, so the
+    // rest are carried out and taken back in with the gathering itself.
+    //
+    // The sea's clock, not this browser's, and the same list the sea reads
+    // (shared/daylight.mjs): the tables have to come out for exactly the minutes the people
+    // are there, or a viewer in another zone sees a borrel with no furniture.
+    const gathering = gatheringAt(calendar.weekday, hour);
     if (state.borrel) {
-      state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
+      state.borrel.show(gathering ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
     // And our own people, off the wire like any other island's. The height is the one the
     // sea walked them to - decks, stair treads and all - which is what stands somebody on a
@@ -4557,11 +4663,14 @@ function updateLabels() {
   if (who && who.visible) {
     const rec = state.byId.get(who.id);
     const spec = rec ? rec.spec : who.spec;
+    // A keeper shares the building's id, so without this the mayor would be labelled
+    // "Promptholm Town Hall" - named for what they keep, with the building underneath.
+    const keeper = keeperOf(spec);
     projected.set(who.pos[0], (who.y || 0) + 0.62, who.pos[1]).project(camera);
     if (projected.z <= 1) {
       hoverItem = {
-        name: spec.name,
-        sub: labelSub(spec),
+        name: keeper ? keeper.name : spec.name,
+        sub: keeper ? spec.name : labelSub(spec),
         x: (projected.x + 1) / 2 * innerWidth,
         y: (1 - projected.y) / 2 * innerHeight,
       };
@@ -4836,7 +4945,11 @@ async function boot() {
   state.studio = createAvatarStudio(document.body, {
     // Re-dress the avatar the instant a swatch is picked, so if you are already walking
     // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
-    onApply: (spec) => { if (state.walk) state.walk.setAvatar(spec); },
+    onApply: (spec) => {
+      if (state.walk) state.walk.setAvatar(spec);
+      // Everybody else sees the new look too (Plans/andere-spelers-zoals-jij.md).
+      if (state.net) state.net.setLook(spec);
+    },
     onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
   });
 
@@ -5020,7 +5133,9 @@ async function boot() {
     // Every swing the arm starts goes to the sea, which decides what it reaches
     // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function
     // because the line is opened after this.
-    onSwing: () => { if (state.net) state.net.swing(); },
+    onSwing: (side) => { if (state.net) state.net.swing(side); },
+    // And a sip, which nobody fights with and everybody else should still see.
+    onDrink: (side) => { if (state.net) state.net.drink(side); },
     tipsy: state.tipsy,
     bikes: true,
   });
@@ -5037,6 +5152,20 @@ async function boot() {
       if (!state.panels) return;
       const board = at ? ourPanel(at.board) : null;
       state.panels.peerCursor(who, board ? { ...at, board } : null);
+    },
+    // A pilot stands on the hull they are steering (Plans/lopen-op-de-boot.md, fase 0): the
+    // hull as glideBoats has put it this frame, on the deck the fleet loop last bobbed it to
+    // - exactly where walk.js stands our own pilot.
+    seatOf: (id) => {
+      const b = state.boats.find((x) => x.pilot === id);
+      return b ? { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw } : null;
+    },
+    // And somebody standing on a deck is drawn on that hull too, at their place on it
+    // (shared/deck.mjs). Nobody stands on one yet - every boat is a Benchy with room for her
+    // pilot - but the page can already draw a crew the day a boat carries one.
+    hullOf: (id) => {
+      const b = boatAt(id);
+      return b ? { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw } : null;
     },
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
@@ -5057,6 +5186,9 @@ async function boot() {
     blocked: () => !!openPanel(),
   });
   state.net = createNet({
+    // What we look like to everybody else: our own wardrobe (web/js/avatar.js), said on
+    // every connect and again from the studio's Apply.
+    look: loadAvatar(),
     onEvicted: (m) => {
       exitWalk({ force: true });
       state.walk.setPaused(false);
@@ -5349,6 +5481,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (!rec.group.visible) return;
   if (rec.blades) rec.blades.rotation.z += dt * 0.55;
   if (rec.clock) updateClock(rec.clock, hour);
+  // Real time, not `hour`: the refill is a fact about now, whatever the chronicle is showing.
+  if (rec.resetClock) updateResetClock(rec.resetClock, rec.resetClock.foreign || state.guest ? null : state.gold, Date.now());
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);

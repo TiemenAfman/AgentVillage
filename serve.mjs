@@ -35,7 +35,7 @@ import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
-import { readUsage, USAGE_FILE } from './lib/usage.mjs';
+import { currentUsage } from './lib/usage.mjs';
 import { ensureStatusLine } from './lib/statusline.mjs';
 import { goldOf } from './shared/gold.mjs';
 import os from 'node:os';
@@ -1453,7 +1453,11 @@ function watchData() {
 // for nothing, where a second fs.watch on DATA beside watchData's would still need a timer
 // for the reset. readFileSync, like everything here that reads a data/*.json: a handle held
 // across a turn is what makes the writer's rename fail with EPERM on Windows.
-const goldNow = () => goldOf(readUsage(USAGE_FILE), Date.now());
+//
+// The desktop app's own samples (lib/usage.mjs readDesktopUsage) ride the same poll: it
+// rewrites its file every quarter of an hour, and 75 kB parsed every five seconds is still
+// nothing beside a scan.
+const goldNow = () => goldOf(currentUsage(), Date.now());
 const GOLD_POLL_MS = 5000;
 function watchGold() {
   let said = JSON.stringify(goldNow());

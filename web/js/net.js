@@ -29,6 +29,12 @@ export const FLAG_SHIELD_RIGHT = 64;
 // In the saddle (web/js/bicycle.js). The sea only relays it, and peers.js draws a bicycle
 // under whoever carries it; lib/players.mjs's POSE.RIDING is the sea's copy.
 export const FLAG_RIDING = 128;
+// How the body is to be drawn by everybody else (Plans/andere-spelers-zoals-jij.md): on its
+// back, crouched, on a seat. Relayed only, for peers.js; lib/players.mjs's POSE is the sea's
+// copy, and a sea from before these masks them away and draws nobody wrong.
+export const FLAG_LYING = 256;
+export const FLAG_CROUCHING = 512;
+export const FLAG_SITTING = 1024;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -81,7 +87,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, name = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
+  onWelcome = () => {}, onAgent = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
   // Where the sea says our island lies, in the sea's own frame. The page draws its own
@@ -113,7 +119,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   let closed = false;
   let walking = false;
   let selfId = null;
-  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, r: null, at: 0 };
+  const last = { x: 0, y: 0, z: 0, yaw: 0, f: -1, r: null, d: null, at: 0 };
   // Whose feet to report. Walking the island it is the island's walk mode; indoors the
   // room owns one of its own, and reporting the wrong one would leave your body standing
   // wherever you last were outside.
@@ -168,6 +174,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       const hand = joinWith();
       if (hand) send({ t: 'join', ...hand });
       if (name) send({ t: 'hello', name });
+      // What we look like, from our own wardrobe (web/js/avatar.js), on every connect: the
+      // sea keeps it only as long as this socket, and a reconnect is a stranger until then.
+      if (look) send({ t: 'look', ...look });
       send({ t: 'w', on: walking });
       last.f = -1;                      // force the first pose through
     });
@@ -204,6 +213,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           onWelcome(m.id, m.build || null);
           break;
         case 'join': peers.join(m.p); break;
+        // Somebody else's arm, on everybody else's screen (Plans/andere-spelers-zoals-jij.md):
+        // a swing coming down, a glass going up. Events, like the agents' own `swing`.
+        case 'swung': peers.act(m.id, 'attack', m.side); break;
+        case 'drank': peers.act(m.id, 'drink', m.side); break;
         case 'leave': peers.leave(m.id); break;
         case 'roster': peers.roster(m.players); break;
         case 's': {
@@ -211,7 +224,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           // and z come into ours here, before anything draws them.
           const [hx, hz] = homeAt();
           if (hx || hz) for (const row of m.a || []) { row[1] -= hx; row[3] -= hz; }
-          peers.snapshot(m.a);
+          // `d` is who stands on which deck, in that hull's own frame, so it needs no
+          // translating: the hull it is measured from already came in through boatIn.
+          peers.snapshot(m.a, undefined, m.d);
           break;
         }
         // The boards. `ui` is one field of one board; `drove` is who is standing at it.
@@ -335,12 +350,21 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.blocking && !s.swimming && !s.vehicle && !s.bike ? FLAG_BLOCKING : 0)
       | (s.bike ? FLAG_RIDING : 0)
       | (s.shields && s.shields.left ? FLAG_SHIELD_LEFT : 0)
-      | (s.shields && s.shields.right ? FLAG_SHIELD_RIGHT : 0);
+      | (s.shields && s.shields.right ? FLAG_SHIELD_RIGHT : 0)
+      | (s.lying ? FLAG_LYING : 0)
+      | (s.crouching && !s.lying ? FLAG_CROUCHING : 0)
+      | (s.sitting ? FLAG_SITTING : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.
     const [hx, hz] = homeAt();
-    const still = Math.abs(s.pos.x - last.x) < MOVED
+    // On a deck (Plans/lopen-op-de-boot.md): which boat, and where on it, in its own frame -
+    // shared/deck.mjs. The world position still goes out beside it, for a sea from before
+    // this. No walk mode sets `deck` yet: every boat is a Benchy with room for her pilot.
+    const deck = s.deck || null;
+    const deckSig = deck ? `${deck.boat}:${deck.x.toFixed(3)},${deck.y.toFixed(3)},${deck.z.toFixed(3)},${deck.yaw.toFixed(3)}` : null;
+    const still = deckSig === last.d
+      && Math.abs(s.pos.x - last.x) < MOVED
       && Math.abs(s.pos.z - last.z) < MOVED
       && Math.abs(s.pos.y - last.y) < MOVED
       && Math.abs(s.yaw - last.yaw) < TURNED
@@ -351,8 +375,10 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     const [wx, wz] = outgoing(s.pos.x, s.pos.z);
     const pose = { t: 'p', x: wx, y: s.pos.y, z: wz, yaw: s.yaw, f, r: room || undefined };
     if (cursor) { pose.b = cursor.id; pose.u = cursor.u; pose.v = cursor.v; }
+    if (deck) { pose.on = deck.boat; pose.d = [deck.x, deck.y, deck.z, deck.yaw]; }
     if (!send(pose)) return;
     last.x = s.pos.x; last.y = s.pos.y; last.z = s.pos.z; last.yaw = s.yaw; last.f = f; last.r = room; last.at = now;
+    last.d = deckSig;
     last.hx = hx; last.hz = hz;
   }
 
@@ -411,13 +437,15 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // raised in the other hand is no reason not to: the sea takes a swing from a blocker. Every one of those the sea
     // would drop on arrival, so none of them is worth a token from the bucket. Returns whether
     // it went.
-    swing() {
+    swing(side = null) {
       const s = here && here.state;
       if (!walking || room || here !== walk || !s || !s.active || s.vehicle || s.bike || s.swimming || !berthKnown()) return false;
       const t = clock();
       if (t - swungAt < SWING_MS) return false;
       sendPose();
-      if (!send({ t: 'swing' })) return false;
+      // Which hand, so everybody else sees that arm come down (the sea passes it on as
+      // `swung`); the sea's own combat does not care.
+      if (!send({ t: 'swing', side: side || undefined })) return false;
       swungAt = t;
       return true;
     },
@@ -453,6 +481,18 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       hull.live = false;
       send({ t: 'boat', a: 'drop', id });
     },
+    // A crew, for a boat with room for more than her pilot (Plans/lopen-op-de-boot.md, fase
+    // 4 to 6; lib/boats.mjs has the rules). Nothing calls these yet. Letting go of the tiller
+    // keeps the hull live: for a moment the sea still takes its position from us while it
+    // runs out its way (COAST_MS there).
+    boardBoat(id) { send({ t: 'boat', a: 'board', id }); },
+    // A sip, for everybody else to see (the sea passes it on as `drank`). Indoors too: the
+    // bar is where a beer is drunk.
+    drink(side) { if (walking && here && here.state && here.state.active) send({ t: 'drink', side }); },
+    // Our look, when the wardrobe changes it - and kept for the next connect.
+    setLook(spec) { look = spec || null; if (look) send({ t: 'look', ...look }); },
+    leaveBoat(id) { send({ t: 'boat', a: 'leave', id }); },
+    letGoBoat(id) { sendHull(); send({ t: 'boat', a: 'letgo', id }); },
     // And where the hull has got to, on the pose beat rather than a beat of its own: the
     // pilot is already sending ten poses a second and the boat is under them, so this is
     // one more message on the same bucket and no new ceiling to reason about. Twenty a

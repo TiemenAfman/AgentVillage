@@ -12,10 +12,12 @@ export const GOLDPIT_ID = 'civic:goldpit';
 // pile shrinks as the limit is used" literal rather than a scale somebody has to read.
 export const GOLD_BARS = 100;
 
-// A usage reading, as lib/usage.mjs keeps it in data/usage.json:
-//   { fiveHour: { used, resetsAt }, at }
+// A usage reading, as lib/usage.mjs hands it over (currentUsage):
+//   { fiveHour: { used, resetsAt }, at, source }
 // `used` is Claude Code's own used_percentage (0..100), `resetsAt` the end of the window in
-// milliseconds since the epoch, `at` when the reading was taken.
+// milliseconds since the epoch, `at` when the reading was taken, and `source` which of the
+// two places said so - 'statusline' (exact) or 'desktop' (the app's quarter-hourly sample,
+// whose `resetsAt` is an estimate that errs late). Passed through for the dossier to say.
 //
 // What it comes to in bars. No reading at all, or a window that has run out since the
 // reading was taken, is a full pit: a reset is exactly what an empty window means, and an
@@ -25,9 +27,10 @@ export const GOLD_BARS = 100;
 export function goldOf(reading, now) {
   const w = reading && reading.fiveHour;
   const valid = w && Number.isFinite(w.used) && Number.isFinite(w.resetsAt);
-  if (!valid) return { bars: GOLD_BARS, max: GOLD_BARS, used: null, resetsAt: null, at: null, known: false, reset: false };
+  if (!valid) return { bars: GOLD_BARS, max: GOLD_BARS, used: null, resetsAt: null, at: null, known: false, reset: false, source: null };
+  const source = reading.source ?? null;
   if (now >= w.resetsAt) {
-    return { bars: GOLD_BARS, max: GOLD_BARS, used: 0, resetsAt: null, at: reading.at ?? null, known: true, reset: true };
+    return { bars: GOLD_BARS, max: GOLD_BARS, used: 0, resetsAt: null, at: reading.at ?? null, known: true, reset: true, source };
   }
   const used = Math.min(100, Math.max(0, w.used));
   return {
@@ -38,5 +41,6 @@ export function goldOf(reading, now) {
     at: reading.at ?? null,
     known: true,
     reset: false,
+    source,
   };
 }
