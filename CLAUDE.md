@@ -505,7 +505,10 @@ stream, `MAX_GOLD` out at once) behind a wheelbarrow: `'barrow'` out empty, `'lo
 it at the pile, `'carry'` home full - appended to `ANIMS`, the two walks in `MOVING`, the same
 kind of word as a woodcutter's `'haul'`. `settler-figures.js` sets the barrow on the ground
 under them (no bob, no lean: it runs on its wheel), turns the wheel by distance travelled and
-parks it on its legs for loading (`BARROW`, three batches for the whole crowd). `createCrowd(island, { known, before })` hands each settler's gold errand over from
+parks it on its legs for loading (`BARROW`, three batches for the whole crowd). Between
+trips it stands beside its settler while they hammer, along the front of the house and empty -
+derived on the page (`barrowAtHome` in crowd-view.js: `'hammer'` on an island whose buildings
+include the pit), so nothing about it is on the wire and every screen parks the same barrows. `createCrowd(island, { known, before })` hands each settler's gold errand over from
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.

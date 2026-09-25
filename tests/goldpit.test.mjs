@@ -38,6 +38,7 @@ globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeE
 const { buildBuilding } = await import('../web/js/buildings.js');
 const { pileSlots, attachGoldPile, goldBarGeometry, BAR, PILE_PITCH, PILE_Z } = await import('../web/js/goldpit.js');
 const { createFigures } = await import('../web/js/settler-figures.js');
+const { createCrowdView } = await import('../web/js/crowd-view.js');
 const { settlerLook } = await import('../shared/palette.mjs');
 const THREE = await import('three');
 delete globalThis.document;
@@ -432,6 +433,49 @@ test('a barrow is drawn for the trip, parked for loading, and loaded on the way 
     assert.equal(mesh.visible, false);
   }
   view.dispose();
+});
+
+test('a hammering settler has the barrow parked beside them, empty and still', () => {
+  const scene = new THREE.Scene();
+  const view = createFigures(scene, new THREE.MeshStandardMaterial());
+  const figures = new Map();
+  for (const [id, home] of [['builder', true], ['no-pit', false]]) {
+    const f = { id, visible: true, pos: [0, 0], y: 0, yaw: 0, anim: 'hammer', mode: 'hammer', speed: 0, barrowAtHome: home };
+    view.enrol(f, settlerLook(id, 'sonnet'), 'adult');
+    figures.set(id, f);
+  }
+  const barrows = scene.getObjectByName('resident-barrows');
+  const gold = scene.getObjectByName('resident-barrow-gold');
+  view.draw(figures, 0.1);
+  assert.equal(barrows.count, 1, 'the builder on an island with a pit has one; the other none');
+  assert.equal(gold.count, 0, 'what it brought has gone into the house');
+  assert.equal(figures.get('builder').wheelTurn, undefined, 'a parked barrow does not roll');
+  // Beside them and turned along the house, not in front of them where the wall is: its
+  // wheel is out to one side, and no further forward than a step.
+  const wheels = scene.getObjectByName('resident-barrow-wheels');
+  const m = new THREE.Matrix4();
+  wheels.getMatrixAt(0, m);
+  const [x, , z] = [m.elements[12], m.elements[13], m.elements[14]];
+  assert.ok(Math.abs(x) > 0.3, `the wheel is ${x.toFixed(2)} to the side`);
+  assert.ok(z < 0.2, `and ${z.toFixed(2)} forward, towards the wall`);
+  view.dispose();
+});
+
+test('the page parks a barrow only on an island that has a gold pit', () => {
+  const region = { id: 'goldholm', origin: [0, 0], half: 32, worldHeight: () => 0 };
+  for (const pit of [true, false]) {
+    const buildings = [{ id: 'house:a', kind: 'house', name: 'A', style: 'opus' }];
+    if (pit) buildings.push({ id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit' });
+    const crowd = createCrowdView({ scene: new THREE.Scene(), material: new THREE.MeshBasicMaterial(), region, buildings });
+    crowd.roster(['house:a']);
+    crowd.apply(new Map([[0, { x: 1, z: 1, anim: 'hammer' }]]), 1000);
+    crowd.draw(0.016, () => 0, 1100);
+    assert.equal(crowd.figure('house:a').barrowAtHome, pit, pit ? 'hammering beside their barrow' : 'no pit, no barrow');
+    crowd.apply(new Map([[0, { x: 1, z: 1, anim: 'still' }]]), 1200);
+    crowd.draw(0.016, () => 0, 1300);
+    assert.equal(crowd.figure('house:a').barrowAtHome, false, 'only while hammering');
+    crowd.dispose();
+  }
 });
 
 test('the islander puts the status line in once, and leaves it alone after that', () => {

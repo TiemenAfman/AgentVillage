@@ -192,7 +192,8 @@ the pit will be full again.
 
 Whoever is at work fetches gold first. A settler whose session is running wheels a barrow
 over to the pit, parks it in front of the pile and loads it, wheels it home full and only
-then starts hammering — and goes again every few minutes of work after that. That is the sea walking them, so every
+then starts hammering, with the barrow set down beside them along the front of the house —
+and goes again every few minutes of work after that. That is the sea walking them, so every
 screen watching your island sees the same trips.
 
 The number comes from Claude Code itself, which hands it to a **status line** and to

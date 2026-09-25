@@ -36,6 +36,7 @@ import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
 import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
 import { MOVING } from 'shared/settlerwire.mjs';
+import { GOLDPIT_ID } from 'shared/gold.mjs';
 
 // What a body does standing still that is not merely standing: the hammer and the chores
 // (Plans/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
@@ -87,6 +88,11 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
   // bundle is already on the region; this is only a faster way to look one up.
   const byId = new Map(buildings.map((b) => [b.id, b]));
+  // On an island with a gold pit every house keeps a wheelbarrow (Plans/goudkuil.md): it goes
+  // along on a trip for gold and stands beside its settler while they hammer. Worked out here
+  // from the buildings rather than sent - the page already knows who is hammering and whether
+  // there is a pit, so every screen draws the same barrows, after a reload too.
+  const barrowsAtHome = byId.has(GOLDPIT_ID);
   const [ox, oz] = region.origin;
 
   // The afternoon boats. index -> what the last message said about that outing, and
@@ -312,6 +318,7 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       const gait = laden || (MOVING.has(f.said) || MOVING.has(f.came) ? 'walk' : 'step');
       f.anim = f.said === 'hammer' ? 'hammer' : !moving ? (AT_WORK.has(f.said) ? f.said : 'still') : gait;
       f.mode = MOVING.has(f.anim) ? 'walk' : f.anim === 'hammer' ? 'hammer' : 'idle';
+      f.barrowAtHome = barrowsAtHome && f.anim === 'hammer';
       // Only turn when actually going somewhere: a body nudged a centimetre by a late
       // message should not spin to face it. Towards the word rather than along this
       // frame's step, as briskly as the walk turned - it took its corners at 0.2 and its

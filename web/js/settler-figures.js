@@ -171,8 +171,12 @@ export const BARROW = {
 // back end down, by as much as lifts the legs off the ground while it is being pushed.
 const BARROW_PARK_AHEAD = 0.05;
 const BARROW_PARK_TILT = -Math.atan2(BARROW.legLift, BARROW.wheelZ - BARROW.legZ);
-// How many can be seen at once: MAX_GOLD on each of a few islands.
-const BARROWS = 64;
+// At home, while its settler hammers: set down on its legs beside them, turned to run along
+// the front of the house with its handles at their elbow, rather than out in front where the
+// wall is. Empty - what it brought has gone into the building.
+const BARROW_HOME_AT = [0.17, 0, 0.1];
+// How many can be seen at once: every builder on a few islands, parked or on the move.
+const BARROWS = 256;
 // The gold in the tray: one bar while it is being loaded, all three once it is.
 const TRAY_BARS = [[-0.03, 0, -0.02, 0.1], [0.03, 0, 0.015, -0.08], [0, 0.034, 0, 0.05]];
 
@@ -458,6 +462,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
     .multiply(axleMat)
     .multiply(new THREE.Matrix4().makeRotationX(BARROW_PARK_TILT))
     .multiply(new THREE.Matrix4().makeTranslation(0, -BARROW.r, -BARROW.wheelZ));
+  const homeMat = new THREE.Matrix4().makeTranslation(...BARROW_HOME_AT)
+    .multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2))
+    .multiply(axleMat)
+    .multiply(new THREE.Matrix4().makeRotationX(BARROW_PARK_TILT))
+    .multiply(new THREE.Matrix4().makeTranslation(0, -BARROW.r, -BARROW.wheelZ));
   const trayAt = TRAY_BARS.map(([x, y, z, turn]) => new THREE.Matrix4().makeRotationY(turn)
     .setPosition(x, BARROW.trayY + 0.006 + y, BARROW.trayZ + z));
   const TOOL_OF = { hoe: hoes, chop: axes, fish: rods };
@@ -590,7 +599,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
         toolCount.set(tool, n + 1);
       }
       if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
-      if ((pushing || loading) && barrowCount < BARROWS) {
+      // `barrowAtHome` is crowd-view.js's: hammering, on an island with a gold pit.
+      const parkedAtHome = hammering && f.barrowAtHome;
+      if ((pushing || loading || parkedAtHome) && barrowCount < BARROWS) {
         // On the ground where they stand, turned the way they face, at their height - no
         // bob, no lean, no roll: it is the barrow that runs on the wheel, not the person.
         const size = f.baseScale * f.look.height;
@@ -600,6 +611,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
         barrowObj.updateMatrix();
         frameMat.copy(barrowObj.matrix);
         if (loading) frameMat.multiply(parkMat);
+        else if (parkedAtHome) frameMat.multiply(homeMat);
         barrows.setMatrixAt(barrowCount, frameMat);
         // The wheel turns as far as the body travels: speed over its radius, and a positive
         // turn about x takes the top of the wheel forwards, which is rolling ahead.
