@@ -16,6 +16,7 @@
 // Adding a set: bake it, import it here, put it in SETS. Everything else - the workbench,
 // the model sheet, the shape catalogue - reads it through this file.
 import * as THREE from 'three';
+import { GOLDPIT } from './goldpit-mesh.js';
 import { LIGHTHOUSE } from './lighthouse-mesh.js';
 import { CLOCKTOWER } from './clocktower-mesh.js';
 import { STATUE } from './statue-mesh.js';
@@ -42,7 +43,7 @@ import { BUOYS } from './buoys-mesh.js';
 import { BENCHY } from './benchy-mesh.js';
 import { BICYCLE } from './bicycle-mesh.js';
 
-const SETS = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
+const SETS = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the

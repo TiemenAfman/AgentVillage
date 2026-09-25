@@ -13,7 +13,7 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, clearRoads, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, doorCell, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID } from './shared/gold.mjs';
@@ -235,13 +235,9 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     const p = layout.plots[id];
     return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
   };
-  const doorOf = (p) => {
-    if (!p || p.w !== 3) return null;
-    if (p.rot === 0) return [p.gx + 1, p.gz];
-    if (p.rot === 1) return [p.gx + 2, p.gz + 1];
-    if (p.rot === 2) return [p.gx + 1, p.gz + 2];
-    return [p.gx, p.gz + 1];
-  };
+  // lib/layout.mjs's own door, not a copy of it: the castle's seven-wide lot has its gate
+  // three cells in, and a copy that only knew three by three said one.
+  const doorOf = (p) => (p && p.w >= 3 ? doorCell(p.gx, p.gz, p.rot, p.w) : null);
 
   // Work handed out at the sprint board, so a house can show what its settler took on.
   const assignments = readAssignments();

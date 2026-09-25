@@ -8,11 +8,10 @@
 // (mailflag.js, clock.js), and how many bars stand is its `count`: one draw call for the
 // whole pile however full it is, and nothing to rebuild when a bar goes.
 //
-// Drawn with the island's own building material rather than one of its own. There is no
-// environment map on the island for a metal to reflect, so a "real" gold material comes
-// out brown; a warm vertex colour with a touch of the night-glow mask reads as gold at
-// noon and glints after dark the way the lit windows do - and costs no extra shader.
+// Polished bevels come from Blender. The pile has a specular material of its own:
+// the sun supplies moving highlights without an environment map or extra draw calls.
 import * as THREE from 'three';
+import { grouped } from './models.js';
 import { GOLD_BARS } from 'shared/gold.mjs';
 
 // One bar, in island units (4 m): oversized on purpose, like every prop on the island, or a
@@ -23,26 +22,14 @@ const GOLD = 0xf0b92e;
 // below a window's full 1.
 const GLINT = 0.22;
 
-// A bar: a box whose top face is drawn in to `top` of the base, which is the shape everybody
-// recognises as an ingot. Vertex-coloured, with the emissive attribute the building material
-// reads (buildings.js createBuildingMaterial), and no `aSheet`: a flat colour.
-export function goldBarGeometry({ l = BAR.l, h = BAR.h, w = BAR.w, top = BAR.top, hex = GOLD, glint = GLINT } = {}) {
-  const g = new THREE.BoxGeometry(l, h, w);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    if (p.getY(i) > 0) { p.setX(i, p.getX(i) * top); p.setZ(i, p.getZ(i) * top); }
-  }
-  g.translate(0, h / 2, 0);
-  g.deleteAttribute('uv');
-  const flat = g.toNonIndexed();
-  flat.computeVertexNormals();
-  const n = flat.attributes.position.count;
-  const c = new THREE.Color(hex);
-  const col = new Float32Array(n * 3), emi = new Float32Array(n);
-  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; emi[i] = glint; }
-  flat.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  flat.setAttribute('aEmissive', new THREE.BufferAttribute(emi, 1));
-  return flat;
+// The carried bar uses the same baked ingot, scaled to fit the settler's hands.
+export function goldBarGeometry({ l = BAR.l, h = BAR.h, w = BAR.w, glint = GLINT } = {}) {
+  const g = grouped('prop_goldbar', ['plain']);
+  g.clearGroups();
+  g.scale(l / BAR.l, h / BAR.h, w / BAR.w);
+  const n = g.attributes.position.count;
+  g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(n).fill(glint), 1));
+  return g;
 }
 
 // Where each of the GOLD_BARS bars stands, as [x, y, z] of the middle of its base, in the
@@ -76,7 +63,11 @@ const BATCHES = [1, 0.9, 1.08];
 // Hang the pile on a building's group. `at` is where the heap's floor is in that group's
 // frame (buildings.js publishes it as `animated.goldpile`). Returns the handle main.js
 // keeps: `setBars(n)` shows the first n, clamped to the pile.
-export function attachGoldPile(group, at, material) {
+export function attachGoldPile(group, at) {
+  const material = new THREE.MeshPhongMaterial({
+    vertexColors: true, specular: 0xffe8a6, shininess: 85,
+    emissive: 0x6b4309, emissiveIntensity: 0.12,
+  });
   const geo = goldBarGeometry();
   const mesh = new THREE.InstancedMesh(geo, material, GOLD_BARS);
   mesh.castShadow = true;
@@ -107,6 +98,7 @@ export function attachGoldPile(group, at, material) {
     dispose() {
       group.remove(mesh);
       geo.dispose();
+      material.dispose();
       mesh.dispose?.();
     },
   };

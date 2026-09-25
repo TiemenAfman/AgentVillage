@@ -39,6 +39,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
+- [groot-kasteel.md](groot-kasteel.md) — het kasteel op twee bij twee super-cellen: een kavel van
+  7 bij 7 en het model 7/3 zo groot. Een nieuw kasteel neemt het dichtstbijzijnde vrije, vlakke
+  blok van de stad; een bestaand kasteel groeit op zijn plek met de voorkant waar hij was, of
+  blijft zoals het was. Gebouwd en op het eiland toegepast op 25 september 2026.
 - [goudkuil.md](goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
   5-uurs usage limit, één staaf per procent, dat slinkt terwijl je werkt. Het getal komt uit
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;

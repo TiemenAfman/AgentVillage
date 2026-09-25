@@ -35,13 +35,14 @@
 // New words go on the end: a page running older code reads a number it has never heard of
 // as 'still', which is a settler standing in their field rather than hammering in it. The
 // six after 'hammer' are the chores (Plans/inwoners-aan-het-werk.md); 'haul' is the walk
-// home from the wood with a bundle of sticks, and is a walker in every sense below. 'carry'
-// is the walk home from the gold pit with a bar in both hands (Plans/goudkuil.md), the same
-// kind of word for the same kind of walk.
-export const ANIMS = ['still', 'step', 'walk', 'hammer', 'hoe', 'weed', 'chop', 'gather', 'fish', 'haul', 'carry'];
+// home from the wood with a bundle of sticks, and is a walker in every sense below. The last
+// three are the gold pit's (Plans/goudkuil.md): 'carry' wheels a loaded barrow home, 'barrow'
+// wheels it out empty - two walks of the same kind as 'haul' - and 'load' is bent over it at
+// the pile, a chore like 'gather'.
+export const ANIMS = ['still', 'step', 'walk', 'hammer', 'hoe', 'weed', 'chop', 'gather', 'fish', 'haul', 'carry', 'barrow', 'load'];
 const ANIM_OF = new Map(ANIMS.map((a, i) => [a, i]));
 // The words that mean going somewhere, and so ride at the walker rate.
-export const MOVING = new Set(['walk', 'haul', 'carry']);
+export const MOVING = new Set(['walk', 'haul', 'carry', 'barrow']);
 
 // How finely a position travels. A thirty-second of an island unit is about three
 // centimetres against a body a third of a unit wide - far below anything an eye can

@@ -217,9 +217,10 @@ shrinks from the top as you work, and fills up again the moment the window runs 
 Walk up to it and the count is over the keys; press **E**, or click it, and it says when
 the pit will be full again.
 
-Whoever is at work fetches gold first. A settler whose session is running walks over to
-the pit, loads a bar, carries it home in both hands and only then starts hammering — and
-goes again every few minutes of work after that. That is the sea walking them, so every
+Whoever is at work fetches gold first. A settler whose session is running wheels a barrow
+over to the pit, parks it in front of the pile and loads it, wheels it home full and only
+then starts hammering, with the barrow set down beside them along the front of the house —
+and goes again every few minutes of work after that. That is the sea walking them, so every
 screen watching your island sees the same trips.
 
 The number comes from Claude Code itself, which hands it to a **status line** and to

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf } from '../scripts/model-rules.mjs';
 import { KINDS, knownShape } from '../shared/shapes.mjs';
+import { GOLDPIT } from '../web/js/goldpit-mesh.js';
 import { LIGHTHOUSE } from '../web/js/lighthouse-mesh.js';
 import { CLOCKTOWER } from '../web/js/clocktower-mesh.js';
 import { STATUE } from '../web/js/statue-mesh.js';
@@ -38,7 +39,7 @@ import { BICYCLE } from '../web/js/bicycle-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -258,7 +259,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'school', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['benchy', 'bicycle', 'boardwalk', 'buoys', 'castle', 'clocktower', 'cottage', 'docks', 'fence', 'flora', 'goldpit', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'school', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
@@ -267,7 +268,7 @@ test('the register spans every set and answers by part name alone', () => {
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
     // (scripts/build-bicycle.py, Plans/fiets.md).
     'bicycle', 'castle',
-    'civic_chapel', 'civic_fountain', 'civic_quay_platform', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
+    'civic_chapel', 'civic_fountain', 'civic_goldpit', 'civic_quay_platform', 'civic_seed_stall', 'civic_tables', 'civic_watertower',
     // The mill is two assets, because its sails turn and the tower does not.
     'civic_windmill', 'civic_windmill_sails',
     'clocktower',
@@ -277,7 +278,7 @@ test('the register spans every set and answers by part name alone', () => {
     'lighthouse',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
-    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green'].sort(),
+    ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school', 'statue', 'tavern', 'townhall',
   ]);
   assert.equal(models.assetSet('prop_barrel'), 'props');

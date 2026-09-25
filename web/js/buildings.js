@@ -1431,9 +1431,16 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('lighthouse') };
     }
     case 'castle': {
-      parts.push(...meshAsset('castle'));
-      Object.assign(anchors, meshAnchors('castle'));
-      return { anchors, animated, height: models.heightOf('castle') };
+      // Baked for a three by three and drawn at the size of the lot it stands on: seven
+      // (CASTLE_LOT in lib/layout.mjs, Plans/groot-kasteel.md) is 7/3 of it every way, and a
+      // castle from before that could not grow yet stays exactly the model it was. Scaled
+      // here rather than with the building's own `s`, so the porch is laid round it after
+      // and keeps a step a settler can walk up.
+      const k = Math.max(3, (spec.plot && spec.plot.w) || 3) / 3;
+      const o = { sx: k, sy: k, sz: k };
+      parts.push(...meshAsset('castle', 0xffffff, o));
+      Object.assign(anchors, meshAnchors('castle', o));
+      return { anchors, animated, height: models.heightOf('castle') * k };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
@@ -1556,39 +1563,10 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: HEAD + 0.12 };
     }
     case 'goldpit': {
-      // The gold pit (Plans/goudkuil.md): a trench silo in poured concrete, the kind a farm
-      // keeps its silage in, open at the end that faces the town - which is +z here, the
-      // front of every building - and holding the keeper's five-hour usage window as a heap
-      // of bars against the back wall.
-      //
-      // The walls step down towards the open end the way a real bunker silo's do, which is
-      // also what lets the heap be seen from the square rather than only from the air, and
-      // they stop short of the heap's top course: a berg goud should look like more than
-      // the silo can hold. The gold itself is not in here. It shrinks while the building
-      // stands, and a merged geometry cannot lose a piece of itself, so it is published as
-      // `animated.goldpile` and hung on the group as an InstancedMesh (web/js/goldpit.js).
-      // tests/goldpit.test.mjs holds the heap inside these walls.
-      const concrete = 0xa9a59c, lip = 0x8c887f;
-      // The slab, top at 0.02. Flat colour, not the stone sheet: with it the floor read as
-      // flagstones from the square, and a silo floor is one pour of concrete.
-      parts.push(box(2.5, 0.16, 2.72, lip, { y: -0.14 }));
-      for (const x of [-1.18, 1.18]) {
-        parts.push(box(0.14, 0.3, 1.9, concrete, { x, y: 0.02, z: -0.41 }));          // high, beside the heap
-        parts.push(box(0.14, 0.17, 0.82, concrete, { x, y: 0.02, z: 0.95 }));         // low, at the mouth
-        parts.push(box(0.18, 0.025, 1.92, lip, { x, y: 0.32, z: -0.41 }));
-      }
-      parts.push(box(2.5, 0.3, 0.14, concrete, { y: 0.02, z: -1.29 }));               // the back wall
-      parts.push(box(2.54, 0.025, 0.18, lip, { y: 0.32, z: -1.29 }));
-      // A board on a post at the mouth, picked out in gold, so the pit reads as somewhere
-      // before anybody has hovered it.
-      parts.push(box(0.035, 0.44, 0.035, C.darkWood, { x: -1.32, z: 1.3 }));
-      parts.push(box(0.32, 0.15, 0.03, C.plank, { x: -1.32, y: 0.34, z: 1.32, sheet: 'plank' }));
-      parts.push(box(0.22, 0.05, 0.036, C.gold, { x: -1.32, y: 0.39, z: 1.33, emissive: 0.2 }));
-      // And the pick somebody left leaning on the low wall.
-      parts.push(box(0.022, 0.36, 0.022, C.wood, { x: 1.04, y: 0.02, z: 1.12, rz: 0.35 }));
-      parts.push(box(0.2, 0.028, 0.028, C.iron, { x: 0.92, y: 0.35, z: 1.12, rz: 0.35 }));
-      animated.goldpile = { at: [0, 0.02, 0] };
-      return { anchors, animated, height: 0.5 };
+      // Baked concrete and coping stay one draw call; the shrinking stock is instanced.
+      parts.push(...meshAsset('civic_goldpit'));
+      animated.goldpile = { at: [0, 0.031, 0] };
+      return { anchors, animated, height: 1.22 };
     }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));

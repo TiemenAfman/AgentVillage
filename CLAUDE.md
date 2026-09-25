@@ -860,12 +860,28 @@ every percent. The pit itself is an ordinary civic 3x3 (`civic:goldpit`, placed 
 the town hall's and the seven 3x3 milestones'), with its bars an InstancedMesh hung on
 from `animated.goldpile` (`web/js/goldpit.js`, `count` = bars). On the sea a settler at
 work fetches a bar first (`startGold` in `shared/settlerwalk.mjs`: its own `<id>:gold`
-stream, `MAX_GOLD` out at once) and walks home as the `'carry'` animation - appended to
-`ANIMS` and in `MOVING`, the same kind of word as a woodcutter's `'haul'`, drawn with a bar
-across both fists (`settler-figures.js`). `createCrowd(island, { known, before })` hands each settler's gold errand over from
+stream, `MAX_GOLD` out at once) behind a wheelbarrow: `'barrow'` out empty, `'load'` bent over
+it at the pile, `'carry'` home full - appended to `ANIMS`, the two walks in `MOVING`, the same
+kind of word as a woodcutter's `'haul'`. `settler-figures.js` sets the barrow on the ground
+under them (no bob, no lean: it runs on its wheel), turns the wheel by distance travelled and
+parks it on its legs for loading (`BARROW`, three batches for the whole crowd). Between
+trips it stands beside its settler while they hammer, along the front of the house and empty -
+derived on the page (`barrowAtHome` in crowd-view.js: `'hammer'` on an island whose buildings
+include the pit), so nothing about it is on the wire and every screen parks the same barrows. `createCrowd(island, { known, before })` hands each settler's gold errand over from
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
+
+**The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
+`CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
+`web/js/buildings.js` draws the baked castle at `plot.w / 3`, so read a civic lot's size off
+`p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
+`doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
+block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
+commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
+cells only - never over a road, its own included, because a road laid later over another's
+cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
+the gate.
 
 ## The Blender pipeline
 
