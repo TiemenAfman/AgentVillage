@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { playerGeometry, lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
 import { LAG_MS, progress } from './timeline.js';
+import { toWorld } from 'shared/deck.mjs';
 
 const FADE_S = 0.4;
 const BODY_R = 0.35;
@@ -91,7 +92,11 @@ function labelTexture(text) {
 // { x, y, z, yaw }, from main.js, which owns the boats - or null when this page draws no such
 // hull. The hull is drawn on the same timeline as everybody's pose (timeline.js), so a pilot
 // put on it stays on it; their own pose, drawn separately, trails the hull by the lag.
-export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null }) {
+//
+// `hullOf(boatId)` is the same hull for somebody standing on its deck (Plans/lopen-op-de-boot.md):
+// { x, y, z, yaw }, with y its deck. They are drawn as that hull plus where they are on it,
+// and never from their own world position, for the same reason a pilot is.
+export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null }) {
   const places = new Map([[null, { scene, terrain: ground || terrain }]]);
   // One geometry per style, shared by everyone wearing it. Never disposed while the page
   // lives: handing it to a peer and then throwing it away when that peer leaves is how
@@ -139,6 +144,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       room: null,
       want: null,
       aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
+      deckFrom: null,     // on a deck: the two samples of where on it, in the hull's frame
+      deckTo: null,
       cursor: null,       // where their hand is on a board, if it is on one
       bike: null,         // their bicycle, made the first time they are seen riding
       ride: { wheel: 0, crank: 0, steer: 0, lean: 0, pitch: 0, x: 0, y: 0, z: 0, yaw: 0 },
@@ -207,8 +214,13 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
   // One snapshot: everybody currently on their feet. Anyone we know about who is not in
   // it has stepped back up to the map, so they simply stop being drawn.
-  function snapshot(list, at = performance.now()) {
+  function snapshot(list, at = performance.now(), decks = null) {
     const seen = new Set();
+    // Who is on which deck (lib/players.mjs `d`): [id, boat, x, y, z, yaw] in that boat's own
+    // frame. Kept as samples of their own, on the same clock, so a passenger walking along the
+    // deck is interpolated along the deck while the deck is interpolated along the sea.
+    const onDeck = new Map();
+    for (const r of decks || []) if (Array.isArray(r) && r.length === 6) onDeck.set(r[0], r);
     for (const row of list || []) {
       const [id, x, y, z, yaw, f, r] = row;
       if (id === selfId) continue;
@@ -226,6 +238,12 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       p.from = p.to || pose;
       p.to = pose;
       p.shown = true;
+      const d = onDeck.get(id);
+      if (d) {
+        const s = { boat: d[1], x: d[2], y: d[3], z: d[4], yaw: d[5], at };
+        p.deckFrom = p.deckTo && p.deckTo.boat === s.boat ? p.deckTo : s;
+        p.deckTo = s;
+      } else p.deckFrom = p.deckTo = null;
       // A seventh entry means their hand is on a board. It rides here rather than in a
       // message of its own - see the pose beat in web/js/net.js.
       // Slots 7 to 9 are their hand on a board, when there is one; slot 6 is the room,
@@ -296,7 +314,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
       const a = p.from || p.to, b = p.to;
       const k = progress(a, b, render);
-      const seat = p.aboard ? seatOf(p.id) : null;
+      // Where they stand, if it is on something that moves: a deck first, then a helm.
+      const seat = deckPose(p, render) || (p.aboard ? seatOf(p.id) : null);
 
       let x = a.x + (b.x - a.x) * k;
       let z = a.z + (b.z - a.z) * k;
@@ -340,8 +359,24 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot
       // see standing in open water is worse than walking through a swimmer.
-      if (!swimming && !airborne && !p.aboard) blockersIn(p.room).push({ x, z, r: BODY_R });
+      if (!swimming && !airborne && !p.aboard && !p.deckTo) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
+  }
+
+  // Somebody on a deck, in this scene: their hull as hullOf has it this frame, plus where on
+  // the deck they were at `render`, interpolated in the hull's own frame. Null when they are
+  // on no deck, or on one this page is not drawing.
+  const deckAt = [0, 0];
+  function deckPose(p, render) {
+    if (!p.deckTo) return null;
+    const hull = hullOf(p.deckTo.boat);
+    if (!hull) return null;
+    const a = p.deckFrom || p.deckTo, b = p.deckTo;
+    const k = progress(a, b, render);
+    const lx = a.x + (b.x - a.x) * k, lz = a.z + (b.z - a.z) * k;
+    const ly = a.y + (b.y - a.y) * Math.min(1, k);
+    toWorld({ x: hull.x, z: hull.z, fx: Math.sin(hull.yaw), fz: Math.cos(hull.yaw) }, lx, lz, deckAt);
+    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw: hull.yaw + lerpAngle(a.yaw, b.yaw, Math.min(1, k)) };
   }
 
   // One frame of a peer on a bicycle. Everything the bike does is read off where the rider
