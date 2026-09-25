@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { islandClock, borrelAt } from 'shared/daylight.mjs';
+import { islandClock, gatheringAt } from 'shared/daylight.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -3950,18 +3950,19 @@ function frame(nowMs) {
     if (state.flags) state.flags.material.userData.uniforms.uTime.value = nowMs / 1000;
   }
   if (state.settlers) {
-    // Friday afternoon: the whole village downs tools and heads for the square. Whether
-    // they go is the sea's decision - it keeps the clock everybody shares - and what is
-    // left here is the furniture, which is scenery and always was: one set of tables per
-    // ten islanders, of which the set the village earned is the first, so the rest are
-    // carried out and taken back in with the borrel itself.
-    // The sea's clock, not this browser's: the people go to the square on the island's
-    // own Friday afternoon (shared/daylight.mjs), and the tables have to come out for the
-    // same half hour or a viewer in another zone sees a borrel with no furniture.
+    // A break, or the Friday borrel: the whole village downs tools and heads for the
+    // square. Whether they go is the sea's decision - it keeps the clock everybody shares -
+    // and what is left here is the furniture, which is scenery and always was: one set of
+    // tables per ten islanders, of which the set the village earned is the first, so the
+    // rest are carried out and taken back in with the gathering itself.
+    //
+    // The sea's clock, not this browser's, and the same list the sea reads
+    // (shared/daylight.mjs): the tables have to come out for exactly the minutes the people
+    // are there, or a viewer in another zone sees a borrel with no furniture.
     const clock = islandClock(timeNow());
-    const borrel = borrelAt(clock.day, clock.hour);
+    const gathering = gatheringAt(clock.day, clock.hour);
     if (state.borrel) {
-      state.borrel.show(borrel ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
+      state.borrel.show(gathering ? tableSetsFor(state.village && state.village.stats && state.village.stats.settlers) : 0);
     }
     // And our own people, off the wire like any other island's. The height is the one the
     // sea walked them to - decks, stair treads and all - which is what stands somebody on a

@@ -1,5 +1,5 @@
 // What time it is on the island, as far as its people are concerned: how dark, and whether
-// it is Friday borrel.
+// the village is due on the square.
 //
 // Here rather than in web/js/ because the sea walks every crowd, ours included, and the
 // sea may not import web/. Before this lived here the two questions were the browser's -
@@ -27,14 +27,40 @@ export function nightAt(hour) {
   return 1;
 }
 
-// Friday, half past four until five. One place, because this is the sort of thing that is
-// asked for by the half hour and should be one line to move.
-export const BORREL_DAY = 5;              // Sunday is 0, so Friday is 5
-export const BORREL_FROM = 16.5;
-export const BORREL_UNTIL = 17;
+// When the whole village downs tools and goes to the square. One list, because this is the
+// sort of thing that is asked for by the quarter of an hour and should be one line to move -
+// and because both machines that need it must read the same one. The sea decides who walks
+// (it rings `crowds.setGather` off this, once a beat) and the page carries the extra tables
+// out for exactly the same minutes; two clocks is how the borrel came to be furniture with
+// nobody at it.
+//
+// Coffee at ten, lunch at half past twelve, tea at three, on every working day, and the
+// Friday borrel keeping its own half hour. A village that only ever met on Friday afternoon
+// was empty the rest of the week.
+//
+// getDay()'s numbering: Sunday is 0, so the working week is 1..5, and Friday is 5. `from`
+// and `until` are hours with their minutes as a fraction, the way `islandClock` hands them
+// back. The end is exclusive, so a quarter of an hour from ten is over at 10:15 sharp.
+// `name` is what the sea's log calls it.
+export const WEEKDAYS = [1, 2, 3, 4, 5];
 
-export function borrelAt(day, hour) {
-  return day === BORREL_DAY && hour >= BORREL_FROM && hour < BORREL_UNTIL;
+export const GATHERINGS = [
+  { id: 'coffee', name: 'the coffee break', days: WEEKDAYS, from: 10, until: 10.25 },
+  { id: 'lunch', name: 'lunch', days: WEEKDAYS, from: 12.5, until: 13 },
+  { id: 'tea', name: 'the afternoon break', days: WEEKDAYS, from: 15, until: 15.25 },
+  { id: 'borrel', name: 'the Friday borrel', days: [5], from: 16.5, until: 17 },
+];
+
+// The gathering that is on at this weekday and hour, or null.
+//
+// Every edge is a quarter of an hour, and a quarter of an hour divides by sixty exactly in
+// binary - so the minute the bell goes is the same minute on both machines and there is no
+// epsilon anywhere in this comparison. tests/daylight.test.mjs holds that property.
+export function gatheringAt(day, hour) {
+  for (const g of GATHERINGS) {
+    if (g.days.includes(day) && hour >= g.from && hour < g.until) return g;
+  }
+  return null;
 }
 
 // Whose afternoon. A sea in a container keeps UTC, which would ring the bell at half past

@@ -812,6 +812,7 @@ with no shallows to reclaim.
 | A plank dock out over the water, with mooring posts | The quay: where a Cowork task's settler comes ashore, and where the island's boat lies. Stand on it and **E** gives you the boat — see [Visitors and neighbours](#visitors-and-neighbours). On the open sea, never on the lake or a river — a settler arriving by boat has to be able to get there |
 | One dock and no more, on every island | The quay district's planks where there is a quay district, and a dock at the landing where there is not |
 | A boat out on the bay with a settler in it | Somebody's afternoon off — they will bring her back to the quay |
+| The whole village on the town square at once, with extra tables carried out | A break: coffee at ten, lunch at half past twelve and tea at three on a working day, and the Friday borrel from half past four. The clock is the sea's, so every island in a world takes its break together |
 | An apprentice's shed | A subagent: lookout tent for Explore, drafting hut for Plan, workshop for general-purpose, book kiosk for the guide |
 | Tower with a copper dome | Fable |
 | Stone walls, slate roof | Opus |
