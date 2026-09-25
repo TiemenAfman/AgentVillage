@@ -421,6 +421,13 @@ the peers). A pilot is drawn standing on their hull (`seatOf`), never on their o
 two timelines they part by as far as the boat goes in the difference. `'boat'` in a pose is
 a room to the sea (`afoot` in lib/hostility.mjs) and a hull to peers.js (`BOAT_ROOM`), not a
 place - read as a place it hid every pilot. [Plans/lopen-op-de-boot.md](Plans/lopen-op-de-boot.md).
+Standing on a deck is a position in the hull's own frame (`shared/deck.mjs`, trig-free: a
+hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boat holds is
+`shared/crafts.mjs`, the one copy (every boat is a Benchy, `crew: 1`). The sea takes a deck
+pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works the world
+position out itself, and sends decks as their own list `d` beside the rows - a row's slots
+are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
+crew). None of it runs yet: no walk mode sets `state.deck`.
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`

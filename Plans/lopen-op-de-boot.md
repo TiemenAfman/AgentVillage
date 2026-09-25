@@ -1,7 +1,8 @@
 # Lopen op een varende boot, met z'n vijven
 
-Opgeschreven op 25 september 2026; fase 0 en 1 gebouwd op dezelfde dag (nog niet met twee
-spelers tegelijk op zee bekeken). Doel: een boot waar tot vijf spelers
+Opgeschreven op 25 september 2026; fase 0 en 1 gebouwd op dezelfde dag en met een tweede
+speler op de open zee bekeken, en voor fase 2 tot en met 6 staat het grondwerk (zie Fases):
+alles behalve een nieuwe boot en het aanzetten ervan in walk-mode. Doel: een boot waar tot vijf spelers
 tegelijk op staan en rondlopen terwijl hij vaart, zoals je in moderne games in een rijdende
 vrachtwagen of op een lift staat, en dat iedereen op zee dat vloeiend ziet.
 
@@ -108,14 +109,40 @@ vrachtwagen of op een lift staat, en dat iedereen op zee dat vloeiend ziet.
    `glideBoats()` draait vóór de peers, zodat de stuurder op de romp van dít frame staat.
    `tests/timeline.test.mjs` vaart een romp op topsnelheid, ook over een haperende lijn.
 2. **De sloep.** Het model met zijn ankers door de pijplijn, varend en aangemeerd, nog met
-   één persoon aan het roer zoals nu.
+   één persoon aan het roer zoals nu. *Grondwerk klaar:* `shared/crafts.mjs` is de ene plek
+   die zegt wat een soort boot is (`crew`, `helm`, `deck`, `rails`, in het rompstelsel) en
+   `kindOf` welke soort een boot-id is; er staat alleen de Benchy in, met plek voor haar
+   stuurder. *Nog te doen:* het model, zijn ankers als `deck`/`rails`, en `kindOf` dat de
+   sloep herkent (waarschijnlijk via een `craft` op de ligplaats in `shared/quay.mjs`).
 3. **Zelf lopen op een varend dek.** `state.deck`, `stepDeck`, de overgangen, springen.
-   Alleen op je eigen scherm; de pose gaat nog in wereldcoördinaten.
+   Alleen op je eigen scherm; de pose gaat nog in wereldcoördinaten. *Grondwerk klaar:*
+   `shared/deck.mjs`, puur en zonder goniometrie (de romp komt binnen als vector, `frameOf`):
+   heen en terug tussen romp en wereld, `deckAt`, `clampToDeck`, `stepDeck` (reling glijdt,
+   open rand of een sprong over de zijkant is `off`, een sprong landt op dezelfde plank hoe
+   hard de boot ook vaart), `boardAt` en `leaveDeck` (met de snelheid van de romp mee).
+   `tests/deck.test.mjs`. *Nog te doen:* walk.js aansluiten (`state.deck` zetten bij het
+   instappen, `stepDeck` in plaats van lopen zolang hij staat, de camera meedraaien) - bewust
+   gewacht tot er een dek is om op te staan, en omdat walk.js op dat moment in ander werk zat.
 4. **Passagiers voor elkaar.** De lokale velden in de pose, de zee die `crew` bijhoudt en
    doorgeeft, andere schermen die romp ⊕ lokaal tekenen. Hierna moet de open zee mee.
+   *Grondwerk klaar:* net.js stuurt `on` en `d` = [x, y, z, yaw] zodra walk.js een
+   `state.deck` heeft (nog nooit), en `boardBoat`/`leaveBoat`/`letGoBoat`. De zee stuurt
+   wie op welk dek staat als eigen lijst `d` naast de rijen, zodat een oudere pagina de rij
+   leest zoals altijd; peers.js tekent zo iemand als romp (`hullOf` uit main.js) ⊕ plek op
+   het dek, met die plek op dezelfde tijdlijn. `tests/net-deck.test.mjs`. Geen `SEA_V`-stap.
 5. **De zee rekent mee.** Capaciteit, bereik en klemmen, en de wereldpositie voor bewakers,
-   lava en schade.
+   lava en schade. *Grondwerk klaar:* `lib/boats.mjs` houdt een `crew` bij (de stuurder
+   telt mee, `crewOf` uit de craft), `board` alleen binnen `BOARD_REACH` en tot vol, één dek
+   per lichaam, en een bemande boot drijft niet naar huis. `lib/players.mjs` neemt een
+   dekpositie alleen aan van wie aan boord is, klemt hem op de planken en rekent de
+   wereldpositie zelf uit vanaf de romp zoals de zee die heeft. Aan boord is voor bewakers,
+   lava en vechten hetzelfde als stuurder (`pilotsOf` telt de crew mee) - het antwoord op de
+   open vraag tot die beslist is. `tests/crew.test.mjs`.
 6. **Het roer overdragen.** Weglopen bij het roer, uitlopen, een ander die het roer pakt.
+   *Grondwerk klaar:* `letGo` maakt de stuurder crew; wie losliet mag de romp nog `COAST_MS`
+   (8 s) verplaatsen terwijl hij uitloopt, tot een ander het roer pakt; op een boot met
+   plek voor meer pak je het roer vanaf het dek. *Nog te doen:* op de pagina het uitlopen
+   zelf (`stepBoat` met gas dicht blijven sturen na `letGoBoat`) en de knoppen ervoor.
 
 ## Open vragen
 
