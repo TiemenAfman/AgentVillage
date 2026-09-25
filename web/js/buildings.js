@@ -1457,16 +1457,17 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('lighthouse') };
     }
     case 'castle': {
-      // Baked for a three by three and drawn at the size of the lot it stands on: seven
-      // (CASTLE_LOT in lib/layout.mjs, Plans/groot-kasteel.md) is 7/3 of it every way, and a
-      // castle from before that could not grow yet stays exactly the model it was. Scaled
-      // here rather than with the building's own `s`, so the porch is laid round it after
-      // and keeps a step a settler can walk up.
-      const k = Math.max(3, (spec.plot && spec.plot.w) || 3) / 3;
-      const o = { sx: k, sy: k, sz: k };
-      parts.push(...meshAsset('castle', 0xffffff, o));
-      Object.assign(anchors, meshAnchors('castle', o));
-      return { anchors, animated, height: models.heightOf('castle') * k };
+      // Two bakes, picked by the lot. On seven by seven (CASTLE_LOT in lib/layout.mjs,
+      // Plans/groot-kasteel.md) the great castle, built at that size: it used to be the three
+      // by three's bake drawn at 7/3, and a gate a whole cell wide and a storey and a half
+      // tall is not a door a settler walks through - a building that is bigger has more
+      // windows, not bigger ones. Anything narrower is the castle it always was: one that
+      // could not grow yet, and the volcano's guardhouse (GUARDHOUSE_LOOKS_LIKE), whose
+      // reach shared/volcano.mjs has measured.
+      const name = ((spec.plot && spec.plot.w) || 3) >= 7 ? 'greatcastle' : 'castle';
+      parts.push(...meshAsset(name));
+      Object.assign(anchors, meshAnchors(name));
+      return { anchors, animated, height: models.heightOf(name) };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
