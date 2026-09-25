@@ -8,6 +8,7 @@ import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight } from 'shared/settlerwalk.mjs';
 import { islandClock, gatheringAt } from 'shared/daylight.mjs';
+import { keeperOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, nearestFirst, worldToScene } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { createMainMenu } from './mainmenu.js';
@@ -417,6 +418,22 @@ function faceUp(id, fig) {
   });
 }
 
+// The innkeeper and the mayor have no session to carry on. You look them in the eye like
+// anybody else; the mayor then opens the register, which is their office's work, and the
+// innkeeper says how the house is doing - by the island's own clock, the one the sea sends
+// the village to the square by.
+function speakToKeeper(it) {
+  const fig = state.settlers ? state.settlers.figure(it.id) : null;
+  faceUp(it.id, fig);
+  if (it.post === 'mayor') { openTownHall(); return; }
+  const c = islandClock(timeNow());
+  const on = gatheringAt(c.day, c.hour);
+  state.ui.toast(on
+    ? `“Busy — it’s ${on.name}. Grab a table on the square and I’ll bring it out.”`
+    : c.hour >= 22 || c.hour < 7 ? '“We’re closed. Come back when there’s light in the sky.”'
+      : '“Quiet in here. The door’s open, and the tables are yours.”');
+}
+
 // Addressing a settler opens their session and lets you carry it on.
 function talkTo(id) {
   if (keeperOnly('carry on a settler’s session')) return;
@@ -541,6 +558,23 @@ function interactables() {
       });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
+    }
+  }
+  // The innkeeper and the mayor (Plans/kroegbaas-en-burgemeester.md), wherever they are
+  // standing. Getters, because walk.js measures the distance every frame and a keeper does
+  // not stand still - and looked up by id each time, because a new roster enrols a new
+  // figure object under the same id.
+  if (state.settlers) {
+    for (const rec of state.byId.values()) {
+      const keeper = keeperOf(rec.spec);
+      if (!keeper || !rec.group.visible) continue;
+      const fig = () => state.settlers.figure(rec.id);
+      const who = keeper.name.replace(/^The /, 'the ');
+      out.push({
+        id: rec.id, kind: 'keeper', post: keeper.post, r: 1.4, label: who, prompt: `speak to ${who}`,
+        get x() { const f = fig(); return f && f.visible ? f.pos[0] : Infinity; },
+        get z() { const f = fig(); return f && f.visible ? f.pos[1] : Infinity; },
+      });
     }
   }
   // The boards with a page on them. They come from the panel layer rather than from the
@@ -950,6 +984,7 @@ function walkCallbacks() {
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
       else if (it.kind === 'boat') takeBoat(it.id);
@@ -959,7 +994,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -3288,7 +3323,9 @@ function applyVisibility() {
   for (const rec of state.byId.values()) {
     const ok = passesFilter(rec.spec) && visibleAt(rec.spec, t) && !rec.popping;
     rec.group.visible = ok;
-    if (state.settlers) state.settlers.setVisible(rec.id, ok && rec.spec.kind !== 'civic');
+    // Nobody lives in a civic building, except the two who keep one (KEEPERS in
+    // shared/palette.mjs): the innkeeper and the mayor stand at the door of theirs.
+    if (state.settlers) state.settlers.setVisible(rec.id, ok && (rec.spec.kind !== 'civic' || !!keeperOf(rec.spec)));
     if (rec.flagIdx >= 0) updateFlagInstance(rec, ok);
   }
   // The bed holds the middle of the square for exactly as long as the fountain is not
@@ -4113,11 +4150,14 @@ function updateLabels() {
   if (who && who.visible) {
     const rec = state.byId.get(who.id);
     const spec = rec ? rec.spec : who.spec;
+    // A keeper shares the building's id, so without this the mayor would be labelled
+    // "Promptholm Town Hall" - named for what they keep, with the building underneath.
+    const keeper = keeperOf(spec);
     projected.set(who.pos[0], (who.y || 0) + 0.62, who.pos[1]).project(camera);
     if (projected.z <= 1) {
       hoverItem = {
-        name: spec.name,
-        sub: labelSub(spec),
+        name: keeper ? keeper.name : spec.name,
+        sub: keeper ? spec.name : labelSub(spec),
         x: (projected.x + 1) / 2 * innerWidth,
         y: (1 - projected.y) / 2 * innerHeight,
       };

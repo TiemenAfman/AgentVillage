@@ -34,7 +34,7 @@
 // both sides, which is the promise the wardrobe has always made.
 import { createFigures } from './settler-figures.js';
 import { createBoat } from './boat.js';
-import { settlerLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { kindOf, residentLook } from 'shared/palette.mjs';
 import { MOVING } from 'shared/settlerwire.mjs';
 import { GOLDPIT_ID } from 'shared/gold.mjs';
 
@@ -117,7 +117,9 @@ export function createCrowdView({ scene, material, region, buildings = [] }) {
       const spec = byId.get(id);
       if (!spec) return;                      // a settler whose house we have not got yet
       const kind = kindOf(spec);
-      const look = settlerLook(id, styleOf(spec), kind);
+      // residentLook, not settlerLook: the innkeeper and the mayor wear their dress over
+      // the face the id hashes to, and the sea sized their stride from the same call.
+      const look = residentLook(spec);
       const f = {
         id, spec,
         // What the renderer reads. The walk would have written these; a socket does now.

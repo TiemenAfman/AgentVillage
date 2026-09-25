@@ -151,3 +151,39 @@ export function kindOf(spec) {
 export function styleOf(spec) {
   return PALETTE[spec.style] ? spec.style : 'unknown';
 }
+
+// ---- the two who keep a building rather than a house ------------------------------
+// The innkeeper stands at the tavern and the mayor at the town hall
+// (Plans/kroegbaas-en-burgemeester.md). They go by the building's own id - `civic:tavern`,
+// `civic:townhall` - which is never redacted, so the roster, /api/crowd-ids and the page
+// all know them already. This table is the one list of which buildings have somebody.
+//
+// `post` is how they behave on the sea (shared/settlerwalk.mjs), `dress` what they wear
+// over their own hashed face and height: everybody's height sets their stride, so the sea
+// and the page both call residentLook below and arrive at the same person.
+export const KEEPERS = {
+  tavern: {
+    post: 'innkeeper', name: 'The innkeeper',
+    dress: { hatShape: 'none', tunic: 0xe9e2d2, trim: 0x6a4526, build: 1.18 },
+  },
+  townhall: {
+    post: 'mayor', name: 'The mayor',
+    dress: { hatShape: 'dome', hat: 0x1d1c22, tunic: 0x28304a, trim: 0xb8923e, build: 1.04 },
+  },
+};
+
+export function keeperOf(spec) {
+  if (!spec || spec.kind !== 'civic') return null;
+  return Object.prototype.hasOwnProperty.call(KEEPERS, spec.civicType) ? KEEPERS[spec.civicType] : null;
+}
+
+export function keeperLook(spec) {
+  const k = keeperOf(spec);
+  const base = settlerLook(spec.id, 'unknown', 'adult');
+  return k ? { ...base, ...k.dress } : base;
+}
+
+// Whoever lives at this spec, as they look. The one call both halves make.
+export function residentLook(spec) {
+  return keeperOf(spec) ? keeperLook(spec) : settlerLook(spec.id, styleOf(spec), kindOf(spec));
+}
