@@ -57,6 +57,8 @@ WATER = material('plain', 'stable water', 0x5b7f96)
 LEATHER = material('plain', 'stable saddle', 0x6b3f25)
 SIGN = material('plank', 'stable sign', 0xb08556)
 LAMP = material('plain', 'stable lamp', 0xffd27a, emissive=True)
+STONE = material('stone', 'stable footing', 0x929087)
+EDGE = material('plank', 'stable cut oak', 0xa77b49)
 
 
 class Part:
@@ -121,6 +123,8 @@ EAVES, RIDGE, BAND = 0.66, 1.06, 0.38        # BAND: where the planks stop and t
 MIDZ, T = (Z0 + Z1) / 2, 0.04
 
 walls = Part(HOUSE, 'walls')
+# A low stone course keeps the boards out of the mud without raising the doors.
+box(walls, ((X0 + X1) / 2, 0.035, MIDZ), (X1 - X0 + 0.045, 0.07, Z1 - Z0 + 0.035), STONE)
 for z in (Z0 + T / 2, Z1 - T / 2):
     box(walls, ((X0 + X1) / 2, BAND / 2, z), (X1 - X0, BAND, T), BOARDS)
     box(walls, ((X0 + X1) / 2, (BAND + EAVES) / 2, z), (X1 - X0, EAVES - BAND, T), PLASTER)
@@ -147,6 +151,14 @@ for x0, x1 in ((-0.55, -0.25), (-0.25, 0.05)):
     beam(frame, (x1, BAND + 0.02, Z1 + 0.018), (x0, EAVES - 0.03, Z1 + 0.018), 0.022, TIMBER)
 for x in (X0 - 0.012, X1 + 0.012):
     box(frame, (x, BAND, MIDZ), (0.028, 0.035, Z1 - Z0), TIMBER_Z)
+    box(frame, (x, EAVES - 0.02, MIDZ), (0.035, 0.045, Z1 - Z0), TIMBER_Z)
+    for z in (Z0, Z1):
+        beam(frame, (x, EAVES, z), (x, RIDGE, MIDZ), 0.035, EDGE)
+        beam(frame, (x, BAND + 0.025, z), (x, EAVES - 0.045, MIDZ), 0.025, TIMBER)
+# Short rafter tails give the broad slate roof a timber underside.
+for x in (-0.7, -0.4, -0.1, 0.2):
+    for z in (Z0 - 0.035, Z1 + 0.035):
+        box(frame, (x, EAVES - 0.035, z), (0.035, 0.045, 0.115), EDGE)
 frame.build()
 
 doors = Part(HOUSE, 'doors')
@@ -155,7 +167,13 @@ doors = Part(HOUSE, 'doors')
 for x in (-0.64, -0.42):
     box(doors, (x, 0.13, Z1 + 0.006), (0.16, 0.24, 0.02), BOARDS)
     beam(doors, (x - 0.07, 0.03, Z1 + 0.018), (x + 0.07, 0.23, Z1 + 0.018), 0.018, TIMBER)
-    box(doors, (x, 0.34, Z1 - 0.004), (0.15, 0.17, 0.012), DARK)
+    # The dark opening must sit in front of the solid wall, or the plaster hides it.
+    box(doors, (x, 0.34, Z1 + 0.008), (0.15, 0.17, 0.012), DARK)
+    for dx in (-0.09, 0.09):
+        box(doors, (x + dx, 0.235, Z1 + 0.025), (0.022, 0.45, 0.035), EDGE)
+    box(doors, (x, 0.44, Z1 + 0.025), (0.2, 0.025, 0.035), EDGE)
+    # An upper half swung out: the split door reads as a stall from the street.
+    box(doors, (x - 0.105, 0.34, Z1 + 0.09), (0.025, 0.17, 0.15), BOARDS)
     box(doors, (x, 0.255, Z1 + 0.012), (0.18, 0.02, 0.035), TIMBER)
     for y in (0.07, 0.19):
         box(doors, (x - 0.05, y, Z1 + 0.019), (0.07, 0.012, 0.005), IRON)
@@ -167,6 +185,8 @@ for side in (-1, 1):
     for y in (0.1, 0.38):
         box(doors, (x + side * 0.05, y, Z1 + 0.021), (0.09, 0.014, 0.005), IRON)
 box(doors, (0, 0.49, Z1 + 0.012), (0.44, 0.03, 0.04), TIMBER)
+for x in (-0.025, 0.025):
+    box(doors, (x, 0.245, Z1 + 0.035), (0.014, 0.05, 0.012), IRON)
 doors.build()
 
 roof = Part(HOUSE, 'roof')
@@ -176,20 +196,35 @@ for side in (-1, 1):
     box(roof, ((X0 + X1) / 2, (EAVES + RIDGE) / 2 + 0.03, MIDZ + side * ((Z1 - Z0) / 4 + 0.02)),
         (X1 - X0 + 0.16, 0.04, span), SLATE, rx=side * pitch)
 box(roof, ((X0 + X1) / 2, RIDGE + 0.04, MIDZ), (X1 - X0 + 0.18, 0.04, 0.06), TIMBER)
+# Bargeboards follow the slopes; the blue tiles remain the large, quiet colour field.
+for x in (X0 - 0.085, X1 + 0.085):
+    for side in (-1, 1):
+        beam(roof, (x, EAVES - 0.055, MIDZ + side * 0.415),
+             (x, RIDGE + 0.055, MIDZ), 0.035, EDGE)
 # The hay loft door in the right gable, open, with hay showing, and a hoist beam over it.
 box(roof, (X1 + 0.004, 0.8, MIDZ), (0.012, 0.16, 0.14), DARK)
 box(roof, (X1 + 0.008, 0.76, MIDZ), (0.014, 0.07, 0.12), HAY)
 box(roof, (X1 + 0.08, 0.95, MIDZ), (0.16, 0.03, 0.03), TIMBER)
 box(roof, (X1 + 0.15, 0.9, MIDZ), (0.004, 0.09, 0.004), IRON)
+for z in (MIDZ - 0.095, MIDZ + 0.095):
+    box(roof, (X1 + 0.018, 0.805, z), (0.03, 0.21, 0.025), EDGE)
+box(roof, (X1 + 0.04, 0.705, MIDZ), (0.09, 0.03, 0.22), EDGE)
+box(roof, (X1 + 0.02, 0.91, MIDZ), (0.03, 0.025, 0.22), EDGE)
+for z in (MIDZ - 0.15, MIDZ + 0.15):
+    box(roof, (X1 + 0.025, 0.8, z), (0.03, 0.17, 0.07), BOARDS_Z)
+    box(roof, (X1 + 0.044, 0.8, z), (0.014, 0.018, 0.07), TIMBER_Z)
 roof.build()
 
 signs = Part(HOUSE, 'sign')
 # A board on an arm by the big door, a horseshoe on it, and the lantern the other side.
 box(signs, (0.28, 0.58, Z1 + 0.09), (0.02, 0.02, 0.16), TIMBER)
 box(signs, (0.28, 0.5, Z1 + 0.14), (0.012, 0.12, 0.12), SIGN)
-for a in range(5):
-    t = math.pi * (0.1 + 0.8 * a / 4)
-    box(signs, (0.272, 0.5 + 0.03 * math.sin(t), Z1 + 0.14 + 0.03 * math.cos(t)), (0.006, 0.014, 0.014), IRON)
+# A connected U on both faces, open at the top: five loose dots read as nails.
+for x in (0.27, 0.29):
+    for i in range(7):
+        a, b = [math.pi * (0.25 + 1.5 * k / 7) for k in (i, i + 1)]
+        beam(signs, (x, 0.5 + 0.035 * math.cos(a), Z1 + 0.14 + 0.035 * math.sin(a)),
+             (x, 0.5 + 0.035 * math.cos(b), Z1 + 0.14 + 0.035 * math.sin(b)), 0.01, IRON)
 box(signs, (-0.22, 0.52, Z1 + 0.03), (0.01, 0.01, 0.05), IRON)
 box(signs, (-0.22, 0.47, Z1 + 0.055), (0.035, 0.05, 0.035), LAMP)
 box(signs, (-0.22, 0.5, Z1 + 0.055), (0.045, 0.01, 0.045), IRON)

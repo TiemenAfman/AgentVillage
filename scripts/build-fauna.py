@@ -194,19 +194,23 @@ def quadruped(name, s):
     head.build()
 
     tail = Part(a, 'tail', s['tail'][0][0])
-    fin(tail, s['tail'][0], s['tail'][1], s['tail_mat'], thick=s.get('tail_thick', 0.012))
+    if s.get('tail_round'):
+        loft(tail, along(s['tail'][0], s['tail'][1]), s['tail_mat'], sides=6)
+    else:
+        fin(tail, s['tail'][0], s['tail'][1], s['tail_mat'], thick=s.get('tail_thick', 0.012))
     tail.build()
 
     for key, (x, z) in (('fl', (-1, 1)), ('fr', (1, 1)), ('bl', (-1, -1)), ('br', (1, -1))):
         top = (x * s['legs']['x'], s['legs']['top'], z * s['legs']['z'] if z > 0 else -s['legs']['zb'])
         leg = Part(a, f'leg {key}', top)
         ys, ws = s['legs']['ys'], s['legs']['ws']
-        pts = [(top[0], y, top[2]) for y in ys]
+        offsets = s['legs'].get('front_offsets' if z > 0 else 'back_offsets', [0] * len(ys))
+        pts = [(top[0], y, top[2] + dz) for y, dz in zip(ys, offsets)]
         segs = along(pts, ws)
         # Two colours on a leg: the coat down to the knee, then the sock and the hoof.
         loft(leg, segs[:s['legs']['sock'] + 1], s['coat'], sides=6, caps=False)
         loft(leg, segs[s['legs']['sock']:], s['sock_mat'], sides=6)
-        box(leg, (top[0], s['legs']['hoof'] / 2, top[2] + 0.004), (ws[-1] * 1.2, s['legs']['hoof'], ws[-1] * 1.3), s['hoof_mat'])
+        box(leg, (top[0], s['legs']['hoof'] / 2, pts[-1][2] + 0.004), (ws[-1] * 1.2, s['legs']['hoof'], ws[-1] * 1.3), s['hoof_mat'])
         leg.build()
     return a
 
@@ -255,27 +259,57 @@ DRAKE, DRAKE_HEAD, DUCK_BILL = material('duck body', 0x8b6f55), material('duck h
 
 # ---- the horse ---------------------------------------------------------------------------
 def saddle(p):
-    box(p, (0, 0.47, 0.01), (0.18, 0.012, 0.13), material('horse saddle pad', 0x8c7f6a))
-    box(p, (0, 0.485, 0.0), (0.12, 0.03, 0.1), LEATHER)
-    box(p, (0, 0.507, 0.045), (0.03, 0.03, 0.02), LEATHER)
+    pad = material('horse saddle pad', 0x416d72)
+    brass = material('horse tack brass', 0xc6a263)
+    box(p, (0, 0.477, 0.0), (0.18, 0.012, 0.16), pad)
+    loft(p, [((0, y, z), (0, 0, 1), w, h) for z, y, w, h in
+             [(-0.068, 0.5, 0.13, 0.04), (-0.03, 0.487, 0.12, 0.018),
+              (0.035, 0.49, 0.11, 0.022), (0.065, 0.51, 0.09, 0.035)]], LEATHER, sides=6)
     for side in (-1, 1):
-        box(p, (side * 0.088, 0.37, 0.0), (0.006, 0.12, 0.02), LEATHER)
-        box(p, (side * 0.09, 0.3, 0.0), (0.012, 0.02, 0.02), material('horse stirrup', 0x9aa0a6))
+        box(p, (side * 0.087, 0.433, 0.0), (0.012, 0.09, 0.155), pad)
+        box(p, (side * 0.096, 0.42, 0.01), (0.014, 0.075, 0.085), LEATHER)
+        box(p, (side * 0.107, 0.368, 0.02), (0.007, 0.095, 0.012), LEATHER)
+        for z in (0.004, 0.036):
+            box(p, (side * 0.11, 0.316, z), (0.009, 0.027, 0.006), brass)
+        box(p, (side * 0.11, 0.302, 0.02), (0.009, 0.007, 0.038), brass)
+
+
+def horse_face(p):
+    # The blaze follows the face, rather than floating as a block across the muzzle.
+    loft(p, along([(0, 0.627, 0.342), (0, 0.603, 0.39), (0, 0.558, 0.44)],
+                  [0.018, 0.024, 0.016], [0.006, 0.007, 0.006]), BLAZE, sides=4)
+    for side in (-1, 1):
+        box(p, (side * 0.03, 0.537, 0.456), (0.006, 0.012, 0.016), DARK)
+        # A cheek strap stays on the head's pivot when it looks round.
+        loft(p, along([(side * 0.037, 0.61, 0.332), (side * 0.037, 0.576, 0.397),
+                      (side * 0.03, 0.535, 0.438)], [0.007] * 3), LEATHER, sides=4)
+        box(p, (side * 0.04, 0.578, 0.393), (0.005, 0.012, 0.012), material('horse tack brass', 0xc6a263))
+    fin(p, [(0, 0.637, 0.314), (0, 0.626, 0.35)], [0.025, 0.008], DARK, thick=0.018)
 
 
 quadruped('horse', {
     'coat': BAY, 'hair': DARK, 'tail_mat': DARK, 'sock_mat': SOCK, 'hoof_mat': HOOF, 'ear_mat': BAY,
-    'body': [(-0.27, 0.39, 0.08, 0.09), (-0.23, 0.39, 0.16, 0.19), (-0.08, 0.38, 0.17, 0.2),
-             (0.08, 0.385, 0.165, 0.2), (0.2, 0.4, 0.14, 0.18), (0.25, 0.42, 0.08, 0.11)],
+    'body': [(-0.27, 0.39, 0.08, 0.1), (-0.22, 0.393, 0.18, 0.195), (-0.13, 0.385, 0.19, 0.205),
+             (-0.02, 0.377, 0.18, 0.205), (0.1, 0.386, 0.175, 0.21),
+             (0.19, 0.405, 0.15, 0.195), (0.25, 0.42, 0.08, 0.11)],
     'extras': [saddle],
     'head': [(0, 0.43, 0.21), (0, 0.52, 0.28), (0, 0.6, 0.32), (0, 0.585, 0.38), (0, 0.53, 0.44)],
     'head_w': [0.1, 0.08, 0.066, 0.06, 0.05], 'head_h': [0.15, 0.12, 0.09, 0.075, 0.06],
-    'muzzle': ((0, 0.585, 0.37), (0.058, 0.012, 0.05)), 'muzzle_mat': BLAZE,
+    'snout': ([(0, 0.54, 0.421), (0, 0.524, 0.458), (0, 0.526, 0.472)],
+              [0.057, 0.065, 0.05], [0.058, 0.052, 0.037]),
+    'muzzle_mat': material('horse muzzle', 0x665044),
+    'eyes': [(-0.033, 0.604, 0.354), (0.033, 0.604, 0.354)],
+    'head_extras': [horse_face],
     'mane': ([(0, 0.46, 0.19), (0, 0.55, 0.25), (0, 0.63, 0.3)], [0.05, 0.045, 0.03]),
     'ears': ((0, 0.66, 0.325), 0.018, 0.035),
-    'tail': ([(0, 0.4, -0.27), (0, 0.33, -0.31), (0, 0.2, -0.32)], [0.03, 0.05, 0.04]),
-    'legs': {'x': 0.05, 'z': 0.17, 'zb': 0.19, 'top': 0.34, 'ys': [0.34, 0.2, 0.1, 0.03], 'ws': [0.065, 0.045, 0.034, 0.036],
-             'sock': 2, 'hoof': 0.03},
+    'tail': ([(0, 0.41, -0.26), (0, 0.35, -0.3), (0.008, 0.23, -0.32), (0.012, 0.13, -0.31)],
+             [0.03, 0.05, 0.058, 0.014]), 'tail_round': True,
+    'legs': {'x': 0.057, 'z': 0.17, 'zb': 0.19, 'top': 0.34,
+             'ys': [0.34, 0.255, 0.19, 0.145, 0.055, 0.028],
+             'ws': [0.078, 0.057, 0.043, 0.028, 0.033, 0.037],
+             'front_offsets': [0, -0.012, -0.008, 0, 0, 0.006],
+             'back_offsets': [0, 0.024, -0.018, -0.025, 0, 0.008],
+             'sock': 3, 'hoof': 0.028},
 })
 
 # ---- the cow ------------------------------------------------------------------------------
