@@ -76,6 +76,18 @@ select option { color: var(--ink); background: var(--panel-solid); }
 .an-mystery { background: rgba(147, 208, 195, .06); }
 .an-mystery.solved { border-color: rgba(232, 193, 124, .4); background: rgba(232, 193, 124, .07); }
 .an-rels li { border-radius: 10px; }
+/* The sea not answering, alone in the skew box (web/js/ui.js renderSkew): where the skew
+   stands and as long as it lasts, but a toast's colours - it ends by itself and breaks
+   nothing, it only says why nobody is walking. */
+.skew.quiet {
+  background: linear-gradient(145deg, rgba(32, 53, 49, .97), var(--panel));
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--accent);
+  color: var(--ink);
+  font-size: 12px;
+  max-width: min(520px, calc(100vw - 32px));
+}
+.skew.quiet b { color: var(--accent); }
 .walk-prompt { padding: 11px 18px; border-radius: 12px; }
 .walk-keys { padding: 7px 12px; border-radius: 8px; background: var(--panel); }
 .boot { background: radial-gradient(ellipse at 50% 42%, #31534c, #102826 70%); }

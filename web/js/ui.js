@@ -622,15 +622,32 @@ export function createUI(handlers) {
   // somebody is. One line per island, because two out of date is a different conversation
   // from one.
   const skewed = new Map();
+  // The sea not answering (web/js/seaquiet.js builds the words), which shares the box: both
+  // stay up until what they name is fixed, and one box cannot sit on top of the other. On
+  // its own it wears a toast's colours rather than the skew's (`.skew.quiet` in
+  // harbour.css): it breaks nothing and ends by itself, it is only why nobody is walking.
+  let seaQuiet = null;
+  function renderSkew() {
+    const box = el('skew');
+    const lines = [];
+    if (skewed.size) {
+      const who = [...skewed.values()];
+      lines.push(`<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
+        + 'running a different version of the island, so their land is drawn from numbers this '
+        + 'page disagrees with. Pull and restart on both sides.');
+    }
+    if (seaQuiet) lines.push(seaQuiet);
+    box.hidden = !lines.length;
+    box.classList.toggle('quiet', !skewed.size && !!seaQuiet);
+    box.innerHTML = lines.map((l) => `<p>${l}</p>`).join('');
+  }
   function setSkew(id, name) {
     if (name) skewed.set(id, name); else skewed.delete(id);
-    const box = el('skew');
-    if (!skewed.size) { box.hidden = true; box.innerHTML = ''; return; }
-    const who = [...skewed.values()];
-    box.hidden = false;
-    box.innerHTML = `<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
-      + 'running a different version of the island, so their land is drawn from numbers this '
-      + 'page disagrees with. Pull and restart on both sides.';
+    renderSkew();
+  }
+  function setSeaQuiet(html) {
+    seaQuiet = html || null;
+    renderSkew();
   }
 
   // Who is behind, this page or the sea (web/js/update.js builds the words). Closed by
@@ -869,7 +886,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
+    setHover, toast, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
     // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.

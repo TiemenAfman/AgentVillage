@@ -749,6 +749,19 @@ of these reasons fix themselves, so the loop turned one problem into a toast eve
 seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
 is wrong and tells whoever has to fix it nothing.
 
+A sea that does not answer at all is the same rule with no refusal to hang it on: since the
+sea walks every crowd, it is an island with nobody on it (26 September 2026, twelve minutes
+of it, found only by asking). After `QUIET_MS` (10 s, past a sea restart's blank second)
+`lib/seaclient.mjs` logs it once, naming the address, and says `back after …` on the join;
+`net.js` says `onStatus('quiet')` once, and main.js puts `web/js/seaquiet.js`'s sentence in
+the skew box (`setSeaQuiet`) until a socket opens - with **On my own** as the hint only for
+the keeper, only when the sea is somebody else's (`seaMode`/`seaOpen` on `/api/hello`).
+Pitfall that made it worse: Node's own WebSocket (undici 6.21, Node 22.16) fires `error` and
+never `close` for a socket that failed before it opened, and `close()` on one recurses until
+the stack runs out - so a retry hung only off `close` stops after the first failed attempt.
+The islander's line home ends an attempt on either event, once (`gone`), and closes only a
+socket that opened.
+
 `SEA_KEY` is optional and only for a private sea - the open sea has none, so a Windows
 release and the phone app can both just join, and `POST /update` is locked by
 `SEA_ADMIN_KEY` instead (falling back to `SEA_KEY`). When set, it is shared by everybody in a world. Each islander keeps it in

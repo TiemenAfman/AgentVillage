@@ -511,6 +511,13 @@ async function handle(req, res) {
       // over the island from anywhere.
       islandId: ISLAND_ID,
       sea: seaUrlFor(req),
+      // Which kind of sea that is, for the page's words when it stops answering
+      // (web/js/seaquiet.js): our own (single, host) has no address worth reading out, the
+      // open sea is "the online sea" the main menu offers, and only somebody else's can be
+      // left for one of our own. Nothing a visitor could not read off `sea` already - and
+      // the 'sea' event tells every page the mode anyway.
+      seaMode: seaModeOf(),
+      seaOpen: seaModeOf() === 'join' && isOpenSea(SEA().url),
       token: who.role === 'islander' ? ISLAND_TOKEN : null,
       // The key to the sea, for the keeper's own page only.
       //
@@ -1680,6 +1687,9 @@ function islandBundle() {
   }
 }
 
+// Which world this island is in: a sea of its own (single, host) or somebody else's (join).
+function seaModeOf() { return SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single'; }
+
 // Where this page should look for the world.
 //
 // A joined sea is one absolute address and everybody uses it. A sea of our own is on this
@@ -1687,7 +1697,7 @@ function islandBundle() {
 // actually arrived on, not from localhost. A phone at http://192.168.2.8:4747/ that was
 // handed "localhost" would spend the rest of the evening trying to reach its own browser.
 function seaUrlFor(req) {
-  const mode = SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single';
+  const mode = seaModeOf();
   if (mode === 'join') return SEA().url || null;
   if (!ownSea) return null;
   const port = (ownSea.address() || {}).port;
