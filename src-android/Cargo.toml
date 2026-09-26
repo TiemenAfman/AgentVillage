@@ -1,6 +1,6 @@
 [package]
 name = "promptholm-android"
-version = "0.5.0"
+version = "0.5.1"
 description = "Promptholm on a phone: web/ carried inside the app, joining one sea - see Plans/eiland-op-android.md"
 authors = ["Martijn Jansen"]
 edition = "2021"
@@ -16,8 +16,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-# Links out of the island (a new release, a Jira ticket) go to the phone's browser.
+# Links out of the island (a new release, a Jira ticket) go to the phone's browser, and
+# the new APK is handed to Android's installer through the same plugin.
 tauri-plugin-opener = "2"
+# Fetching that APK (install_update below). rustls rather than the system OpenSSL: nothing
+# to cross-compile for aarch64-linux-android, and the page cannot fetch it itself - it sits
+# on tauri.localhost and GitHub sends no CORS header with a release asset. `json` for
+# latest_release, which reads the newest release's tag from the GitHub API.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde_json = "1"
 
 [profile.release]
 codegen-units = 1

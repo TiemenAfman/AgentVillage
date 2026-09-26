@@ -1195,6 +1195,7 @@ function onRefusedBySea(m) {
   // In the app it is the whole-screen gate with a download button instead: a refused app
   // has no island to fall back on, so nothing else on the screen is worth reaching.
   if (why === 'version') {
+    state.seaSpeaks = m.speaks;
     const gate = STANDALONE ? updateGate({ speaks: m.speaks }) : null;
     if (gate) state.ui.setGate(gate);
     else state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE }));
@@ -1219,6 +1220,32 @@ function onSeaStatus(status) {
   if (status !== 'quiet') return;
   const words = state.seaWords || { url: STANDALONE ? STANDALONE.sea : null };
   state.ui.setSeaQuiet(seaQuietNotice({ ...words, keeper: islanderHere() && !state.guest }));
+}
+
+// The app's gate from all it knows: its own release, the sea's (from the welcome) and the
+// newest on GitHub (askLatestRelease). See updateGate in web/js/update.js.
+function appGate() {
+  return updateGate({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease });
+}
+
+// The app asks GitHub for the newest release itself (src-android/src/lib.rs, latest_release),
+// so the card goes up as soon as there is one - not only once whoever keeps the sea has
+// updated it. At boot and on a welcome, at most once an hour: an app lives on in the
+// background for days, and GitHub allows sixty unauthenticated calls an hour.
+let releaseAsked = 0;
+function askLatestRelease() {
+  const ipc = globalThis.__TAURI_INTERNALS__;
+  if (!STANDALONE || !ipc || typeof ipc.invoke !== 'function') return;
+  if (Date.now() - releaseAsked < 3600e3) return;
+  releaseAsked = Date.now();
+  ipc.invoke('latest_release').then((latest) => {
+    state.latestRelease = latest;
+    // A refusal owns the screen until the next welcome; this card is not to cover it.
+    const gate = appGate();
+    if (gate && state.seaSpeaks == null) state.ui.setGate(gate);
+  }).catch(() => {
+    // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
+  });
 }
 
 function applyPanelMessage(m) {
@@ -5390,6 +5417,7 @@ async function boot() {
     // the "who is behind" banner once the sea says its own.
     state.build = STANDALONE.build || null;
     state.ui.setStandalone();
+    askLatestRelease();
   }
   try {
     const hello = await mine('/api/hello').then((r) => r.json());
@@ -5538,8 +5566,10 @@ async function boot() {
       // The sea says which release it is on every welcome, so a sea updated under us is
       // noticed on the reconnect its restart causes.
       state.seaBuild = build;
+      state.seaSpeaks = null;
+      askLatestRelease();
       // In the app a newer release is the gate with a Later; on a desktop island, the banner.
-      const gate = STANDALONE ? updateGate({ mine: state.build, sea: build }) : null;
+      const gate = STANDALONE ? appGate() : null;
       if (gate) state.ui.setGate(gate);
       else state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
     },

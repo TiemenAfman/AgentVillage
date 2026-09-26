@@ -80,13 +80,19 @@ export function updateNotice({ mine, sea, phone = false }) {
 // the old one ("conflicts with an existing package"). From 0.3.2 the release workflow signs
 // with one fixed key (the ANDROID_KEYSTORE secret), so coming from 0.3.1 or older needs the
 // uninstall once and every update after that installs straight over the top.
-export function updateGate({ speaks = null, mine = null, sea = null } = {}) {
+//
+// `latest` is the newest release on GitHub (src-android/src/lib.rs, latest_release), a bare
+// version string. With it the card goes up as soon as there is a release, not only once the
+// sea has been updated to it: the sea is behind the releases whenever nobody has got round to
+// it yet, and that is no reason for the app to be.
+export function updateGate({ speaks = null, mine = null, sea = null, latest = null } = {}) {
   const common = {
     download: APK_URL,
     notes: RELEASES,
-    steps: 'Tap the button, let the download finish, open it and allow the install. '
+    steps: 'Tap the button; the app fetches it and the phone asks to install it. The first time, '
+      + 'Android sends you to settings to allow this app to install others. '
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
-      + 'once and open the download again. After that, updates install over the top.',
+      + 'once and tap the button again. After that, updates install over the top.',
   };
   if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
     return {
@@ -96,12 +102,19 @@ export function updateGate({ speaks = null, mine = null, sea = null } = {}) {
       body: 'This sea has moved on to a newer version and will not let this app in until it is updated.',
     };
   }
-  if (compareLines(mine && mine.version, sea && sea.version) === -1) {
+  const seaAhead = compareLines(mine && mine.version, sea && sea.version) === -1;
+  const releaseAhead = compareLines(mine && mine.version, latest) === -1;
+  if (seaAhead || releaseAhead) {
+    // The newer of the two is the one to name; the sea can be ahead of what GitHub said when
+    // that answer is older than the sea's last restart.
+    const newest = seaAhead && !(releaseAhead && compareVersions(latest, sea.version) === 1) ? sea.version : latest;
     return {
       ...common,
       blocking: false,
-      title: `Promptholm v${sea.version} is out`,
-      body: `This app is v${mine.version}. The sea still lets it in, but what is new will not reach you until you update.`,
+      title: `Promptholm v${newest} is out`,
+      body: seaAhead
+        ? `This app is v${mine.version}. The sea still lets it in, but what is new will not reach you until you update.`
+        : `This app is v${mine.version}. It still works as it is; the update brings what is new.`,
     };
   }
   return null;
