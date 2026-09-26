@@ -1626,11 +1626,13 @@ const animalLife = config.animals && config.animals.enabled === false ? null : c
   pace: Number(config.animals && config.animals.pace) || 1,
   log: (m) => log(m),
   onNews: (n) => { animalNews.push(n); },
-  onChange: () => {
+  // `again`: the journal was reopened after a failed write, and the sea must be asked once
+  // more even though nothing it is told has changed - see recover() in lib/animal-life.mjs.
+  onChange: ({ again = false } = {}) => {
     const news = animalNews;
     animalNews = [];
     broadcast({ seq: animalLife ? animalLife.seq() : 0, news }, 'animals', { localOnly: true });
-    if (seaClient) seaClient.sendAnimals().catch(() => {});
+    if (seaClient) seaClient.sendAnimals({ force: again }).catch(() => {});
   },
 });
 // After a scan, and when the keeper opens the island: read what the scan wrote and let the

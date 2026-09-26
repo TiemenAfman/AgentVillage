@@ -24,7 +24,39 @@ All five stages are in, and connected end to end:
 
 Measured: every story animal on every island draws in at most 18 calls (one per species and
 body part), the marks in 9; see "Metingen" in the Plans file. Tests: `node --test
-"tests/animal-*.test.mjs" tests/traces.test.mjs tests/fauna.test.mjs`.
+"tests/animal-*.test.mjs" tests/traces.test.mjs tests/fauna.test.mjs` (105 tests, all green
+on 2026-09-26, the recovery chain below included).
+
+### The recovery chain, end to end
+
+`tests/animal-recovery.test.mjs` runs the islander's real `lib/animal-life.mjs` and
+`lib/animal-store.mjs` on a scratch journal, its real `lib/seaclient.mjs` and a real
+`lib/sea.mjs` on loopback, with a TCP proxy between them that can cut the line, hold it down or
+swallow what the sea says, and a sea clock the test runs fast while an animal walks and nearly
+stops while the line is down. Every wait is on a condition with a deadline. In each scenario it
+checks that the errand becomes exactly one encounter in the journal, appended after everything
+that was there; that the animal keeps its id, name, species, traits and arrival; that the
+settler's relationship gains exactly one visit and no other relationship changes; that nothing
+is left pending; and that a reopened journal says the same.
+
+| scenario | how it recovers |
+|---|---|
+| the line drops while the hen is on her way, back before she arrives | re-posted under the new generation, `done` under it |
+| the line drops and the sea finishes while the islander is away | the sea's finished memory answers the re-post; the herd is not swept |
+| away past the grace: the herd is swept | the re-post makes a new herd, the errand is walked again, remembered once |
+| the sea restarts mid-encounter | the new sea is handed the pending errand on the welcome and walks it |
+| the islander restarts with the encounter open (and a stale lock) | the lock is taken over, the pending errand replays from the journal, generation 1 again |
+| the islander restarts after the sea finished | answered from the sea's memory on the new line |
+| the encounter is done but the confirmation is lost (a line that delivers nothing) | nothing is taken while muted; the reconnect's re-post is answered once |
+| the journal cannot write the memory | reopened on the next scan and the sea asked again, forced - **was broken, fixed** |
+| an old or a repeated confirmation | the sea answers stale re-posts; the islander takes none of them |
+
+The one defect it found: a failed journal append poisoned the store for the rest of the
+islander's life, and the memory that line held was never written, because the sea had answered
+and nothing asked it again. `recover()` in `lib/animal-life.mjs` now closes and reopens the store
+on the next scan or completion and has the islander post its animals with `force`, so the sea
+answers what it finished out of its memory (`onChange({ again: true })`, `sendAnimals({ force })`
+in `serve.mjs`).
 
 Where the build departed from the text below, the Plans file says so; the main ones: an
 animal only visits within its species' reach of home (`MOTION.reach`), the sea's `done`
@@ -68,9 +100,11 @@ Bees also exist in `web/js/countryside.js`: seven animated instances around a be
 They are a decorative swarm, not individually modelled fauna. Reuse them for later
 flower-and-bee discoveries.
 
-The inspected callers of the fauna, stable and countryside creation functions are the
-demo, stable module and tests. Live main/guest-island integration is still needed.
-Available assets and demo behaviour must not be mistaken for persistent live animals.
+On the island itself three of them are now story animals (chicken, goat, sparrow: drawn from
+the sea through `web/js/animal-view.js`, on our island and every detailed guest), and the
+others are scenery: the stable's horse and hens (`web/js/stable.js`) and the ambient herds on
+fields, rivers and quays (`web/js/herds.js`), which move on their own like the bees and never
+author a story. `/demo` keeps its standalone behaviour for looking at the models.
 
 Missing from the supplied proposal: cat, dog, goose, raccoon, fox, rabbit, deer, frog
 and octopus/mythic creature models. None is required for the first release.
@@ -80,18 +114,20 @@ and octopus/mythic creature models. None is required for the first release.
 - `lib/village.mjs`: session-derived inhabitants, progression and activity. An inhabitant
   represents a session; do not assume that a named AI assistant is one stable person
   across unrelated sessions.
-- `web/js/history.js` and the chronicle in `web/js/main.js`: views of the island's past.
-  These are not yet a durable journal of animal encounters.
+- `web/js/history.js` and the chronicle in `web/js/main.js`: views of the island's past. The
+  animals' own durable history is their journal (`data/animal-events.jsonl`); the chronicle
+  hides live animals while scrubbed back and shows a mark only from the day it was made.
 - `lib/weather.mjs`: shared weather owned by the sea, held only in memory.
 - `lib/crowd.mjs`, `shared/settlerwalk.mjs`, `web/js/crowd-view.js`: a precedent for
   movement on the sea and presentation in the browser.
 - `lib/islandbundle.mjs` and `lib/seaclient.mjs`: redacted publication and incremental
-  parcel updates. Animal state and story updates need their own validated extension.
+  parcel updates. The animals got their own validated extension beside them:
+  `lib/animalbundle.mjs` (forgiving `packAnimals`, strict `parseAnimals`) and a door of their own.
 - `lib/layout.mjs`: permanent locations that must not move to make room for a new story.
 
-No named-animal or animal-memory system was found in the inspected source. The lighthouse
-already unlocks at 50 settlers. Preserve it; a later mystery can reveal its old signal,
-a keeper's cache or an offshore light.
+Before this there was no named-animal or animal-memory system. The lighthouse (unlocked at 50
+settlers) is kept as it was; the mystery ends there with the old keeper's cache, or at the town
+hall on an island that has no lighthouse yet.
 
 ## First playable release
 
@@ -165,10 +201,11 @@ movement path for single-player and multiplayer.
 
 ### Reuse and movement migration
 
-`fauna.js` currently combines articulated meshes, cosmetic animation and browser-local
-movement driven by frame delta and trigonometry. It cannot move wholesale into shared/.
-Keep the existing geometry and joint animations. Extract a presentation API accepting
-position, direction and action from the wire; implement fixed-tick movement separately.
+`fauna.js` used to combine articulated meshes, cosmetic animation and browser-local movement
+driven by frame delta and trigonometry, which could not move wholesale into shared/. As
+built, it keeps the geometry and joint animation behind a presentation API
+(`createPose`/`stepPose`, and `createBrain`/`stepBrain` for the scenery that still moves on
+its own), and the fixed-tick movement is `shared/animalwalk.mjs`.
 
 Migrate the chicken first. Its live figure must never also run the old autonomous movement.
 Keep the demo's standalone behaviour for asset inspection; it does not author stories.
@@ -180,7 +217,8 @@ is enrolled, persist its association with its animal id so a scene rebuild canno
 a second identity. Transform stable-local coordinates through the building placement
 before applying the island's world offset.
 
-Proposed components:
+Components (all built; `lib/animal-life.mjs`, `lib/animal-places.mjs`, `lib/animalbundle.mjs`
+and `web/js/traces.js` joined them):
 
 | Component | Responsibility |
 | --- | --- |
@@ -210,8 +248,9 @@ An intended encounter first sends an action target to the sea. The sea reports c
 over the islander's existing outbound-established connection; only then does the islander
 commit the encounter outcome. Completion ids are deduplicated. Interrupted actions can be
 retried after reconnect without counting twice. This adds an inbound message handler on
-that connection, not an inbound route on the islander. The current seaclient does not yet
-act on these messages, so this is an explicit protocol change.
+that connection, not an inbound route on the islander: `{t:'animal', a:'done'}` is the one
+message `lib/seaclient.mjs` acts on, bounded before it is handed on, and
+`tests/seaclient.test.mjs` holds that list to three.
 
 Do not trust completion messages as arbitrary commands or state updates: accept only a
 pending action id for the current island and connection generation, with bounded fields.
@@ -224,8 +263,10 @@ there is no reconstruction of weather lost in a sea restart.
   summaries, redacted resident references and current intentions. Real session ids,
   transcript content, paths and private dossier history stay on the islander.
 - Send story changes through a dedicated sequenced patch. Do not republish terrain or
-  change the island geometry revision for an encounter. Detect missing patches and fetch
-  a fresh animal snapshot; the next scan also remains a recovery opportunity.
+  change the island geometry revision for an encounter. As built, every `herd` message is
+  the whole public state with its `seq` (six animals and their marks are small), so a missed
+  one is healed by the next rather than detected and fetched; a page ignores an older `seq`,
+  and `GET /island/:id/animals` is there for a page that wants it outright.
 - Reconnect starts from the islander's durable checkpoint and pending intentions. Sea
   movement positions can reset to safe anchors; identities and committed memories survive.
 - Joining viewers receive a complete initial position snapshot. Hide figures until their
@@ -239,11 +280,11 @@ there is no reconstruction of weather lost in a sea restart.
   and story randomness. Render animals only on detailed islands, within the existing
   nearest-island policy.
 - Measure existing articulated meshes first: each animal has separate moving parts.
-  Record draw calls and frame times with zero, one and six story animals on the same
-  crowded scene, including multiple detailed islands. Establish a measured release budget
-  in stage 1; withdraw the earlier assumption of six extra draw calls for three species.
-  Share geometry/materials and batch matching parts if six animals exceed that budget.
-  Bound message size and movement frequency independently of resident count.
+  As built every (species, part) is one InstancedMesh for all islands together: at most 18
+  draw calls however many animals, measured on the page as 13 extra (1169 -> 1182) for a hen
+  and a goat on a 299-settler island. Frame times with six animals on several detailed
+  islands are not measured yet (see the acceptance list below). Messages are bounded
+  independently of the settlers: seven numbers a row, six rows at most per island.
 - In the chronicle, show dated discoveries and memories, and hide live animals. Historical
   path replay is outside the first release.
 
@@ -317,8 +358,19 @@ habit, can explain a relationship change, and return curious about a specific on
 If all they remember is the number of animals, improve the encounters first. Collect this
 through observation or optional local diagnostics; remote analytics is not a prerequisite.
 
-## First implementation task
+## Where each acceptance point stands
 
-Implement stage 1 with a synthetic chicken encounter and no new terrain or assets. Its review
-should demonstrate activity deduplication, action completion, durable recovery and public
-redaction. Stage 2 then turns that tested contract into the first visible life story.
+| stage | covered by an automated test | still to check by hand |
+|---|---|---|
+| 1 | dedup of rescans and lower counters, torn and corrupt journals, stale locks, redaction both ways, strict parsing (`animal-stories`, `animal-bundle`, `animal-life`), the recovery chain (`animal-recovery`) | restoring a journal from a backup while the sea keeps running: new errands reuse sequence numbers, and a sea that still remembers the old ids answers them at once without walking them |
+| 2 | one walk on the sea, no page-side movement (`animal-walk`, `animal-view`), a nonzero region origin (`animal-view`) | two islanders on one sea, each seeing the other's animals at the right berth in a real browser; closing a page while an errand runs (follows from the design, not yet watched) |
+| 3 | repeat preferences, personalities, a reconciliation, the six-animal cap (`animal-stories`); the draw-call budget (`animal-view`, measured once on the page) | frame times with six animals on several detailed islands |
+| 4 | marks placed once, on ground a bed would take, the chronicle hiding them until their day (`animal-stories`, `animal-places`, `traces`) | a long-running island: whether the Feathered Corner turns up at the pace intended |
+| 5 | single- and multi-settler routes both resolve, progress survives restarts (`animal-stories`, `animal-recovery`) | whether the hints read as direction without a checklist - a playtest |
+
+And the playtest the section above asks for, before any new species: whether people remember
+a name and a habit, and come back curious about one story in particular.
+
+Known limits, deliberately left: a second torn tail refuses to open the journal until the
+first recovery file is moved aside (evidence is never overwritten); a sea older than the
+animals' door keeps the animals waiting on the islander, said once in its log.

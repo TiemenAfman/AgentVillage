@@ -117,6 +117,25 @@ Blender-sporen) op één draadcontract ([docs/animals-wire.md](../docs/animals-w
 - **Een klik op een dier van de buren** opent het openbare kaartje uit `herd`; het zweeflabel
   krijgt het getekende record en niet het id, want `animal:1` is op elk eiland iemand anders.
 
+## De herstelketen getest (26 september 2026, later op de dag)
+
+`tests/animal-recovery.test.mjs` zet de echte islander-kant (animal-life, animal-store,
+seaclient) tegen een echte zee op loopback, met een TCP-proxy ertussen die de lijn kan
+doorknippen, dicht kan houden of kan laten zwijgen, en een zeeklok die de test hard laat lopen
+terwijl een dier onderweg is en bijna stil zet terwijl de lijn weg is. Negen scenario's: de lijn
+weg terwijl de kip onderweg is (terug vóór en ná aankomst), weg voorbij de genade (kudde
+opgeruimd, opnieuw gelopen), de zee herstart, de islander herstart (met een achtergebleven
+slot, en nadat de zee al klaar was), de bevestiging onderweg kwijt, een oude of dubbele
+bevestiging, en het journaal dat een regel niet kan schrijven. Telkens precies één herinnering,
+dezelfde kip, één bezoek erbij, geen andere relatie geraakt.
+
+Dat laatste scenario vond de enige fout: een mislukte schrijfactie liet de opslag voor de rest
+van de islander weigeren, en de herinnering van die regel kwam er nooit meer, omdat de zee al
+had geantwoord en niemand het haar opnieuw vroeg. Nu heropent `recover()` de opslag bij de
+volgende scan en laat de islander zijn dieren geforceerd opnieuw posten; de zee antwoordt uit
+wat ze onthouden heeft. Wat nog met de hand moet staat in
+[docs/animal-stories.md](../docs/animal-stories.md), "Where each acceptance point stands".
+
 ## Metingen
 
 - Draw calls (kleurpass, `drawCalls` in animal-view.js en `stats()` in traces.js): alle
