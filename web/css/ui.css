@@ -727,6 +727,79 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .right-column { position: fixed; right: 14px; top: 108px; width: 246px; z-index: 11; display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
 .right-column > * { position: static !important; right: auto !important; top: auto !important; width: 100% !important; pointer-events: auto; }
 .right-column > [hidden] { display: none !important; }
+
+/* --- the island's animals (web/js/animal-dossier.js) -------------------- */
+/* The "while you were away" card, in the right column under the waiting list. Teal rather
+   than the waiting list's red: nothing in it is owed. */
+.animal-summary { padding: 11px 13px; max-height: 40vh; overflow: auto; border-color: rgba(127,199,217,.32); }
+.animal-summary .row { align-items: flex-start; }
+.animal-summary h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-2); }
+#animal-summary-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+#animal-summary-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.4; padding: 6px 0; border-top: 1px solid var(--edge); }
+#animal-summary-list li:first-child { border-top: 0; padding-top: 0; }
+#animal-summary-list li span { flex: 1; min-width: 0; }
+#animal-summary-list li b { color: var(--ink); font-weight: 600; }
+.an-show { flex: none; padding: 2px 9px; font-size: 10.5px; }
+
+/* One animal. The about line is the animal's own voice, so it is set in the island's serif. */
+.an-species { background: var(--accent-2); }
+.an-about { margin: 0 0 10px; font-family: var(--font); font-size: 13.5px; line-height: 1.45; }
+.an-now { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 7px 10px; font-size: 12.5px;
+  border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.04); }
+.an-now i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); animation: pulse 2.2s infinite; }
+/* A camera link inside running text: smaller than a chip, and never on its own line. */
+.an-go { font: inherit; font-size: 11px; color: var(--accent-2); background: none; border: 0; padding: 0 2px; margin-left: 2px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px; white-space: nowrap; }
+.an-go:hover { color: var(--ink); }
+
+/* Relationships: a name and a word, never a number. */
+.an-rels { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.an-rels li { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; align-items: baseline; padding: 6px 9px;
+  border: 1px solid var(--edge); border-radius: 9px; background: rgba(255,255,255,.03); }
+.an-rels li small { grid-column: 1 / -1; color: var(--ink-dim); font-size: 11px; }
+.an-who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-label { font-size: 10.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--edge); white-space: nowrap; color: var(--ink-dim); }
+.an-label.bonded { color: #a9dca0; border-color: rgba(169,220,160,.4); background: rgba(169,220,160,.1); }
+.an-label.suspicious { color: var(--accent); border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.08); }
+.an-label.nemesis { color: #ef8a78; border-color: rgba(239,138,120,.45); background: rgba(239,138,120,.1); }
+.an-ties .an-label { margin-left: 4px; }
+
+/* The life story and the diary: a thread down the left, a bead per entry, a filled bead for
+   the ones that changed something. */
+.an-story { list-style: none; margin: 0 0 0 4px; padding: 0; border-left: 1px solid var(--edge); }
+.an-story li { position: relative; padding: 0 0 10px 14px; font-size: 12px; line-height: 1.45; }
+.an-story li:last-child { padding-bottom: 2px; }
+.an-story li::before { content: ""; position: absolute; left: -4px; top: 4px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--panel-solid); border: 1px solid var(--ink-dim); }
+.an-story li.big::before { background: var(--accent); border-color: var(--accent); }
+.an-story li b { font-weight: 600; }
+.an-story time { display: block; font-size: 10.5px; color: var(--ink-dim); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.an-times { color: var(--ink-dim); font-size: 11px; white-space: nowrap; }
+.an-earlier { margin: 6px 0 0; }
+
+/* The journal: the cast first, each one a way into its dossier. */
+.an-cast { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 4px; }
+.an-cast li { cursor: pointer; padding: 6px 9px; border-radius: 9px; border: 1px solid transparent; line-height: 1.35; }
+.an-cast li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+.an-cast li b { font-size: 13px; font-weight: 600; }
+.an-cast li small { display: block; color: var(--ink-dim); font-size: 11px; }
+.an-marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.an-marks li { font-size: 12px; line-height: 1.4; }
+.an-marks li small { color: var(--ink-dim); }
+.an-marks li p { margin: 2px 0 0; color: var(--ink); opacity: .85; }
+/* The mystery: found things and a hint. Nothing in here counts. */
+.an-mystery { margin: 14px 0 4px; padding: 9px 11px 10px; border: 1px solid rgba(127,199,217,.32); border-radius: 10px; background: rgba(127,199,217,.06); }
+.an-mystery h3.sec { margin: 0 0 5px; color: var(--accent-2); }
+.an-mystery.solved { border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.07); }
+.an-mystery.solved h3.sec { color: var(--accent); }
+.an-hint { margin: 0 0 7px; font-family: var(--font); font-style: italic; font-size: 13px; line-height: 1.45; }
+.an-finds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.an-finds li { font-size: 12px; line-height: 1.4; }
+.an-finds li b { font-weight: 600; }
+.an-finds li small { color: var(--ink-dim); }
+.an-foot { margin-top: 14px; }
+/* What kind of news a toast is, over the islander's own line. */
+.toast .an-kick { display: block; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 2px; }
 /* --- the seed stall, and the pouch you carry round the island ---------- */
 .market .ho-sum { max-width: 62ch; }
 .mk-purse { display: flex; align-items: baseline; gap: 12px; margin: 14px 0 2px;

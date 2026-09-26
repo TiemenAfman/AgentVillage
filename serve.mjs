@@ -29,6 +29,7 @@ import { guestVillage } from './lib/guestview.mjs';
 import { buildBundle, parseBundle, packParcel, packCodex, beaconId } from './lib/islandbundle.mjs';
 import { createSea } from './lib/sea.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
+import { createAnimalLife } from './lib/animal-life.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
@@ -159,6 +160,8 @@ function survey() {
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
 function shutdown(why) {
+  // The animals' journal first: its lock is what tells the next islander this one has gone.
+  try { animalLife && animalLife.close(); } catch { /* a lock left behind is recovered on the next start */ }
   try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
   try { ownSea && ownSea.close(); } catch { /* and so does the sea, if it was ours */ }
   const stopped = stopAllAgents();
@@ -394,13 +397,22 @@ async function rescan(reason, opts = {}) {
     run = w;
   }
   const r = await run;
+  // The story animals look at what the scan found - who is working, who has gone quiet - and
+  // may answer it (Plans/dierenverhalen.md). Before the publish, so an errand decided now goes
+  // out on the same round trip.
+  animalsLook();
   // And tell the world, if the island actually changed. publish() compares what it last
   // sent, so a scan that found nothing costs nothing - and a scan that found a house puts
   // it on everybody else's horizon within the minute rather than whenever they next
   // reload. This is the whole of "live, also between scans" for the shape of an island.
   // The Codex settlers after the island, through their own door: they live on the volcano,
   // not here, so they are not part of the bundle - see sendCodex in lib/seaclient.mjs.
-  if (seaClient) seaClient.publish().then(() => seaClient && seaClient.sendCodex()).catch(() => {});
+  if (seaClient) {
+    seaClient.publish()
+      .then(() => seaClient && seaClient.sendCodex())
+      .then(() => seaClient && seaClient.sendAnimals())
+      .catch(() => {});
+  }
   return r;
 }
 
@@ -719,6 +731,9 @@ async function handle(req, res) {
     // islands above all, name other machines on the network and are not a visitor's to see.
     const client = { res, local: who.role === 'islander' };
     clients.add(client);
+    // The keeper has just opened the island - which is the moment the first hen may turn up,
+    // so she is asked now rather than on the next scan a minute from here.
+    if (client.local) setTimeout(animalsLook, 1500).unref?.();
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
     req.on('close', () => { clearInterval(ping); clients.delete(client); });
     return;
@@ -952,6 +967,26 @@ if (req.url === '/api/command' && req.method === 'POST') {
   if (p === '/api/crowd-ids' && req.method === 'GET') {
     if (!Object.keys(crowdIds).length) islandBundle();
     return json(res, 200, { ids: crowdIds });
+  }
+
+  // ---- the story animals (Plans/dierenverhalen.md, docs/animals-wire.md) -------------------
+  // All three for the keeper only - not on PUBLIC_API: they name settlers by their real house
+  // ids and carry the whole diary. A visitor sees an animal's public card, which comes from
+  // the sea (`herd`), never from here.
+  if (p === '/api/animals' && req.method === 'GET') {
+    return json(res, 200, animalLife ? animalLife.privateState() : { enabled: false });
+  }
+  if (p === '/api/animals/story' && req.method === 'GET') {
+    const who = url.searchParams.get('animal');
+    const animal = who && /^animal:\d{1,2}$/.test(who) ? who : null;
+    const before = Number(url.searchParams.get('before'));
+    const limit = Math.max(1, Math.min(60, Number(url.searchParams.get('limit')) || 30));
+    const page = animalLife ? animalLife.story(animal, { before: Number.isSafeInteger(before) && before > 0 ? before : Infinity, limit }) : { entries: [], more: false };
+    return json(res, 200, page);
+  }
+  if (p === '/api/animals/summary' && req.method === 'GET') {
+    const since = Number(url.searchParams.get('since'));
+    return json(res, 200, animalLife ? animalLife.summary(Number.isSafeInteger(since) && since >= 0 ? since : 0) : { seq: 0, items: [] });
   }
 
   if (p === '/api/seas') {
@@ -1566,6 +1601,39 @@ function codexSettlers() {
 // Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
 // visitor would undo every bit of it in one request.
 let crowdIds = {};
+// And the other way round, for the animals' public card: which redacted id the bundle gave a
+// settler, or null when the bundle does not carry them. A linear walk, because it is asked
+// for at most four friends of at most six animals.
+function shownIdOf(real) {
+  for (const k in crowdIds) if (crowdIds[k] === real) return k;
+  return null;
+}
+
+// The story animals (Plans/dierenverhalen.md). This islander is the only writer of their
+// journal (data/animal-events.jsonl, irreplaceable like layout.json); the sea only walks them.
+// What they do is told to the keeper's own page as it happens (the localOnly `animals` event,
+// with the toasts in it) and to the sea through its own door.
+let animalNews = [];
+const animalLife = config.animals && config.animals.enabled === false ? null : createAnimalLife({
+  dir: DATA,
+  pace: Number(config.animals && config.animals.pace) || 1,
+  log: (m) => log(m),
+  onNews: (n) => { animalNews.push(n); },
+  onChange: () => {
+    const news = animalNews;
+    animalNews = [];
+    broadcast({ seq: animalLife ? animalLife.seq() : 0, news }, 'animals', { localOnly: true });
+    if (seaClient) seaClient.sendAnimals().catch(() => {});
+  },
+});
+// After a scan, and when the keeper opens the island: read what the scan wrote and let the
+// animals answer it.
+function animalsLook() {
+  if (!animalLife) return;
+  const village = readJson(VILLAGE_FILE, null);
+  if (!village) return;
+  animalLife.afterScan(village, { viewing: [...clients].some((c) => c.local) });
+}
 
 // What is standing on this island, out to everybody watching it.
 //
@@ -1690,8 +1758,13 @@ async function putToSea() {
     name: islanderName,
     bundle: islandBundle,
     codex: codexSettlers,
+    animals: () => (animalLife ? animalLife.publicState(shownIdOf) : null),
     log: (m) => log(`sea: ${m}`),
   });
+  // The one message this islander takes from the sea: an animal's errand is done. Checked
+  // against the generation of the line it came on, inside animalLife.complete.
+  const client = seaClient;
+  seaClient.onAnimal((m) => { if (animalLife) animalLife.complete(m, client.generation()); });
 }
 
 server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {

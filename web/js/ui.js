@@ -103,25 +103,42 @@ export function createUI(handlers) {
     applyNavCollapsed();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { close('dossier'); close('legend'); close('settings'); }
+    if (e.key === 'Escape') SIDE.forEach(close);
     // Space belongs to the player on foot, where it jumps. Restarting the history from
     // under someone's feet is not what the key means down there.
     if (e.key === ' ' && e.target === document.body && !walking) { e.preventDefault(); el('play-btn').click(); }
   });
 
+  // The side panels on the right, one open at a time. The last two are the animals'
+  // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
+  // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
+  const SIDE = ['dossier', 'legend', 'settings', 'animal-dossier', 'animal-journal'];
+  const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
+    if (!el(which)) return;
     el(which).hidden = true;
     if (which === 'dossier') { state.open = null; handlers.onSelect(null); }
     syncSidebar();
   }
-  function openLegend() { el('dossier').hidden = true; el('settings').hidden = true; el('legend').hidden = false; syncSidebar(); }
-  function openSettings() { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
+  // For a panel this file does not fill. The settler's dossier is closed properly first, so
+  // whatever it had selected lets go, rather than only hidden the way the legend hides it.
+  function openSide(which) {
+    if (which !== 'dossier' && !el('dossier').hidden) close('dossier');
+    hideSide(which);
+    el(which).hidden = false;
+    syncSidebar();
+  }
+  function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
+  function openSettings() { hideSide('settings'); el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
-    const panelOpen = !el('dossier').hidden || !el('legend').hidden || !el('settings').hidden;
+    const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
     el('building-now').hidden = walking || planning || panelOpen || !hasBuilders;
     const w = el('waiting-now');
     if (w) w.hidden = walking || planning || panelOpen || !w.querySelector('li');
+    // The animals' "while you were away" card follows the same rule as the waiting list.
+    const a = el('animal-summary');
+    if (a) a.hidden = walking || planning || panelOpen || !a.querySelector('li');
     el('chronicle').hidden = walking || planning;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
     el('settings-btn').classList.toggle('on', !el('settings').hidden);
@@ -210,8 +227,7 @@ export function createUI(handlers) {
   // --- dossier -------------------------------------------------------------
   function showDossier(b, ctx) {
     state.open = b.id;
-    el('legend').hidden = true;
-    el('settings').hidden = true;
+    hideSide('dossier');
     el('dossier').hidden = false;
     syncSidebar();
     el('dossier-name').textContent = b.name;
@@ -729,7 +745,7 @@ export function createUI(handlers) {
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
     el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
-    if (on) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; renderWalkKeys(); }
+    if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
   // From above, with a hand on the hamlets (web/js/plan-mode.js). Like walking, the right
@@ -740,7 +756,7 @@ export function createUI(handlers) {
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
     el('plan-btn').textContent = planning ? 'Done' : 'Plan';
-    if (planning) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; }
+    if (planning) hideSide();
     syncSidebar();
   }
 
@@ -855,9 +871,12 @@ export function createUI(handlers) {
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
     setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
     closeDossier: () => close('dossier'),
+    // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
+    // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.
+    openSide, closeSide: close, syncPanels: syncSidebar,
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas, setIslandSize,
-    closeOverlays: () => { close('dossier'); close('legend'); close('settings'); },
+    closeOverlays: () => SIDE.forEach(close),
   };
 }
 

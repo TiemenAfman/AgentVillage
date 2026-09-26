@@ -35,6 +35,7 @@ import {
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
+import { createAnimalPanel } from './animal-dossier.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
@@ -3691,6 +3692,23 @@ function startIntro() {
   renderer.domElement.addEventListener('wheel', stop, { once: true, passive: true });
 }
 
+// The camera over a spot on our own island rather than over a building: where an animal is,
+// or where its story happened (the "Show" links in web/js/animal-dossier.js). Island-local,
+// which for our own island is the scene frame. From the walker it first comes back up into
+// the sky, because the link means "show me", not "walk me there".
+function focusAt(at) {
+  if (!Array.isArray(at) || !Number.isFinite(at[0]) || !Number.isFinite(at[1])) return;
+  if (state.mode === 'walk') exitWalk();
+  if (state.mode !== 'orbit') return;
+  state.intro = null;
+  controls.enabled = true;
+  const y = state.region ? state.region.worldHeight(at[0], at[1]) : 0;
+  const dir = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+  const target = new THREE.Vector3(at[0], y + 0.3, at[1]);
+  const dist = Math.max(4, Math.min(8, camera.position.distanceTo(controls.target) * 0.4));
+  state.tween = { t: 0, dur: 0.75, from: controls.target.clone(), to: target, fromPos: camera.position.clone(), toPos: target.clone().add(dir.multiplyScalar(dist)) };
+}
+
 function focusOn(id) {
   const rec = state.byId.get(id);
   if (!rec) return;
@@ -4261,7 +4279,10 @@ function refreshUI() {
   state.ui.setBuilding(list, waiting);
   if (state.selected) {
     const spec = specById(v).get(state.selected);
-    if (spec) state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
+    if (spec) {
+      state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
+      if (state.animals) state.animals.decorateDossier(spec.id);
+    }
   }
 }
 function humanSince(msv) {
@@ -4282,7 +4303,11 @@ function select(id) {
   state.selected = id;
   if (!id) return;
   const spec = specById(state.village).get(id);
-  if (spec) state.ui.showDossier(decorate(spec), { get: (x) => { const s = specById(state.village).get(x); return s ? decorate(s) : null; } });
+  if (spec) {
+    state.ui.showDossier(decorate(spec), { get: (x) => { const s = specById(state.village).get(x); return s ? decorate(s) : null; } });
+    // Which of our animals know this settler, under the facts (web/js/animal-dossier.js).
+    if (state.animals) state.animals.decorateDossier(spec.id);
+  }
 }
 
 // --------------------------------------------------------------- picking
@@ -4933,6 +4958,21 @@ async function boot() {
     onSound: () => state.ui.setSound(state.sound.toggle()),
   });
 
+  // The story animals' dossier, the island's animal diary and the "while you were away" card
+  // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
+  // animals comes from our own islander - /api/animals is not on PUBLIC_API - and a guest's
+  // animal is shown from the public card the sea carries (`herd`), never fetched.
+  state.animals = createAnimalPanel({
+    ui: state.ui,
+    onGoto: (at) => focusAt(at),
+    onResident: (id) => { if (state.byId.has(id)) focusOn(id); },
+    fetchState: async () => (await mine('/api/animals')).json(),
+    fetchStory: async (id, before, limit) => (await mine(`/api/animals/story?${id ? `animal=${encodeURIComponent(id)}&` : ''}before=${before ?? ''}&limit=${limit}`)).json(),
+    fetchSummary: async (since) => (await mine(`/api/animals/summary?since=${since}`)).json(),
+    liveAct: (id) => (state.herd ? state.herd.actOf(id) : null),
+    whereOf: (id) => (state.herd ? state.herd.whereOf(id) : null),
+  });
+
   // What the island sounds like. Made here and completely silent: web/js/sound.js builds
   // no AudioContext until the switch is thrown - which is both what a browser demands of
   // anything that wants to make a noise and what keeps the boot path clear of it.
@@ -5350,6 +5390,9 @@ async function boot() {
   if (STANDALONE) return;
   connect();
   registerWorker();
+  // Our own animals and what they did while we were away. After the island is up, so the
+  // card lands on a picture rather than on the boot screen.
+  if (state.animals) state.animals.boot().catch(() => { /* an islander without animals */ });
 }
 
 // Where a phone stands: nowhere. It has no island, so its home is a berth of open water -
@@ -5461,6 +5504,12 @@ function connect() {
     // out. Only ever sent to the keeper's own pages (serve.mjs, localOnly).
     es.addEventListener('gold', (e) => {
       try { showGold(JSON.parse(e.data)); } catch { /* keep what we had */ }
+    });
+    // Something happened to one of our animals: the open panels refresh, and the big moments
+    // - an arrival, a friendship or a feud, a mark, a discovery - get a toast. Keeper only,
+    // like the gold (serve.mjs, localOnly).
+    es.addEventListener('animals', (e) => {
+      try { if (state.animals) state.animals.news(JSON.parse(e.data)); } catch { /* the next one will do */ }
     });
     es.addEventListener('reload', () => location.reload());
     es.onerror = () => { state.ui.setLive('off'); };

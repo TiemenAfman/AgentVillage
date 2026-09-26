@@ -87,7 +87,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
+  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
   // Where the sea says our island lies, in the sea's own frame. The page draws its own
@@ -251,6 +251,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // And `fh`, who is being spoken to and where the talker stands: the whole set, sent
         // when it changes (shared/settlerwire.mjs encodeHeld).
         case 'fh': onCrowd({ kind: 'held', island: m.i, h: m.h }); break;
+        // An island's story animals (docs/animals-wire.md): `herd` is who they are and the
+        // marks they have left, `af` where they have got to, seven numbers a row. Their own
+        // `t`s rather than an `island` message, because a page from before the animals reads
+        // every unknown `island` as a fleet row.
+        case 'herd': onHerd({ kind: 'herd', island: m.i, seq: m.seq, animals: m.animals || [], traces: m.traces || [] }); break;
+        case 'af': onHerd({ kind: 'where', island: m.i, r: m.r || [] }); break;
         // A boat taken, dropped, moved, or unmoored because its island has gone.
         // Passed through as it arrived, and that matters: `moved` carries the position
         // and no pilot, because the tiller does not change ten times a second and a

@@ -116,6 +116,9 @@
       <button class="chip" id="build-btn" title="Put something on the island">Build</button>
       <button class="chip" id="plan-btn" title="The island from above: move hamlets, zone ground" hidden>Plan</button>
       <button class="chip" id="avatar-btn" title="Compose the settler you walk as (I)">Inventory</button>
+      <!-- The island's animal journal (web/js/animal-dossier.js). Hidden until the island has
+           an animal, and only ever shown to the keeper: /api/animals is loopback only. -->
+      <button class="chip" id="animals-btn" title="The island's animals, and what they have been up to" hidden>Animals</button>
       <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
       <button class="chip" id="legend-btn">Legend</button>
       <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
@@ -139,6 +142,14 @@
     <ul id="waiting-list"></ul>
   </section>
 
+  <!-- What the animals did while nobody was looking: at most three lines, once
+       (web/js/animal-dossier.js summary). Shown by ui.js's syncSidebar only while it has a
+       line in it, by the same rule as the waiting list above. -->
+  <section class="card animal-summary" id="animal-summary" hidden>
+    <div class="row"><h2>While you were away</h2><button class="x" data-dismiss="animal-summary" title="Seen it" aria-label="Dismiss">✕</button></div>
+    <ul id="animal-summary-list"></ul>
+  </section>
+
   <section class="card building-now" id="building-now" hidden>
     <h2>Now building</h2>
     <ul id="building-list"></ul>
@@ -158,6 +169,19 @@
 <aside class="panel" id="dossier" hidden>
   <div class="panel-head"><h2 id="dossier-name">—</h2><button class="x" data-close="dossier">✕</button></div>
   <div class="panel-body" id="dossier-body"></div>
+</aside>
+
+<!-- The island's story animals (web/js/animal-dossier.js): one animal, and the island's
+     whole animal journal. Side panels like the three above - ui.js's SIDE list keeps one
+     of the five open at a time. -->
+<aside class="panel animal-panel" id="animal-dossier" hidden>
+  <div class="panel-head"><h2 id="animal-dossier-name">—</h2><button class="x" data-close="animal-dossier">✕</button></div>
+  <div class="panel-body" id="animal-dossier-body"></div>
+</aside>
+
+<aside class="panel animal-panel" id="animal-journal" hidden>
+  <div class="panel-head"><h2>The animals</h2><button class="x" data-close="animal-journal">✕</button></div>
+  <div class="panel-body" id="animal-journal-body"></div>
 </aside>
 
 <!-- The planner (web/js/plan-mode.js): tools on the left, the draft on the right. Filled

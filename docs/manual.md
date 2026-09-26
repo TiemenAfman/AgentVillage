@@ -243,6 +243,66 @@ pile where the last terminal session put it. The pile never moves on a guess.
 The count is yours alone, like the post. It is not in `village.json` and it does not go to
 the sea: a visitor, and anybody who sees your island from theirs, sees a full pit.
 
+## The animals
+
+A few animals live on the island as somebody rather than as scenery: a hen first, then a
+goat, then a sparrow, and in time a second of each - never more than six. Each has a name,
+two or three traits (bold, shy, restless, greedy, vain, …) and a place it likes, and each
+remembers the settlers it has met.
+
+The first hen turns up the first time you have the island open while somebody is at work,
+somewhere near that settler's house. The others follow a day or so apart, once the ones
+before them have had a few encounters.
+
+What the settlers do gives the animals their chances. A session that is working is an
+opportunity, not a reward per message: every twenty minutes each animal may answer one
+settler whose work has moved on since the last time, and the island as a whole has at most
+three notable encounters an hour. A hen pecks about on somebody's doorstep, waits by their
+door while they work, dust-bathes in their garden; a goat nudges at a door, nibbles a hedge,
+butts a gate, keeps watch from the high ground, and - once it has fallen out with somebody -
+may lie down by their door and chew quietly until it is forgiven; a sparrow perches on a
+roof, hops about a garden, sings from a chimney or makes off with a bootlace. Quiet houses
+get visitors too: an animal dozing in the sun by a house nobody has worked in for a while is
+a different kind of life, not a telling-off.
+
+Every encounter moves a relationship, which is one of four words: *getting used to each
+other*, *friends*, *wary* or *nemesis*. The words change slowly on purpose, and at most once a
+day per animal, so a hen does not fall in and out of love every twenty minutes.
+
+Click an animal for its dossier: what it is like, what it is doing lately, who it knows and
+how, and its life story, newest first. The settler dossier lists the animals that know that
+settler. The **Animals** chip opens the island's animal diary, with the marks the animals
+have left and, once it begins, the mystery. When you come back after a while, a card says
+what happened while you were away - at most three things, each with a link that shows you
+where. A toast is only for the big moments: an arrival, a friendship or a feud, a mark, a
+discovery.
+
+A relationship that goes far enough leaves a mark on the island: a hen's nest by the door of
+the settler she chose, a goat's lookout cairn on its high ground, a sparrow's birdhouse in
+the garden of the roof it kept coming back to. Where the hen and the sparrow have both made
+one house theirs, somebody puts up a feeder: the Feathered Corner. The marks go only on
+ground a garden bed would take, never on a plot or the street; if there is no room yet, the
+discovery is kept and the mark appears when there is.
+
+And once the island has had enough encounters, one of the animals will stop dead at a print
+in the mud that nothing on the island could have made. That is the start of the island's
+mystery. It is solved by living rather than by a checklist: finds turn up at doorsteps as the
+animals go about their business, faster when different settlers are involved but also, more
+slowly, when one settler keeps coming back - and the last step is at the lighthouse (or the
+town hall, on an island without one).
+
+The animals are the sea's to walk, like the settlers, so everybody watching your island sees
+the same hen at the same door, and closing your page changes nothing about what they do.
+What happened to them is yours: the diary, the settlers' real names and the numbers behind
+the four words stay on this computer, in `data/animal-events.jsonl` - which, like
+`layout.json`, is irreplaceable and worth backing up. A visitor sees each animal's name, what
+it is doing and one public sentence about it. While the islander is stopped, nothing
+happens to the animals; after a long absence you get one gentle line about what somebody
+got up to, and nothing invented beyond it. `"animals": { "pace": 20 }` in `config.json`
+plays a day in a little over an hour, for trying it out; `"enabled": false` keeps them away.
+A sea older than the animals has nowhere to put them; the island says so once in its log and
+they wait until it joins one that does.
+
 ## Visitors and neighbours
 
 The island is open. Other people can walk it with you, each connection getting its own

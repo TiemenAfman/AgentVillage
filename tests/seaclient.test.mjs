@@ -254,7 +254,35 @@ test('nothing in the line home listens for instructions', async () => {
   for (const forbidden of ['node:fs', 'node:child_process', 'writeFile', 'exec(', 'spawn(']) {
     assert.ok(!src.includes(forbidden), `lib/seaclient.mjs reaches for ${forbidden}`);
   }
-  // It handles exactly two things the sea can say, and neither of them is a command.
+  // It handles exactly three things the sea can say, and none of them is a command. The third
+  // is an animal's errand being done (Plans/dierenverhalen.md): it names an action this
+  // islander itself posted, and all it can do is let the reducer finish a visit that is still
+  // pending on this very connection - see the test below.
   const handled = [...src.matchAll(/m\.t === '([a-z]+)'/g)].map((m) => m[1]).sort();
-  assert.deepEqual(handled, ['refused', 'welcome']);
+  assert.deepEqual(handled, ['animal', 'refused', 'welcome']);
+  // And that one is bounded before it is handed on: only `done`, only for this island, an id
+  // no longer than an action id, and a whole-number generation.
+  const animal = src.slice(src.indexOf("m.t === 'animal'"), src.indexOf("m.t === 'welcome'"));
+  for (const check of ["m.a === 'done'", 'm.i === islandId', 'm.action.length <= 40', 'Number.isSafeInteger(m.gen)']) {
+    assert.ok(animal.includes(check), `the animal message is handed on without checking ${check}`);
+  }
+});
+
+test('an animal errand done is handed on only for this island, and the generation counts welcomes', async () => {
+  const { createSea } = await import('../lib/sea.mjs');
+  const { createSeaClient } = await import('../lib/seaclient.mjs');
+  const sea = createSea({ port: 0, host: '127.0.0.1', log: () => {} });
+  const addr = await sea.listen();
+  const heard = [];
+  const client = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: 'aaaaaaaaaaaaaaaa', bundle: () => null });
+  client.onAnimal((m) => heard.push(m));
+  try {
+    for (let i = 0; i < 100 && !client.connected(); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(client.connected(), 'never joined');
+    assert.equal(client.generation(), 1);
+  } finally {
+    client.close();
+    await sea.close();
+  }
+  assert.deepEqual(heard, []);
 });

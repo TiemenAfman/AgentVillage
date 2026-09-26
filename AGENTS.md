@@ -403,11 +403,15 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 (mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
 
-The animal-story foundation adds `animal-events.jsonl` when explicitly opened. That journal
-is also irreplaceable: animal identities, activity cursors and memories rebuild from it,
-not from transcripts. `animals.json` is its disposable checkpoint. The foundation is not
-yet connected to the live island. See [docs/animal-story-storage.md](docs/animal-story-storage.md)
-for writer ownership, crash recovery and the limits of this first increment.
+The story animals add `animal-events.jsonl`, opened by the islander on its first scan
+(`lib/animal-life.mjs`; off with `config.animals.enabled: false`). That journal is also
+irreplaceable: animal identities, activity cursors and memories rebuild from it, not from
+transcripts. `animals.json` is its disposable checkpoint. The islander owns the story, the sea
+only walks the animals (`POST /island/:id/animals`, `{t:'herd'}`, `{t:'af'}`, and a
+`{t:'animal', a:'done'}` back over the islander's own socket). See
+[docs/animal-story-storage.md](docs/animal-story-storage.md) for writer ownership and crash
+recovery, [docs/animals-wire.md](docs/animals-wire.md) for the wire, and
+[Plans/dierenverhalen.md](Plans/dierenverhalen.md) for the design.
 
 ## Conventions
 

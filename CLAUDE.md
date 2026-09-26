@@ -657,6 +657,44 @@ The sweep that drops an islander after `GRACE_MS` calls `residents.drop` - house
 go, guards and the volcano stay. `settler-figures.js` now reuses freed slots (`free`), because
 the volcano's crowd churns for as long as the page is open.
 
+**The story animals are the islander's to remember and the sea's to walk**
+([Plans/dierenverhalen.md](Plans/dierenverhalen.md); the wire is
+[docs/animals-wire.md](docs/animals-wire.md), the disk [docs/animal-story-storage.md](docs/animal-story-storage.md)).
+At most six named animals per island (`shared/animals.mjs`, the one copy of species, traits,
+acts - wire order, append only - and trace kinds): a hen first, then a goat and a sparrow.
+`lib/animal-stories.mjs` is a reducer with no clock: `decide*` makes every choice (off a
+stream seeded by the island's salt and the event's sequence) and writes the *outcome* into
+the event, `applyAnimalEvent` only checks and applies, so a replay never rerolls and a rule
+change only touches future choices (`rules` in each event). `lib/animal-store.mjs` keeps
+`data/animal-events.jsonl` - **irreplaceable, like layout.json** - flushed per event,
+replayed in full on open, torn tails kept aside, one writer (`animal-store.lock`, taken over
+only from a pid that no longer runs). `lib/animal-life.mjs` runs it from serve.mjs: after
+every scan (`animalsLook`, also 1.5 s after the keeper's page connects, because the first hen
+arrives only while somebody is watching a working island) it asks for an arrival, lets go of
+stale errands, turns new activity into errands and finds ground for earned marks
+(`lib/animal-places.mjs`, which uses the garden's own `groundCheck` - a nest never goes where
+a bed would be refused). Activity is `humanTurns + assistantMsgs + toolCalls` per house, an
+opportunity rather than a reward: only the cursor a visit consumed is journaled, in the same
+event as the visit; one notable encounter per animal per 20-minute window, three per island
+per hour, one label change per animal per day (labels have hysteresis). The errand goes to
+the sea through **`POST /island/:id/animals`** (key, then `fleet.vouch`, then the strict
+`parseAnimals` of `lib/animalbundle.mjs`; `packAnimals` is the forgiving sender) and counts
+only when the sea says `{t:'animal', a:'done', gen}` **over the islander's own socket** -
+`lib/seaclient.mjs` counts `gen` up on every welcome and re-posts everything, and
+`animalLife.complete` refuses any other generation, so an interrupted errand runs again and
+a completion heard twice counts once. That message is the one thing the islander acts on from
+the sea; it is still not an inbound route. The sea (`shared/animalwalk.mjs`, trig-free and
+tick-counted like settlerwalk; `lib/animal-crowd.mjs`) keeps herds in memory like everything
+else and broadcasts **`{t:'herd'}`** (who, and the marks) and **`{t:'af'}`** (seven numbers a
+row) - their own `t`s, because a page from before them reads any unknown `{t:'island', a}` as
+a fleet row. `rev` never moves for an animal. A sea older than the door answers `no route`,
+which the seaclient says once and leaves until the next welcome. The page draws every island's
+animals through one shared instanced batch (`web/js/animal-view.js`; `web/js/fauna.js` keeps
+the joint animation, `/demo` and the stable still move on their own through the same pose) and
+explains them from `/api/animals` (not on `PUBLIC_API`: real house ids and the whole diary) in
+`web/js/animal-dossier.js`; a visitor gets only the public card the sea carries, with settlers
+under their redacted ids. `config.animals.pace` divides every story duration for playtesting.
+
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
 route open to anybody — so an inbound half would be a change of posture, not a convenience.
@@ -1104,9 +1142,11 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 
 `data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
 window above) - and a checkout's own `data/` is only the backup an island moved out of
-(`data/MOVED.txt` says so). `data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
-`garden.json` (the walker's purse and beds — the scanner never touches it) and `mail.json`
-(mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
+(`data/MOVED.txt` says so). `data/` is generated and safe to delete, with four exceptions: `layout.json` (above),
+`garden.json` (the walker's purse and beds — the scanner never touches it), `mail.json`
+(mail server credentials, deliberately gitignored twice) and `animal-events.jsonl` (the story
+animals' journal - their names, bonds and marks rebuild from nothing else; `animals.json`
+beside it is only a checkpoint). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
 
 ## Conventions
