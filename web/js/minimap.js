@@ -107,6 +107,12 @@ export const LANDMARKS = {
   'civic:sawmill': 'Sawmill', 'civic:smithy': 'Smithy',
   'civic:clocktower': 'Clock tower', 'civic:board': 'Sprint board', 'civic:issues': "The island's own board",
   'civic:mailbox': 'Postbox',
+  // The shops of the town's plan (Plans/knus-dorpscentrum.md): the places a walk into town is
+  // for, which is exactly what a map of it should say.
+  'civic:bakery': 'Bakery', 'civic:grocer': 'Grocer', 'civic:apothecary': 'Apothecary',
+  'civic:tailor': 'Clothes shop', 'civic:library': 'Library', 'civic:tearoom': 'Tea room',
+  'civic:wandmaker': 'Wand maker', 'civic:butcher': 'Butcher', 'civic:sweetshop': 'Sweet shop',
+  'civic:owlpost': 'Owl post', 'civic:cauldron': 'Cauldron maker',
 };
 
 // How far from the town centre, in cells, a civic building still counts as "on the square".

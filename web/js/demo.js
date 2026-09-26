@@ -57,16 +57,26 @@ const CIVIC = [
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
-  // Not on the island yet: only here, until it has a rung and a site (Plans/zagerij.md).
-  ['sawmill', 'Sawmill', 'not placed yet'],
-  // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
-  ['smithy', 'Smithy', 'not placed yet'],
-  // And a stable with its horse, and a bakery with its oven (Plans/stal-en-veld.md).
+  // The two workshops, out beyond the shopping streets (Plans/zagerij.md, Plans/smidse.md). The
+  // smith goes in at night: move the night slider.
+  ['sawmill', 'Sawmill', '55'],
+  ['smithy', 'Smithy', '60'],
+  // Not on the island yet: a stable with its horse (Plans/stal-en-veld.md).
   ['stable', 'Stable', 'not placed yet'],
-  ['bakery', 'Bakery', 'not placed yet'],
-  // And the smithy's sister, the butcher's, whose awning rolls in when he goes home
-  // (Plans/slagerij.md).
-  ['butcher', 'Butcher', 'not placed yet'],
+  // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven on a
+  // corner of the square, the butcher's (whose awning rolls in when he goes home,
+  // Plans/slagerij.md) and the rest along the four streets.
+  ['bakery', 'Bakery', '12'],
+  ['grocer', 'Grocer', '18'],
+  ['apothecary', 'Apothecary', '22'],
+  ['tailor', 'Clothes shop', '28'],
+  ['library', 'Library', '33'],
+  ['tearoom', 'Tea room', '38'],
+  ['wandmaker', 'Wand maker', '42'],
+  ['butcher', 'Butcher', '48'],
+  ['sweetshop', 'Sweet shop', '65'],
+  ['owlpost', 'Owl post', '75'],
+  ['cauldron', 'Cauldron maker', '80'],
 ];
 
 const FURNITURE = [

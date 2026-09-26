@@ -38,13 +38,14 @@ function village(settlers) {
   };
 }
 
-// Forty settlers: the hall and six three by three milestones round the square, one lot left
-// free, and the gold pit off the lots.
+// Forty settlers: the ring round the square full (Plans/knus-dorpscentrum.md - the hall, the
+// tavern, the clock tower, the chapel and the four corners), the first shops on the streets
+// and the gold pit behind the library.
 const MODEL = village(40);
-function island() {
+function island(model = MODEL) {
   const layout = emptyLayout(SEED, SIZE);
-  placeAll(layout, MODEL, { seed: SEED, size: SIZE });
-  placeAll(layout, MODEL, { seed: SEED, size: SIZE });
+  placeAll(layout, model, { seed: SEED, size: SIZE });
+  placeAll(layout, model, { seed: SEED, size: SIZE });
   return layout;
 }
 const terrainOf = (layout) => makeTerrain(SEED, { size: layout.size, polders: layout.polders || [], fairway: layout.fairway || null, grow: layout.grow || null });
@@ -87,7 +88,12 @@ test('the ops are parsed field by field and refused when they are not what they 
 test('a building turned where it stands: nothing else moves, its road follows the new door', () => {
   const layout = island();
   const tavern = layout.plots['civic:tavern'];
-  const rot = (tavern.rot + 2) % 4;
+  // A way it may face where it stands, as the planner's own map has it: in a town of lots
+  // shoulder to shoulder, straight round is as likely as not a door onto the shop behind.
+  const S = civicSites(layout, terrainOf(layout));
+  const mask = parseInt(S.sites['civic:tavern'][tavern.gz - S.gz][tavern.gx - S.gx], 16);
+  const rot = [2, 1, 3].map((k) => (tavern.rot + k) % 4).find((r) => (mask >> r) & 1);
+  assert.notEqual(rot, undefined, 'the tavern can face another way where it stands');
   const r = plan(layout, [{ op: 'civic', id: 'civic:tavern', gx: tavern.gx, gz: tavern.gz, rot }], false);
   assert.equal(r.ok, true, r.error || r.verdicts[0].reason);
   assert.deepEqual(r.diff.plots.otherMoved, []);
@@ -190,14 +196,18 @@ test('refusals say why', () => {
   assert.match(why({ op: 'civic', id: 'civic:castle', gx: 20, gz: 20, rot: 0 }), /does not stand on the island/);
   const tavern = layout.plots['civic:tavern'];
   assert.match(why({ op: 'civic', id: 'civic:tavern', gx: tavern.gx, gz: tavern.gz, rot: tavern.rot }), /already stands there/);
-  // Half on the free lot: some building, some one-cell offset from it, says exactly that.
-  const terrain = terrainOf(layout);
-  const used = new Set(Object.values(layout.plots).map((p) => `${p.gx},${p.gz}`));
-  const free = layout.town.lots.find((l) => !used.has(l.join(',')));
+  // Half on a free lot: some building, some one-cell offset from it, says exactly that. At
+  // forty settlers every lot of the ring has its building, so this is asked of a younger town,
+  // where the chapel's, the tea room's and the library's lots still wait for them.
+  const young = island(village(30));
+  const terrain = terrainOf(young);
+  const used = new Set(Object.values(young.plots).map((p) => `${p.gx},${p.gz}`));
+  const free = young.town.lots.find((l) => !used.has(l.join(',')));
   assert.ok(free, 'the island has a free lot to test against');
   let half = null;
-  for (const id of ['civic:chapel', 'civic:tavern', 'civic:market', 'civic:school', 'civic:watertower', 'civic:clocktower']) {
-    const site = civicSite(layout, terrain, layout.lattice, id);
+  for (const id of ['civic:tavern', 'civic:market', 'civic:clocktower', 'civic:bakery', 'civic:grocer', 'civic:apothecary']) {
+    if (!young.plots[id]) continue;
+    const site = civicSite(young, terrain, young.lattice, id);
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) {
       const w = site.check(free[0] + dx, free[1] + dz);
       if (w && /half on a free lot/.test(w)) { half = w; break; }

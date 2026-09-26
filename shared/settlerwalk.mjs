@@ -394,13 +394,20 @@ export function createWalk(terrain, village = null) {
   const groundOrDeck = (x, z) => stand(x, z);
 
   // The square's own cells, kept apart from the general road network so the Friday
-  // gathering has somewhere specific to aim for instead of "some road cell".
+  // gathering has somewhere specific to aim for instead of "some road cell". `gather` is the
+  // part of the paving the gathering may aim for, when that is less than all of it: the town's
+  // shopping streets are walked like the square but are not where a borrel stands
+  // (shared/roads.mjs `gatherCells`). Left out, it is every square cell, as it always was.
   let squareList = [];
-  function setRoads(paths, squares) {
+  function setRoads(paths, squares, gather = null) {
     const cells = new Set();
     for (const p of paths || []) for (const [gx, gz] of p.cells) cells.add(gx + gz * terrain.size);
     const sq = [];
     for (const [gx, gz] of squares || []) { const k = gx + gz * terrain.size; cells.add(k); sq.push(k); }
+    if (gather) {
+      sq.length = 0;
+      for (const [gx, gz] of gather) { const k = gx + gz * terrain.size; if (cells.has(k)) sq.push(k); }
+    }
     squareList = sq;
     roads = cells.size ? { cells, list: [...cells] } : null;
     for (const f of figures.values()) f.gate = undefined;   // streets moved; look again

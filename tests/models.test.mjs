@@ -44,10 +44,19 @@ import { STABLE } from '../web/js/stable-mesh.js';
 import { FARMYARD } from '../web/js/farmyard-mesh.js';
 import { BAKERY } from '../web/js/bakery-mesh.js';
 import { BUTCHER } from '../web/js/butcher-mesh.js';
+import { TEAROOM } from '../web/js/tearoom-mesh.js';
+import { CAULDRON } from '../web/js/cauldron-mesh.js';
+import { WANDMAKER } from '../web/js/wandmaker-mesh.js';
+import { TAILOR } from '../web/js/tailor-mesh.js';
+import { SWEETSHOP } from '../web/js/sweetshop-mesh.js';
+import { OWLPOST } from '../web/js/owlpost-mesh.js';
+import { LIBRARY } from '../web/js/library-mesh.js';
+import { GROCER } from '../web/js/grocer-mesh.js';
+import { APOTHECARY } from '../web/js/apothecary-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -267,7 +276,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'hedge', 'house', 'hut', 'lighthouse', 'manor', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'stable', 'statue', 'tavern', 'townhall', 'village', 'wall', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'grocer', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'village', 'wall', 'wandmaker', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
@@ -276,11 +285,14 @@ test('the register spans every set and answers by part name alone', () => {
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
     // (scripts/build-bicycle.py, Plans/fiets.md).
     'bicycle', 'castle',
+    // The shops of the town's plan, one asset each (scripts/build-<shop>.py,
+    // Plans/knus-dorpscentrum.md).
+    'civic_apothecary',
     // The butcher's, the smithy's sister: the shop and its yard, with the awning, the sign, the
     // hanging meat, the joint, a slice and the smokehouse fire inside the yard's asset
     // (scripts/build-butcher.py, Plans/slagerij.md).
-    'civic_bakery', 'civic_butcher', 'civic_butcher_yard',
-    'civic_chapel', 'civic_fountain', 'civic_goldpit', 'civic_quay_platform',
+    'civic_bakery', 'civic_butcher', 'civic_butcher_yard', 'civic_cauldron',
+    'civic_chapel', 'civic_fountain', 'civic_goldpit', 'civic_grocer', 'civic_library', 'civic_owlpost', 'civic_quay_platform',
     // The sawmill is two, the barn and its yard; what turns is parts inside the yard
     // (scripts/build-sawmill.py, Plans/zagerij.md).
     'civic_sawmill', 'civic_sawmill_yard',
@@ -289,8 +301,8 @@ test('the register spans every set and answers by part name alone', () => {
     // lean-to's asset (scripts/build-smithy.py, Plans/smidse.md).
     'civic_smithy', 'civic_smithy_yard',
     // The stable and its paddock (scripts/build-stable.py); the horse is fauna_horse.
-    'civic_stable', 'civic_stable_yard',
-    'civic_tables', 'civic_watertower',
+    'civic_stable', 'civic_stable_yard', 'civic_sweetshop',
+    'civic_tables', 'civic_tailor', 'civic_tearoom', 'civic_wandmaker', 'civic_watertower',
     // The mill is two assets, because its sails turn and the tower does not.
     'civic_windmill', 'civic_windmill_sails',
     'clocktower',

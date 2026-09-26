@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
+  gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
+  winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
+  snoepwinkel, uilenpost, ketelmaker), plus de bakkerij en de slagerij. `TOWN_VERSION` deelt een
+  bestaand centrum één keer opnieuw in; geen huis beweegt. Gebouwd op 26 september 2026.
 - [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
   kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
   gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.

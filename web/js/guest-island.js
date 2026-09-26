@@ -29,6 +29,8 @@ import { housePlacement } from './house-placement.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeSawmill } from './sawmill.js';
 import { disposeSmithy } from './smithy.js';
+import { disposeButcher } from './butcher.js';
+import { disposeBakery } from './countryside.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -287,6 +289,8 @@ export function createGuestIsland({
         if (rec.goldPile) rec.goldPile.dispose();
         if (rec.sawmill) disposeSawmill(rec.sawmill);
         if (rec.smithy) disposeSmithy(rec.smithy);
+        if (rec.bakery) disposeBakery(rec.bakery);
+        if (rec.butcher) disposeButcher(rec.butcher);
       }
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },

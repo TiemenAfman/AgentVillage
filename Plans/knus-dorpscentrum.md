@@ -6,6 +6,28 @@ ingedeeld, zoals Hogsmeade in Hogwarts Legacy: winkels schouder aan schouder lan
 het plein blijft een dorpsplein, en ambachten als de zagerij staan niet in het centrum. De
 planner mag ervoor wijken als het moet — dat blijkt niet nodig (zie onder).
 
+## Stand van zaken
+
+Gebouwd op 26 september 2026, op `claude/dorpscentrum`: de indeling (`TOWN_PLAN` in
+`lib/layout.mjs`), `TOWN_VERSION` 1, de negen winkelmodellen, de slagerij uit zijn worktree,
+de bakkerij en de slager met hun vuur en hun slager op het eiland, de straten in `town.paved`
+en `town.streets`, en de borrel die op het plein blijft (`gatherCells`). Alle 948 tests groen;
+`tests/town-plan.test.mjs` houdt de indeling vast.
+
+Gemeten op een kopie van het live eiland (113 settlers, grid 288), met de scan van deze branch:
+**geen van de 163 huizen en schuurtjes verplaatst**, de tweede scan byte-identiek. Het plan past
+daar niet helemaal: de westkant van het plein en zeven van de zestien straatkavels liggen op
+grond die te steil of nat is, en op de westkavel van de ring staan twee verweesde schuurtjes. De
+klokkentoren en de bibliotheek staan daarom in een straat, een paar winkels op het
+dichtstbijzijnde vrije blok ernaast, en de zagerij en de smidse staan nu ver in het westen.
+
+**Waar het de dierentak raakt.** `codex/dierenverhalen` (Plans/stal-en-veld.md) maakte de
+bakkerij (65) en de stal (75) tot ambachten via `TRADES`, en het live eiland heeft ze al zo
+staan. Bij het samenvoegen: de bakkerij houdt trede 12 op de hoek van het plein (dat vroeg de
+keeper: meer in het centrum), dus de trede op 65 en `bakery` in hun `TRADES` vervallen; de stal
+houdt hun trede 75 en is hier al een ambacht. Hun bakker (`web/js/bakery-keeper.js`) hoort bij de
+bakkerij, waar die ook staat. `TOWN_LAID` tilt beide mee, zodat de migratie ze op hun plek zet.
+
 ## Wat er al is
 
 - **Het plein** groeit van 3 naar 7 breed (`SQUARE_STEPS`), met fontein, put, beeld, tafels,
