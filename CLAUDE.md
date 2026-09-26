@@ -942,8 +942,9 @@ a keeper's zone or a dike, which are RESERVED too. A street is paved from the sq
 building, into `town.paved` (so every reader of the paving has it) and again as `town.streets`
 for the one reader that must leave it out: the Friday gathering (`gatherCells` in
 `shared/roads.mjs`, the third argument of `setRoads`). The static shops are `SHOPS` in
-`web/js/buildings.js` - one asset `civic_<type>` each, walked round part by part (`APART`) and
-set on a step no wider than themselves. `TOWN_VERSION` laid an existing centre out again once.
+`web/js/buildings.js` - one asset `civic_<type>` each, at the tavern's size under the village's
+terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
+round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
 **The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
