@@ -5393,7 +5393,10 @@ async function standaloneHome() {
   await learnTheWorld();
   const placed = state.fleet
     .filter((i) => i && Array.isArray(i.origin))
-    .map((i) => ({ half: (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
+    // On what each island holds of the sea rather than its size today, as the sea lays berths
+    // out: a starter is small and holds the room of the island that will take it
+    // (Plans/starter-eilanden.md). A sea from before `reach` sends only the size.
+    .map((i) => ({ half: i.reach ?? (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
   state.islandId = null;
   state.homeOrigin = nextOrigin(placed, OPEN_HOME / 2);
   return {

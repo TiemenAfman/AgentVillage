@@ -50,7 +50,7 @@ function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', hous
 }
 
 async function afloat(fn, opts = {}) {
-  const sea = createSea({ port: 0, name: 'test sea', ...opts });
+  const sea = createSea({ port: 0, name: 'test sea', starters: false, ...opts });
   const addr = await sea.listen();
   try {
     return await fn({ sea, url: `http://127.0.0.1:${addr.port}/` });
@@ -162,7 +162,7 @@ test('a sea that has restarted gets the island again without anybody editing a f
   await until(() => client.connected(), 'the socket never came up');
   client.close();
 
-  const fresh = createSea({ port: 0, name: 'a fresh sea' });
+  const fresh = createSea({ port: 0, name: 'a fresh sea', starters: false });
   const addr = await fresh.listen();
   const again = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: a.id, bundle: () => a.bundle });
   try {

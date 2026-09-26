@@ -10,7 +10,11 @@ vulkaan, met vijandige bewakers. Daardoor voelt de app kaal en doelloos. Starter
 altijd iets is om naartoe te varen: een plein, een kroeg met een kroegbaas, een stadhuis met een
 burgemeester. Het is ook de ondergrond voor de klusjes en het logboek die daarna komen.
 
-Nog niet gebouwd.
+Stap 1 tot en met 6 gebouwd op 26 september 2026: `starterBundle(slot)` in
+`lib/islandbundle.mjs`, `fleet.raiseStarters()` en het claimen in `publish` (`lib/fleet.mjs`),
+`retireStarter()` / `topUpStarters()` in `lib/sea.mjs`, `reach` in de vlootregel voor de
+ligplaats van de telefoon, en `CLAUDE.md`; getest in `tests/starter.test.mjs`. De open vragen
+onderaan en de decoratie-eilandjes staan nog.
 
 ## Hoe het nu zit (gemeten in de sessie van 26-09)
 
