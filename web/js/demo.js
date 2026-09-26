@@ -1035,10 +1035,11 @@ function setPrompt(near) {
   promptEl.innerHTML = `<b>E</b> ${near.prompt || `look at ${near.label}`}`;
 }
 
-// The doors on the field. One for now; the next room is one more entry.
+// The doors on the field: the tavern, and the castle, whose great hall is a rave here at any
+// hour - the island opens it on Saturday nights only (Plans/rave-in-het-kasteel.md).
 function doors() {
   const out = [];
-  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern']]) {
+  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern'], ['c:castle', 'rave', 'the castle']]) {
     const at = placed.get(id);
     if (at) out.push({ id, room, kind: 'door', x: at.x, z: at.z, r: 2.4, label, prompt: `step into ${label}` });
   }

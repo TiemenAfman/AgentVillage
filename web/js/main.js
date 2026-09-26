@@ -6,9 +6,9 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
-import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { gatheringAt } from 'shared/daylight.mjs';
-import { keeperOf } from 'shared/palette.mjs';
+import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
+import { gatheringAt, raveAt } from 'shared/daylight.mjs';
+import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -722,6 +722,15 @@ function interactables() {
         id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
         label: 'the tavern', prompt: 'step into the tavern',
       });
+    } else if (rec.spec.civicType === 'castle') {
+      // At the gate, not the middle of the lot: a seven by seven castle measured from its
+      // centre would answer E from behind its back wall. A getter for the prompt, because
+      // the gate opens at nine on Saturday whether or not anybody rebuilds this list.
+      const [gx, gz] = castleGate(rec);
+      out.push({
+        id: rec.id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
+        get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
+      });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
@@ -1167,6 +1176,7 @@ function walkCallbacks() {
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -1177,7 +1187,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1346,6 +1356,59 @@ function promptFor(near) {
 const rooms = new Map();
 let cameFrom = null;
 
+// ---- the castle on a Saturday night (Plans/rave-in-het-kasteel.md) ----
+// The hours are shared/daylight.mjs's (RAVE, raveAt), asked of the world's clock like the
+// borrel is, so it is the same Saturday night on every screen in the sea. `?rave` opens the
+// gate whatever the hour, for trying it on a Tuesday.
+const FORCE_RAVE = params.has('rave');
+function raveOn() {
+  return FORCE_RAVE || raveAt(worldNow().weekday, currentHour());
+}
+const RAVE_SHUT = 'The castle gate is barred. On Saturday night, from nine until three, the great hall is a rave.';
+const RAVE_IN = 'Saturday night in the great hall. The music runs until three.';
+const RAVE_OUT = 'Three o’clock. The lights come up and the castle empties out.';
+
+// In front of the gate, which is half the lot's width out from its middle, the way the
+// layout's rot says the building faces (DOOR_DIR - the same table the settlers' doorsteps
+// come from).
+function castleGate(rec) {
+  const p = rec.group.position, plot = rec.spec.plot || {};
+  const [dx, dz] = DOOR_DIR[plot.rot || 0];
+  const reach = (plot.w || 3) / 2 + 0.35;
+  return [p.x + dx * reach, p.z + dz * reach];
+}
+
+// Who is dancing: our own settlers, dressed as they are outside, the ones who worked most
+// lately first. Apprentices stay home - it is two in the morning - and whoever the floor has
+// room for past the end of this list is somebody who came over from another island.
+function raveGuests() {
+  const out = [];
+  for (const rec of state.byId.values()) {
+    const s = rec.spec;
+    if (s.kind !== 'house' && s.kind !== 'camp') continue;
+    out.push({ id: rec.id, style: styleOf(s), at: s.lastAt || s.startedAt || '' });
+  }
+  out.sort((a, b) => (a.at < b.at) - (a.at > b.at) || (a.id < b.id ? -1 : 1));
+  return out;
+}
+
+// What sound.js is told about the rave: nothing when there is none, the hall when you are
+// in it, and otherwise how far the castle is - a thump through the walls from the square.
+function raveHeard() {
+  if (!raveOn()) return null;
+  if (state.inside) return state.inside.room === 'rave' ? { inside: true } : null;
+  const rec = state.byId.get('civic:castle');
+  if (!rec || !rec.group.visible) return null;
+  return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
+}
+
+// Three o'clock: whoever is inside is put back out on the step, once.
+function keepRaveHours() {
+  if (!state.inside || state.inside.room !== 'rave' || raveOn()) return;
+  state.inside.leave();
+  state.ui.toast(RAVE_OUT);
+}
+
 function enterInterior(room, at) {
   if (state.inside || state.mode !== 'walk') return;
   let inside = rooms.get(room);
@@ -1370,8 +1433,9 @@ function enterInterior(room, at) {
   cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
-  inside.enter({ avatar: loadAvatar() });
+  inside.enter({ avatar: loadAvatar(), guests: room === 'rave' ? raveGuests() : null });
   state.ui.setIndoors(true);
+  if (room === 'rave') state.ui.toast(RAVE_IN);
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -4774,8 +4838,9 @@ function frame(nowMs) {
   }
 
   // ---- walking ------------------------------------------------------------
+  keepRaveHours();
   if (state.inside) {
-    const w = state.inside.update(dt);
+    const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
@@ -5904,6 +5969,7 @@ function soundSnapshot() {
     // not cross sixty units of open water anyway.
     records: state.byId,
     tables: state.borrel ? state.borrel.out : 0,
+    rave: raveHeard(),
   };
 }
 

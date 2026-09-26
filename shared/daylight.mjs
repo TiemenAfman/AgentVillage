@@ -65,3 +65,16 @@ export function gatheringAt(day, hour) {
   }
   return null;
 }
+
+// When the castle's great hall is a rave (Plans/rave-in-het-kasteel.md): Saturday night,
+// from nine until three - which is Sunday by the calendar, and that wrap past midnight is
+// the whole reason this is a table and not an `if` somebody writes again where it is needed.
+// `day` is the night it belongs to, and `until` runs into the next morning. Hours with their
+// minutes as a fraction, the end exclusive, like the gatherings above.
+export const RAVE = { day: 6, from: 21, until: 3 };
+
+// Whether the rave is on at this weekday and hour.
+export function raveAt(day, hour) {
+  if (day === RAVE.day && hour >= RAVE.from) return true;
+  return day === (RAVE.day + 1) % 7 && hour < RAVE.until;
+}

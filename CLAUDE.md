@@ -1072,7 +1072,8 @@ geometry; the bake still only allows 0 or 1.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?tipsy=0.8` (start that
+Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
+Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
 drunk). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
