@@ -840,6 +840,17 @@ export function createUI(handlers) {
 
   // What a beer in your hand offers the settler in front of you (main.js giveTarget), or
   // nothing. Called every frame on foot, so it writes only on a change.
+  // What a keeper says to your face (main.js speakToKeeper): who, the words, and the key
+  // that walks on. It stays until main.js takes it down - the toast it used to be went by
+  // itself after a few seconds, while the keeper was still standing there looking at you.
+  function setSpeech(s) {
+    const p = el('speech');
+    if (!s) { p.hidden = true; p.innerHTML = ''; return; }
+    p.hidden = false;
+    p.innerHTML = `<b class="speech-who">${esc(s.who)}</b><span class="speech-line">${esc(s.line)}</span>`
+      + '<span class="speech-key"><kbd>Esc</kbd> walk on</span>';
+  }
+
   function setGive(name) {
     const p = el('walk-give');
     if (!name) { p.hidden = true; return; }
@@ -937,7 +948,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
+    setHover, toast, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
     // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.

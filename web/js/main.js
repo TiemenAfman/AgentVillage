@@ -446,25 +446,73 @@ function standingSpotFor(fig, rec) {
   return [fig.pos[0] + dx * step, fig.pos[1] + dz * step];
 }
 
+// How often a conversation says again who it is holding. The sea keeps a hold until it is
+// let go of, but a crowd rebuilt by a republish - every scan on an island at work - starts
+// with nobody held, so a conversation that lasts until Escape saw its settler walk off
+// mid-sentence a minute in. Said again, the rebuilt crowd holds them within this long; said
+// to the crowd that already holds them it changes nothing, and nothing goes out on the wire
+// but the one small message (`fh` is only broadcast when the held set changes).
+const HOLD_AGAIN_MS = 2000;
+
 // Look them in the eye for as long as the conversation lasts: they are held where they
 // stand and turned towards you, and the camera drops into your own eyes. Nothing happens
 // without a figure to look at and feet to look from - a conversation is still a
-// conversation with the camera left where it was.
+// conversation with the camera left where it was. The caller pauses the feet: two hands on
+// one camera fight, and walk mode, writing its own stance every frame, won - the camera
+// swung in and straight back up again the moment it arrived (see `speakToKeeper`).
 function faceUp(id, fig) {
-  if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
+  if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return false;
+  // One conversation at a time: whoever was held before is let go of first, or their hold
+  // would be kept up for ever by an interval nobody could reach.
+  faceToFace.cancel();
   const w = state.walk.state;
   // Named to the sea by the name the sea walks them under (seaIdOf). With our own
   // `house:<uuid>` the sea found nobody to hold, and the settler walked on mid-sentence
   // while the camera stayed on them. Worked out once, here, so the letting go names the
   // same body as the holding did even if a roster arrives in between.
   const onSea = seaIdOf(id);
-  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
-  faceToFace.begin({
-    subject: fig,
+  const hold = () => { if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z); };
+  hold();
+  const again = setInterval(hold, HOLD_AGAIN_MS);
+  const began = faceToFace.begin({
+    // Found again every frame rather than held by the object: a roster that arrives
+    // mid-conversation enrols a new figure under the same id (see facetoface.js).
+    subject: () => (state.settlers && state.settlers.figure(id)) || fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => { if (state.net) state.net.unattend(onSea); },
+    onLetGo: () => { clearInterval(again); if (state.net) state.net.unattend(onSea); },
   });
+  if (!began) { clearInterval(again); if (state.net) state.net.unattend(onSea); }
+  return began;
 }
+
+// A keeper's piece, said to your face and left there until you walk on. The toast it used to
+// be went by itself after a few seconds and nothing held the camera meanwhile; now the keeper
+// stands and looks at you, the words stay under them, and Escape - or E again - ends it.
+// `parley` is the conversation in progress, or null.
+let parley = null;
+function endParley({ camera = true } = {}) {
+  if (!parley) return false;
+  parley = null;
+  state.ui.setSpeech(null);
+  // Your feet get their keys back only once the camera is home again, as after the chat:
+  // unpausing now would let walk mode write the camera mid-flight, and its stance would win.
+  // Without the camera (walk mode itself is ending) the feet are let go at once, as the chat
+  // does when exitWalk closes it.
+  const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+  if (!camera || !faceToFace.end(walkOn)) walkOn();
+  return true;
+}
+// Captured on the window, and stopped dead, for the same reason the chat and the town hall
+// stop theirs: walk.js listens on this window too, and the key that ends a conversation must
+// not also be read as "back to the sky" or as E at whatever is nearest.
+addEventListener('keydown', (e) => {
+  if (!parley) return;
+  const k = e.key.toLowerCase();
+  if (k !== 'escape' && k !== 'e') return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!e.repeat) endParley();
+}, true);
 
 // ------------------------------------------------------------ a beer for a settler
 // A glass in your hand and one of our own settlers within reach: G hands it over
@@ -516,8 +564,10 @@ function endGift() {
 // to the square by, and for the gold clerk by the pit's own count.
 function speakToKeeper(it) {
   const fig = state.settlers ? state.settlers.figure(it.id) : null;
-  faceUp(it.id, fig);
-  if (it.post === 'mayor') { openTownHall(); return; }
+  // The mayor's piece is the register, which holds the conversation open itself: the town
+  // hall pauses the feet, and closing it hands the camera back (its onClose). Panel first, so
+  // walk mode is already paused when the camera is taken.
+  if (it.post === 'mayor') { openTownHall(); if (state.townHall.isOpen()) faceUp(it.id, fig); return; }
   const c = { day: worldNow().weekday, hour: currentHour() };
   const on = gatheringAt(c.day, c.hour);
   const night = c.hour >= 22 || c.hour < 7;
@@ -541,7 +591,12 @@ function speakToKeeper(it) {
         : night ? '“A quiet night. The lamp stays lit.”'
           : '“Peace be with you. The bell keeps the island’s hours.”',
   };
-  if (said[it.post]) state.ui.toast(said[it.post]);
+  if (!said[it.post]) return;
+  if (state.walk) state.walk.setPaused(true);
+  faceUp(it.id, fig);
+  parley = { id: it.id };
+  const who = it.label.charAt(0).toUpperCase() + it.label.slice(1);
+  state.ui.setSpeech({ who, line: said[it.post] });
 }
 
 // Addressing a settler opens their session and lets you carry it on.
@@ -1507,6 +1562,7 @@ function enterPlan() {
   if (state.chronicle.t != null) setLiveMode();
   state.intro = null;
   state.tween = null;
+  endParley({ camera: false });
   faceToFace.cancel();
   if (state.ghost) state.ghost.drop();
   state.ui.closeOverlays();
@@ -1630,6 +1686,7 @@ function exitWalk({ force = false } = {}) {
   showMinimap(false);   // M's own state (minimapMode) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
+  endParley({ camera: false });
   faceToFace.cancel();
   if (state.chat.isOpen()) state.chat.close();
   // Straight from a bar stool to the sky: leave the room on the way out, or the island
@@ -5316,7 +5373,13 @@ async function boot() {
       fetchVillage().then((v) => applyVillage(v, { animate: true })).catch(() => {});
     },
     onFound: () => foundSettler(),
-    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+    // Opened by speaking to the mayor, the register holds a conversation open, and closing it
+    // hands the camera back before the feet, as the chat does. Opened at the door there is
+    // no conversation, and it is only the feet.
+    onClose: () => {
+      const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+      if (!faceToFace.end(walkOn)) walkOn();
+    },
   });
 
   state.newSettler = createNewSettler(document.body, {

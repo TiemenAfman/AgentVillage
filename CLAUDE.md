@@ -420,6 +420,12 @@ republish, and a compact renumbers. `crowd-view.js held()` keeps it by index (it
 our roster is translated) and `draw` faces a *standing* body at the talker at the walk's 0.12.
 Anything that names one of our settlers *to* the sea goes through `seaIdOf` in main.js (the
 inverse of `/api/crowd-ids`): `faceUp` sent `house:<uuid>` and the sea held nobody.
+A conversation lasts until it is ended - Escape closes the chat, the town hall or a keeper's
+words (`parley`, `endParley`, `ui.setSpeech`) - and the caller of `faceUp` pauses walk mode
+first: with the feet still running, walk mode's stance beat `web/js/facetoface.js`'s follow and
+the camera swung in to a keeper and straight back up. `faceUp` also says the hold again every
+`HOLD_AGAIN_MS`, because a crowd rebuilt by a republish starts with nobody held, and hands
+facetoface a *finder* rather than the figure, because the rebuilt roster is new objects.
 
 On the drawing side `rev` only decides whether to refetch, never whether to rebuild:
 `web/js/islandsig.js` compares a `drawnSignature()` of what is already standing against the
