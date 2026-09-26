@@ -89,7 +89,9 @@ test('the page hands the crowd a height that knows about decks', () => {
   // Up to `nowMs` rather than to the next comma: the argument is a function and has commas
   // of its own, and cutting at the first one reported `(x` and named nothing useful.
   const draws = [...main.matchAll(/\.draw\(\s*dt\s*,([\s\S]*?),\s*nowMs\s*,/g)].map((m) => m[1].trim());
-  assert.equal(draws.length, 2, `expected both crowd draw sites, found ${draws.length}`);
+  // Four: both crowds, and the story animals of both (web/js/animal-view.js) - a hen on the
+  // quay's planks is as drowned by the raw ground as a settler is.
+  assert.equal(draws.length, 4, `expected both crowd and both herd draw sites, found ${draws.length}`);
   for (const arg of draws) {
     assert.ok(/[sS]tand/.test(arg),
       `a crowd is drawn at \`${arg}\` - that is the raw ground, and the quay is planks over it`);
