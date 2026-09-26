@@ -36,6 +36,8 @@ import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createAnimalPanel } from './animal-dossier.js';
+import { createAnimalBatch, createAnimalView } from './animal-view.js';
+import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
@@ -2442,6 +2444,83 @@ async function ourRoster(ids) {
   if (heldWhere) { const held = heldWhere; heldWhere = null; placeOurs(held); }
 }
 
+// ---- the story animals (Plans/dierenverhalen.md, docs/animals-wire.md) ---------------------
+// Every island's animals, ours included, are the sea's to walk and this page's only to draw -
+// the same bargain as the settlers. One batch for all of them (web/js/animal-view.js: one
+// InstancedMesh per species and body part, so six hens on three islands cost what one does)
+// and a view per island that knows which bodies are whose.
+function animalBatch() {
+  if (!state.animalBatch) state.animalBatch = createAnimalBatch(scene, buildingMat);
+  return state.animalBatch;
+}
+// The last `herd` the sea sent for each island. Kept, like the home roster, because a view is
+// made when an island is raised and thrown away when it is dropped or re-berthed, and the sea
+// has no reason to say who the animals are again; their positions come round within two
+// seconds on their own.
+const herdLast = new Map();
+function replayHerd(island, view) {
+  const h = island ? herdLast.get(island) : null;
+  if (h && view) { view.herd(h); showTraces(view); }
+}
+// The marks the animals have left - a nest, a lookout, a birdhouse - drawn from the same herd
+// message (web/js/traces.js: one batch for every island, like the animals). Keyed by the
+// view's region, which is 'home' for ours whatever berth the sea gave us, and shown only from
+// the moment each was made while the chronicle is scrubbed back.
+function traceBatch() {
+  if (!state.traces) {
+    state.traces = createTraces(scene, buildingMat);
+    state.traces.setTime(state.chronicle ? state.chronicle.t : null);
+  }
+  return state.traces;
+}
+function showTraces(view) {
+  if (!view) return;
+  const home = view === state.homeHerd;
+  const g = home ? null : state.guests.find((x) => x.herd === view);
+  if (!home && !g) return;
+  traceBatch().apply(view.traces(), {
+    region: view.region,
+    origin: home ? [0, 0] : g.region.origin,
+    groundAt: home ? (homeStand || ((x, z) => state.region.worldHeight(x, z))) : standHeightFor(g.region),
+  });
+}
+function herdViewOf(island) {
+  if (state.islandId && island === state.islandId) return state.homeHerd || null;
+  const g = state.guests.find((x) => x.region.id === island);
+  return g ? g.herd || null : null;
+}
+function onHerdMessage(m) {
+  if (m.kind === 'herd') herdLast.set(m.island, m);
+  const view = herdViewOf(m.island);
+  if (!view) return;
+  if (m.kind === 'herd') { view.herd(m); showTraces(view); }
+  else view.apply(m.r, performance.now());
+}
+// Where a perching sparrow sits: the top of whatever building stands on that cell. `records`
+// is asked each time rather than captured, because buildings come and go under it; asked only
+// when a percher moves (animal-view.js), so a walk over the list is cheap enough.
+function perchFinder(records, half, origin) {
+  const [ox, oz] = origin;
+  return (x, z) => {
+    const gx = Math.floor(x - ox + half), gz = Math.floor(z - oz + half);
+    let top = null;
+    for (const rec of records()) {
+      const p = rec.spec && rec.spec.plot;
+      if (!p || !rec.built || !rec.group) continue;
+      if (gx < p.gx || gz < p.gz || gx >= p.gx + (p.w || 1) || gz >= p.gz + (p.d || 1)) continue;
+      const y = rec.group.position.y + (rec.built.height || 0);
+      if (top == null || y > top) top = y;
+    }
+    return top;
+  };
+}
+// What the dossier asks of our own animals as they are drawn now: what each is doing, and
+// where, for "Show on the island".
+state.herd = {
+  actOf: (id) => { const a = state.homeHerd && state.homeHerd.animal(id); return a ? a.act : null; },
+  whereOf: (id) => { const a = state.homeHerd && state.homeHerd.animal(id); return a && a.visible ? [a.pos[0], a.pos[1]] : null; },
+};
+
 // Where our own people are. Split out of the router because the join case has to be able
 // to replay one.
 function placeOurs(m) {
@@ -2538,6 +2617,7 @@ function dropRegion(id) {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -2707,6 +2787,12 @@ function raiseGuestIslands() {
     g.props.apply((region.village && region.village.props) || [], { animate: false });
     g.crops = createCrops({ scene: g.group, terrain: region.terrain, material: buildingMat });
     g.crops.apply((region.village && region.village.crops) || [], { animate: false });
+    // Their animals, in the same batch as ours.
+    g.herd = createAnimalView({
+      batch: animalBatch(), region,
+      perchAt: perchFinder(() => g.records, region.half, region.origin),
+    });
+    replayHerd(region.id, g.herd);
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     const talking = crowdHeld.get(region.id);
@@ -2724,6 +2810,7 @@ function raiseGuestIslands() {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -3261,6 +3348,13 @@ function buildScene(village) {
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
   if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
+  // And our own animals, the same way: drawn off the wire, never walked here.
+  if (state.homeHerd) state.homeHerd.dispose();
+  state.homeHerd = createAnimalView({
+    batch: animalBatch(), region: state.region,
+    perchAt: perchFinder(() => state.byId.values(), state.region.half, [0, 0]),
+  });
+  replayHerd(state.islandId, state.homeHerd);
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
@@ -4009,6 +4103,8 @@ function applyVillage(next, { animate }) {
     shownPolders = null;
     shownKey = null;
     applyLandscape(true);
+    // A mark stands on the ground it was put on; ground that moved stands it again.
+    if (state.traces) state.traces.reground('home');
   }
   syncSquareBed(next);
   syncBorrelTables(next);
@@ -4335,6 +4431,25 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
+    // An animal opens its own dossier: ours the keeper's, from our islander; a neighbour's
+    // the public card the sea carries, which is all anybody but its keeper is ever told.
+    if (pickedAnimal && state.animals) {
+      if (pickedAnimal.home) state.animals.show(pickedAnimal.a.id);
+      else {
+        const g = state.guests.find((x) => x.region.id === pickedAnimal.a.island);
+        const v = g && g.region.village;
+        const names = new Map(((v && v.buildings) || []).map((b) => [b.id, b.name]));
+        state.animals.showPublic(pickedAnimal.a, { island: (v && v.island && v.island.name) || 'a neighbouring island', nameOf: (who) => names.get(who) || null, act: pickedAnimal.a.act });
+      }
+      downAt = null;
+      return;
+    }
+    // A mark opens the diary it came out of - ours; a neighbour's is only named.
+    if (pickedTrace && state.animals) {
+      if (state.homeHerd && state.homeHerd.traces().some((t) => t.id === pickedTrace.trace.id)) state.animals.showJournal();
+      downAt = null;
+      return;
+    }
     // A silhouette on the horizon is not somewhere to go - a far island in our own sea is
     // water you cross - so a click on one is a click on nothing, and closing the dossier
     // is the right answer.
@@ -4347,6 +4462,9 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 // The last ray hit that landed on a person rather than on a building, so the label can
 // follow them down the street instead of sitting on the roof they came from.
 let pickedFigure = null;
+// And on one of the story animals, ours (`home`) or a neighbour's, or on a mark they left.
+let pickedAnimal = null;
+let pickedTrace = null;
 // Testing several hundred instanced people costs real time, and past this distance
 // they are a couple of pixels anyway, so only look for them once the camera is close.
 const PEOPLE_PICK_RANGE = 42;
@@ -4365,6 +4483,37 @@ function pick() {
 
   pickedFigure = null;
   pickedGuest.f = null; pickedGuest.g = null;
+  pickedAnimal = null;
+  // The animals first: they are the smallest things on the island and stand in front of
+  // everything. A hen or a goat by its triangles, and anything by the ray's arithmetic as
+  // well (animal-view.js animalOnRay) - a sparrow is six centimetres of bird.
+  if (state.animalBatch && controls.getDistance() < PEOPLE_PICK_RANGE && chronicleLive()) {
+    const reach = b ? b.distance + 0.5 : GUEST_PICK_T;
+    let best = null;
+    const hits = ray.intersectObjects(state.animalBatch.pickables(), false);
+    for (const h of hits) {
+      if (h.distance > reach) break;
+      const a = state.animalBatch.animalAt(h.object, h.instanceId);
+      if (a) { best = { a, t: h.distance }; break; }
+    }
+    for (const v of [state.homeHerd, ...state.guests.map((g) => g.herd)]) {
+      if (!v) continue;
+      const h = v.animalOnRay(ray.ray.origin, ray.ray.direction, best ? best.t : reach);
+      if (h) best = { a: h.animal, t: h.t };
+    }
+    if (best) {
+      const home = !!state.homeHerd && state.homeHerd.animal(best.a.id) === best.a;
+      pickedAnimal = { a: best.a, home };
+      return `animal:${home ? 'home' : best.a.island}:${best.a.id}`;
+    }
+  }
+  // And the marks they left, which are small enough to stand in front of a house too.
+  pickedTrace = null;
+  if (state.traces && controls.getDistance() < PEOPLE_PICK_RANGE && chronicleLive()) {
+    const hit = ray.intersectObjects(state.traces.objects(), false)[0];
+    const t = hit && (!b || hit.distance <= b.distance + 0.5) ? state.traces.traceOf(hit) : null;
+    if (t) { pickedTrace = { trace: t, point: hit.point.clone() }; return `trace:${t.id}`; }
+  }
   if (state.settlers && controls.getDistance() < PEOPLE_PICK_RANGE) {
     const people = ray.intersectObjects(state.settlers.pickables(), false);
     const p = people[0];
@@ -4573,7 +4722,12 @@ function frame(nowMs) {
     // quay's planks rather than in the water beside them. It used to be plain terrain here,
     // and the quay is the one place on the island where those two differ by a whole metre.
     state.settlers.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
+    // And our animals, on the same ground and the same clock. Hidden while the chronicle
+    // is scrubbed back, like everybody else who is here now rather than then.
+    if (state.homeHerd) state.homeHerd.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
   }
+  // The feeder's bell and the glint of a find.
+  if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -4631,6 +4785,7 @@ function frame(nowMs) {
     // the height their own island's decks and steps put them - which is what puts a body on
     // a quay's planks rather than in the water beside them.
     if (g.crowd) g.crowd.draw(dt, standHeightFor(g.region), nowMs, live);
+    if (g.herd) g.herd.draw(dt, standHeightFor(g.region), nowMs, live);
   }
 
 
@@ -4726,6 +4881,33 @@ function updateLabels() {
       hoverItem = {
         name: keeper ? keeper.name : spec.name,
         sub: keeper ? spec.name : labelSub(spec),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
+  // Or on an animal: its name and what it is doing, over its head. No nameplates the rest
+  // of the time - the animals are to be found, not labelled.
+  const beast = hoverId && pickedAnimal ? pickedAnimal.a : null;
+  if (beast && state.animals) {
+    projected.set(beast.pos[0], (beast.y || 0) + (beast.h || 0) + 0.3, beast.pos[1]).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        // The drawn record itself, never its id: `animal:1` is somebody on every island, and
+        // an id would be looked up among ours and name a neighbour's goat after our hen.
+        ...state.animals.hoverOf(beast, beast.act),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
+  const mark = hoverId && pickedTrace ? pickedTrace : null;
+  if (mark) {
+    projected.copy(mark.point).setY(mark.point.y + 0.35).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        name: mark.trace.name,
+        sub: 'left by the animals',
         x: (projected.x + 1) / 2 * innerWidth,
         y: (1 - projected.y) / 2 * innerHeight,
       };
@@ -4840,6 +5022,8 @@ function setChronicleTime(t) {
   state.ui.setLive('replay');
   applyLandscape();
   applyVisibility();
+  // The animals' marks from the day each was made, like every building.
+  if (state.traces) state.traces.setTime(state.chronicle.t);
   state.ui.setChronicle({
     fraction: (state.chronicle.t - start) / Math.max(1, end - start),
     date: new Date(state.chronicle.t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
@@ -4853,6 +5037,7 @@ function setLiveMode() {
   state.ui.setLive('live');
   applyLandscape();
   applyVisibility();
+  if (state.traces) state.traces.setTime(null);
   state.ui.setChronicle({ fraction: 1, date: 'Now', playing: false, live: true });
 }
 
@@ -5305,6 +5490,7 @@ async function boot() {
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
     onAgent: onAgentMessage,
+    onHerd: onHerdMessage,
     // The sky, straight through: it is one word for the whole world and nothing on this
     // side has an opinion about it. web/js/weather.js holds it whether or not the scene
     // has been built yet, which it has not when the welcome lands on a slow boot.

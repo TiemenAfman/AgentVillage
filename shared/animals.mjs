@@ -34,10 +34,13 @@ export const MOVING_ACTS = new Set(['walk', 'fly']);
 // amble inside its patch (the same numbers web/js/fauna.js has always animated at), `hurry`
 // the pace of an errand to somebody's door - a hen crossing a hamlet at an amble would take
 // five minutes to get anywhere. `flies` is the sparrow's: it crosses by air, never by path.
+// `reach` is how far from home, in island units, the story will send it to somebody's door:
+// a hen visits the neighbours, not a house on the far side of the river - at `hurry` that
+// is a minute's walk, where the island's whole width was five.
 export const MOTION = {
-  chicken: { walk: 0.12, hurry: 0.3, still: [1, 4], feed: [1.5, 4], roam: 0.9 },
-  goat: { walk: 0.15, hurry: 0.34, still: [1, 5], feed: [2, 6], roam: 1.4 },
-  sparrow: { walk: 0.06, hurry: 1.1, still: [2, 7], feed: [0.6, 1.8], roam: 1.2, flies: true },
+  chicken: { walk: 0.12, hurry: 0.3, still: [1, 4], feed: [1.5, 4], roam: 0.9, reach: 16 },
+  goat: { walk: 0.15, hurry: 0.34, still: [1, 5], feed: [2, 6], roam: 1.4, reach: 24 },
+  sparrow: { walk: 0.06, hurry: 1.1, still: [2, 7], feed: [0.6, 1.8], roam: 1.2, flies: true, reach: 36 },
 };
 
 // Character. Two or three of these per animal, drawn once when it arrives and kept in the
