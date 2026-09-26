@@ -1,5 +1,6 @@
-// The trades: the sawmill at 55 settlers, the smithy at 60, the bakery at 65 and the stable at
-// 75 (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
+// The trades: the sawmill at 55 settlers, the smithy at 60 and the stable at 75 (Plans/zagerij.md,
+// Plans/smidse.md, Plans/stal-en-veld.md). The bakery was one for a morning and is a shop of the
+// square in the town's plan now (Plans/knus-dorpscentrum.md, tests/town-plan.test.mjs).
 //
 // What is asserted is the one rule that is theirs and nobody else's: they are square civics
 // with a door, and they never take one of the lots round the square. Those lots are the
@@ -18,15 +19,14 @@ import { emptyLayout, placeAll } from '../lib/layout.mjs';
 import { MILESTONES } from '../lib/village.mjs';
 import { SAWMILL } from '../web/js/sawmill-mesh.js';
 import { SMITHY } from '../web/js/smithy-mesh.js';
-import { BAKERY } from '../web/js/bakery-mesh.js';
 import { STABLE } from '../web/js/stable-mesh.js';
 
 const SIZE = 128;
 // 5 and 2024 found the island with all eight lots free, so two are still empty when the sawmill
 // comes - the case the rule exists for. 1337 found it with six, all spoken for by then.
 const SEEDS = [5, 2024, 1337];
-const TRADES = ['sawmill', 'smithy', 'bakery', 'stable'];
-const BAKES = { sawmill: SAWMILL, smithy: SMITHY, bakery: BAKERY, stable: STABLE };
+const TRADES = ['sawmill', 'smithy', 'stable'];
+const BAKES = { sawmill: SAWMILL, smithy: SMITHY, stable: STABLE };
 const SETTLERS = Math.max(...TRADES.map((t) => MILESTONES.find((m) => m.id === t).at)) + 2;
 // The stable's paddock was modelled to fill its lot: the outer rail's posts (0.035 square)
 // stand centred on the lot line, so half of one is over it. Nothing else is.
@@ -86,9 +86,8 @@ test('the trades are rungs between the lighthouse and the bridge, and none share
   const at = (id) => MILESTONES.find((m) => m.id === id).at;
   assert.equal(at('sawmill'), 55);
   assert.equal(at('smithy'), 60);
-  assert.equal(at('bakery'), 65);
   assert.equal(at('stable'), 75);
-  assert.ok(at('lighthouse') < at('sawmill') && at('smithy') < at('bakery') && at('bakery') < at('statue'));
+  assert.ok(at('lighthouse') < at('sawmill') && at('smithy') < at('statue'));
   assert.ok(at('statue') < at('stable') && at('stable') < at('bridge'));
   const settlers = MILESTONES.filter((m) => (m.on || 'settlers') === 'settlers').map((m) => m.at);
   for (const t of TRADES) assert.equal(settlers.filter((n) => n === at(t)).length, 1, `the ${t} shares its rung`);

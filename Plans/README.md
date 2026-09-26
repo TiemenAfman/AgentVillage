@@ -16,6 +16,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
+  gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
+  winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
+  snoepwinkel, uilenpost, ketelmaker), plus de bakkerij en de slagerij. `TOWN_VERSION` deelt een
+  bestaand centrum één keer opnieuw in; geen huis beweegt. Gebouwd op 26 september 2026.
 - [dierenverhalen.md](dierenverhalen.md) — een kip, een geit en een mus (tot zes per eiland) met
   een naam, karakter en een geheugen: de islander onthoudt (`data/animal-events.jsonl`,
   onvervangbaar), de zee laat ze lopen, een ontmoeting telt pas als de zee zegt dat hij gebeurd

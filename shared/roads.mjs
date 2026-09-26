@@ -45,6 +45,19 @@ export function squareCells(village) {
   return out;
 }
 
+// The paving the Friday gathering aims for: every square cell but the town's shopping
+// streets (Plans/knus-dorpscentrum.md). The streets are paved into `town.paved` so that
+// everything that walks or draws the square has them for free, and `town.streets` names
+// them again for this one reader - a borrel belongs on the square, and with the streets in
+// the draw half the village would stand about in the high street instead. A village from
+// before the streets has none, and gets every square cell, as it always did.
+export function gatherCells(village) {
+  const town = village && village.island && village.island.town;
+  const streets = new Set(((town && town.streets) || []).map(([gx, gz]) => `${gx},${gz}`));
+  const all = squareCells(village);
+  return streets.size ? all.filter(([gx, gz]) => !streets.has(`${gx},${gz}`)) : all;
+}
+
 // How far from a road a door may stand and still count as connected to it - the search
 // shape shared/settlerwalk.mjs's gateOf uses (every direction, nearest cell wins). Exported
 // so both keep one number: a door found reachable here and not there, or the other way

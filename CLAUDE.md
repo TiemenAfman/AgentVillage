@@ -138,10 +138,12 @@ Roads, unlike plots, the scan does take up by itself: every scan runs the planne
 `pruneUnreachable` and lays again whatever no longer reaches the square, because a path
 records only the cells it paved itself - when a hamlet dies its road goes, and every road
 that had braided onto it was left ending in the grass (45 houses cut off, 25 September
-2026). Five version gates in `lib/layout.mjs`, in descending order of violence:
+2026). Six version gates in `lib/layout.mjs`, in descending order of violence:
 `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
-paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
+paths), `TOWN_VERSION` (lays the centre's own buildings out again on the town's plan and
+re-routes every road round its streets; no house or shed moves), `ROAD_VERSION` (re-routes
+hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
 `placeAll` rather than `loadLayout`, because it has to ask the ground a question). Reach
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
@@ -725,7 +727,7 @@ which differs between players on the same release all the time, and by the *line
 (`compareLines`, major.minor): a patch apart says nothing. **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
-`ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
+`TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
 a bundle that an older 0.4.x would misread - a release and a checkout share one island in
 `~/.promptholm`, and an older one on a newer layout plans the town again. Any of those is
 the next minor.
@@ -963,6 +965,23 @@ include the pit), so nothing about it is on the wire and every screen parks the 
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
+
+**The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
+`TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
+`CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets
+leaving it with the clock (`STREETS`) and sixteen three by three street lots filled from the
+square outwards (`STREET_LOTS`; school and water tower take the far end), the gold pit behind
+the library. A building whose lot is taken or unbuildable falls back to the nearest free block,
+facing whichever side has ground in front of its door (`openRot`). Workshops (`TRADES`: sawmill,
+smithy, stable) and a new castle stand beyond it (`TRADE_RING`, `TOWN_REACH`). Street lots on the
+town's ground are RESERVED from the first scan like the ring - but never the streets themselves,
+which would wall the hamlets off from the square - and `townHeld` is what tells those marks from
+a keeper's zone or a dike, which are RESERVED too. A street is paved from the square to its last
+building, into `town.paved` (so every reader of the paving has it) and again as `town.streets`
+for the one reader that must leave it out: the Friday gathering (`gatherCells` in
+`shared/roads.mjs`, the third argument of `setRoads`). The static shops are `SHOPS` in
+`web/js/buildings.js` - one asset `civic_<type>` each, walked round part by part (`APART`) and
+set on a step no wider than themselves. `TOWN_VERSION` laid an existing centre out again once.
 
 **The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and

@@ -30,6 +30,7 @@ import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
+import { attachButcher, updateButcher } from './butcher.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -50,11 +51,10 @@ const CIVIC = [
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
-  // The trades. The smith goes in at night, and so does the baker: move the night slider
-  // (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
+  // The trades, out beyond the shopping streets. The smith goes in at night: move the night
+  // slider (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
   ['sawmill', 'Sawmill', '55'],
   ['smithy', 'Smithy', '60'],
-  ['bakery', 'Bakery', '65'],
   ['statue', 'Statue', '70'],
   ['stable', 'Stable', '75'],
   // The stone, not the crossing: the deck is drawn from the layout's own cells and there
@@ -63,6 +63,20 @@ const CIVIC = [
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
+  // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
+  // baker (who goes in at night too) on a corner of the square, the butcher's (whose awning rolls in when he goes home,
+  // Plans/slagerij.md) and the rest along the four streets.
+  ['bakery', 'Bakery', '12'],
+  ['grocer', 'Grocer', '18'],
+  ['apothecary', 'Apothecary', '22'],
+  ['tailor', 'Clothes shop', '28'],
+  ['library', 'Library', '33'],
+  ['tearoom', 'Tea room', '38'],
+  ['wandmaker', 'Wand maker', '42'],
+  ['butcher', 'Butcher', '48'],
+  ['sweetshop', 'Sweet shop', '65'],
+  ['cauldron', 'Cauldron maker', '80'],
+  ['owlpost', 'Owl post', '85'],
 ];
 
 const FURNITURE = [
@@ -176,6 +190,7 @@ const beacons = [];   // the lighthouse's lamp, which is the one thing here the 
 const sawmills = [];  // the saw, the feed, the belt and the sawdust
 const smithies = [];  // the smith, the bellows, the fire and the lantern
 const lives = [];     // everything else that moves on its own: animals, the stable, the countryside
+const butchers = [];  // the butcher, the awning, the sign, the hanging meat and the smoke
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -253,6 +268,10 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.smithy) {
     const at = built.animated.smithy.at;
     smithies.push(attachSmithy(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.butcher) {
+    const at = built.animated.butcher.at;
+    butchers.push(attachButcher(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -1116,6 +1135,7 @@ function frame(now) {
   for (const m of sawmills) updateSawmill(m, dt);
   for (const s of smithies) updateSmithy(s, dt);
   for (const live of lives) live(dt);
+  for (const b of butchers) updateButcher(b, dt);
 
   if (inside) {
     const w = inside.update(dt);

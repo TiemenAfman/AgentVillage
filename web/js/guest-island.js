@@ -32,6 +32,7 @@ import { disposeSmithy } from './smithy.js';
 import { disposeStable } from './stable.js';
 import { disposeBakery } from './countryside.js';
 import { disposeBaker } from './bakery-keeper.js';
+import { disposeButcher } from './butcher.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -294,6 +295,7 @@ export function createGuestIsland({
         if (rec.stable) disposeStable(rec.stable);
         if (rec.bakery) disposeBakery(rec.bakery);
         if (rec.baker) disposeBaker(rec.baker);
+        if (rec.butcher) disposeButcher(rec.butcher);
       }
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },

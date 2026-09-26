@@ -927,8 +927,9 @@ with no shallows to reclaim.
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, bakery, statue, stable, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75 and 100 settlers |
-| A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the trades' own people, who work by day and go indoors at night |
+| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, statue, stable, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 75 and 100 settlers |
+| The shops round the square and along the four streets: bakery, grocer, apothecary, clothes shop, library, tea room, wand maker, butcher, sweet shop, cauldron maker, owl post | 12, 18, 22, 28, 33, 38, 42, 48, 65, 80 and 85 settlers |
+| A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the smithy's and the bakery's own people, who work by day and go indoors at night |
 | A horse in a paddock and two hens by the stall doors | The stable's animals, scenery rather than somebody — not the named animals with a story (see [The animals](#the-animals)) |
 | Sheep or cows in a field, hens outside a hut, ducks on the water, gulls over a quay | The island's ambient animals: scenery, placed from its fields, huts, river and quays, up to forty (see [The animals](#the-animals)) |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |

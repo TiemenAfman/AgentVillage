@@ -67,6 +67,7 @@ import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 import { attachStable, updateStable, disposeStable } from './stable.js';
 import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
 import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
+import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -3108,7 +3109,7 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
-  // The next two trades, the same way. The stable's horse and hens are scenery out of
+  // The stable (a trade) and the bakery (a shop of the square), the same way. The stable's horse and hens are scenery out of
   // web/js/fauna.js moving on their own clock, like the bees - not story animals, which are
   // the sea's and web/js/animal-view.js's. The bakery brings its oven's light, as the smithy
   // does, and its baker (web/js/bakery-keeper.js), the smith's kind of passive settler.
@@ -3118,6 +3119,11 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.bakery) {
     rec.bakery = attachBakery(group, built.animated.bakery.at, buildingMat);
     rec.baker = attachBaker(group, built.animated.bakery.at, buildingMat);
+  }
+  // The butcher's (Plans/slagerij.md), a shop of the town's plan with something alive in it:
+  // his awning, his hanging meat and his smokehouse (web/js/butcher.js).
+  if (built.animated && built.animated.butcher) {
+    rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
   }
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
@@ -3219,6 +3225,7 @@ function disposeRecord(rec) {
   if (rec.stable) disposeStable(rec.stable);
   if (rec.bakery) disposeBakery(rec.bakery);
   if (rec.baker) disposeBaker(rec.baker);
+  if (rec.butcher) disposeButcher(rec.butcher);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -5819,6 +5826,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.stable) updateStable(rec.stable, dt);
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
+  if (rec.butcher) updateButcher(rec.butcher, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5827,7 +5835,9 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
-    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill' || rec.spec.civicType === 'bakery';
+    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
+    // An oven and a brazier that are lit all day, like the smithy's fire.
+    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
