@@ -5,6 +5,13 @@ import { worldToScene, sceneToWorld } from 'shared/regions.mjs';
 const RETRY_MIN = 1000;
 const RETRY_MAX = 15000;
 const POSE_MS = 100;
+// How long no socket may open before onStatus says 'quiet' - once, however many attempts
+// fail in the meantime, and not again until one has opened. The sea walks every crowd, this
+// island's own included, so a sea that does not answer is an island with nobody on it and
+// no word of why (26 September: twelve minutes of it). Ten seconds rides out a sea
+// restarting, which is a second of blank water; lib/seaclient.mjs waits as long before its
+// own line in the log.
+export const QUIET_MS = 10000;
 
 // What counts as having moved. Below this a standing player sends nothing but the slow
 // keepalive, which costs one message a second instead of ten.
@@ -87,7 +94,8 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now() } = {}) {
+  onWelcome = () => {}, onAgent = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
+  quietMs = QUIET_MS } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
   // Where the sea says our island lies, in the sea's own frame. The page draws its own
@@ -153,6 +161,21 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   let health = null;
   // When the last swing went, on `clock`; see SWING_MS.
   let swungAt = -Infinity;
+  // The sea not answering, said once: see QUIET_MS. Armed when the line drops or an attempt
+  // starts without one, disarmed by a socket opening - a sea that opens and then refuses us
+  // has answered, and onRefused says why.
+  let quietTimer = null;
+  let saidQuiet = false;
+  const armQuiet = () => {
+    if (quietTimer || saidQuiet || closed) return;
+    quietTimer = setTimeout(() => {
+      quietTimer = null;
+      if (closed || (sock && sock.readyState === 1)) return;
+      saidQuiet = true;
+      onStatus('quiet');
+    }, quietMs);
+  };
+  const disarmQuiet = () => { clearTimeout(quietTimer); quietTimer = null; saidQuiet = false; };
 
   const send = (obj) => {
     if (sock && sock.readyState === 1) { sock.send(JSON.stringify(obj)); return true; }
@@ -161,10 +184,12 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
 
   function open() {
     if (closed) return;
+    armQuiet();
     try { sock = new WebSocket(addressOf()); } catch { schedule(); return; }
 
     sock.addEventListener('open', () => {
       retry = RETRY_MIN;
+      disarmQuiet();
       onStatus('on');
       // The handshake. A sea answers nothing else until it has had one - it has to know
       // which world you meant and which coast your body belongs over - and it is sent
@@ -293,6 +318,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
 
     const gone = () => {
       onStatus('off');
+      armQuiet();                       // the grace counts from the line dropping, not the next knock
       // The server hands out a new id on every connection, so every peer we knew is now
       // a stale name for somebody who may not even be here. Start clean.
       peers.clear();
@@ -534,10 +560,14 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     reconnect() {
       if (closed) return;
       retry = RETRY_MIN;
+      // Another sea gets its own grace and its own 'quiet', under its own name: the caller
+      // takes down whatever it put up for the old one (followSea in main.js).
+      disarmQuiet();
       try { sock && sock.close(); } catch { /* already gone; the close handler still fires */ }
     },
     dispose() {
       closed = true;
+      disarmQuiet();
       clearInterval(beat);
       clearInterval(uiBeat);
       document.removeEventListener('visibilitychange', onVisibility);

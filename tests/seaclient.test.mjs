@@ -258,3 +258,92 @@ test('nothing in the line home listens for instructions', async () => {
   const handled = [...src.matchAll(/m\.t === '([a-z]+)'/g)].map((m) => m[1]).sort();
   assert.deepEqual(handled, ['refused', 'welcome']);
 });
+
+// A port nobody is listening on, for a sea that is not there yet. Taken and let go at once:
+// the sea started on it later is the one that "comes back".
+async function freePort() {
+  const net = await import('node:net');
+  return new Promise((done) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => done(port));
+    });
+  });
+}
+const quietLines = (said) => said.filter((m) => /is not answering/.test(m));
+
+// 26 September: the open sea timed out and the islander said nothing for twelve minutes -
+// and was not retrying either. Node's WebSocket fires `error` and never `close` for a socket
+// that failed before it opened, and the retry hung only off `close`, so the first failed
+// attempt was the last one. Both halves are held here: it is said once, and it keeps
+// knocking until the sea is there.
+test('a sea that is not answering is said once, and the island keeps knocking until it answers', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const a = island();
+  const said = [];
+  const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle, quietMs: 300, log: (m) => said.push(m) });
+  let sea = null;
+  try {
+    await until(() => quietLines(said).length, 'nothing was said about a sea that is not there');
+    assert.ok(quietLines(said)[0].includes(url), `the line does not name the address: ${quietLines(said)[0]}`);
+    // Long enough for the backoff to have knocked again (1 s, then 2 s).
+    await settle(1400);
+    assert.equal(quietLines(said).length, 1, 'said again on a later attempt');
+
+    sea = createSea({ port, name: 'a late sea' });
+    await sea.listen();
+    await until(() => client.connected(), 'the island never knocked again once the sea was there', 8000);
+    await until(() => sea.fleet.has(a.id), 'joined, but the island never arrived');
+    const joined = said.filter((m) => /^joined/.test(m));
+    assert.equal(joined.length, 1);
+    assert.match(joined[0], /back after \d+ s without an answer/, 'the join does not say the island had been without');
+    assert.equal(quietLines(said).length, 1);
+  } finally {
+    client.close();
+    if (sea) await sea.close();
+  }
+});
+
+// A sea restarting is a second of blank water, and that is not worth a line in anybody's
+// log - the grace is what keeps the real one readable.
+test('a sea back within the grace is not said to have gone quiet', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const a = island();
+  const said = [];
+  let sea = createSea({ port, name: 'test sea' });
+  await sea.listen();
+  const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle, quietMs: 4000, log: (m) => said.push(m) });
+  try {
+    await until(() => client.connected(), 'the socket never came up');
+    await sea.close();
+    await until(() => !client.connected(), 'the island never noticed the sea go');
+    sea = createSea({ port, name: 'test sea, again' });
+    await sea.listen();
+    await until(() => client.connected(), 'the island never found the sea again', 8000);
+    assert.deepEqual(quietLines(said), [], 'a restart was reported as a sea not answering');
+    assert.ok(said.filter((m) => /^joined/.test(m)).every((m) => !/back after/.test(m)));
+  } finally {
+    client.close();
+    await sea.close();
+  }
+});
+
+// A claim being waited out is the sea answering, between knocks that grow further apart
+// than the grace. It has its own line (the refusal) and must not also get this one.
+test('a claim being waited out is not a sea that is not answering', () => afloat(async ({ sea, url }) => {
+  const a = island();
+  const before = createSeaClient({ url, islandId: a.id, token: 'the-old-process', bundle: () => a.bundle });
+  await until(() => sea.fleet.has(a.id), 'the island never arrived');
+  before.close();
+  const said = [];
+  const after = createSeaClient({ url, islandId: a.id, token: 'the-new-process', bundle: () => a.bundle, quietMs: 300, log: (m) => said.push(m) });
+  try {
+    await until(() => said.some((m) => /claimed/.test(m)), 'the old claim was never in the way');
+    await settle(2500);                            // two knocks, each gap longer than the grace
+    assert.deepEqual(quietLines(said), [], 'the waiting was taken for silence');
+  } finally {
+    after.close();
+  }
+}));
