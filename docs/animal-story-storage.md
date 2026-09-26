@@ -31,8 +31,12 @@ without them (`/api/animals` says why). Do not replace a damaged journal with an
 
 The store saves an unterminated tail separately before truncating it. Only complete records
 are replayed. New writes are flushed before returning their event; a failed append blocks
-further work on that instance until it is closed and recovered. Checkpoint writes use a
-flushed temporary file followed by rename. A checkpoint failure does not undo journaled
+further work on that instance until it is closed and recovered (`healthy()` says which).
+The islander does that itself, without a restart: on the next scan or completion
+`recover()` in `lib/animal-life.mjs` closes the store, opens it again (replaying what is whole)
+and has the sea asked once more, forced, so an errand the sea finished while the line could
+not be written is answered again and remembered once (`tests/animal-recovery.test.mjs`).
+Checkpoint writes use a flushed temporary file followed by rename. A checkpoint failure does not undo journaled
 events. This is process-crash recovery, not a substitute for disk backups.
 
 ## Commands

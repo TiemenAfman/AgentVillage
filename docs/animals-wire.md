@@ -55,7 +55,11 @@ restart simply runs again, and a completion heard twice counts once (the reducer
 of a finished action is null).
 
 The sea remembers the last 32 completed action ids per island: an action re-posted after it
-finished is not walked again, its `done` is sent again instead.
+finished is not walked again, its `done` is sent again instead. The islander re-posts on
+every welcome, and once more - forced, though nothing it says has changed - after it had to
+reopen its journal because a write failed; the done it could not write is heard again that way.
+A sea that swept the island in the meantime has forgotten both the herd and what it finished,
+and simply walks the errand again. `tests/animal-recovery.test.mjs` holds all of these.
 
 ## Sea -> everybody
 
