@@ -85,6 +85,7 @@ import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { SETTLER_DRINK_S } from './settler-figures.js';
 import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
+import { seaQuietNotice } from './seaquiet.js';
 import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
 
@@ -1191,6 +1192,24 @@ function onRefusedBySea(m) {
     return;
   }
   state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
+}
+
+// Not answering at all, which is the other way a sea can fail us and the one that used to
+// say nothing: no refusal arrives, the socket just never opens, and the island stands empty
+// because the sea walks every crowd. net.js says 'quiet' once after its grace and 'on' when
+// a socket opens; a banner rather than a toast, because it is true for as long as it lasts
+// and a toast would be gone before anybody wondered where the settlers were.
+//
+// Which sea, in the keeper's words, comes from /api/hello: its mode and whether it is the
+// open sea (seaQuietNotice). A phone has no hello, only the sea it was packed with.
+function learnSea(hello) {
+  state.seaWords = { url: hello.sea || null, mode: hello.seaMode || null, open: !!hello.seaOpen };
+}
+function onSeaStatus(status) {
+  if (status === 'on') { state.ui.setSeaQuiet(null); return; }
+  if (status !== 'quiet') return;
+  const words = state.seaWords || { url: STANDALONE ? STANDALONE.sea : null };
+  state.ui.setSeaQuiet(seaQuietNotice({ ...words, keeper: islanderHere() && !state.guest }));
 }
 
 function applyPanelMessage(m) {
@@ -2341,7 +2360,11 @@ async function followSea() {
     useSea(hello.sea);
     state.islandId = hello.islandId || null;
     state.seaKey = hello.seaKey || null;
+    learnSea(hello);
   }
+  // Whatever was said about the old sea not answering was about the old sea. net.js gives
+  // the new one its own grace, and says 'quiet' again under its name if it earns it.
+  state.ui.setSeaQuiet(null);
   // And dial again. Everything in net.js is already written to survive the line dropping,
   // so this is a close and a retry rather than a second socket.
   if (state.net) state.net.reconnect();
@@ -5104,6 +5127,7 @@ async function boot() {
     state.islandId = hello.islandId || null;
     state.islandToken = hello.token || null;
     state.seaKey = hello.seaKey || null;
+    learnSea(hello);
     // Which release this island's own code is (lib/buildinfo.mjs) - this page is served by
     // it, so it is this page's too.
     state.build = hello.build || null;
@@ -5271,7 +5295,7 @@ async function boot() {
     onWeather: setSky,
     onRefused: onRefusedBySea,
     name: playerName(),
-    onStatus: () => {},
+    onStatus: onSeaStatus,
     onPanels: (m) => applyPanelMessage(m),
     onSaid: (m) => state.islandchat.said(m),
   });

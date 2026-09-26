@@ -1005,6 +1005,12 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
 }
 .skew b { color: #ffc98a; }
+/* One paragraph per thing that is wrong: out of step, and the sea not answering. As wide as
+   its text up to max-width: left 50% alone shrinks a box to the half of the screen right of
+   the middle, which at 375 wide was a column 187px across. */
+#skew { width: max-content; }
+.skew p { margin: 0; }
+.skew p + p { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(233, 160, 90, .25); }
 
 /* Somebody is behind: this page or the sea (web/js/update.js). Up top, so it never sits on
    the skew banner, but under the chip row and between the title card and the minimap -
