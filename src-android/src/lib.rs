@@ -16,6 +16,34 @@ use tauri_plugin_opener::OpenerExt;
 const APK_URL: &str =
     "https://github.com/TiemenAfman/AgentVillage/releases/latest/download/promptholm-android.apk";
 
+/// The same release, asked of the API: which version it is, without fetching the APK.
+const LATEST_API: &str = "https://api.github.com/repos/TiemenAfman/AgentVillage/releases/latest";
+
+/// The newest release's version ("0.5.1", the tag without its v), for the update gate.
+///
+/// The sea's welcome says which release the sea is on, and until now that was the only way
+/// the app heard of a new one - so it only heard once whoever keeps the sea had updated it.
+/// This asks GitHub itself, so the card goes up as soon as there is a release to install.
+/// In Rust for the same reason as install_update: the page's fetch would go out from
+/// tauri.localhost, and here there is no origin to argue about. GitHub refuses a request
+/// with no User-Agent, hence the header.
+#[tauri::command]
+async fn latest_release() -> Result<String, String> {
+    let res = reqwest::Client::new()
+        .get(LATEST_API)
+        .header("User-Agent", "promptholm-android")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("GitHub answered {}", res.status()));
+    }
+    let release: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let tag = release["tag_name"].as_str().ok_or("the release has no tag")?;
+    Ok(tag.trim_start_matches('v').to_string())
+}
+
 /// Fetch that APK and put it in front of Android's installer.
 ///
 /// This is the whole of "update from inside the app", and it is as far as an app outside the
@@ -60,7 +88,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![install_update])
+        .invoke_handler(tauri::generate_handler![install_update, latest_release])
         .setup(|app| {
             let handle = app.handle().clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

@@ -1086,6 +1086,13 @@ Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To 
 page without a phone, serve `src-android/dist/` from any static server — that origin has no
 islander behind it either.
 
+**Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
+`tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
+the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
+as soon as there is a release, not only once the sea is updated; `install_update` fetches the
+APK and hands it to Android's installer through the FileProvider. Both are app commands, so
+they need no entry in `capabilities/default.json` (only plugin calls do).
+
 ## Layout of the source
 
 | | |
