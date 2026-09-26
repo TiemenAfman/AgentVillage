@@ -1,20 +1,24 @@
 """The tea room. Rebuild with scripts/blender.mjs --background --python scripts/build-tearoom.py.
 
 A tea room on a corner of the square (Plans/knus-dorpscentrum.md): a pale cream stone ground floor
-wrapped in tall round-topped windows - three either side of the door and two round each corner -
-framed in sage green, with leading across the panes; a sage door under an arched fanlight; above
-it a jettied upper floor of cream plaster in dark timber, window boxes of flowers under its three
-windows, and a very steep slate roof with one tall gable over the door and a crooked chimney on
-the ridge. Beside the door a white teapot with a gold band hangs from a curly iron bracket, over
-the door a small sage board carries a gold teacup, and out front two little white iron café
-tables each have two chairs.
+wrapped in round-topped windows - three either side of the door and two round each corner -
+framed in sage green; a sage door under an arched fanlight; above it a jettied upper floor of
+cream plaster in oak timber, window boxes of flowers under its three windows, and a terracotta
+roof with one gable over the door and a crooked brick chimney on the ridge. Beside the door a
+white teapot with a gold band hangs from a curly iron bracket, and out front two little white
+iron café tables each have two chairs.
 
-One civic asset, `civic_tearoom` (budget 1500), and nothing that moves. It fills its lot the way
-a terrace house fills its plot: the walls run x -1.40..+1.40 so the neighbours stand almost
-against it, the roof stops at 1.47, and nothing on the pavement passes z 1.46. The door is in the
-middle of the front, because that is where the island's paths arrive, and the tables stand either
-side of it so the doorway stays clear. `anchor.door` is at its foot, `anchor.smoke` on the
-chimney pot.
+It is drawn at the village's own size, not the terrace's: the first version filled its whole 3x3
+lot (2.9 across, 3.45 tall under slate) and stood on the square like a hotel beside the tavern
+(1.80 x 1.57 x 1.69) and the bakery. So the walls run x -0.87..+0.87 and z -0.55..+0.80, the
+eaves are at 0.96, the ridge at 1.58 and the chimney pot stops under 1.9; the door is 0.27 wide
+and 0.45 tall over its footing, and the roof is the tavern's pitch (43 degrees) in the
+tavern's terracotta, with oak rather than near-black timber - the colours of the houses around
+it, with only the paint of the shopfront its own. The café tables stay within z 1.16 and |x| 0.82.
+
+One civic asset, `civic_tearoom` (budget 1500), and nothing that moves. The door is in the middle
+of the front, because that is where the island's paths arrive, and the tables stand either side
+of it so the doorway stays clear. `anchor.door` is at its foot, `anchor.smoke` on the chimney pot.
 
 Every window is a dark pane with a smaller emissive shape just in front of it, as in
 build-bakery.py: dark by day with a lit middle, and the middle is what glows at night. Here the
@@ -22,15 +26,19 @@ shapes are arches - an n-gon of a rectangle and a half circle, six segments roun
 is the fewest that still reads as round rather than as a bell - so that after dark the ground
 floor is a row of warm round-topped lights, which is the one thing that says "tea room" from the
 far side of the square. The arches are flat layers a few millimetres apart (sage frame, dark
-glass, glow, leading) rather than recesses: a solid box has no hole to put a window in, and at
-island distance a recess of a hand's depth is invisible while its triangles are not.
+glass, glow) rather than recesses: a solid box has no hole to put a window in, and at island
+distance a recess of a hand's depth is invisible while its triangles are not. The leading that
+crossed each pane and the gold teacup on a board over the door went at this size: a bar under a
+centimetre wide is a flicker, and the teapot is the sign.
 
 The house is solid boxes rather than wall slabs: nobody looks into it, and a box is twelve
 triangles where four walls are forty-eight. Timber that is only ever seen from the front is drawn
 without the faces that lie against the plaster. The teapot is the one round thing that is turned
 on a lathe (eight sides, which is where most of its triangles go), because it is the sign and has
 to read as a teapot and not as a ball; the spout points along the street so its silhouette shows
-from the front. Written in island coordinates (x right, y up, z to the front) through xyz().
+from the front, and it hangs from the upper floor with its foot at 0.59, over a settler's head
+(WALK_CLEARANCE 0.55), so it is a sign and never a post to walk round. Written in island
+coordinates (x right, y up, z to the front) through xyz().
 """
 import bpy
 import math
@@ -60,16 +68,16 @@ def material(sheet, name, color, emissive=False):
     return m
 
 
-# The palette is the terrace's (cream plaster, near-black oak, blue-grey slate) with this shop's
-# own colour in the paint: sage green, with cream stone and gold beside it.
-STONE = material('stone', 'tearoom cream stone', 0xe4dac2)
-FOOTING = material('stone', 'tearoom footing', 0xa49b89)
-PLASTER = material('wall', 'tearoom plaster', 0xf0e6cc)
-TIMBER = material('plank', 'tearoom timber', 0x3e2a1c)
-TIMBER_Z = material('plankZ', 'tearoom timber', 0x3e2a1c)
-SLATE = material('roof', 'tearoom slate', 0x46505c)
-RIDGE_SLATE = material('roof', 'tearoom ridge', 0x363d47)
-CHIMNEY = material('stone', 'tearoom chimney', 0x8a8276)
+# The palette is the village's - the bakery's cream plaster and oak, the tavern's terracotta and
+# brick - with this shop's own colour in the paint: sage green, with cream stone and gold beside it.
+STONE = material('stone', 'tearoom cream stone', 0xe6d7b8)
+FOOTING = material('stone', 'tearoom footing', 0x968778)
+PLASTER = material('wall', 'tearoom plaster', 0xf0e2c4)
+TIMBER = material('plank', 'tearoom timber', 0x6a4426)
+TIMBER_Z = material('plankZ', 'tearoom timber', 0x6a4426)
+TILES = material('roof', 'tearoom tiles', 0xb8552f)
+RIDGE_TILES = material('roof', 'tearoom ridge', 0xc76b3d)
+BRICK = material('stone', 'tearoom chimney', 0x9c5a44)
 POT = material('plain', 'tearoom chimney pot', 0xa35b3c)
 SOOT = material('plain', 'tearoom soot', 0x1f1b18)
 SAGE = material('plank', 'tearoom sage paint', 0x86a27f)
@@ -79,7 +87,6 @@ SAGE_FLAT = material('plain', 'tearoom sage frame', 0x86a27f)
 GOLD = material('plain', 'tearoom gold', 0xd8ab44)
 GLASS = material('plain', 'tearoom window', 0x2b3136)
 GLOW = material('plain', 'tearoom lit window', 0xffd88a, emissive=True)
-LEAD = material('plain', 'tearoom leading', 0x2a2b2f)
 CHINA = material('plain', 'tearoom china', 0xf7f2e7)
 IRON = material('plain', 'tearoom iron', 0x2e2f33)
 CAFE = material('plain', 'tearoom white iron', 0xf2f0ea)
@@ -159,6 +166,10 @@ def wpoly(part, wall, pts, d, mat):
     part.add([wall.at(u, v, d) for u, v in pts], [list(range(len(pts)))], mat)
 
 
+def rect(u0, v0, u1, v1):
+    return [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+
+
 def wbox(part, wall, u0, u1, v0, v1, d0, d1, mat, omit=('back',)):
     """A box standing on a wall; the face against the wall is left out unless asked for."""
     hexa(part, [wall.at(u, v, d) for u, v, d in ((u0, v0, d0), (u1, v0, d0), (u1, v1, d0), (u0, v1, d0),
@@ -180,13 +191,13 @@ def wbar(part, wall, a, b, w, d0, d1, mat, ends=True):
          omit=('back',) if ends else ('back', 'left', 'right'))
 
 
-def arch(cu, v0, spring, r, segs=6):
+def arch(cu, v0, spring, r, segs=5):
     """A round-topped outline: the two bottom corners, then the half circle from right to left."""
     return [(cu - r, v0), (cu + r, v0)] + [(cu + r * math.cos(math.pi * k / segs), spring + r * math.sin(math.pi * k / segs))
                                            for k in range(segs + 1)]
 
 
-def half_disc(cu, spring, r, segs=6):
+def half_disc(cu, spring, r, segs=5):
     return [(cu + r * math.cos(math.pi * k / segs), spring + r * math.sin(math.pi * k / segs)) for k in range(segs + 1)]
 
 
@@ -265,17 +276,18 @@ bpy.context.scene.collection.children.link(ASSET)
 # ---- the measurements ---------------------------------------------------------------------
 # The ground floor is a touch narrower and shallower than the floor above it, which leans out
 # over the pavement on a beam (a jetty): XG/ZG below, XU/ZU above. XR is the roof's reach.
-XG, XU, XR = 1.37, 1.40, 1.46
-ZB, ZG, ZU = -1.30, 0.93, 1.03
-FOOT = 0.05
-BEAM0, BEAM1 = 0.80, 0.88          # the jetty beam the upper floor stands on
-GF = 0.84
-EAVES, RIDGE = 1.64, 2.96
+XG, XU, XR = 0.84, 0.87, 0.92
+ZB, ZG, ZU = -0.55, 0.755, 0.80
+FOOT = 0.035
+BEAM0, BEAM1 = 0.52, 0.575         # the jetty beam the upper floor stands on
+GF = 0.53
+EAVES, RIDGE = 0.96, 1.58
+TOP = 0.925                        # the underside of the top plate under the eaves
 ZM, HALF = (ZU + ZB) / 2, (ZU - ZB) / 2
-SLOPE = (RIDGE - EAVES) / HALF     # 1.13, so the main pitch is 48 degrees; the gable is 59
-OV, T = 0.12, 0.05                 # the roof's overhang, and the slates' thickness
-CX, CROSS = 0.58, 2.60             # the front gable's half width and the height of its ridge
-CZ = ZU + 0.03                     # its face, a hair proud of the wall below it
+SLOPE = (RIDGE - EAVES) / HALF     # 0.92, so the pitch is 43 degrees: the tavern's 0.57 over 0.62
+OV, T = 0.08, 0.035                # the roof's overhang, and the tiles' thickness
+CX, CROSS = 0.38, 1.34             # the front gable's half width and the height of its ridge (45)
+CZ = ZU + 0.02                     # its face, a hair proud of the wall below it
 
 FRONT_G = Wall((0, 0, ZG), (1, 0, 0), (0, 0, 1))
 FRONT_U = Wall((0, 0, ZU), (1, 0, 0), (0, 0, 1))
@@ -287,17 +299,17 @@ SIDES_U = [Wall((XU, 0, 0), (0, 0, -1), (1, 0, 0)), Wall((-XU, 0, 0), (0, 0, 1),
 # ---- the house ----------------------------------------------------------------------------
 body = Part(ASSET, 'body')
 box(body, (0, GF / 2, (ZB + ZG) / 2), (2 * XG, GF, ZG - ZB), STONE, omit=('bottom', 'top'))
-box(body, (0, FOOT / 2, (ZB + ZG) / 2), (2 * XG + 0.04, FOOT, ZG - ZB + 0.04), FOOTING, omit=('bottom',))
+box(body, (0, FOOT / 2, (ZB + ZG) / 2), (2 * XG + 0.03, FOOT, ZG - ZB + 0.03), FOOTING, omit=('bottom',))
 box(body, (0, (GF + EAVES) / 2, (ZB + ZU) / 2), (2 * XU, EAVES - GF, ZU - ZB), PLASTER, omit=('bottom', 'top'))
 # The jetty: a beam along the front and one down each side, closing the gap under the overhang.
 # The front one is the shop's fascia, painted sage with a gold line along it, which is what ties
 # the arched windows and the door together into one shopfront.
-box(body, (0, (BEAM0 + BEAM1) / 2, (ZG + ZU + 0.012) / 2), (2 * XU + 0.02, BEAM1 - BEAM0, ZU + 0.012 - ZG), SAGE, omit=('back', 'top'))
-wpoly(body, Wall((0, 0, ZU + 0.012), (1, 0, 0), (0, 0, 1)),
-      [(-XU, 0.832), (XU, 0.832), (XU, 0.845), (-XU, 0.845)], 0.002, GOLD)
+FZ = ZU + 0.01
+box(body, (0, (BEAM0 + BEAM1) / 2, (ZG + FZ) / 2), (2 * XU + 0.02, BEAM1 - BEAM0, FZ - ZG), SAGE, omit=('back', 'top'))
+wpoly(body, Wall((0, 0, FZ), (1, 0, 0), (0, 0, 1)), rect(-XU - 0.01, 0.541, XU + 0.01, 0.553), 0.002, GOLD)
 for s in (-1, 1):
-    box(body, (s * (XG + XU + 0.012) / 2, (BEAM0 + BEAM1) / 2, (ZB + ZU) / 2),
-        (XU + 0.012 - XG, BEAM1 - BEAM0, ZU - ZB), TIMBER_Z, omit=('top', 'left' if s > 0 else 'right'))
+    box(body, (s * (XG + XU + 0.01) / 2, (BEAM0 + BEAM1) / 2, (ZB + ZU) / 2),
+        (XU + 0.01 - XG, BEAM1 - BEAM0, ZU - ZB), TIMBER_Z, omit=('top', 'left' if s > 0 else 'right'))
 # The gable ends, the plaster triangles under the roof at either side.
 for wall in SIDES_U:
     wpoly(body, wall, [(wall.u_of((0, 0, z)), y) for z, y in ((ZU, EAVES), (ZB, EAVES), (ZM, RIDGE))][::1 if wall.u.z < 0 else -1], 0, PLASTER)
@@ -320,7 +332,7 @@ def main_slab(xa, xb, front, overhang=True, omit=()):
     pts = []
     for z, y in ((ZM, RIDGE), (ze, ye)):
         pts += [(xa, y, z), (xb, y, z), (xb, y + T, z), (xa, y + T, z)]
-    hexa(roof, pts, SLATE, omit=('back',) + tuple(omit))
+    hexa(roof, pts, TILES, omit=('back',) + tuple(omit))
 
 
 # The front pitch is cut in three round the front gable: its middle stops at the wall, where
@@ -329,10 +341,10 @@ main_slab(-XR, -CX, True)
 main_slab(-CX, CX, True, overhang=False, omit=('left', 'right'))
 main_slab(CX, XR, True)
 main_slab(-XR, XR, False)
-box(roof, (0, RIDGE + T + 0.012, ZM), (2 * XR + 0.02, 0.055, 0.09), RIDGE_SLATE, omit=('bottom',))
+box(roof, (0, RIDGE + T + 0.01, ZM), (2 * XR + 0.02, 0.04, 0.07), RIDGE_TILES, omit=('bottom',))
 # The front gable's roof: two pitches from its ridge down to the main eave line, running back
 # until they are lost inside the main roof.
-GZF, GZB = ZU + OV + 0.01, 0.10
+GZF, GZB = ZU + OV + 0.01, 0.25
 for s in (-1, 1):
     zs = (GZB, GZF) if s > 0 else (GZF, GZB)
     pts = []
@@ -340,242 +352,222 @@ for s in (-1, 1):
         pts += [(0, CROSS, z), (s * CX, EAVES, z), (s * CX, EAVES + T, z), (0, CROSS + T, z)]
     # Left out: the face along its ridge (against the other pitch) and its far end, buried in
     # the main roof.
-    hexa(roof, pts, SLATE, omit=('left', 'back' if s > 0 else 'front'))
+    hexa(roof, pts, TILES, omit=('left', 'back' if s > 0 else 'front'))
 GZR = ZU - (CROSS - EAVES) / SLOPE     # where the gable's ridge meets the main roof
-box(roof, (0, CROSS + T + 0.01, (GZR + GZF) / 2), (0.08, 0.05, GZF - GZR), RIDGE_SLATE, omit=('bottom',))
-# The chimney: on the ridge near the left gable, leaning a little the way old ones do.
-CHX, CHZ, CHY0, CHY1, LEAN = -0.92, ZM - 0.02, 2.45, 3.30, 0.05
+box(roof, (0, CROSS + T + 0.008, (GZR + GZF) / 2), (0.055, 0.035, GZF - GZR), RIDGE_TILES, omit=('bottom',))
+# The chimney: brick like the tavern's, on the ridge near the left gable, leaning a little the
+# way old ones do. The pot is the tallest thing on the building and stops under 1.9.
+CHX, CHZ, CHY0, CHY1, LEAN = -0.55, ZM - 0.02, 1.38, 1.78, 0.04
 cm = rotation(rx=-0.03, rz=LEAN)
 ch_c = Vector((CHX, (CHY0 + CHY1) / 2, CHZ))
-box(roof, ch_c, (0.24, CHY1 - CHY0, 0.26), CHIMNEY, rx=-0.03, rz=LEAN, omit=('bottom',))
+box(roof, ch_c, (0.15, CHY1 - CHY0, 0.16), BRICK, rx=-0.03, rz=LEAN, omit=('bottom',))
 ch_top = ch_c + cm @ Vector((0, (CHY1 - CHY0) / 2, 0))
-box(roof, ch_top + Vector((0, 0.02, 0)), (0.31, 0.05, 0.33), CHIMNEY, rx=-0.04, rz=LEAN + 0.03, omit=('bottom',))
-pot0 = ch_top + Vector((0.03, 0.04, 0.0))
-pot1 = pot0 + Vector((-0.008, 0.11, 0))
-tube(roof, pot0, pot1, 0.055, 0.045, POT, sides=6, cap_b=SOOT)
+box(roof, ch_top + Vector((0, 0.012, 0)), (0.19, 0.03, 0.2), FOOTING, rx=-0.04, rz=LEAN + 0.03, omit=('bottom',))
+pot0 = ch_top + Vector((0.02, 0.025, 0.0))
+pot1 = pot0 + Vector((-0.005, 0.06, 0))
+tube(roof, pot0, pot1, 0.034, 0.028, POT, sides=6, cap_b=SOOT)
 roof.build()
 
 # ---- the timber frame ---------------------------------------------------------------------
 frame = Part(ASSET, 'timber')
-for x in (-XU + 0.03, XU - 0.03):
-    for z in (ZU - 0.03, ZB + 0.03):
-        box(frame, (x, (BEAM1 + EAVES) / 2, z), (0.07, EAVES - BEAM1, 0.07), TIMBER, omit=('bottom', 'top'))
+for x in (-XU + 0.02, XU - 0.02):
+    for z in (ZU - 0.02, ZB + 0.02):
+        inside = ('left' if x > 0 else 'right', 'back' if z > 0 else 'front')   # in the plaster
+        box(frame, (x, (BEAM1 + EAVES) / 2, z), (0.045, EAVES - BEAM1, 0.045), TIMBER, omit=('bottom', 'top') + inside)
 # The front of the upper floor: posts at the gable's corners, a sill rail under the windows, a
 # top plate under the eaves, and a steep brace in every narrow panel beside a window.
-wbox(frame, FRONT_U, -XU - 0.005, XU + 0.005, 1.58, EAVES, 0, 0.026, TIMBER)
-wbox(frame, FRONT_U, -XU, XU, 0.97, 1.02, 0, 0.02, TIMBER, omit=('back', 'left', 'right'))
+SILL_RAIL = (0.615, 0.64)
+wbox(frame, FRONT_U, -XU - 0.004, XU + 0.004, TOP, EAVES, 0, 0.018, TIMBER)
+wbox(frame, FRONT_U, -XU, XU, *SILL_RAIL, 0, 0.014, TIMBER, omit=('back', 'left', 'right'))
 for x in (-CX, CX):
-    wbox(frame, FRONT_U, x - 0.025, x + 0.025, BEAM1, 1.58, 0, 0.024, TIMBER, omit=('back', 'top', 'bottom'))
-UPPER = [-0.99, 0.0, 0.99]         # the three windows upstairs
-WIN_W = 0.20
-for x0, x1 in ((-XU + 0.065, UPPER[0] - WIN_W), (UPPER[0] + WIN_W, -CX - 0.025), (-CX + 0.025, -WIN_W)):
-    for a, b in (((x0 + 0.02, 1.02), (x1 - 0.02, 1.58)), ((-x0 - 0.02, 1.02), (-x1 + 0.02, 1.58))):
-        wbar(frame, FRONT_U, a, b, 0.045, 0, 0.018, TIMBER, ends=False)
+    wbox(frame, FRONT_U, x - 0.018, x + 0.018, BEAM1, TOP, 0, 0.016, TIMBER, omit=('back', 'top', 'bottom'))
+UPPER = [-0.62, 0.0, 0.62]         # the three windows upstairs
+WIN_W = 0.095
+for x0, x1 in ((-XU + 0.043, UPPER[0] - WIN_W), (UPPER[0] + WIN_W, -CX - 0.018), (-CX + 0.018, -WIN_W)):
+    for a, b in (((x0 + 0.012, SILL_RAIL[1]), (x1 - 0.012, TOP)), ((-x0 - 0.012, SILL_RAIL[1]), (-x1 + 0.012, TOP))):
+        wbar(frame, FRONT_U, a, b, 0.03, 0, 0.012, TIMBER, ends=False)
 # The sides: a post in the middle, a sill rail and a top plate, and one brace in the long back
 # panel, so a corner lot shows a framed gable and not a blank one.
 for wall in SIDES_U:
     um = wall.u_of((0, 0, ZM))
     u_front, u_back = wall.u_of((0, 0, ZU)), wall.u_of((0, 0, ZB))
     lo, hi = min(u_front, u_back), max(u_front, u_back)
-    wbox(frame, wall, um - 0.025, um + 0.025, BEAM1, 1.58, 0, 0.024, TIMBER_Z, omit=('back', 'top', 'bottom'))
-    wbox(frame, wall, lo, hi, 1.58, EAVES, 0, 0.026, TIMBER_Z)
-    wbox(frame, wall, lo, hi, 0.97, 1.02, 0, 0.02, TIMBER_Z, omit=('back', 'left', 'right'))
-    ub = wall.u_of((0, 0, ZB + 0.08))
-    wbar(frame, wall, (ub, 1.02), (um + (0.05 if ub < um else -0.05), 1.58), 0.045, 0, 0.018, TIMBER_Z, ends=False)
+    wbox(frame, wall, um - 0.018, um + 0.018, BEAM1, TOP, 0, 0.016, TIMBER_Z, omit=('back', 'top', 'bottom'))
+    wbox(frame, wall, lo, hi, TOP, EAVES, 0, 0.018, TIMBER_Z)
+    wbox(frame, wall, lo, hi, *SILL_RAIL, 0, 0.014, TIMBER_Z, omit=('back', 'left', 'right'))
+    ub = wall.u_of((0, 0, ZB + 0.05))
+    wbar(frame, wall, (ub, SILL_RAIL[1]), (um + (0.03 if ub < um else -0.03), TOP), 0.03, 0, 0.012, TIMBER_Z, ends=False)
     # The gable above: a king post up the middle and a collar across it.
-    wbox(frame, wall, um - 0.022, um + 0.022, EAVES, RIDGE - 0.03, 0, 0.02, TIMBER_Z, omit=('back', 'bottom'))
-    half = HALF * (RIDGE - 2.2) / (RIDGE - EAVES) - 0.03
-    wbox(frame, wall, um - half, um + half, 2.17, 2.22, 0, 0.02, TIMBER_Z)
+    wbox(frame, wall, um - 0.016, um + 0.016, EAVES, RIDGE - 0.02, 0, 0.014, TIMBER_Z, omit=('back', 'bottom'))
+    half = HALF * (RIDGE - 1.28) / (RIDGE - EAVES) - 0.02
+    wbox(frame, wall, um - half, um + half, 1.25, 1.28, 0, 0.014, TIMBER_Z, omit=('back', 'left', 'right'))
 # The back: its top plate, enough that the eaves line runs all the way round.
-wbox(frame, BACK, -XU - 0.005, XU + 0.005, 1.58, EAVES, 0, 0.026, TIMBER)
-# The front gable: dark barge boards tucked under the front edge of its roof, a collar and a
-# short king post. On the gable's face instead, a board stuck out past the slates at its foot
+wbox(frame, BACK, -XU - 0.004, XU + 0.004, TOP, EAVES, 0, 0.018, TIMBER)
+# The front gable: oak barge boards tucked under the front edge of its roof, a collar and a
+# short king post. On the gable's face instead, a board stuck out past the tiles at its foot
 # and read from three-quarters as a stick poking out of the roof.
-BW = 0.055
+BW = 0.035
 for s in (-1, 1):
-    # Half a board's width in from the roof's edge, so its top edge lies along the slates.
+    # Half a board's width in from the roof's edge, so its top edge lies along the tiles.
     down = Vector((-s * (CROSS - EAVES), -CX)).normalized() * (BW / 2)
     a, b = Vector((s * CX, EAVES)) + down, Vector((0, CROSS)) + down
-    wbar(frame, GABLE, (a.x, a.y), (b.x, b.y), BW, GZF - CZ - 0.04, GZF - CZ - 0.005, TIMBER)
-cy0, cy1 = 2.10, 2.15
+    wbar(frame, GABLE, (a.x, a.y), (b.x, b.y), BW, GZF - CZ - 0.028, GZF - CZ - 0.004, TIMBER)
+cy0, cy1 = 1.19, 1.215
 chalf = CX * (CROSS - cy1) / (CROSS - EAVES)
-wbox(frame, GABLE, -chalf, chalf, cy0, cy1, 0, 0.02, TIMBER)
-wbox(frame, GABLE, -0.022, 0.022, cy1, CROSS - 0.04, 0, 0.02, TIMBER, omit=('back', 'bottom'))
+wbox(frame, GABLE, -chalf, chalf, cy0, cy1, 0, 0.014, TIMBER)
+wbox(frame, GABLE, -0.016, 0.016, cy1, CROSS - 0.03, 0, 0.014, TIMBER, omit=('back', 'bottom'))
 frame.build()
 
 # ---- the shopfront ------------------------------------------------------------------------
 shop = Part(ASSET, 'shopfront')
-SILL, SPRING = 0.155, 0.49
-PR, GR, LR = 0.135, 0.105, 0.085   # the frame's, the glass's and the glow's half width
+SILL, SPRING = 0.10, 0.33
+PR, GR, LR = 0.085, 0.066, 0.05    # the frame's, the glass's and the glow's half width
 
 
 def light(part, wall, cu):
-    """One round-topped window: sage frame, dark glass, the lit middle, and its leading."""
+    """One round-topped window: sage frame, dark glass and the lit middle."""
     wpoly(part, wall, arch(cu, SILL, SPRING, PR), 0.004, SAGE_FLAT)
-    wpoly(part, wall, arch(cu, SILL + 0.025, SPRING, GR), 0.008, GLASS)
-    wpoly(part, wall, arch(cu, SILL + 0.045, SPRING, LR), 0.012, GLOW)
-    wbar(part, wall, (cu, SILL + 0.025), (cu, SPRING + GR), 0.012, 0.016, 0.016, LEAD)
-    wbar(part, wall, (cu - GR, SPRING), (cu + GR, SPRING), 0.012, 0.016, 0.016, LEAD)
+    wpoly(part, wall, arch(cu, SILL + 0.018, SPRING, GR), 0.008, GLASS)
+    wpoly(part, wall, arch(cu, SILL + 0.034, SPRING, LR), 0.012, GLOW)
 
 
-FRONT_LIGHTS = [0.48, 0.80, 1.12]
+FRONT_LIGHTS = [0.325, 0.53, 0.735]
 for s in (-1, 1):
     for x in FRONT_LIGHTS:
         light(shop, FRONT_G, s * x)
-    wbox(shop, FRONT_G, *sorted((s * 0.32, s * 1.28)), SILL - 0.04, SILL, 0, 0.05, SAGE, omit=('back', 'bottom'))
+    wbox(shop, FRONT_G, *sorted((s * 0.225, s * 0.835)), SILL - 0.024, SILL, 0, 0.032, SAGE, omit=('back', 'bottom'))
 # Round each corner: two more on each side wall, close to the front.
 for wall in SIDES_G:
-    us = [wall.u_of((0, 0, z)) for z in (0.62, 0.30)]
+    us = [wall.u_of((0, 0, z)) for z in (0.57, 0.36)]
     for u in us:
         light(shop, wall, u)
-    wbox(shop, wall, min(us) - 0.16, max(us) + 0.16, SILL - 0.04, SILL, 0, 0.05, SAGE_Z, omit=('back', 'bottom'))
-# The door: sage, under an arched fanlight, in a sage frame that stands out from the stone.
-DR, DRO, DSP, DB = 0.15, 0.195, 0.42, FOOT
-wbox(shop, FRONT_G, -DR, DR, DB, DSP, 0, 0.015, SAGE_DARK)
-wpoly(shop, FRONT_G, half_disc(0, DSP, DR), 0.006, GLASS)
-wpoly(shop, FRONT_G, half_disc(0, DSP, DR - 0.03), 0.010, GLOW)
-for t in (math.pi / 3, 2 * math.pi / 3):
-    wbar(shop, FRONT_G, (0, DSP), (DR * math.cos(t), DSP + DR * math.sin(t)), 0.012, 0.013, 0.013, LEAD)
-wbox(shop, FRONT_G, -DR, DR, DSP - 0.015, DSP + 0.015, 0, 0.025, SAGE)
-for u0, u1 in ((-DR + 0.03, -0.01), (0.01, DR - 0.03)):
-    wpoly(shop, FRONT_G, [(u0, 0.10), (u1, 0.10), (u1, 0.36), (u0, 0.36)], 0.018, SAGE)
-inner = [(-DR, DB)] + [(DR * math.cos(math.pi - math.pi * k / 6), DSP + DR * math.sin(math.pi - math.pi * k / 6)) for k in range(7)] + [(DR, DB)]
-outer = [(-DRO, DB)] + [(DRO * math.cos(math.pi - math.pi * k / 6), DSP + DRO * math.sin(math.pi - math.pi * k / 6)) for k in range(7)] + [(DRO, DB)]
-DF = 0.03
-ring = []
+    wbox(shop, wall, min(us) - 0.1, max(us) + 0.1, SILL - 0.024, SILL, 0, 0.032, SAGE_Z, omit=('back', 'bottom'))
+# The door: sage, under an arched fanlight, in a sage frame that stands out from the stone. It is
+# 0.27 by 0.45 over the footing, its frame's crown a hair under the fascia - a door of the
+# village's size, which is what makes the building read as a shop in that village rather than
+# the same drawing enlarged.
+DR, DRO, DSP, DB = 0.135, 0.165, 0.35, FOOT
+wbox(shop, FRONT_G, -DR, DR, DB, DSP, 0, 0.012, SAGE_DARK)
+wpoly(shop, FRONT_G, half_disc(0, DSP, DR), 0.005, GLASS)
+wpoly(shop, FRONT_G, half_disc(0, DSP, DR - 0.022), 0.009, GLOW)
+wbox(shop, FRONT_G, -DR, DR, DSP - 0.01, DSP + 0.01, 0, 0.02, SAGE)
+for u0, u1 in ((-DR + 0.024, -0.008), (0.008, DR - 0.024)):
+    wpoly(shop, FRONT_G, rect(u0, 0.08, u1, 0.30), 0.014, SAGE)
+inner = [(-DR, DB)] + [(DR * math.cos(math.pi - math.pi * k / 5), DSP + DR * math.sin(math.pi - math.pi * k / 5)) for k in range(6)] + [(DR, DB)]
+outer = [(-DRO, DB)] + [(DRO * math.cos(math.pi - math.pi * k / 5), DSP + DRO * math.sin(math.pi - math.pi * k / 5)) for k in range(6)] + [(DRO, DB)]
+DF = 0.024
 for k in range(len(inner) - 1):
-    ring.append([inner[k], inner[k + 1], outer[k + 1], outer[k]])
-for q in ring:
-    wpoly(shop, FRONT_G, q, DF, SAGE_FLAT)
+    wpoly(shop, FRONT_G, [inner[k], inner[k + 1], outer[k + 1], outer[k]], DF, SAGE_FLAT)
 for k in range(len(outer) - 1):
     a, b = outer[k], outer[k + 1]
     shop.add([FRONT_G.at(a[0], a[1], 0), FRONT_G.at(b[0], b[1], 0), FRONT_G.at(b[0], b[1], DF), FRONT_G.at(a[0], a[1], DF)],
              [[0, 1, 2, 3]], SAGE_FLAT)
-cone(shop, FRONT_G.at(0.105, 0.24, 0.015), FRONT_G.at(0.105, 0.24, 0.04), 0.016, GOLD, sides=4)
+cone(shop, FRONT_G.at(0.095, 0.19, 0.012), FRONT_G.at(0.095, 0.19, 0.03), 0.012, GOLD, sides=4)
 # No doorstep: a shop is walked round part by part (APART in buildings.js), so a step would be a
 # solid of its own right where anchor.door is, and the porch the island sets every shop on is
 # the step already.
-# The sign over the door: a sage board edged in gold, and a gold teacup on its saucer with a
-# curl of steam - the picture a lettered board would otherwise need words for. It is fixed to
-# the front of the fascia and hangs below it: on the wall behind, the jetty hid it from anyone
-# looking down on the square, which on the island is everyone.
-FASCIA = Wall((0, 0, ZU + 0.012), (1, 0, 0), (0, 0, 1))
-SB, CY = (0.655, 0.855), 0.745     # the board's bottom and top, and the cup's middle
-wbox(shop, FASCIA, -0.19, 0.19, SB[0], SB[1], 0.002, 0.022, SAGE, omit=())
-for (a, b) in (((-0.172, SB[1] - 0.014), (0.172, SB[1] - 0.014)), ((-0.172, SB[0] + 0.014), (0.172, SB[0] + 0.014)),
-               ((-0.172, SB[0] + 0.014), (-0.172, SB[1] - 0.014)), ((0.172, SB[0] + 0.014), (0.172, SB[1] - 0.014))):
-    wbar(shop, FASCIA, a, b, 0.012, 0.024, 0.024, GOLD)
-wpoly(shop, FASCIA, [(-0.035, CY - 0.03), (0.035, CY - 0.03), (0.052, CY + 0.03), (-0.052, CY + 0.03)], 0.026, GOLD)
-wpoly(shop, FASCIA, [(-0.08, CY - 0.043), (0.08, CY - 0.043), (0.068, CY - 0.031), (-0.068, CY - 0.031)], 0.026, GOLD)
-hc = (0.054, CY + 0.004)
-for k in range(3):
-    t0, t1 = -math.pi / 2 + math.pi * k / 3, -math.pi / 2 + math.pi * (k + 1) / 3
-    pa = [(hc[0] + r * math.cos(t), hc[1] + r * math.sin(t)) for r, t in ((0.013, t0), (0.013, t1))]
-    pb = [(hc[0] + r * math.cos(t), hc[1] + r * math.sin(t)) for r, t in ((0.025, t1), (0.025, t0))]
-    wpoly(shop, FASCIA, pa + pb, 0.026, GOLD)
-for dx in (-0.018, 0.018):
-    wbar(shop, FASCIA, (dx, CY + 0.038), (dx + 0.013, CY + 0.056), 0.009, 0.026, 0.026, GOLD)
-    wbar(shop, FASCIA, (dx + 0.013, CY + 0.056), (dx, CY + 0.074), 0.009, 0.026, 0.026, GOLD)
 shop.build()
 
 # ---- upstairs -----------------------------------------------------------------------------
 up = Part(ASSET, 'upstairs')
 
 
-def window(part, wall, cu, v0=1.04, v1=1.50, w=WIN_W):
-    """A casement: a dark frame, the pane, its lit middle, and a mullion and transom over it."""
-    wbox(part, wall, cu - w, cu + w, v0, v1, 0, 0.03, TIMBER, omit=('back', 'bottom'))
-    wpoly(part, wall, [(cu - w + 0.035, v0 + 0.035), (cu + w - 0.035, v0 + 0.035), (cu + w - 0.035, v1 - 0.035), (cu - w + 0.035, v1 - 0.035)], 0.034, GLASS)
-    wpoly(part, wall, [(cu - w + 0.07, v0 + 0.07), (cu + w - 0.07, v0 + 0.07), (cu + w - 0.07, v1 - 0.07), (cu - w + 0.07, v1 - 0.07)], 0.038, GLOW)
-    wbar(part, wall, (cu, v0 + 0.035), (cu, v1 - 0.035), 0.022, 0.042, 0.042, TIMBER)
-    wbar(part, wall, (cu - w + 0.035, v0 + 0.3), (cu + w - 0.035, v0 + 0.3), 0.02, 0.042, 0.042, TIMBER)
+def window(part, wall, cu, v0=0.655, v1=0.885, w=WIN_W):
+    """A casement: an oak frame, the pane, its lit middle, and a mullion and transom over it."""
+    wbox(part, wall, cu - w, cu + w, v0, v1, 0, 0.02, TIMBER, omit=('back', 'bottom'))
+    wpoly(part, wall, rect(cu - w + 0.022, v0 + 0.022, cu + w - 0.022, v1 - 0.022), 0.022, GLASS)
+    wpoly(part, wall, rect(cu - w + 0.042, v0 + 0.042, cu + w - 0.042, v1 - 0.042), 0.025, GLOW)
+    wbar(part, wall, (cu, v0 + 0.022), (cu, v1 - 0.022), 0.014, 0.028, 0.028, TIMBER)
+    wbar(part, wall, (cu - w + 0.022, v0 + 0.15), (cu + w - 0.022, v0 + 0.15), 0.013, 0.028, 0.028, TIMBER)
 
 
 def flower_box(part, wall, cu, k0):
-    wbox(part, wall, cu - 0.21, cu + 0.21, 0.93, 1.01, 0, 0.09, SAGE)
-    wbox(part, wall, cu - 0.19, cu + 0.19, 1.01, 1.045, 0.015, 0.08, LEAVES, omit=('back', 'bottom'))
-    for k, du in enumerate((-0.12, 0.0, 0.12)):
-        tet(part, wall.at(cu + du, 1.052, 0.045 + 0.012 * ((k + k0) % 2)), 0.036, FLOWERS[(k + k0) % 4], phase=0.7 * k)
+    wbox(part, wall, cu - 0.12, cu + 0.12, 0.588, 0.636, 0, 0.052, SAGE, omit=('back', 'bottom'))
+    wbox(part, wall, cu - 0.105, cu + 0.105, 0.636, 0.654, 0.008, 0.046, LEAVES, omit=('back', 'bottom', 'left', 'right'))
+    for k, du in enumerate((-0.07, 0.0, 0.07)):
+        tet(part, wall.at(cu + du, 0.66, 0.027 + 0.008 * ((k + k0) % 2)), 0.024, FLOWERS[(k + k0) % 4], phase=0.7 * k)
 
 
 for k, x in enumerate(UPPER):
     window(up, FRONT_U, x)
     flower_box(up, FRONT_U, x, k)
 for wall in SIDES_U:
-    window(up, wall, wall.u_of((0, 0, 0.45)))
-window(up, BACK, BACK.u_of((0.62, 0, 0)))
+    window(up, wall, wall.u_of((0, 0, 0.46)))
+window(up, BACK, BACK.u_of((0.4, 0, 0)))
 # The attic light in the front gable: a small arch, under the collar.
-wpoly(up, GABLE, arch(0, 1.74, 1.90, 0.12), 0.004, TIMBER)
-wpoly(up, GABLE, arch(0, 1.765, 1.90, 0.095), 0.008, GLASS)
-wpoly(up, GABLE, arch(0, 1.79, 1.90, 0.07), 0.012, GLOW)
-wbar(up, GABLE, (0, 1.765), (0, 1.995), 0.014, 0.016, 0.016, TIMBER)
+wpoly(up, GABLE, arch(0, 0.99, 1.08, 0.065), 0.004, TIMBER)
+wpoly(up, GABLE, arch(0, 1.006, 1.08, 0.048), 0.008, GLASS)
+wpoly(up, GABLE, arch(0, 1.02, 1.08, 0.034), 0.012, GLOW)
 up.build()
 
 # ---- the teapot on its bracket ------------------------------------------------------------
 tea = Part(ASSET, 'teapot')
 # The pot's axis, the height of its foot and its scale: a sign is bigger than the thing it
-# means, and at 1.4 it is still clear of anybody walking under it (WALK_CLEARANCE is 0.55).
-TX, TZ, TB, K = 0.43, 1.29, 0.62, 1.4
-ARM_Y, ARM_Z1 = 0.862, 1.42
-rod(tea, (TX, ARM_Y, ZU + 0.012), (TX, ARM_Y, ARM_Z1), 0.011, IRON, sides=4)
+# means, and it hangs off the upper floor so its foot is over head height (WALK_CLEARANCE 0.55).
+TX, TZ, TB, K = 0.27, ZU + 0.21, 0.595, 0.8
+ARM_Y, ARM_Z1 = 0.748, ZU + 0.30
+rod(tea, (TX, ARM_Y, ZU + 0.008), (TX, ARM_Y, ARM_Z1), 0.008, IRON, sides=4)
 # The ironwork that holds the arm up, as strap: a quarter round from the wall out to the arm, a
 # scroll curled up inside it, and a curl at the arm's tip.
 Z0 = ZU + 0.004
-quarter = [(Z0 + 0.25 * math.sin(math.pi / 2 * k / 5), ARM_Y + 0.25 * math.cos(math.pi / 2 * k / 5)) for k in range(6)]
-strap(tea, TX, quarter, 0.016, IRON)
-scroll = [(Z0 + 0.105 + (0.07 - 0.009 * k) * math.cos(math.radians(-90 + 62 * k)),
-           ARM_Y + 0.08 + (0.07 - 0.009 * k) * math.sin(math.radians(-90 + 62 * k))) for k in range(7)]
-strap(tea, TX, scroll, 0.013, IRON)
-tip = [(ARM_Z1 - 0.025 + (0.045 - 0.007 * k) * math.cos(math.radians(-55 + 68 * k)),
-        ARM_Y + 0.037 + (0.045 - 0.007 * k) * math.sin(math.radians(-55 + 68 * k))) for k in range(6)]
-strap(tea, TX, tip, 0.012, IRON)
+quarter = [(Z0 + 0.16 * math.sin(math.pi / 2 * k / 5), ARM_Y + 0.16 * math.cos(math.pi / 2 * k / 5)) for k in range(6)]
+strap(tea, TX, quarter, 0.012, IRON)
+scroll = [(Z0 + 0.067 + (0.045 - 0.006 * k) * math.cos(math.radians(-90 + 62 * k)),
+           ARM_Y + 0.051 + (0.045 - 0.006 * k) * math.sin(math.radians(-90 + 62 * k))) for k in range(6)]
+strap(tea, TX, scroll, 0.01, IRON)
+tip = [(ARM_Z1 - 0.016 + (0.029 - 0.0045 * k) * math.cos(math.radians(-55 + 68 * k)),
+        ARM_Y + 0.024 + (0.029 - 0.0045 * k) * math.sin(math.radians(-55 + 68 * k))) for k in range(5)]
+strap(tea, TX, tip, 0.009, IRON)
 P = lambda dx, dy: (TX + dx * K, TB + dy * K, TZ)
-rings = [(TB + y * K, r * K) for y, r in ((0, 0.052), (0.028, 0.083), (0.058, 0.092), (0.074, 0.092), (0.104, 0.07), (0.12, 0.038))]
-lathe(tea, TX, TZ, rings, [CHINA, CHINA, GOLD, CHINA, CHINA], sides=8, bottom=CHINA, top=CHINA)
+rings = [(TB + y * K, r * K) for y, r in ((0, 0.052), (0.028, 0.083), (0.058, 0.092), (0.074, 0.092), (0.12, 0.04))]
+lathe(tea, TX, TZ, rings, [CHINA, CHINA, GOLD, CHINA], sides=8, bottom=CHINA, top=CHINA)
 cone(tea, P(0, 0.12), P(0, 0.148), 0.022 * K, GOLD)
-rod(tea, P(0, 0.148), (TX, ARM_Y, TZ), 0.005, IRON)
+rod(tea, P(0, 0.148), (TX, ARM_Y, TZ), 0.004, IRON)
 tube(tea, P(0.07, 0.036), P(0.172, 0.126), 0.024 * K, 0.011 * K, CHINA, sides=5)
 handle = [P(-0.078, 0.1), P(-0.138, 0.098), P(-0.142, 0.042), P(-0.082, 0.028)]
 for a, b in zip(handle, handle[1:]):
-    rod(tea, a, b, 0.013 * K, CHINA, sides=4)
+    rod(tea, a, b, 0.013 * K, CHINA)
 tea.build()
 
 # ---- the café tables ----------------------------------------------------------------------
 # One part per table, and that is load-bearing: the island walks round a shop by the rectangle
 # of each baked part, and one part holding both tables was one rectangle from table to table,
 # straight across the doorway.
-TABLE_Z, TERRACE = 1.27, []
-for side, tx in (('left', -0.80), ('right', 0.80)):
+TABLE_Z, TERRACE = 1.08, []
+for side, tx in (('left', -0.62), ('right', 0.62)):
     cafe = Part(ASSET, f'terrace {side}')
-    tube(cafe, (tx, 0.185, TABLE_Z), (tx, 0.2, TABLE_Z), 0.1, 0.1, CAFE, sides=6, cap_b=CAFE)
-    rod(cafe, (tx, 0.02, TABLE_Z), (tx, 0.185, TABLE_Z), 0.012, CAFE)
-    tube(cafe, (tx, 0.0, TABLE_Z), (tx, 0.03, TABLE_Z), 0.055, 0.014, CAFE, sides=4)
+    # The top is a hexagon and nothing else: its edge, a centimetre thick at this size, is under
+    # a pixel from anywhere a camera stands.
+    cafe.add([(tx + 0.075 * math.cos(math.pi * k / 3), 0.15, TABLE_Z + 0.075 * math.sin(math.pi * k / 3)) for k in range(6)][::-1],
+             [list(range(6))], CAFE)
+    rod(cafe, (tx, 0.016, TABLE_Z), (tx, 0.15, TABLE_Z), 0.009, CAFE)
+    tube(cafe, (tx, 0.0, TABLE_Z), (tx, 0.022, TABLE_Z), 0.042, 0.011, CAFE, sides=4)
     # The chairs are bent iron, and drawn as it: a seat, a back and four legs that are one quad
     # each, the legs turned corner-wise. Each chair is swung a little towards the wall, so it
     # looks out over its table at the street - and so its back is not edge-on from the front,
     # where a flat back would vanish and leave four legs.
     for a in (math.radians(-25), math.radians(205)):
         o, p = Vector((math.cos(a), 0, math.sin(a))), Vector((-math.sin(a), 0, math.cos(a)))
-        c, SEAT = Vector((tx, 0, TABLE_Z)) + o * 0.19, 0.12
+        c, SEAT = Vector((tx, 0, TABLE_Z)) + o * 0.15, 0.092
         at = lambda do, dp, y=SEAT: c + o * do + p * dp + Vector((0, y, 0))
         ring = lambda r, y, degs: [at(r * math.cos(math.radians(g)), r * math.sin(math.radians(g)), y) for g in degs]
-        cafe.add(ring(0.062, SEAT, range(0, 360, 60))[::-1], [list(range(6))], CAFE)
+        cafe.add(ring(0.048, SEAT, range(0, 360, 60))[::-1], [list(range(6))], CAFE)
         # A bistro chair's back is a hoop round the seat's far side: three quads, so there is
         # no side from which it is edge-on and gone.
         hoop = (-72, -24, 24, 72)
-        cafe.add(ring(0.06, SEAT, hoop) + ring(0.074, SEAT + 0.13, hoop), [[k, k + 1, 5 + k, 4 + k] for k in range(3)], CAFE)
-        for do in (-0.05, 0.05):
-            for dp in (-0.05, 0.05):
+        cafe.add(ring(0.046, SEAT, hoop) + ring(0.058, SEAT + 0.1, hoop), [[k, k + 1, 5 + k, 4 + k] for k in range(3)], CAFE)
+        for do in (-0.038, 0.038):
+            for dp in (-0.038, 0.038):
                 leg = o * do + p * dp
-                strip(cafe, at(do * 1.12, dp * 1.12, 0.0), at(do, dp), 0.014, (-leg.z, 0, leg.x), CAFE)
+                strip(cafe, at(do * 1.12, dp * 1.12, 0.0), at(do, dp), 0.011, (-leg.z, 0, leg.x), CAFE)
     cafe.build()
     TERRACE.append(cafe)
 
 smoke = bpy.data.objects.new('anchor.smoke', None)
-smoke.location = xyz(pot1 + Vector((0, 0.04, 0)))
+smoke.location = xyz(pot1 + Vector((0, 0.02, 0)))
 ASSET.objects.link(smoke)
 door = bpy.data.objects.new('anchor.door', None)
-door.location = xyz((0, 0, ZG + 0.12))
+door.location = xyz((0, 0, ZG + 0.10))
 ASSET.objects.link(door)
 
 # The tallest thing is the chimney pot, and the scene says so rather than a guess at it.

@@ -1,41 +1,49 @@
 """The greengrocer. Rebuild with scripts/blender.mjs --background --python scripts/build-grocer.py.
 
-A narrow shop in a terrace, one of the village-centre shops that share a house style: a rough
-stone ground floor, a jettied upper floor of cream plaster between dark timbers, a very steep
-blue-grey slate roof and a crooked stone chimney. Its roofline is its own: the ridge runs to the
-street, so the whole front is one tall gable - the upper floor, then the top of the gable
-jettied out again over a beam, posts and raking struts up to a collar, an attic window, and a
-little window high in the apex under a king post. The shops beside it turn their ridge the other
-way with a cross-gable over the front; in a street this is the one that stands end-on. On the
-ground floor the painted shopfront, in leaf green: a door in the middle with a lit pane and a
-fanlight, a wide shop window either side of it, and one striped green-and-cream awning over all
-of it. Out front, either side of the door, a trestle of crates - the back row tipped towards
-the street on a riser - full of apples, cabbages, carrots, pears, plums, tomatoes and small
-pumpkins; a heap of pumpkins at one end and sacks of potatoes at the other; strings of garlic
-and onions hung on the door posts; and a sign on an iron bracket at the corner, a green hoop
-with a big pumpkin sitting in it. The market already has an open seed stall, so everything here
-says *shop*: a door, glass, an upper floor somebody lives in, and the produce set out in front.
+A small shop on the square, one of the village-centre shops that share a house style with the
+tavern and the bakery: a stone plinth, cream plaster in warm oak timbers, a jettied upper floor
+and a terracotta roof at the tavern's pitch. Its roofline is its own: the ridge runs to the
+street, so the whole front is one gable - the upper floor, then the top of the gable jettied out
+again over a beam, with posts and raking struts up to a collar, an attic window between them and
+a king post over it. The shops beside it turn their ridge the other way; in a street this is the
+one that stands end-on. On the ground floor the painted shopfront, in leaf green: a door in the
+middle with a lit pane and a fanlight, a wide shop window either side, and one striped
+green-and-cream awning hung from the jetty beam over all of it. Out front, either side of the
+door, a trestle of crates - the back row tipped towards the street on a riser - full of apples,
+cabbages, carrots, pears, plums, tomatoes and small pumpkins; a heap of pumpkins at one end and
+sacks of potatoes at the other; and a sign on an iron arm at the corner, a green hoop with a big
+pumpkin sitting in it. The market already has an open seed stall, so everything here says
+*shop*: a door, glass, an upper floor somebody lives in, and the produce set out in front.
 
-One civic asset, `civic_grocer` (budget 1500), static - nothing in it moves. `anchor.door`
-is at the foot of the door, in the middle of the front, just off the doorstep, where the
-island's paths arrive; `anchor.smoke` is on top of the chimney.
+One civic asset, `civic_grocer` (budget 1500), static - nothing in it moves. `anchor.door` is at
+the foot of the door, in the middle of the front, just off the doorstep, where the island's paths
+arrive; `anchor.smoke` is on top of the chimney pot.
 
-It stands on a 3x3 lot in a terrace, so it is as wide as the lot allows (x -1.40..1.40 for the
-body, the eaves to 1.47, nothing past 1.48) with its neighbours against its party walls, and
-everything out front stays inside z 1.46. The doorway is kept clear from x -0.32 to 0.32: the
-crates stand either side of it, never in front, and each side's display is its own part, so
-that a footprint taken a rectangle per baked part (footprintOf in web/js/buildings.js, with
-merging off) leaves the gap between them open.
+Its size is the village's, not the lot's. It was first built to fill its 3x3 lot like a terrace
+house, 2.8 wide and 3.3 tall, and on the island it stood twice the size of the tavern (1.80 x
+1.57 x 1.69) and the bakery beside it - the houses are 1.0-1.2 wide and 1.1-1.9 tall. So the body
+is x -0.84..0.84, z -0.52..0.82, eaves at 0.93, ridge at 1.64 (40 degrees, the tavern's roof
+rises 0.57 over 0.62), chimney pot at 1.80; it stands towards the street on its lot, and nothing
+on the pavement passes z 1.21 or |x| 1.0. A door is 0.28 x 0.46 and a window about 0.2 across,
+the tavern's and the bakery's scale, which is what makes the three read as one street.
 
-Everything is coarse on purpose. The shell is outer faces only - nobody sees inside a shop
-whose windows are dark glass - and a timber, a sill or a glazing bar has only the faces that
-face the street, so the triangles go where the eye goes: the produce. A fruit is a dome of
-thirteen triangles half sunk in a crate whose lid is painted the same produce a shade darker,
-so three fruit on top read as a crate full; the pumpkins that have to read on their own get a
-shoulder and a dimple.
+The doorway is kept clear from x -0.30 to 0.30: the crates stand either side of it, never in
+front, and each side's display is its own part, so that a footprint taken a rectangle per baked
+part (footprintOf in web/js/buildings.js, with merging off) leaves the gap between them open.
+The same footprint counts every vertex below WALK_CLEARANCE (0.55), so the awning and the sign,
+which reach out over the pavement, keep every corner above 0.556: one dipping lower would stand
+a rectangle across the doorway at the awning's front edge.
 
-Plaster takes the wall sheet, the slates the roof sheet, the stone the stone sheet and the
-timber the plank sheets, so the island's own textures draw the courses and the boards.
+Everything is coarse on purpose. The shell is outer faces only - nobody sees inside a shop whose
+windows are dark glass - and a timber, a sill or a glazing bar has only the faces that face the
+street, so the triangles go where the eye goes: the produce. A fruit is a dome of ten triangles
+half sunk in a crate whose lid is painted the same produce a shade darker, so three fruit on top
+read as a crate full; the pumpkins that have to read on their own get a shoulder and a dimple.
+What stopped reading at this size went: the strings of garlic and onions on the door posts, the
+little window in the apex, the second chimney pot, the loose potatoes on the sack.
+
+Plaster takes the wall sheet, the tiles the roof sheet, the stone the stone sheet and the timber
+the plank sheets, so the island's own textures draw the courses and the boards.
 Written in island coordinates (x right, y up, z to the front) through xyz().
 """
 import bpy
@@ -66,13 +74,16 @@ def material(sheet, name, color, emissive=False):
     return m
 
 
-PLASTER = material('wall', 'grocer plaster', 0xefe4ca)
-TIMBER = material('plank', 'grocer timber', 0x4a3222)
-TIMBER_Z = material('plankZ', 'grocer timber', 0x4a3222)
-SLATE = material('roof', 'grocer slate', 0x455064)
-STONE = material('stone', 'grocer stone', 0x928b80)
-PIER = material('stone', 'grocer pier', 0xa39b8e)
-CHIMNEY = material('stone', 'grocer chimney', 0x837b72)
+# The tavern's palette (scripts/build-tavern.py): its cream plaster, its terracotta and the lighter
+# ridge course, warm oak rather than near-black, its brick chimney and its warm footing stone.
+PLASTER = material('wall', 'grocer plaster', 0xe8d4ad)
+TIMBER = material('plank', 'grocer timber', 0x6a4426)
+TIMBER_Z = material('plankZ', 'grocer timber', 0x6a4426)
+TILES = material('roof', 'grocer tiles', 0xb8552f)
+RIDGE_TILES = material('roof', 'grocer ridge tiles', 0xc76b3d)
+STONE = material('stone', 'grocer stone', 0x968778)
+PIER = material('stone', 'grocer pier', 0x8f8c86)
+BRICK = material('stone', 'grocer chimney', 0x9c5a44)
 GREEN = material('plank', 'grocer leaf green', 0x4ea93d)
 DOOR = material('plank', 'grocer door', 0x2f7a2c)
 CREAM = material('plain', 'grocer cream', 0xf2e9cf)
@@ -102,9 +113,6 @@ FILL = {m: material('plain', m.name.split(':', 1)[1] + ' heap', c) for m, c in (
     (APPLE, 0x9c2219), (GREEN_APPLE, 0x6e9828), (CABBAGE, 0x467e2c), (CARROT, 0xb4600f),
     (PEAR, 0xaa9528), (PLUM, 0x45224b), (TOMATO, 0xa3301b), (PUMPKIN, 0xa95212))}
 SACK = material('plain', 'grocer sack', 0xcdb384)
-GARLIC = material('plain', 'grocer garlic', 0xf1e8d6)
-ONION = material('plain', 'grocer onion', 0xc5813a)
-CORD = material('plain', 'grocer cord', 0x8a7350)
 
 
 class Part:
@@ -195,8 +203,13 @@ def pane(part, x0, x1, y0, y1, z, mat):
     quad(part, [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)], mat)
 
 
+def side_pane(part, x, z0, z1, y0, y1, mat, f):
+    """A pane on a side wall at x, facing f (-1 left, 1 right)."""
+    quad(part, [(x, y0, z0), (x, y0, z1), (x, y1, z1), (x, y1, z0)], mat, facing=(f, 0, 0))
+
+
 def lump(part, c, r, h, mat, n=5, turn=0.0, low=None, squash=1.0):
-    """A fruit: a ring of n corners with a point above and a flatter one below."""
+    """A potato: a ring of n corners with a point above and a flatter one below."""
     cx, cy, cz = c
     low = h * 0.7 if low is None else low
     ring = [(cx + r * math.cos(turn + 2 * math.pi * i / n), cy, cz + r * squash * math.sin(turn + 2 * math.pi * i / n)) for i in range(n)]
@@ -217,7 +230,7 @@ def dome(part, c, r, h, mat, n=5, turn=0.0):
 
 
 def gourd(part, c, r, h, mat, n=6, turn=0.0):
-    """A pumpkin: two ribbed rings between a dimpled top and a flat-ish bottom."""
+    """A cabbage, a small pumpkin: two ribbed rings between a top and a flat-ish bottom."""
     cx, cy, cz = c
     rings = [(-0.3 * h, 0.92), (0.14 * h, 1.0)]
     pts = []
@@ -283,21 +296,24 @@ ASSET = bpy.data.collections.new('civic_grocer')
 bpy.context.scene.collection.children.link(ASSET)
 
 # ---- the measurements ---------------------------------------------------------------------
-X0, X1 = -1.40, 1.40          # the party walls; the neighbours stand against these
-ZB = -1.30                     # the back wall
-ZF = 1.00                      # the ground floor's front
-ZU = 1.10                      # the upper floor's front, jettied out over it
-G = 0.80                       # the first floor, where the jetty beam runs
-EAVES, RIDGE = 1.36, 3.0       # low eaves on the party walls and the ridge running to the street:
-SLOPE = (RIDGE - EAVES) / X1   # a pitch of 49.5 degrees, and the whole front is one gable
-UP = 1.69                      # where the top of the gable is jettied out again
-ZG = ZU + 0.07                 # the face of that top part
-RT = 0.05                      # slate thickness
-# How far the eaves reach past the party walls. Little, because a pitch's outer end is square to
-# the slates, so its top corner stands 0.04 further out than its foot, and 1.48 is the lot.
-XR = 1.43
-GF, GB = ZG + 0.12, ZB - 0.12  # the roof's front and back edges, past the gables
-COLLAR = 2.30                  # the collar across the top of the gable
+X0, X1 = -0.84, 0.84          # the side walls
+ZB = -0.52                     # the back wall
+ZF = 0.78                      # the ground floor's front
+ZU = 0.82                      # the upper floor's front, jettied out over it
+PL = 0.14                      # the stone plinth, as high as the tavern's
+G = 0.64                       # the first floor, where the jetty beam runs
+GB_H = 0.045                   # that beam's height
+# Eaves on the side walls and the ridge running to the street: a pitch of 40 degrees, and the whole
+# front is one gable. A little lower than the apothecary's 44, because this is the one shop that
+# shows the street its full height: at 1.70 it stood over the tavern beside it.
+EAVES, RIDGE = 0.93, 1.64
+SLOPE = (RIDGE - EAVES) / X1
+UP = 1.02                      # where the top of the gable is jettied out again
+ZG = ZU + 0.035                # the face of that top part
+RT = 0.04                      # tile thickness
+XR = 0.94                      # how far the eaves reach past the side walls: the tavern's 0.1
+GF, GB = ZG + 0.1, ZB - 0.1    # the roof's front and back edges, past the gables
+COLLAR = 1.34                  # the collar across the top of the gable
 
 
 def half(y):
@@ -308,11 +324,21 @@ def half(y):
 # ---- the shell: outer faces only ----------------------------------------------------------
 house = Part(ASSET, 'house')
 for x, f in ((X0, -1), (X1, 1)):
-    quad(house, [(x, 0, ZB), (x, 0, ZF), (x, G, ZF), (x, G, ZB)], STONE, facing=(f, 0, 0))
+    quad(house, [(x, 0, ZB), (x, 0, ZF), (x, PL, ZF), (x, PL, ZB)], STONE, facing=(f, 0, 0))
+    quad(house, [(x, PL, ZB), (x, PL, ZF), (x, G, ZF), (x, G, ZB)], PLASTER, facing=(f, 0, 0))
     quad(house, [(x, G, ZB), (x, G, ZU), (x, EAVES, ZU), (x, EAVES, ZB)], PLASTER, facing=(f, 0, 0))
-quad(house, [(X0, 0, ZB), (X1, 0, ZB), (X1, G, ZB), (X0, G, ZB)], STONE, facing=(0, 0, -1))
-house.add([(X0, G, ZB), (X1, G, ZB), (X1, EAVES, ZB), (0, RIDGE, ZB), (X0, EAVES, ZB)], [[0, 1, 2, 3, 4]],
+    # A small window upstairs in each side, flat: the sides are seen across the square, but the
+    # front is what the shop is.
+    side_pane(house, x + f * 0.002, 0.02, 0.22, 0.7, 0.87, GLASS, f)
+    side_pane(house, x + f * 0.004, 0.05, 0.19, 0.73, 0.84, GLOW, f)
+quad(house, [(X0, 0, ZB), (X1, 0, ZB), (X1, PL, ZB), (X0, PL, ZB)], STONE, facing=(0, 0, -1))
+house.add([(X0, PL, ZB), (X1, PL, ZB), (X1, EAVES, ZB), (0, RIDGE, ZB), (X0, EAVES, ZB)], [[0, 1, 2, 3, 4]],
           PLASTER, facing=(0, 0, -1))
+# At the back, over the yard: a window up in the gable, one downstairs, and a door.
+for (x0, x1, y0, y1), dz, mat in (((-0.1, 0.1, 1.0, 1.18), 0.002, GLASS), ((-0.075, 0.075, 1.025, 1.155), 0.004, GLOW),
+                                  ((-0.6, -0.42, 0.3, 0.48), 0.002, GLASS), ((-0.575, -0.445, 0.325, 0.455), 0.004, GLOW),
+                                  ((0.34, 0.56, 0.03, 0.47), 0.002, DOOR)):
+    quad(house, [(x0, y0, ZB - dz), (x1, y0, ZB - dz), (x1, y1, ZB - dz), (x0, y1, ZB - dz)], mat, facing=(0, 0, -1))
 pane(house, X0, X1, 0, G, ZF, STONE)
 # The front gable in two: the upper floor, and the top jettied out over it on a beam of its own.
 house.add([(X0, G, ZU), (X1, G, ZU), (X1, EAVES, ZU), (half(UP), UP, ZU), (-half(UP), UP, ZU), (X0, EAVES, ZU)],
@@ -320,40 +346,48 @@ house.add([(X0, G, ZU), (X1, G, ZU), (X1, EAVES, ZU), (half(UP), UP, ZU), (-half
 house.add([(-half(UP), UP, ZG), (half(UP), UP, ZG), (0, RIDGE, ZG)], [[0, 1, 2]], PLASTER, facing=(0, 0, 1))
 # The stone piers at the corners of the shopfront, a little proud of it.
 for s in (-1, 1):
-    box(house, (s * 1.33, G / 2, ZF + 0.025), (0.14, G, 0.05), PIER, skip=('back', 'bottom', 'top'))
+    box(house, (s * 0.8, G / 2, ZF + 0.015), (0.08, G, 0.03), PIER, skip=('back', 'bottom', 'top'))
 # A doorstep.
-box(house, (0, 0.02, ZF + 0.06), (0.46, 0.04, 0.12), STONE, skip=('back', 'bottom'))
+box(house, (0, 0.015, ZF + 0.04), (0.36, 0.03, 0.08), STONE, skip=('back', 'bottom'))
 house.build()
 
-# ---- the timber frame of the upper floor ---------------------------------------------------
+# ---- the timber frame -----------------------------------------------------------------------
 frame = Part(ASSET, 'frame')
-# The jetty beam the upper floor stands out on, a rail under its windows, a post at each corner,
-# and two either side of the middle window, up to the beam the top of the gable stands out on.
-box(frame, (0, G + 0.035, ZF + 0.07), (2.84, 0.07, 0.15), TIMBER, skip=('back',))
-wall(frame, X0 + 0.05, X1 - 0.05, 0.99, 1.025, ZU, TIMBER, faces=('front', 'top'))
-for x in (-1.375, 1.375):
-    box(frame, (x, (G + 0.07 + EAVES) / 2, ZU + 0.002), (0.06, EAVES - G - 0.07, 0.07), TIMBER, only=('front', 'left', 'right'))
-for x in (-0.52, 0.52):
-    wall(frame, x - 0.025, x + 0.025, G + 0.07, UP - 0.07, ZU, TIMBER, t=0.036, faces=('front', 'left', 'right'))
-# No wider than the gable is at its top, or its ends come up through the slates.
-box(frame, (0, UP - 0.035, (ZU + ZG) / 2 + 0.005), (2 * half(UP) - 0.02, 0.07, ZG - ZU + 0.06), TIMBER, skip=('back',))
-# Along the party walls, which only show at the end of a terrace: the plate under the eaves and
-# the floor line where the stone stops.
+# The jetty beam the upper floor stands out on, a post at each corner and two either side of the
+# middle window, up to the beam the top of the gable stands out on.
+box(frame, (0, G + GB_H / 2, (ZF + ZU + 0.02) / 2), (2 * X1 + 0.03, GB_H, ZU + 0.02 - ZF), TIMBER, skip=('back',))
+for x in (-0.815, 0.815):
+    box(frame, (x, (G + GB_H + EAVES) / 2, ZU + 0.015), (0.05, EAVES - G - GB_H, 0.03), TIMBER, only=('front', 'left', 'right'))
+for x in (-0.31, 0.31):
+    wall(frame, x - 0.02, x + 0.02, G + GB_H, UP - 0.04, ZU, TIMBER, t=0.025, faces=('front', 'left', 'right'))
+# No wider than the gable is at its top, or its ends come up through the tiles.
+box(frame, (0, UP - 0.02, (ZU + ZG) / 2 + 0.005), (2 * half(UP) - 0.02, 0.04, ZG - ZU + 0.04), TIMBER, skip=('back',))
+# Along the sides: the plate under the eaves, the floor line, a post at the back corner and one
+# in the middle, as the tavern's sides have.
 for s in (-1, 1):
-    x = s * (X1 + 0.015)
-    box(frame, (x, EAVES - 0.02, (ZB + ZU) / 2), (0.03, 0.04, ZU - ZB), TIMBER_Z, only=('left', 'right', 'bottom'))
-    box(frame, (x, G + 0.02, (ZB + ZU) / 2), (0.03, 0.04, ZU - ZB), TIMBER_Z, only=('left', 'right', 'top'))
+    x, out = s * (X1 + 0.012), 'right' if s > 0 else 'left'     # the face away from the wall
+    box(frame, (x, EAVES - 0.02, (ZB + ZU) / 2), (0.024, 0.04, ZU - ZB), TIMBER_Z, only=(out, 'bottom'))
+    box(frame, (x, G + 0.02, (ZB + ZU) / 2), (0.024, 0.04, ZU - ZB), TIMBER_Z, only=(out, 'top', 'bottom'))
+    box(frame, (x, (PL + EAVES) / 2, 0.36), (0.024, EAVES - PL, 0.045), TIMBER, only=(out, 'front', 'back'))
+    # The back corner post stands proud of both walls, so one post shows on the side and the back.
+    box(frame, (s * (X1 - 0.015), (PL + EAVES) / 2, ZB + 0.015), (0.054, EAVES - PL, 0.054), TIMBER, only=(out, 'back'))
+# Across the back: the floor line, a tie beam at the eaves and two posts, so the back is framed
+# like the tavern's rather than a blank gable - it is what the road behind the square sees.
+box(frame, (0, G + 0.02, ZB - 0.012), (2 * X1, 0.04, 0.024), TIMBER, only=('back', 'top', 'bottom'))
+box(frame, (0, EAVES - 0.02, ZB - 0.012), (2 * X1, 0.04, 0.024), TIMBER, only=('back', 'top', 'bottom'))
+for x in (-0.3, 0.26):
+    box(frame, (x, (PL + EAVES - 0.04) / 2, ZB - 0.01), (0.04, EAVES - 0.04 - PL, 0.02), TIMBER, only=('back', 'left', 'right'))
 # The top of the gable: two posts either side of the attic window up to a collar, raking struts
-# from the ends of the beam to the collar, and a king post over the little window in the apex.
-for x in (-0.3, 0.3):
-    wall(frame, x - 0.025, x + 0.025, UP, COLLAR, ZG, TIMBER, t=0.03, faces=('front', 'left', 'right'))
-wall(frame, -half(COLLAR + 0.035) + 0.02, half(COLLAR + 0.035) - 0.02, COLLAR, COLLAR + 0.035, ZG, TIMBER,
-     t=0.034, faces=('front', 'top', 'bottom'))
-wall(frame, -0.02, 0.02, 2.66, 2.9, ZG, TIMBER, t=0.03, faces=('front', 'left', 'right'))
+# from the ends of the beam to the collar, and a king post from the collar to the ridge.
+for x in (-0.17, 0.17):
+    wall(frame, x - 0.02, x + 0.02, UP, COLLAR, ZG, TIMBER, t=0.025, faces=('front', 'left', 'right'))
+wall(frame, -half(COLLAR + 0.03) + 0.015, half(COLLAR + 0.03) - 0.015, COLLAR, COLLAR + 0.03, ZG, TIMBER,
+     t=0.028, faces=('front', 'top', 'bottom'))
+wall(frame, -0.018, 0.018, COLLAR + 0.03, RIDGE - 0.1, ZG, TIMBER, t=0.025, faces=('front', 'left', 'right'))
 for s in (-1, 1):
     # a strut in the plane of the gable: its local x is the depth, and it runs inwards, so the
     # side against the plaster is 'left' on the right and 'right' on the left
-    beam(frame, (s * 0.98, UP + 0.005, ZG + 0.015), (s * 0.33, COLLAR, ZG + 0.015), 0.035, 0.03, TIMBER,
+    beam(frame, (s * 0.66, UP + 0.005, ZG + 0.0125), (s * 0.2, COLLAR, ZG + 0.0125), 0.03, 0.025, TIMBER,
          skip=('back', 'left' if s > 0 else 'right'))
 frame.build()
 
@@ -364,124 +398,123 @@ upstairs = Part(ASSET, 'windows')
 def window(part, x, y0, y1, w, lights=2, shutters=False, z=ZU):
     """Dark glass with a smaller lit pane just in front of it, glazing bars over both and a sill."""
     pane(part, x - w / 2, x + w / 2, y0, y1, z + 0.004, GLASS)
-    pane(part, x - w / 2 + 0.035, x + w / 2 - 0.035, y0 + 0.035, y1 - 0.035, z + 0.008, GLOW)
+    pane(part, x - w / 2 + 0.03, x + w / 2 - 0.03, y0 + 0.03, y1 - 0.03, z + 0.008, GLOW)
     for k in range(1, lights):
         bx = x - w / 2 + w * k / lights
-        wall(part, bx - 0.012, bx + 0.012, y0, y1, z + 0.008, TIMBER, t=0.012, faces=('front',))
+        wall(part, bx - 0.01, bx + 0.01, y0, y1, z + 0.008, TIMBER, t=0.01, faces=('front',))
     ty = y0 + (y1 - y0) * 0.58
-    wall(part, x - w / 2, x + w / 2, ty - 0.012, ty + 0.012, z + 0.008, TIMBER, t=0.016, faces=('front', 'top'))
-    wall(part, x - w / 2 - 0.02, x + w / 2 + 0.02, y1, y1 + 0.03, z, TIMBER, t=0.025, faces=('front', 'top'))
-    box(part, (x, y0 - 0.015, z + 0.03), (w + 0.08, 0.03, 0.06), TIMBER, only=('front', 'top'))
+    wall(part, x - w / 2, x + w / 2, ty - 0.01, ty + 0.01, z + 0.008, TIMBER, t=0.012, faces=('front', 'top'))
+    wall(part, x - w / 2 - 0.015, x + w / 2 + 0.015, y1, y1 + 0.025, z, TIMBER, t=0.02, faces=('front', 'top'))
+    box(part, (x, y0 - 0.012, z + 0.025), (w + 0.06, 0.024, 0.05), TIMBER, only=('front', 'top'))
     if shutters:
         for s in (-1, 1):
-            sx = x + s * (w / 2 + 0.035 + 0.075)
-            wall(part, sx - 0.075, sx + 0.075, y0 - 0.005, y1 + 0.01, z, GREEN, t=0.018, faces=('front', 'left', 'right'))
-            wall(part, sx - 0.06, sx + 0.06, (y0 + y1) / 2 - 0.01, (y0 + y1) / 2 + 0.01, z + 0.018, CREAM, t=0.006, faces=('front',))
+            sx = x + s * (w / 2 + 0.025 + 0.045)
+            wall(part, sx - 0.045, sx + 0.045, y0 - 0.005, y1 + 0.005, z, GREEN, t=0.014, faces=('front', 'left', 'right'))
 
 
 for s in (-1, 1):
-    window(upstairs, s * 0.9, 1.06, 1.44, 0.3, lights=2, shutters=True)
-window(upstairs, 0, 1.06, 1.44, 0.46, lights=3)
-window(upstairs, 0, 1.86, 2.18, 0.4, lights=2, z=ZG)
-# and the little one high up in the apex
-pane(upstairs, -0.07, 0.07, 2.44, 2.6, ZG + 0.004, GLASS)
-pane(upstairs, -0.045, 0.045, 2.465, 2.575, ZG + 0.008, GLOW)
-wall(upstairs, -0.09, 0.09, 2.6, 2.63, ZG, TIMBER, t=0.025, faces=('front', 'top'))
-box(upstairs, (0, 2.425, ZG + 0.025), (0.19, 0.03, 0.05), TIMBER, only=('front', 'top'))
+    window(upstairs, s * 0.56, 0.73, 0.91, 0.18, lights=2, shutters=True)
+window(upstairs, 0, 0.73, 0.91, 0.26, lights=3)
+window(upstairs, 0, 1.1, 1.27, 0.22, lights=2, z=ZG)
 upstairs.build()
 
 # ---- the shopfront ---------------------------------------------------------------------------
 shop = Part(ASSET, 'shopfront')
-TOP = 0.755                    # the fascia's top, under the awning's roller
-for x0, x1 in ((-1.26, -1.19), (-0.30, -0.16), (0.16, 0.30), (1.19, 1.26)):
-    wall(shop, x0, x1, 0, TOP, ZF, GREEN, t=0.045, faces=('front', 'left', 'right'))
-wall(shop, -1.26, 1.26, 0.70, TOP, ZF, GREEN, t=0.055, faces=('front', 'bottom'))
+TOP = 0.605                    # the fascia's top, under the jetty beam's awning
+for x0, x1 in ((-0.755, -0.7), (-0.2, -0.14), (0.14, 0.2), (0.7, 0.755)):
+    wall(shop, x0, x1, 0, TOP, ZF, GREEN, t=0.035, faces=('front', 'left', 'right'))
+wall(shop, -0.755, 0.755, 0.55, TOP, ZF, GREEN, t=0.04, faces=('front', 'bottom'))
 for s in (-1, 1):
-    a, b = sorted((s * 0.30, s * 1.19))
-    wall(shop, a, b, 0, 0.215, ZF, GREEN, t=0.03, faces=('front',))
-    box(shop, ((a + b) / 2, 0.23, ZF + 0.035), (b - a + 0.02, 0.03, 0.07), CREAM, only=('front', 'top'))
-    pane(shop, a, b, 0.245, 0.70, ZF + 0.003, GLASS)
-    pane(shop, a + 0.05, b - 0.05, 0.28, 0.665, ZF + 0.006, GLOW)
+    a, b = sorted((s * 0.2, s * 0.7))
+    wall(shop, a, b, 0, 0.13, ZF, GREEN, t=0.022, faces=('front',))
+    box(shop, ((a + b) / 2, 0.14, ZF + 0.025), (b - a + 0.016, 0.02, 0.05), CREAM, only=('front', 'top'))
+    pane(shop, a, b, 0.15, 0.55, ZF + 0.003, GLASS)
+    pane(shop, a + 0.035, b - 0.035, 0.175, 0.525, ZF + 0.006, GLOW)
     for bx in (a + (b - a) / 3, a + 2 * (b - a) / 3):
-        wall(shop, bx - 0.014, bx + 0.014, 0.245, 0.70, ZF + 0.006, GREEN, t=0.014, faces=('front',))
-    wall(shop, a, b, 0.575, 0.6, ZF + 0.006, GREEN, t=0.018, faces=('front', 'top'))
+        wall(shop, bx - 0.011, bx + 0.011, 0.15, 0.55, ZF + 0.006, GREEN, t=0.012, faces=('front',))
+    wall(shop, a, b, 0.445, 0.465, ZF + 0.006, GREEN, t=0.014, faces=('front', 'top'))
 # The door: a darker green leaf with a lit pane, a brass knob, and a fanlight over it.
-wall(shop, -0.16, 0.16, 0.04, 0.64, ZF, DOOR, t=0.02, faces=('front',))
-pane(shop, -0.09, 0.09, 0.42, 0.585, ZF + 0.021, GLASS)
-pane(shop, -0.07, 0.07, 0.435, 0.57, ZF + 0.024, GLOW)
-wall(shop, -0.16, 0.16, 0.225, 0.245, ZF + 0.02, GREEN, t=0.008, faces=('front', 'top'))
-box(shop, (0.11, 0.32, ZF + 0.03), (0.025, 0.025, 0.02), BRASS, skip=('back',))
-wall(shop, -0.16, 0.16, 0.64, 0.655, ZF, GREEN, t=0.035, faces=('front', 'top', 'bottom'))
-pane(shop, -0.15, 0.15, 0.655, 0.70, ZF + 0.004, GLASS)
-pane(shop, -0.13, 0.13, 0.665, 0.692, ZF + 0.007, GLOW)
+wall(shop, -0.14, 0.14, 0.03, 0.49, ZF, DOOR, t=0.016, faces=('front',))
+pane(shop, -0.075, 0.075, 0.32, 0.45, ZF + 0.017, GLASS)
+pane(shop, -0.055, 0.055, 0.335, 0.435, ZF + 0.02, GLOW)
+wall(shop, -0.14, 0.14, 0.17, 0.188, ZF + 0.016, GREEN, t=0.007, faces=('front', 'top'))
+box(shop, (0.095, 0.25, ZF + 0.025), (0.022, 0.022, 0.018), BRASS, skip=('back',))
+wall(shop, -0.14, 0.14, 0.49, 0.505, ZF, GREEN, t=0.028, faces=('front', 'top', 'bottom'))
+pane(shop, -0.13, 0.13, 0.505, 0.55, ZF + 0.004, GLASS)
+pane(shop, -0.11, 0.11, 0.513, 0.542, ZF + 0.007, GLOW)
 shop.build()
 
 # ---- the awning --------------------------------------------------------------------------------
-# Fourteen strips, alternately green and cream, from a roller box under the jetty beam down to a
-# scalloped valance - each strip its own slanted slab, so the stripes are geometry and not paint.
+# Twelve strips, alternately green and cream, from a roller on the face of the jetty beam down to
+# a scalloped valance - each strip its own slanted slab, so the stripes are geometry and not
+# paint. Hung from the beam rather than under it, so it has a fall and still clears 0.55 at its
+# lowest scallop (see the docstring).
 awning = Part(ASSET, 'awning')
-box(awning, (0, 0.775, ZF + 0.04), (2.54, 0.045, 0.08), TRESTLE, skip=('back',))
-A0, A1 = (0.785, ZF + 0.07), (0.655, 1.43)      # (y, z) of its top edge at the wall and at the front
-VAL = 0.045
-N = 14
+AX = 0.755
+box(awning, (0, G + 0.02, ZU + 0.035), (2 * AX + 0.02, 0.035, 0.03), TRESTLE, skip=('back',))
+A0, A1 = (G + 0.035, ZU + 0.05), (0.6, 1.07)      # (y, z) of its top edge at the beam and at the front
+VAL = 0.028
+N = 12
 for i in range(N):
-    x0, x1 = -1.26 + 2.52 * i / N, -1.26 + 2.52 * (i + 1) / N
+    x0, x1 = -AX + 2 * AX * i / N, -AX + 2 * AX * (i + 1) / N
     m = AWN_A if i % 2 == 0 else AWN_B
     quad(awning, [(x0, A0[0], A0[1]), (x1, A0[0], A0[1]), (x1, A1[0], A1[1]), (x0, A1[0], A1[1])], m, facing=(0, 1, 0.4))
     xm = (x0 + x1) / 2
-    awning.add([(x0, A1[0], A1[1]), (x1, A1[0], A1[1]), (x1, A1[0] - VAL, A1[1]), (xm, A1[0] - VAL - 0.028, A1[1]), (x0, A1[0] - VAL, A1[1])],
+    awning.add([(x0, A1[0], A1[1]), (x1, A1[0], A1[1]), (x1, A1[0] - VAL, A1[1]), (xm, A1[0] - VAL - 0.014, A1[1]), (x0, A1[0] - VAL, A1[1])],
                [[0, 1, 2, 3, 4]], m, facing=(0, 0, 1))
 # Its underside is one sheet: only somebody standing under it sees it, and then in its shadow.
-quad(awning, [(-1.26, A0[0] - 0.012, A0[1]), (1.26, A0[0] - 0.012, A0[1]), (1.26, A1[0] - 0.012, A1[1]), (-1.26, A1[0] - 0.012, A1[1])],
+quad(awning, [(-AX, A0[0] - 0.01, A0[1]), (AX, A0[0] - 0.01, A0[1]), (AX, A1[0] - 0.01, A1[1]), (-AX, A1[0] - 0.01, A1[1])],
      AWN_A, facing=(0, -1, -0.4))
 # The two cheeks, so the ends of the awning read as cloth and not as a cut.
-for x, f in ((-1.26, -1), (1.26, 1)):
-    awning.add([(x, A0[0], A0[1]), (x, A1[0], A1[1]), (x, A1[0] - VAL, A1[1]), (x, A0[0] - 0.04, A0[1])], [[0, 1, 2, 3]], AWN_A, facing=(f, 0, 0))
+for x, f in ((-AX, -1), (AX, 1)):
+    awning.add([(x, A0[0], A0[1]), (x, A1[0], A1[1]), (x, A1[0] - VAL, A1[1]), (x, A0[0] - 0.03, A0[1])], [[0, 1, 2, 3]], AWN_A, facing=(f, 0, 0))
 awning.build()
 
 # ---- the roof -------------------------------------------------------------------------------
-# Two pitches from a ridge that runs to the street, each one slab from the ridge to the party
-# wall and from past the back gable to past the front one; barge boards down the front edge,
-# which is the line that makes the whole shop read as one tall gable; an iron finial on top.
+# Two pitches from a ridge that runs to the street, each one slab from the ridge to past the side
+# wall and from past the back gable to past the front one; a ridge course of lighter tiles; barge
+# boards down the front edge, which is the line that makes the whole shop read as one gable; an
+# iron finial on top.
 roof = Part(ASSET, 'roof')
 zc, zl = (GF + GB) / 2, GF - GB
 for s in (-1, 1):
-    beam(roof, (0, RIDGE, zc), (s * XR, RIDGE - XR * SLOPE, zc), zl, RT, SLATE, lift=0.5, skip=('back',))
-box(roof, (0, RIDGE + 0.04, zc), (0.1, 0.05, zl + 0.02), SLATE, skip=('bottom',))
+    beam(roof, (0, RIDGE, zc), (s * XR, RIDGE - XR * SLOPE, zc), zl, RT, TILES, lift=0.5, skip=('back',))
+box(roof, (0, RIDGE + 0.03, zc), (0.09, 0.045, zl + 0.02), RIDGE_TILES, skip=('bottom',))
 for s in (-1, 1):
-    beam(roof, (0, RIDGE + 0.075, GF + 0.012), (s * 1.4, RIDGE - 1.4 * SLOPE + 0.02, GF + 0.012), 0.05, 0.03, TIMBER, skip=('back',))
-cone(roof, (0, RIDGE + 0.07, GF - 0.02), (0, RIDGE + 0.21, GF - 0.02), 0.02, IRON, n=4)
+    beam(roof, (0, RIDGE + 0.055, GF + 0.01), (s * X1, RIDGE - X1 * SLOPE + 0.015, GF + 0.01), 0.045, 0.025, TIMBER, skip=('back',))
+cone(roof, (0, RIDGE + 0.05, GF - 0.02), (0, RIDGE + 0.14, GF - 0.02), 0.016, IRON, n=4)
 roof.build()
 
 # ---- the chimney -----------------------------------------------------------------------------
-# Out of the right-hand pitch towards the back, leaning a little - houses here have settled.
+# Brick, as the tavern's is, out of the right-hand pitch towards the back, leaning a little -
+# houses here have settled.
 chimney = Part(ASSET, 'chimney')
-CX, CZ, LEAN = 0.42, -0.62, 0.06
-C0 = Vector((CX, 2.3, CZ))
-H = 0.9
-tilt = rotation(rz=-LEAN, rx=0.03)
-box(chimney, C0 + tilt @ Vector((0, H / 2, 0)), (0.24, H, 0.24), CHIMNEY, rz=-LEAN, rx=0.03, skip=('bottom',))
+CX, CZ, LEAN = 0.36, -0.22, 0.04
+C0 = Vector((CX, 1.2, CZ))
+H = 0.5
+tilt = rotation(rz=-LEAN, rx=0.02)
+box(chimney, C0 + tilt @ Vector((0, H / 2, 0)), (0.17, H, 0.17), BRICK, rz=-LEAN, rx=0.02, skip=('bottom',))
 CT = C0 + tilt @ Vector((0, H, 0))
-box(chimney, CT + tilt @ Vector((0, 0.025, 0)), (0.3, 0.05, 0.3), CHIMNEY, rz=-LEAN, rx=0.03, skip=('bottom',))
-for dx in (-0.055, 0.055):
-    p = CT + tilt @ Vector((dx, 0.05, 0))
-    frustum(chimney, p, 0.04, 0.032, 0.1, POT, n=5, top=IRON)
+box(chimney, CT + tilt @ Vector((0, 0.018, 0)), (0.21, 0.036, 0.21), PIER, rz=-LEAN, rx=0.02, skip=('bottom',))
+frustum(chimney, CT + tilt @ Vector((0, 0.036, 0)), 0.035, 0.029, 0.065, POT, n=6, top=IRON)
 chimney.build()
 
 # ---- the sign --------------------------------------------------------------------------------
-# An iron arm off the corner post with a round green board hung from it, face to the side as a
-# real hanging sign is; the pumpkin on it is solid and stands out either side, so from the front,
-# where the board is only its edge, what you see hanging there is still a pumpkin.
+# An iron arm off the corner post with a round green hoop hung from it, face to the side as a
+# real hanging sign is; the pumpkin in it is solid and stands out either side, so from the front,
+# where the hoop is only its edge, what you see hanging there is still a pumpkin. It hangs high
+# enough to clear the awning's end and WALK_CLEARANCE both.
 sign = Part(ASSET, 'sign')
-SX, SY, SZ, SR = 1.33, 1.065, 1.285, 0.14
-ARM = 1.24                     # under the eaves, which come down low at the corner
-box(sign, (SX, ARM, (ZU + 1.46) / 2), (0.028, 0.028, 1.46 - ZU), IRON, skip=('back',))
-beam(sign, (SX, 1.34, ZU + 0.02), (SX, ARM + 0.005, 1.33), 0.018, 0.018, IRON)
-for dz in (-0.075, 0.075):
-    box(sign, (SX, (ARM + SY + SR) / 2, SZ + dz), (0.01, ARM - SY - SR, 0.01), IRON, only=('left', 'right'))
+SX, SY, SZ, SR = 0.8, 0.79, 1.02, 0.1
+ARM = 0.915
+ARM_Z = 1.16
+box(sign, (SX, ARM, (ZU + ARM_Z) / 2), (0.022, 0.022, ARM_Z - ZU), IRON, skip=('back',))
+beam(sign, (SX, ARM - 0.12, ZU + 0.015), (SX, ARM - 0.005, ZU + 0.2), 0.015, 0.015, IRON, skip=('back', 'front'))
+for dz in (-0.055, 0.055):
+    box(sign, (SX, (ARM + SY + SR) / 2, SZ + dz), (0.008, ARM - SY - SR, 0.008), IRON, only=('left', 'right'))
 # The sign is an open hoop, not a board: a board through the middle of the pumpkin hid its stalk
 # in the wood and cut it in two halves, one on each face. In a hoop it hangs whole.
-RI, T2 = SR - 0.026, 0.013
+RI, T2 = SR - 0.02, 0.011
 ring = lambda r: [(SY + r * math.sin(2 * math.pi * (i + 0.5) / 8), SZ + r * math.cos(2 * math.pi * (i + 0.5) / 8)) for i in range(8)]
 outer, inner = ring(SR), ring(RI)
 for f in (-1, 1):
@@ -490,108 +523,104 @@ for f in (-1, 1):
 pts = [(SX - T2, y, z) for y, z in outer] + [(SX + T2, y, z) for y, z in outer]
 sign.add(pts, [[i, (i + 1) % 8, 8 + (i + 1) % 8, 8 + i] for i in range(8)], GREEN, centre=(SX, SY, SZ))
 # sitting on the hoop's bottom bar
-pumpkin(sign, (SX, SY - 0.043, SZ), 0.09, 0.12, n=8, turn=0.2)
-box(sign, (SX, SY + 0.022, SZ - 0.005), (0.026, 0.06, 0.026), STALK, rx=-0.3, skip=('bottom',))
+pumpkin(sign, (SX, SY - 0.03, SZ), 0.066, 0.088, n=6, turn=0.2)
+cone(sign, (SX, SY + 0.004, SZ), (SX, SY + 0.05, SZ - 0.014), 0.013, STALK, n=3)
 for f in (1, -1):
-    sign.add([(SX, SY + 0.027, SZ), (SX + 0.05, SY + 0.062, SZ + 0.04), (SX - 0.01, SY + 0.022, SZ + 0.085)], [[0, 1, 2]], LEAF, facing=(0.3, 1, 0) if f > 0 else (-0.3, -1, 0))
+    sign.add([(SX, SY + 0.02, SZ), (SX + 0.038, SY + 0.046, SZ + 0.03), (SX - 0.008, SY + 0.016, SZ + 0.064)], [[0, 1, 2]], LEAF, facing=(0.3, 1, 0) if f > 0 else (-0.3, -1, 0))
 sign.build()
-
-# ---- strings of garlic and onions on the door posts ---------------------------------------------
-for name, s, mat in (('garlic', -1, GARLIC), ('onions', 1, ONION)):
-    string = Part(ASSET, name)
-    x = s * 0.235
-    wall(string, x - 0.004, x + 0.004, 0.38, 0.62, ZF + 0.045, CORD, t=0.004, faces=('front',))
-    for k in range(3):
-        # round at the bottom and drawn to a point at the top, which is what makes it an onion
-        lump(string, (x + (0.012 if k % 2 else -0.012), 0.555 - k * 0.07, ZF + 0.078), 0.034, 0.045, mat, n=5, turn=0.4 * k, low=0.024)
-    string.build()
 
 # ---- the displays either side of the door ---------------------------------------------------------
 # A trestle, a riser at its back, two crates tipped towards the street on the riser and two flat
 # in front. Each side is its own part: one part is one footprint rectangle on the island, and one
 # rectangle over both sides would stand in the doorway.
-ROW = {'back': (1.2, 0.3, 0.35), 'front': (1.36, 0.215, 0.0)}   # z, y of the middle, tilt
-CW, CD, CH = 0.4, 0.16, 0.09
+ROW = {'back': (ZF + 0.12, 0.175, 0.35), 'front': (ZF + 0.225, 0.125, 0.0)}   # z, y of the middle, tilt
+CW, CD, CH = 0.2, 0.1, 0.055
 
 
 def crate(part, x, row, fill, fruit):
     z, y, tilt = ROW[row]
     c = Vector((x, y, z))
     m = rotation(rx=tilt)
-    # A tipped crate has its back against the riser, which nobody sees.
-    box(part, c, (CW, CH, CD), CRATE, rx=tilt, skip=('bottom', 'back') if tilt else ('bottom',), paint={'top': FILL[fill]})
+    # A tipped crate has its back against the riser and a flat one against the tipped one behind
+    # it, and nobody sees either.
+    box(part, c, (CW, CH, CD), CRATE, rx=tilt, skip=('bottom', 'back'), paint={'top': FILL[fill]})
     for lx, lz, kind in fruit:
         # Fruit stand upright on a tipped lid, so they sink a little into it to sit on its low side.
-        at = c + m @ Vector((lx, CH / 2, lz)) - Vector((0, 0.065 * math.tan(tilt), 0))
+        at = c + m @ Vector((lx, CH / 2, lz)) - Vector((0, 0.04 * math.tan(tilt), 0))
         kind(part, at)
 
 
-def fruit(mat, r=0.06, n=5):
-    return lambda part, at: dome(part, (at.x, at.y - 0.004, at.z), r, 0.8 * r, mat, n=n, turn=at.x * 7)
+# Four corners and not five: at 0.036 across a fruit is a dot of colour from anywhere a settler
+# stands, and the fifth corner was a sixth of the whole shop.
+def fruit(mat, r=0.036, n=4):
+    return lambda part, at: dome(part, (at.x, at.y - 0.003, at.z), r, 0.8 * r, mat, n=n, turn=at.x * 7)
 
 
-def leafy(mat, r=0.075):
-    return lambda part, at: gourd(part, (at.x, at.y + 0.45 * r, at.z), r, 1.2 * r, mat, n=6, turn=at.x * 5)
+def leafy(mat, r=0.045):
+    return lambda part, at: gourd(part, (at.x, at.y + 0.45 * r, at.z), r, 1.2 * r, mat, n=5, turn=at.x * 5)
 
 
 def carrots(part, at):
-    for k, (dx, dz) in enumerate(((-0.13, -0.02), (-0.04, 0.02), (0.05, -0.02), (0.14, 0.02))):
-        base = Vector((at.x + dx, at.y + 0.02, at.z - 0.05 + dz))
-        cone(part, base, base + Vector((0.02 * (k - 1.5), -0.01, 0.13)), 0.022, CARROT, n=4, turn=k)
-        cone(part, base, base + Vector((0.01 * (k - 1.5), 0.03, -0.05)), 0.018, LEAF, n=3, turn=k)
+    for k, (dx, dz) in enumerate(((-0.06, -0.012), (0.0, 0.012), (0.06, -0.012))):
+        base = Vector((at.x + dx, at.y + 0.012, at.z - 0.03 + dz))
+        cone(part, base, base + Vector((0.012 * (k - 1), -0.006, 0.08)), 0.014, CARROT, n=4, turn=k)
+        cone(part, base, base + Vector((0.006 * (k - 1), 0.02, -0.03)), 0.012, LEAF, n=3, turn=k)
 
 
-def three(kind, spread=0.13, dz=0.03):
+def three(kind, spread=0.062, dz=0.015):
     return [(-spread, dz, kind), (0.0, -dz, kind), (spread, dz, kind)]
 
 
 for side, s in (('left', -1), ('right', 1)):
     part = Part(ASSET, f'display {side}')
-    xs = sorted((s * 0.36, s * 1.2))
+    xs = sorted((s * 0.3, s * 0.76))
     xm = (xs[0] + xs[1]) / 2
-    box(part, (xm, 0.155, 1.28), (xs[1] - xs[0], 0.03, 0.3), TRESTLE, skip=('bottom', 'back'))
-    for lx in (xs[0] + 0.04, xs[1] - 0.04):
-        box(part, (lx, 0.07, 1.28), (0.03, 0.14, 0.26), TRESTLE, skip=('top', 'bottom', 'back'))
-    box(part, (xm, 0.2, 1.2), (xs[1] - xs[0] - 0.04, 0.06, 0.13), TRESTLE, skip=('bottom', 'back'))
-    inner, outer = s * 0.57, s * 0.99
+    box(part, (xm, 0.09, ZF + 0.17), (xs[1] - xs[0], 0.02, 0.18), TRESTLE, skip=('bottom', 'back'))
+    for lx in (xs[0] + 0.025, xs[1] - 0.025):
+        box(part, (lx, 0.04, ZF + 0.17), (0.02, 0.08, 0.16), TRESTLE, skip=('top', 'bottom', 'back'))
+    box(part, (xm, 0.12, ZF + 0.12), (xs[1] - xs[0] - 0.03, 0.04, 0.08), TRESTLE, skip=('bottom', 'back'))
+    inner, outer = s * 0.41, s * 0.645
     if s < 0:
         crate(part, outer, 'back', APPLE, three(fruit(APPLE)))
-        crate(part, inner, 'back', CABBAGE, [(-0.095, 0.0, leafy(CABBAGE)), (0.095, 0.0, leafy(CABBAGE, 0.07))])
+        crate(part, inner, 'back', CABBAGE, [(-0.048, 0.0, leafy(CABBAGE)), (0.048, 0.0, leafy(CABBAGE, 0.042))])
         crate(part, outer, 'front', CARROT, [(0, 0, carrots)])
-        crate(part, inner, 'front', PEAR, three(fruit(PEAR, 0.055)))
+        crate(part, inner, 'front', PEAR, three(fruit(PEAR, 0.034)))
     else:
         crate(part, inner, 'back', GREEN_APPLE, three(fruit(GREEN_APPLE)))
-        crate(part, outer, 'back', PUMPKIN, [(-0.095, 0.0, leafy(PUMPKIN, 0.075)), (0.095, 0.0, leafy(PUMPKIN, 0.07))])
-        crate(part, inner, 'front', PLUM, three(fruit(PLUM, 0.05)))
-        crate(part, outer, 'front', TOMATO, three(fruit(TOMATO, 0.055)))
+        crate(part, outer, 'back', PUMPKIN, [(-0.048, 0.0, leafy(PUMPKIN, 0.045)), (0.048, 0.0, leafy(PUMPKIN, 0.042))])
+        crate(part, inner, 'front', PLUM, three(fruit(PLUM, 0.031)))
+        crate(part, outer, 'front', TOMATO, three(fruit(TOMATO, 0.034)))
     part.build()
 
 # ---- at the ends: pumpkins on the right, sacks of potatoes on the left ----------------------------
+# One big pumpkin with its shoulder, dimple and stalk, and two small ones leaning on it that are
+# gourd()s, as the crates' are.
 heap = Part(ASSET, 'pumpkins')
-PUMPKINS = (((1.33, 0.065, 1.22), 0.1, 0.13), ((1.37, 0.05, 1.375), 0.075, 0.1), ((1.3, 0.155, 1.32), 0.062, 0.085))
-for i, (c, r, h) in enumerate(PUMPKINS):
-    pumpkin(heap, c, r, h, n=6, turn=0.45 * i)
-    cone(heap, (c[0], c[1] + 0.2 * h, c[2]), (c[0] + 0.012, c[1] + 0.2 * h + 0.055, c[2]), 0.013, STALK, n=3)
+c, r, h = (0.88, 0.04, ZF + 0.14), 0.06, 0.08
+pumpkin(heap, c, r, h, n=6)
+cone(heap, (c[0], c[1] + 0.2 * h, c[2]), (c[0] + 0.008, c[1] + 0.2 * h + 0.035, c[2]), 0.009, STALK, n=3)
+gourd(heap, (0.9, 0.03, ZF + 0.25), 0.046, 0.06, PUMPKIN, n=5, turn=0.45)
+gourd(heap, (0.855, 0.095, ZF + 0.2), 0.04, 0.05, PUMPKIN, n=5, turn=0.9)
 heap.build()
 
+# The open sack's mouth is painted potatoes, which from the square is what a sack of them is.
 sacks = Part(ASSET, 'sacks')
-frustum(sacks, (-1.32, 0, 1.2), 0.09, 0.075, 0.2, SACK, n=6, top=None, squash=0.85)
-cone(sacks, (-1.32, 0.19, 1.2), (-1.315, 0.27, 1.205), 0.07, SACK, n=6)
-frustum(sacks, (-1.33, 0, 1.38), 0.085, 0.08, 0.14, SACK, n=6, top=POTATO, turn=0.5, squash=0.8)
-for dx, dz in ((-0.03, -0.02), (0.03, 0.02)):
-    lump(sacks, (-1.33 + dx, 0.15, 1.38 + dz), 0.035, 0.025, POTATO, n=4, turn=dx * 30, low=0.02)
+frustum(sacks, (-0.88, 0, ZF + 0.14), 0.055, 0.046, 0.12, SACK, n=6, top=None, squash=0.85)
+cone(sacks, (-0.88, 0.114, ZF + 0.14), (-0.877, 0.165, ZF + 0.143), 0.043, SACK, n=6)
+frustum(sacks, (-0.89, 0, ZF + 0.25), 0.052, 0.049, 0.085, SACK, n=6, top=POTATO, turn=0.5, squash=0.8)
+lump(sacks, (-0.89, 0.085, ZF + 0.25), 0.03, 0.02, POTATO, n=4, turn=0.4, low=0.01)
 sacks.build()
 
 # ---- anchors ------------------------------------------------------------------------------------
 smoke = bpy.data.objects.new('anchor.smoke', None)
-smoke.location = xyz(CT + tilt @ Vector((0, 0.16, 0)))
+smoke.location = xyz(CT + tilt @ Vector((0, 0.11, 0)))
 ASSET.objects.link(smoke)
-# At the foot of the door, just off the doorstep (which reaches ZF + 0.12).
+# At the foot of the door, just off the doorstep (which reaches ZF + 0.08).
 door = bpy.data.objects.new('anchor.door', None)
-door.location = xyz((0, 0, ZF + 0.14))
+door.location = xyz((0, 0, ZF + 0.1))
 ASSET.objects.link(door)
 
-# The tallest thing it has, which is the chimney pots.
+# The tallest thing it has, which is the chimney pot.
 top = max((o.matrix_world @ v.co).z for o in ASSET.objects if o.type == 'MESH' for v in o.data.vertices)
 bpy.context.scene['building_height'] = round(top, 3)
 tris = 0

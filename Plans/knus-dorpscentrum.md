@@ -97,8 +97,7 @@ alle kanten dicht op de openingen na: het plein is een ruimte met gevels eromhee
   (`claimForTown`, zoals het kasteel). Het kasteel blijft waar het staat.
 - **Alles op het 3x3-rooster van nu**, dus de planner blijft werken: de nieuwe winkels komen in
   `MOVABLE_CIVICS`, en slepen, draaien en de survey doen wat ze al deden. Smallere gevels (2
-  breed) zouden een tiental aannames over `w === d === 3` breken; dat is het niet waard, en de
-  modellen vullen de breedte van hun kavel, zodat een rij kavels als een rij huizen leest.
+  breed) zouden een tiental aannames over `w === d === 3` breken; dat is het niet waard.
 
 ## Wat er gebouwd wordt, en wanneer
 
@@ -124,12 +123,16 @@ ketelmaker), en de slager meteen mee: zijn werk uit de worktree `slagerij` is ge
 gehaald heeft in één scan. Straatgebruikers zijn er daarmee tien (acht winkels, school,
 watertoren); zes straatkavels blijven over voor later.
 
-**De modellen** volgen één huisstijl, afgekeken van Hogsmeade: stenen begane grond, witte
-pleister met donker vakwerk erboven, een heel steil donker leien dak, een scheve schoorsteen
-(`anchor.smoke`), één sterke kleur per winkelpui, en één herkenbaar ding als uithangbord in
-geometrie (geen letters: gebakken modellen hebben geen textuur). Kavel 3x3, gebouw van x
-−1,40 tot +1,40 zodat buren bijna tegen elkaar staan, voordeur midden op de voorgevel
-(`anchor.door`), hooguit 1500 driehoeken. Eén set per winkel (`scripts/build-<set>.py` →
+**De modellen** volgen de huisstijl van het dorp dat er al stond, met één ding van Hogsmeade
+erbij: stenen voet, crème pleister met eikenhouten vakwerk, een terracotta pannendak op zo'n 45
+graden zoals de herberg en de bakkerij, een scheve schoorsteen (`anchor.smoke`), en per winkel
+één sterke kleur in de pui en één herkenbaar ding als uithangbord in geometrie (geen letters:
+gebakken modellen hebben geen textuur). **Op de maat van het dorp**: zo groot als de herberg
+(1,8 × 1,6 × 1,7), dus 1,6–1,8 breed, 1,2–1,4 diep, nok op 1,5–1,75, naar de straat toe op hun
+kavel, voordeur midden op de voorgevel (`anchor.door`). De eerste versie was Hogsmeade letterlijk
+- donkere leien daken, 2,9 breed en 3,4 hoog, tot de rand van de kavel - en stak twee keer zo
+groot en zwart af tegen de vakwerkhuizen met hun rode daken; de keeper zag het op het eiland en
+dezelfde dag zijn ze op deze maat opnieuw gebakken. Eén set per winkel (`scripts/build-<set>.py` →
 `assets/<set>/` → `web/js/<set>-mesh.js`), gemaakt door parallelle agents; de registratie
 (`models.js`, `buildings.js`, `/demo`, `tests/models.test.mjs`) doe ik in één keer. Geen
 beschermde namen of herkenbare combinaties (geen monogram, geen tweelingtorentjes in roze en
