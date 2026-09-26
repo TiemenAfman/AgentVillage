@@ -606,6 +606,23 @@ feature a few cells across is gone - and world.js paints its bands off `crater.t
 units. A* on it is ~5-10x dearer than on the 128 cone (30-65 ms beach-to-rim, `findPath`'s
 `open.sort`), which the hostility tick's 3 searches per 650 ms pay for.
 
+**Beside it, the starters: the sea's too, but made to be taken** ([Plans/starter-eilanden.md](Plans/starter-eilanden.md)).
+`starterBundle(slot)` (`lib/islandbundle.mjs`) is a 64-island with a square, well, tables,
+tavern and town hall - so an innkeeper and a mayor, no settlers - from the slot number alone;
+`fleet.raiseStarters()` keeps `STARTER.free` (3) unclaimed, berthed with `nextOrigin` after
+the volcano, each holding `STARTER.room` (384, so `reach` 192). On the fleet they are
+`sea: true` + `starter: true`: never swept, `claim`/`patch`/`vouch` refuse them, but unlike the
+volcano they **count against `MAX_ISLANDS`** (`places()`; `players()` stays real islanders
+only). A newcomer's `publish` takes the berth of the first starter it fits in and returns it
+as `island.took`; `lib/sea.mjs` then `retireStarter()`s it (crowd off, walkers on it
+`evicted` to their skiff or square via `health.refuge`, `gone` before the newcomer's
+`joined`) and `topUpStarters()` puts out the next slot - slots are never reused in one run.
+`createSea({ starters })` defaults on; the test helpers default it **off** (`starters: false`
+in `tests/support/sea.mjs` and the sea tests' own `createSea`), because every berth and
+island count in them assumes an empty ring - pass `starters: true` to test them. The fleet
+row carries `reach`, and the phone's `standaloneHome()` lays its open-water berth on it: on
+`gridSize / 2` it put its skiff inside the room a starter holds for its claimer.
+
 **The volcano's lava has bridges, and they are ordinary bridges.** `volcanoBridges()` in
 `shared/volcano.mjs` picks three crossings per flow (apron, mid-cone, high cone) from the
 terrain alone - axis-aligned, exactly over the lava + bank run, landing on plain ground -
@@ -789,6 +806,13 @@ islander socket still holds it — the old line dying after the new one joined u
 live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`; `claimed`
 and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
 back on the next changed scan, gone again.
+
+**And when the islander stops, the island stays for days.** `GRACE_MS` is three days, not
+the 45 s it was: a phone has no island, so a sea with every islander offline was the volcano
+alone. A quiet island is drawn, walked and keeps its crowd; only the sweep takes it. Two
+costs: a ghost holds one of `MAX_ISLANDS`' places until then, and an islander whose token
+changed (lost `data/sea-token.json`, new machine on the same id) is `claimed` for as long -
+a sea restart clears both, since the fleet lives in memory only.
 
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
