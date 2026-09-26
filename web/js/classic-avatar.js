@@ -169,6 +169,21 @@ function hammerGeometry() {
   ], false));
 }
 
+// The butcher's cleaver (web/js/butcher.js, Plans/slagerij.md) - a villager's tool, not a
+// player's: it is deliberately not in HAND_ITEMS (avatar.js), so no inventory slot offers it,
+// normalizeAvatar drops it and the sea's lookOf never has to know it; the butcher is handed it
+// after normalising. Pointing +y out of the fist like every item, with the blade standing
+// forward (+z) of the handle's line: at the strike the swing turns the item about 1.8 rad in
+// all, which puts that forward edge face down on the block.
+const CLEAVER_HANDLE = 0x6b4226, CLEAVER_BLADE = 0xc9ccd1, CLEAVER_BOLSTER = 0x3a3a3f;
+function cleaverGeometry() {
+  return withSheet(mergeGeometries([
+    box(0.02, 0.085, 0.02, CLEAVER_HANDLE, { y: -0.03 }),
+    box(0.016, 0.012, 0.024, CLEAVER_BOLSTER, { y: 0.055 }),
+    box(0.008, 0.085, 0.055, CLEAVER_BLADE, { y: 0.067, z: 0.022 }),
+  ], false));
+}
+
 // The first held item its hand's button drinks from rather than fights with (Plans/
 // bier-en-dronken.md). The pint the barman pulls in the tavern (interior.js pintGeometry),
 // in the same two colours, a little bigger because it is carried rather than stood on a
@@ -198,7 +213,7 @@ function heldPartGeometry(spec, names) {
 // a dozen primitives) that nothing here is worth caching; the baked ones go through
 // heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
 // exported for the inventory's slot icons, which show the item on its own.
-const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry };
+const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry };
 export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD, torch: TORCH };
 
 export function heldItemGeometry(item, spec) {
@@ -289,7 +304,7 @@ export function createClassicAvatar(spec, material) {
   // the counter-rotation takes over again at the end of the recovery. A block is a held pose, so it goes through the same targets and
   // damping as everything else: the shield arm comes up in front, and the shield turns from
   // its resting yaw to a quarter turn so its face points forward.
-  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol']);
+  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol', 'cleaver']);
   let swing = null;   // { side, t, from } while an attack is playing
   const ease = (u) => u * u * (3 - 2 * u);
   // The hand that swings when nobody says which: a weapon if there is one (right first),
