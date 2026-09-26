@@ -261,9 +261,11 @@ span(house, X0 - 0.015, X1 + 0.015, 0, FOOT, ZB - 0.015, ZF, STONE, skip=('botto
 span(house, X0, X1, FOOT, G, ZB, ZF, PLASTER, skip=('bottom', 'top'))
 span(house, X0, X1, G, EAVES, ZB, ZU, PLASTER, skip=('top',))
 # The main roof's two gable ends, on the sides.
+# In this vertex order the normal points towards -x; each end must face outwards
+# because the building material culls back faces.
 for s in (-1, 1):
     pts = [(s * X1, EAVES, ZB), (s * X1, EAVES, ZU), (s * X1, RIDGE, ZM)]
-    house.add(pts, [[0, 1, 2] if s > 0 else [2, 1, 0]], PLASTER)
+    house.add(pts, [[2, 1, 0] if s > 0 else [0, 1, 2]], PLASTER)
 # The two cross gables on the front.
 for gx in (-GX, GX):
     house.add([(gx - GW, EAVES, ZU), (gx + GW, EAVES, ZU), (gx, APEX, ZU)], [[0, 1, 2]], PLASTER)
