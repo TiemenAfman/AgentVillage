@@ -731,6 +731,13 @@ live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`;
 and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
 back on the next changed scan, gone again.
 
+**And when the islander stops, the island stays for days.** `GRACE_MS` is three days, not
+the 45 s it was: a phone has no island, so a sea with every islander offline was the volcano
+alone. A quiet island is drawn, walked and keeps its crowd; only the sweep takes it. Two
+costs: a ghost holds one of `MAX_ISLANDS`' places until then, and an islander whose token
+changed (lost `data/sea-token.json`, new machine on the same id) is `claimed` for as long -
+a sea restart clears both, since the fleet lives in memory only.
+
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
 from the boot-time `/api/hello` — without that, switching mode left the page reconnecting
