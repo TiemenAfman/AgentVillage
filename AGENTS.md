@@ -398,10 +398,16 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
 
-`data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
+`data/` is generated and safe to delete, with these exceptions: `layout.json` (above),
 `garden.json` (the walker's purse and beds — the scanner never touches it) and `mail.json`
 (mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
+
+The animal-story foundation adds `animal-events.jsonl` when explicitly opened. That journal
+is also irreplaceable: animal identities, activity cursors and memories rebuild from it,
+not from transcripts. `animals.json` is its disposable checkpoint. The foundation is not
+yet connected to the live island. See [docs/animal-story-storage.md](docs/animal-story-storage.md)
+for writer ownership, crash recovery and the limits of this first increment.
 
 ## Conventions
 
