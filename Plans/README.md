@@ -102,3 +102,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de
   service starten als die er niet is en hem laten draaien als het venster dichtgaat. Gebouwd op
   22 september 2026.
+- [starter-eilanden.md](starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
+  alleen een plein, een kroeg en een stadhuis (en dus een kroegbaas en een burgemeester), zodat
+  een telefoonspeler altijd iets heeft om naartoe te varen. Een nieuw eiland neemt de ligplaats
+  van de eerste vrije starter over. Plan van 26 september 2026; gebouwd (stap 1–6); de decoratie-eilandjes nog niet.

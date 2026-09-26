@@ -39,7 +39,7 @@ function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm' } = {
 
 // A sea on an ephemeral port, torn down after the body runs whatever happens.
 async function afloat(fn, opts = {}) {
-  const sea = createSea({ port: 0, name: 'test sea', ...opts });
+  const sea = createSea({ port: 0, name: 'test sea', starters: false, ...opts });
   const addr = await sea.listen();
   const base = `http://127.0.0.1:${addr.port}`;
   try {
