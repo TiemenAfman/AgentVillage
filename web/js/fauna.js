@@ -451,6 +451,29 @@ function applyPose(a, x, y, z) {
   for (const j of a.joints) jointEuler(p, j.role, j.index, j.pivot.rotation);
 }
 
+// The brain on its own: the state machine, the seeded rng and the pose, and no Object3D at
+// all. `x`, `y`, `z` and `yaw` are where it is, in the frame its `area` is in, once
+// stepBrain has run; `pose` is what its joints are doing. createAnimal hangs pivots on one
+// of these; web/js/herds.js draws a whole island's worth of them through one instanced
+// batch, which is why the two are apart - forty sheep as forty Groups of pivots would be
+// forty sets of part geometries nobody draws. Not the sparrow, whose two models take turns
+// and whose hops are its own (createSparrow below). The rng draws are taken in exactly the
+// order createAnimal always took them - `left`, `circle`, the first target, the yaw - so an
+// animal made either way walks the same field.
+export function createBrain(kind, { area = { x: 0, z: 0, r: 1 }, seed = kind, ground = () => 0, yaw = 0 } = {}) {
+  const K = KINDS[kind];
+  if (!K || kind === 'sparrow') return null;
+  const rng = makeRng(`fauna:${seed}`);
+  const a = {
+    kind, K, area, ground, rng, x: 0, y: 0, z: 0, yaw,
+    mood: 'still', left: rng.range(...K.still), to: null, time: 0,
+    pose: createPose(kind), flying: !!K.flies, circle: rng.range(0, TAU),
+  };
+  ({ x: a.x, z: a.z } = pickTarget(a));
+  a.yaw = rng.range(-Math.PI, Math.PI);
+  return a;
+}
+
 export function createAnimal(kind, material, { area = { x: 0, z: 0, r: 1 }, seed = kind, ground = () => 0, yaw = 0 } = {}) {
   if (kind === 'sparrow') return createSparrow(material, { area, seed, ground, yaw });
   const asset = `fauna_${kind}`;
@@ -467,14 +490,7 @@ export function createAnimal(kind, material, { area = { x: 0, z: 0, r: 1 }, seed
   const legs = (LEG_NAMES[K.legs] || []).map((_, i) => find('leg', i));
   const wings = [find('wing', 0), find('wing', 1)].filter(Boolean);
 
-  const rng = makeRng(`fauna:${seed}`);
-  const a = {
-    kind, K, object, body, head, tail, legs, wings, joints, geometries, area, ground, rng, x: 0, z: 0, yaw,
-    mood: 'still', left: rng.range(...K.still), to: null, time: 0,
-    pose: createPose(kind), flying: !!K.flies, circle: rng.range(0, TAU),
-  };
-  ({ x: a.x, z: a.z } = pickTarget(a));
-  a.yaw = rng.range(-Math.PI, Math.PI);
+  const a = Object.assign(createBrain(kind, { area, seed, ground, yaw }), { object, body, head, tail, legs, wings, joints, geometries });
   a.update = (dt) => updateAnimal(a, dt);
   a.dispose = () => { object.parent?.remove(object); for (const g of geometries) g.dispose(); };
   updateAnimal(a, 0);
@@ -502,6 +518,14 @@ export function middleOf(area) {
 }
 
 export function updateAnimal(a, dt) {
+  stepBrain(a, dt);
+  applyPose(a, a.x, a.y, a.z);
+}
+
+// One step of the brain: the mood, the walk and the pose, and where that leaves it in
+// `a.x`, `a.y`, `a.z`, `a.yaw`. Nothing drawn - updateAnimal puts it on the pivots,
+// web/js/herds.js into its instances.
+export function stepBrain(a, dt) {
   const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 0;
   a.time += step;
   const K = a.K;
@@ -537,7 +561,7 @@ export function updateAnimal(a, dt) {
   // ---- the pose: the same one the sea's animals are drawn in ------------------------------
   // A walk still turning on the spot is standing, which is what stepPose makes of it anyway.
   stepPose(a.kind, a.pose, { act: a.mood, moving, speed: moving ? K.walk : 0 }, step);
-  applyPose(a, a.x, a.ground(a.x, a.z), a.z);
+  a.y = a.ground(a.x, a.z);
 }
 
 // A gull: circles above its patch on flapping wings, gliding every so often.
@@ -552,7 +576,7 @@ function fly(a, step) {
   // Banked by the same -0.3 it always has been, rather than by what the circle's turn would
   // work out to: this is the gull the model sheet has always shown.
   stepPose(a.kind, a.pose, { act: 'fly', moving: true, speed: a.K.walk, bank: -0.3 }, step);
-  applyPose(a, a.x, a.ground(a.x, a.z) + FLIGHT_Y + 0.15 * Math.sin(t * 0.6), a.z);
+  a.y = a.ground(a.x, a.z) + FLIGHT_Y + 0.15 * Math.sin(t * 0.6);
 }
 
 // ---- the sparrow ----------------------------------------------------------------------------

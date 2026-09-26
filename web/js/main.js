@@ -37,6 +37,7 @@ import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
+import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
@@ -62,6 +63,10 @@ import { attachClock, updateClock, attachResetClock, updateResetClock } from './
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
+// The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
+import { attachStable, updateStable, disposeStable } from './stable.js';
+import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
+import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -2453,6 +2458,16 @@ function animalBatch() {
   if (!state.animalBatch) state.animalBatch = createAnimalBatch(scene, buildingMat);
   return state.animalBatch;
 }
+// ---- the ambient animals (web/js/herds.js, Plans/stal-en-veld.md) -------------------------
+// Not the story animals: sheep and cows on the fields, hens by the huts, ducks on the river,
+// gulls over the quay - nobody's, placed from what every page has for an island and walked
+// by this page alone. One batch of their own for every island (`state.ambientHerds`), a herd
+// per island as `state.ambient` and `g.ambient`, made, updated and disposed beside `homeHerd`
+// and `g.herd`.
+function ambientFor(region, groundAt, fields = null) {
+  if (!state.ambientHerds) state.ambientHerds = createHerds({ scene, material: buildingMat });
+  return state.ambientHerds.forIsland({ region, groundAt, fields });
+}
 // The last `herd` the sea sent for each island. Kept, like the home roster, because a view is
 // made when an island is raised and thrown away when it is dropped or re-berthed, and the sea
 // has no reason to say who the animals are again; their positions come round within two
@@ -2618,6 +2633,7 @@ function dropRegion(id) {
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
     if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
+    if (g.ambient) g.ambient.dispose();
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -2793,6 +2809,8 @@ function raiseGuestIslands() {
       perchAt: perchFinder(() => g.records, region.half, region.origin),
     });
     replayHerd(region.id, g.herd);
+    // And their ambient ones, in their fields off the survey their bundle carries.
+    g.ambient = ambientFor(region, (x, z) => standHeightFor(region)(x, z));
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     const talking = crowdHeld.get(region.id);
@@ -2811,6 +2829,7 @@ function raiseGuestIslands() {
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
     if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
+    if (g.ambient) g.ambient.dispose();
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -3066,6 +3085,17 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
+  // The next two trades, the same way. The stable's horse and hens are scenery out of
+  // web/js/fauna.js moving on their own clock, like the bees - not story animals, which are
+  // the sea's and web/js/animal-view.js's. The bakery brings its oven's light, as the smithy
+  // does, and its baker (web/js/bakery-keeper.js), the smith's kind of passive settler.
+  if (built.animated && built.animated.stable) {
+    rec.stable = attachStable(group, built.animated.stable.at, buildingMat);
+  }
+  if (built.animated && built.animated.bakery) {
+    rec.bakery = attachBakery(group, built.animated.bakery.at, buildingMat);
+    rec.baker = attachBaker(group, built.animated.bakery.at, buildingMat);
+  }
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
   if (mail && built.animated && built.animated.mailflag) {
@@ -3163,6 +3193,9 @@ function disposeRecord(rec) {
   if (rec.goldPile) rec.goldPile.dispose();
   if (rec.sawmill) disposeSawmill(rec.sawmill);
   if (rec.smithy) disposeSmithy(rec.smithy);
+  if (rec.stable) disposeStable(rec.stable);
+  if (rec.bakery) disposeBakery(rec.bakery);
+  if (rec.baker) disposeBaker(rec.baker);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -3355,6 +3388,12 @@ function buildScene(village) {
     perchAt: perchFinder(() => state.byId.values(), state.region.half, [0, 0]),
   });
   replayHerd(state.islandId, state.homeHerd);
+  // And the ambient ones, walked here: on our own fields off this page's survey, and
+  // re-planned by the herd itself whenever state.region's village or terrain is replaced.
+  if (state.ambient) state.ambient.dispose();
+  state.ambient = ambientFor(() => state.region,
+    (x, z) => (homeStand ? homeStand(x, z) : state.region.worldHeight(x, z)),
+    () => (state.world && state.world.workSites ? state.world.workSites().fields : null));
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
@@ -4725,6 +4764,7 @@ function frame(nowMs) {
     // And our animals, on the same ground and the same clock. Hidden while the chronicle
     // is scrubbed back, like everybody else who is here now rather than then.
     if (state.homeHerd) state.homeHerd.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
+    if (state.ambient) state.ambient.update(dt, { showing: live, eye: camera.position });
   }
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
@@ -4786,6 +4826,7 @@ function frame(nowMs) {
     // a quay's planks rather than in the water beside them.
     if (g.crowd) g.crowd.draw(dt, standHeightFor(g.region), nowMs, live);
     if (g.herd) g.herd.draw(dt, standHeightFor(g.region), nowMs, live);
+    if (g.ambient) g.ambient.update(dt, { showing: live, eye: camera.position });
   }
 
 
@@ -5751,6 +5792,9 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
+  if (rec.stable) updateStable(rec.stable, dt);
+  if (rec.bakery) updateBakery(rec.bakery, dt);
+  if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5759,7 +5803,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
-    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill';
+    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill' || rec.spec.civicType === 'bakery';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;

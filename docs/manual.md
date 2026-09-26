@@ -250,6 +250,13 @@ goat, then a sparrow, and in time a second of each - never more than six. Each h
 two or three traits (bold, shy, restless, greedy, vain, …) and a place it likes, and each
 remembers the settlers it has met.
 
+The rest are scenery, and there are more of them: sheep or cows in a fenced field of each
+hamlet, a few hens scratching in front of one hut in three, ducks on the lake and the river,
+and gulls circling off every quay - up to forty on an island, fewer on one with less to keep
+them. They have no names and nobody remembers them. Every screen puts the same flock in the
+same field, but how they wander about in it is each screen's own; they cannot be clicked, and
+they are not drawn while you scrub the chronicle back or from far away.
+
 The first hen turns up the first time you have the island open while somebody is at work,
 somewhere near that settler's house. The others follow a day or so apart, once the ones
 before them have had a few encounters.
@@ -920,7 +927,10 @@ with no shallows to reclaim.
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, statue, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, bakery, statue, stable, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75 and 100 settlers |
+| A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the trades' own people, who work by day and go indoors at night |
+| A horse in a paddock and two hens by the stall doors | The stable's animals, scenery rather than somebody — not the named animals with a story (see [The animals](#the-animals)) |
+| Sheep or cows in a field, hens outside a hut, ducks on the water, gulls over a quay | The island's ambient animals: scenery, placed from its fields, huts, river and quays, up to forty (see [The animals](#the-animals)) |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |

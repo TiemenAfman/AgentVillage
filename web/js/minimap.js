@@ -104,7 +104,7 @@ export const LANDMARKS = {
   'civic:lighthouse': 'Lighthouse', 'civic:townhall': 'Town hall', 'civic:tavern': 'Tavern',
   'civic:market': 'Market', 'civic:school': 'School', 'civic:chapel': 'Chapel',
   'civic:windmill': 'Windmill', 'civic:castle': 'Castle', 'civic:watertower': 'Water tower',
-  'civic:sawmill': 'Sawmill', 'civic:smithy': 'Smithy',
+  'civic:sawmill': 'Sawmill', 'civic:smithy': 'Smithy', 'civic:bakery': 'Bakery', 'civic:stable': 'Stable',
   'civic:clocktower': 'Clock tower', 'civic:board': 'Sprint board', 'civic:issues': "The island's own board",
   'civic:mailbox': 'Postbox',
 };

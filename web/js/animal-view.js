@@ -204,6 +204,39 @@ export function createAnimalBatch(scene, material, { capacity = ANIMAL_CAPACITY,
   };
 }
 
+// One animal into its slot: the whole body at (x, y, z) facing `yaw`, leant and lunged as
+// the pose says, then each part hung on its joint - the animal's matrix times the joint's
+// own turn about its `at`. The body's `at` is its origin, so it is the animal. Whichever of
+// a species' models the pose does not show (the sparrow's other one) is taken out of sight.
+// Shared by the story animals below and the ambient ones (web/js/herds.js), so the two can
+// never pose a hen differently. Allocates nothing.
+export function poseInBatch(batch, species, slot, pose, x, y, z, yaw) {
+  const kind = batch.kinds.get(species);
+  if (!kind || slot < 0) return;
+  root.position.set(x + Math.sin(yaw) * pose.surge, y + pose.bodyY, z + Math.cos(yaw) * pose.surge);
+  root.rotation.set(pose.bodyX, yaw, pose.bodyZ);
+  root.updateMatrix();
+  for (let m = 0; m < kind.models.length; m++) {
+    const model = kind.models[m];
+    const on = showsAsset(species, pose, model.asset);
+    for (let i = 0; i < model.parts.length; i++) {
+      const part = model.parts[i];
+      if (!on) { batch.hide(part, slot); continue; }
+      jointEuler(pose, part.role, part.index, euler);
+      local.makeRotationFromEuler(euler);
+      local.setPosition(part.at[0], part.at[1], part.at[2]);
+      composed.multiplyMatrices(root.matrix, local);
+      batch.put(part, slot, composed);
+    }
+  }
+}
+// And out of sight, every part of it - a no-op for one already hidden.
+export function hideInBatch(batch, species, slot) {
+  const kind = batch.kinds.get(species);
+  if (!kind || slot < 0) return;
+  for (const m of kind.models) for (const part of m.parts) batch.hide(part, slot);
+}
+
 // How many draw calls the batch costs right now: the part meshes with anything to draw. The
 // colour pass only, like ?stats - the shadow pass draws the same meshes once more.
 export function drawCalls(batch) {
@@ -284,8 +317,7 @@ export function createAnimalView({ batch, region, perchAt = null }) {
     b.rec.visible = false;
     if (!b.drawn || b.slot < 0) return;
     b.drawn = false;
-    const kind = batch.kinds.get(b.rec.species);
-    for (const m of kind.models) for (const part of m.parts) batch.hide(part, b.slot);
+    hideInBatch(batch, b.rec.species, b.slot);
   }
   function retire(b) {
     conceal(b);
@@ -435,26 +467,8 @@ export function createAnimalView({ batch, region, perchAt = null }) {
       rec.y = y;
       b.fresh = false;
 
-      // The whole animal, then each part hung on its joint: the animal's matrix times the
-      // joint's own turn about its `at`. The body's `at` is its origin, so it is the animal.
-      const yaw = b.yaw;
-      root.position.set(x + Math.sin(yaw) * pose.surge, y + pose.bodyY, z + Math.cos(yaw) * pose.surge);
-      root.rotation.set(pose.bodyX, yaw, pose.bodyZ);
-      root.updateMatrix();
-      const kind = batch.kinds.get(rec.species);
-      for (let m = 0; m < kind.models.length; m++) {
-        const model = kind.models[m];
-        const on = showsAsset(rec.species, pose, model.asset);
-        for (let i = 0; i < model.parts.length; i++) {
-          const part = model.parts[i];
-          if (!on) { batch.hide(part, b.slot); continue; }
-          jointEuler(pose, part.role, part.index, euler);
-          local.makeRotationFromEuler(euler);
-          local.setPosition(part.at[0], part.at[1], part.at[2]);
-          composed.multiplyMatrices(root.matrix, local);
-          batch.put(part, b.slot, composed);
-        }
-      }
+      // The whole animal, then each part hung on its joint (poseInBatch).
+      poseInBatch(batch, rec.species, b.slot, pose, x, y, z, b.yaw);
       b.drawn = true;
       rec.visible = true;
     }

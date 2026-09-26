@@ -28,6 +28,7 @@ import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
 import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
+import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
 import { modelUrl } from './assets.js';
 
@@ -49,20 +50,19 @@ const CIVIC = [
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
+  // The trades. The smith goes in at night, and so does the baker: move the night slider
+  // (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
+  ['sawmill', 'Sawmill', '55'],
+  ['smithy', 'Smithy', '60'],
+  ['bakery', 'Bakery', '65'],
   ['statue', 'Statue', '70'],
+  ['stable', 'Stable', '75'],
   // The stone, not the crossing: the deck is drawn from the layout's own cells and there
   // is no river on the model sheet to stand it in.
   ['bridge', 'Bridge stone', '90'],
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
-  // Not on the island yet: only here, until it has a rung and a site (Plans/zagerij.md).
-  ['sawmill', 'Sawmill', 'not placed yet'],
-  // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
-  ['smithy', 'Smithy', 'not placed yet'],
-  // And a stable with its horse, and a bakery with its oven (Plans/stal-en-veld.md).
-  ['stable', 'Stable', 'not placed yet'],
-  ['bakery', 'Bakery', 'not placed yet'],
 ];
 
 const FURNITURE = [
@@ -235,13 +235,20 @@ function place(spec, x, z, name, note) {
     const at = built.animated.sawmill.at;
     sawmills.push(attachSawmill(scene, [x + at[0], at[1], z + at[2]], material));
   }
+  // At `at`, like the sawmill: that is where the porch has lifted the building to, and hung at
+  // the field's own height the horse walked a step below its sand and the fire burnt under the
+  // oven's mouth.
   if (built.animated && built.animated.stable) {
-    const stable = attachStable(scene, [x, 0, z], material);
+    const at = built.animated.stable.at;
+    const stable = attachStable(scene, [x + at[0], at[1], z + at[2]], material);
     if (stable) lives.push((dt) => updateStable(stable, dt));
   }
   if (built.animated && built.animated.bakery) {
-    const bakery = attachBakery(scene, [x, 0, z], material);
+    const at = built.animated.bakery.at, where = [x + at[0], at[1], z + at[2]];
+    const bakery = attachBakery(scene, where, material);
     if (bakery) lives.push((dt) => updateBakery(bakery, dt));
+    const baker = attachBaker(scene, where, material);
+    if (baker) lives.push((dt) => updateBaker(baker, dt));
   }
   if (built.animated && built.animated.smithy) {
     const at = built.animated.smithy.at;
