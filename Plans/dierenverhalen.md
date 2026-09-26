@@ -2,7 +2,7 @@
 
 Begonnen op 26 september 2026, op de branch `codex/dierenverhalen` (Codex legde de eerste steen:
 een journaal en een reducer zonder klok), verder gebouwd in `claude/dierenverhalen`. Het uitgewerkte
-Engelse plan staat in [docs/next/animal-stories.md](../docs/next/animal-stories.md); dit is het
+Engelse plan staat in [docs/animal-stories.md](../docs/animal-stories.md); dit is het
 "waarom" en de beslissingen die bij het bouwen vielen. Het vervangt de regel "dieren op het eiland
 zelf" onder *Later* in [stal-en-veld.md](stal-en-veld.md): de dieren die daar op `/demo` staan
 lopen nu op het eiland, maar als *personen* met een naam en een geheugen, niet als decor.
@@ -91,6 +91,45 @@ een vogelhuisje). Uit die sporen komt één eilandmysterie.
 4. Sporen: nest, uitkijkpost, vogelhuisje, en één combinatie-ontdekking.
 5. Het mysterie.
 
+Alle vijf gebouwd op 26 september 2026, met vier agents naast elkaar (zee, tekenen, dossier,
+Blender-sporen) op één draadcontract ([docs/animals-wire.md](../docs/animals-wire.md)).
+
+## Wat er bij het bouwen nog bij kwam
+
+- **Een dier bezoekt de buren, niet het hele eiland** (`MOTION.reach`: kip 16, geit 24, mus 36
+  eenheden van huis). Zonder dat liep de eerste kip op het proef-eiland naar een stil huis aan
+  de overkant, vijf minuten ver, en werd ze onderweg losgelaten.
+- **Wie het langst wacht is eerst.** In id-volgorde pakte de eerste kip elk venster de enige
+  werkende settler en ontmoetten de geit en de mus nooit iemand.
+- **Het eiland zelf kleurt het toeval.** Zaad en naam kwamen eerst alleen uit `island.seed`,
+  en heel veel eilanden hebben seed 1337 (`config.example.json`): overal dezelfde rusteloze
+  kip. Nu `seed:foundedAt`, en de reducer houdt een `salt` vast bij de eerste komst, zodat twee
+  eilanden met dezelfde geschiedenis toch anders kiezen.
+- **Geen nulmeting zonder dieren.** De eerste `observe` schreef driehonderd cursors in het
+  journaal voor een eiland zonder één dier; de nulmeting hoort bij de komst.
+- **`pace` versnelt het verhaal, niet het lopen.** De termijn waarna een onafgemaakte boodschap
+  wordt losgelaten heeft daarom een bodem van tien echte minuten.
+- **`gen` van een boodschap die nog loopt is die van de laatste post**, want de islander stuurt
+  na elke herverbinding alles opnieuw en neemt alleen zijn huidige generatie aan. Een al
+  voltooide boodschap die opnieuw binnenkomt loopt niet opnieuw; de zee zegt nog eens `done`.
+- **Een mus op de nok tilt de pagina op**: de zee kent geen daken en laat haar op hoogte 0
+  landen; `perchFinder` in main.js zoekt het gebouw onder haar.
+- **Een klik op een dier van de buren** opent het openbare kaartje uit `herd`; het zweeflabel
+  krijgt het getekende record en niet het id, want `animal:1` is op elk eiland iemand anders.
+
 ## Metingen
 
-(Wordt ingevuld tijdens het bouwen.)
+- Draw calls (kleurpass, `drawCalls` in animal-view.js en `stats()` in traces.js): alle
+  verhaaldieren van alle eilanden samen hoogstens 18 (kip 6 delen, geit 7, mus zittend 2 en
+  vliegend 3), onafhankelijk van het aantal dieren; een soort die niet te zien is kost niets
+  (1 kip = 6, 12 kippen = 6). Alle sporen samen 9. De schaduwpass tekent dezelfde meshes nog
+  eens. Op de echte pagina nagemeten (`?stats`, dezelfde camera, de batch aan en uit) op het
+  proef-eiland met 299 settlers: 1182 calls met een kip en een geit, 1169 zonder - 13, een per
+  soort en lichaamsdeel, 1,1% van een druk eiland. Zes dieren (twee van elke soort) blijven 18.
+- Het draadverkeer: een rij is 7 getallen, hoogstens zes dieren per eiland, veranderde rijen op
+  het lopertempo en alles om de twee seconden - een paar honderd bytes per seconde per eiland,
+  los van het aantal settlers.
+- De hele lus live op een proef-eiland uit de worktree (`--all`, 299 settlers, `pace: 300`): de
+  eerste kip kwam 1,5 s nadat de pagina openging, haar eerste boodschap was binnen een minuut
+  gelopen, afgemeld en als ontmoeting in het journaal gezet, en het dossier, het dagboek,
+  "Show on the island" en het zweeflabel werkten op de echte pagina.

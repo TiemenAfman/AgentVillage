@@ -1,5 +1,5 @@
 // What the page says about the story animals (web/js/animal-dossier.js; Plans/dierenverhalen.md,
-// docs/next/animal-stories.md "What the player sees", docs/animals-wire.md).
+// docs/animal-stories.md "What the player sees", docs/animals-wire.md).
 //
 // The promises: a relationship is a word and never its numbers; the mystery is found things and
 // a hint, never a count; every name that reaches the page is escaped, the islander's own story

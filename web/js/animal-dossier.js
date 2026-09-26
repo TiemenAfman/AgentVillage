@@ -1,5 +1,5 @@
 // What the page says about the island's story animals (Plans/dierenverhalen.md,
-// docs/next/animal-stories.md "What the player sees", docs/animals-wire.md for every shape
+// docs/animal-stories.md "What the player sees", docs/animals-wire.md for every shape
 // read here): the dossier of one animal, the island's animal journal, the "while you were
 // away" card and the few lines a settler's own dossier gets about the animals that know them.
 //

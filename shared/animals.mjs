@@ -11,7 +11,7 @@
 export const STORY_SPECIES = ['chicken', 'goat', 'sparrow'];
 
 // The most named animals one island keeps. A small cast with habits people remember is the
-// point; a menagerie is the thing to avoid (docs/next/animal-stories.md, "Experience").
+// point; a menagerie is the thing to avoid (docs/animal-stories.md, "Experience").
 export const MAX_ANIMALS = 6;
 
 // Who comes, in order. The first hen turns up the first time somebody is watching an island

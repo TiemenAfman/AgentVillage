@@ -1,38 +1,36 @@
 # Animal stories and island mysteries
 
-Status: proposed implementation plan for AgentVillage, revised on 2026-09-26 against
-AgentVillage's source. Supersedes the earlier Settlers-based inventory.
+Status: built, on 2026-09-26 (branches `codex/dierenverhalen`, then `claude/dierenverhalen`).
+This page stays as the design; [Plans/dierenverhalen.md](../Plans/dierenverhalen.md) has the
+decisions taken while building it, [animals-wire.md](animals-wire.md) the wire and
+[animal-story-storage.md](animal-story-storage.md) the disk.
 
 ## Implementation status
 
-Branch: `codex/dierenverhalen`.
+All five stages are in, and connected end to end:
 
-The first increment of stage 1 is implemented as standalone islander modules:
+| | where |
+|---|---|
+| the story (reducer: traits, four labels with hysteresis, 13 encounters and a rest, window/hour/day limits, the relationship cap, marks, the Feathered Corner, the mystery, the vignette) | `lib/animal-stories.mjs` |
+| the journal (flushed appends, one writer with stale-lock takeover, torn tails kept, paged diary) | `lib/animal-store.mjs` |
+| when each is asked, and what is published (after every scan, on a completion, `/api/animals*`) | `lib/animal-life.mjs`, `serve.mjs` |
+| where an animal can be on an island, and ground for a mark (the garden's own check) | `lib/animal-places.mjs` |
+| the door and its strict parser, the forgiving packer | `lib/animalbundle.mjs`, `lib/sea.mjs` |
+| movement on the sea (ticks, no trigonometry) and the herds | `shared/animalwalk.mjs`, `lib/animal-crowd.mjs` |
+| the line home: generation, the door, `done` | `lib/seaclient.mjs` |
+| the pose split and the shared instanced batch | `web/js/fauna.js`, `web/js/animal-view.js` |
+| the marks (Blender set `traces`, seven props) | `scripts/build-traces.py`, `web/js/traces.js` |
+| dossier, diary, return card, toasts, the settler dossier's section | `web/js/animal-dossier.js` |
 
-- `lib/animal-stories.mjs`: stable arrivals, activity baselines and increasing cursors,
-  one pending chicken visit per animal, activity-window suppression, explicit encounter
-  outcomes and replay without randomness.
-- `lib/animal-store.mjs`: flushed journal writes, exclusive writer lock, disposable atomic
-  checkpoint, paged history, interrupted-tail preservation and recovery.
-- `tests/animal-stories.test.mjs`: synthetic chicken encounters, duplicate suppression,
-  reopen recovery, corrupt checkpoints/records, writer exclusion and failed writes.
+Measured: every story animal on every island draws in at most 18 calls (one per species and
+body part), the marks in 9; see "Metingen" in the Plans file. Tests: `node --test
+"tests/animal-*.test.mjs" tests/traces.test.mjs tests/fauna.test.mjs`.
 
-This is not yet connected to scanning, the sea or the live renderer. The completion command
-is an internal fixture API, not a network contract. Its simple three-visit bond is a testable
-initial rule, not final relationship balancing; traits, daily limits, relationship caps and
-hysteresis still follow. No existing island data is changed by importing these modules.
-
-Next in stage 1: define and validate public snapshots/patches and connection-scoped action
-acknowledgements, redaction, geometry/frame-time baselines, and the production lifecycle
-for the store. Then connect one chicken through the sea in stage 2. Durable pending visits
-already survive reopening, but reconnect routing and stale-connection rejection are not
-implemented yet. See [storage and recovery](../animal-story-storage.md) before integration.
-
-Validation of this increment: all 12 new foundation tests pass. The full suite reports
-920 passes out of 922: layout measurement could not acquire the shared scan lock, and
-the applied-zone test fails with existing zone data. The same two test files run against
-an unchanged checkout and the same island home give 15 passes out of 16: layout passes,
-and the applied-zone failure reproduces. These failures are outside the new modules.
+Where the build departed from the text below, the Plans file says so; the main ones: an
+animal only visits within its species' reach of home (`MOTION.reach`), the sea's `done`
+carries the generation of the *latest* post, the positions travel as `{t:'af'}` and the
+public state as `{t:'herd'}` rather than as `island` messages, and a perching sparrow is
+lifted onto the roof by the page (the sea knows no roof heights).
 
 ## Experience
 
