@@ -332,6 +332,9 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
+// The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
+// although they hang on the house: every part that moves is in the yard's asset.
+export const isButcherMoving = (n) => /^civic_butcher_yard (awning|sign|hang \d+|joint|slice|embers)(:\d+)?$/.test(n);
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1443,6 +1446,14 @@ function civic(parts, spec, rng) {
       Object.assign(anchors, meshAnchors('civic_smithy'));
       animated.smithy = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('civic_smithy') };
+    }
+    case 'butcher': {
+      // The shop and the yard, less the awning, the sign, the hanging meat, the joint, the slice
+      // and the fire: butcher.js hangs those, and brings the butcher who works at the block.
+      parts.push(...meshAsset('civic_butcher'), ...meshAsset('civic_butcher_yard', 0xffffff, { skip: isButcherMoving }));
+      Object.assign(anchors, meshAnchors('civic_butcher'));
+      animated.butcher = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_butcher') };
     }
     case 'windmill':
     case 'poldermill':

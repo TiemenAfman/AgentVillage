@@ -26,6 +26,7 @@ import { attachGoldPile } from './goldpit.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
+import { attachButcher, updateButcher } from './butcher.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -57,6 +58,8 @@ const CIVIC = [
   ['sawmill', 'Sawmill', 'not placed yet'],
   // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
   ['smithy', 'Smithy', 'not placed yet'],
+  // And its sister, the butcher's, whose awning rolls in when he goes home (Plans/slagerij.md).
+  ['butcher', 'Butcher', 'not placed yet'],
 ];
 
 const FURNITURE = [
@@ -169,6 +172,7 @@ const fountains = []; // separate water meshes, animated just as they are on the
 const beacons = [];   // the lighthouse's lamp, which is the one thing here the slider lights
 const sawmills = [];  // the saw, the feed, the belt and the sawdust
 const smithies = [];  // the smith, the bellows, the fire and the lantern
+const butchers = [];  // the butcher, the awning, the sign, the hanging meat and the smoke
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -231,6 +235,10 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.smithy) {
     const at = built.animated.smithy.at;
     smithies.push(attachSmithy(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.butcher) {
+    const at = built.animated.butcher.at;
+    butchers.push(attachButcher(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -1035,6 +1043,7 @@ function frame(now) {
   for (const b of beacons) updateBeacon(b, dt, uniforms.uNight.value);
   for (const m of sawmills) updateSawmill(m, dt);
   for (const s of smithies) updateSmithy(s, dt);
+  for (const b of butchers) updateButcher(b, dt);
 
   if (inside) {
     const w = inside.update(dt);
