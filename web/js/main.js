@@ -1392,6 +1392,14 @@ function raveGuests() {
   return out;
 }
 
+// Whether the island's own stable is standing, and so whether its horse and hens are on the
+// dance floor tonight: that is where they went while the paddock stands empty (updateStable's
+// `away`, on the same raveOn). An island without a stable brings no horse.
+function stableComes() {
+  const rec = state.byId.get('civic:stable');
+  return !!(rec && rec.stable && rec.group.visible);
+}
+
 // What sound.js is told about the rave: nothing when there is none, the hall when you are
 // in it, and otherwise how far the castle is - a thump through the walls from the square.
 function raveHeard() {
@@ -1433,9 +1441,10 @@ function enterInterior(room, at) {
   cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
-  inside.enter({ avatar: loadAvatar(), guests: room === 'rave' ? raveGuests() : null });
+  const rave = room === 'rave';
+  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
   state.ui.setIndoors(true);
-  if (room === 'rave') state.ui.toast(RAVE_IN);
+  if (rave) state.ui.toast(RAVE_IN);
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -5985,7 +5994,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
-  if (rec.stable) updateStable(rec.stable, dt);
+  // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
+  if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.butcher) updateButcher(rec.butcher, dt);

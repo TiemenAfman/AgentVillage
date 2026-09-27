@@ -1086,7 +1086,9 @@ function stepInside(door) {
   }
   walk.exit();
   inside = room;
-  room.enter();
+  // The field's stable keeps its horse - this is a model sheet - and the rave shows the one it
+  // has on a Saturday night on the island all the same, so the dance can be looked at here.
+  room.enter({ stable: true });
   keysEl.innerHTML = KEYS_IN;
   promptEl.hidden = true;
 }

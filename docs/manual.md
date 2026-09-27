@@ -931,6 +931,7 @@ with no shallows to reclaim.
 | The shops round the square and along the four streets: bakery, grocer, apothecary, clothes shop, library, tea room, wand maker, butcher, sweet shop, cauldron maker, owl post | 12, 18, 22, 28, 33, 38, 42, 48, 65, 80 and 85 settlers |
 | A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the smithy's and the bakery's own people, who work by day and go indoors at night |
 | A horse in a paddock and two hens by the stall doors | The stable's animals, scenery rather than somebody — not the named animals with a story (see [The animals](#the-animals)) |
+| An empty paddock on a Saturday night | The stable's horse and hens are at the castle's rave, dancing under the mirror ball until three |
 | Sheep or cows in a field, hens outside a hut, ducks on the water, gulls over a quay | The island's ambient animals: scenery, placed from its fields, huts, river and quays, up to forty (see [The animals](#the-animals)) |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |

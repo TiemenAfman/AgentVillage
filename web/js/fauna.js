@@ -129,10 +129,11 @@ export function partGeometry(base) {
   return names.length === 1 ? mesh(names[0]) : mergeGeometries(names.map((x) => mesh(x)), false);
 }
 
-// How far a body sinks when it lies down, and how long it is, measured off the bake rather
-// than written down per kind: lying down is the belly on the grass, which is how high the
-// lowest point of the body part is, and a lunge is a fraction of a body length. Cached, since
-// the pose asks every frame.
+// How far a body sinks when it lies down, how long it is and where its hind hips are,
+// measured off the bake rather than written down per kind: lying down is the belly on the
+// grass, which is how high the lowest point of the body part is, a lunge is a fraction of a
+// body length, and a horse rearing stands on its hind hooves, which hang under those hips.
+// Cached, since the pose asks every frame.
 const measured = new Map();
 function measureOf(kind) {
   let m = measured.get(kind);
@@ -153,6 +154,7 @@ function measureOf(kind) {
     // but straight along the grass, and a hair into it reads as lying in it.
     if (Number.isFinite(y0)) m.drop = Math.max(0, y0 * 0.9);
     if (z1 > z0) m.len = z1 - z0;
+    m.hind = atOf(asset, `${asset} leg bl`);
   }
   measured.set(kind, m);
   return m;
@@ -185,6 +187,9 @@ export function createPose(kind, { phase = 0 } = {}) {
     // What is damped rather than set: how far down the body has settled (0 standing, 1 lying),
     // and the lean, bank and lunge, which would otherwise snap from one act to the next.
     low: 0,
+    // How far up a dancing animal has gone (stepDance): a horse on its hind legs, a hen with
+    // its wings out. Damped too, or the drop would snap a horse upright in one frame.
+    rear: 0,
   };
 }
 
@@ -414,6 +419,81 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   return pose;
 }
 
+// ---- dancing --------------------------------------------------------------------------------
+// The stable's horse and hens on a Saturday night (web/js/rave.js, Plans/rave-in-het-kasteel.md):
+// a pose on somebody else's beat. `beat` is where the music is, counted in beats - rave.js hands
+// it the same count its settlers dance to, so a hoof comes down on the kick you hear - and `up`
+// is whether the animal goes up now (1) or not (0): the drop and the build's last bar, when every
+// settler's hands go up, a horse rears and a hen throws her wings out. Like stepPose it never
+// moves the animal and nothing it works out feeds back into a position; unlike stepPose it keeps
+// no clock of its own, because the music is the clock, and `dt` is only for easing into and out
+// of going up. Any four-legged kind dances as the horse does and any two-legged one as the hen.
+const REAR = 0.42;             // how far back a horse goes on its hind legs, in radians
+export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
+  if (!pose) return pose;
+  const K = KINDS[kind] || KINDS.chicken;
+  const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 0;
+  const u = beat - Math.floor(beat);
+  const kick = Math.exp(-u * 6);                 // sharp on the beat, gone by the next
+  const lift = Math.sin(Math.PI * u);            // nothing on the beat, most between two
+  const slow = Math.sin(Math.PI * beat / 2);     // one way and back over two beats
+  const turn = (Math.floor(beat) % 2 + 2) % 2;   // which side's turn it is this beat
+  const sides = sidesOf(kind);
+  if (pose.act !== 'dance') { pose.act = 'dance'; pose.since = 0; }
+  pose.since += step;
+  pose.flying = false;
+  pose.low = 0;
+  pose.surge = 0;
+  pose.rear = damp(pose.rear, up ? 1 : 0, 5, step);
+  const r = pose.rear;
+
+  if (K.legs === 4) {
+    // Headbanging: the nod comes down on the kick and is back up before the next one. Up on
+    // its hind legs the head is flung back instead.
+    pose.headX = (0.12 + 0.42 * kick) * (1 - r) - 0.5 * r;
+    pose.headY = 0.2 * slow * (1 - r);
+    // One front hoof pawing each beat and stamped down on the next, the other planted; up on
+    // its hind legs both paw the air. The hind legs are the ones it stands on: swung back by
+    // exactly what the body leans, they hang straight down whatever the body does.
+    const lean = -REAR * r;
+    for (let i = 0; i < 4; i++) {
+      if (i < 2) {
+        const paw = i === turn ? -0.55 * lift : 0;
+        pose.legs[i] = paw * (1 - r) + r * (-0.6 + 0.3 * (i === turn ? -lift : lift));
+      } else pose.legs[i] = -lean;
+    }
+    pose.tailZ = 0.4 * Math.sin(Math.PI * beat);
+    pose.tailX = damp(pose.tailX, 0.25 + 0.3 * r, 6, step);
+    // The body bounces between the kicks and sways over two beats - the nod is the head's
+    // alone, since a body leant forward about its middle puts the front hooves in the floor -
+    // and going up it tips back about the middle and is lifted by exactly what that put the
+    // hind hooves under the floor, so it stands on them.
+    const hind = measureOf(kind).hind || [0, 0.34, -0.19];
+    const [, hy, hz] = hind;
+    const rise = hy * (1 - Math.cos(lean)) + hz * Math.sin(lean);
+    pose.bodyX = lean;
+    pose.bodyZ = 0.05 * slow * (1 - r);
+    pose.bodyY = 0.01 * lift * (1 - r) + Math.max(0, rise);
+  } else {
+    // A hen: the head bob, on the beat and quick; stepping from foot to foot; and, going up,
+    // her wings out and beating and a hop on every beat.
+    pose.headX = 0.08 + 0.5 * kick;
+    pose.headY = 0.3 * Math.sin(Math.PI * beat / 4);
+    for (let i = 0; i < pose.legs.length; i++) pose.legs[i] = i === turn ? 0.35 * lift : 0;
+    for (let i = 0; i < 2; i++) {
+      const side = sides[i];
+      pose.wingY[i] = side * FOLD * (1 - 0.75 * r);
+      pose.wingZ[i] = side * (0.12 * kick * (1 - r) + r * (0.35 + 0.35 * Math.abs(Math.sin(Math.PI * beat * 2))));
+    }
+    pose.tailZ = 0.2 * Math.sin(Math.PI * beat);
+    pose.tailX = 0;
+    pose.bodyX = 0.1 * kick * (1 - r);
+    pose.bodyZ = 0;
+    pose.bodyY = 0.004 * lift + (HOP_HIGH[kind] || 0.03) * r * lift;
+  }
+  return pose;
+}
+
 // The rotation of one part, as an Euler: `role` and `index` as animalParts gives them. Written
 // into `e` and returned, so a pivot can be handed its own `rotation` and a batch a scratch one.
 export function jointEuler(pose, role, index, e) {
@@ -443,8 +523,9 @@ function hangAsset(asset, material, group, geometries) {
   }
   return out;
 }
-// The pose onto the pivots, and the lean and lunge onto the whole animal at (x, y, z).
-function applyPose(a, x, y, z) {
+// The pose onto the pivots, and the lean and lunge onto the whole animal at (x, y, z). Also
+// what rave.js puts its dancing horse and hens on the floor with, their brains left asleep.
+export function applyPose(a, x, y, z) {
   const p = a.pose;
   a.object.position.set(x + Math.sin(a.yaw) * p.surge, y + p.bodyY, z + Math.cos(a.yaw) * p.surge);
   a.object.rotation.set(p.bodyX, a.yaw, p.bodyZ);

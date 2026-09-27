@@ -664,17 +664,20 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     if (barman) barmanX = it[barman.along];  // he comes along the bar to serve it
   }
 
-  // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js).
-  function enter({ avatar, guests = null } = {}) {
+  // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js), and
+  // `stable` whether the island's horse and hens came along. What the show puts on the floor
+  // tonight that you cannot walk through - the horse - is the show's to say, after its enter.
+  function enter({ avatar, guests = null, stable = false } = {}) {
     left = false;
     if (avatar) walk.setAvatar(avatar);
-    if (show) show.enter({ dancers: guests });
+    if (show) show.enter({ dancers: guests, stable });
+    const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
     walk.enter({
       at: [def.spawn.x, def.spawn.z],
       facing: [def.spawn.x, def.spawn.z - 1],
-      blockers: def.blockers,
+      blockers,
       interactables: def.seats.map((s, i) => ({ ...s, index: i })),
       onInteract,
       onExit: leave,
