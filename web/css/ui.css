@@ -170,6 +170,25 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .hover-label small { display: block; color: var(--ink-dim); font-size: 10.5px; }
 #toasts { position: fixed; left: 14px; bottom: 16px; z-index: 11; display: grid; gap: 7px; width: 288px; }
 
+/* An island's name as you come into its waters: a dark ribbon across the top with swallow-
+   tailed ends, the name in gold capitals and its keeper underneath. */
+.arrival { position: fixed; top: 14%; left: 50%; z-index: 12; transform: translateX(-50%);
+  pointer-events: none; text-align: center; min-width: min(460px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px); padding: 12px 56px 13px; color: var(--ink);
+  background: rgba(14,11,9,.9); filter: drop-shadow(0 6px 18px rgba(0,0,0,.45));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 26px) 50%, 100% 100%, 0 100%, 26px 50%); }
+.arrival b { display: block; font-family: var(--font); font-weight: 600; font-size: 26px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arrival small { display: block; margin-top: 3px; font-family: var(--font); font-size: 13.5px;
+  font-style: italic; color: var(--ink-dim); }
+.arrival small:empty { display: none; }
+.arrival.show { animation: unfurl .5s cubic-bezier(.2,.8,.2,1); }
+.arrival.fade { opacity: 0; transition: opacity .7s ease; }
+@keyframes unfurl { from { opacity: 0; clip-path: polygon(50% 0, 50% 0, 50% 50%, 50% 100%, 50% 100%, 50% 50%); } }
+@media (max-width: 520px) { .arrival { padding: 10px 40px 11px; } .arrival b { font-size: 20px; } }
+@media (prefers-reduced-motion: reduce) { .arrival.show { animation: none; } }
+
 /* The water closing over the screen on the way to a neighbour's island. */
 #veil { position: fixed; inset: 0; z-index: 40; background: #0d1420; opacity: 0; pointer-events: none; }
 
@@ -301,6 +320,11 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   pointer-events: none;
 }
 .worldmap canvas { width: 100%; height: 100%; display: block; }
+/* The phone's way out of the chart (minimap.js createWorldMap `phone`): the sheet itself
+   lets touches through to the stick underneath, so only this takes them. */
+.worldmap-close { position: absolute; top: 8px; right: 8px; pointer-events: auto;
+  background: rgba(14,18,24,.75); color: rgba(244,236,224,.95); border-radius: 50%; }
+body.standalone .worldmap { inset: calc(var(--st) + 50px) var(--sr) var(--sb) var(--sl); }
 /* What the pointer is over. Placed by minimap.js with a transform from the sheet's corner. */
 .worldmap-tip {
   position: absolute; left: 0; top: 0; max-width: 260px;
@@ -1198,5 +1222,61 @@ body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
 .tp-buttons { position: absolute; right: 18px; bottom: 30px; display: flex; gap: 14px; align-items: flex-end; }
 .tp-btn { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55);
   background: rgba(20,24,30,.35); color: #fff; font: 600 20px/1 system-ui, sans-serif; touch-action: none; }
-.tp-btn[data-b="X"] { margin-bottom: 44px; }
+.tp-btn[data-b="X"] { margin-bottom: 44px; position: relative; }
 .tp-btn.on { background: rgba(232,180,92,.6); }
+/* What X would do, under the letter ("Board", "Land", "Talk"), from main.js touchHud. */
+.tp-say { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px;
+  font: 600 12px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  white-space: nowrap; pointer-events: none; }
+.tp-run { width: 54px; height: 54px; font-size: 13px; margin-bottom: 104px; }
+/* The two hands, on foot only (touchHud): left hand left, right hand right. */
+.tp-hands { position: absolute; display: flex; gap: 14px; }
+.tp-hands[hidden] { display: none; }
+.tp-hand { width: 54px; height: 54px; font-size: 22px; }
+
+/* ---- the phone, fitted to the glass ----------------------------------------------------
+   The APK draws into the notch (MainActivity.kt, LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES),
+   so every edge is kept at least the cutout away: the four --s* below are the one place. */
+body.standalone {
+  --sl: max(14px, env(safe-area-inset-left)); --sr: max(14px, env(safe-area-inset-right));
+  --st: max(14px, env(safe-area-inset-top));  --sb: max(14px, env(safe-area-inset-bottom));
+  /* No double-tap zoom on a HUD chip: a game is not a page. */
+  touch-action: manipulation;
+}
+body.standalone .titlecard { top: var(--st); left: var(--sl); }
+body.standalone .titlecard::before { display: none; }
+body.standalone .titlecard h1 { font-size: 17px; }
+/* Over the radar: opened, the menu wraps down across it, and its chips have to take the tap. */
+body.standalone .topright { top: var(--st); right: var(--sr); z-index: 11; }
+/* Tappable: it opens the sea chart (main.js onMinimapTap). */
+body.standalone .minimap { top: calc(var(--st) + 50px); right: var(--sr); width: 144px; height: 144px;
+  pointer-events: auto; cursor: pointer; }
+/* Toasts and the island chat used to sit bottom-left, which is exactly where a left thumb
+   lands for the stick - and they took the touch. Top middle, and see-through to fingers. */
+body.standalone #toasts { left: 50%; right: auto; bottom: auto; top: calc(var(--st) + 50px); transform: translateX(-50%);
+  width: min(340px, calc(100vw - 200px)); pointer-events: none; }
+body.standalone #toasts .act, body.standalone #toasts button, body.standalone #toasts a { pointer-events: auto; }
+body.standalone .islandchat { left: var(--sl); bottom: auto; top: calc(var(--st) + 64px); max-width: min(300px, 42vw); }
+/* Fingers are wider than a cursor: 44px is the least a tap target should be. */
+body.standalone .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
+body.standalone .x, body.standalone .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
+body.standalone .speech { pointer-events: auto; cursor: pointer; }
+body.standalone .skew { bottom: calc(var(--sb) + 170px); }
+body.standalone .tp-buttons { right: var(--sr); bottom: calc(var(--sb) + 16px); }
+body.standalone .tp-hands { right: calc(var(--sr) + 70px); bottom: calc(var(--sb) + 150px); }
+/* The Controls panel (ui.js openPhone): one setting a row, big enough for a thumb. */
+.phone-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.phone-row input[type="range"] { flex: 1; }
+.phone-row input[type="checkbox"] { width: 22px; height: 22px; }
+.phone-row select { font-size: 14px; min-height: 36px; margin-left: auto; }
+.phone-row output { min-width: 3.2em; text-align: right; color: var(--ink-dim); }
+/* Left-handed (phoneprefs.js lefty): the stick on the right, the buttons mirrored left. */
+body.standalone .touchpad.lefty .tp-buttons { right: auto; left: var(--sl); flex-direction: row-reverse; }
+body.standalone .touchpad.lefty .tp-hands { right: auto; left: calc(var(--sl) + 70px); }
+/* Held sideways a phone is under 480px tall, and the desktop layout hung panels 108-230px
+   down with 96px kept free at the foot: a Legend of 64px. A sheet down the right instead. */
+@media (max-height: 480px) {
+  body.standalone .panel { top: var(--st); bottom: var(--sb); right: var(--sr); height: auto; width: min(360px, 46vw); }
+  body.standalone .walk-hud { bottom: calc(var(--sb) + 10px); }
+  body.standalone .minimap { width: 120px; height: 120px; }
+}

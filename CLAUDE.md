@@ -1188,6 +1188,27 @@ Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To 
 page without a phone, serve `src-android/dist/` from any static server — that origin has no
 islander behind it either.
 
+**Touch is a pad with two extras, and the phone's HUD is one CSS block.** `web/js/touchpad.js`
+polls in `gamepad.js`'s shape (buttons A jump, X interact, Run = `L3`), plus two fields only
+`walk.pad()` reads through `p.raw`: `drag` (px since the last poll, turned like the mouse by
+`DRAG_YAW`/`DRAG_PITCH`, **never × dt** - that made look speed follow the frame rate) and
+`zoom` (a pinch factor for `zoomBy`). The stick is round with a dead zone (`stickOut`, tested).
+The hand buttons bypass the pad and call `walk.hand(side, down)`; `touchHud` in main.js sets
+X's caption and shows the hands only `walk.onFoot()`. A short still tap on the look side is
+`tapName` (guest figures only - the phone has no island). The camera's distance is `base ×
+zoomPref` (`place()`), so a zoom survives boarding; a boat now waits `RECENTRE_AFTER` like the
+bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (localStorage,
+read live; `quality: 'light'` is the default and means `modest`, since `MODEST_GPU` knows no
+phone GPU). A keeper's conversation has its own input mode (`parley` in `input.js`: X/B/BACK)
+and a tappable `#speech` - Esc was the only way out. Android's back button: `phoneBack()`
+holds one `history` entry while any overlay is open and `popstate` closes them. All phone
+layout is under `body.standalone` in `web/css/ui.css`, edges from `--sl/--sr/--st/--sb`
+(`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
+the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
+serve `src-android/dist/`, and drive it with Playwright's touch emulation.
+
 **Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
 `tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
 the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up

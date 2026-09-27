@@ -78,4 +78,7 @@ is niet gestript. Kleiner (≈10 MB): `tauri android build --apk --target aarch6
   die tekent de `android`-job in `release.yml` met een wegwerpsleutel en updatet een release
   niet over de vorige heen.
 - Een zee kiezen in de app zelf; nu is het wat de pack erin schreef.
-- Panels/boards op een telefoon: ze openen, maar zijn niet op touch ontworpen.
+- Panels/boards op een telefoon: de zijpanelen zijn sinds 27 september een sheet (staand) of een
+  kolom rechts (liggend) met tikdoelen van 44px, maar de borden zelf (sprint- en eilandbord) zijn
+  nog niet op touch ontworpen. Hurken, fietsen en een bewaarder op andermans eiland aanspreken kan
+  op de telefoon nog niet.
