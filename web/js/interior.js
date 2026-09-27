@@ -16,6 +16,7 @@ import { figureGeometry } from './settlers.js';
 import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
+import { wallBeat } from './dance.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -469,7 +470,7 @@ function snackGeometry() {
 // ------------------------------------------------------------------ the machinery
 // Built once per room and kept: a visit is enter() and leave(), not another scene. Walk mode
 // hangs listeners on the window, so churning one per visit would pile them up.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null }) {
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -627,9 +628,17 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // back at a point 0.9 off the ground, and all three of those are taller than this room.
   // `tipsy` is the island's own pool (main.js), so what is drunk at the bar goes out of the
   // door with you.
+  // A dancer in here (R, Plans/dansen.md) keeps the room's own time when it has one - the
+  // rave's lights and floor run on it, music or not - and otherwise whatever we were handed.
+  const hallBeat = () => (show && show.beat ? show.beat() : null);
+  const danceHere = () => {
+    const d = dance ? dance() : { id: 'me', beat: wallBeat(performance.now()) };
+    const hall = hallBeat();
+    return hall == null ? d : { id: d.id, beat: hall };
+  };
   const walk = createWalkMode({
     scene, camera, terrain, material, dom,
-    camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy, onDrink,
+    camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy, onDrink, dance: danceHere,
   });
 
   // What moves in a room beyond its fire and its barman - the castle's lights and its dancing
@@ -664,17 +673,20 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     if (barman) barmanX = it[barman.along];  // he comes along the bar to serve it
   }
 
-  // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js).
-  function enter({ avatar, guests = null } = {}) {
+  // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js), and
+  // `stable` whether the island's horse and hens came along. What the show puts on the floor
+  // tonight that you cannot walk through - the horse - is the show's to say, after its enter.
+  function enter({ avatar, guests = null, stable = false } = {}) {
     left = false;
     if (avatar) walk.setAvatar(avatar);
-    if (show) show.enter({ dancers: guests });
+    if (show) show.enter({ dancers: guests, stable });
+    const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
     walk.enter({
       at: [def.spawn.x, def.spawn.z],
       facing: [def.spawn.x, def.spawn.z - 1],
-      blockers: def.blockers,
+      blockers,
       interactables: def.seats.map((s, i) => ({ ...s, index: i })),
       onInteract,
       onExit: leave,
@@ -735,6 +747,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
   return {
     name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
+    // Where the room's music is, in beats, for everybody dancing in here (main.js danceBeat);
+    // null in a room with no show.
+    beat: hallBeat,
     setPaused: (v) => walk.setPaused(v),
     // The room has its own walk mode, so it needs its own way in for the controller.
     pad: (a, dt) => walk.pad(a, dt),

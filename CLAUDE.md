@@ -452,9 +452,13 @@ crew). None of it runs yet: no walk mode sets `state.deck`.
 gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
 connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
 `identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
-`CROUCHING`, `SITTING` are 256/512/1024 (`POSE_MASK` 2047) - and by events for the arms:
-`{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}` as
-`drank`. Events, not bits: a swing is over in less than two pose beats.
+`CROUCHING`, `SITTING`, `DANCING` are 256/512/1024/2048 (`POSE_MASK` 4095) - and by events for
+the arms: `{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}`
+as `drank`. Events, not bits: a swing is over in less than two pose beats. A dance is a bit
+because it lasts (R, [Plans/dansen.md](Plans/dansen.md)), and only the bit crosses: every page
+picks the move from the dancer's id (`danceStep` in `web/js/dance.js`, the one copy of the
+moves the rave's settlers dance too) and dances them to the beat *it* plays (`danceBeat` in
+main.js: the hall, else the music, else the wall clock at the song's tempo).
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
@@ -540,7 +544,7 @@ away and leaves a swimmer. The camera on a bike is free: any look input resets
 still trails every frame). The mesh
 hangs each baked part (`scripts/build-bicycle.py`) on its Blender origin, and the steering axis
 is read off the steer and front-axle origins - move a pivot in the builder, not in JS. Peers
-see a rider through `FLAG_RIDING` (128; `POSE_MASK` is 255 now); a sea still running the old
+see a rider through `FLAG_RIDING` (128, within `POSE_MASK`); a sea still running the old
 `lib/players.mjs` masks it away, so a remote-hosted sea has to be redeployed before other
 players see bicycles.
 
@@ -842,8 +846,8 @@ measured strike frame) later from where both stand *then* (`REACH_SLACK` of give
 page never guesses at an attack, and a shield raised or a step back during the wind-up counts.
 A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per hand the pose
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
-then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16; mask in
-`lib/players.mjs` 127) faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
+then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
+faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
 Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest

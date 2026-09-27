@@ -13,6 +13,7 @@ import { stepBoat, DECK_Y } from './boat.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
+import { danceStep, wallBeat } from './dance.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -178,6 +179,11 @@ export function createWalkMode({
   // Whether F puts you on a bicycle here (web/js/bicycle.js). The island and the workbench
   // say yes; a room does not - there is no riding a bike round the tavern.
   bikes = false,
+  // Who is dancing and to what, when R is pressed (Plans/dansen.md): `{ id, beat }`, the id the
+  // sea knows us by - so our own screen picks the move everybody else's does - and the beat of
+  // whatever we hear (main.js danceBeat). Without one (the workbench) it is nobody in
+  // particular on the wall clock.
+  dance = null,
 }) {
   const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
@@ -278,6 +284,7 @@ export function createWalkMode({
     // What the beer has done so far, and the clock the stagger runs on.
     tipsy: tipsy || createTipsy(),
     sway: 0,
+    dancing: false,  // R (Plans/dansen.md): on the spot, until the feet do anything else
     blocking: false, // a shield is up in either hand - what net.js puts in the pose
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
@@ -295,6 +302,7 @@ export function createWalkMode({
     state.lying = false;
     state.sitting = null;
     state.crouchSince = 0;
+    state.dancing = false;
   }
 
   // Jumping and crouching live here rather than in the key handler because the controller
@@ -306,7 +314,20 @@ export function createWalkMode({
   }
   function crouchToggle() {
     if (state.lying) standUp();                 // pressing it again is how you get up
-    else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); }
+    else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); state.dancing = false; }
+  }
+  // Dancing, where you stand (Plans/dansen.md). A pose like sitting, held until you do anything
+  // else: walk, jump, crouch, get on something, fight, or press R again. Only with both feet on
+  // dry ground and nothing else going on - not on the bike, at a tiller, in the water, on a
+  // stool or lying down. A crouch is stood up out of, the way a jump stands you off a stool.
+  const canDance = () => state.active && !state.working && state.grounded && !state.swimming
+    && !state.vehicle && !state.bike && !state.sitting && !state.lying;
+  function danceToggle() {
+    if (state.dancing) { state.dancing = false; return; }
+    if (!canDance()) return;
+    state.crouching = false;
+    state.crouchSince = 0;
+    state.dancing = true;
   }
 
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
@@ -317,6 +338,7 @@ export function createWalkMode({
     state.crouching = false;
     state.lying = false;
     state.crouchSince = 0;
+    state.dancing = false;
     state.sitting = { x, z, y: y != null ? y : groundAt(x, z, state.pos.y), yaw, since: performance.now() };
     state.pos.set(x, state.sitting.y, z);
     keys.clear();                            // whatever walked you here is not walking you off
@@ -364,6 +386,8 @@ export function createWalkMode({
     // the crouch over - an infinite loop that never spent a rendered frame lying down,
     // reachable only by physically releasing and re-pressing the key.
     if (k === 'c' && !e.repeat) { e.preventDefault(); if (!state.bike) crouchToggle(); }
+    // Not on a repeat either, or holding R would start and stop the dance every few frames.
+    if (k === 'r' && !e.repeat) { e.preventDefault(); danceToggle(); }
     // Whatever E and X reach for - a door, a stool, a boat, a settler - is done on foot, so
     // they get you off the bike first; so does sowing, which happens where the feet are.
     if (k === 'e' && state.near) { e.preventDefault(); dismount(); state.onInteract && state.onInteract(state.near); }
@@ -437,10 +461,16 @@ export function createWalkMode({
   // refused, so a mashed button is not a volley the sea sees and nobody else does. A shield
   // up in the other hand is no reason not to: the sea takes a swing from a blocker.
   // `side` goes with it, so everybody else sees that arm come down (Plans/andere-spelers-zoals-jij.md).
-  const fight = (side) => { if (canFight() && classicAvatar.attack(side) && onSwing) onSwing(side); };
+  // A swing ends a dance: fighting is doing something else with your arms.
+  const fight = (side) => {
+    if (!canFight() || !classicAvatar.attack(side)) return;
+    state.dancing = false;
+    if (onSwing) onSwing(side);
+  };
   const SIDE_OF = { 0: 'leftArm', 2: 'rightArm' };
   const shieldIn = (side) => classicAvatar.held(side) === 'shield';
   function guardUp(side, on) {
+    if (on) state.dancing = false;              // and so does a shield going up
     state.guard[side] = on;
     state.blocking = state.guard.leftArm || state.guard.rightArm;
   }
@@ -900,6 +930,7 @@ export function createWalkMode({
     if (p.hit('bike')) toggleBike();
     if (p.hit('jump')) jump();
     if (p.hit('crouch') && !state.bike) crouchToggle();
+    if (p.hit('dance')) danceToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
     const held = p.down('crouch');
@@ -1142,6 +1173,14 @@ export function createWalkMode({
     return afterMove(dt);
   }
 
+  // The move and the beat for the rig while dancing, the same way peers.js works them out for
+  // somebody else: danceStep off the dancer's id, on the beat we hear.
+  function dancingNow() {
+    if (!state.dancing) return null;
+    const d = dance ? dance() : { id: 'me', beat: wallBeat(performance.now()) };
+    return { ...danceStep(d.id, d.beat), beat: d.beat };
+  }
+
   // What both a walker and a boat end with: the pose, the animation, where the camera sits
   // and what is within reach. Split out when the boat arrived, because a boat needs all of
   // it and none of the walking above it - and a second copy of the camera block would have
@@ -1149,6 +1188,9 @@ export function createWalkMode({
   function afterMove(dt) {
     // Looking out of the head: on foot the body faces where you look, as it would; a boat
     // is its own thing, and sitting or lying down puts the camera back behind you.
+    // A dance ends the way a nap does: the moment the feet do anything else, or the body is
+    // somewhere it cannot dance (a hull, the saddle, the water).
+    if (state.dancing && (state.moving || state.crouching || !canDance())) state.dancing = false;
     const fp = state.firstPerson && !state.vehicle && !state.lying && !state.sitting;
     if (fp && !state.bike) state.yaw = state.camYaw;
     avatar.scale.setScalar(1);
@@ -1204,6 +1246,7 @@ export function createWalkMode({
       crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
+      dancing: dancingNow(),
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');

@@ -66,6 +66,8 @@ import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
 import { attachStable, updateStable, disposeStable } from './stable.js';
+// The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
+import { clockBeat, wallBeat } from './dance.js';
 import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
 import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
 import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
@@ -1474,6 +1476,14 @@ function raveGuests() {
   return out;
 }
 
+// Whether the island's own stable is standing, and so whether its horse and hens are on the
+// dance floor tonight: that is where they went while the paddock stands empty (updateStable's
+// `away`, on the same raveOn). An island without a stable brings no horse.
+function stableComes() {
+  const rec = state.byId.get('civic:stable');
+  return !!(rec && rec.stable && rec.group.visible);
+}
+
 // What sound.js is told about the rave: nothing when there is none, the hall when you are
 // in it, and otherwise how far the castle is - a thump through the walls from the square.
 function raveHeard() {
@@ -1482,6 +1492,24 @@ function raveHeard() {
   const rec = state.byId.get('civic:castle');
   if (!rec || !rec.group.visible) return null;
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
+}
+
+// The beat everybody on this screen dances to (Plans/dansen.md): ourselves (R) and every other
+// player whose pose says they are dancing, since only the bit crosses the wire. The hall's own
+// count when we are in it, which already follows the music when there is music; outside, the
+// music when we can hear it (the thump through the castle walls); otherwise the wall clock at
+// the song's tempo. Everybody dances in time with what this screen plays, not with what theirs
+// does.
+function danceBeat() {
+  const hall = state.inside && state.inside.beat ? state.inside.beat() : null;
+  if (hall != null) return hall;
+  const clock = state.sound ? state.sound.raveClock() : null;
+  return clock != null ? clockBeat(clock) : wallBeat(performance.now());
+}
+// And who we are while we dance: the id the sea knows us by, which is the id everybody else's
+// peers.js picks our moves from (dance.js danceStep), so our screen and theirs agree.
+function danceNow() {
+  return { id: (state.net && state.net.id()) || 'me', beat: danceBeat() };
 }
 
 // Three o'clock: whoever is inside is put back out on the step, once.
@@ -1501,6 +1529,7 @@ function enterInterior(room, at) {
         onLeave: () => leaveInterior(),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
         onDrink: (side) => { if (state.net) state.net.drink(side); },
+        dance: danceNow,
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -1515,9 +1544,10 @@ function enterInterior(room, at) {
   cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
-  inside.enter({ avatar: loadAvatar(), guests: room === 'rave' ? raveGuests() : null });
+  const rave = room === 'rave';
+  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
   state.ui.setIndoors(true);
-  if (room === 'rave') state.ui.toast(RAVE_IN);
+  if (rave) state.ui.toast(RAVE_IN);
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -5014,7 +5044,7 @@ function frame(nowMs) {
   glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
-    state.peers.update(dt);
+    state.peers.update(dt, { beat: danceBeat() });
     // Only the people in the room you are standing in are people you can bump into.
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
     else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
@@ -5834,6 +5864,7 @@ async function boot() {
     onDrink: (side) => { if (state.net) state.net.drink(side); },
     tipsy: state.tipsy,
     bikes: true,
+    dance: danceNow,
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
@@ -6201,7 +6232,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
-  if (rec.stable) updateStable(rec.stable, dt);
+  // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
+  if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.butcher) updateButcher(rec.butcher, dt);

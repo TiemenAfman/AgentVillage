@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_PARTS } from './settler-mesh.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { box, cylinder, cone, sphere } from './buildings.js';
+import { dancePose } from './dance.js';
 
 const LIMBS = {
   leftLeg: ['Left boot', 'Left trousers', 'Left stocking cuff'],
@@ -529,6 +530,7 @@ export function createClassicAvatar(spec, material) {
   }
 
   let time = 0;
+  let danceMix = 0;   // how far into a dance the body is, 0..1, so starting and stopping ease
   function update(pose, dt) {
     time += dt;
     const ride = pose.riding || null;
@@ -562,6 +564,21 @@ export function createClassicAvatar(spec, material) {
       for (const side of ['leftArm', 'rightArm']) {
         if (holding[side]) targets[side] = (FP_HOLD_X[holding[side]] ?? FP_HOLD_X.default) + look + stride * 0.08;
       }
+    }
+    // Dancing (Plans/dansen.md): `pose.dancing` is { move, beat, hype } - danceStep's move for
+    // this dancer and the beat whoever is watching hears (web/js/dance.js) - and the angles are
+    // the same dancePose the settlers on the castle's floor are drawn from. Whatever is in the
+    // hands is danced with. The limbs take it here; the bob, lean, twist and roll are the whole
+    // body's and go on `object` below, the rig's root at the feet, since the limbs are not
+    // children of the core. Not in first person: that pose is a view model nobody else sees.
+    const dancing = pose.dancing && !ride && !pose.sitting && !pose.lying && !pose.swimming && !fp ? pose.dancing : null;
+    const dance = dancing ? dancePose(dancing.move, dancing.beat, dancing.hype || 0) : null;
+    if (dance) {
+      // The legs take the lean back off, as the settlers' do, so they stay under the body.
+      targets.leftLeg = dance.legL - dance.lean;
+      targets.rightLeg = dance.legR - dance.lean;
+      targets.leftArm = dance.left;
+      targets.rightArm = dance.right;
     }
     // `blocking` is either which hands are up ({ leftArm, rightArm }, from walk.js) or a bare
     // true, which means the default hand.
@@ -628,13 +645,29 @@ export function createClassicAvatar(spec, material) {
       else if (drunk[name]) pieces[name].pivot.rotation.x = drunk[name].x;
       // A pedalling leg follows the crank exactly: damped, it lags a quarter turn at speed.
       else if (ride && (name === 'leftLeg' || name === 'rightLeg')) pieces[name].pivot.rotation.x = target;
-      else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, 15, dt);
+      // Twice as quick on the dance floor: at 15 a punch on the kick is still on its way up
+      // when the next one comes.
+      else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance ? 30 : 15, dt);
     }
     pieces.leftArm.pivot.rotation.z = drunk.leftArm ? drunk.leftArm.z
       : damp(pieces.leftArm.pivot.rotation.z, holding.leftArm ? 0 : (pose.running ? -0.12 : 0), 12, dt);
     pieces.rightArm.pivot.rotation.z = drunk.rightArm ? drunk.rightArm.z
       : damp(pieces.rightArm.pivot.rotation.z, holding.rightArm ? 0 : (pose.running ? 0.12 : 0), 12, dt);
     pieces.core.pivot.position.y = Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
+    // The body's share of the dance, eased in over a beat or so and back out when it stops.
+    // Scaled by PLAYER_SCALE like every pivot here: dancePose's lifts are a settler's.
+    danceMix = damp(danceMix, dance ? 1 : 0, 6, dt);
+    if (dance) {
+      object.position.y = dance.bob * PLAYER_SCALE * danceMix;
+      object.rotation.set(dance.lean * danceMix, dance.twist * danceMix, dance.roll * danceMix);
+    } else if (object.position.y || object.rotation.x || object.rotation.y || object.rotation.z) {
+      object.position.y = damp(object.position.y, 0, 12, dt);
+      object.rotation.set(damp(object.rotation.x, 0, 12, dt), damp(object.rotation.y, 0, 12, dt), damp(object.rotation.z, 0, 12, dt));
+      if (Math.abs(object.position.y) + Math.abs(object.rotation.x) + Math.abs(object.rotation.y) + Math.abs(object.rotation.z) < 1e-4) {
+        object.position.y = 0;
+        object.rotation.set(0, 0, 0);
+      }
+    }
     // Cancel each arm pivot's own rotation on the item it carries: the attach point gives
     // the item the hand's position (correct - the grip moves with the arm), but a held
     // item should not also inherit the arm's tilt, or it lies over at whatever angle the
