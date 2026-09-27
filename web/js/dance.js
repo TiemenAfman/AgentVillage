@@ -93,3 +93,8 @@ export function danceStep(id, beat) {
 export function wallBeat(ms) {
   return ms / 1000 / SPB;
 }
+
+// The beat, from how far into the loop the music is (sound.raveClock, in seconds).
+export function clockBeat(seconds) {
+  return seconds / SPB;
+}

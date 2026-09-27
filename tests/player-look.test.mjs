@@ -1,7 +1,7 @@
 // Seeing other players the way they see themselves (Plans/andere-spelers-zoals-jij.md): their
-// look, their pose - lying, crouching, sitting - and their arms, a swing and a sip. peers.js,
-// which draws all of it, reaches walk.js and cannot be loaded here; what can be held is what
-// the sea lets through (lib/players.mjs) and what a page says (web/js/net.js).
+// look, their pose - lying, crouching, sitting, dancing - and their arms, a swing and a sip. Held
+// here: what the sea lets through (lib/players.mjs) and what a page says (web/js/net.js). How
+// peers.js draws a dancer is tests/dance.test.mjs's, which loads it with a canvas stub.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -49,14 +49,14 @@ test('a look is held to its shape: whatever else a socket hangs on it does not r
   });
 });
 
-test('lying, crouching and sitting go through the sea; nothing above them does', () => {
+test('lying, crouching, sitting and dancing go through the sea; nothing above them does', () => {
   const { join } = room();
   const ann = join('aaaaaaaaaaaa');
-  for (const bit of [POSE.LYING, POSE.CROUCHING, POSE.SITTING]) {
+  for (const bit of [POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING]) {
     ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: bit | POSE.MOVING });
     assert.equal(ann.p.f, bit | POSE.MOVING);
   }
-  assert.deepEqual([POSE.LYING, POSE.CROUCHING, POSE.SITTING], [256, 512, 1024]);
+  assert.deepEqual([POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING], [256, 512, 1024, 2048]);
   ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 4096 | POSE.SITTING });
   assert.equal(ann.p.f, POSE.SITTING);
 });
@@ -90,7 +90,7 @@ globalThis.WebSocket = class {
   send(text) { this.sent.push(JSON.parse(text)); }
   close() { this.readyState = 3; }
 };
-const { createNet, FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING } = await import('../web/js/net.js');
+const { createNet, FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING } = await import('../web/js/net.js');
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('a page says what it looks like on connect, how its body is, and which hand swung', async () => {
@@ -107,6 +107,13 @@ test('a page says what it looks like on connect, how its body is, and which hand
     await wait(150);
     assert.equal(sock.sent.filter((m) => m.t === 'p').at(-1).f & (FLAG_LYING | FLAG_CROUCHING | FLAG_SITTING), FLAG_SITTING);
     walk.state.sitting = null;
+    // Dancing (Plans/dansen.md): the bit and nothing else - no move, no beat.
+    walk.state.dancing = true;
+    await wait(150);
+    const danced = sock.sent.filter((m) => m.t === 'p').at(-1);
+    assert.equal(danced.f & (FLAG_LYING | FLAG_CROUCHING | FLAG_SITTING | FLAG_DANCING), FLAG_DANCING);
+    assert.deepEqual(Object.keys(danced).filter((k) => /move|beat/.test(k)), [], 'the dance itself went over the wire');
+    walk.state.dancing = false;
     assert.ok(net.swing('rightArm'));
     assert.equal(sock.sent.filter((m) => m.t === 'swing').at(-1).side, 'rightArm');
     net.drink('leftArm');
@@ -121,9 +128,9 @@ test('a page says what it looks like on connect, how its body is, and which hand
 test('the numbers the page and the sea both write down agree', () => {
   // POSE is the sea's copy and net.js / peers.js the page's; three places, one set of bits.
   const peers = readFileSync(new URL('../web/js/peers.js', import.meta.url), 'utf8');
-  for (const [name, bit] of [['LYING', 256], ['CROUCHING', 512], ['SITTING', 1024]]) {
+  for (const [name, bit] of [['LYING', 256], ['CROUCHING', 512], ['SITTING', 1024], ['DANCING', 2048]]) {
     assert.equal(POSE[name], bit);
     assert.match(peers, new RegExp(`const FLAG_${name} = ${bit};`), `peers.js has another ${name}`);
   }
-  assert.deepEqual([FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING], [256, 512, 1024]);
+  assert.deepEqual([FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING], [256, 512, 1024, 2048]);
 });

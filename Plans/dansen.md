@@ -7,8 +7,9 @@ en daarna "Bouw voor iedereen zichtbaar". In `Plans/rave-in-het-kasteel.md` ston
 ## Wat er gebeurt
 
 - **R** (op de controller het kruisje omhoog) en je settler danst, waar je ook staat: op de
-  dansvloer, op het plein, in de tavern. Nog een keer R, of weglopen, springen, hurken, en je
-  staat weer gewoon. Niet op de fiets, niet in de boot en niet zwemmend.
+  dansvloer, op het plein, in de tavern. Nog een keer R, of weglopen, springen, hurken, zwaaien
+  of een schild opheffen, en je staat weer gewoon. Niet op de fiets, niet in de boot, niet
+  zwemmend, niet zittend of liggend. Een biertje drinken mag wel: dansend, met je glas.
 - Je danst dezelfde dans als de settlers op de rave (`dancePose`): twee eigen bewegingen die om
   de vier maten wisselen, en in de laatste maat van de build de handen omhoog. Welke twee is
   van jou (uit je eigen id), dus iedereen die naar je kijkt ziet dezelfde stijl.
@@ -38,6 +39,21 @@ en daarna "Bouw voor iedereen zichtbaar". In `Plans/rave-in-het-kasteel.md` ston
 - **Een zee van vóór dit bit maskeert het weg**, zoals bij de fiets (`FLAG_RIDING`): op een eigen
   zee (de islander start hem uit deze checkout) werkt het meteen, op de open zee pas als die
   opnieuw is uitgerold. Geen `SEA_V`-ophoging: een oudere pagina die het bit krijgt negeert het.
+- **De dans zit in het rig zelf** (`classic-avatar.js`, `update({ dancing })`): armen en benen
+  uit `dancePose`, en de bob, de lean, de twist en de roll op de wortel van het rig, bij de
+  voeten - de ledematen hangen niet aan de romp, dus daar kan het niet. Zo hoeven walk.js en
+  peers.js alleen door te geven *dat* er gedanst wordt. Niet in first person: dat is een
+  viewmodel dat niemand anders ziet. Op het podium van de rave stond een andere speler tot zijn
+  knieën in de planken (de vloer binnen is plat, het podium is alleen walk levels); een danser
+  wordt daarom net als een zitter op de hoogte getekend die hij zelf stuurde.
+- **Getest**: `tests/dance.test.mjs` (de keuze van de beweging, het rig, wanneer het niet danst,
+  de knop op de controller, en `peers.js` zelf - dat laadt onder Node met een canvas-stub - die
+  een ander op de beat laat dansen en op het podium zet), `tests/player-look.test.mjs` (het bit
+  gaat de lijn op en door de zee, en de beweging en de tel niet). In de browser op `/demo`
+  bekeken: op het veld en tussen de ravers, en R, lopen, springen, hurken en de fiets gedragen
+  zich zoals hierboven. Twee pagina's op één zee zagen elkaar wel, maar het bos op het verse
+  eiland stond telkens tussen ze in; dat stuk is dus met de test van `peers.js` gedekt en niet
+  op beeld.
 
 ## Nog niet
 

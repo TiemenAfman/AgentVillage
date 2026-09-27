@@ -705,6 +705,9 @@ function createRaveShow({ scene, material, layout }) {
     enter: ({ dancers: guests, stable = false } = {}) => { own = 0; dress(guests, stable); },
     // Asked by interior.js after enter, for the walk's list of what is in the way.
     blockers: () => (stableHere ? layout.herdBlockers : []),
+    // How many beats in the hall is, for a player dancing on the floor (Plans/dansen.md): the
+    // same count the settlers dance to, so a player keeps time with the crowd music or not.
+    beat: () => S.beats,
     update, dispose,
   };
 }

@@ -65,7 +65,10 @@ puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does no
 a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
 C again, to get back up. (It was Ctrl until crouching and walking turned out to be
 ctrl+W, which closes the tab: Chrome keeps that one for itself and a page cannot refuse
-it.) You can walk into
+it.) **R** dances, where you stand - the dance the settlers do on the castle's floor on a
+Saturday night, two moves of your own and on the beat of whatever you hear - until you walk,
+jump, crouch, swing, raise a shield or press R again; everybody else on the sea sees you
+dance (up on the D-pad on a controller). You can walk into
 the sea and you swim rather than walk once you are past the waterline - as far as you
 like, even to another island, but slowly: the boat is five times faster. You cannot jump
 out of the water.

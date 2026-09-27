@@ -42,6 +42,11 @@ export const FLAG_RIDING = 128;
 export const FLAG_LYING = 256;
 export const FLAG_CROUCHING = 512;
 export const FLAG_SITTING = 1024;
+// Dancing (R, Plans/dansen.md). Only *that* somebody dances: which move comes out of their id
+// and the bar, and the bar out of the beat whoever is watching hears (web/js/dance.js), so
+// there is nothing else to send and nothing to keep in step. Same kind of word as the three
+// above, and a sea from before it masks it away the same way.
+export const FLAG_DANCING = 2048;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -385,7 +390,8 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.shields && s.shields.right ? FLAG_SHIELD_RIGHT : 0)
       | (s.lying ? FLAG_LYING : 0)
       | (s.crouching && !s.lying ? FLAG_CROUCHING : 0)
-      | (s.sitting ? FLAG_SITTING : 0);
+      | (s.sitting ? FLAG_SITTING : 0)
+      | (s.dancing ? FLAG_DANCING : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.

@@ -65,6 +65,8 @@ import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
 import { attachStable, updateStable, disposeStable } from './stable.js';
+// The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
+import { clockBeat, wallBeat } from './dance.js';
 import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
 import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
 import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
@@ -1491,6 +1493,24 @@ function raveHeard() {
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
 }
 
+// The beat everybody on this screen dances to (Plans/dansen.md): ourselves (R) and every other
+// player whose pose says they are dancing, since only the bit crosses the wire. The hall's own
+// count when we are in it, which already follows the music when there is music; outside, the
+// music when we can hear it (the thump through the castle walls); otherwise the wall clock at
+// the song's tempo. Everybody dances in time with what this screen plays, not with what theirs
+// does.
+function danceBeat() {
+  const hall = state.inside && state.inside.beat ? state.inside.beat() : null;
+  if (hall != null) return hall;
+  const clock = state.sound ? state.sound.raveClock() : null;
+  return clock != null ? clockBeat(clock) : wallBeat(performance.now());
+}
+// And who we are while we dance: the id the sea knows us by, which is the id everybody else's
+// peers.js picks our moves from (dance.js danceStep), so our screen and theirs agree.
+function danceNow() {
+  return { id: (state.net && state.net.id()) || 'me', beat: danceBeat() };
+}
+
 // Three o'clock: whoever is inside is put back out on the step, once.
 function keepRaveHours() {
   if (!state.inside || state.inside.room !== 'rave' || raveOn()) return;
@@ -1508,6 +1528,7 @@ function enterInterior(room, at) {
         onLeave: () => leaveInterior(),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
         onDrink: (side) => { if (state.net) state.net.drink(side); },
+        dance: danceNow,
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -5009,7 +5030,7 @@ function frame(nowMs) {
   glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
-    state.peers.update(dt);
+    state.peers.update(dt, { beat: danceBeat() });
     // Only the people in the room you are standing in are people you can bump into.
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
     else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
@@ -5828,6 +5849,7 @@ async function boot() {
     onDrink: (side) => { if (state.net) state.net.drink(side); },
     tipsy: state.tipsy,
     bikes: true,
+    dance: danceNow,
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.

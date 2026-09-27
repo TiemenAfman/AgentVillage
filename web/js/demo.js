@@ -1019,11 +1019,11 @@ const flatTerrain = {
 const KEYS_OUT = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
   + '<span>mouse to look, Esc frees it, click takes it back</span>'
   + '<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>V</kbd> first person</span><span><kbd>Space</kbd> jump</span>'
-  + '<span><kbd>Ctrl</kbd> crouch</span><span><kbd>E</kbd> step inside</span>'
+  + '<span><kbd>Ctrl</kbd> crouch</span><span><kbd>R</kbd> dance</span><span><kbd>E</kbd> step inside</span>'
   + '<span><kbd>Esc</kbd> back to the sky</span>';
 const KEYS_IN = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
   + '<span>mouse to look, Esc frees it, click takes it back</span>'
-  + '<span><kbd>E</kbd> sit down</span><span><kbd>Esc</kbd> step outside</span>';
+  + '<span><kbd>E</kbd> sit down</span><span><kbd>R</kbd> dance</span><span><kbd>Esc</kbd> step outside</span>';
 
 let walk = null;
 let inside = null;
