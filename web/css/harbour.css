@@ -132,10 +132,11 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .an-rels li { padding: 5px 8px; }
   .an-about { font-size: 13px; }
   /* To the left and narrower. At 390 wide, centred, the bars ran from x 103 to 287
-     at 92px up, straight across the touchpad's X button (x 230-294, 74-138px up) - which
-     reads as the bar being part of the button. The left edge is the stick's side, but that
-     stick floats wherever the thumb lands and is drawn over whatever is there. */
-  .vitals { align-self: flex-start; margin-left: 16px; width: min(160px, 42vw); gap: 3px; }
+     at 92px up, straight across the touchpad's X button - which reads as the bar being part
+     of the button. The left edge is the stick's side, but that stick floats wherever the
+     thumb lands and is drawn over whatever is there. 140 since the buttons became a cluster
+     (touchpad.js): its X sits from x 164 at 390 wide. */
+  .vitals { align-self: flex-start; margin-left: 16px; width: min(140px, 36vw); gap: 3px; }
   .vital b { height: 6px; }
   .vital span { width: 12px; font-size: 10px; }
 }
