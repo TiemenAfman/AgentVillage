@@ -70,6 +70,7 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 .chips-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
   text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 #clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+#clock-chip.lens { color: var(--accent-2); border-color: rgba(127,199,217,.45); }
 #nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
 #nav-collapse-btn.collapsed { transform: rotate(180deg); }
 

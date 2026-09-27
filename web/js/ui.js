@@ -190,9 +190,12 @@ export function createUI(handlers) {
     el('live-text').textContent = mode === 'off' ? 'Offline' : mode === 'replay' ? 'Replay' : 'Live';
   }
 
-  function setClock(hour, seasonName) {
+  function setClock(hour, seasonName, lens = false) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
-    el('clock-chip').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}`;
+    const chip = el('clock-chip');
+    chip.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · local' : ''}`;
+    chip.classList.toggle('lens', lens);
+    chip.title = lens ? 'A time of day on this screen only - the sea keeps its own. Click to go on.' : 'Time of day on the island';
   }
 
   // --- now building --------------------------------------------------------
