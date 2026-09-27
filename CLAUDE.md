@@ -862,6 +862,15 @@ the page fills the bar on its own clock; it is sent only when the page's number 
 wrong without it: after every hit that leaves you standing, and "whole" after an evict the
 page was told less than.
 
+**The islets are the page's, worked out from the fleet, and never regions**
+([Plans/starter-eilanden.md](Plans/starter-eilanden.md)). `shared/islets.mjs isletsNear(fleet, at)`
+is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet's square is
+`clearOf` every row's `reach` plus `ISLET_MARGIN` (and a phone's own berth, handed in as
+`extra`) - so every page sees the same islets, the sea gains nothing, and they never go into
+`nextOrigin`. `web/js/islets.js` draws them relative to `state.homeOrigin` from `syncIslets()` in
+`doSyncFleet`, and draws nothing until the berth is known. Not being regions is why the sea under
+them is open-sea blue and boats sail through; `isletHeight` is the one ground for the walk-on step.
+
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
 minutes or so on the sea's own clock and riding out on the welcome and on one broadcast. It

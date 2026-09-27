@@ -46,6 +46,7 @@ import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
+import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership } from './hamlets.js';
 import { createBoard } from './board.js';
@@ -2582,6 +2583,18 @@ function syncFleet(rows) {
   return syncing;
 }
 
+// The islets on the open water (web/js/islets.js): worked out from the fleet by every page
+// alike, so they follow every fleet change and every rehome from here. Not before our berth
+// is known - drawn relative to a berth of [0,0] they would stand in the wrong sea for the
+// moment it takes to arrive, and on top of whoever is really there. A phone's own berth is
+// open water nobody else holds, so it is handed over as water an islet may not take.
+function syncIslets() {
+  if (!state.islets) return;
+  if (!state.homeOrigin) { state.islets.apply([], null); return; }
+  const extra = STANDALONE ? [{ half: OPEN_HOME / 2, origin: state.homeOrigin }] : [];
+  state.islets.apply(state.fleet || [], state.homeOrigin, { extra, focus: focusPoint() });
+}
+
 async function doSyncFleet() {
   if (!state.terrain) return;
   const moored = state.fleet || [];
@@ -2651,6 +2664,7 @@ async function doSyncFleet() {
     if (region) arrived.push(row.name);
   }
   syncHorizon();
+  syncIslets();
   raiseGuestIslands();
   buildDocks();
   launchBoats();
@@ -5125,6 +5139,7 @@ function frame(nowMs) {
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
+  if (state.islets) state.islets.update(dt, focusPoint());
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -5853,6 +5868,7 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
+  state.islets = createIslets({ scene, modest });
   state.minimap = createMinimap();
   state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
   // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.

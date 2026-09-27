@@ -198,6 +198,19 @@ function sheet(name, onLoad) {
   });
 }
 
+// A plant's two materials, bark and foliage, for plants the landscape does not scatter
+// itself (web/js/islets.js): the same recipe as the forest's own in createLandscape, so a
+// palm out on a sandbank is drawn on the same sheets as a pine on the island.
+export function plantMaterials() {
+  const base = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const bark = base.clone();
+  const foliage = base.clone();
+  base.dispose();
+  sheet('bark', (tex) => { tex.repeat.set(2, 1); bark.map = tex; bark.needsUpdate = true; });
+  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliage.map = tex; foliage.needsUpdate = true; });
+  return { bark, foliage };
+}
+
 // How big the detailed water patch is and where its middle sits. Exported and pure so the
 // budget can be asserted without a WebGL context - tests/water-span.test.mjs - because the
 // patch is by a wide margin the heaviest geometry on the island (135k triangles of the
