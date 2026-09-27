@@ -138,10 +138,12 @@ Roads, unlike plots, the scan does take up by itself: every scan runs the planne
 `pruneUnreachable` and lays again whatever no longer reaches the square, because a path
 records only the cells it paved itself - when a hamlet dies its road goes, and every road
 that had braided onto it was left ending in the grass (45 houses cut off, 25 September
-2026). Five version gates in `lib/layout.mjs`, in descending order of violence:
+2026). Six version gates in `lib/layout.mjs`, in descending order of violence:
 `LAYOUT_VERSION` (throws away the town
 and the terrain — almost never right), `PARCEL_VERSION` (re-plans houses, sheds, parcels,
-paths), `ROAD_VERSION` (re-routes hamlet roads and nothing else), `SQUARE_VERSION`,
+paths), `TOWN_VERSION` (lays the centre's own buildings out again on the town's plan and
+re-routes every road round its streets; no house or shed moves), `ROAD_VERSION` (re-routes
+hamlet roads and nothing else), `SQUARE_VERSION`,
 `QUAY_VERSION` (re-plans the quay alone, its planks included — the one gate that runs from
 `placeAll` rather than `loadLayout`, because it has to ask the ground a question). Reach
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
@@ -418,6 +420,12 @@ republish, and a compact renumbers. `crowd-view.js held()` keeps it by index (it
 our roster is translated) and `draw` faces a *standing* body at the talker at the walk's 0.12.
 Anything that names one of our settlers *to* the sea goes through `seaIdOf` in main.js (the
 inverse of `/api/crowd-ids`): `faceUp` sent `house:<uuid>` and the sea held nobody.
+A conversation lasts until it is ended - Escape closes the chat, the town hall or a keeper's
+words (`parley`, `endParley`, `ui.setSpeech`) - and the caller of `faceUp` pauses walk mode
+first: with the feet still running, walk mode's stance beat `web/js/facetoface.js`'s follow and
+the camera swung in to a keeper and straight back up. `faceUp` also says the hold again every
+`HOLD_AGAIN_MS`, because a crowd rebuilt by a republish starts with nobody held, and hands
+facetoface a *finder* rather than the figure, because the rebuilt roster is new objects.
 
 On the drawing side `rev` only decides whether to refetch, never whether to rebuild:
 `web/js/islandsig.js` compares a `drawnSignature()` of what is already standing against the
@@ -598,6 +606,23 @@ feature a few cells across is gone - and world.js paints its bands off `crater.t
 units. A* on it is ~5-10x dearer than on the 128 cone (30-65 ms beach-to-rim, `findPath`'s
 `open.sort`), which the hostility tick's 3 searches per 650 ms pay for.
 
+**Beside it, the starters: the sea's too, but made to be taken** ([Plans/starter-eilanden.md](Plans/starter-eilanden.md)).
+`starterBundle(slot)` (`lib/islandbundle.mjs`) is a 64-island with a square, well, tables,
+tavern and town hall - so an innkeeper and a mayor, no settlers - from the slot number alone;
+`fleet.raiseStarters()` keeps `STARTER.free` (3) unclaimed, berthed with `nextOrigin` after
+the volcano, each holding `STARTER.room` (384, so `reach` 192). On the fleet they are
+`sea: true` + `starter: true`: never swept, `claim`/`patch`/`vouch` refuse them, but unlike the
+volcano they **count against `MAX_ISLANDS`** (`places()`; `players()` stays real islanders
+only). A newcomer's `publish` takes the berth of the first starter it fits in and returns it
+as `island.took`; `lib/sea.mjs` then `retireStarter()`s it (crowd off, walkers on it
+`evicted` to their skiff or square via `health.refuge`, `gone` before the newcomer's
+`joined`) and `topUpStarters()` puts out the next slot - slots are never reused in one run.
+`createSea({ starters })` defaults on; the test helpers default it **off** (`starters: false`
+in `tests/support/sea.mjs` and the sea tests' own `createSea`), because every berth and
+island count in them assumes an empty ring - pass `starters: true` to test them. The fleet
+row carries `reach`, and the phone's `standaloneHome()` lays its open-water berth on it: on
+`gridSize / 2` it put its skiff inside the room a starter holds for its claimer.
+
 **The volcano's lava has bridges, and they are ordinary bridges.** `volcanoBridges()` in
 `shared/volcano.mjs` picks three crossings per flow (apron, mid-cone, high cone) from the
 terrain alone - axis-aligned, exactly over the lava + bank run, landing on plain ground -
@@ -657,6 +682,44 @@ The sweep that drops an islander after `GRACE_MS` calls `residents.drop` - house
 go, guards and the volcano stay. `settler-figures.js` now reuses freed slots (`free`), because
 the volcano's crowd churns for as long as the page is open.
 
+**The story animals are the islander's to remember and the sea's to walk**
+([Plans/dierenverhalen.md](Plans/dierenverhalen.md); the wire is
+[docs/animals-wire.md](docs/animals-wire.md), the disk [docs/animal-story-storage.md](docs/animal-story-storage.md)).
+At most six named animals per island (`shared/animals.mjs`, the one copy of species, traits,
+acts - wire order, append only - and trace kinds): a hen first, then a goat and a sparrow.
+`lib/animal-stories.mjs` is a reducer with no clock: `decide*` makes every choice (off a
+stream seeded by the island's salt and the event's sequence) and writes the *outcome* into
+the event, `applyAnimalEvent` only checks and applies, so a replay never rerolls and a rule
+change only touches future choices (`rules` in each event). `lib/animal-store.mjs` keeps
+`data/animal-events.jsonl` - **irreplaceable, like layout.json** - flushed per event,
+replayed in full on open, torn tails kept aside, one writer (`animal-store.lock`, taken over
+only from a pid that no longer runs). `lib/animal-life.mjs` runs it from serve.mjs: after
+every scan (`animalsLook`, also 1.5 s after the keeper's page connects, because the first hen
+arrives only while somebody is watching a working island) it asks for an arrival, lets go of
+stale errands, turns new activity into errands and finds ground for earned marks
+(`lib/animal-places.mjs`, which uses the garden's own `groundCheck` - a nest never goes where
+a bed would be refused). Activity is `humanTurns + assistantMsgs + toolCalls` per house, an
+opportunity rather than a reward: only the cursor a visit consumed is journaled, in the same
+event as the visit; one notable encounter per animal per 20-minute window, three per island
+per hour, one label change per animal per day (labels have hysteresis). The errand goes to
+the sea through **`POST /island/:id/animals`** (key, then `fleet.vouch`, then the strict
+`parseAnimals` of `lib/animalbundle.mjs`; `packAnimals` is the forgiving sender) and counts
+only when the sea says `{t:'animal', a:'done', gen}` **over the islander's own socket** -
+`lib/seaclient.mjs` counts `gen` up on every welcome and re-posts everything, and
+`animalLife.complete` refuses any other generation, so an interrupted errand runs again and
+a completion heard twice counts once. That message is the one thing the islander acts on from
+the sea; it is still not an inbound route. The sea (`shared/animalwalk.mjs`, trig-free and
+tick-counted like settlerwalk; `lib/animal-crowd.mjs`) keeps herds in memory like everything
+else and broadcasts **`{t:'herd'}`** (who, and the marks) and **`{t:'af'}`** (seven numbers a
+row) - their own `t`s, because a page from before them reads any unknown `{t:'island', a}` as
+a fleet row. `rev` never moves for an animal. A sea older than the door answers `no route`,
+which the seaclient says once and leaves until the next welcome. The page draws every island's
+animals through one shared instanced batch (`web/js/animal-view.js`; `web/js/fauna.js` keeps
+the joint animation, `/demo` and the stable still move on their own through the same pose) and
+explains them from `/api/animals` (not on `PUBLIC_API`: real house ids and the whole diary) in
+`web/js/animal-dossier.js`; a visitor gets only the public card the sea carries, with settlers
+under their redacted ids. `config.animals.pace` divides every story duration for playtesting.
+
 The line home (`lib/seaclient.mjs`) goes one way on purpose: the islander reaches out, the
 sea never reaches in. That is what lets `lib/access.mjs` stay strict — the island needs no
 route open to anybody — so an inbound half would be a change of posture, not a convenience.
@@ -687,7 +750,7 @@ which differs between players on the same release all the time, and by the *line
 (`compareLines`, major.minor): a patch apart says nothing. **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
-`ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
+`TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
 a bundle that an older 0.4.x would misread - a release and a checkout share one island in
 `~/.promptholm`, and an older one on a newer layout plans the town again. Any of those is
 the next minor.
@@ -711,6 +774,19 @@ of these reasons fix themselves, so the loop turned one problem into a toast eve
 seconds — in the wire's own vocabulary ("key"), which tells whoever wrote the protocol what
 is wrong and tells whoever has to fix it nothing.
 
+A sea that does not answer at all is the same rule with no refusal to hang it on: since the
+sea walks every crowd, it is an island with nobody on it (26 September 2026, twelve minutes
+of it, found only by asking). After `QUIET_MS` (10 s, past a sea restart's blank second)
+`lib/seaclient.mjs` logs it once, naming the address, and says `back after …` on the join;
+`net.js` says `onStatus('quiet')` once, and main.js puts `web/js/seaquiet.js`'s sentence in
+the skew box (`setSeaQuiet`) until a socket opens - with **On my own** as the hint only for
+the keeper, only when the sea is somebody else's (`seaMode`/`seaOpen` on `/api/hello`).
+Pitfall that made it worse: Node's own WebSocket (undici 6.21, Node 22.16) fires `error` and
+never `close` for a socket that failed before it opened, and `close()` on one recurses until
+the stack runs out - so a retry hung only off `close` stops after the first failed attempt.
+The islander's line home ends an attempt on either event, once (`gone`), and closes only a
+socket that opened.
+
 `SEA_KEY` is optional and only for a private sea - the open sea has none, so a Windows
 release and the phone app can both just join, and `POST /update` is locked by
 `SEA_ADMIN_KEY` instead (falling back to `SEA_KEY`). When set, it is shared by everybody in a world. Each islander keeps it in
@@ -730,6 +806,13 @@ islander socket still holds it — the old line dying after the new one joined u
 live island swept. And `lib/seaclient.mjs` gives up only on `version` and `key`; `claimed`
 and `full` are waited out — giving up left the island HTTP-only: "keeper away", swept,
 back on the next changed scan, gone again.
+
+**And when the islander stops, the island stays for days.** `GRACE_MS` is three days, not
+the 45 s it was: a phone has no island, so a sea with every islander offline was the volcano
+alone. A quiet island is drawn, walked and keeps its crowd; only the sweep takes it. Two
+costs: a ghost holds one of `MAX_ISLANDS`' places until then, and an islander whose token
+changed (lost `data/sea-token.json`, new machine on the same id) is `claimed` for as long -
+a sea restart clears both, since the fleet lives in memory only.
 
 The browser side of the line home reads the same way: `web/js/net.js` asks the islander
 which sea to join again on every (re)connect (`followSea()`) rather than holding the answer
@@ -808,8 +891,16 @@ workbench and real-date labels excepted). The sea reads its zone by name (`SEA_T
 `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
-[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
-borrel, the clouds, the moon).
+The clouds, the swell and the moon run on the sea's clock too (`world.update`'s fourth
+argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer is one
+`CLOUD_TILE` of clouds from a fixed seed repeated over the **whole sea in the world frame**
+(`cloudNearest`, `setSeaHome(state.homeOrigin)` every frame), drawn three by three round the
+camera, so every screen has the same cloud and the same shadow; the island's own rng is still
+spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
+`WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
+chronicle) marks the clock chip `· local`.
+[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
@@ -876,7 +967,8 @@ avatar's own matrix, so a crouch or the saddle moves it) and pulls the near plan
 horizon. `classic-avatar.js` then hides everything but the two arms (`FP_HIDDEN`) and carries
 held items higher and tilted (`FP_HOLD_X`, `FP_TILT`), following `camPitch` - none of it is on
 the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scale.x = -1`):
-the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand.
+the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand. The villagers' own rigs (smith, butcher, baker) set it back to 1: their tools were placed
+against the unmirrored rig, and `tests/butcher.test.mjs` fails on the cleaver if one is not.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -921,6 +1013,24 @@ include the pit), so nothing about it is on the wire and every screen parks the 
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
+
+**The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
+`TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
+`CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets
+leaving it with the clock (`STREETS`) and sixteen three by three street lots filled from the
+square outwards (`STREET_LOTS`; school and water tower take the far end), the gold pit behind
+the library. A building whose lot is taken or unbuildable falls back to the nearest free block,
+facing whichever side has ground in front of its door (`openRot`). Workshops (`TRADES`: sawmill,
+smithy, stable) and a new castle stand beyond it (`TRADE_RING`, `TOWN_REACH`). Street lots on the
+town's ground are RESERVED from the first scan like the ring - but never the streets themselves,
+which would wall the hamlets off from the square - and `townHeld` is what tells those marks from
+a keeper's zone or a dike, which are RESERVED too. A street is paved from the square to its last
+building, into `town.paved` (so every reader of the paving has it) and again as `town.streets`
+for the one reader that must leave it out: the Friday gathering (`gatherCells` in
+`shared/roads.mjs`, the third argument of `setRoads`). The static shops are `SHOPS` in
+`web/js/buildings.js` - one asset `civic_<type>` each, at the tavern's size under the village's
+terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
+round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
 **The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
@@ -980,7 +1090,8 @@ geometry; the bake still only allows 0 or 1.
   exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
   to match and are reported rather than guessed at.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?tipsy=0.8` (start that
+Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
+Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
 drunk). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
@@ -1095,6 +1206,34 @@ Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To 
 page without a phone, serve `src-android/dist/` from any static server — that origin has no
 islander behind it either.
 
+**Touch is a pad with two extras, and the phone's HUD is one CSS block.** `web/js/touchpad.js`
+polls in `gamepad.js`'s shape (buttons A jump, X interact, Run = `L3`), plus two fields only
+`walk.pad()` reads through `p.raw`: `drag` (px since the last poll, turned like the mouse by
+`DRAG_YAW`/`DRAG_PITCH`, **never × dt** - that made look speed follow the frame rate) and
+`zoom` (a pinch factor for `zoomBy`). The stick is round with a dead zone (`stickOut`, tested).
+The hand buttons bypass the pad and call `walk.hand(side, down)`; `touchHud` in main.js sets
+X's caption and shows the hands only `walk.onFoot()`. A short still tap on the look side is
+`tapName` (guest figures only - the phone has no island). The camera's distance is `base ×
+zoomPref` (`place()`), so a zoom survives boarding; a boat now waits `RECENTRE_AFTER` like the
+bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (localStorage,
+read live; `quality: 'light'` is the default and means `modest`, since `MODEST_GPU` knows no
+phone GPU). A keeper's conversation has its own input mode (`parley` in `input.js`: X/B/BACK)
+and a tappable `#speech` - Esc was the only way out. Android's back button: `phoneBack()`
+holds one `history` entry while any overlay is open and `popstate` closes them. All phone
+layout is under `body.standalone` in `web/css/ui.css`, edges from `--sl/--sr/--st/--sb`
+(`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
+the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
+serve `src-android/dist/`, and drive it with Playwright's touch emulation.
+
+**Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
+`tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
+the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
+as soon as there is a release, not only once the sea is updated; `install_update` fetches the
+APK and hands it to Android's installer through the FileProvider. Both are app commands, so
+they need no entry in `capabilities/default.json` (only plugin calls do).
+
 ## Layout of the source
 
 | | |
@@ -1113,9 +1252,11 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 
 `data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
 window above) - and a checkout's own `data/` is only the backup an island moved out of
-(`data/MOVED.txt` says so). `data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
-`garden.json` (the walker's purse and beds — the scanner never touches it) and `mail.json`
-(mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
+(`data/MOVED.txt` says so). `data/` is generated and safe to delete, with four exceptions: `layout.json` (above),
+`garden.json` (the walker's purse and beds — the scanner never touches it), `mail.json`
+(mail server credentials, deliberately gitignored twice) and `animal-events.jsonl` (the story
+animals' journal - their names, bonds and marks rebuild from nothing else; `animals.json`
+beside it is only a checkpoint). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
 
 ## Conventions

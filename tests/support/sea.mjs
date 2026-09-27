@@ -81,7 +81,7 @@ export async function until(pred, what, tries = 200) {
 }
 
 export async function afloat(fn, opts = {}) {
-  const sea = createSea({ port: 0, name: 'test sea', ...opts });
+  const sea = createSea({ port: 0, name: 'test sea', starters: false, ...opts });
   const addr = await sea.listen();
   const base = `http://127.0.0.1:${addr.port}`;
   try {

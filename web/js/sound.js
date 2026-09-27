@@ -376,6 +376,211 @@ function gullBuffer(ctx) {
   return intoBuffer(ctx, chs, sr);
 }
 
+// --- the rave --------------------------------------------------------------
+//
+// Saturday night in the castle (Plans/rave-in-het-kasteel.md): sixteen bars of techno in A
+// minor, looped. Twelve bars of groove - four on the floor, a clap on two and four, open
+// hats on the offbeat, a rolling bass under it and an acid line from bar five - then four of
+// breakdown and build with no kick, a pad, a snare roll that tightens bar by bar and a riser,
+// and a beat of nothing before bar one comes round again as the drop. A drop every half
+// minute is a lot; a rave is a lot.
+//
+// The one copy of the song's shape, because web/js/rave.js lights the hall off it: the lasers
+// go out for the breakdown, the strobe runs with the roll and the floor jumps on the drop.
+// `build` is the first bar without a kick.
+export const RAVE_SONG = { bpm: 132, bars: 16, build: 12 };
+
+// Everything is written into the loop modulo its length, so a tail that runs past the last
+// bar lands on the first one and the loop has no seam to fold: the crash on the drop and the
+// kick's decay are the same samples either way round. Mono, like every placed voice, even
+// though this one is not placed - it plays through one THREE.Audio, and what it gains from
+// width is not worth twice the 2.6 MB. Made the first time it is wanted, never at build().
+//
+// And made a bar at a time: a generator, stepped once a frame by update() until it hands
+// back the buffer. All at once it was 115 ms on this machine - cold code, run exactly once,
+// so no amount of tightening the loops gets it under a frame - which is a stutter in the
+// middle of somebody walking up to the castle. A step is a bar, the riser, or a quarter of
+// the final mix, and the music starts about a third of a second after it was first wanted.
+function* raveSong(ctx) {
+  const sr = HIT_SR;
+  const { bpm, bars, build } = RAVE_SONG;
+  const beat = 60 / bpm, step = beat / 4;
+  const n = Math.round(sr * beat * 4 * bars);
+  const hit = new Float32Array(n);         // drums, which the sidechain leaves alone
+  const tone = new Float32Array(n);        // everything the kick pushes down
+  const side = new Float32Array(n).fill(1);
+  const rng = makeRng('rave');
+  const at = (bar, s) => Math.round((bar * 16 + s) * step * sr);
+  const put = (dst, src, i0, gain) => { for (let i = 0; i < src.length; i++) dst[(i0 + i) % n] += src[i] * gain; };
+  const env = (len, fn) => { const a = new Float32Array(Math.floor(len * sr)); for (let i = 0; i < a.length; i++) a[i] = fn(i / sr, i); return a; };
+  const att = (t, s = 0.002) => Math.min(1, t / s);
+
+  // The one-shots, made once and laid down wherever the pattern asks for them.
+  let ph = 0;
+  const kick = env(0.42, (t) => {
+    ph += (46 + 115 * Math.exp(-t / 0.028)) / sr;
+    const body = Math.sin(2 * Math.PI * ph) * Math.exp(-t / 0.17) * att(t, 0.001);
+    return Math.tanh(body * 1.8) + (t < 0.004 ? (rng.next() * 2 - 1) * 0.3 * (1 - t / 0.004) : 0);
+  });
+  const hatNoise = highpass(noise(Math.floor(0.25 * sr), rng), sr, 6500);
+  const closedHat = env(0.05, (t, i) => hatNoise[i] * Math.exp(-t / 0.011));
+  const openHat = env(0.24, (t, i) => hatNoise[i] * Math.exp(-t / 0.065) * att(t));
+  const clapNoise = resonate(noise(Math.floor(0.3 * sr), rng), sr, 1450, 1.1);
+  const clap = env(0.3, (t, i) => {
+    let a = Math.exp(-t / 0.075) * 0.6;
+    for (const o of [0, 0.011, 0.023]) if (t >= o) a += Math.exp(-(t - o) / 0.0055);
+    return clapNoise[i] * a;
+  });
+  const crashNoise = highpass(noise(Math.floor(1.8 * sr), rng), sr, 4200);
+  const crash = env(1.8, (t, i) => crashNoise[i] * Math.exp(-t / 0.55) * att(t));
+  const snareNoise = resonate(noise(Math.floor(0.2 * sr), rng), sr, 1900, 0.8);
+  const snare = (pitch) => { let p = 0; return env(0.16, (t, i) => { p += pitch / sr; return (snareNoise[i] * 1.3 + Math.sin(2 * Math.PI * p) * 0.6) * Math.exp(-t / 0.05) * att(t); }); };
+  const saw = (p) => 2 * (p - Math.floor(p + 0.5));
+  // What the kick does to everything else, as a curve over one beat, made once: an exp() a
+  // sample under every kick was a fifth of the time the song took to make.
+  const pump = env(beat, (t) => 1 - 0.78 * Math.exp(-t / 0.085));
+  // A bass note, made once per pitch: the song plays eight different ones 144 times.
+  const bassNotes = new Map();
+  const bassNote = (f) => {
+    if (!bassNotes.has(f)) {
+      let p = 0, y1 = 0, y2 = 0;
+      bassNotes.set(f, env(step * 0.92, (t) => {
+        p += f / sr;
+        const x = saw(p) * Math.exp(-t / 0.08) * att(t, 0.003);
+        y1 += 0.16 * (x - y1); y2 += 0.16 * (y1 - y2);     // two poles at ~600 Hz
+        return y2;
+      }));
+    }
+    return bassNotes.get(f);
+  };
+
+  // A bar's root, for the bass and the acid: A, A, F, G, over and over.
+  const ROOTS = [55, 55, 43.65, 49];
+  const rootOf = (bar) => ROOTS[bar % 4];
+  // The acid line, in semitones over the bar's root, and whether each sixteenth sounds.
+  const ACID = [0, 12, 0, 3, 0, 7, 12, 0, 10, 0, 3, 15, 0, 7, 5, 12];
+  const ACID_ON = [1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1];
+  const ACID_ACCENT = [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0];
+  yield;
+
+  for (let bar = 0; bar < bars; bar++) {
+    const groove = bar < build;
+    const k = bar - build;                 // 0..3 through the build
+    for (let s = 0; s < 16; s++) {
+      const i0 = at(bar, s);
+      if (groove) {
+        if (s % 4 === 0) {
+          put(hit, kick, i0, 0.95);
+          // The pump: everything else ducks under the kick and comes back before the next.
+          for (let j = 0; j < pump.length; j++) {
+            const w = i0 + j < n ? i0 + j : i0 + j - n;
+            if (pump[j] < side[w]) side[w] = pump[j];
+          }
+        }
+        if (s === 4 || s === 12) put(hit, clap, i0, 0.42);
+        if (s % 4 === 2) put(hit, openHat, i0, 0.2);
+        else put(hit, closedHat, i0, [0.13, 0.07, 0, 0.09][s % 4]);
+        // The rolling bass: every sixteenth the kick does not have, an octave up on the last.
+        if (s % 4 !== 0) put(tone, bassNote(rootOf(bar) * (s % 4 === 3 ? 2 : 1)), i0, 0.55);
+        if (bar >= 8 && (s === 3 || s === 11)) {
+          // A chord stab on the offbeats of the second half, to lift it before the break.
+          const chord = [220, 261.63, 329.63].map((c) => c * (rootOf(bar) / 55));
+          const ps = chord.map(() => rng.next());
+          put(tone, env(step * 1.6, (t) => {
+            let v = 0;
+            chord.forEach((f, c) => { ps[c] += f / sr; v += saw(ps[c]) + saw(ps[c] * 1.007); });
+            return v * Math.exp(-t / 0.09) * att(t, 0.004) * 0.18;
+          }), i0, 0.6);
+        }
+      } else if (k < 2) {
+        put(hit, closedHat, i0, s % 2 ? 0.05 : 0.09);
+      }
+      // The acid line, from bar five, and on into the first half of the break with its
+      // filter opening; a resonant state-variable filter swept per note.
+      const acidBar = (bar >= 4 && groove) || k === 0 || k === 1;
+      if (acidBar && ACID_ON[s]) {
+        const f = rootOf(bar) * 2 * Math.pow(2, ACID[s] / 12);
+        const sweep = groove ? 0.5 - 0.5 * Math.cos(Math.PI * 2 * ((bar - 4) * 16 + s) / 128) : 0.6 + 0.2 * k;
+        const accent = ACID_ACCENT[s] ? 1 : 0;
+        // Straight into the mix, with both envelopes stepped by multiplication rather than
+        // an exp() per sample, and the filter's sin() taken as its first two terms - the
+        // cutoff never passes 3.7 kHz, where that is a few per cent out and nobody can hear.
+        const len = Math.floor(step * 0.95 * sr), gain = (groove ? 0.34 : 0.26) * (0.7 + 0.5 * accent);
+        // The saw is its phase kept in -0.5..0.5 by hand, which is Math.floor's work for
+        // nothing, and the index wraps by a compare: the modulo was most of this loop.
+        const fk = Math.exp(-1 / (sr * (0.07 + 0.08 * accent))), ak = Math.exp(-1 / (sr * 0.2));
+        const inc = f / sr, rise = 1 / (0.002 * sr);
+        let p = 0, low = 0, band = 0, fe = 1, ae = 1;
+        for (let i = 0; i < len; i++) {
+          p += inc; if (p >= 0.5) p -= 1;
+          let cut = 260 + 2400 * sweep * (0.35 + 0.65 * fe) + accent * 700;
+          if (cut > 3000) cut = 3000;
+          const w = Math.PI * cut / sr, fc = 2 * (w - w * w * w / 6);
+          const hi = 2 * p - low - 0.28 * band;
+          band += fc * hi; low += fc * band;
+          const at0 = i * rise;
+          const idx = i0 + i < n ? i0 + i : i0 + i - n;
+          tone[idx] += low * ae * (at0 < 1 ? at0 : 1) * gain;
+          fe *= fk; ae *= ak;
+        }
+      }
+    }
+    if (!groove) {
+      // The roll tightens a bar at a time - crotchets, quavers, semiquavers, then
+      // demisemiquavers - rising in pitch and level with it, and the last beat is a gap.
+      const per = [4, 2, 1, 0.5][k];
+      for (let h = 0; h < 16; h += per) {
+        if (k === 3 && h >= 12) break;
+        const g = (k * 16 + h) / 64;
+        put(hit, snare(180 + g * 140), at(bar, h), 0.22 + 0.6 * g);
+      }
+      // A pad over the break: A minor for two bars, then G, which is what leans into the
+      // drop. Three detuned saws a note, a slow swell, and nothing ducks it.
+      // 360 000 saws a bar: plain loops over two small typed arrays, phases wrapped by hand
+      // like the acid's. A forEach per sample with Math.floor in it was 47 ms of this.
+      const chord = (k < 2 ? [220, 261.63, 329.63] : [196, 246.94, 293.66]);
+      const inc = new Float64Array(9), ps = new Float64Array(9);
+      for (let v = 0; v < 9; v++) { inc[v] = chord[Math.floor(v / 3)] * (1 + (v % 3 - 1) * 0.006) / sr; ps[v] = rng.next() - 0.5; }
+      const i0 = at(bar, 0), len = at(bar + 1, 0) - i0;
+      const swells = k % 2 === 0, swellK = 1 / (1.2 * sr);
+      for (let i = 0; i < len; i++) {
+        let v = 0;
+        for (let o = 0; o < 9; o++) { let q = ps[o] + inc[o]; if (q >= 0.5) q -= 1; ps[o] = q; v += q; }
+        const swell = swells ? i * swellK : 1;
+        tone[i0 + i < n ? i0 + i : i0 + i - n] += v * 2 * (swell < 1 ? swell : 1) * 0.06;
+      }
+    }
+    yield;
+  }
+  // The riser over the whole build: noise through a band sweeping up four octaves, rising.
+  const b0 = at(build, 0), len = at(bars, 0) - b0 - Math.round(beat * sr);
+  let low = 0, band = 0;
+  for (let i = 0; i < len; i++) {
+    const g = i / len;
+    const fc = 2 * Math.sin(Math.PI * (300 * Math.pow(18, g)) / sr);
+    const hi = (rng.next() * 2 - 1) - low - 0.5 * band;
+    band += fc * hi; low += fc * band;
+    tone[(b0 + i) % n] += band * g * g * 0.3;
+  }
+  put(hit, crash, at(0, 0), 0.32);
+  yield;
+
+  const out = new Float32Array(n);
+  for (let q = 0; q < 4; q++) {
+    for (let i = Math.floor(n * q / 4); i < Math.floor(n * (q + 1) / 4); i++) out[i] = Math.tanh((hit[i] + tone[i] * side[i]) * 1.1);
+    yield;
+  }
+  const chs = [out];
+  level(chs, 0.2);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// How loud the rave is: in the hall it is the loudest thing you will ever hear on this
+// island, and from the square it is a thump through a wall that is gone before the harbour.
+const RAVE_LOUD = 0.62;
+const RAVE_OUT = 0.3;
+const RAVE_RANGE = 34;
+
 // --------------------------------------------------------------- the island's ears
 
 function remembered() {
@@ -486,8 +691,67 @@ export function createSound({ camera, scene, island }) {
       })),
       gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42 })),
       tavern: mkVoice(buffers.murmur, { ref: 6, rolloff: 2.2, volume: 0 }),
+      // The rave's music, made the first Saturday night it is within earshot (makeRave).
+      rave: null,
     };
     built.tavern.audio.setLoop(true);
+  }
+
+  // One source for the rave whether you are in the hall or out on the square, so the beat
+  // does not start again at the door: walking in opens the filter, walking out closes it.
+  // Not positional, like the bed - turning your head in a hall that loud changes nothing -
+  // and the loudness outside is the distance to the castle, which main.js measures.
+  function makeRave() {
+    const a = new THREE.Audio(listener);
+    a.setLoop(true);
+    a.setVolume(0);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 300;
+    filter.Q.value = 0.9;
+    a.setFilters([filter]);
+    return { audio: a, filter, since: 0, want: 0, making: raveSong(ctx) };
+  }
+
+  // A bar of the song a frame, until it is done (raveSong says why).
+  function makeMore() {
+    const r = built.rave;
+    const step = r.making.next();
+    if (!step.done) return;
+    r.making = null;
+    r.audio.setBuffer(step.value);
+    built.buffers.rave = step.value;
+  }
+
+  // `rave` is main.js's word on it: null when there is no rave to hear, else whether you are
+  // in the hall and how far the castle is when you are not.
+  function steerRave(rave) {
+    if (rave && !built.rave) built.rave = makeRave();
+    const r = built.rave;
+    if (!r) return;
+    r.want = !rave ? 0 : rave.inside ? RAVE_LOUD
+      : RAVE_OUT * Math.pow(clamp(1 - (rave.dist || 0) / RAVE_RANGE, 0, 1), 2);
+    if (r.making) return;                 // still being written; it starts when it is done
+    const now = ctx.currentTime;
+    r.filter.frequency.setTargetAtTime(rave && rave.inside ? 16000 : 320, now, 0.12);
+    r.audio.gain.gain.setTargetAtTime(r.want, now, r.want > 0 ? 0.25 : 0.6);
+    if (r.want > 0 && !r.audio.isPlaying) {
+      r.since = now;
+      r.audio.play();
+    } else if (r.want <= 0 && r.audio.isPlaying && r.audio.gain.gain.value <= 0.001) {
+      r.audio.stop();
+    }
+  }
+
+  // How far into the loop the music is, in seconds, at the moment what is being drawn now
+  // is heard - which is the output latency later than the context's clock - or null when
+  // there is nothing to keep time to. The lights in the hall run on this.
+  function raveClock() {
+    const r = built && built.rave;
+    if (!on || !r || r.making || !r.audio.isPlaying || ctx.state !== 'running') return null;
+    const dur = r.audio.buffer.duration;
+    const t = ctx.currentTime - r.since - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+    return ((t % dur) + dur) % dur;
   }
 
   // Re-trigger a one-shot. three.js refuses `play()` on a source that is already running
@@ -568,6 +832,7 @@ export function createSound({ camera, scene, island }) {
 
   function repick(look) {
     findTavern(look);
+    steerRave(look.rave || null);
 
     // --- the bed ---
     const wet = coastliness(look);
@@ -681,6 +946,7 @@ export function createSound({ camera, scene, island }) {
     if (fade < 1.6) listener.setMasterVolume(Math.min(1, fade / 1.5));
 
     if (look) maybeGull(look, PICK_S);
+    if (built.rave && built.rave.making) makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
     for (const slot of built.hammers) {
@@ -755,6 +1021,7 @@ export function createSound({ camera, scene, island }) {
     setOn,
     toggle: () => setOn(!on),
     update,
+    raveClock,
     // There is nothing to hear from a test and nothing to see in a screenshot, so the only
     // way to check the two promises this module makes - that nothing exists before the
     // gesture, and that a village of three hundred is still nine sources - is to read them
@@ -787,6 +1054,14 @@ export function createSound({ camera, scene, island }) {
       crowd: seen,
       atWork: working,
       buffers: built ? Object.keys(built.buffers).length : 0,
+      // The rave is a bed rather than a placed voice, and it exists only once somebody has
+      // been near the castle on a Saturday night: null until then.
+      rave: built && built.rave ? {
+        making: !!built.rave.making,
+        playing: built.rave.audio.isPlaying,
+        want: Math.round(built.rave.want * 100) / 100,
+        cut: Math.round(built.rave.filter.frequency.value),
+      } : null,
     }),
   };
   if (typeof window !== 'undefined') window.__sound = api;

@@ -283,6 +283,78 @@ test('the tavern hums when there is somebody at the tables, and not otherwise', 
   assert.equal(humming(), 1, 'and starts one when there is something to hear');
 });
 
+// The castle on a Saturday night (Plans/rave-in-het-kasteel.md). 2.6 MB of music is not
+// made for an island that never goes near its castle, and one source carries it from the
+// square into the hall, so the beat does not start again at the door.
+test('the rave is made the first time it is within earshot, and is one source in and out', () => {
+  store = {};
+  const look = village(3);
+  const sound = made(look);
+  sound.setOn(true);
+  dispatch('pointerdown');
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().rave, null, 'no Saturday night, no music');
+  assert.equal(sound.stats().buffers, 5, 'and nothing synthesised for it');
+  assert.equal(sound.raveClock(), null);
+
+  look.rave = { inside: false, dist: 12 };
+  sound.update(1 / 6);
+  assert.equal(sound.stats().rave.making, true, 'it is written a bar a frame, not in one stall');
+  assert.equal(sound.stats().rave.playing, false);
+  for (let i = 0; i < 60; i++) sound.update(1 / 60);
+  const out = sound.stats().rave;
+  assert.ok(out && out.playing, 'heard from the square');
+  assert.ok(out.want > 0 && out.want < 0.3, `through the walls it is a thump, not the hall (${out.want})`);
+  assert.ok(out.cut < 500, `and only the bass comes through (${out.cut} Hz)`);
+  const music = ctx.buffers[ctx.buffers.length - 1];
+  const sources = () => ctx.started.filter((b) => b === music).length;
+  assert.equal(sources(), 1);
+
+  look.rave = { inside: true };
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  const hall = sound.stats().rave;
+  assert.ok(hall.want > out.want * 2, 'in the hall it is loud');
+  assert.ok(hall.cut > 10000, 'and all of it');
+  assert.equal(sources(), 1, 'the same source: walking in does not start the song again');
+
+  ctx.currentTime = 5;
+  const t = sound.raveClock();
+  assert.ok(t > 4.5 && t <= 5, `the lights keep time to the music (${t})`);
+
+  look.rave = null;
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().rave.playing, false, 'three o’clock: it stops');
+  assert.equal(sound.raveClock(), null);
+  ctx.currentTime = 0;
+});
+
+test('the rave loops without a seam, loud and inside the rails', async () => {
+  const { RAVE_SONG } = await import('../web/js/sound.js');
+  const music = ctx.buffers.find((b) => b.duration > 20);
+  assert.ok(music, 'the test above made it');
+  const bars = RAVE_SONG.bars * 4 * 60 / RAVE_SONG.bpm;
+  assert.ok(Math.abs(music.duration - bars) < 0.001, `${RAVE_SONG.bars} bars, exactly (${music.duration} s)`);
+  assert.equal(music.numberOfChannels, 1);
+  const d = music.getChannelData(0);
+  let sum = 0, peak = 0, worst = 0;
+  for (let i = 0; i < d.length; i++) {
+    assert.ok(Number.isFinite(d[i]), `sample ${i} is not a number`);
+    sum += d[i] * d[i];
+    peak = Math.max(peak, Math.abs(d[i]));
+    if (i) worst = Math.max(worst, Math.abs(d[i] - d[i - 1]));
+  }
+  const rms = Math.sqrt(sum / d.length);
+  assert.ok(peak <= 1, `it clips at ${peak}`);
+  assert.ok(rms > 0.1, `a rave that quiet is a radio next door (rms ${rms})`);
+  // Everything was written modulo the loop, so the step across the seam is a step like any.
+  assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the loop point jumps');
+  // And the build really is quieter in the low end than the groove: no kick in it. The kick
+  // is the loudest thing in the song, so its bars carry more energy than the break's.
+  const barLen = d.length / RAVE_SONG.bars;
+  const energy = (bar) => { let e = 0; for (let i = bar * barLen; i < (bar + 1) * barLen; i++) e += d[Math.floor(i)] ** 2; return e; };
+  assert.ok(energy(2) > energy(RAVE_SONG.build + 1), 'the break has no kick in it');
+});
+
 // --- 3. the noises themselves ---------------------------------------------
 
 test('every voice is synthesised, finite, and inside the rails', () => {

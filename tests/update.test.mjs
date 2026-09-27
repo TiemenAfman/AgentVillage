@@ -63,3 +63,22 @@ test('the app gets a whole-screen gate: blocking when refused, with a Later when
   assert.equal(updateGate({ speaks: SEA_PROTOCOL - 1 }), null, 'an older sea is not for the app to fix');
   assert.equal(updateGate({}), null);
 });
+
+test('the gate goes up for a newer release on GitHub, whether or not the sea has it yet', () => {
+  const mine = { version: '0.5.0' };
+  const released = updateGate({ mine, sea: { version: '0.5.0' }, latest: '0.6.0' });
+  assert.equal(released.blocking, false);
+  assert.match(released.title, /0\.6\.0/);
+  assert.doesNotMatch(released.body, /sea/, 'blamed the sea for a release it has nothing to do with');
+  assert.equal(updateGate({ mine, latest: '0.6.0' }).blocking, false, 'needs no welcome to know');
+
+  assert.equal(updateGate({ mine, latest: '0.5.1' }), null, 'the app was sent to update for a patch');
+  assert.equal(updateGate({ mine, latest: '0.5.0' }), null);
+  assert.equal(updateGate({ mine, latest: null }), null, 'GitHub unreachable is nothing to say');
+
+  // Both ahead: the newer of the two is the one named.
+  assert.match(updateGate({ mine, sea: { version: '0.6.0' }, latest: '0.7.0' }).title, /0\.7\.0/);
+  assert.match(updateGate({ mine, sea: { version: '0.7.0' }, latest: '0.6.0' }).title, /0\.7\.0/);
+  // Refused still wins: that card has no Later.
+  assert.equal(updateGate({ speaks: SEA_PROTOCOL + 1, mine, latest: '0.6.0' }).blocking, true);
+});

@@ -57,7 +57,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 test('the idle sweep closes a frozen walker, and nobody else', async () => {
   // A short leash, so the test does not have to wait a minute; the beat is 20 ms so the
   // roster ticks often enough to notice.
-  const sea = createSea({ port: 0, name: 'test sea', tickMs: 20, idleMs: 150 });
+  const sea = createSea({ port: 0, name: 'test sea', tickMs: 20, idleMs: 150, starters: false });
   const addr = await sea.listen();
   const base = `http://127.0.0.1:${addr.port}`;
   const wsUrl = `ws://127.0.0.1:${addr.port}/ws`;

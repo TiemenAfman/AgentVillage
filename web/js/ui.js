@@ -80,6 +80,8 @@ export function createUI(handlers) {
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+  // A keeper's words can be tapped away: on a phone there is no Esc to press.
+  el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
   // Tucks the menu away - New settler through Overview - leaving the clock and the
   // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
@@ -103,28 +105,46 @@ export function createUI(handlers) {
     applyNavCollapsed();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { close('dossier'); close('legend'); close('settings'); }
+    if (e.key === 'Escape') SIDE.forEach(close);
     // Space belongs to the player on foot, where it jumps. Restarting the history from
     // under someone's feet is not what the key means down there.
     if (e.key === ' ' && e.target === document.body && !walking) { e.preventDefault(); el('play-btn').click(); }
   });
 
+  // The side panels on the right, one open at a time. The last two are the animals'
+  // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
+  // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
+  const SIDE = ['dossier', 'legend', 'settings', 'phone', 'animal-dossier', 'animal-journal'];
+  const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
+    if (!el(which)) return;
     el(which).hidden = true;
     if (which === 'dossier') { state.open = null; handlers.onSelect(null); }
     syncSidebar();
   }
-  function openLegend() { el('dossier').hidden = true; el('settings').hidden = true; el('legend').hidden = false; syncSidebar(); }
-  function openSettings() { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
+  // For a panel this file does not fill. The settler's dossier is closed properly first, so
+  // whatever it had selected lets go, rather than only hidden the way the legend hides it.
+  function openSide(which) {
+    if (which !== 'dossier' && !el('dossier').hidden) close('dossier');
+    hideSide(which);
+    el(which).hidden = false;
+    syncSidebar();
+  }
+  function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
+  function openSettings() { hideSide('settings'); el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
-    const panelOpen = !el('dossier').hidden || !el('legend').hidden || !el('settings').hidden;
+    const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
     el('building-now').hidden = walking || planning || panelOpen || !hasBuilders;
     const w = el('waiting-now');
     if (w) w.hidden = walking || planning || panelOpen || !w.querySelector('li');
+    // The animals' "while you were away" card follows the same rule as the waiting list.
+    const a = el('animal-summary');
+    if (a) a.hidden = walking || planning || panelOpen || !a.querySelector('li');
     el('chronicle').hidden = walking || planning;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
     el('settings-btn').classList.toggle('on', !el('settings').hidden);
+    el('phone-btn').classList.toggle('on', !el('phone').hidden);
   }
   let hasBuilders = false;
   let walking = false;
@@ -170,9 +190,12 @@ export function createUI(handlers) {
     el('live-text').textContent = mode === 'off' ? 'Offline' : mode === 'replay' ? 'Replay' : 'Live';
   }
 
-  function setClock(hour, seasonName) {
+  function setClock(hour, seasonName, lens = false) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
-    el('clock-chip').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}`;
+    const chip = el('clock-chip');
+    chip.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · local' : ''}`;
+    chip.classList.toggle('lens', lens);
+    chip.title = lens ? 'A time of day on this screen only - the sea keeps its own. Click to go on.' : 'Time of day on the island';
   }
 
   // --- now building --------------------------------------------------------
@@ -210,8 +233,7 @@ export function createUI(handlers) {
   // --- dossier -------------------------------------------------------------
   function showDossier(b, ctx) {
     state.open = b.id;
-    el('legend').hidden = true;
-    el('settings').hidden = true;
+    hideSide('dossier');
     el('dossier').hidden = false;
     syncSidebar();
     el('dossier-name').textContent = b.name;
@@ -396,7 +418,41 @@ export function createUI(handlers) {
   // The app on a phone: on foot for good, so the ways up to the sky and into the planner
   // go, and so does building. A class on body rather than `hidden`, because other setters
   // (setWalking among them) hand some of these chips their `hidden` back later.
-  function setStandalone() { document.body.classList.add('standalone'); }
+  // The app on a phone. It also gets the two chips a phone needs and a keyboard does not:
+  // Say, for the island chat that otherwise only T opens, and Controls (phoneprefs.js).
+  function setStandalone() {
+    document.body.classList.add('standalone');
+    el('say-btn').hidden = false;
+    el('phone-btn').hidden = false;
+  }
+  el('say-btn').addEventListener('click', () => handlers.onSay && handlers.onSay());
+  el('phone-btn').addEventListener('click', () => (el('phone').hidden ? openPhone() : close('phone')));
+
+  // How the controls feel, for the phone's own player: drawn from the preferences each time
+  // it opens, and each change handed straight back (handlers.onPhonePref) to be kept and
+  // applied - everything on the next frame, except quality, which is the next start.
+  function openPhone() {
+    const p = handlers.phonePrefs ? handlers.phonePrefs() : {};
+    el('phone-body').innerHTML = `
+      <label class="phone-row">Look speed
+        <input type="range" id="pp-look" min="0.5" max="2" step="0.1" value="${Number(p.look) || 1}">
+        <output id="pp-look-out">${(Number(p.look) || 1).toFixed(1)}×</output></label>
+      <label class="phone-row"><input type="checkbox" id="pp-invert"${p.invert ? ' checked' : ''}> Drag up to look down</label>
+      <label class="phone-row"><input type="checkbox" id="pp-lefty"${p.lefty ? ' checked' : ''}> Left-handed: stick on the right</label>
+      <div class="phone-row">Drawing
+        <select id="pp-quality">
+          <option value="light"${p.quality !== 'full' ? ' selected' : ''}>Light (smoother)</option>
+          <option value="full"${p.quality === 'full' ? ' selected' : ''}>Full (sharper, warmer phone)</option>
+        </select></div>
+      <p class="muted">Drawing changes on the next start of the app.</p>
+      <p class="muted">Pinch with two fingers to bring the camera closer or further. Tap somebody to hear who they are.</p>`;
+    const set = (name, value) => handlers.onPhonePref && handlers.onPhonePref(name, value);
+    el('pp-look').addEventListener('input', (e) => { el('pp-look-out').textContent = `${Number(e.target.value).toFixed(1)}×`; set('look', Number(e.target.value)); });
+    el('pp-invert').addEventListener('change', (e) => set('invert', e.target.checked));
+    el('pp-lefty').addEventListener('change', (e) => set('lefty', e.target.checked));
+    el('pp-quality').addEventListener('change', (e) => set('quality', e.target.value));
+    openSide('phone');
+  }
 
   // The Sound chip. `on` is what the person asked for, which is not the same as whether a
   // note is playing: a browser will not start an AudioContext until the page has been
@@ -593,6 +649,25 @@ export function createUI(handlers) {
     while (kids.length > 4) kids[0].remove();
   }
 
+  // Coming into an island's waters: its name on a ribbon across the top of the screen, the
+  // way a ship is hailed through a spyglass, and who keeps it underneath. Only the latest
+  // arrival shows - sailing on past two islands names the second.
+  let arrivalTimer = 0;
+  function arrival(name, keeper) {
+    const d = el('arrival');
+    d.querySelector('b').textContent = name;
+    d.querySelector('small').textContent = keeper ? `Kept by ${keeper}` : '';
+    d.hidden = false;
+    d.classList.remove('fade');
+    void d.offsetWidth;
+    d.classList.add('show');
+    clearTimeout(arrivalTimer);
+    arrivalTimer = setTimeout(() => {
+      d.classList.add('fade');
+      arrivalTimer = setTimeout(() => { d.hidden = true; d.classList.remove('show', 'fade'); }, 700);
+    }, 4200);
+  }
+
   // Somebody in this world is running different code.
   //
   // A toast is wrong for this and a console warning is worse. Three machines make a world
@@ -606,15 +681,32 @@ export function createUI(handlers) {
   // somebody is. One line per island, because two out of date is a different conversation
   // from one.
   const skewed = new Map();
+  // The sea not answering (web/js/seaquiet.js builds the words), which shares the box: both
+  // stay up until what they name is fixed, and one box cannot sit on top of the other. On
+  // its own it wears a toast's colours rather than the skew's (`.skew.quiet` in
+  // harbour.css): it breaks nothing and ends by itself, it is only why nobody is walking.
+  let seaQuiet = null;
+  function renderSkew() {
+    const box = el('skew');
+    const lines = [];
+    if (skewed.size) {
+      const who = [...skewed.values()];
+      lines.push(`<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
+        + 'running a different version of the island, so their land is drawn from numbers this '
+        + 'page disagrees with. Pull and restart on both sides.');
+    }
+    if (seaQuiet) lines.push(seaQuiet);
+    box.hidden = !lines.length;
+    box.classList.toggle('quiet', !skewed.size && !!seaQuiet);
+    box.innerHTML = lines.map((l) => `<p>${l}</p>`).join('');
+  }
   function setSkew(id, name) {
     if (name) skewed.set(id, name); else skewed.delete(id);
-    const box = el('skew');
-    if (!skewed.size) { box.hidden = true; box.innerHTML = ''; return; }
-    const who = [...skewed.values()];
-    box.hidden = false;
-    box.innerHTML = `<b>Out of step.</b> ${esc(who.join(', '))} ${who.length === 1 ? 'is' : 'are'} `
-      + 'running a different version of the island, so their land is drawn from numbers this '
-      + 'page disagrees with. Pull and restart on both sides.';
+    renderSkew();
+  }
+  function setSeaQuiet(html) {
+    seaQuiet = html || null;
+    renderSkew();
   }
 
   // Who is behind, this page or the sea (web/js/update.js builds the words). Closed by
@@ -645,6 +737,57 @@ export function createUI(handlers) {
     // The small banner says the same thing in fewer words; with the card up it is noise.
     el('update').hidden = true;
     box.hidden = false;
+  }
+
+  // Getting out of the app, for the two links on that card and the one in the banner.
+  //
+  // In the phone app the page is Tauri's own (tauri.localhost), so it can ask the opener
+  // plugin itself over IPC - the documented way, and the one that does not depend on
+  // src-android/src/lib.rs's on_navigation being handed the click by the webview. That is
+  // what the download button did up to v0.5.0, and what it did was nothing at all: the
+  // navigation was cancelled, `open_url` failed for want of "opener:default" in
+  // src-android/capabilities/default.json, and the error went into a `let _ =`.
+  //
+  // Nowhere else does this run. A browser tab has no __TAURI_INTERNALS__, and neither does
+  // the desktop window: its page is remote (http://localhost:4747), so no IPC is opened to
+  // it on purpose and src-tauri/src/lib.rs hands links to the system browser instead.
+  const ipc = globalThis.__TAURI_INTERNALS__;
+  if (ipc && typeof ipc.invoke === 'function') {
+    // The download button never leaves the app: Rust fetches the APK and hands it to the
+    // phone's installer (src-android/src/lib.rs, install_update), so a tap is a download and
+    // an "install this app?" rather than a browser, a downloads folder and a notification.
+    // Its href stays what it was, because that is still the way out when this fails.
+    const button = el('update-gate-download');
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (button.dataset.busy) return;
+      button.dataset.busy = '1';
+      const said = button.textContent;
+      button.textContent = 'Fetching the update…';
+      ipc.invoke('install_update')
+        .then(() => { button.textContent = 'Opening the installer…'; })
+        .catch((err) => {
+          button.textContent = said;
+          toast(`Could not fetch the update (${esc(err)}). Trying the browser instead.`);
+          ipc.invoke('plugin:opener|open_url', { url: button.href }).catch(() => {});
+        })
+        .finally(() => { delete button.dataset.busy; });
+    });
+
+    // Everything else that points out of the app - "What is new", the banner's link. The
+    // page asks the opener plugin itself rather than leaving it to on_navigation in
+    // src-android/src/lib.rs: this is the documented way and it does not depend on the
+    // webview handing the click to Rust at all, which is what silently failed up to v0.5.0.
+    document.addEventListener('click', (e) => {
+      if (e.defaultPrevented) return;
+      const a = e.target && e.target.closest && e.target.closest('a[href^="http"]');
+      if (!a) return;
+      e.preventDefault();
+      // Said out loud when it fails. A button that quietly does nothing is exactly the bug
+      // this replaces, and on a phone there is no console anybody is going to look at.
+      ipc.invoke('plugin:opener|open_url', { url: a.href })
+        .catch(() => toast(`Could not open <b>${esc(a.href)}</b>. Copy it into your browser.`));
+    });
   }
 
   // The two-step confirmation shown while walking, before anyone is sent away.
@@ -730,7 +873,7 @@ export function createUI(handlers) {
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
     el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
-    if (on) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; renderWalkKeys(); }
+    if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
   // From above, with a hand on the hamlets (web/js/plan-mode.js). Like walking, the right
@@ -741,7 +884,7 @@ export function createUI(handlers) {
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
     el('plan-btn').textContent = planning ? 'Done' : 'Plan';
-    if (planning) { el('dossier').hidden = true; el('legend').hidden = true; el('settings').hidden = true; }
+    if (planning) hideSide();
     syncSidebar();
   }
 
@@ -757,6 +900,18 @@ export function createUI(handlers) {
 
   // What a beer in your hand offers the settler in front of you (main.js giveTarget), or
   // nothing. Called every frame on foot, so it writes only on a change.
+  // What a keeper says to your face (main.js speakToKeeper): who, the words, and the key
+  // that walks on. It stays until main.js takes it down - the toast it used to be went by
+  // itself after a few seconds, while the keeper was still standing there looking at you.
+  function setSpeech(s) {
+    const p = el('speech');
+    if (!s) { p.hidden = true; p.innerHTML = ''; return; }
+    p.hidden = false;
+    p.innerHTML = `<b class="speech-who">${esc(s.who)}</b><span class="speech-line">${esc(s.line)}</span>`
+      + `<span class="speech-key">${document.body.classList.contains('standalone') ? 'Tap or <kbd>X</kbd> to walk on'
+        : padConnected ? '<kbd>X</kbd> walk on' : '<kbd>Esc</kbd> walk on'}</span>`;
+  }
+
   function setGive(name) {
     const p = el('walk-give');
     if (!name) { p.hidden = true; return; }
@@ -854,11 +1009,14 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive,
+    setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
+    // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
+    // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.
+    openSide, closeSide: close, syncPanels: syncSidebar,
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas, setIslandSize,
-    closeOverlays: () => { close('dossier'); close('legend'); close('settings'); },
+    closeOverlays: () => SIDE.forEach(close),
   };
 }
 

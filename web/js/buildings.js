@@ -332,8 +332,17 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
+// The static shops of the town's plan (Plans/knus-dorpscentrum.md), each one baked asset
+// `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
+// part by part (APART) so the door can be reached between the crates on the pavement, and
+// set on the tavern's step (porchOverhang). The bakery and the butcher's are
+// shops too, but they have a fire and a shopkeeper and cases of their own.
+export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
 // And the bakery's fire (scripts/build-bakery.py, web/js/countryside.js).
 export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
+// The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
+// although they hang on the house: every part that moves is in the yard's asset.
+export const isButcherMoving = (n) => /^civic_butcher_yard (awning|sign|hang \d+|joint|slice|embers)(:\d+)?$/.test(n);
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1073,6 +1082,15 @@ function noticeBoard(parts, spec, { panel, frame, roof, sign, note, pins }) {
 function civic(parts, spec, rng) {
   const anchors = {};
   const animated = {};
+  // The shops of the town's plan (Plans/knus-dorpscentrum.md): one baked asset each, in the set
+  // named after the shop (scripts/build-<shop>.py), at the tavern's size and under the same
+  // terracotta, standing towards the street on its lot, and with nothing that moves.
+  if (SHOPS.has(spec.civicType)) {
+    const name = `civic_${spec.civicType}`;
+    parts.push(...meshAsset(name));
+    Object.assign(anchors, meshAnchors(name));
+    return { anchors, animated, height: models.heightOf(name) };
+  }
   switch (spec.civicType) {
     case 'townhall': {
       // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
@@ -1458,6 +1476,14 @@ function civic(parts, spec, rng) {
       animated.bakery = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('civic_bakery') };
     }
+    case 'butcher': {
+      // The shop and the yard, less the awning, the sign, the hanging meat, the joint, the slice
+      // and the fire: butcher.js hangs those, and brings the butcher who works at the block.
+      parts.push(...meshAsset('civic_butcher'), ...meshAsset('civic_butcher_yard', 0xffffff, { skip: isButcherMoving }));
+      Object.assign(anchors, meshAnchors('civic_butcher'));
+      animated.butcher = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_butcher') };
+    }
     case 'windmill':
     case 'poldermill':
       parts.push(...meshAsset('civic_windmill'));
@@ -1758,7 +1784,7 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed']);
 // the square that corner faces the fountain one cell away, diagonally, which with the
 // fountain's own solid left no way between them. Unmerged, a gap narrower than a body
 // still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
-const APART = new Set(['tables']);
+const APART = new Set(['tables', ...SHOPS]);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -1817,8 +1843,11 @@ function wantsPorch(spec) {
 // off the length it may be, and on a three cell lot that is the difference between a
 // church and a chapel of ease. So it takes the step at exactly its own footprint: the
 // skirt that holds the ground, and not a hand's width more.
+// The shops are the tavern's size and stand on the tavern's step (Plans/knus-dorpscentrum.md).
+// They were built out to the edge of their lot at first and took the chapel's rule then; at the
+// village's size that left them the only buildings on the square not standing on something.
 const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' ? [0, 0]
-  : spec.civicType === 'tavern' ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
+  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line
 // that matters for walking into something, and a shed is knee high: all of it is down in

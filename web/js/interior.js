@@ -11,11 +11,11 @@
 //
 // Adding a room is one entry in ROOMS.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { box, cylinder, cone, sphere, dome } from './buildings.js';
+import { box, cylinder, cone, sphere, dome, mergeParts } from './buildings.js';
 import { figureGeometry } from './settlers.js';
 import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
+import { buildRave } from './rave.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -438,7 +438,10 @@ function buildTavern() {
   };
 }
 
-const ROOMS = { tavern: buildTavern };
+// The castle's great hall on a Saturday night (Plans/rave-in-het-kasteel.md). It gets the
+// floor and the blocker shape handed in rather than importing them, so the two files do not
+// import each other.
+const ROOMS = { tavern: buildTavern, rave: () => buildRave({ FLOOR, rect }) };
 
 export const ROOM_KINDS = Object.keys(ROOMS);
 
@@ -471,9 +474,14 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
 
+  // The dark behind everything and the haze in front of it are the room's: the tavern's is
+  // woodsmoke, the castle's is a smoke machine.
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x140d09);
-  scene.fog = new THREE.Fog(0x140d09, 9, 26);
+  const dark = def.background ?? 0x140d09;
+  const [fogNear, fogFar] = def.fog || [9, 26];
+  scene.background = new THREE.Color(dark);
+  scene.fog = new THREE.Fog(dark, fogNear, fogFar);
+  const ROOF_AT = FLOOR + (def.ceiling ?? CEILING);
 
   // One mesh for the whole room, the same trick the buildings use: a tavern is a few hundred
   // primitives and has no business being a few hundred draw calls.
@@ -487,20 +495,29 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   if (roofMesh) scene.add(roofMesh);
 
   // The fire is its own mesh because it is pulsed, and geometry that gets scaled has to be
-  // built about the origin or it walks away from the hearth as it flickers.
-  const fire = new THREE.Mesh(mergeGeom([
+  // built about the origin or it walks away from the hearth as it flickers. Only a room with
+  // a hearth has one.
+  const fire = def.fireAt ? new THREE.Mesh(mergeGeom([
     cone(0.085, 0.24, 6, C.ember, { emissive: 1 }),
     cone(0.05, 0.155, 6, C.flame, { y: 0.035, emissive: 1 }),
-  ]), material);
-  fire.position.set(...def.fireAt);
-  scene.add(fire);
+  ]), material) : null;
+  if (fire) {
+    fire.position.set(...def.fireAt);
+    scene.add(fire);
+  }
 
+  // A figure faces +z unless its `yaw` says otherwise, and a barman walks along x - the
+  // tavern's bar runs east to west - unless his bar runs along z, like the castle's.
   const figures = def.figures.map((f) => {
-    const mesh = new THREE.Mesh(figureGeometry(f.style), material);
+    const mesh = new THREE.Mesh(figureGeometry(f.style, f.look ? { look: f.look } : undefined), material);
     mesh.position.set(...f.at);
     mesh.scale.setScalar(f.scale || 1);
     scene.add(mesh);
-    return { mesh, seed: f.seed || 0, y: f.at[1], home: f.at[0], tends: !!f.tends };
+    const along = f.along === 'z' ? 'z' : 'x';
+    return {
+      mesh, seed: f.seed || 0, y: f.at[1], yaw: f.yaw || 0, tends: !!f.tends, along,
+      home: along === 'z' ? f.at[2] : f.at[0],
+    };
   });
   const barman = figures.find((f) => f.tends) || null;
   let barmanX = barman ? barman.home : 0;
@@ -519,9 +536,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     return { beer, plate, step: 0 };
   });
 
-  // Dim and warm, so the lamps and the fire are what you read the room by.
-  scene.add(new THREE.HemisphereLight(0x6a5a44, 0x241a12, 0.4));
-  scene.add(new THREE.AmbientLight(0xffe6c0, 0.2));
+  // Dim and warm, so the lamps and the fire are what you read the room by - or, where the
+  // room says so, dark and cold, so that what you read it by is the show.
+  const amb = def.ambience || { sky: 0x6a5a44, ground: 0x241a12, hemi: 0.4, hex: 0xffe6c0, amb: 0.2 };
+  scene.add(new THREE.HemisphereLight(amb.sky, amb.ground, amb.hemi));
+  scene.add(new THREE.AmbientLight(amb.hex, amb.amb));
   const lamps = def.lights.map((l) => {
     const light = new THREE.PointLight(l.hex, l.intensity, l.dist, 2);
     light.position.set(...l.at);
@@ -600,7 +619,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const yNear = p.y + CAM.aim + 0.18;
     v.y = Math.max(yNear, v.y + (1 - t) * len * 0.8);
     // Once it is up through the ceiling, the ceiling is in the way of the only view there is.
-    roofWanted = v.y < FLOOR + CEILING - 0.04;
+    roofWanted = v.y < ROOF_AT - 0.04;
   }
 
   // Over the shoulder, as everywhere else on the island, but closer in, lower, and aimed at
@@ -612,6 +631,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     scene, camera, terrain, material, dom,
     camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy, onDrink,
   });
+
+  // What moves in a room beyond its fire and its barman - the castle's lights and its dancing
+  // crowd (rave.js) - built once, like the rest of it, and handed each visit and each frame.
+  const show = def.show ? def.show({ scene, material }) : null;
 
   // The stage, as a surface to stand on. Walk mode keeps a list of what stands above the
   // floor of each cell and picks the one you belong to, which is how a bridge carries you
@@ -638,12 +661,14 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     s.step = (s.step + 1) % 3;
     s.beer.visible = s.step >= 1;
     s.plate.visible = s.step >= 2;
-    if (barman) barmanX = it.x;             // he comes along the bar to serve it
+    if (barman) barmanX = it[barman.along];  // he comes along the bar to serve it
   }
 
-  function enter({ avatar } = {}) {
+  // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js).
+  function enter({ avatar, guests = null } = {}) {
     left = false;
     if (avatar) walk.setAvatar(avatar);
+    if (show) show.enter({ dancers: guests });
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
     walk.enter({
@@ -659,7 +684,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
   let t = 0;
   let roofWanted = true;
-  function update(dt) {
+  // `extra` is what the room is told from outside each frame: for the castle, where the
+  // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear.
+  function update(dt, extra = {}) {
     if (left) return null;
     roofWanted = true;
     const w = walk.update(dt);
@@ -671,14 +698,15 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
-    fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
+    if (fire) fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
     for (const l of lamps) if (l.flicker) l.light.intensity = l.base * flick;
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
     for (const f of figures) {
-      if (f.tends) f.mesh.position.x += (barmanX - f.mesh.position.x) * Math.min(1, dt * 3.4);
+      if (f.tends) f.mesh.position[f.along] += (barmanX - f.mesh.position[f.along]) * Math.min(1, dt * 3.4);
       f.mesh.position.y = f.y + Math.abs(Math.sin(t * 0.9 + f.seed)) * 0.014;
-      f.mesh.rotation.y = Math.sin(t * 0.55 + f.seed) * 0.28;
+      f.mesh.rotation.y = f.yaw + Math.sin(t * 0.55 + f.seed) * 0.28;
     }
+    if (show) show.update(dt, extra, p);
 
     if (w && w.near) w.near.prompt = promptFor(w.near);
     return w;
@@ -698,7 +726,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     walk.dispose();
     shell.geometry.dispose();
     if (roofMesh) roofMesh.geometry.dispose();
-    fire.geometry.dispose();
+    if (fire) fire.geometry.dispose();
+    if (show) show.dispose();
     pint.dispose();
     snack.dispose();
     for (const f of figures) f.mesh.geometry.dispose();
@@ -713,10 +742,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   };
 }
 
+// buildings.js's own merge, not a copy of it: a part drawn on a texture sheet carries
+// `aSheet` and a plain one does not, and only that merge fills the zeroes in. The castle's
+// stone walls are the first sheet in any room, and the copy this used to be refused them.
 function mergeGeom(parts) {
-  const g = mergeGeometries(parts.filter(Boolean), false);
-  g.computeVertexNormals();
-  g.computeBoundingBox();
-  g.computeBoundingSphere();
-  return g;
+  return mergeParts(parts);
 }

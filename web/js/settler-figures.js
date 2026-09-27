@@ -105,6 +105,69 @@ const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
 // a narrow pulse off a slower one for the stumble, so it comes every few seconds and never on
 // a beat.
 const STAGGER_SIDE = 0.2, STAGGER_YAW = 0.45, STUMBLE_PITCH = 0.3, STUMBLE_SIDE = 0.12;
+
+// Dancing, which nobody on the wire ever does (Plans/rave-in-het-kasteel.md). `'dance'` is
+// written by the castle's rave (web/js/rave.js) onto figures it made itself, together with
+// `f.beat` - how many beats of the music have gone by, off the music's own clock - `f.move`,
+// which of the moves below, and `f.hype`, 0..1, how hard the drop has hit. The beat and not
+// this file's clock, or seventy people bounce out of time with the kick. Every number here
+// is an angle or a lift on a matrix, like the rest of the file; none of it reaches `f.pos`.
+//
+// Arms turn about x, as everywhere in here: 0 hangs, -pi/2 points ahead, -2.8 is over the
+// head. `u` is 0 on the kick, `down` is how far up between two kicks the knees have pushed
+// (0 on the kick, which is where a crowd bends), and `alt` swings +1/-1 on alternate beats.
+export const DANCE_MOVES = 6;          // pump, hands up, running man, wave, nod, and the DJ
+export function dancePose(move, beat, hype = 0) {
+  const u = beat - Math.floor(beat);
+  const down = Math.sin(Math.PI * u);
+  const pulse = Math.exp(-u * 6);
+  const alt = Math.cos(Math.PI * beat);
+  const slow = Math.sin(Math.PI * beat / 2);
+  const jump = hype * 0.07 * down;
+  const p = { bob: 0, left: 0, right: 0, legL: 0, legR: 0, roll: 0, twist: 0, lean: 0 };
+  switch (move) {
+    case 0:                 // the fist in the air on every kick
+      p.bob = 0.03 * down + jump;
+      p.right = -2.2 - 0.65 * pulse;
+      p.left = -0.45 - 0.3 * down;
+      p.legL = 0.12 * alt; p.legR = -0.12 * alt;
+      p.roll = 0.03 * alt;
+      break;
+    case 1:                 // both hands up, swaying
+      p.bob = 0.026 * down + jump;
+      p.left = -2.85 + 0.14 * slow;
+      p.right = -2.85 - 0.14 * slow;
+      p.roll = 0.07 * slow;
+      break;
+    case 2:                 // the running man
+      p.bob = 0.04 * down + jump;
+      p.legL = 0.42 * alt; p.legR = -0.42 * alt;
+      p.left = -1.0 + 0.45 * alt;
+      p.right = -1.0 - 0.45 * alt;
+      p.lean = 0.08;
+      break;
+    case 3:                 // one arm up and then the other, turning with it
+      p.bob = 0.025 * down + jump;
+      p.left = -1.2 - 1.5 * Math.max(0, slow);
+      p.right = -1.2 - 1.5 * Math.max(0, -slow);
+      p.twist = 0.28 * slow;
+      p.roll = 0.04 * slow;
+      break;
+    case 4:                 // too cool to move much: a nod on the kick
+      p.bob = 0.014 * down + jump * 0.5;
+      p.lean = 0.12 * pulse;
+      p.left = -0.25; p.right = -0.35 - 0.1 * down;
+      p.twist = 0.08 * alt;
+      break;
+    default:                // the DJ: a hand on the decks, the other up when it drops
+      p.bob = 0.02 * down;
+      p.lean = 0.16 + 0.1 * pulse;
+      p.right = -1.25 - 0.08 * down;
+      p.left = hype > 0.3 ? -2.7 - 0.2 * pulse : -1.1 - 0.15 * alt;
+      p.twist = 0.1 * slow;
+  }
+  return p;
+}
 const HEAD_Y = RESIDENT_HEAD_Y;
 
 // How far above its own feet a figure's eyes are. A function rather than a constant
@@ -709,10 +772,12 @@ export function createFigures(scene, material, { armed = false } = {}) {
         flinchK *= flinchK;
       }
       const work = workPose(loading ? 'gather' : f.anim, time + f.phase);
+      const dance = f.anim === 'dance' ? dancePose(f.move || 0, f.beat || 0, f.hype || 0) : null;
       const bob = f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
-            : work ? work.drop + hipLift(work.lean, f.look) : 0;
+            : dance ? dance.bob
+              : work ? work.drop + hipLift(work.lean, f.look) : 0;
       // A beer going down (drinkBeer), `t` seconds in, and what a few have done already.
       let drunk = null;
       if (f.drink > 0) {
@@ -737,13 +802,14 @@ export function createFigures(scene, material, { armed = false } = {}) {
       const sx = f.pos[0] + Math.cos(f.yaw) * swaySide, sz = f.pos[1] - Math.sin(f.yaw) * swaySide;
       // The nose follows the zigzag - pointing where the lurch is taking them, which is the
       // zigzag's slope - so they look like they are walking it rather than sliding along it.
-      const drawnYaw = f.yaw + stagger * STAGGER_YAW * Math.cos(swayPhase * 0.6);
+      const drawnYaw = f.yaw + stagger * STAGGER_YAW * Math.cos(swayPhase * 0.6) + (dance ? dance.twist : 0);
 
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(sx, f.y + bob * f.baseScale, sz);
       const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
-      tmpObj.rotation.set((work ? work.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw, Math.sin(gaitPhase) * (walking ? 0.045 : 0.01) + swayRoll);
+      tmpObj.rotation.set((work ? work.lean : dance ? dance.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw,
+        (dance ? dance.roll : Math.sin(gaitPhase) * (walking ? 0.045 : 0.01)) + swayRoll);
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
@@ -752,18 +818,20 @@ export function createFigures(scene, material, { armed = false } = {}) {
       trim.setMatrixAt(f.slot, bodyMat);
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
-      const idle = walking || hammering || work ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
+      const idle = walking || hammering || work || dance ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
       // Hauling, the right hand is up on the bundle and only the left arm swings. Behind a
       // barrow both are on the handles (BARROW_ARM) and neither swings.
       const leftArmAngle = work ? work.left
-        : pushing ? BARROW_ARM
-          : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
+        : dance ? dance.left
+          : pushing ? BARROW_ARM
+            : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
       let rightArmAngle = work ? work.right
-        : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
-          : hauling ? -2.5
-            : pushing ? BARROW_ARM
-              : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
+        : dance ? dance.right
+          : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
+            : hauling ? -2.5
+              : pushing ? BARROW_ARM
+                : (armed ? ARMED_ARM.right : 0) + (walking ? stride * swing : -idle);
       if (f.strike > 0) {
         f.strike = Math.max(0, f.strike - dt);
         rightArmAngle = strikeArm(1 - f.strike / STRIKE_S, rightArmAngle);
@@ -774,8 +842,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
         rightArmAngle += (drunk.x - rightArmAngle) * drunk.w;
         rightTurn = -drunk.z * drunk.w;       // inward, which for the right arm is -z
       }
-      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : stride);
-      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : -stride);
+      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride);
+      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);

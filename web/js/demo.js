@@ -28,7 +28,9 @@ import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
 import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
+import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
+import { attachButcher, updateButcher } from './butcher.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -49,20 +51,32 @@ const CIVIC = [
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
+  // The trades, out beyond the shopping streets. The smith goes in at night: move the night
+  // slider (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
+  ['sawmill', 'Sawmill', '55'],
+  ['smithy', 'Smithy', '60'],
   ['statue', 'Statue', '70'],
+  ['stable', 'Stable', '75'],
   // The stone, not the crossing: the deck is drawn from the layout's own cells and there
   // is no river on the model sheet to stand it in.
   ['bridge', 'Bridge stone', '90'],
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
-  // Not on the island yet: only here, until it has a rung and a site (Plans/zagerij.md).
-  ['sawmill', 'Sawmill', 'not placed yet'],
-  // The same, with its smith, who goes in at night: move the night slider (Plans/smidse.md).
-  ['smithy', 'Smithy', 'not placed yet'],
-  // And a stable with its horse, and a bakery with its oven (Plans/stal-en-veld.md).
-  ['stable', 'Stable', 'not placed yet'],
-  ['bakery', 'Bakery', 'not placed yet'],
+  // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
+  // baker (who goes in at night too) on a corner of the square, the butcher's (whose awning rolls in when he goes home,
+  // Plans/slagerij.md) and the rest along the four streets.
+  ['bakery', 'Bakery', '12'],
+  ['grocer', 'Grocer', '18'],
+  ['apothecary', 'Apothecary', '22'],
+  ['tailor', 'Clothes shop', '28'],
+  ['library', 'Library', '33'],
+  ['tearoom', 'Tea room', '38'],
+  ['wandmaker', 'Wand maker', '42'],
+  ['butcher', 'Butcher', '48'],
+  ['sweetshop', 'Sweet shop', '65'],
+  ['cauldron', 'Cauldron maker', '80'],
+  ['owlpost', 'Owl post', '85'],
 ];
 
 const FURNITURE = [
@@ -176,6 +190,7 @@ const beacons = [];   // the lighthouse's lamp, which is the one thing here the 
 const sawmills = [];  // the saw, the feed, the belt and the sawdust
 const smithies = [];  // the smith, the bellows, the fire and the lantern
 const lives = [];     // everything else that moves on its own: animals, the stable, the countryside
+const butchers = [];  // the butcher, the awning, the sign, the hanging meat and the smoke
 let row = 0;
 
 function tag(x, z, name, note, cls = 'tag') {
@@ -235,17 +250,28 @@ function place(spec, x, z, name, note) {
     const at = built.animated.sawmill.at;
     sawmills.push(attachSawmill(scene, [x + at[0], at[1], z + at[2]], material));
   }
+  // At `at`, like the sawmill: that is where the porch has lifted the building to, and hung at
+  // the field's own height the horse walked a step below its sand and the fire burnt under the
+  // oven's mouth.
   if (built.animated && built.animated.stable) {
-    const stable = attachStable(scene, [x, 0, z], material);
+    const at = built.animated.stable.at;
+    const stable = attachStable(scene, [x + at[0], at[1], z + at[2]], material);
     if (stable) lives.push((dt) => updateStable(stable, dt));
   }
   if (built.animated && built.animated.bakery) {
-    const bakery = attachBakery(scene, [x, 0, z], material);
+    const at = built.animated.bakery.at, where = [x + at[0], at[1], z + at[2]];
+    const bakery = attachBakery(scene, where, material);
     if (bakery) lives.push((dt) => updateBakery(bakery, dt));
+    const baker = attachBaker(scene, where, material);
+    if (baker) lives.push((dt) => updateBaker(baker, dt));
   }
   if (built.animated && built.animated.smithy) {
     const at = built.animated.smithy.at;
     smithies.push(attachSmithy(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.butcher) {
+    const at = built.animated.butcher.at;
+    butchers.push(attachButcher(scene, [x + at[0], at[1], z + at[2]], material));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);
@@ -1009,10 +1035,11 @@ function setPrompt(near) {
   promptEl.innerHTML = `<b>E</b> ${near.prompt || `look at ${near.label}`}`;
 }
 
-// The doors on the field. One for now; the next room is one more entry.
+// The doors on the field: the tavern, and the castle, whose great hall is a rave here at any
+// hour - the island opens it on Saturday nights only (Plans/rave-in-het-kasteel.md).
 function doors() {
   const out = [];
-  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern']]) {
+  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern'], ['c:castle', 'rave', 'the castle']]) {
     const at = placed.get(id);
     if (at) out.push({ id, room, kind: 'door', x: at.x, z: at.z, r: 2.4, label, prompt: `step into ${label}` });
   }
@@ -1109,6 +1136,7 @@ function frame(now) {
   for (const m of sawmills) updateSawmill(m, dt);
   for (const s of smithies) updateSmithy(s, dt);
   for (const live of lives) live(dt);
+  for (const b of butchers) updateButcher(b, dt);
 
   if (inside) {
     const w = inside.update(dt);

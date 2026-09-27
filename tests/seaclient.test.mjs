@@ -50,7 +50,7 @@ function island({ seed = 1337, size = 64, port = 4747, name = 'Promptholm', hous
 }
 
 async function afloat(fn, opts = {}) {
-  const sea = createSea({ port: 0, name: 'test sea', ...opts });
+  const sea = createSea({ port: 0, name: 'test sea', starters: false, ...opts });
   const addr = await sea.listen();
   try {
     return await fn({ sea, url: `http://127.0.0.1:${addr.port}/` });
@@ -162,7 +162,7 @@ test('a sea that has restarted gets the island again without anybody editing a f
   await until(() => client.connected(), 'the socket never came up');
   client.close();
 
-  const fresh = createSea({ port: 0, name: 'a fresh sea' });
+  const fresh = createSea({ port: 0, name: 'a fresh sea', starters: false });
   const addr = await fresh.listen();
   const again = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: a.id, bundle: () => a.bundle });
   try {
@@ -254,7 +254,124 @@ test('nothing in the line home listens for instructions', async () => {
   for (const forbidden of ['node:fs', 'node:child_process', 'writeFile', 'exec(', 'spawn(']) {
     assert.ok(!src.includes(forbidden), `lib/seaclient.mjs reaches for ${forbidden}`);
   }
-  // It handles exactly two things the sea can say, and neither of them is a command.
+  // It handles exactly three things the sea can say, and none of them is a command. The third
+  // is an animal's errand being done (Plans/dierenverhalen.md): it names an action this
+  // islander itself posted, and all it can do is let the reducer finish a visit that is still
+  // pending on this very connection - see the test below.
   const handled = [...src.matchAll(/m\.t === '([a-z]+)'/g)].map((m) => m[1]).sort();
-  assert.deepEqual(handled, ['refused', 'welcome']);
+  assert.deepEqual(handled, ['animal', 'refused', 'welcome']);
+  // And that one is bounded before it is handed on: only `done`, only for this island, an id
+  // no longer than an action id, and a whole-number generation.
+  const animal = src.slice(src.indexOf("m.t === 'animal'"), src.indexOf("m.t === 'welcome'"));
+  for (const check of ["m.a === 'done'", 'm.i === islandId', 'm.action.length <= 40', 'Number.isSafeInteger(m.gen)']) {
+    assert.ok(animal.includes(check), `the animal message is handed on without checking ${check}`);
+  }
 });
+
+test('an animal errand done is handed on only for this island, and the generation counts welcomes', async () => {
+  const { createSea } = await import('../lib/sea.mjs');
+  const { createSeaClient } = await import('../lib/seaclient.mjs');
+  const sea = createSea({ port: 0, host: '127.0.0.1', log: () => {} });
+  const addr = await sea.listen();
+  const heard = [];
+  const client = createSeaClient({ url: `http://127.0.0.1:${addr.port}/`, islandId: 'aaaaaaaaaaaaaaaa', bundle: () => null });
+  client.onAnimal((m) => heard.push(m));
+  try {
+    for (let i = 0; i < 100 && !client.connected(); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(client.connected(), 'never joined');
+    assert.equal(client.generation(), 1);
+  } finally {
+    client.close();
+    await sea.close();
+  }
+  assert.deepEqual(heard, []);
+});
+
+// A port nobody is listening on, for a sea that is not there yet. Taken and let go at once:
+// the sea started on it later is the one that "comes back".
+async function freePort() {
+  const net = await import('node:net');
+  return new Promise((done) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => done(port));
+    });
+  });
+}
+const quietLines = (said) => said.filter((m) => /is not answering/.test(m));
+
+// 26 September: the open sea timed out and the islander said nothing for twelve minutes -
+// and was not retrying either. Node's WebSocket fires `error` and never `close` for a socket
+// that failed before it opened, and the retry hung only off `close`, so the first failed
+// attempt was the last one. Both halves are held here: it is said once, and it keeps
+// knocking until the sea is there.
+test('a sea that is not answering is said once, and the island keeps knocking until it answers', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const a = island();
+  const said = [];
+  const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle, quietMs: 300, log: (m) => said.push(m) });
+  let sea = null;
+  try {
+    await until(() => quietLines(said).length, 'nothing was said about a sea that is not there');
+    assert.ok(quietLines(said)[0].includes(url), `the line does not name the address: ${quietLines(said)[0]}`);
+    // Long enough for the backoff to have knocked again (1 s, then 2 s).
+    await settle(1400);
+    assert.equal(quietLines(said).length, 1, 'said again on a later attempt');
+
+    sea = createSea({ port, name: 'a late sea' });
+    await sea.listen();
+    await until(() => client.connected(), 'the island never knocked again once the sea was there', 8000);
+    await until(() => sea.fleet.has(a.id), 'joined, but the island never arrived');
+    const joined = said.filter((m) => /^joined/.test(m));
+    assert.equal(joined.length, 1);
+    assert.match(joined[0], /back after \d+ s without an answer/, 'the join does not say the island had been without');
+    assert.equal(quietLines(said).length, 1);
+  } finally {
+    client.close();
+    if (sea) await sea.close();
+  }
+});
+
+// A sea restarting is a second of blank water, and that is not worth a line in anybody's
+// log - the grace is what keeps the real one readable.
+test('a sea back within the grace is not said to have gone quiet', async () => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const a = island();
+  const said = [];
+  let sea = createSea({ port, name: 'test sea' });
+  await sea.listen();
+  const client = createSeaClient({ url, islandId: a.id, bundle: () => a.bundle, quietMs: 4000, log: (m) => said.push(m) });
+  try {
+    await until(() => client.connected(), 'the socket never came up');
+    await sea.close();
+    await until(() => !client.connected(), 'the island never noticed the sea go');
+    sea = createSea({ port, name: 'test sea, again' });
+    await sea.listen();
+    await until(() => client.connected(), 'the island never found the sea again', 8000);
+    assert.deepEqual(quietLines(said), [], 'a restart was reported as a sea not answering');
+    assert.ok(said.filter((m) => /^joined/.test(m)).every((m) => !/back after/.test(m)));
+  } finally {
+    client.close();
+    await sea.close();
+  }
+});
+
+// A claim being waited out is the sea answering, between knocks that grow further apart
+// than the grace. It has its own line (the refusal) and must not also get this one.
+test('a claim being waited out is not a sea that is not answering', () => afloat(async ({ sea, url }) => {
+  const a = island();
+  const before = createSeaClient({ url, islandId: a.id, token: 'the-old-process', bundle: () => a.bundle });
+  await until(() => sea.fleet.has(a.id), 'the island never arrived');
+  before.close();
+  const said = [];
+  const after = createSeaClient({ url, islandId: a.id, token: 'the-new-process', bundle: () => a.bundle, quietMs: 300, log: (m) => said.push(m) });
+  try {
+    await until(() => said.some((m) => /claimed/.test(m)), 'the old claim was never in the way');
+    await settle(2500);                            // two knocks, each gap longer than the grace
+    assert.deepEqual(quietLines(said), [], 'the waiting was taken for silence');
+  } finally {
+    after.close();
+  }
+}));

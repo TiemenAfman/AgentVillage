@@ -18,6 +18,10 @@ const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
+// A finger's drag, turned the way the mouse turns: radians per px dragged (touchpad.js hands
+// it over as `drag`). A little livelier than the mouse, because a phone is a short stroke.
+const DRAG_YAW = 0.0055;
+const DRAG_PITCH = 0.0042;
 const CAM_UP = 1.6;
 // Eye level, asked of the figure instead of written down here. This is the height the
 // third-person camera looks at, so a wrong number tilts the whole frame: it used to be a
@@ -519,16 +523,27 @@ export function createWalkMode({
   // The wheel pulls the camera in and pushes it out, the same as it does from the sky. It
   // listens on the canvas and not the window, and gives up while an overlay owns the input,
   // so scrolling a panel of text never also zooms the island behind it.
-  let back = camBack;
+  //
+  // How far back is two things: `base`, what you are doing asks for (on foot, on the bike, at
+  // a tiller), and `zoomPref`, what the wheel or a pinch asked for on top of it, which stays
+  // yours from one to the next rather than being put back at every step ashore. At a tiller
+  // it may go further out than on foot, since the base is already at the old limit there.
+  let base = camBack, zoomPref = 1, back = camBack;
+  const farthest = () => Math.max(camBack * 2.2, base * 1.4);
+  function place(b) { base = b; back = clamp(base * zoomPref, camBack * 0.35, farthest()); }
+  function zoomBy(f) {
+    if (!Number.isFinite(f) || f <= 0) return;
+    back = clamp(back * f, camBack * 0.35, farthest());
+    zoomPref = back / base;
+  }
   const onWheel = (e) => {
     if (!state.active || state.paused) return;
     e.preventDefault();
     // One notch past the nearest stop goes in behind the eyes, and the first notch out
     // comes back to that stop - never both in one notch, or a trackpad flick would flicker.
-    const nearest = camBack * 0.35;
     if (state.firstPerson) { if (e.deltaY > 0) setFirstPerson(false); return; }
-    if (e.deltaY < 0 && back <= nearest + 1e-9) { setFirstPerson(true); return; }
-    back = clamp(back * Math.exp(clamp(e.deltaY, -240, 240) * 0.0016), nearest, camBack * 2.2);
+    if (e.deltaY < 0 && back <= camBack * 0.35 + 1e-9) { setFirstPerson(true); return; }
+    zoomBy(Math.exp(clamp(e.deltaY, -240, 240) * 0.0016));
   };
   // From behind the eyes the camera may look nearly straight up and down; from behind the
   // back it may not, or it swings under the ground or over the head.
@@ -546,6 +561,7 @@ export function createWalkMode({
     else {
       camera.near = farNear;
       back = camBack * 0.35;
+      zoomPref = back / base;
       state.camPitch = clamp(state.camPitch, -0.25, 0.95);
     }
     camera.updateProjectionMatrix();
@@ -696,7 +712,10 @@ export function createWalkMode({
     state.swimming = false;
     state.grounded = true;
     state.vy = 0;
-    back = camBack * 2.2;
+    place(camBack * 2.2);
+    // Straight behind the bow from the first stroke: a look from before you boarded is not
+    // a look round the boat.
+    riddenSinceLook = Infinity;
   }
 
   // Ashore at `at`, which is where the bow is pointing. The same step-back loop `enter`
@@ -713,7 +732,7 @@ export function createWalkMode({
     }
     if (!ok) return false;
     state.vehicle = null;
-    back = camBack;
+    place(camBack);
     state.pos.set(x, groundAt(x, z), z);
     state.floor = state.pos.y;
     state.grounded = true;
@@ -742,7 +761,7 @@ export function createWalkMode({
     state.crouching = false;
     state.crouchSince = 0;
     state.vy = 0;
-    back = camBack * 1.35;
+    place(camBack * 1.35);
     return true;
   }
 
@@ -774,7 +793,7 @@ export function createWalkMode({
     if (!state.bike) return;
     state.bike = null;
     if (bikeMesh) bikeMesh.visible = false;
-    back = camBack;
+    place(camBack);
   }
 
   function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
@@ -817,7 +836,7 @@ export function createWalkMode({
     setFirstPerson(false);
     state.vehicle = null;
     putBikeAway();
-    back = camBack;
+    place(camBack);
     // Inactive before the release, or release() would ask for the lock back on the way out.
     state.active = false;
     release();
@@ -869,6 +888,15 @@ export function createWalkMode({
     if (Math.abs(p.look.x) > 0.05) lookedAround();
     state.camYaw -= p.look.x * 2.6 * dt;
     state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, ...pitchRange());
+    // A finger on the glass (touchpad.js): a drag is a distance, turned like the mouse and
+    // not by dt, and a pinch is a factor on how far back the camera sits.
+    const raw = p.raw || p;
+    if (raw.drag && (raw.drag.x || raw.drag.y)) {
+      if (Math.abs(raw.drag.x) > 1) lookedAround();
+      state.camYaw -= raw.drag.x * DRAG_YAW;
+      state.camPitch = clamp(state.camPitch + raw.drag.y * DRAG_PITCH, ...pitchRange());
+    }
+    if (raw.zoom && raw.zoom !== 1) zoomBy(raw.zoom);
     if (p.hit('bike')) toggleBike();
     if (p.hit('jump')) jump();
     if (p.hit('crouch') && !state.bike) crouchToggle();
@@ -957,9 +985,13 @@ export function createWalkMode({
       state.yaw = state.vehicle.yaw;
       // The camera trails the bow rather than staying where the mouse left it. You steer
       // with a rudder here, not by walking towards what you are looking at, so a camera
-      // that did not follow would leave you sailing sideways out of frame. It lerps, so a
-      // look around still works and simply drifts back.
-      state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5));
+      // that did not follow would leave you sailing sideways out of frame. But not while you
+      // are looking round: like the bike, it waits until you have sailed RECENTRE_AFTER
+      // without touching it and then eases back in. It used to pull every frame, which on a
+      // phone - where looking is a drag and not a flick - meant you could not look at all.
+      if (Math.abs(state.vehicle.v) > 0.05) riddenSinceLook += dt;
+      const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
+      if (ease > 0) state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5 * ease));
       state.moving = Math.abs(state.vehicle.v) > 0.05;
       state.running = false;
       state.grounded = true;
@@ -1268,6 +1300,18 @@ export function createWalkMode({
     // over (classic-avatar.js handOver), gone from the fist for `away` seconds.
     beerHand: () => (beerIn('rightArm') ? 'rightArm' : beerIn('leftArm') ? 'leftArm' : null),
     handOver: (side, away) => classicAvatar.handOver(side, away),
+    // A hand's button from something that is not a mouse - the phone's hand buttons
+    // (touchpad.js) - pressed and let go: a shield is held up while it is down, anything
+    // else swings or sips on the press, exactly as onDown / onUp do for a mouse button.
+    hand(side, down) {
+      if (!state.active || state.paused) return;
+      if (!down) { guardUp(side, false); return; }
+      if (shieldIn(side)) { if (canFight()) guardUp(side, true); } else act(side);
+    },
+    // On foot and on land, which is when the hands have anything to do.
+    onFoot: () => state.active && !state.paused && !state.vehicle && !state.bike && !state.swimming,
+    // How far back the camera sits against what it would for this mode: the wheel's or the pinch's.
+    zoom: () => zoomPref,
     dispose, isActive: () => state.active };
 }
 

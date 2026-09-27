@@ -116,8 +116,13 @@
       <button class="chip" id="build-btn" title="Put something on the island">Build</button>
       <button class="chip" id="plan-btn" title="The island from above: move hamlets, zone ground" hidden>Plan</button>
       <button class="chip" id="avatar-btn" title="Compose the settler you walk as (I)">Inventory</button>
+      <!-- The island's animal journal (web/js/animal-dossier.js). Hidden until the island has
+           an animal, and only ever shown to the keeper: /api/animals is loopback only. -->
+      <button class="chip" id="animals-btn" title="The island's animals, and what they have been up to" hidden>Animals</button>
       <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
       <button class="chip" id="legend-btn">Legend</button>
+      <button class="chip" id="say-btn" title="Say something to everybody on the island" hidden>Say</button>
+      <button class="chip" id="phone-btn" title="How the controls feel" hidden>Controls</button>
       <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
       <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
     </div>
@@ -139,12 +144,24 @@
     <ul id="waiting-list"></ul>
   </section>
 
+  <!-- What the animals did while nobody was looking: at most three lines, once
+       (web/js/animal-dossier.js summary). Shown by ui.js's syncSidebar only while it has a
+       line in it, by the same rule as the waiting list above. -->
+  <section class="card animal-summary" id="animal-summary" hidden>
+    <div class="row"><h2>While you were away</h2><button class="x" data-dismiss="animal-summary" title="Seen it" aria-label="Dismiss">✕</button></div>
+    <ul id="animal-summary-list"></ul>
+  </section>
+
   <section class="card building-now" id="building-now" hidden>
     <h2>Now building</h2>
     <ul id="building-list"></ul>
   </section>
 </div>
 
+<aside class="panel" id="phone" hidden>
+  <div class="panel-head"><h2>Controls</h2><button class="x" data-close="phone">✕</button></div>
+  <div class="panel-body" id="phone-body"></div>
+</aside>
 <aside class="panel" id="legend" hidden>
   <div class="panel-head"><h2>Legend</h2><button class="x" data-close="legend">✕</button></div>
   <div class="panel-body" id="legend-body"></div>
@@ -158,6 +175,19 @@
 <aside class="panel" id="dossier" hidden>
   <div class="panel-head"><h2 id="dossier-name">—</h2><button class="x" data-close="dossier">✕</button></div>
   <div class="panel-body" id="dossier-body"></div>
+</aside>
+
+<!-- The island's story animals (web/js/animal-dossier.js): one animal, and the island's
+     whole animal journal. Side panels like the three above - ui.js's SIDE list keeps one
+     of the five open at a time. -->
+<aside class="panel animal-panel" id="animal-dossier" hidden>
+  <div class="panel-head"><h2 id="animal-dossier-name">—</h2><button class="x" data-close="animal-dossier">✕</button></div>
+  <div class="panel-body" id="animal-dossier-body"></div>
+</aside>
+
+<aside class="panel animal-panel" id="animal-journal" hidden>
+  <div class="panel-head"><h2>The animals</h2><button class="x" data-close="animal-journal">✕</button></div>
+  <div class="panel-body" id="animal-journal-body"></div>
 </aside>
 
 <!-- The planner (web/js/plan-mode.js): tools on the left, the draft on the right. Filled
@@ -202,6 +232,9 @@
   <div class="card walk-prompt walk-give" id="walk-give" hidden></div>
   <div class="card walk-confirm" id="walk-confirm" hidden></div>
   <div class="card walk-pouch" id="walk-pouch" hidden></div>
+  <!-- What a keeper says to your face (main.js speakToKeeper, ui.js setSpeech): under the
+       face, where subtitles go, for as long as the conversation lasts. -->
+  <div class="card speech" id="speech" hidden role="status"></div>
   <div class="walk-keys" id="walk-keys"></div>
 </div>
 
@@ -242,7 +275,8 @@
 
 <div id="labels"></div>
 <div id="toasts"></div>
-<div id="skew" class="skew" hidden></div>
+<div id="arrival" class="arrival" aria-live="polite" hidden><b></b><small></small></div>
+<div id="skew" class="skew" role="status" hidden></div>
 <div id="update-gate" class="update-gate" hidden role="dialog" aria-modal="true" aria-labelledby="update-gate-title">
   <div class="update-gate-card">
     <h2 id="update-gate-title"></h2>

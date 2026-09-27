@@ -6,9 +6,9 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
-import { createStandHeight } from 'shared/settlerwalk.mjs';
-import { gatheringAt } from 'shared/daylight.mjs';
-import { keeperOf } from 'shared/palette.mjs';
+import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
+import { gatheringAt, raveAt } from 'shared/daylight.mjs';
+import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -35,6 +35,10 @@ import {
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
+import { createAnimalPanel } from './animal-dossier.js';
+import { createAnimalBatch, createAnimalView } from './animal-view.js';
+import { createHerds } from './herds.js';
+import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW } from './interior.js';
@@ -59,6 +63,11 @@ import { attachClock, updateClock, attachResetClock, updateResetClock } from './
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
+// The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
+import { attachStable, updateStable, disposeStable } from './stable.js';
+import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
+import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
+import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -80,11 +89,13 @@ import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
+import { prefs as phonePrefs, setPref as setPhonePref } from './phoneprefs.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { SETTLER_DRINK_S } from './settler-figures.js';
 import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
+import { seaQuietNotice } from './seaquiet.js';
 import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
 
@@ -300,7 +311,10 @@ async function openBoardWithoutIsland() {
   board.open();
 }
 
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu);
+// A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
+// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
+// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
@@ -312,6 +326,17 @@ if (modest) console.info('island: integrated graphics detected, running lighter'
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
+// The field of view is vertical, so a phone held upright at 45 degrees saw about 23 across:
+// a boat and a strip of sea. On the phone it opens up in portrait until there is about 60
+// across, and no further than 75 up and down, where the edges start to stretch.
+function fitFov() {
+  const aspect = innerWidth / innerHeight;
+  const want = STANDALONE && aspect < 1
+    ? Math.min(75, 2 * Math.atan(Math.tan(Math.PI / 6) / aspect) * 180 / Math.PI)
+    : 45;
+  if (camera.fov !== want) { camera.fov = want; camera.updateProjectionMatrix(); }
+}
+fitFov();
 // No browser menu over the island, in any mode.
 //
 // OrbitControls suppresses it for itself, because it uses the right button to pan - so from
@@ -436,25 +461,73 @@ function standingSpotFor(fig, rec) {
   return [fig.pos[0] + dx * step, fig.pos[1] + dz * step];
 }
 
+// How often a conversation says again who it is holding. The sea keeps a hold until it is
+// let go of, but a crowd rebuilt by a republish - every scan on an island at work - starts
+// with nobody held, so a conversation that lasts until Escape saw its settler walk off
+// mid-sentence a minute in. Said again, the rebuilt crowd holds them within this long; said
+// to the crowd that already holds them it changes nothing, and nothing goes out on the wire
+// but the one small message (`fh` is only broadcast when the held set changes).
+const HOLD_AGAIN_MS = 2000;
+
 // Look them in the eye for as long as the conversation lasts: they are held where they
 // stand and turned towards you, and the camera drops into your own eyes. Nothing happens
 // without a figure to look at and feet to look from - a conversation is still a
-// conversation with the camera left where it was.
+// conversation with the camera left where it was. The caller pauses the feet: two hands on
+// one camera fight, and walk mode, writing its own stance every frame, won - the camera
+// swung in and straight back up again the moment it arrived (see `speakToKeeper`).
 function faceUp(id, fig) {
-  if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return;
+  if (!fig || !fig.visible || state.inside || state.mode !== 'walk') return false;
+  // One conversation at a time: whoever was held before is let go of first, or their hold
+  // would be kept up for ever by an interval nobody could reach.
+  faceToFace.cancel();
   const w = state.walk.state;
   // Named to the sea by the name the sea walks them under (seaIdOf). With our own
   // `house:<uuid>` the sea found nobody to hold, and the settler walked on mid-sentence
   // while the camera stayed on them. Worked out once, here, so the letting go names the
   // same body as the holding did even if a roster arrives in between.
   const onSea = seaIdOf(id);
-  if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z);
-  faceToFace.begin({
-    subject: fig,
+  const hold = () => { if (state.net) state.net.attend(onSea, w.pos.x, w.pos.z); };
+  hold();
+  const again = setInterval(hold, HOLD_AGAIN_MS);
+  const began = faceToFace.begin({
+    // Found again every frame rather than held by the object: a roster that arrives
+    // mid-conversation enrols a new figure under the same id (see facetoface.js).
+    subject: () => (state.settlers && state.settlers.figure(id)) || fig,
     viewer: { x: w.pos.x, z: w.pos.z, feetY: w.pos.y },
-    onLetGo: () => { if (state.net) state.net.unattend(onSea); },
+    onLetGo: () => { clearInterval(again); if (state.net) state.net.unattend(onSea); },
   });
+  if (!began) { clearInterval(again); if (state.net) state.net.unattend(onSea); }
+  return began;
 }
+
+// A keeper's piece, said to your face and left there until you walk on. The toast it used to
+// be went by itself after a few seconds and nothing held the camera meanwhile; now the keeper
+// stands and looks at you, the words stay under them, and Escape - or E again - ends it.
+// `parley` is the conversation in progress, or null.
+let parley = null;
+function endParley({ camera = true } = {}) {
+  if (!parley) return false;
+  parley = null;
+  state.ui.setSpeech(null);
+  // Your feet get their keys back only once the camera is home again, as after the chat:
+  // unpausing now would let walk mode write the camera mid-flight, and its stance would win.
+  // Without the camera (walk mode itself is ending) the feet are let go at once, as the chat
+  // does when exitWalk closes it.
+  const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+  if (!camera || !faceToFace.end(walkOn)) walkOn();
+  return true;
+}
+// Captured on the window, and stopped dead, for the same reason the chat and the town hall
+// stop theirs: walk.js listens on this window too, and the key that ends a conversation must
+// not also be read as "back to the sky" or as E at whatever is nearest.
+addEventListener('keydown', (e) => {
+  if (!parley) return;
+  const k = e.key.toLowerCase();
+  if (k !== 'escape' && k !== 'e') return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!e.repeat) endParley();
+}, true);
 
 // ------------------------------------------------------------ a beer for a settler
 // A glass in your hand and one of our own settlers within reach: G hands it over
@@ -506,8 +579,10 @@ function endGift() {
 // to the square by, and for the gold clerk by the pit's own count.
 function speakToKeeper(it) {
   const fig = state.settlers ? state.settlers.figure(it.id) : null;
-  faceUp(it.id, fig);
-  if (it.post === 'mayor') { openTownHall(); return; }
+  // The mayor's piece is the register, which holds the conversation open itself: the town
+  // hall pauses the feet, and closing it hands the camera back (its onClose). Panel first, so
+  // walk mode is already paused when the camera is taken.
+  if (it.post === 'mayor') { openTownHall(); if (state.townHall.isOpen()) faceUp(it.id, fig); return; }
   const c = { day: worldNow().weekday, hour: currentHour() };
   const on = gatheringAt(c.day, c.hour);
   const night = c.hour >= 22 || c.hour < 7;
@@ -531,7 +606,12 @@ function speakToKeeper(it) {
         : night ? '“A quiet night. The lamp stays lit.”'
           : '“Peace be with you. The bell keeps the island’s hours.”',
   };
-  if (said[it.post]) state.ui.toast(said[it.post]);
+  if (!said[it.post]) return;
+  if (state.walk) state.walk.setPaused(true);
+  faceUp(it.id, fig);
+  parley = { id: it.id };
+  const who = it.label.charAt(0).toUpperCase() + it.label.slice(1);
+  state.ui.setSpeech({ who, line: said[it.post] });
 }
 
 // Addressing a settler opens their session and lets you carry it on.
@@ -656,6 +736,15 @@ function interactables() {
       out.push({
         id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
         label: 'the tavern', prompt: 'step into the tavern',
+      });
+    } else if (rec.spec.civicType === 'castle') {
+      // At the gate, not the middle of the lot: a seven by seven castle measured from its
+      // centre would answer E from behind its back wall. A getter for the prompt, because
+      // the gate opens at nine on Saturday whether or not anybody rebuilds this list.
+      const [gx, gz] = castleGate(rec);
+      out.push({
+        id: rec.id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
+        get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
       });
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
@@ -1135,6 +1224,7 @@ function walkCallbacks() {
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -1145,7 +1235,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1218,12 +1308,57 @@ function onRefusedBySea(m) {
   // In the app it is the whole-screen gate with a download button instead: a refused app
   // has no island to fall back on, so nothing else on the screen is worth reaching.
   if (why === 'version') {
+    state.seaSpeaks = m.speaks;
     const gate = STANDALONE ? updateGate({ speaks: m.speaks }) : null;
     if (gate) state.ui.setGate(gate);
     else state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE }));
     return;
   }
   state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
+}
+
+// Not answering at all, which is the other way a sea can fail us and the one that used to
+// say nothing: no refusal arrives, the socket just never opens, and the island stands empty
+// because the sea walks every crowd. net.js says 'quiet' once after its grace and 'on' when
+// a socket opens; a banner rather than a toast, because it is true for as long as it lasts
+// and a toast would be gone before anybody wondered where the settlers were.
+//
+// Which sea, in the keeper's words, comes from /api/hello: its mode and whether it is the
+// open sea (seaQuietNotice). A phone has no hello, only the sea it was packed with.
+function learnSea(hello) {
+  state.seaWords = { url: hello.sea || null, mode: hello.seaMode || null, open: !!hello.seaOpen };
+}
+function onSeaStatus(status) {
+  if (status === 'on') { state.ui.setSeaQuiet(null); return; }
+  if (status !== 'quiet') return;
+  const words = state.seaWords || { url: STANDALONE ? STANDALONE.sea : null };
+  state.ui.setSeaQuiet(seaQuietNotice({ ...words, keeper: islanderHere() && !state.guest }));
+}
+
+// The app's gate from all it knows: its own release, the sea's (from the welcome) and the
+// newest on GitHub (askLatestRelease). See updateGate in web/js/update.js.
+function appGate() {
+  return updateGate({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease });
+}
+
+// The app asks GitHub for the newest release itself (src-android/src/lib.rs, latest_release),
+// so the card goes up as soon as there is one - not only once whoever keeps the sea has
+// updated it. At boot and on a welcome, at most once an hour: an app lives on in the
+// background for days, and GitHub allows sixty unauthenticated calls an hour.
+let releaseAsked = 0;
+function askLatestRelease() {
+  const ipc = globalThis.__TAURI_INTERNALS__;
+  if (!STANDALONE || !ipc || typeof ipc.invoke !== 'function') return;
+  if (Date.now() - releaseAsked < 3600e3) return;
+  releaseAsked = Date.now();
+  ipc.invoke('latest_release').then((latest) => {
+    state.latestRelease = latest;
+    // A refusal owns the screen until the next welcome; this card is not to cover it.
+    const gate = appGate();
+    if (gate && state.seaSpeaks == null) state.ui.setGate(gate);
+  }).catch(() => {
+    // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
+  });
 }
 
 function applyPanelMessage(m) {
@@ -1254,6 +1389,39 @@ function applyPanelMessage(m) {
 }
 
 // A board you are already working says how to let go of it, not how to take it.
+// The phone's buttons say what they would do: a word under X for what is in reach, and the
+// two hands only while there is ground under your feet to fight or drink on.
+const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter' };
+function touchHud(near, walk) {
+  if (!state.touch) return;
+  const word = !near ? ''
+    : near.prompt ? (CAPTION[near.prompt] || near.prompt.split(' ')[0].replace(/^./, (c) => c.toUpperCase()))
+      : near.kind === 'board' || near.kind === 'issues' ? 'Read'
+        : near.kind === 'bed' ? '' : 'Talk';
+  state.touch.caption(word);
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null);
+}
+
+// A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
+// Only somebody on a visiting island - a phone has no island of its own to have people on -
+// found by guest-pick.js's arithmetic along the ray through the finger, and said in a toast
+// with the island's name.
+function tapName(x, y) {
+  if (state.mode !== 'walk' || state.inside) return;
+  pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(pointer, camera);
+  let best = null;
+  for (const g of state.guests) {
+    if (!g.crowd) continue;
+    const h = nearestOnRay(g.crowd.figures(), ray.ray.origin, ray.ray.direction, GUEST_PICK_T);
+    if (h.f && (!best || h.t < best.t)) best = { f: h.f, t: h.t, g };
+  }
+  if (!best) return;
+  const v = best.g.region.village;
+  const said = guestLabel(best.f, v && v.island, state.fleet);
+  state.ui.toast(`<b>${escapeHtml(said.name)}</b>${said.sub ? ` · ${escapeHtml(said.sub)}` : ''}`);
+}
+
 function promptFor(near) {
   if (!near) return null;
   const held = state.walk.state.working;
@@ -1268,6 +1436,59 @@ function promptFor(near) {
 // listeners on the window, so a fresh one per visit would pile them up.
 const rooms = new Map();
 let cameFrom = null;
+
+// ---- the castle on a Saturday night (Plans/rave-in-het-kasteel.md) ----
+// The hours are shared/daylight.mjs's (RAVE, raveAt), asked of the world's clock like the
+// borrel is, so it is the same Saturday night on every screen in the sea. `?rave` opens the
+// gate whatever the hour, for trying it on a Tuesday.
+const FORCE_RAVE = params.has('rave');
+function raveOn() {
+  return FORCE_RAVE || raveAt(worldNow().weekday, currentHour());
+}
+const RAVE_SHUT = 'The castle gate is barred. On Saturday night, from nine until three, the great hall is a rave.';
+const RAVE_IN = 'Saturday night in the great hall. The music runs until three.';
+const RAVE_OUT = 'Three o’clock. The lights come up and the castle empties out.';
+
+// In front of the gate, which is half the lot's width out from its middle, the way the
+// layout's rot says the building faces (DOOR_DIR - the same table the settlers' doorsteps
+// come from).
+function castleGate(rec) {
+  const p = rec.group.position, plot = rec.spec.plot || {};
+  const [dx, dz] = DOOR_DIR[plot.rot || 0];
+  const reach = (plot.w || 3) / 2 + 0.35;
+  return [p.x + dx * reach, p.z + dz * reach];
+}
+
+// Who is dancing: our own settlers, dressed as they are outside, the ones who worked most
+// lately first. Apprentices stay home - it is two in the morning - and whoever the floor has
+// room for past the end of this list is somebody who came over from another island.
+function raveGuests() {
+  const out = [];
+  for (const rec of state.byId.values()) {
+    const s = rec.spec;
+    if (s.kind !== 'house' && s.kind !== 'camp') continue;
+    out.push({ id: rec.id, style: styleOf(s), at: s.lastAt || s.startedAt || '' });
+  }
+  out.sort((a, b) => (a.at < b.at) - (a.at > b.at) || (a.id < b.id ? -1 : 1));
+  return out;
+}
+
+// What sound.js is told about the rave: nothing when there is none, the hall when you are
+// in it, and otherwise how far the castle is - a thump through the walls from the square.
+function raveHeard() {
+  if (!raveOn()) return null;
+  if (state.inside) return state.inside.room === 'rave' ? { inside: true } : null;
+  const rec = state.byId.get('civic:castle');
+  if (!rec || !rec.group.visible) return null;
+  return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
+}
+
+// Three o'clock: whoever is inside is put back out on the step, once.
+function keepRaveHours() {
+  if (!state.inside || state.inside.room !== 'rave' || raveOn()) return;
+  state.inside.leave();
+  state.ui.toast(RAVE_OUT);
+}
 
 function enterInterior(room, at) {
   if (state.inside || state.mode !== 'walk') return;
@@ -1293,8 +1514,9 @@ function enterInterior(room, at) {
   cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
-  inside.enter({ avatar: loadAvatar() });
+  inside.enter({ avatar: loadAvatar(), guests: room === 'rave' ? raveGuests() : null });
   state.ui.setIndoors(true);
+  if (room === 'rave') state.ui.toast(RAVE_IN);
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -1378,7 +1600,93 @@ function minimapData() {
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
     district: minimapDistrict(),
+    // Names and distances for the nearest islands, on the phone, where a wanderer has
+    // nothing else to steer by (see the `named` pass in minimap.js).
+    named: STANDALONE ? namedIslands(w.pos) : null,
   };
+}
+
+// Every island the page knows a name for, but not the one underfoot: the raised regions,
+// named off the fleet, and the horizon's pinned marks for those further out.
+function namedIslands(pos) {
+  const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
+  const here = regionAt(pos);
+  const out = [];
+  for (const r of state.sea.regions()) {
+    const name = names.get(r.id);
+    if (r !== here && name) out.push({ x: r.origin[0], z: r.origin[1], name });
+  }
+  const seen = new Set(out.map((n) => n.name));
+  for (const m of state.horizon ? state.horizon.marks() : []) {
+    if (m.pinned && m.name && !seen.has(m.name)) out.push({ x: m.x, z: m.z, name: m.name });
+  }
+  return out;
+}
+// Android's back button (the phone). Tauri hands it to the webview's history, so while
+// anything is open over the island - a side panel, the chart, a keeper's words, the chat -
+// one history entry is held for it, and going back closes all of that instead of the app.
+// With nothing open there is no entry, and back leaves the app the way Android expects.
+let backHeld = false, backLetGo = false;
+function overlayOpen() {
+  return !!parley || minimapMode === 'map' || !!(state.islandchat && state.islandchat.isOpen())
+    || !!openPanel() || !!document.querySelector('aside.panel:not([hidden])');
+}
+function phoneBack() {
+  const open = overlayOpen();
+  if (open && !backHeld) { history.pushState({ overlay: true }, ''); backHeld = true; }
+  // Closed some other way (a ✕, a tap): give the entry back, quietly.
+  else if (!open && backHeld) { backHeld = false; backLetGo = true; history.back(); }
+}
+if (STANDALONE) {
+  addEventListener('popstate', () => {
+    if (backLetGo) { backLetGo = false; return; }
+    backHeld = false;
+    endParley();
+    if (minimapMode === 'map') setMinimapMode('radar');
+    if (state.islandchat && state.islandchat.isOpen()) state.islandchat.toggle();
+    const p = openPanel();
+    if (p) p.close();
+    state.ui.closeOverlays();
+  });
+}
+
+// Which raised region a scene position is over, or null out at sea.
+function regionAt(pos) {
+  for (const r of state.sea.regions()) {
+    if (Math.abs(pos.x - r.origin[0]) <= r.half && Math.abs(pos.z - r.origin[1]) <= r.half) return r;
+  }
+  return null;
+}
+
+// A ribbon with the island's name when you come into its waters (ui.arrival), and a word when
+// you leave them for the open sea -
+// on every page, since sailing over to a neighbour is the same arrival on a desktop. On the
+// phone the title card follows too: it said "The open sea" for good there - its home is open
+// water and nothing else ever wrote there - while the player rowed from island to island; on
+// a desktop it is the name of your own island and stays that. The first look is silent, so
+// stepping down onto your own island is not an arrival. Checked twice a second.
+let placeCheckedAt = 0, placeName;
+function islandWhere(pos) {
+  const now = performance.now();
+  if (now - placeCheckedAt < 500) return;
+  placeCheckedAt = now;
+  const r = regionAt(pos);
+  const home = r && r === state.region && state.village && state.village.island;
+  const row = r && !home ? (state.fleet || []).find((f) => f.id === r.id) : null;
+  const name = home ? state.village.island.name : row?.name || null;
+  if (name === placeName) return;
+  const first = placeName === undefined;
+  const was = placeName;
+  placeName = name;
+  if (STANDALONE) {
+    const card = document.getElementById('island-name');
+    if (card) card.textContent = name || 'The open sea';
+  }
+  if (first) return;
+  if (name) {
+    const keeper = home ? state.village.island.keeper : row?.keeper;
+    state.ui.arrival(name, keeper && keeper !== 'Someone' ? keeper : null);
+  } else if (was) state.ui.toast(`Out on the open sea, ${escapeHtml(was)} behind you.`);
 }
 
 // The chart's picture of the sea: every region with ground under it, named off the fleet
@@ -1487,6 +1795,7 @@ function enterPlan() {
   if (state.chronicle.t != null) setLiveMode();
   state.intro = null;
   state.tween = null;
+  endParley({ camera: false });
   faceToFace.cancel();
   if (state.ghost) state.ghost.drop();
   state.ui.closeOverlays();
@@ -1610,6 +1919,7 @@ function exitWalk({ force = false } = {}) {
   showMinimap(false);   // M's own state (minimapMode) survives; only the sky hides it
   // A conversation cannot outlive the feet it was had on: the camera is on its way to the
   // sky, so it is dropped rather than walked back down, and the settler is let go of.
+  endParley({ camera: false });
   faceToFace.cancel();
   if (state.chat.isOpen()) state.chat.close();
   // Straight from a bar stool to the sky: leave the room on the way out, or the island
@@ -2376,7 +2686,11 @@ async function followSea() {
     useSea(hello.sea);
     state.islandId = hello.islandId || null;
     state.seaKey = hello.seaKey || null;
+    learnSea(hello);
   }
+  // Whatever was said about the old sea not answering was about the old sea. net.js gives
+  // the new one its own grace, and says 'quiet' again under its name if it earns it.
+  state.ui.setSeaQuiet(null);
   // And dial again. Everything in net.js is already written to survive the line dropping,
   // so this is a close and a retry rather than a second socket.
   if (state.net) state.net.reconnect();
@@ -2476,6 +2790,93 @@ async function ourRoster(ids) {
   if (heldWhere) { const held = heldWhere; heldWhere = null; placeOurs(held); }
 }
 
+// ---- the story animals (Plans/dierenverhalen.md, docs/animals-wire.md) ---------------------
+// Every island's animals, ours included, are the sea's to walk and this page's only to draw -
+// the same bargain as the settlers. One batch for all of them (web/js/animal-view.js: one
+// InstancedMesh per species and body part, so six hens on three islands cost what one does)
+// and a view per island that knows which bodies are whose.
+function animalBatch() {
+  if (!state.animalBatch) state.animalBatch = createAnimalBatch(scene, buildingMat);
+  return state.animalBatch;
+}
+// ---- the ambient animals (web/js/herds.js, Plans/stal-en-veld.md) -------------------------
+// Not the story animals: sheep and cows on the fields, hens by the huts, ducks on the river,
+// gulls over the quay - nobody's, placed from what every page has for an island and walked
+// by this page alone. One batch of their own for every island (`state.ambientHerds`), a herd
+// per island as `state.ambient` and `g.ambient`, made, updated and disposed beside `homeHerd`
+// and `g.herd`.
+function ambientFor(region, groundAt, fields = null) {
+  if (!state.ambientHerds) state.ambientHerds = createHerds({ scene, material: buildingMat });
+  return state.ambientHerds.forIsland({ region, groundAt, fields });
+}
+// The last `herd` the sea sent for each island. Kept, like the home roster, because a view is
+// made when an island is raised and thrown away when it is dropped or re-berthed, and the sea
+// has no reason to say who the animals are again; their positions come round within two
+// seconds on their own.
+const herdLast = new Map();
+function replayHerd(island, view) {
+  const h = island ? herdLast.get(island) : null;
+  if (h && view) { view.herd(h); showTraces(view); }
+}
+// The marks the animals have left - a nest, a lookout, a birdhouse - drawn from the same herd
+// message (web/js/traces.js: one batch for every island, like the animals). Keyed by the
+// view's region, which is 'home' for ours whatever berth the sea gave us, and shown only from
+// the moment each was made while the chronicle is scrubbed back.
+function traceBatch() {
+  if (!state.traces) {
+    state.traces = createTraces(scene, buildingMat);
+    state.traces.setTime(state.chronicle ? state.chronicle.t : null);
+  }
+  return state.traces;
+}
+function showTraces(view) {
+  if (!view) return;
+  const home = view === state.homeHerd;
+  const g = home ? null : state.guests.find((x) => x.herd === view);
+  if (!home && !g) return;
+  traceBatch().apply(view.traces(), {
+    region: view.region,
+    origin: home ? [0, 0] : g.region.origin,
+    groundAt: home ? (homeStand || ((x, z) => state.region.worldHeight(x, z))) : standHeightFor(g.region),
+  });
+}
+function herdViewOf(island) {
+  if (state.islandId && island === state.islandId) return state.homeHerd || null;
+  const g = state.guests.find((x) => x.region.id === island);
+  return g ? g.herd || null : null;
+}
+function onHerdMessage(m) {
+  if (m.kind === 'herd') herdLast.set(m.island, m);
+  const view = herdViewOf(m.island);
+  if (!view) return;
+  if (m.kind === 'herd') { view.herd(m); showTraces(view); }
+  else view.apply(m.r, performance.now());
+}
+// Where a perching sparrow sits: the top of whatever building stands on that cell. `records`
+// is asked each time rather than captured, because buildings come and go under it; asked only
+// when a percher moves (animal-view.js), so a walk over the list is cheap enough.
+function perchFinder(records, half, origin) {
+  const [ox, oz] = origin;
+  return (x, z) => {
+    const gx = Math.floor(x - ox + half), gz = Math.floor(z - oz + half);
+    let top = null;
+    for (const rec of records()) {
+      const p = rec.spec && rec.spec.plot;
+      if (!p || !rec.built || !rec.group) continue;
+      if (gx < p.gx || gz < p.gz || gx >= p.gx + (p.w || 1) || gz >= p.gz + (p.d || 1)) continue;
+      const y = rec.group.position.y + (rec.built.height || 0);
+      if (top == null || y > top) top = y;
+    }
+    return top;
+  };
+}
+// What the dossier asks of our own animals as they are drawn now: what each is doing, and
+// where, for "Show on the island".
+state.herd = {
+  actOf: (id) => { const a = state.homeHerd && state.homeHerd.animal(id); return a ? a.act : null; },
+  whereOf: (id) => { const a = state.homeHerd && state.homeHerd.animal(id); return a && a.visible ? [a.pos[0], a.pos[1]] : null; },
+};
+
 // Where our own people are. Split out of the router because the join case has to be able
 // to replay one.
 function placeOurs(m) {
@@ -2572,6 +2973,8 @@ function dropRegion(id) {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
+    if (g.ambient) g.ambient.dispose();
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -2741,6 +3144,14 @@ function raiseGuestIslands() {
     g.props.apply((region.village && region.village.props) || [], { animate: false });
     g.crops = createCrops({ scene: g.group, terrain: region.terrain, material: buildingMat });
     g.crops.apply((region.village && region.village.crops) || [], { animate: false });
+    // Their animals, in the same batch as ours.
+    g.herd = createAnimalView({
+      batch: animalBatch(), region,
+      perchAt: perchFinder(() => g.records, region.half, region.origin),
+    });
+    replayHerd(region.id, g.herd);
+    // And their ambient ones, in their fields off the survey their bundle carries.
+    g.ambient = ambientFor(region, (x, z) => standHeightFor(region)(x, z));
     const waiting = crowdRosters.get(region.id);
     if (waiting) { g.crowd.roster(waiting); crowdRosters.delete(region.id); }
     const talking = crowdHeld.get(region.id);
@@ -2758,6 +3169,8 @@ function raiseGuestIslands() {
     const k = state.pickables.indexOf(g.ground);
     if (k >= 0) state.pickables.splice(k, 1);
     if (g.crowd) g.crowd.dispose();
+    if (g.herd) { g.herd.dispose(); if (state.traces) state.traces.drop(g.region.id); }
+    if (g.ambient) g.ambient.dispose();
     if (g.props) g.props.dispose();
     if (g.crops) g.crops.dispose();
     g.dispose();
@@ -3013,6 +3426,22 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
+  // The stable (a trade) and the bakery (a shop of the square), the same way. The stable's horse and hens are scenery out of
+  // web/js/fauna.js moving on their own clock, like the bees - not story animals, which are
+  // the sea's and web/js/animal-view.js's. The bakery brings its oven's light, as the smithy
+  // does, and its baker (web/js/bakery-keeper.js), the smith's kind of passive settler.
+  if (built.animated && built.animated.stable) {
+    rec.stable = attachStable(group, built.animated.stable.at, buildingMat);
+  }
+  if (built.animated && built.animated.bakery) {
+    rec.bakery = attachBakery(group, built.animated.bakery.at, buildingMat);
+    rec.baker = attachBaker(group, built.animated.bakery.at, buildingMat);
+  }
+  // The butcher's (Plans/slagerij.md), a shop of the town's plan with something alive in it:
+  // his awning, his hanging meat and his smokehouse (web/js/butcher.js).
+  if (built.animated && built.animated.butcher) {
+    rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
+  }
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
   if (mail && built.animated && built.animated.mailflag) {
@@ -3110,6 +3539,10 @@ function disposeRecord(rec) {
   if (rec.goldPile) rec.goldPile.dispose();
   if (rec.sawmill) disposeSawmill(rec.sawmill);
   if (rec.smithy) disposeSmithy(rec.smithy);
+  if (rec.stable) disposeStable(rec.stable);
+  if (rec.bakery) disposeBakery(rec.bakery);
+  if (rec.baker) disposeBaker(rec.baker);
+  if (rec.butcher) disposeButcher(rec.butcher);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -3295,6 +3728,19 @@ function buildScene(village) {
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
   if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
+  // And our own animals, the same way: drawn off the wire, never walked here.
+  if (state.homeHerd) state.homeHerd.dispose();
+  state.homeHerd = createAnimalView({
+    batch: animalBatch(), region: state.region,
+    perchAt: perchFinder(() => state.byId.values(), state.region.half, [0, 0]),
+  });
+  replayHerd(state.islandId, state.homeHerd);
+  // And the ambient ones, walked here: on our own fields off this page's survey, and
+  // re-planned by the herd itself whenever state.region's village or terrain is replaced.
+  if (state.ambient) state.ambient.dispose();
+  state.ambient = ambientFor(() => state.region,
+    (x, z) => (homeStand ? homeStand(x, z) : state.region.worldHeight(x, z)),
+    () => (state.world && state.world.workSites ? state.world.workSites().fields : null));
   syncBridges(village);
   state.particles = createParticles();
   state.waitingFlags = createWaitingFlags(scene);
@@ -3726,6 +4172,23 @@ function startIntro() {
   renderer.domElement.addEventListener('wheel', stop, { once: true, passive: true });
 }
 
+// The camera over a spot on our own island rather than over a building: where an animal is,
+// or where its story happened (the "Show" links in web/js/animal-dossier.js). Island-local,
+// which for our own island is the scene frame. From the walker it first comes back up into
+// the sky, because the link means "show me", not "walk me there".
+function focusAt(at) {
+  if (!Array.isArray(at) || !Number.isFinite(at[0]) || !Number.isFinite(at[1])) return;
+  if (state.mode === 'walk') exitWalk();
+  if (state.mode !== 'orbit') return;
+  state.intro = null;
+  controls.enabled = true;
+  const y = state.region ? state.region.worldHeight(at[0], at[1]) : 0;
+  const dir = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+  const target = new THREE.Vector3(at[0], y + 0.3, at[1]);
+  const dist = Math.max(4, Math.min(8, camera.position.distanceTo(controls.target) * 0.4));
+  state.tween = { t: 0, dur: 0.75, from: controls.target.clone(), to: target, fromPos: camera.position.clone(), toPos: target.clone().add(dir.multiplyScalar(dist)) };
+}
+
 function focusOn(id) {
   const rec = state.byId.get(id);
   if (!rec) return;
@@ -4026,6 +4489,8 @@ function applyVillage(next, { animate }) {
     shownPolders = null;
     shownKey = null;
     applyLandscape(true);
+    // A mark stands on the ground it was put on; ground that moved stands it again.
+    if (state.traces) state.traces.reground('home');
   }
   syncSquareBed(next);
   syncBorrelTables(next);
@@ -4296,7 +4761,10 @@ function refreshUI() {
   state.ui.setBuilding(list, waiting);
   if (state.selected) {
     const spec = specById(v).get(state.selected);
-    if (spec) state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
+    if (spec) {
+      state.ui.showDossier(decorate(spec), { get: (id) => { const s = specById(v).get(id); return s ? decorate(s) : null; } });
+      if (state.animals) state.animals.decorateDossier(spec.id);
+    }
   }
 }
 function humanSince(msv) {
@@ -4317,7 +4785,11 @@ function select(id) {
   state.selected = id;
   if (!id) return;
   const spec = specById(state.village).get(id);
-  if (spec) state.ui.showDossier(decorate(spec), { get: (x) => { const s = specById(state.village).get(x); return s ? decorate(s) : null; } });
+  if (spec) {
+    state.ui.showDossier(decorate(spec), { get: (x) => { const s = specById(state.village).get(x); return s ? decorate(s) : null; } });
+    // Which of our animals know this settler, under the facts (web/js/animal-dossier.js).
+    if (state.animals) state.animals.decorateDossier(spec.id);
+  }
 }
 
 // --------------------------------------------------------------- picking
@@ -4345,6 +4817,25 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
+    // An animal opens its own dossier: ours the keeper's, from our islander; a neighbour's
+    // the public card the sea carries, which is all anybody but its keeper is ever told.
+    if (pickedAnimal && state.animals) {
+      if (pickedAnimal.home) state.animals.show(pickedAnimal.a.id);
+      else {
+        const g = state.guests.find((x) => x.region.id === pickedAnimal.a.island);
+        const v = g && g.region.village;
+        const names = new Map(((v && v.buildings) || []).map((b) => [b.id, b.name]));
+        state.animals.showPublic(pickedAnimal.a, { island: (v && v.island && v.island.name) || 'a neighbouring island', nameOf: (who) => names.get(who) || null, act: pickedAnimal.a.act });
+      }
+      downAt = null;
+      return;
+    }
+    // A mark opens the diary it came out of - ours; a neighbour's is only named.
+    if (pickedTrace && state.animals) {
+      if (state.homeHerd && state.homeHerd.traces().some((t) => t.id === pickedTrace.trace.id)) state.animals.showJournal();
+      downAt = null;
+      return;
+    }
     // A silhouette on the horizon is not somewhere to go - a far island in our own sea is
     // water you cross - so a click on one is a click on nothing, and closing the dossier
     // is the right answer.
@@ -4357,6 +4848,9 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 // The last ray hit that landed on a person rather than on a building, so the label can
 // follow them down the street instead of sitting on the roof they came from.
 let pickedFigure = null;
+// And on one of the story animals, ours (`home`) or a neighbour's, or on a mark they left.
+let pickedAnimal = null;
+let pickedTrace = null;
 // Testing several hundred instanced people costs real time, and past this distance
 // they are a couple of pixels anyway, so only look for them once the camera is close.
 const PEOPLE_PICK_RANGE = 42;
@@ -4375,6 +4869,37 @@ function pick() {
 
   pickedFigure = null;
   pickedGuest.f = null; pickedGuest.g = null;
+  pickedAnimal = null;
+  // The animals first: they are the smallest things on the island and stand in front of
+  // everything. A hen or a goat by its triangles, and anything by the ray's arithmetic as
+  // well (animal-view.js animalOnRay) - a sparrow is six centimetres of bird.
+  if (state.animalBatch && controls.getDistance() < PEOPLE_PICK_RANGE && chronicleLive()) {
+    const reach = b ? b.distance + 0.5 : GUEST_PICK_T;
+    let best = null;
+    const hits = ray.intersectObjects(state.animalBatch.pickables(), false);
+    for (const h of hits) {
+      if (h.distance > reach) break;
+      const a = state.animalBatch.animalAt(h.object, h.instanceId);
+      if (a) { best = { a, t: h.distance }; break; }
+    }
+    for (const v of [state.homeHerd, ...state.guests.map((g) => g.herd)]) {
+      if (!v) continue;
+      const h = v.animalOnRay(ray.ray.origin, ray.ray.direction, best ? best.t : reach);
+      if (h) best = { a: h.animal, t: h.t };
+    }
+    if (best) {
+      const home = !!state.homeHerd && state.homeHerd.animal(best.a.id) === best.a;
+      pickedAnimal = { a: best.a, home };
+      return `animal:${home ? 'home' : best.a.island}:${best.a.id}`;
+    }
+  }
+  // And the marks they left, which are small enough to stand in front of a house too.
+  pickedTrace = null;
+  if (state.traces && controls.getDistance() < PEOPLE_PICK_RANGE && chronicleLive()) {
+    const hit = ray.intersectObjects(state.traces.objects(), false)[0];
+    const t = hit && (!b || hit.distance <= b.distance + 0.5) ? state.traces.traceOf(hit) : null;
+    if (t) { pickedTrace = { trace: t, point: hit.point.clone() }; return `trace:${t.id}`; }
+  }
   if (state.settlers && controls.getDistance() < PEOPLE_PICK_RANGE) {
     const people = ray.intersectObjects(state.settlers.pickables(), false);
     const p = people[0];
@@ -4482,9 +5007,11 @@ function frame(nowMs) {
   }
 
   // ---- walking ------------------------------------------------------------
+  keepRaveHours();
   if (state.inside) {
-    const w = state.inside.update(dt);
+    const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
@@ -4493,6 +5020,7 @@ function frame(nowMs) {
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
+    touchHud(w && w.near, state.walk);
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
     // What each mouse button does, for the key row: its hand's item picked up or put down in
     // the inventory changes it mid-walk, and ui.js redraws only on a change.
@@ -4501,6 +5029,8 @@ function frame(nowMs) {
     state.ui.setGive(offer ? (offer.spec && offer.spec.name) || 'them' : null);
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
+    islandWhere(state.walk.state.pos);
+    if (STANDALONE) phoneBack();
     showMinimap(true);
     if (minimapMode === 'radar') state.minimap.update(minimapData());
     else if (minimapMode === 'map') state.worldMap.update(worldMapData());
@@ -4551,7 +5081,11 @@ function frame(nowMs) {
   const calendar = worldNow();
   const month = calendar.month;
   if (state.world) {
-    state.world.update(dt, hour, month);
+    // The clouds and the swell run on the sea's clock and in the sea's frame, so they need
+    // its time (never the chronicle's - scrubbing is a lens on the island, not the weather)
+    // and where our island lies in it; the moon's phase comes with the calendar.
+    state.world.setSeaHome(state.homeOrigin);
+    state.world.update(dt, hour, month, { t: Date.now() + (state.seaSkewMs || 0), moon: calendar.moon });
     // Straight after it, and never before: the weather multiplies what the hour has just
     // set - the lights, the dome, the haze's colour - and world.js writes all of those
     // fresh every frame, which is exactly what stops a multiplier compounding.
@@ -4583,7 +5117,13 @@ function frame(nowMs) {
     // quay's planks rather than in the water beside them. It used to be plain terrain here,
     // and the quay is the one place on the island where those two differ by a whole metre.
     state.settlers.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
+    // And our animals, on the same ground and the same clock. Hidden while the chronicle
+    // is scrubbed back, like everybody else who is here now rather than then.
+    if (state.homeHerd) state.homeHerd.draw(dt, homeStand || ((x, z) => state.region.worldHeight(x, z)), nowMs, live);
+    if (state.ambient) state.ambient.update(dt, { showing: live, eye: camera.position });
   }
+  // The feeder's bell and the glint of a find.
+  if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -4641,6 +5181,8 @@ function frame(nowMs) {
     // the height their own island's decks and steps put them - which is what puts a body on
     // a quay's planks rather than in the water beside them.
     if (g.crowd) g.crowd.draw(dt, standHeightFor(g.region), nowMs, live);
+    if (g.herd) g.herd.draw(dt, standHeightFor(g.region), nowMs, live);
+    if (g.ambient) g.ambient.update(dt, { showing: live, eye: camera.position });
   }
 
 
@@ -4683,7 +5225,10 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
+  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
+  // says so - nobody should screenshot "the world at noon" while it is evening out there.
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
+    state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
@@ -4736,6 +5281,33 @@ function updateLabels() {
       hoverItem = {
         name: keeper ? keeper.name : spec.name,
         sub: keeper ? spec.name : labelSub(spec),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
+  // Or on an animal: its name and what it is doing, over its head. No nameplates the rest
+  // of the time - the animals are to be found, not labelled.
+  const beast = hoverId && pickedAnimal ? pickedAnimal.a : null;
+  if (beast && state.animals) {
+    projected.set(beast.pos[0], (beast.y || 0) + (beast.h || 0) + 0.3, beast.pos[1]).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        // The drawn record itself, never its id: `animal:1` is somebody on every island, and
+        // an id would be looked up among ours and name a neighbour's goat after our hen.
+        ...state.animals.hoverOf(beast, beast.act),
+        x: (projected.x + 1) / 2 * innerWidth,
+        y: (1 - projected.y) / 2 * innerHeight,
+      };
+    }
+  }
+  const mark = hoverId && pickedTrace ? pickedTrace : null;
+  if (mark) {
+    projected.copy(mark.point).setY(mark.point.y + 0.35).project(camera);
+    if (projected.z <= 1) {
+      hoverItem = {
+        name: mark.trace.name,
+        sub: 'left by the animals',
         x: (projected.x + 1) / 2 * innerWidth,
         y: (1 - projected.y) / 2 * innerHeight,
       };
@@ -4850,6 +5422,8 @@ function setChronicleTime(t) {
   state.ui.setLive('replay');
   applyLandscape();
   applyVisibility();
+  // The animals' marks from the day each was made, like every building.
+  if (state.traces) state.traces.setTime(state.chronicle.t);
   state.ui.setChronicle({
     fraction: (state.chronicle.t - start) / Math.max(1, end - start),
     date: new Date(state.chronicle.t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
@@ -4863,6 +5437,7 @@ function setLiveMode() {
   state.ui.setLive('live');
   applyLandscape();
   applyVisibility();
+  if (state.traces) state.traces.setTime(null);
   state.ui.setChronicle({ fraction: 1, date: 'Now', playing: false, live: true });
 }
 
@@ -4889,6 +5464,13 @@ function playerName() {
 async function boot() {
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
+    onSpeechTap: () => endParley(),
+    onSay: () => state.islandchat && state.islandchat.toggle(),
+    phonePrefs: () => phonePrefs(),
+    onPhonePref: (name, value) => {
+      setPhonePref(name, value);
+      if (name === 'lefty' && state.touch) state.touch.relayout();
+    },
     // Only asks. The island writes the setting down and tells every open window, this
     // one included, so what is drawn always comes from the server's answer.
     onSigns: async (mode) => {
@@ -4968,6 +5550,21 @@ async function boot() {
     onSound: () => state.ui.setSound(state.sound.toggle()),
   });
 
+  // The story animals' dossier, the island's animal diary and the "while you were away" card
+  // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
+  // animals comes from our own islander - /api/animals is not on PUBLIC_API - and a guest's
+  // animal is shown from the public card the sea carries (`herd`), never fetched.
+  state.animals = createAnimalPanel({
+    ui: state.ui,
+    onGoto: (at) => focusAt(at),
+    onResident: (id) => { if (state.byId.has(id)) focusOn(id); },
+    fetchState: async () => (await mine('/api/animals')).json(),
+    fetchStory: async (id, before, limit) => (await mine(`/api/animals/story?${id ? `animal=${encodeURIComponent(id)}&` : ''}before=${before ?? ''}&limit=${limit}`)).json(),
+    fetchSummary: async (since) => (await mine(`/api/animals/summary?since=${since}`)).json(),
+    liveAct: (id) => (state.herd ? state.herd.actOf(id) : null),
+    whereOf: (id) => (state.herd ? state.herd.whereOf(id) : null),
+  });
+
   // What the island sounds like. Made here and completely silent: web/js/sound.js builds
   // no AudioContext until the switch is thrown - which is both what a browser demands of
   // anything that wants to make a noise and what keeps the boot path clear of it.
@@ -5028,7 +5625,13 @@ async function boot() {
       fetchVillage().then((v) => applyVillage(v, { animate: true })).catch(() => {});
     },
     onFound: () => foundSettler(),
-    onClose: () => { if (state.walk) state.walk.setPaused(false); },
+    // Opened by speaking to the mayor, the register holds a conversation open, and closing it
+    // hands the camera back before the feet, as the chat does. Opened at the door there is
+    // no conversation, and it is only the feet.
+    onClose: () => {
+      const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+      if (!faceToFace.end(walkOn)) walkOn();
+    },
   });
 
   state.newSettler = createNewSettler(document.body, {
@@ -5078,7 +5681,13 @@ async function boot() {
   });
   // On a phone the screen is the controller: a stick and two buttons drawn over the
   // canvas that poll exactly like a pad, so walk mode and the boat need nothing new.
-  state.pad = STANDALONE ? eitherPad(gamepad, createTouchPad(document.body)) : gamepad;
+  // A short tap on the look side names whoever is there (tapName), and the two hand buttons
+  // press the hands as a mouse would (walk.hand).
+  state.touch = STANDALONE ? createTouchPad(document.body, {
+    onTap: (x, y) => tapName(x, y),
+    onHand: (side, down) => { if (state.mode === 'walk' && !state.inside) state.walk.hand(side, down); },
+  }) : null;
+  state.pad = state.touch ? eitherPad(gamepad, state.touch) : gamepad;
 
   // Who the controller is talking to. First one that says it is up, wins - a panel over
   // a room, a room over the island, the island over the sky.
@@ -5096,6 +5705,11 @@ async function boot() {
       if (p.pad) p.pad(a, dt);              // the boards steer a cursor of their own
       else if (a.hit('back')) p.close();    // everything else: B is the way out
     },
+  });
+  // A keeper's conversation holds walk mode paused, so it needs its own way out on a pad.
+  state.input.mode('parley', {
+    active: () => !!parley,
+    handle: (a) => { if (a.hit('leave') || a.hit('back') || a.hit('exit')) endParley(); },
   });
   state.input.mode('inside', {
     active: () => !!state.inside,
@@ -5129,6 +5743,7 @@ async function boot() {
     // the "who is behind" banner once the sea says its own.
     state.build = STANDALONE.build || null;
     state.ui.setStandalone();
+    askLatestRelease();
   }
   try {
     const hello = await mine('/api/hello').then((r) => r.json());
@@ -5139,6 +5754,7 @@ async function boot() {
     state.islandId = hello.islandId || null;
     state.islandToken = hello.token || null;
     state.seaKey = hello.seaKey || null;
+    learnSea(hello);
     // Which release this island's own code is (lib/buildinfo.mjs) - this page is served by
     // it, so it is this page's too.
     state.build = hello.build || null;
@@ -5238,7 +5854,9 @@ async function boot() {
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   state.minimap = createMinimap();
-  state.worldMap = createWorldMap();
+  state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
+  // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.
+  if (STANDALONE) document.getElementById('minimap').addEventListener('click', () => setMinimapMode('map'));
   syncFleet();        // whatever was already in the water when this page opened
   // And again as the viewer moves: which islands are near is a question of where you are.
   setInterval(recheckDetail, 2000);
@@ -5276,8 +5894,10 @@ async function boot() {
       // The sea says which release it is on every welcome, so a sea updated under us is
       // noticed on the reconnect its restart causes.
       state.seaBuild = build;
+      state.seaSpeaks = null;
+      askLatestRelease();
       // In the app a newer release is the gate with a Later; on a desktop island, the banner.
-      const gate = STANDALONE ? updateGate({ mine: state.build, sea: build }) : null;
+      const gate = STANDALONE ? appGate() : null;
       if (gate) state.ui.setGate(gate);
       else state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
     },
@@ -5300,13 +5920,14 @@ async function boot() {
     onWorld: onFleetNews,
     onCrowd: onCrowdMessage,
     onAgent: onAgentMessage,
+    onHerd: onHerdMessage,
     // The sky, straight through: it is one word for the whole world and nothing on this
     // side has an opinion about it. web/js/weather.js holds it whether or not the scene
     // has been built yet, which it has not when the welcome lands on a slow boot.
     onWeather: setSky,
     onRefused: onRefusedBySea,
     name: playerName(),
-    onStatus: () => {},
+    onStatus: onSeaStatus,
     onPanels: (m) => applyPanelMessage(m),
     onSaid: (m) => state.islandchat.said(m),
   });
@@ -5385,6 +6006,9 @@ async function boot() {
   if (STANDALONE) return;
   connect();
   registerWorker();
+  // Our own animals and what they did while we were away. After the island is up, so the
+  // card lands on a picture rather than on the boot screen.
+  if (state.animals) state.animals.boot().catch(() => { /* an islander without animals */ });
 }
 
 // Where a phone stands: nowhere. It has no island, so its home is a berth of open water -
@@ -5398,7 +6022,10 @@ async function standaloneHome() {
   await learnTheWorld();
   const placed = state.fleet
     .filter((i) => i && Array.isArray(i.origin))
-    .map((i) => ({ half: (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
+    // On what each island holds of the sea rather than its size today, as the sea lays berths
+    // out: a starter is small and holds the room of the island that will take it
+    // (Plans/starter-eilanden.md). A sea from before `reach` sends only the size.
+    .map((i) => ({ half: i.reach ?? (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
   state.islandId = null;
   state.homeOrigin = nextOrigin(placed, OPEN_HOME / 2);
   return {
@@ -5497,6 +6124,12 @@ function connect() {
     es.addEventListener('gold', (e) => {
       try { showGold(JSON.parse(e.data)); } catch { /* keep what we had */ }
     });
+    // Something happened to one of our animals: the open panels refresh, and the big moments
+    // - an arrival, a friendship or a feud, a mark, a discovery - get a toast. Keeper only,
+    // like the gold (serve.mjs, localOnly).
+    es.addEventListener('animals', (e) => {
+      try { if (state.animals) state.animals.news(JSON.parse(e.data)); } catch { /* the next one will do */ }
+    });
     es.addEventListener('reload', () => location.reload());
     es.onerror = () => { state.ui.setLive('off'); };
   };
@@ -5536,6 +6169,7 @@ function soundSnapshot() {
     // not cross sixty units of open water anyway.
     records: state.byId,
     tables: state.borrel ? state.borrel.out : 0,
+    rave: raveHeard(),
   };
 }
 
@@ -5551,6 +6185,10 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
+  if (rec.stable) updateStable(rec.stable, dt);
+  if (rec.bakery) updateBakery(rec.bakery, dt);
+  if (rec.baker) updateBaker(rec.baker, dt);
+  if (rec.butcher) updateButcher(rec.butcher, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5559,7 +6197,9 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
-    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill';
+    || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
+    // An oven and a brazier that are lit all day, like the smithy's fire.
+    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
@@ -5583,6 +6223,7 @@ window.settlers = {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  fitFov();
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();

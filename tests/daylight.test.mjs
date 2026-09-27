@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { NIGHT_CURVE, nightAt, GATHERINGS, WEEKDAYS, gatheringAt } from '../shared/daylight.mjs';
+import { NIGHT_CURVE, nightAt, GATHERINGS, WEEKDAYS, gatheringAt, RAVE, raveAt } from '../shared/daylight.mjs';
 import { worldTime } from '../shared/worldclock.mjs';
 import { zoneOffset } from '../lib/seaclock.mjs';
 import { createCrowds } from '../lib/crowd.mjs';
@@ -110,6 +110,32 @@ test('the borrel keeps the time of the sea, summer and winter', () => {
   assert.equal(winter.hour, 16.75);
   // And the day turns at the sea's midnight, not at UTC's.
   assert.equal(seaTime(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
+});
+
+// Saturday night from nine until three (Plans/rave-in-het-kasteel.md). The three is on
+// Sunday by the calendar, which is the one thing about this that goes wrong in a hurry.
+test('the castle raves from nine on Saturday until three on Sunday morning', () => {
+  assert.equal(raveAt(6, at(20, 59)), false, 'not yet at 20:59');
+  assert.equal(raveAt(6, at(21, 0)), true, 'the doors open at nine');
+  assert.equal(raveAt(6, at(23, 59)), true);
+  assert.equal(raveAt(0, 0), true, 'past midnight it is Sunday, and still Saturday night');
+  assert.equal(raveAt(0, at(2, 59)), true);
+  assert.equal(raveAt(0, at(3, 0)), false, 'and over at three sharp');
+  assert.equal(raveAt(0, at(21, 30)), false, 'Sunday night is not Saturday night');
+  assert.equal(raveAt(6, at(1, 0)), false, 'nor are the small hours of Saturday, which are Friday night');
+  for (const day of [1, 2, 3, 4, 5]) assert.equal(raveAt(day, 22), false, `a rave on day ${day}`);
+  assert.equal(RAVE.day, 6);
+  // By the sea's clock: Saturday 26 September 2026 22:30 in Amsterdam is 20:30 UTC, and the
+  // Sunday 01:30 after it is Saturday 23:30 UTC - a Saturday by UTC's calendar, but not by
+  // the world's, and it is the world's that has to answer.
+  const seaTime = (ms) => worldTime(ms, zoneOffset('Europe/Amsterdam', ms));
+  const late = seaTime(Date.UTC(2026, 8, 26, 20, 30));
+  assert.equal(raveAt(late.weekday, late.hour), true);
+  const small = seaTime(Date.UTC(2026, 8, 26, 23, 30));
+  assert.equal(small.weekday, 0);
+  assert.equal(raveAt(small.weekday, small.hour), true);
+  const dawn = seaTime(Date.UTC(2026, 8, 27, 1, 15));
+  assert.equal(raveAt(dawn.weekday, dawn.hour), false, '03:15 on Sunday, and the lights are on');
 });
 
 function island(id) {

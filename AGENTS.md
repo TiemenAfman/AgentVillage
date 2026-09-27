@@ -398,10 +398,20 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
 
-`data/` is generated and safe to delete, with three exceptions: `layout.json` (above),
+`data/` is generated and safe to delete, with these exceptions: `layout.json` (above),
 `garden.json` (the walker's purse and beds — the scanner never touches it) and `mail.json`
 (mail server credentials, deliberately gitignored twice). `config.json` is per-machine and
 untracked; `config.example.json` is the template.
+
+The story animals add `animal-events.jsonl`, opened by the islander on its first scan
+(`lib/animal-life.mjs`; off with `config.animals.enabled: false`). That journal is also
+irreplaceable: animal identities, activity cursors and memories rebuild from it, not from
+transcripts. `animals.json` is its disposable checkpoint. The islander owns the story, the sea
+only walks the animals (`POST /island/:id/animals`, `{t:'herd'}`, `{t:'af'}`, and a
+`{t:'animal', a:'done'}` back over the islander's own socket). See
+[docs/animal-story-storage.md](docs/animal-story-storage.md) for writer ownership and crash
+recovery, [docs/animals-wire.md](docs/animals-wire.md) for the wire, and
+[Plans/dierenverhalen.md](Plans/dierenverhalen.md) for the design.
 
 ## Conventions
 

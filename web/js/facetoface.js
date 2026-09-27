@@ -5,7 +5,9 @@
 // island back exactly as it found it when you are done.
 //
 // It owns the camera outright while it runs, which is why walk mode is paused around it
-// (see `talkTo` in main.js): two writers on one camera fight, and the loser stutters.
+// (see `talkTo` and `speakToKeeper` in main.js): two writers on one camera fight, and the
+// loser stutters. The keepers were once spoken to without the pause, and walk mode won
+// outright: the camera swung in to the gold clerk and straight back up the moment it arrived.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
 import { eyeHeight } from './settlers.js';
@@ -61,18 +63,33 @@ export function createFaceToFace({ camera, reserved = () => 0 }) {
 
   let phase = 'off';        // off | in | held | out
   let t = 0;
-  let subject = null;       // the figure being spoken to, live out of settlers.js
+  let subject = null;       // the figure being spoken to, live out of settlers.js - or a function
+                            // that finds it, for a conversation long enough to outlast a roster
+  let seen = null;          // whichever figure that last answered with
   let viewer = null;        // where your own feet are standing
   let onLetGo = null;
   let onReturned = null;
 
+  // Who is in front of you this frame. A conversation now lasts until Escape, and the sea
+  // sends a new roster whenever the island republishes - every scan on an island at work -
+  // which enrols a new figure object under the same id: held by the object, the camera stared
+  // at a figure nobody was moving any more while the one being drawn stood somewhere else. So
+  // the caller may hand in a finder instead, and the last figure it found stands in for a
+  // frame in which it finds none.
+  function figure() {
+    const f = typeof subject === 'function' ? subject() : subject;
+    if (f && f.pos) seen = f;
+    return seen;
+  }
+
   // The pose the conversation wants of the camera, worked out in full every frame.
   function want() {
-    const eye = eyeHeight(subject);
-    head.set(subject.pos[0], subject.y + eye, subject.pos[1]);
+    const fig = figure();
+    const eye = eyeHeight(fig);
+    head.set(fig.pos[0], fig.y + eye, fig.pos[1]);
     // The side of them you walked up to is the side you keep: the camera stands on the
     // line between the two of you rather than choosing a flattering angle of its own.
-    dir.set(viewer.x - subject.pos[0], 0, viewer.z - subject.pos[1]);
+    dir.set(viewer.x - fig.pos[0], 0, viewer.z - fig.pos[1]);
     if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);      // standing on their toes: any side will do
     const apart = Math.hypot(dir.x, dir.z);
     dir.divideScalar(apart);
@@ -107,6 +124,7 @@ export function createFaceToFace({ camera, reserved = () => 0 }) {
   function finish() {
     phase = 'off';
     subject = null;
+    seen = null;
     viewer = null;
     const done = onReturned;
     onReturned = null;
@@ -118,6 +136,8 @@ export function createFaceToFace({ camera, reserved = () => 0 }) {
   function begin({ subject: who, viewer: feet, home = null, onLetGo: go = null }) {
     if (!who || !feet) return false;
     subject = who;
+    seen = null;
+    if (!figure()) { subject = null; return false; }
     viewer = feet;
     onLetGo = go;
     onReturned = null;
@@ -151,6 +171,7 @@ export function createFaceToFace({ camera, reserved = () => 0 }) {
     letGo();
     phase = 'off';
     subject = null;
+    seen = null;
     viewer = null;
     onReturned = null;
     return true;

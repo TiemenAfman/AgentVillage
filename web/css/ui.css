@@ -70,6 +70,7 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 .chips-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
   text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 #clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+#clock-chip.lens { color: var(--accent-2); border-color: rgba(127,199,217,.45); }
 #nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
 #nav-collapse-btn.collapsed { transform: rotate(180deg); }
 
@@ -170,6 +171,25 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .hover-label small { display: block; color: var(--ink-dim); font-size: 10.5px; }
 #toasts { position: fixed; left: 14px; bottom: 16px; z-index: 11; display: grid; gap: 7px; width: 288px; }
 
+/* An island's name as you come into its waters: a dark ribbon across the top with swallow-
+   tailed ends, the name in gold capitals and its keeper underneath. */
+.arrival { position: fixed; top: 14%; left: 50%; z-index: 12; transform: translateX(-50%);
+  pointer-events: none; text-align: center; min-width: min(460px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px); padding: 12px 56px 13px; color: var(--ink);
+  background: rgba(14,11,9,.9); filter: drop-shadow(0 6px 18px rgba(0,0,0,.45));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 26px) 50%, 100% 100%, 0 100%, 26px 50%); }
+.arrival b { display: block; font-family: var(--font); font-weight: 600; font-size: 26px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arrival small { display: block; margin-top: 3px; font-family: var(--font); font-size: 13.5px;
+  font-style: italic; color: var(--ink-dim); }
+.arrival small:empty { display: none; }
+.arrival.show { animation: unfurl .5s cubic-bezier(.2,.8,.2,1); }
+.arrival.fade { opacity: 0; transition: opacity .7s ease; }
+@keyframes unfurl { from { opacity: 0; clip-path: polygon(50% 0, 50% 0, 50% 50%, 50% 100%, 50% 100%, 50% 50%); } }
+@media (max-width: 520px) { .arrival { padding: 10px 40px 11px; } .arrival b { font-size: 20px; } }
+@media (prefers-reduced-motion: reduce) { .arrival.show { animation: none; } }
+
 /* The water closing over the screen on the way to a neighbour's island. */
 #veil { position: fixed; inset: 0; z-index: 40; background: #0d1420; opacity: 0; pointer-events: none; }
 
@@ -240,6 +260,14 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease;
 }
 .walk-prompt b { color: var(--accent); }
+/* What a keeper says (web/js/ui.js setSpeech): a card in the walk HUD's own column, so it
+   sits under the face in the middle of the screen and above the key row, like a subtitle. */
+.speech { max-width: min(520px, calc(100vw - 28px)); padding: 10px 16px; display: grid; gap: 4px; text-align: center; font-size: 14px; line-height: 1.45; animation: risein .2s ease; }
+.speech-who { color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.speech-key { font-size: 11px; color: var(--ink-dim); }
+.speech-key kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+/* In a conversation the offer of one is beside the point. */
+.walk-hud:has(.speech:not([hidden])) .walk-prompt { display: none; }
 /* The beer offer, one card's height under the prompt (web/index.html #walk-give). */
 .walk-give { bottom: calc(56% - 46px); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
@@ -293,6 +321,11 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   pointer-events: none;
 }
 .worldmap canvas { width: 100%; height: 100%; display: block; }
+/* The phone's way out of the chart (minimap.js createWorldMap `phone`): the sheet itself
+   lets touches through to the stick underneath, so only this takes them. */
+.worldmap-close { position: absolute; top: 8px; right: 8px; pointer-events: auto;
+  background: rgba(14,18,24,.75); color: rgba(244,236,224,.95); border-radius: 50%; }
+body.standalone .worldmap { inset: calc(var(--st) + 50px) var(--sr) var(--sb) var(--sl); }
 /* What the pointer is over. Placed by minimap.js with a transform from the sheet's corner. */
 .worldmap-tip {
   position: absolute; left: 0; top: 0; max-width: 260px;
@@ -727,6 +760,79 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .right-column { position: fixed; right: 14px; top: 108px; width: 246px; z-index: 11; display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
 .right-column > * { position: static !important; right: auto !important; top: auto !important; width: 100% !important; pointer-events: auto; }
 .right-column > [hidden] { display: none !important; }
+
+/* --- the island's animals (web/js/animal-dossier.js) -------------------- */
+/* The "while you were away" card, in the right column under the waiting list. Teal rather
+   than the waiting list's red: nothing in it is owed. */
+.animal-summary { padding: 11px 13px; max-height: 40vh; overflow: auto; border-color: rgba(127,199,217,.32); }
+.animal-summary .row { align-items: flex-start; }
+.animal-summary h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-2); }
+#animal-summary-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+#animal-summary-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.4; padding: 6px 0; border-top: 1px solid var(--edge); }
+#animal-summary-list li:first-child { border-top: 0; padding-top: 0; }
+#animal-summary-list li span { flex: 1; min-width: 0; }
+#animal-summary-list li b { color: var(--ink); font-weight: 600; }
+.an-show { flex: none; padding: 2px 9px; font-size: 10.5px; }
+
+/* One animal. The about line is the animal's own voice, so it is set in the island's serif. */
+.an-species { background: var(--accent-2); }
+.an-about { margin: 0 0 10px; font-family: var(--font); font-size: 13.5px; line-height: 1.45; }
+.an-now { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 7px 10px; font-size: 12.5px;
+  border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.04); }
+.an-now i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); animation: pulse 2.2s infinite; }
+/* A camera link inside running text: smaller than a chip, and never on its own line. */
+.an-go { font: inherit; font-size: 11px; color: var(--accent-2); background: none; border: 0; padding: 0 2px; margin-left: 2px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px; white-space: nowrap; }
+.an-go:hover { color: var(--ink); }
+
+/* Relationships: a name and a word, never a number. */
+.an-rels { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.an-rels li { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; align-items: baseline; padding: 6px 9px;
+  border: 1px solid var(--edge); border-radius: 9px; background: rgba(255,255,255,.03); }
+.an-rels li small { grid-column: 1 / -1; color: var(--ink-dim); font-size: 11px; }
+.an-who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-label { font-size: 10.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--edge); white-space: nowrap; color: var(--ink-dim); }
+.an-label.bonded { color: #a9dca0; border-color: rgba(169,220,160,.4); background: rgba(169,220,160,.1); }
+.an-label.suspicious { color: var(--accent); border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.08); }
+.an-label.nemesis { color: #ef8a78; border-color: rgba(239,138,120,.45); background: rgba(239,138,120,.1); }
+.an-ties .an-label { margin-left: 4px; }
+
+/* The life story and the diary: a thread down the left, a bead per entry, a filled bead for
+   the ones that changed something. */
+.an-story { list-style: none; margin: 0 0 0 4px; padding: 0; border-left: 1px solid var(--edge); }
+.an-story li { position: relative; padding: 0 0 10px 14px; font-size: 12px; line-height: 1.45; }
+.an-story li:last-child { padding-bottom: 2px; }
+.an-story li::before { content: ""; position: absolute; left: -4px; top: 4px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--panel-solid); border: 1px solid var(--ink-dim); }
+.an-story li.big::before { background: var(--accent); border-color: var(--accent); }
+.an-story li b { font-weight: 600; }
+.an-story time { display: block; font-size: 10.5px; color: var(--ink-dim); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.an-times { color: var(--ink-dim); font-size: 11px; white-space: nowrap; }
+.an-earlier { margin: 6px 0 0; }
+
+/* The journal: the cast first, each one a way into its dossier. */
+.an-cast { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 4px; }
+.an-cast li { cursor: pointer; padding: 6px 9px; border-radius: 9px; border: 1px solid transparent; line-height: 1.35; }
+.an-cast li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+.an-cast li b { font-size: 13px; font-weight: 600; }
+.an-cast li small { display: block; color: var(--ink-dim); font-size: 11px; }
+.an-marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.an-marks li { font-size: 12px; line-height: 1.4; }
+.an-marks li small { color: var(--ink-dim); }
+.an-marks li p { margin: 2px 0 0; color: var(--ink); opacity: .85; }
+/* The mystery: found things and a hint. Nothing in here counts. */
+.an-mystery { margin: 14px 0 4px; padding: 9px 11px 10px; border: 1px solid rgba(127,199,217,.32); border-radius: 10px; background: rgba(127,199,217,.06); }
+.an-mystery h3.sec { margin: 0 0 5px; color: var(--accent-2); }
+.an-mystery.solved { border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.07); }
+.an-mystery.solved h3.sec { color: var(--accent); }
+.an-hint { margin: 0 0 7px; font-family: var(--font); font-style: italic; font-size: 13px; line-height: 1.45; }
+.an-finds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.an-finds li { font-size: 12px; line-height: 1.4; }
+.an-finds li b { font-weight: 600; }
+.an-finds li small { color: var(--ink-dim); }
+.an-foot { margin-top: 14px; }
+/* What kind of news a toast is, over the islander's own line. */
+.toast .an-kick { display: block; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 2px; }
 /* --- the seed stall, and the pouch you carry round the island ---------- */
 .market .ho-sum { max-width: 62ch; }
 .mk-purse { display: flex; align-items: baseline; gap: 12px; margin: 14px 0 2px;
@@ -1005,6 +1111,12 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
 }
 .skew b { color: #ffc98a; }
+/* One paragraph per thing that is wrong: out of step, and the sea not answering. As wide as
+   its text up to max-width: left 50% alone shrinks a box to the half of the screen right of
+   the middle, which at 375 wide was a column 187px across. */
+#skew { width: max-content; }
+.skew p { margin: 0; }
+.skew p + p { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(233, 160, 90, .25); }
 
 /* Somebody is behind: this page or the sea (web/js/update.js). Up top, so it never sits on
    the skew banner, but under the chip row and between the title card and the minimap -
@@ -1111,5 +1223,61 @@ body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
 .tp-buttons { position: absolute; right: 18px; bottom: 30px; display: flex; gap: 14px; align-items: flex-end; }
 .tp-btn { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55);
   background: rgba(20,24,30,.35); color: #fff; font: 600 20px/1 system-ui, sans-serif; touch-action: none; }
-.tp-btn[data-b="X"] { margin-bottom: 44px; }
+.tp-btn[data-b="X"] { margin-bottom: 44px; position: relative; }
 .tp-btn.on { background: rgba(232,180,92,.6); }
+/* What X would do, under the letter ("Board", "Land", "Talk"), from main.js touchHud. */
+.tp-say { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px;
+  font: 600 12px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  white-space: nowrap; pointer-events: none; }
+.tp-run { width: 54px; height: 54px; font-size: 13px; margin-bottom: 104px; }
+/* The two hands, on foot only (touchHud): left hand left, right hand right. */
+.tp-hands { position: absolute; display: flex; gap: 14px; }
+.tp-hands[hidden] { display: none; }
+.tp-hand { width: 54px; height: 54px; font-size: 22px; }
+
+/* ---- the phone, fitted to the glass ----------------------------------------------------
+   The APK draws into the notch (MainActivity.kt, LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES),
+   so every edge is kept at least the cutout away: the four --s* below are the one place. */
+body.standalone {
+  --sl: max(14px, env(safe-area-inset-left)); --sr: max(14px, env(safe-area-inset-right));
+  --st: max(14px, env(safe-area-inset-top));  --sb: max(14px, env(safe-area-inset-bottom));
+  /* No double-tap zoom on a HUD chip: a game is not a page. */
+  touch-action: manipulation;
+}
+body.standalone .titlecard { top: var(--st); left: var(--sl); }
+body.standalone .titlecard::before { display: none; }
+body.standalone .titlecard h1 { font-size: 17px; }
+/* Over the radar: opened, the menu wraps down across it, and its chips have to take the tap. */
+body.standalone .topright { top: var(--st); right: var(--sr); z-index: 11; }
+/* Tappable: it opens the sea chart (main.js onMinimapTap). */
+body.standalone .minimap { top: calc(var(--st) + 50px); right: var(--sr); width: 144px; height: 144px;
+  pointer-events: auto; cursor: pointer; }
+/* Toasts and the island chat used to sit bottom-left, which is exactly where a left thumb
+   lands for the stick - and they took the touch. Top middle, and see-through to fingers. */
+body.standalone #toasts { left: 50%; right: auto; bottom: auto; top: calc(var(--st) + 50px); transform: translateX(-50%);
+  width: min(340px, calc(100vw - 200px)); pointer-events: none; }
+body.standalone #toasts .act, body.standalone #toasts button, body.standalone #toasts a { pointer-events: auto; }
+body.standalone .islandchat { left: var(--sl); bottom: auto; top: calc(var(--st) + 64px); max-width: min(300px, 42vw); }
+/* Fingers are wider than a cursor: 44px is the least a tap target should be. */
+body.standalone .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
+body.standalone .x, body.standalone .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
+body.standalone .speech { pointer-events: auto; cursor: pointer; }
+body.standalone .skew { bottom: calc(var(--sb) + 170px); }
+body.standalone .tp-buttons { right: var(--sr); bottom: calc(var(--sb) + 16px); }
+body.standalone .tp-hands { right: calc(var(--sr) + 70px); bottom: calc(var(--sb) + 150px); }
+/* The Controls panel (ui.js openPhone): one setting a row, big enough for a thumb. */
+.phone-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.phone-row input[type="range"] { flex: 1; }
+.phone-row input[type="checkbox"] { width: 22px; height: 22px; }
+.phone-row select { font-size: 14px; min-height: 36px; margin-left: auto; }
+.phone-row output { min-width: 3.2em; text-align: right; color: var(--ink-dim); }
+/* Left-handed (phoneprefs.js lefty): the stick on the right, the buttons mirrored left. */
+body.standalone .touchpad.lefty .tp-buttons { right: auto; left: var(--sl); flex-direction: row-reverse; }
+body.standalone .touchpad.lefty .tp-hands { right: auto; left: calc(var(--sl) + 70px); }
+/* Held sideways a phone is under 480px tall, and the desktop layout hung panels 108-230px
+   down with 96px kept free at the foot: a Legend of 64px. A sheet down the right instead. */
+@media (max-height: 480px) {
+  body.standalone .panel { top: var(--st); bottom: var(--sb); right: var(--sr); height: auto; width: min(360px, 46vw); }
+  body.standalone .walk-hud { bottom: calc(var(--sb) + 10px); }
+  body.standalone .minimap { width: 120px; height: 120px; }
+}

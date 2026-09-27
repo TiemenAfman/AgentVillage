@@ -16,6 +16,16 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
+  gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
+  winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
+  snoepwinkel, uilenpost, ketelmaker), plus de bakkerij en de slagerij. `TOWN_VERSION` deelt een
+  bestaand centrum één keer opnieuw in; geen huis beweegt. Gebouwd op 26 september 2026.
+- [dierenverhalen.md](dierenverhalen.md) — een kip, een geit en een mus (tot zes per eiland) met
+  een naam, karakter en een geheugen: de islander onthoudt (`data/animal-events.jsonl`,
+  onvervangbaar), de zee laat ze lopen, een ontmoeting telt pas als de zee zegt dat hij gebeurd
+  is. Relaties in vier woorden, sporen op het eiland (nest, uitkijkpost, vogelhuisje, de
+  Feathered Corner) en één mysterie bij de vuurtoren. Gebouwd op 26 september 2026.
 - [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
   kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
   gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.
@@ -92,3 +102,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de
   service starten als die er niet is en hem laten draaien als het venster dichtgaat. Gebouwd op
   22 september 2026.
+- [starter-eilanden.md](starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
+  alleen een plein, een kroeg en een stadhuis (en dus een kroegbaas en een burgemeester), zodat
+  een telefoonspeler altijd iets heeft om naartoe te varen. Een nieuw eiland neemt de ligplaats
+  van de eerste vrije starter over. Plan van 26 september 2026; gebouwd (stap 1–6); de decoratie-eilandjes nog niet.
