@@ -309,7 +309,7 @@ test('the register spans every set and answers by part name alone', () => {
     'clocktower',
     // The animals, each in moving parts (scripts/build-fauna.py, web/js/fauna.js).
     'fauna_chicken', 'fauna_cow', 'fauna_duck', 'fauna_goat', 'fauna_gull', 'fauna_horse', 'fauna_pig', 'fauna_sheep', 'fauna_sparrow', 'fauna_sparrow_flying',
-    'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
+    'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_palm_a', 'flora_palm_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b',
     // The castle on its seven by seven, built at that size rather than the castle drawn at 7/3
     // (scripts/build-greatcastle.py, Plans/groot-kasteel.md).
@@ -389,7 +389,7 @@ test('a roof is modelled on the unit square it will be scaled by', () => {
 // multiplied by the number of stems on the island and then by two, because the shadow
 // pass walks every instance as well - so these numbers are the card, not a detail of it.
 test('a tree is two groups, bark before needles, in the order the materials come in', () => {
-  for (const name of ['flora_pine_a', 'flora_pine_a_lo', 'flora_oak_a', 'flora_oak_a_lo']) {
+  for (const name of ['flora_pine_a', 'flora_pine_a_lo', 'flora_oak_a', 'flora_oak_a_lo', 'flora_palm_a', 'flora_palm_a_lo']) {
     const g = models.grouped(name, ['bark', 'foliage']);
     // Two groups and in this order, because world.js hands the InstancedMesh
     // [barkMat, foliageMat] positionally. Swap them and the tree grows a wooden canopy

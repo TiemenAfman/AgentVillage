@@ -47,6 +47,14 @@ export const BUDGETS = [
   // a moment at the edge of a wood, and there are thousands of it. Forty is what a rock
   // gets for the same reason.
   ['flora_bush', 40],
+  // A palm is not forest: it stands on the unclaimable islets (Plans/starter-eilanden.md),
+  // one to a sandbank and a handful to a round one, never twenty thousand to a canopy. A
+  // crown of fronds is also a shape sixty triangles cannot draw - five fronds at a dozen
+  // each is the whole budget with no trunk. At 250 the fronds lost their serrated edges and
+  // their fold, and it no longer looked like the model it came from; at 1000 the two cannot be
+  // told apart. Twenty palms in reach, shadow pass included, is 40k - a fifth of the houses.
+  // The `_lo` (250) is for the phone and the far ones.
+  ['flora_palm', 1000],
   ['flora_', 60],
   ['prop_', 120],
   ['addon_', 150],
