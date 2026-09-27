@@ -1220,20 +1220,36 @@ body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
   border: 2px solid rgba(255,255,255,.45); background: rgba(20,24,30,.18); pointer-events: none; }
 .tp-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
   background: rgba(255,255,255,.55); transform: translate(-50%, -50%); }
-.tp-buttons { position: absolute; right: 18px; bottom: 30px; display: flex; gap: 14px; align-items: flex-end; }
-.tp-btn { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55);
-  background: rgba(20,24,30,.35); color: #fff; font: 600 20px/1 system-ui, sans-serif; touch-action: none; }
-.tp-btn[data-b="X"] { margin-bottom: 44px; position: relative; }
-.tp-btn.on { background: rgba(232,180,92,.6); }
+/* The buttons, after Xbox Cloud Gaming's touch layout: a faint circle for the thumb with the
+   commonest buttons inside it and the rest on an arc round it, each an outline icon with the
+   pad's letter as a coloured badge (touchpad.js). Every button is placed by its --x/--y from
+   the circle's middle, and --flip mirrors the lot for the left-handed. The box itself takes
+   no touch - between the buttons is still the look side. */
+.tp-cluster { position: absolute; right: 18px; bottom: 30px; width: 212px; height: 178px;
+  --cx: 96px; --cy: 68px; --flip: 1; pointer-events: none; }
+.tp-ring { position: absolute; left: var(--cx); top: var(--cy); width: 136px; height: 136px;
+  transform: translate(-50%, -50%); border-radius: 50%; border: 1.5px solid rgba(255,255,255,.22);
+  background: rgba(10,12,16,.12); }
+.tp-btn { position: absolute; left: calc(var(--cx) + var(--x) * var(--flip)); top: calc(var(--cy) + var(--y));
+  width: 48px; height: 48px; transform: translate(-50%, -50%); padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: #fff; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.75)); }
+.tp-btn[hidden] { display: none; }
+.tp-btn svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+.tp-btn.on { background: rgba(255,255,255,.16); }
+.tp-btn.on svg { transform: scale(.9); }
+.tp-badge { position: absolute; left: 60%; top: 60%; min-width: 15px; height: 15px; padding: 0 2px;
+  border-radius: 8px; font: 700 9px/15px system-ui, sans-serif; font-style: normal; text-align: center; color: #fff; }
+.tp-badge-A { background: #3fa535; }
+.tp-badge-B { background: #d8363a; }
+.tp-badge-X { background: #2a7fd6; }
+.tp-badge-Y { background: #e2a81c; color: #1b1b1b; }
+.tp-badge-LS { background: #6b7280; font-size: 8px; }
 /* What X would do, under the letter ("Board", "Land", "Talk"), from main.js touchHud. */
-.tp-say { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px;
+.tp-say { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 1px;
   font: 600 12px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8);
   white-space: nowrap; pointer-events: none; }
-.tp-run { width: 54px; height: 54px; font-size: 13px; margin-bottom: 104px; }
-/* The two hands, on foot only (touchHud): left hand left, right hand right. */
-.tp-hands { position: absolute; display: flex; gap: 14px; }
-.tp-hands[hidden] { display: none; }
-.tp-hand { width: 54px; height: 54px; font-size: 22px; }
 
 /* ---- the phone, fitted to the glass ----------------------------------------------------
    The APK draws into the notch (MainActivity.kt, LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES),
@@ -1263,8 +1279,7 @@ body.standalone .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
 body.standalone .x, body.standalone .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
 body.standalone .speech { pointer-events: auto; cursor: pointer; }
 body.standalone .skew { bottom: calc(var(--sb) + 170px); }
-body.standalone .tp-buttons { right: var(--sr); bottom: calc(var(--sb) + 16px); }
-body.standalone .tp-hands { right: calc(var(--sr) + 70px); bottom: calc(var(--sb) + 150px); }
+body.standalone .tp-cluster { right: var(--sr); bottom: var(--sb); }
 /* The Controls panel (ui.js openPhone): one setting a row, big enough for a thumb. */
 .phone-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
 .phone-row input[type="range"] { flex: 1; }
@@ -1272,8 +1287,7 @@ body.standalone .tp-hands { right: calc(var(--sr) + 70px); bottom: calc(var(--sb
 .phone-row select { font-size: 14px; min-height: 36px; margin-left: auto; }
 .phone-row output { min-width: 3.2em; text-align: right; color: var(--ink-dim); }
 /* Left-handed (phoneprefs.js lefty): the stick on the right, the buttons mirrored left. */
-body.standalone .touchpad.lefty .tp-buttons { right: auto; left: var(--sl); flex-direction: row-reverse; }
-body.standalone .touchpad.lefty .tp-hands { right: auto; left: calc(var(--sl) + 70px); }
+body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx: 116px; --flip: -1; }
 /* Held sideways a phone is under 480px tall, and the desktop layout hung panels 108-230px
    down with 96px kept free at the foot: a Legend of 64px. A sheet down the right instead. */
 @media (max-height: 480px) {

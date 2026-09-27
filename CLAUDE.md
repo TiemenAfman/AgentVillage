@@ -1216,12 +1216,16 @@ page without a phone, serve `src-android/dist/` from any static server — that 
 islander behind it either.
 
 **Touch is a pad with two extras, and the phone's HUD is one CSS block.** `web/js/touchpad.js`
-polls in `gamepad.js`'s shape (buttons A jump, X interact, Run = `L3`), plus two fields only
+polls in `gamepad.js`'s shape (A jump, X interact, Run = `L3`, and on foot B crouch and Y
+bike - the walk map's own buttons, so they needed no code in walk.js), laid out after Xbox
+Cloud Gaming's touch controls: `.tp-cluster`, a faint thumb circle with every button placed by
+`--x/--y` from its middle and mirrored by `--flip` for `lefty`, outline SVG icons with the pad
+letter as a coloured badge (`ICONS` in touchpad.js). Plus two fields only
 `walk.pad()` reads through `p.raw`: `drag` (px since the last poll, turned like the mouse by
 `DRAG_YAW`/`DRAG_PITCH`, **never × dt** - that made look speed follow the frame rate) and
 `zoom` (a pinch factor for `zoomBy`). The stick is round with a dead zone (`stickOut`, tested).
 The hand buttons bypass the pad and call `walk.hand(side, down)`; `touchHud` in main.js sets
-X's caption and shows the hands only `walk.onFoot()`. A short still tap on the look side is
+X's caption and shows the hands, B and Y (`.tp-foot`) only `walk.onFoot()`. A short still tap on the look side is
 `tapName` (guest figures only - the phone has no island). The camera's distance is `base ×
 zoomPref` (`place()`), so a zoom survives boarding; a boat now waits `RECENTRE_AFTER` like the
 bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (localStorage,

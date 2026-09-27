@@ -9,8 +9,13 @@
 // One half of the screen is a floating stick: where the thumb lands is the middle, and a
 // thumb that runs past the rim drags the middle along. The other half looks about by
 // dragging, pinches to zoom and taps to ask what is there. Which half is which is the
-// player's (phoneprefs.js `lefty`). Three round buttons - A jumps, X does whatever the
-// prompt says, Run keeps you running - and two for the hands, shown only on foot.
+// player's (phoneprefs.js `lefty`). The buttons are laid out the way Xbox Cloud Gaming lays
+// out its touch controls: a faint circle where the thumb rests, with what the thumb does
+// most inside it (A jumps, Run keeps you running, Y gets on the bike) and the rest on an arc
+// round it (X does whatever the prompt says, B crouches, and the two hands). Each is an
+// outline icon of what it does, with the pad's own letter as a small coloured badge - so a
+// player who later plugs in a controller already knows which button is which. B, Y and the
+// hands are shown only on foot.
 //
 // Two things a pad cannot say ride along in the poll, and only walk mode reads them:
 // `drag`, how far the look finger went since the last poll in pixels (a distance, turned
@@ -39,22 +44,41 @@ export function stickOut(dx, dy) {
   return { x: (dx / d) * k, y: (dy / d) * k };
 }
 
+// Outline icons, stroked in currentColor on a 24 grid, like the ones they are modelled on.
+const ICONS = {
+  jump: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/>',
+  run: '<path d="M4 6l6 6-6 6M12 6l6 6-6 6"/>',
+  talk: '<path d="M4 5h16v10H10l-5 4v-4H4z"/>',
+  crouch: '<path d="M12 4v10M7 9l5 5 5-5"/><path d="M5 20h14"/>',
+  bike: '<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-7h5l3 7M10 9l3 7M14 6h2"/>',
+  sword: '<path d="M19 4l1 1-10.5 10.5-2-2zM6 12l6 6M4.5 19.5l3-3"/>',
+  shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+  mug: '<path d="M6 8h9v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2M6 8c0-2 2-3 4-2 1-2 5-2 5 1"/>',
+};
+
 export function createTouchPad(root = document.body, { onTap = null, onHand = null } = {}) {
   const layer = document.createElement('div');
   layer.className = 'touchpad';
+  // Where each button sits, as px from the middle of the thumb's circle: `x` towards the
+  // screen's edge is mirrored for the left-handed (CSS, `--flip`), `y` down.
+  const btn = (cls, attrs, x, y, icon, badge) => `<button class="tp-btn ${cls}" ${attrs} style="--x:${x}px;--y:${y}px">`
+    + `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>`
+    + (badge ? `<i class="tp-badge tp-badge-${badge}">${badge}</i>` : '') + '</button>';
   layer.innerHTML = '<div class="tp-stick" hidden><div class="tp-knob"></div></div>'
-    + '<div class="tp-hands" hidden>'
-    + '<button class="tp-btn tp-hand" data-hand="leftArm" aria-label="Left hand"></button>'
-    + '<button class="tp-btn tp-hand" data-hand="rightArm" aria-label="Right hand"></button></div>'
-    + '<div class="tp-buttons">'
-    + '<button class="tp-btn tp-run" data-b="L3" aria-label="Run">Run</button>'
-    + '<button class="tp-btn" data-b="X" aria-label="Interact">X<span class="tp-say"></span></button>'
-    + '<button class="tp-btn" data-b="A" aria-label="Jump">A</button></div>';
+    + '<div class="tp-cluster"><div class="tp-ring"></div>'
+    + btn('', 'data-b="A" aria-label="Jump"', -6, 26, ICONS.jump, 'A')
+    + btn('tp-run', 'data-b="L3" aria-label="Run"', 30, -26, ICONS.run, 'LS')
+    + btn('tp-foot', 'data-b="Y" aria-label="Bicycle" hidden', -32, -24, ICONS.bike, 'Y')
+    + btn('tp-foot', 'data-b="B" aria-label="Crouch" hidden', 84, -44, ICONS.crouch, 'B')
+    + btn('tp-x', 'data-b="X" aria-label="Interact"', -72, 70, ICONS.talk, 'X').replace('</button>', '<span class="tp-say"></span></button>')
+    + btn('tp-hand tp-foot', 'data-hand="leftArm" aria-label="Left hand" hidden', 92, 26, '', null)
+    + btn('tp-hand tp-foot', 'data-hand="rightArm" aria-label="Right hand" hidden', 40, 86, '', null)
+    + '</div>';
   root.appendChild(layer);
   const stickEl = layer.querySelector('.tp-stick');
   const knob = layer.querySelector('.tp-knob');
   const say = layer.querySelector('.tp-say');
-  const hands = layer.querySelector('.tp-hands');
+  const onFoot = layer.querySelectorAll('.tp-foot');
 
   let seen = false;
   const move = { x: 0, y: 0 };
@@ -187,14 +211,15 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   // What X would do right now, under the letter: "board", "ashore", "talk". Empty hides it.
   function caption(text) { say.textContent = text || ''; }
   // The two hands, when there is something to do with them: `{ leftArm, rightArm }` of
-  // 'attack' / 'block' / 'drink', or null to put them away.
-  const ICON = { attack: '⚔', block: '🛡', drink: '🍺' };
+  // 'attack' / 'block' / 'drink', or null - not on foot - to put them away, and B and Y
+  // with them: there is no crouching at the tiller and no bicycle in a boat.
+  const HAND = { attack: ICONS.sword, block: ICONS.shield, drink: ICONS.mug };
   function setHands(what) {
-    hands.hidden = !what;
+    for (const b of onFoot) b.hidden = !what;
     if (!what) return;
-    for (const b of hands.querySelectorAll('.tp-hand')) {
+    for (const b of layer.querySelectorAll('.tp-hand')) {
       const a = what[b.dataset.hand];
-      b.textContent = ICON[a] || '';
+      b.querySelector('svg').innerHTML = HAND[a] || '';
       b.setAttribute('aria-label', a || '');
     }
   }
