@@ -89,6 +89,7 @@ import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
+import { prefs as phonePrefs, setPref as setPhonePref } from './phoneprefs.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
@@ -310,7 +311,10 @@ async function openBoardWithoutIsland() {
   board.open();
 }
 
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu);
+// A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
+// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
+// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
@@ -322,6 +326,17 @@ if (modest) console.info('island: integrated graphics detected, running lighter'
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
+// The field of view is vertical, so a phone held upright at 45 degrees saw about 23 across:
+// a boat and a strip of sea. On the phone it opens up in portrait until there is about 60
+// across, and no further than 75 up and down, where the edges start to stretch.
+function fitFov() {
+  const aspect = innerWidth / innerHeight;
+  const want = STANDALONE && aspect < 1
+    ? Math.min(75, 2 * Math.atan(Math.tan(Math.PI / 6) / aspect) * 180 / Math.PI)
+    : 45;
+  if (camera.fov !== want) { camera.fov = want; camera.updateProjectionMatrix(); }
+}
+fitFov();
 // No browser menu over the island, in any mode.
 //
 // OrbitControls suppresses it for itself, because it uses the right button to pan - so from
@@ -791,10 +806,39 @@ function interactables() {
 let whereSentAt = 0;
 let whereLastX = null, whereLastZ = null;
 
+// Where you last stood on foot, so the sky and back (or a closed and reopened window)
+// puts you down there again rather than on the town square every time. Per browser and
+// per island - keyed by `terrain.seed`, the one identity the page has for sure - and in
+// scene coordinates, which for home are its local ones and never move (a grown grid grows
+// centred). The server's /api/where is not the store for it: a visitor is refused there,
+// and a spot is a convenience of this screen, not something the island has to know.
+function spotKey() {
+  return state.terrain ? `promptholm.walk.spot.${state.terrain.seed}` : null;
+}
+function rememberSpot(w) {
+  if (state.inside) return;             // a room's floor is not a place on the island
+  const spot = { at: [w.pos.x, w.pos.z], yaw: w.yaw, pitch: w.camPitch };
+  state.lastSpot = spot;
+  const key = spotKey();
+  if (!key) return;
+  try { localStorage.setItem(key, JSON.stringify(spot)); } catch { /* memory still has it */ }
+}
+function recalledSpot() {
+  let spot = state.lastSpot;
+  if (!spot) {
+    const key = spotKey();
+    try { spot = key && JSON.parse(localStorage.getItem(key)); } catch { spot = null; }
+  }
+  if (!spot || !Array.isArray(spot.at) || !spot.at.every(Number.isFinite) || !Number.isFinite(spot.yaw)) return null;
+  const [x, z] = spot.at;
+  return {
+    at: [x, z],
+    facing: [x + Math.sin(spot.yaw) * 10, z + Math.cos(spot.yaw) * 10],
+    pitch: Number.isFinite(spot.pitch) ? spot.pitch : undefined,
+  };
+}
+
 function reportWhere({ final = false } = {}) {
-  // Where the keeper stands is written down so an agent at the command line can find
-  // them. A visitor is not who that is about, and the server refuses them anyway.
-  if (state.guest) return;
   const w = state.walk && state.walk.state;
   if (!w || !w.pos) return;
   const now = performance.now();
@@ -803,6 +847,10 @@ function reportWhere({ final = false } = {}) {
   whereSentAt = now;
   whereLastX = w.pos.x;
   whereLastZ = w.pos.z;
+  if (state.mode === 'walk' || final) rememberSpot(w);
+  // Where the keeper stands is written down so an agent at the command line can find
+  // them. A visitor is not who that is about, and the server refuses them anyway.
+  if (state.guest) return;
   mine('/api/where', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1341,6 +1389,39 @@ function applyPanelMessage(m) {
 }
 
 // A board you are already working says how to let go of it, not how to take it.
+// The phone's buttons say what they would do: a word under X for what is in reach, and the
+// two hands only while there is ground under your feet to fight or drink on.
+const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter' };
+function touchHud(near, walk) {
+  if (!state.touch) return;
+  const word = !near ? ''
+    : near.prompt ? (CAPTION[near.prompt] || near.prompt.split(' ')[0].replace(/^./, (c) => c.toUpperCase()))
+      : near.kind === 'board' || near.kind === 'issues' ? 'Read'
+        : near.kind === 'bed' ? '' : 'Talk';
+  state.touch.caption(word);
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null);
+}
+
+// A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
+// Only somebody on a visiting island - a phone has no island of its own to have people on -
+// found by guest-pick.js's arithmetic along the ray through the finger, and said in a toast
+// with the island's name.
+function tapName(x, y) {
+  if (state.mode !== 'walk' || state.inside) return;
+  pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(pointer, camera);
+  let best = null;
+  for (const g of state.guests) {
+    if (!g.crowd) continue;
+    const h = nearestOnRay(g.crowd.figures(), ray.ray.origin, ray.ray.direction, GUEST_PICK_T);
+    if (h.f && (!best || h.t < best.t)) best = { f: h.f, t: h.t, g };
+  }
+  if (!best) return;
+  const v = best.g.region.village;
+  const said = guestLabel(best.f, v && v.island, state.fleet);
+  state.ui.toast(`<b>${escapeHtml(said.name)}</b>${said.sub ? ` · ${escapeHtml(said.sub)}` : ''}`);
+}
+
 function promptFor(near) {
   if (!near) return null;
   const held = state.walk.state.working;
@@ -1528,7 +1609,93 @@ function minimapData() {
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
     district: minimapDistrict(),
+    // Names and distances for the nearest islands, on the phone, where a wanderer has
+    // nothing else to steer by (see the `named` pass in minimap.js).
+    named: STANDALONE ? namedIslands(w.pos) : null,
   };
+}
+
+// Every island the page knows a name for, but not the one underfoot: the raised regions,
+// named off the fleet, and the horizon's pinned marks for those further out.
+function namedIslands(pos) {
+  const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
+  const here = regionAt(pos);
+  const out = [];
+  for (const r of state.sea.regions()) {
+    const name = names.get(r.id);
+    if (r !== here && name) out.push({ x: r.origin[0], z: r.origin[1], name });
+  }
+  const seen = new Set(out.map((n) => n.name));
+  for (const m of state.horizon ? state.horizon.marks() : []) {
+    if (m.pinned && m.name && !seen.has(m.name)) out.push({ x: m.x, z: m.z, name: m.name });
+  }
+  return out;
+}
+// Android's back button (the phone). Tauri hands it to the webview's history, so while
+// anything is open over the island - a side panel, the chart, a keeper's words, the chat -
+// one history entry is held for it, and going back closes all of that instead of the app.
+// With nothing open there is no entry, and back leaves the app the way Android expects.
+let backHeld = false, backLetGo = false;
+function overlayOpen() {
+  return !!parley || minimapMode === 'map' || !!(state.islandchat && state.islandchat.isOpen())
+    || !!openPanel() || !!document.querySelector('aside.panel:not([hidden])');
+}
+function phoneBack() {
+  const open = overlayOpen();
+  if (open && !backHeld) { history.pushState({ overlay: true }, ''); backHeld = true; }
+  // Closed some other way (a ✕, a tap): give the entry back, quietly.
+  else if (!open && backHeld) { backHeld = false; backLetGo = true; history.back(); }
+}
+if (STANDALONE) {
+  addEventListener('popstate', () => {
+    if (backLetGo) { backLetGo = false; return; }
+    backHeld = false;
+    endParley();
+    if (minimapMode === 'map') setMinimapMode('radar');
+    if (state.islandchat && state.islandchat.isOpen()) state.islandchat.toggle();
+    const p = openPanel();
+    if (p) p.close();
+    state.ui.closeOverlays();
+  });
+}
+
+// Which raised region a scene position is over, or null out at sea.
+function regionAt(pos) {
+  for (const r of state.sea.regions()) {
+    if (Math.abs(pos.x - r.origin[0]) <= r.half && Math.abs(pos.z - r.origin[1]) <= r.half) return r;
+  }
+  return null;
+}
+
+// A ribbon with the island's name when you come into its waters (ui.arrival), and a word when
+// you leave them for the open sea -
+// on every page, since sailing over to a neighbour is the same arrival on a desktop. On the
+// phone the title card follows too: it said "The open sea" for good there - its home is open
+// water and nothing else ever wrote there - while the player rowed from island to island; on
+// a desktop it is the name of your own island and stays that. The first look is silent, so
+// stepping down onto your own island is not an arrival. Checked twice a second.
+let placeCheckedAt = 0, placeName;
+function islandWhere(pos) {
+  const now = performance.now();
+  if (now - placeCheckedAt < 500) return;
+  placeCheckedAt = now;
+  const r = regionAt(pos);
+  const home = r && r === state.region && state.village && state.village.island;
+  const row = r && !home ? (state.fleet || []).find((f) => f.id === r.id) : null;
+  const name = home ? state.village.island.name : row?.name || null;
+  if (name === placeName) return;
+  const first = placeName === undefined;
+  const was = placeName;
+  placeName = name;
+  if (STANDALONE) {
+    const card = document.getElementById('island-name');
+    if (card) card.textContent = name || 'The open sea';
+  }
+  if (first) return;
+  if (name) {
+    const keeper = home ? state.village.island.keeper : row?.keeper;
+    state.ui.arrival(name, keeper && keeper !== 'Someone' ? keeper : null);
+  } else if (was) state.ui.toast(`Out on the open sea, ${escapeHtml(was)} behind you.`);
 }
 
 // The chart's picture of the sea: every region with ground under it, named off the fleet
@@ -1562,6 +1729,8 @@ function enterWalk(spot = null) {
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
   let at = [0, 0], facing = null;
+  // No place in mind: back where you last stood, and only the very first time the square.
+  if (!spot) spot = recalledSpot();
   if (spot && spot.at) {
     at = spot.at;
     facing = spot.facing || null;
@@ -4851,6 +5020,7 @@ function frame(nowMs) {
   if (state.inside) {
     const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
@@ -4859,6 +5029,7 @@ function frame(nowMs) {
   } else if (state.mode === 'walk') {
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
+    touchHud(w && w.near, state.walk);
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
     // What each mouse button does, for the key row: its hand's item picked up or put down in
     // the inventory changes it mid-walk, and ui.js redraws only on a change.
@@ -4867,6 +5038,8 @@ function frame(nowMs) {
     state.ui.setGive(offer ? (offer.spec && offer.spec.name) || 'them' : null);
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
+    islandWhere(state.walk.state.pos);
+    if (STANDALONE) phoneBack();
     showMinimap(true);
     if (minimapMode === 'radar') state.minimap.update(minimapData());
     else if (minimapMode === 'map') state.worldMap.update(worldMapData());
@@ -4917,7 +5090,11 @@ function frame(nowMs) {
   const calendar = worldNow();
   const month = calendar.month;
   if (state.world) {
-    state.world.update(dt, hour, month);
+    // The clouds and the swell run on the sea's clock and in the sea's frame, so they need
+    // its time (never the chronicle's - scrubbing is a lens on the island, not the weather)
+    // and where our island lies in it; the moon's phase comes with the calendar.
+    state.world.setSeaHome(state.homeOrigin);
+    state.world.update(dt, hour, month, { t: Date.now() + (state.seaSkewMs || 0), moon: calendar.moon });
     // Straight after it, and never before: the weather multiplies what the hour has just
     // set - the lights, the dome, the haze's colour - and world.js writes all of those
     // fresh every frame, which is exactly what stops a multiplier compounding.
@@ -5057,7 +5234,10 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
+  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
+  // says so - nobody should screenshot "the world at noon" while it is evening out there.
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
+    state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
@@ -5293,6 +5473,13 @@ function playerName() {
 async function boot() {
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
+    onSpeechTap: () => endParley(),
+    onSay: () => state.islandchat && state.islandchat.toggle(),
+    phonePrefs: () => phonePrefs(),
+    onPhonePref: (name, value) => {
+      setPhonePref(name, value);
+      if (name === 'lefty' && state.touch) state.touch.relayout();
+    },
     // Only asks. The island writes the setting down and tells every open window, this
     // one included, so what is drawn always comes from the server's answer.
     onSigns: async (mode) => {
@@ -5503,7 +5690,13 @@ async function boot() {
   });
   // On a phone the screen is the controller: a stick and two buttons drawn over the
   // canvas that poll exactly like a pad, so walk mode and the boat need nothing new.
-  state.pad = STANDALONE ? eitherPad(gamepad, createTouchPad(document.body)) : gamepad;
+  // A short tap on the look side names whoever is there (tapName), and the two hand buttons
+  // press the hands as a mouse would (walk.hand).
+  state.touch = STANDALONE ? createTouchPad(document.body, {
+    onTap: (x, y) => tapName(x, y),
+    onHand: (side, down) => { if (state.mode === 'walk' && !state.inside) state.walk.hand(side, down); },
+  }) : null;
+  state.pad = state.touch ? eitherPad(gamepad, state.touch) : gamepad;
 
   // Who the controller is talking to. First one that says it is up, wins - a panel over
   // a room, a room over the island, the island over the sky.
@@ -5521,6 +5714,11 @@ async function boot() {
       if (p.pad) p.pad(a, dt);              // the boards steer a cursor of their own
       else if (a.hit('back')) p.close();    // everything else: B is the way out
     },
+  });
+  // A keeper's conversation holds walk mode paused, so it needs its own way out on a pad.
+  state.input.mode('parley', {
+    active: () => !!parley,
+    handle: (a) => { if (a.hit('leave') || a.hit('back') || a.hit('exit')) endParley(); },
   });
   state.input.mode('inside', {
     active: () => !!state.inside,
@@ -5665,7 +5863,9 @@ async function boot() {
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   state.minimap = createMinimap();
-  state.worldMap = createWorldMap();
+  state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
+  // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.
+  if (STANDALONE) document.getElementById('minimap').addEventListener('click', () => setMinimapMode('map'));
   syncFleet();        // whatever was already in the water when this page opened
   // And again as the viewer moves: which islands are near is a question of where you are.
   setInterval(recheckDetail, 2000);
@@ -6033,6 +6233,7 @@ window.settlers = {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  fitFov();
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // can ask how tall somebody is from Node, without dragging three.js along.
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
-import { Color, MeshBasicMaterial, Vector3 } from 'three';
+import { Color, Matrix4, MeshBasicMaterial, Vector3 } from 'three';
 // Imported dynamically, and it has to be: a static import is hoisted above the register()
 // call and would resolve 'shared/…' before the loader that knows what that means exists.
 // classic-avatar.js now reaches web/js/buildings.js for the held-item primitives, which
@@ -127,7 +127,7 @@ test('a swing takes the weapon arm up behind the shoulder and back, a block turn
   assert.ok(Math.abs(sword.rotation.x + rightArm.rotation.x) < 1e-9, 'sword upright');
   assert.ok(Math.abs(leftArm.rotation.x + 0.35) < 0.02, 'shield arm down');
   assert.ok(Math.abs(shield.rotation.y - 0.6) < 0.02, 'shield a little forward');
-  assert.equal(shield.scale.x, -1, 'left-hand item mirrored');
+  assert.ok(shield.scale.x < 0 && Math.abs(shield.scale.x) === shield.scale.y, 'left-hand item mirrored, not squashed');
 
   // Where the fist and the blade's far end are, in the body's own frame (+z is in front).
   sword.geometry.computeBoundingBox();
@@ -193,10 +193,20 @@ test('a beer is drunk from by its own hand, one swallow per drink', () => {
   let down = 0;
   const step = 1 / 60;
   for (let t = 0; t < 0.9; t += step) { lone.update(still, step); down += lone.swallowed(); }
-  // Mid-swallow: up at the face, turned in towards it, the glass rolled towards the mouth.
-  assert.ok(rightArm.rotation.x < -1.9, 'glass at the face: ' + rightArm.rotation.x);
-  assert.ok(rightArm.rotation.z < -0.3, 'turned inward: ' + rightArm.rotation.z);
-  assert.ok(glass.rotation.z + rightArm.rotation.z > 0.8, 'glass tipped to the mouth');
+  // Mid-swallow: the rim at the mouth (just under the nose, on the face's front), the glass
+  // tipped back into the face - and never past level, which is what a roll about the arm
+  // drew: the glass turned on its side beside the cheek, pouring the beer on the ground.
+  for (let t = 0; t < 0.9; t += step) armed.update(still, step);
+  for (const rig of [lone, armed]) rig.object.updateMatrixWorld(true);
+  const rim = glass.localToWorld(new Vector3(-0.045, 0.047, 0));
+  const up = new Vector3(0, 1, 0).transformDirection(glass.matrixWorld);
+  assert.ok(Math.abs(rim.x) < 0.04 && Math.abs(rim.y - 0.365) < 0.02 && Math.abs(rim.z - 0.1) < 0.02,
+    'rim at the mouth: ' + rim.toArray().map((v) => v.toFixed(3)));
+  assert.ok(up.y > 0.2 && up.z < -0.5 && up.x * rim.x < 0, 'glass tipped back into the face, not poured out: ' + up.toArray().map((v) => v.toFixed(2)));
+  // The left hand is the right one's mirror.
+  const leftGlass = armed.handAttach.leftArm.children[0];
+  const leftRim = leftGlass.localToWorld(new Vector3(-0.045, 0.047, 0));
+  assert.ok(leftRim.distanceTo(new Vector3(-rim.x, rim.y, rim.z)) < 1e-6, 'left rim mirrors right: ' + leftRim.toArray());
   assert.ok(down > 0.3 && down < 0.8, 'half-way through the swallow: ' + down);
   for (let t = 0; t < 1.5; t += step) { lone.update(still, step); down += lone.swallowed(); }
   assert.ok(Math.abs(down - 1) < 1e-9, 'one drink is one swallow: ' + down);
@@ -238,5 +248,136 @@ test('a beer handed over leaves the hand for as long as it is being drunk', () =
   assert.equal(glass().visible, true, 'no fresh glass once theirs was down');
   assert.equal(rig.drink('rightArm'), true);
   rig.dispose();
+  material.dispose();
+});
+
+// Two pints are a beer relay (bierestafette), never two arms drinking in turn: the button's own
+// hand drinks, the other pours its glass into that one, and both go down in the one swallow.
+test('two beers are a relay: one glass pours into the other, two drinks in one swallow', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const RIM = new Vector3(-0.045, 0.047, 0);
+  for (const side of ['rightArm', 'leftArm']) {
+    const other = side === 'rightArm' ? 'leftArm' : 'rightArm';
+    const rig = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'beer', leftHandItem: 'beer' } }, material);
+    rig.update(still, 1);
+    assert.equal(rig.drink(side), true);
+    assert.equal(rig.drink(other), false, 'the other hand drank on its own mid-relay');
+    const step = 1 / 60;
+    let down = 0, t = 0;
+    for (; t < 1.3; t += step) { rig.update(still, step); down += rig.swallowed(); }
+    rig.object.updateMatrixWorld(true);
+    const mouth = rig.handAttach[side].children[0], pour = rig.handAttach[other].children[0];
+    const into = mouth.localToWorld(RIM.clone()), from = pour.localToWorld(RIM.clone());
+    const pourUp = new Vector3(0, 1, 0).transformDirection(pour.matrixWorld);
+    // Stacked: the pouring glass's bottom lip rests on the drinking glass's top lip, one rim
+    // width apart, both openings face the mouth, and the upper glass is tipped further.
+    const mouthUp = new Vector3(0, 1, 0).transformDirection(mouth.matrixWorld);
+    assert.ok(into.distanceTo(from) < 0.07, 'the upper rim is not on the lower glass: ' + into.distanceTo(from).toFixed(3));
+    assert.ok(from.y > into.y + 0.01, 'the pouring rim is above the drinking one: ' + from.y.toFixed(3) + ' ' + into.y.toFixed(3));
+    assert.ok(mouthUp.z < -0.8 && pourUp.z < -0.8, 'an opening turned away from the face: ' + mouthUp.z.toFixed(2) + ' ' + pourUp.z.toFixed(2));
+    assert.ok(pourUp.y < mouthUp.y - 0.2, 'the upper glass is not tipped past the lower: ' + pourUp.y.toFixed(2) + ' ' + mouthUp.y.toFixed(2));
+    // Drunk with the head tipped back: the stack has gone up with the mouth (0.37 head up).
+    assert.ok(into.y > 0.385, 'the head is not tipped back: rim at ' + into.y.toFixed(3));
+    // In line: both rims on the body's middle, and neither glass rolled to a side.
+    assert.ok(Math.abs(into.x) < 0.01 && Math.abs(from.x) < 0.01, 'rims off the middle: ' + into.x.toFixed(3) + ' ' + from.x.toFixed(3));
+    assert.ok(Math.abs(mouthUp.x) < 0.05 && Math.abs(pourUp.x) < 0.05, 'a glass rolled sideways: ' + mouthUp.x.toFixed(2) + ' ' + pourUp.x.toFixed(2));
+    const stream = rig.object.children.find((c) => c.isMesh && c.visible && c.scale.y < 0.1);
+    assert.ok(stream, 'no stream between the glasses');
+    for (; t < 3; t += step) { rig.update(still, step); down += rig.swallowed(); }
+    assert.ok(Math.abs(down - 2) < 1e-9, 'a relay is two drinks: ' + down);
+    assert.ok(!rig.object.children.some((c) => c === stream && c.visible), 'the stream outlived the pour');
+    assert.equal(rig.drink(other), true, 'could not start another relay from the other hand');
+    // Into the water: both glasses are put down together.
+    rig.update({ ...still, swimming: true }, step);
+    assert.equal(rig.drink(side), true, 'the relay was still going after the swim');
+    rig.dispose();
+  }
+  // One glass handed over leaves the other to drink on its own, the ordinary way.
+  const rig = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'beer', leftHandItem: 'beer' } }, material);
+  rig.update(still, 1);
+  assert.equal(rig.handOver('leftArm', 2), true);
+  assert.equal(rig.drink('rightArm'), true);
+  let down = 0;
+  for (let t = 0; t < 1.7; t += 1 / 60) { rig.update(still, 1 / 60); down += rig.swallowed(); }
+  assert.ok(Math.abs(down - 1) < 1e-9, 'one glass in hand is one drink: ' + down);
+  rig.dispose();
+  material.dispose();
+});
+
+// Our pints are straight, so the relay's two glasses lean on each other rim to rim rather than
+// nesting: at no moment of it, from either hand, does one go into the other.
+test('the two glasses of a relay never go through each other', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  // The pint's wall, foam cap and top, sampled in its own frame (beerGeometry: glass at x -0.045).
+  const surface = [];
+  for (let y = -0.035; y <= 0.054; y += 0.011) for (let a = 0; a < 16; a++) {
+    surface.push(new Vector3(-0.045 + 0.03 * Math.cos(a / 8 * Math.PI), y, 0.03 * Math.sin(a / 8 * Math.PI)));
+  }
+  const depth = (p) => {
+    const r = Math.hypot(p.x + 0.045, p.z);
+    return r < 0.03 && p.y > -0.035 && p.y < 0.054 ? Math.min(0.03 - r, p.y + 0.035, 0.054 - p.y) : 0;
+  };
+  const into = (a, b) => {
+    const m = b.matrixWorld.clone().invert().multiply(a.matrixWorld);
+    return Math.max(...surface.map((s) => depth(s.clone().applyMatrix4(m))));
+  };
+  for (const side of ['rightArm', 'leftArm']) {
+    const rig = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'beer', leftHandItem: 'beer' } }, material);
+    rig.update(still, 1);
+    rig.drink(side);
+    const a = rig.handAttach.rightArm.children[0], b = rig.handAttach.leftArm.children[0];
+    for (let t = 0; t < 2.7; t += 1 / 60) {
+      rig.update(still, 1 / 60);
+      rig.object.updateMatrixWorld(true);
+      const d = Math.max(into(a, b), into(b, a));
+      assert.ok(d < 0.003, side + ': the glasses overlap by ' + (d * 1000).toFixed(1) + ' mm at ' + t.toFixed(2) + ' s');
+    }
+    rig.dispose();
+  }
+  material.dispose();
+});
+
+// Nor into the face: the head, the nose and the hat (the whole player geometry above the
+// shoulders, turned with the head as it tips back). The drinking rim may touch the lips.
+test('a relay keeps both glasses out of the face', () => {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  const still = { moving: false, running: false, grounded: true, crouching: false, sitting: false, lying: false, phase: 0 };
+  const whole = avatarPlayerGeometry({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, backpack: false } });
+  const head = [];
+  for (let i = 0; i < whole.attributes.position.count; i++) {
+    const v = new Vector3().fromBufferAttribute(whole.attributes.position, i);
+    if (v.y > 0.335 && Math.abs(v.x) < 0.17) head.push(v);
+  }
+  const depth = (p) => {
+    const r = Math.hypot(p.x + 0.045, p.z);
+    return r < 0.031 && p.y > -0.035 && p.y < 0.072 ? Math.min(0.031 - r, p.y + 0.035, 0.072 - p.y) : 0;
+  };
+  const rig = createClassicAvatar({ ...DEFAULT_AVATAR, equip: { ...DEFAULT_AVATAR.equip, rightHandItem: 'beer', leftHandItem: 'beer' } }, material);
+  let neck;
+  rig.object.traverse((o) => { if (o.isGroup && o.position.x === 0 && Math.abs(o.position.y - 0.336) < 0.002) neck = o; });
+  rig.update(still, 1);
+  rig.drink('rightArm');
+  const mouth = rig.handAttach.rightArm.children[0], pour = rig.handAttach.leftArm.children[0];
+  let tipped = 0;
+  for (let t = 0; t < 2.7; t += 1 / 60) {
+    rig.update(still, 1 / 60);
+    rig.object.updateMatrixWorld(true);
+    tipped = Math.max(tipped, -neck.rotation.x);
+    // The head's own vertices sit where the model has them; its pivot is at the neck.
+    const face = neck.matrixWorld.clone().multiply(new Matrix4().makeTranslation(0, -neck.position.y, 0));
+    const into = (glass) => {
+      const m = glass.matrixWorld.clone().invert().multiply(face);
+      return Math.max(...head.map((v) => depth(v.clone().applyMatrix4(m))));
+    };
+    const m = into(mouth), p = into(pour);
+    assert.ok(m < 0.005, 'the drinking glass is in the face by ' + (m * 1000).toFixed(1) + ' mm at ' + t.toFixed(2) + ' s');
+    assert.ok(p < 0.002, 'the pouring glass is in the face by ' + (p * 1000).toFixed(1) + ' mm at ' + t.toFixed(2) + ' s');
+  }
+  assert.ok(tipped > 0.3, 'the head never tipped back: ' + tipped);
+  assert.ok(Math.abs(neck.rotation.x) < 1e-9, 'the head stayed tipped back after the relay');
+  rig.dispose();
+  whole.dispose();
   material.dispose();
 });

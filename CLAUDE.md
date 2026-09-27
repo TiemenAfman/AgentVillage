@@ -891,8 +891,16 @@ workbench and real-date labels excepted). The sea reads its zone by name (`SEA_T
 `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
-[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
-borrel, the clouds, the moon).
+The clouds, the swell and the moon run on the sea's clock too (`world.update`'s fourth
+argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer is one
+`CLOUD_TILE` of clouds from a fixed seed repeated over the **whole sea in the world frame**
+(`cloudNearest`, `setSeaHome(state.homeOrigin)` every frame), drawn three by three round the
+camera, so every screen has the same cloud and the same shadow; the island's own rng is still
+spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
+`WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
+chronicle) marks the clock chip `· local`.
+[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
@@ -951,6 +959,16 @@ where every request is refused: the desktop app's browser pane throws `WrongDocu
 pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
 and a `setTimeout` loop polling the page sees time stand still.
+
+**First person is the wheel's last notch (or V), and it is a view model, not a body.**
+`state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the
+avatar's own matrix, so a crouch or the saddle moves it) and pulls the near plane in to
+`FP_NEAR` only while it is on, because the island's camera keeps 0.5 for depth precision at the
+horizon. `classic-avatar.js` then hides everything but the two arms (`FP_HIDDEN`) and carries
+held items higher and tilted (`FP_HOLD_X`, `FP_TILT`), following `camPitch` - none of it is on
+the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scale.x = -1`):
+the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand. The villagers' own rigs (smith, butcher, baker) set it back to 1: their tools were placed
+against the unmirrored rig, and `tests/butcher.test.mjs` fails on the cleaver if one is not.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -1187,6 +1205,31 @@ driven by `web/js/touchpad.js`, which polls like a gamepad so walk.js needs no t
 Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To try the
 page without a phone, serve `src-android/dist/` from any static server — that origin has no
 islander behind it either.
+
+**Touch is a pad with two extras, and the phone's HUD is one CSS block.** `web/js/touchpad.js`
+polls in `gamepad.js`'s shape (A jump, X interact, Run = `L3`, and on foot B crouch and Y
+bike - the walk map's own buttons, so they needed no code in walk.js), laid out after Xbox
+Cloud Gaming's touch controls: `.tp-cluster`, a faint thumb circle with every button placed by
+`--x/--y` from its middle and mirrored by `--flip` for `lefty`, outline SVG icons with the pad
+letter as a coloured badge (`ICONS` in touchpad.js). Plus two fields only
+`walk.pad()` reads through `p.raw`: `drag` (px since the last poll, turned like the mouse by
+`DRAG_YAW`/`DRAG_PITCH`, **never × dt** - that made look speed follow the frame rate) and
+`zoom` (a pinch factor for `zoomBy`). The stick is round with a dead zone (`stickOut`, tested).
+The hand buttons bypass the pad and call `walk.hand(side, down)`; `touchHud` in main.js sets
+X's caption and shows the hands, B and Y (`.tp-foot`) only `walk.onFoot()`. A short still tap on the look side is
+`tapName` (guest figures only - the phone has no island). The camera's distance is `base ×
+zoomPref` (`place()`), so a zoom survives boarding; a boat now waits `RECENTRE_AFTER` like the
+bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (localStorage,
+read live; `quality: 'light'` is the default and means `modest`, since `MODEST_GPU` knows no
+phone GPU). A keeper's conversation has its own input mode (`parley` in `input.js`: X/B/BACK)
+and a tappable `#speech` - Esc was the only way out. Android's back button: `phoneBack()`
+holds one `history` entry while any overlay is open and `popstate` closes them. All phone
+layout is under `body.standalone` in `web/css/ui.css`, edges from `--sl/--sr/--st/--sb`
+(`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
+the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
+serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
 **Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
 `tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks

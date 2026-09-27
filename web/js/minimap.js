@@ -237,12 +237,21 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
   // 1.5 screen pixels to every one it drew - and with the ground in 4px blocks on top of
   // that, the coast came out as a staircase. `terrainStep` is 2 CSS pixels for the same
   // reason: about 6 400 height lookups a frame, which the chart does ~200 000 of once.
-  const w = canvas.width, h = canvas.height;
+  //
+  // Sized off the box it is shown in, not the markup's 180: the phone shows it at 144 (and
+  // 120 held sideways), where a 180 drawing shrunk by CSS put the compass letters at 7px.
+  // Checked every update, since the box only has a size once it is shown.
+  let w = canvas.width, h = canvas.height;
   const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const cx = w / 2, cy = h / 2;
-  const pixelRadius = Math.min(cx, cy) - 6;
+  let cx = 0, cy = 0, pixelRadius = 0;
+  function fit() {
+    const box = panel.clientWidth;
+    if (box > 0 && box !== w) { w = box; h = box; }
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    cx = w / 2; cy = h / 2;
+    pixelRadius = Math.min(cx, cy) - 6;
+  }
+  fit();
 
   function setVisible(on) {
     panel.hidden = !on;
@@ -330,6 +339,7 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
   }
 
   function update(data) {
+    fit();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
@@ -388,6 +398,42 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
 
     ctx.restore();   // drop the circular clip before the rim, which has to sit on top of it
 
+    // Where to go: the nearest islands by name and how far, the two closest of `named`
+    // (the phone's radar - main.js minimapData). A bearing on the rim was all a wanderer
+    // had to go on, with no word for what it was. Drawn unclipped, over the rim, and pulled
+    // in from it so the words stay inside the circle.
+    const named = (data.named || [])
+      .map((n) => ({ ...n, d: Math.hypot(n.x - data.pos.x, n.z - data.pos.z) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+    ctx.font = '600 10px sans-serif';
+    ctx.textBaseline = 'middle';
+    const taken = [];
+    for (const n of named) {
+      const p = projectToRadar(n.x - data.pos.x, n.z - data.pos.z, worldRadius, pixelRadius);
+      const r = Math.hypot(p.x, p.y) || 1;
+      const inward = Math.min(r, pixelRadius - 22);
+      const words = `${n.name} ${n.d < 1000 ? `${Math.round(n.d / 10) * 10} m` : `${(n.d / 1000).toFixed(1)} km`}`;
+      // Towards its bearing, off the one before it when the two lie the same way, and kept
+      // inside the circle - the canvas is round on screen (border-radius), so a name in a
+      // corner of the square was cut off - by sliding along the chord at that height.
+      const tw = ctx.measureText(words).width;
+      // No higher or lower than where a line this long still fits across the circle.
+      const reach = Math.sqrt(Math.max(0, (pixelRadius - 3) ** 2 - (tw / 2 + 2) ** 2)) - 6;
+      let ty = cy + Math.min(reach, Math.max(-reach, (p.y / r) * inward));
+      for (const t of taken) if (Math.abs(t - ty) < 13) ty = t + (t <= cy ? 13 : -13);
+      taken.push(ty);
+      const chord = Math.sqrt(Math.max(0, (pixelRadius - 3) ** 2 - (ty - cy) ** 2));
+      const room = Math.max(0, chord - tw / 2);
+      const tx = cx + Math.min(room, Math.max(-room, (p.x / r) * inward));
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(14,18,24,.85)';
+      ctx.strokeText(words, tx, ty);
+      ctx.fillStyle = 'rgba(244,236,224,.95)';
+      ctx.fillText(words, tx, ty);
+    }
+
     ctx.strokeStyle = 'rgba(232,180,92,.5)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -438,7 +484,9 @@ export function mapBounds(regions, far, margin = 12) {
   return { minX, maxX, minZ, maxZ };
 }
 
-export function createWorldMap({ step = 3 } = {}) {
+// `phone`: the app on a phone, which has no M key, no Esc and no hover. The chart then says
+// so in its own words, answers a tap with what is there, and has a close button of its own.
+export function createWorldMap({ step = 3, phone = false, onClose = null } = {}) {
   const panel = document.getElementById('worldmap');
   const canvas = document.getElementById('worldmap-canvas');
   const ctx = canvas.getContext('2d');
@@ -453,12 +501,23 @@ export function createWorldMap({ step = 3 } = {}) {
   tip.hidden = true;
   panel.appendChild(tip);
   let pointer = null;
-  window.addEventListener('pointermove', (e) => {
+  const aim = (e) => {
     if (panel.hidden || document.pointerLockElement) { pointer = null; return; }
     const r = panel.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
     pointer = x >= 0 && y >= 0 && x <= r.width && y <= r.height ? { x, y } : null;
-  });
+  };
+  window.addEventListener('pointermove', aim);
+  // A finger does not hover: a tap is where it points, and it stays pointed there.
+  if (phone) window.addEventListener('pointerdown', aim);
+  if (phone) {
+    const close = document.createElement('button');
+    close.className = 'x worldmap-close';
+    close.setAttribute('aria-label', 'Close the chart');
+    close.textContent = '✕';
+    close.addEventListener('click', () => onClose && onClose());
+    panel.appendChild(close);
+  }
 
   // The ground is a few hundred thousand height lookups, so it is painted once into a
   // sheet of its own and only redrawn when what it shows changes: a region raised or
@@ -685,7 +744,7 @@ export function createWorldMap({ step = 3 } = {}) {
       ctx.fillStyle = 'rgba(127,199,217,.95)';
       ctx.fill();
       ctx.restore();
-      marks.push({ px, py, title: 'A boat', sub: 'walk up to it and press E' });
+      marks.push({ px, py, title: 'A boat', sub: phone ? 'row up to it and press X' : 'walk up to it and press E' });
     }
     // The player, with the same `Math.PI - yaw` as the radar's arrow (see there for why).
     const [px, py] = fit.toPx(data.pos.x, data.pos.z);
@@ -720,7 +779,7 @@ export function createWorldMap({ step = 3 } = {}) {
     ctx.fillText('N', W / 2, 10);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('M  close   ·   Esc  back to the radar', W - 14, H - 10);
+    ctx.fillText(phone ? 'Tap a place to name it   ·   ✕  back to the radar' : 'M  close   ·   Esc  back to the radar', W - 14, H - 10);
   }
 
   return { setVisible, update };

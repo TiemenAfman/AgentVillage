@@ -89,7 +89,8 @@ borrel wordt aangemaakt. De pagina leest dezelfde functie voor de tafels, dus ta
 kunnen niet uit de pas lopen. `tests/settler-walk.test.mjs` blijft groen: settlerwalk krijgt
 een vlag, geen klok.
 
-**Wolken zijn een functie van wereldtijd, geen toestand.** `x = wrap(x0 + speed * t)`, met
+**Wolken zijn een functie van wereldtijd, geen toestand** — en sinds 27 september over de hele
+zee (zie fase 3 hieronder; de alinea hieronder is het oorspronkelijke voorstel). `x = wrap(x0 + speed * t)`, met
 `t` = seconden wereldtijd modulo de lus (180 eenheden / speed), in plaats van `+= speed * dt`.
 Dezelfde rng-volgorde, dus de wolken zien er hetzelfde uit; ze staan alleen voor iedereen op
 dezelfde plek. Kost niets op de wire. Grens die blijft: de wolkenlaag hangt aan `world.js` van
@@ -123,12 +124,28 @@ alleen de workbench (`demo.js`, die de muurklok bedoelt) en `ui.js`-datumlabels 
    default, de pagina gebruikt `worldTime` op alle plekken, plus de bron-scantest.
    `tests/sea-image.test.mjs` bewaakt dat `shared/worldclock.mjs` in de image zit (`shared/`
    wordt al gekopieerd).
-2. **De borrel terug.** Zee zet `setGather` op overgangen; test met een geïnjecteerde `now` op
+2. **De borrel terug.** *Gebouwd* — `gatheringAt` in `shared/daylight.mjs`, de zee zet
+   `crowds.setGather` in zijn beat (`lib/sea.mjs`). Zee zet `setGather` op overgangen; test met een geïnjecteerde `now` op
    vrijdag 16:29 → 16:31 → 17:01 dat de vlag precies twee keer omgaat.
-3. **Wolken (en eventueel golven) op wereldtijd.**
-4. **Maanfase tekenen** — de schijf wordt een sikkel/halve/volle maan via een simpele
-   terminator-shader of een tweede, donkere bol ervoor. Puur cosmetisch, als laatste.
-5. **Lens zichtbaar maken** in de klok-chip.
+3. **Wolken (en eventueel golven) op wereldtijd.** *Gebouwd op 27 september 2026*, en ruimer dan
+   voorgesteld: de wolken hangen niet meer rond ons eigen eiland maar liggen over de hele zee,
+   in het frame van de zee. Eén tegel van `CLOUD_TILE` (288) met 30 wolken uit een vaste seed
+   (`sea:clouds`, niet meer de stroom van het eiland - die verschilde per speler), herhaald over
+   de hele zee; `cloudNearest` legt elke wolk op zijn beeld het dichtst bij de camera, plus de
+   acht eromheen, zodat de laag 1,5 tegel elke kant op reikt en iets dat omslaat dat 430 eenheden
+   ver doet, voorbij de nevel. De beelden staan vast in de wereld: de camera bepaalt alleen
+   wélke getekend worden, nooit waar een wolk of zijn schaduw ligt. `x = x0 + speed · t` met
+   `t` = seconden zeetijd (`Date.now()` + skew, bewust niet de kroniek). Nog steeds één
+   InstancedMesh, twee draw calls; ~1100 instanties, matrices direct in de array geschreven.
+   De eilandstroom wordt nog precies zo verbruikt als door de negen oude wolken, zodat de
+   vuurvliegjes blijven staan. Golven: `uTime = zeeseconden mod 20π`. `tests/sea-clouds.test.mjs`
+   houdt beide vast, ook dat elke `uTime * n` in de watershader in `WAVE_RATES` staat.
+4. **Maanfase tekenen.** *Gebouwd op 27 september 2026*: `moonMat` in `world.js`, een
+   terminator-shader belicht vanuit een richting die `moonAt` elke frame uit `worldTime().moon`
+   afleidt (fase 0 van achteren, 0,5 van voren, wassend van rechts). Niet de echte zonrichting:
+   die ligt 's nachts onder zee, en dan is het elke nacht nieuwe maan. Bekeken bij bijna vol.
+5. **Lens zichtbaar maken** in de klok-chip. *Gebouwd op 27 september 2026*: met `?hour`, de
+   klok-chip of de kroniek erop zegt de chip `· local` (en kleurt hij blauw), met een tooltip.
 
 ## Open vragen
 
