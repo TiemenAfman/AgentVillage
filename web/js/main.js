@@ -5046,7 +5046,11 @@ function frame(nowMs) {
   const calendar = worldNow();
   const month = calendar.month;
   if (state.world) {
-    state.world.update(dt, hour, month);
+    // The clouds and the swell run on the sea's clock and in the sea's frame, so they need
+    // its time (never the chronicle's - scrubbing is a lens on the island, not the weather)
+    // and where our island lies in it; the moon's phase comes with the calendar.
+    state.world.setSeaHome(state.homeOrigin);
+    state.world.update(dt, hour, month, { t: Date.now() + (state.seaSkewMs || 0), moon: calendar.moon });
     // Straight after it, and never before: the weather multiplies what the hour has just
     // set - the lights, the dome, the haze's colour - and world.js writes all of those
     // fresh every frame, which is exactly what stops a multiplier compounding.
@@ -5186,7 +5190,10 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
+  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
+  // says so - nobody should screenshot "the world at noon" while it is evening out there.
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
+    state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {

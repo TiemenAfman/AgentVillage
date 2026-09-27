@@ -891,8 +891,16 @@ workbench and real-date labels excepted). The sea reads its zone by name (`SEA_T
 `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
-[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
-borrel, the clouds, the moon).
+The clouds, the swell and the moon run on the sea's clock too (`world.update`'s fourth
+argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer is one
+`CLOUD_TILE` of clouds from a fixed seed repeated over the **whole sea in the world frame**
+(`cloudNearest`, `setSeaHome(state.homeOrigin)` every frame), drawn three by three round the
+camera, so every screen has the same cloud and the same shadow; the island's own rng is still
+spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
+`WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
+chronicle) marks the clock chip `· local`.
+[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
