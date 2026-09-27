@@ -26,6 +26,7 @@ import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
 import { goldBarGeometry } from './goldpit.js';
+import { DANCE_MOVES, dancePose } from './dance.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -106,68 +107,14 @@ const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
 // a beat.
 const STAGGER_SIDE = 0.2, STAGGER_YAW = 0.45, STUMBLE_PITCH = 0.3, STUMBLE_SIDE = 0.12;
 
-// Dancing, which nobody on the wire ever does (Plans/rave-in-het-kasteel.md). `'dance'` is
-// written by the castle's rave (web/js/rave.js) onto figures it made itself, together with
-// `f.beat` - how many beats of the music have gone by, off the music's own clock - `f.move`,
-// which of the moves below, and `f.hype`, 0..1, how hard the drop has hit. The beat and not
-// this file's clock, or seventy people bounce out of time with the kick. Every number here
-// is an angle or a lift on a matrix, like the rest of the file; none of it reaches `f.pos`.
-//
-// Arms turn about x, as everywhere in here: 0 hangs, -pi/2 points ahead, -2.8 is over the
-// head. `u` is 0 on the kick, `down` is how far up between two kicks the knees have pushed
-// (0 on the kick, which is where a crowd bends), and `alt` swings +1/-1 on alternate beats.
-export const DANCE_MOVES = 6;          // pump, hands up, running man, wave, nod, and the DJ
-export function dancePose(move, beat, hype = 0) {
-  const u = beat - Math.floor(beat);
-  const down = Math.sin(Math.PI * u);
-  const pulse = Math.exp(-u * 6);
-  const alt = Math.cos(Math.PI * beat);
-  const slow = Math.sin(Math.PI * beat / 2);
-  const jump = hype * 0.07 * down;
-  const p = { bob: 0, left: 0, right: 0, legL: 0, legR: 0, roll: 0, twist: 0, lean: 0 };
-  switch (move) {
-    case 0:                 // the fist in the air on every kick
-      p.bob = 0.03 * down + jump;
-      p.right = -2.2 - 0.65 * pulse;
-      p.left = -0.45 - 0.3 * down;
-      p.legL = 0.12 * alt; p.legR = -0.12 * alt;
-      p.roll = 0.03 * alt;
-      break;
-    case 1:                 // both hands up, swaying
-      p.bob = 0.026 * down + jump;
-      p.left = -2.85 + 0.14 * slow;
-      p.right = -2.85 - 0.14 * slow;
-      p.roll = 0.07 * slow;
-      break;
-    case 2:                 // the running man
-      p.bob = 0.04 * down + jump;
-      p.legL = 0.42 * alt; p.legR = -0.42 * alt;
-      p.left = -1.0 + 0.45 * alt;
-      p.right = -1.0 - 0.45 * alt;
-      p.lean = 0.08;
-      break;
-    case 3:                 // one arm up and then the other, turning with it
-      p.bob = 0.025 * down + jump;
-      p.left = -1.2 - 1.5 * Math.max(0, slow);
-      p.right = -1.2 - 1.5 * Math.max(0, -slow);
-      p.twist = 0.28 * slow;
-      p.roll = 0.04 * slow;
-      break;
-    case 4:                 // too cool to move much: a nod on the kick
-      p.bob = 0.014 * down + jump * 0.5;
-      p.lean = 0.12 * pulse;
-      p.left = -0.25; p.right = -0.35 - 0.1 * down;
-      p.twist = 0.08 * alt;
-      break;
-    default:                // the DJ: a hand on the decks, the other up when it drops
-      p.bob = 0.02 * down;
-      p.lean = 0.16 + 0.1 * pulse;
-      p.right = -1.25 - 0.08 * down;
-      p.left = hype > 0.3 ? -2.7 - 0.2 * pulse : -1.1 - 0.15 * alt;
-      p.twist = 0.1 * slow;
-  }
-  return p;
-}
+// Dancing (Plans/rave-in-het-kasteel.md). `'dance'` is written by the castle's rave
+// (web/js/rave.js) onto figures it made itself, together with `f.beat` - how many beats of the
+// music have gone by, off the music's own clock - `f.move`, which of the moves, and `f.hype`,
+// 0..1, how hard the drop has hit. The beat and not this file's clock, or seventy people bounce
+// out of time with the kick. The moves themselves are web/js/dance.js's, the one copy, because
+// a player dances them too (classic-avatar.js, Plans/dansen.md); they are exported from here
+// as well for whoever already reached for them here.
+export { DANCE_MOVES, dancePose };
 const HEAD_Y = RESIDENT_HEAD_Y;
 
 // How far above its own feet a figure's eyes are. A function rather than a constant
