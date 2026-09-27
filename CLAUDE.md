@@ -869,6 +869,15 @@ pointer lock cannot be tested there — use a real Chrome or the Tauri window. T
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
 and a `setTimeout` loop polling the page sees time stand still.
 
+**First person is the wheel's last notch (or V), and it is a view model, not a body.**
+`state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the
+avatar's own matrix, so a crouch or the saddle moves it) and pulls the near plane in to
+`FP_NEAR` only while it is on, because the island's camera keeps 0.5 for depth precision at the
+horizon. `classic-avatar.js` then hides everything but the two arms (`FP_HIDDEN`) and carries
+held items higher and tilted (`FP_HOLD_X`, `FP_TILT`), following `camPitch` - none of it is on
+the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scale.x = -1`):
+the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand.
+
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 

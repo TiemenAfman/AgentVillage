@@ -665,23 +665,24 @@ export function createUI(handlers) {
   // to send off the island from a bar stool - so the row says what there is instead.
   let indoors = false;
   // What each mouse button does now - one button per hand (walk.js): 'attack', 'block' for a
-  // shield, 'drink' for a beer (Plans/bier-en-dronken.md). main.js asks the walk every frame,
-  // so only a change - something else picked up in the inventory, a room entered - redraws
-  // the row.
+  // shield, 'drink' for a beer, 'relay' for a beer in each hand (Plans/bier-en-dronken.md).
+  // main.js asks the walk every frame, so only a change - something else picked up in the
+  // inventory, a room entered - redraws the row.
   let lmbDoes = 'attack', rmbDoes = 'attack';
   function setMouse(lmb, rmb) {
     if (lmb === lmbDoes && rmb === rmbDoes) return;
     lmbDoes = lmb; rmbDoes = rmb;
     renderWalkKeys();
   }
-  const MOUSE_SAYS = { attack: 'attack', block: 'hold to block', drink: 'drink' };
+  const MOUSE_SAYS = { attack: 'attack', block: 'hold to block', drink: 'drink', relay: 'beer relay' };
   const mouseKey = (button, does) => `<span><kbd>${button}</kbd> ${MOUSE_SAYS[does] || MOUSE_SAYS.attack}</span>`;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
   function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
   function renderWalkKeys() {
     // Indoors the room's row has no fight in it, but a pint at the bar is the point of the
     // place, so a button that drinks is still said.
-    const drinks = (lmbDoes === 'drink' ? mouseKey('LMB', 'drink') : '') + (rmbDoes === 'drink' ? mouseKey('RMB', 'drink') : '');
+    const sips = (does) => does === 'drink' || does === 'relay';
+    const drinks = (sips(lmbDoes) ? mouseKey('LMB', lmbDoes) : '') + (sips(rmbDoes) ? mouseKey('RMB', rmbDoes) : '');
     if (indoors) {
       el('walk-keys').innerHTML = padConnected
         ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
@@ -708,7 +709,7 @@ export function createUI(handlers) {
         // The left button is the left hand and the right the right, so each says what its
         // own hand does rather than one line explaining the rule.
         + mouseKey('LMB', lmbDoes) + mouseKey('RMB', rmbDoes)
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>V</kbd> first person</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
         // Only while building by hand is switched on (Settings -> Debug): otherwise B says
         // it is off, and a key in the row that only answers with a toast is a key too many.

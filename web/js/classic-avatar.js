@@ -58,12 +58,24 @@ const EQUIPPABLE = new Set([
   ...BACKPACK, ...HAMMER, ...CHESTPLATE, ...LEFT_LEGGING, ...RIGHT_LEGGING,
   ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD, ...TORCH,
 ]);
-const CORE = SETTLER_PARTS.map(({ name }) => name).filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name));
+// The head and whatever hat is on it: its own piece so first person (walk.js) can take it
+// away - the camera sits inside it. Every hat is a variant of its own and the face is the
+// run of body parts from the neck up, so neither list has to be kept in step by hand.
+const FACE = new Set(['Neck', 'Head', 'Hair cap', 'Face', 'Round nose', 'Smile left', 'Smile right',
+  ...['ear', 'eye', 'eyebrow', 'sideburn'].flatMap((p) => [`Left ${p}`, `Right ${p}`])]);
+const HEAD = SETTLER_PARTS.filter((p) => !EQUIPPABLE.has(p.name)
+  && (FACE.has(p.name) || (p.variant !== 'body' && p.variant !== 'gear'))).map((p) => p.name);
+const CORE = SETTLER_PARTS.map(({ name }) => name)
+  .filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name) && !HEAD.includes(name));
 const PIVOTS = {
   leftLeg: [-0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
   rightLeg: [0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
   leftArm: [-0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
   rightArm: [0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
+  // The neck, half way up the baked 'Neck' part (0.315-0.357 on the scaled model): where the
+  // head tips back in the beer relay. Nothing else turns it, so first person, which only
+  // hides it, does not notice where it hangs.
+  head: [0, 0.3 * PLAYER_SCALE, 0],
 };
 // The hips' height over the soles: where a rider's legs turn, which is what walk.js puts on
 // the saddle.
@@ -108,10 +120,21 @@ const GRIP = [0.131 * PLAYER_SCALE, 0.19 * PLAYER_SCALE, 0.018 * PLAYER_SCALE];
 // one is, in front of the chest: held out at -1.3 it was being offered to somebody.
 const HOLD_ARM_X = { default: -1.3, shield: -0.35, beer: -0.7 };
 const holdX = (item) => HOLD_ARM_X[item] ?? HOLD_ARM_X.default;
+// The same in first person, tuned by eye in /demo: high enough that the item stands in the
+// bottom corner of the view from the eye, which the arm alone - no elbow - cannot reach.
+const FP_HOLD_X = { default: -1.6, shield: -1.2, beer: -1.3 };
+// And how each item is turned in first person, on top of standing upright: a blade leaning
+// away with its point in towards the middle of the view, a shield turned to show its face.
+const FP_TILT = { sword: { x: 0.9, z: 0.35 }, hammer: { x: 0.5, z: 0.3 }, torch: { x: 0.3 }, shield: { yaw: 1.1 } };
+const FP_HIDDEN = ['core', 'head', 'backpack', 'chestplate', 'leftLeg', 'rightLeg',
+  'leftLegging', 'rightLegging', 'leftBoot', 'rightBoot'];
 // A held item's turn about the arm, in radians, mirrored for the left hand. The shield is
 // modelled facing straight out from the fist (+X, build-settler.py); a third of a turn
 // forward keeps its face readable from in front instead of edge-on.
 const ITEM_YAW = { shield: 0.6 };
+// Grown about the grip: the baked shield covered little more than a forearm, and in first
+// person it read as a lid rather than something to stand behind.
+const ITEM_SCALE = { shield: 1.4 };
 
 // A torch lights what is around it, not only itself: a warm point light at the middle of the
 // flame (build-settler.py's 'Torch flame', .350-.420, measured from GRIP's .190), the same
@@ -209,6 +232,13 @@ export function heldItemGeometry(item, spec) {
 
 export function createClassicAvatar(spec, material) {
   const object = new THREE.Group();
+  // The bake names its hands the wrong way round: "Right hand" is at +x, and a figure facing
+  // +z has its right hand at -x - so the Right hand slot and the right mouse button have
+  // always worked the hand on the left, which first person made impossible to miss (the
+  // sword on the left of the screen). Mirroring the whole rig puts every "right" on the right
+  // without touching a name, a sign or a test of which hand is which; the figure is
+  // symmetric, and three.js flips the winding for a negative determinant.
+  object.scale.x = -1;
   const pieces = {};
 
   // `parent` defaults to the top-level group and `groupAt`/`translateBy` to the piece's own
@@ -231,6 +261,7 @@ export function createClassicAvatar(spec, material) {
   }
 
   makePiece('core', CORE);
+  makePiece('head', HEAD, { parent: pieces.core.pivot });
   for (const [name, names] of Object.entries(LIMBS)) makePiece(name, names);
   makePiece('backpack', BACKPACK);
   makePiece('chestplate', CHESTPLATE);
@@ -267,7 +298,8 @@ export function createClassicAvatar(spec, material) {
     // which is what puts a shield's face on the outside of either arm; the symmetric items
     // do not notice. The yaw is mirrored with it, so "a little forward" stays forward.
     const left = side === 'leftArm';
-    if (left) mesh.scale.x = -1;
+    mesh.scale.setScalar(ITEM_SCALE[item] || 1);
+    if (left) mesh.scale.x = -mesh.scale.x;
     mesh.rotation.y = (left ? 1 : -1) * (ITEM_YAW[item] || 0);
     if (item === 'torch') {
       const light = new THREE.PointLight(TORCH_LIGHT.color, 0, TORCH_LIGHT.distance, 2);
@@ -341,18 +373,74 @@ export function createClassicAvatar(spec, material) {
   // - walk.js gives each hand its own mouse button - and lifts the glass instead: up to the
   // face and a little inward, a swallow with the glass tipped towards the mouth, and back
   // down. Timed
-  // and driven directly like the swing, one per hand, so two pints are two arms. Only the
+  // and driven directly like the swing, one per hand. Only the
   // swallow counts, and it is handed out a frame at a time through swallowed(), which is what
   // lets walk.js fill the bar while the glass is tipped rather than once it is back down.
-  // DRINK_ARM was found by measuring the model: the shoulder is at chin height and the arm is
-  // 0.11 long, so about -2 puts the fist level with the mouth and the 0.35 inward turn puts
-  // it beside the cheek; the glass is inboard of the fist (beerGeometry) and covers the rest.
-  // -1.95 by the numbers left the rim at the chin in the browser, hence -2.05.
-  // The roll turns about the ear in the fist, so it also lowers the rim: past about 1.2 the
-  // rim drops under the chin, which is why the arm creeps up while it rolls further.
-  const DRINK_S = 1.6, GULP = [0.45, 1.25], DRINK_ARM = { x: -2.05, z: 0.35 }, DRINK_ROLL = [0.8, 1.2];
+  // The glass is not counter-rotated while it is drunk from: it is given a whole orientation
+  // in the body's frame (SIP at the start of the swallow, TIPPED at its end, slerped), because
+  // a roll about the arm's own z is what this used to be - it tipped the glass sideways
+  // beside the cheek until its top pointed at the ground, which looked like pouring it out.
+  // The numbers were found by a search over the real rig (right hand; the left is its
+  // mirror): the arm raised to -1.5 and turned 0.62 inward puts the fist beside the chin,
+  // and SIP/TIPPED put the near edge of the rim on the mouth with the glass standing in front
+  // of the face and its top leaning back into it - 40 degrees off upright, then 78.
+  const DRINK_S = 1.6, GULP = [0.45, 1.25], DRINK_ARM = { x: -1.51, rise: 0.06, z: 0.62 };
+  const quatOf = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+  const UPRIGHT = new THREE.Quaternion(), SIP = quatOf(-0.81, 0.51, 0.31), TIPPED = quatOf(-1.45, 0.35, 0.47);
+  // Two pints are not two arms drinking in turn - nobody drinks like that - but a beer relay
+  // (bierestafette), the way Martijn's reference picture has it: the hand whose button it was
+  // lifts its glass to the mouth, the other stacks its own on top and pours it in, a thin
+  // stream running between them, and both go down in the one swallow, the head tipped back.
+  // The stack: both glasses on the body's middle line, not rolled to either side, both
+  // openings towards the face; the lower one fairly upright (58 degrees above level, 40 by
+  // the end, before the head's tip adds its own), the upper one 20 more tipped, its bottom lip
+  // resting just inside the lower one's top lip. Tipped further than that it read as pouring
+  // the lot over his face. Our pints are straight rather than the tapered cups that nest in the picture, so
+  // they lean rim on rim instead of sliding into each other.
+  // The arm has no elbow and is a tenth of a unit long, so no fist gets in front of the face:
+  // the glasses slide out of the fists for the relay (`slide`, eased in and out with the
+  // reach), 5 cm for the drinking one and 11 for the pouring one, which also stand 1.5 cm
+  // off the face: close enough to read as at the mouth. Every number is a key(), seven per
+  // glass through the swallow, found by a search over the real rig that refused any
+  // glass in the head, nose or hat (1 mm of rim on the lips allowed), any overlap between
+  // the two glasses, and neighbouring keys that were not neighbours - two end poses solved
+  // alone went 13 mm into the face half way between them.
+  // key(arm x, arm z inwards, glass turn in the body's frame, slide in the arm's frame) - for
+  // the right hand; the left is its mirror.
+  const key = (x, z, qx, qy, qz, sx, sy, sz) => ({ x, z, q: quatOf(qx, qy, qz), slide: new THREE.Vector3(sx, sy, sz) });
+  const RELAY_S = 2.6, RELAY_GULP = [0.55, 2.1];
+  const PROFILE = {
+    sip: { s: DRINK_S, gulp: GULP, arm: DRINK_ARM, start: SIP, end: TIPPED, dose: 1 },
+    relay: { s: RELAY_S, gulp: RELAY_GULP, dose: 2, keys: [
+      key(-1.381, 0.718, 2.579, 3.105, -3.127, 0.014, -0.05, 0.011), key(-1.391, 0.715, 2.531, 3.104, -3.126, 0.014, -0.05, 0.011),
+      key(-1.4, 0.713, 2.481, 3.104, -3.125, 0.014, -0.051, 0.012), key(-1.406, 0.711, 2.45, 3.105, -3.125, 0.014, -0.052, 0.012),
+      key(-1.41, 0.708, 2.408, 3.105, -3.123, 0.015, -0.053, 0.012), key(-1.412, 0.705, 2.375, 3.105, -3.122, 0.015, -0.054, 0.012),
+      key(-1.409, 0.702, 2.314, 3.11, -3.122, 0.015, -0.054, 0.011)] },
+    pour: { s: RELAY_S, gulp: RELAY_GULP, dose: 0, keys: [
+      key(-1.631, 0.606, 2.177, 3.086, 3.17, 0.033, -0.107, 0.024), key(-1.648, 0.606, 2.142, 3.087, 3.169, 0.032, -0.107, 0.025),
+      key(-1.665, 0.605, 2.103, 3.088, 3.169, 0.032, -0.106, 0.025), key(-1.68, 0.605, 2.064, 3.09, 3.169, 0.031, -0.106, 0.025),
+      key(-1.693, 0.604, 2.026, 3.091, 3.169, 0.031, -0.106, 0.024), key(-1.704, 0.604, 1.988, 3.093, 3.17, 0.031, -0.105, 0.024),
+      key(-1.709, 0.604, 1.952, 3.099, 3.169, 0.03, -0.104, 0.023)] },
+  };
+  const OTHER = { leftArm: 'rightArm', rightArm: 'leftArm' };
+  // And the relay is drunk with the head tipped back, the way it is in the pub: further back
+  // as the glasses empty, eased in and out with the reach. The stack of glasses turns about
+  // the neck with the head, so it stays at the mouth, and the arms follow part of the way up
+  // (ARM_FOLLOW) so the glasses do not have to slide further out of the fists for it.
+  const HEAD_BACK = [0.2, 0.35], ARM_FOLLOW = 0.6;
+  const tiltQ = new THREE.Quaternion(), armQ = new THREE.Quaternion(), unArm = new THREE.Quaternion();
+  const turn = new THREE.Euler(), neck = new THREE.Vector3(), at = new THREE.Vector3();
+  const MIRROR = { rightArm: new THREE.Vector3(1, 1, 1), leftArm: new THREE.Vector3(-1, 1, 1) };
   const drinks = { leftArm: null, rightArm: null };
   let gulped = 0;
+  // The stream from one glass into the other: a thin amber cylinder hung off the body and
+  // stretched between the two rims every frame it shows. Its own tiny geometry on the shared
+  // material, so it is no new program; no shadow, it is two centimetres of beer.
+  const stream = new THREE.Mesh(withSheet(cylinder(0.005, 0.0065, 1, 5, BEER_GLASS, { y: -1 })), material);
+  stream.visible = false;
+  object.add(stream);
+  const RIM = new THREE.Vector3(-0.045, 0.047, 0), DOWN = new THREE.Vector3(0, -1, 0);
+  const pourFrom = new THREE.Vector3(), pourTo = new THREE.Vector3();
   // A beer handed to a settler (main.js giveBeer): the arm reaches out with it, the glass
   // leaves the hand as they take it, and a fresh one is back in the fist once theirs is down,
   // `away` seconds later - the pint in a hand is a thing you carry, not a thing you run out of.
@@ -366,32 +454,63 @@ export function createClassicAvatar(spec, material) {
   }
 
   // Whether `side` ('leftArm' or 'rightArm') started a drink: not without a glass in it, and
-  // not while it is still drinking the last one or has just handed it over.
+  // not while it is still drinking the last one or has just handed it over. With a glass in
+  // the other hand too it is the relay, and then the other hand has to be free as well: two
+  // pints go down together or not at all, never one after the other.
   function drink(side) {
     if (holding[side] !== 'beer' || drinks[side] || given[side]) return false;
-    drinks[side] = { t: 0, from: pieces[side].pivot.rotation.x, fromZ: pieces[side].pivot.rotation.z };
+    const other = OTHER[side], relay = holding[other] === 'beer' && !given[other];
+    if (relay && drinks[other]) return false;
+    const start = (s, kind) => {
+      drinks[s] = { t: 0, kind, from: pieces[s].pivot.rotation.x, fromZ: pieces[s].pivot.rotation.z };
+    };
+    start(side, relay ? 'relay' : 'sip');
+    if (relay) start(other, 'pour');
     return true;
   }
   // How much of a whole drink went down since the last time this was asked.
   function swallowed() { const g = gulped; gulped = 0; return g; }
 
-  // Where a drinking arm is, and how far its glass is rolled in towards the mouth (the sign
-  // is the caller's: the glass tips towards the middle of the body from either hand).
+  // Where a drinking arm is, and the glass's orientation in the body's frame - worked out
+  // for the right hand and mirrored for the left (X·q·X: y and z negated).
   // `rest`/`restZ` are what the arm would be doing had it not lifted the glass.
   function drinkPose(d, side, rest, restZ) {
-    const lerp = THREE.MathUtils.lerp, [g0, g1] = GULP;
-    const upX = DRINK_ARM.x, upZ = (side === 'rightArm' ? -1 : 1) * DRINK_ARM.z;
-    if (d.t < g0) {
-      const e = ease(d.t / g0);
-      return { x: lerp(d.from, upX, e), z: lerp(d.fromZ, upZ, e), roll: DRINK_ROLL[0] * e };
+    const lerp = THREE.MathUtils.lerp, prof = PROFILE[d.kind], [g0, g1] = prof.gulp, sign = side === 'rightArm' ? -1 : 1;
+    let pose;
+    if (prof.keys) {
+      // A relay glass: up to the first key, through the keys, and down from the last.
+      const K = prof.keys, first = K[0], last = K[K.length - 1];
+      if (d.t < g0) {
+        const e = ease(d.t / g0);
+        pose = { x: lerp(d.from, first.x, e), z: lerp(d.fromZ, sign * first.z, e), q: UPRIGHT.clone().slerp(first.q, e),
+          slide: first.slide.clone().multiplyScalar(e), reach: e, g: 0 };
+      } else if (d.t < g1) {
+        const g = (d.t - g0) / (g1 - g0), u = ease(g) * (K.length - 1), i = Math.min(K.length - 2, Math.floor(u)), f = u - i;
+        const a = K[i], b = K[i + 1];
+        pose = { x: lerp(a.x, b.x, f), z: sign * lerp(a.z, b.z, f), q: a.q.clone().slerp(b.q, f), slide: a.slide.clone().lerp(b.slide, f), reach: 1, g };
+      } else {
+        const e = ease(Math.min(1, (d.t - g1) / (prof.s - g1)));
+        pose = { x: lerp(last.x, rest, e), z: lerp(sign * last.z, restZ, e), q: last.q.clone().slerp(UPRIGHT, e),
+          slide: last.slide.clone().multiplyScalar(1 - e), reach: 1 - e, g: 1 };
+      }
+      pose.slide.multiply(MIRROR[side]);
+    } else {
+      const { s: DRINK_S, arm, start: SIP, end: TIPPED } = prof;
+      const upX = arm.x, topX = upX + arm.rise, upZ = sign * arm.z;
+      if (d.t < g0) {
+        const e = ease(d.t / g0);
+        pose = { x: lerp(d.from, upX, e), z: lerp(d.fromZ, upZ, e), q: UPRIGHT.clone().slerp(SIP, e) };
+      } else if (d.t < g1) {
+        // The glass tips further as it empties, and the arm bobs once a gulp.
+        const g = (d.t - g0) / (g1 - g0);
+        pose = { x: lerp(upX, topX, g) + 0.035 * Math.sin(g * Math.PI * 5), z: upZ, q: SIP.clone().slerp(TIPPED, ease(g)) };
+      } else {
+        const e = ease(Math.min(1, (d.t - g1) / (DRINK_S - g1)));
+        pose = { x: lerp(topX, rest, e), z: lerp(upZ, restZ, e), q: TIPPED.clone().slerp(UPRIGHT, e) };
+      }
     }
-    if (d.t < g1) {
-      // The arm creeps up as the glass empties, and bobs once a gulp.
-      const g = (d.t - g0) / (g1 - g0);
-      return { x: upX - 0.12 * g + 0.035 * Math.sin(g * Math.PI * 5), z: upZ, roll: lerp(DRINK_ROLL[0], DRINK_ROLL[1], ease(g)) };
-    }
-    const e = ease(Math.min(1, (d.t - g1) / (DRINK_S - g1)));
-    return { x: lerp(upX - 0.12, rest, e), z: lerp(upZ, restZ, e), roll: DRINK_ROLL[1] * (1 - e) };
+    if (side === 'leftArm') { pose.q.y = -pose.q.y; pose.q.z = -pose.q.z; }
+    return pose;
   }
 
   let time = 0;
@@ -416,6 +535,19 @@ export function createClassicAvatar(spec, material) {
       leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
       rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? stride * 0.9 : -idle),
     };
+    // First person (walk.js) draws what a shooter draws: the two arms and what is in them,
+    // and nothing of the body the camera is standing in. The arms are carried higher and
+    // follow the look up and down (`pose.pitch`, walk.js's camPitch: positive looks down),
+    // so the hands stay in the bottom corners of the view. Nobody else sees this pose - it
+    // is not on the wire - so it is free to be a view model rather than a body.
+    const fp = !!pose.firstPerson;
+    for (const name of FP_HIDDEN) pieces[name].mesh.visible = !fp;
+    if (fp) {
+      const look = pose.pitch || 0;
+      for (const side of ['leftArm', 'rightArm']) {
+        if (holding[side]) targets[side] = (FP_HOLD_X[holding[side]] ?? FP_HOLD_X.default) + look + stride * 0.08;
+      }
+    }
     // `blocking` is either which hands are up ({ leftArm, rightArm }, from walk.js) or a bare
     // true, which means the default hand.
     const blocks = !pose.blocking ? []
@@ -447,12 +579,34 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) {
       const d = drinks[side];
       if (!d) continue;
-      if (holding[side] !== 'beer' || pose.swimming || pose.lying) { drinks[side] = null; continue; }
+      // A relay is put down whole: the pouring glass with nothing under it, or the drinking
+      // one with nothing pouring into it, is neither drink.
+      const paired = d.kind !== 'sip', partner = paired ? drinks[OTHER[side]] : null;
+      if (holding[side] !== 'beer' || pose.swimming || pose.lying || (paired && !partner)) {
+        drinks[side] = null;
+        if (partner) drinks[OTHER[side]] = null;
+        continue;
+      }
+      const { s, gulp: [g0, g1], dose } = PROFILE[d.kind];
       const was = d.t;
       d.t += dt;
-      gulped += Math.max(0, Math.min(d.t, GULP[1]) - Math.max(was, GULP[0])) / (GULP[1] - GULP[0]);
-      if (d.t >= DRINK_S) drinks[side] = null;
+      gulped += dose * Math.max(0, Math.min(d.t, g1) - Math.max(was, g0)) / (g1 - g0);
+      if (d.t >= s) drinks[side] = null;
       else drunk[side] = drinkPose(d, side, targets[side], 0);
+    }
+    const mouth = ['leftArm', 'rightArm'].find((side) => drunk[side] && drinks[side].kind === 'relay');
+    const back = mouth ? drunk[mouth].reach * THREE.MathUtils.lerp(HEAD_BACK[0], HEAD_BACK[1], drunk[mouth].g) : 0;
+    pieces.head.pivot.rotation.x = -back;
+    tiltQ.setFromEuler(turn.set(-back, 0, 0));
+    // Where the relay's arms would have been with the head up: the glasses' poses were found
+    // there, and are turned with the head from there.
+    const upright = {};
+    if (back) {
+      for (const side of ['leftArm', 'rightArm']) {
+        if (!drunk[side] || drinks[side].kind === 'sip') continue;
+        upright[side] = { x: drunk[side].x, z: drunk[side].z };
+        drunk[side].x -= back * ARM_FOLLOW;
+      }
     }
     for (const [name, target] of Object.entries(targets)) {
       if (swung && name === swing.side) pieces[name].pivot.rotation.x = swung.x;
@@ -470,18 +624,40 @@ export function createClassicAvatar(spec, material) {
     // the item the hand's position (correct - the grip moves with the arm), but a held
     // item should not also inherit the arm's tilt, or it lies over at whatever angle the
     // arm is held at instead of standing up the way something actually gripped would.
+    // The relay's slide out of the fist, put back the moment it is over.
+    for (const side of ['leftArm', 'rightArm']) {
+      if (!heldMesh[side]) continue;
+      if (drunk[side]?.slide) heldMesh[side].position.copy(drunk[side].slide);
+      else heldMesh[side].position.set(0, 0, 0);
+    }
     for (const side of ['leftArm', 'rightArm']) {
       const mesh = heldMesh[side];
       if (!mesh) continue;
-      mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x;
-      // A glass being drunk from rolls in towards the mouth: +z tips the top to -x, which is
-      // inward for the right hand and, through the left hand's mirror, for the left one too
-      // once the sign is flipped.
-      const roll = drunk[side] ? (side === 'rightArm' ? 1 : -1) * drunk[side].roll : 0;
-      mesh.rotation.z = -pieces[side].pivot.rotation.z + roll;
+      // A glass being drunk from: the arm's own turn taken off the orientation it should have
+      // on the body (the left mesh's mirror is in its scale, and the mirrored q undoes it).
+      if (drunk[side]) {
+        const pivot = pieces[side].pivot;
+        unArm.copy(pivot.quaternion).invert();
+        if (upright[side]) {
+          // The glass where it would be on the body with the head up, turned about the neck,
+          // and handed back to the arm that is actually there.
+          armQ.setFromEuler(turn.set(upright[side].x, 0, upright[side].z));
+          at.copy(mesh.position).add(handAttach[side].position).applyQuaternion(armQ).add(pivot.position);
+          neck.copy(pieces.head.pivot.position).add(pieces.core.pivot.position);
+          at.sub(neck).applyQuaternion(tiltQ).add(neck).sub(pivot.position).applyQuaternion(unArm).sub(handAttach[side].position);
+          mesh.position.copy(at);
+          mesh.quaternion.copy(unArm).multiply(tiltQ).multiply(drunk[side].q);
+        } else {
+          mesh.quaternion.copy(unArm).multiply(drunk[side].q);
+        }
+        continue;
+      }
+      const tilt = fp && !(swung && side === swing.side) ? FP_TILT[holding[side]] : null;
+      mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x + (tilt?.x || 0);
+      mesh.rotation.z = -pieces[side].pivot.rotation.z + (side === 'rightArm' ? 1 : -1) * (tilt?.z || 0);
       // A shield turns to face forward while it blocks and back out to the side after;
       // the same mirrored sign setHeldItem gave it, so left and right both turn inward.
-      const yaw = blocks.includes(side) && holding[side] === 'shield' ? Math.PI / 2 : (ITEM_YAW[holding[side]] || 0);
+      const yaw = blocks.includes(side) && holding[side] === 'shield' ? Math.PI / 2 : tilt?.yaw ?? (ITEM_YAW[holding[side]] || 0);
       mesh.rotation.y = damp(mesh.rotation.y, (side === 'leftArm' ? 1 : -1) * yaw, 12, dt);
       if (mesh.userData.light) {
         // Two sines at unrelated rates, so the flicker never settles into a visible beat;
@@ -490,6 +666,22 @@ export function createClassicAvatar(spec, material) {
         const flicker = 0.85 + 0.1 * Math.sin(t * 23) + 0.05 * Math.sin(t * 7.3);
         mesh.userData.light.intensity = TORCH_LIGHT.intensity * nightOf(material) * flicker;
       }
+    }
+    // The relay's stream, only while it is actually pouring: from the pouring glass's rim
+    // into the drinking glass's, both read in the body's own frame (so whatever the body's
+    // parents are doing, the two ends agree).
+    const pourer = drinks.leftArm?.kind === 'pour' ? 'leftArm' : drinks.rightArm?.kind === 'pour' ? 'rightArm' : null;
+    const pd = pourer && drinks[pourer], [p0, p1] = RELAY_GULP;
+    stream.visible = !!(pd && drunk[pourer] && pd.t > p0 + 0.1 && pd.t < p1 && heldMesh[pourer] && heldMesh[OTHER[pourer]]);
+    if (stream.visible) {
+      object.updateMatrixWorld(true);
+      object.worldToLocal(heldMesh[pourer].localToWorld(pourFrom.copy(RIM)));
+      object.worldToLocal(heldMesh[OTHER[pourer]].localToWorld(pourTo.copy(RIM)));
+      pourTo.sub(pourFrom);
+      const length = pourTo.length();
+      stream.position.copy(pourFrom);
+      stream.quaternion.setFromUnitVectors(DOWN, pourTo.divideScalar(length || 1));
+      stream.scale.set(1, Math.max(length, 0.005), 1);
     }
   }
 
@@ -511,6 +703,7 @@ export function createClassicAvatar(spec, material) {
   function dispose() {
     for (const piece of Object.values(pieces)) piece.mesh.geometry.dispose();
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
+    stream.geometry.dispose();
   }
 
   return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed, handOver };

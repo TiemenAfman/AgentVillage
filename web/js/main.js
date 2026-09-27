@@ -717,10 +717,39 @@ function interactables() {
 let whereSentAt = 0;
 let whereLastX = null, whereLastZ = null;
 
+// Where you last stood on foot, so the sky and back (or a closed and reopened window)
+// puts you down there again rather than on the town square every time. Per browser and
+// per island - keyed by `terrain.seed`, the one identity the page has for sure - and in
+// scene coordinates, which for home are its local ones and never move (a grown grid grows
+// centred). The server's /api/where is not the store for it: a visitor is refused there,
+// and a spot is a convenience of this screen, not something the island has to know.
+function spotKey() {
+  return state.terrain ? `promptholm.walk.spot.${state.terrain.seed}` : null;
+}
+function rememberSpot(w) {
+  if (state.inside) return;             // a room's floor is not a place on the island
+  const spot = { at: [w.pos.x, w.pos.z], yaw: w.yaw, pitch: w.camPitch };
+  state.lastSpot = spot;
+  const key = spotKey();
+  if (!key) return;
+  try { localStorage.setItem(key, JSON.stringify(spot)); } catch { /* memory still has it */ }
+}
+function recalledSpot() {
+  let spot = state.lastSpot;
+  if (!spot) {
+    const key = spotKey();
+    try { spot = key && JSON.parse(localStorage.getItem(key)); } catch { spot = null; }
+  }
+  if (!spot || !Array.isArray(spot.at) || !spot.at.every(Number.isFinite) || !Number.isFinite(spot.yaw)) return null;
+  const [x, z] = spot.at;
+  return {
+    at: [x, z],
+    facing: [x + Math.sin(spot.yaw) * 10, z + Math.cos(spot.yaw) * 10],
+    pitch: Number.isFinite(spot.pitch) ? spot.pitch : undefined,
+  };
+}
+
 function reportWhere({ final = false } = {}) {
-  // Where the keeper stands is written down so an agent at the command line can find
-  // them. A visitor is not who that is about, and the server refuses them anyway.
-  if (state.guest) return;
   const w = state.walk && state.walk.state;
   if (!w || !w.pos) return;
   const now = performance.now();
@@ -729,6 +758,10 @@ function reportWhere({ final = false } = {}) {
   whereSentAt = now;
   whereLastX = w.pos.x;
   whereLastZ = w.pos.z;
+  if (state.mode === 'walk' || final) rememberSpot(w);
+  // Where the keeper stands is written down so an agent at the command line can find
+  // them. A visitor is not who that is about, and the server refuses them anyway.
+  if (state.guest) return;
   mine('/api/where', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1379,6 +1412,8 @@ function enterWalk(spot = null) {
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
   let at = [0, 0], facing = null;
+  // No place in mind: back where you last stood, and only the very first time the square.
+  if (!spot) spot = recalledSpot();
   if (spot && spot.at) {
     at = spot.at;
     facing = spot.facing || null;
