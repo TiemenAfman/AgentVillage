@@ -424,6 +424,13 @@ export function createUI(handlers) {
   let youOn = true;
   try { youOn = localStorage.getItem(YOU_KEY) !== '0'; } catch { /* private window: on */ }
 
+  // The director (web/js/director.js, Plans/regisseur.md): the camera wandering off by itself
+  // to watch something happen when nobody has touched the island for a while. On unless
+  // switched off, per browser like the arrow.
+  const DIRECTOR_KEY = 'promptholm.director';
+  let directorOn = true;
+  try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
+
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
@@ -574,6 +581,10 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${youOn
         ? 'On: when you go up into the sky, YOU and an arrow hang over where you left yourself standing.'
         : 'Off: you still stand where you left yourself, without the arrow. A route you give from above keeps its dots and ring.'}</p>`
+      + `<div class="chips wrap" style="margin-top:9px"><button class="chip${directorOn ? ' on' : ''}" data-director="1" aria-pressed="${directorOn}">Wander by itself</button></div>`
+      + `<p class="muted" style="margin-top:9px">${directorOn
+        ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
+        : 'Off: the camera stays where you leave it.'}</p>`
       + '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -592,6 +603,11 @@ export function createUI(handlers) {
     el('settings-body').querySelectorAll('[data-youarrow]').forEach((b) => b.addEventListener('click', () => {
       youOn = !youOn;
       try { if (youOn) localStorage.removeItem(YOU_KEY); else localStorage.setItem(YOU_KEY, '0'); } catch { /* kept for this page only */ }
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {
+      directorOn = !directorOn;
+      try { if (directorOn) localStorage.removeItem(DIRECTOR_KEY); else localStorage.setItem(DIRECTOR_KEY, '0'); } catch { /* kept for this page only */ }
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-rebind]').forEach((b) => b.addEventListener('click', () => {
@@ -1068,7 +1084,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn, directorEnabled: () => directorOn,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close

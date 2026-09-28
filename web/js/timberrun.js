@@ -547,6 +547,16 @@ export function createTimberRun({ scene, material, groundAt }) {
       const trip = drawTrip(now, step, night);
       drawCrew(now, step, night, trip);
     },
+    // One of the yard's hands in world [x, z], for the director (Plans/regisseur.md); null when
+    // there is no yard or they are in the shed. Which one turns with the minute, so the camera
+    // does not always look at the same man.
+    handAt(now) {
+      const hands = Object.values(crew).filter((f) => f && f.group.visible);
+      if (!hands.length) return null;
+      const f = hands[Math.floor(now / 60000) % hands.length];
+      const v = f.group.getWorldPosition(new THREE.Vector3());
+      return [v.x, v.z];
+    },
     // For the dossier and ?timber: what the wagon is doing now.
     stageAt: (now) => (plan ? tripAt(plan, now, phase).stage : null),
     // Where the horse is at `now`, and the trip it is on: for the camera of whoever is looking
