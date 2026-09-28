@@ -958,6 +958,9 @@ export function createUI(handlers) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
+    // An offer that stands for as long as you do (the helm, while you steer) goes down in
+    // the HUD's own column: over the middle it hid the very ship you were sailing.
+    p.classList.toggle('low', near.kind === 'leavehelm');
     // Whatever is within reach answers to E, or to whatever the controller map calls
     // interact. A board you are already standing at is the exception: it names its own
     // key, because what it offers is the way back out.

@@ -260,6 +260,8 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease;
 }
 .walk-prompt b { color: var(--accent); }
+/* ui.js setWalkPrompt: a standing offer takes its place in the bottom strip instead. */
+.walk-prompt.low { position: static; }
 /* What a keeper says (web/js/ui.js setSpeech): a card in the walk HUD's own column, so it
    sits under the face in the middle of the screen and above the key row, like a subtitle. */
 .speech { max-width: min(520px, calc(100vw - 28px)); padding: 10px 16px; display: grid; gap: 4px; text-align: center; font-size: 14px; line-height: 1.45; animation: risein .2s ease; }
