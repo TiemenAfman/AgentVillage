@@ -128,6 +128,18 @@ after an apply is byte-identical again. `placeAll` refuses nothing handed to it 
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
 feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
+**A project keeps to one piece of land** ([Plans/wijkjes-samenvoegen.md](Plans/wijkjes-samenvoegen.md)).
+The scan founds no annex for a project any more (only the quay, `annexes(rec)`): a boxed-in
+hamlet grows wider through `growLobe`'s rungs - past `RCAP`, then belt 0 up against its
+neighbours (never onto their land), then onto beach - and a house that finds its land roaded
+asks for one super-cell it can stand on (`roomy`, a *filter* per rung: as a preference the
+first rung was satisfied by a roaded cell and the wider ones never ran). Only a project walled
+in on every side goes to the commons. What already stands in pieces is brought home by the
+planner's `merge` op (`{ district, lobe }`, the lobe that stays becomes lobe 0 with its road
+and office renamed to match; `diff.scattered` must be empty), and in plan mode a click selects
+the whole project, so a drag no longer tears one apart. Known gap: on an island founded small
+the first hamlet by the square can be walled in by neighbours' belt-0 growth before it needs
+the land, and its later houses lodge on the commons.
 The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
 exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
 paved, because `clearRoads` throws every path away and no door re-routes a road nobody's

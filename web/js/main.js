@@ -6550,7 +6550,7 @@ async function boot() {
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
-      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(),
+      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(), onMerge: () => state.plan.merge(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),
