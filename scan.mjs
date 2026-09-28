@@ -16,7 +16,7 @@ import {
   loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
-import { GOLDPIT_ID } from './shared/gold.mjs';
+import { GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
@@ -326,6 +326,26 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit', district: null,
       plot: pitPlot, door: doorOf(GOLDPIT_ID, pitPlot), name: 'The gold pit', label: 'Gold pit',
       title: 'The five-hour usage window, one bar a percent',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The goldsmith and the gold mine (Plans/goudmijn.md), on the pit's terms: where they
+  // stand and nothing more. How much ore is in the mine is the keeper's week, read live by
+  // their own page with the pit's count, and the cart that runs between the three when the
+  // five-hour window turns over is the page's alone.
+  for (const [id, civicType, name, label, title] of [
+    [GOLDSMITH_ID, 'goldsmith', 'The goldsmith', 'Goldsmith', 'Where the ore becomes bars for the pit'],
+    [GOLDMINE_ID, 'goldmine', 'The gold mine', 'Gold mine', 'The seven-day usage window, one lump of ore a percent'],
+  ]) {
+    const p = plot(id);
+    if (!p) continue;
+    civics.push({
+      id, kind: 'civic', civicType, district: null,
+      plot: p, door: doorOf(id, p), name, label, title,
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },

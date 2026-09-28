@@ -123,7 +123,9 @@ test('the desktop app\'s last sample is a reading, its reset five hours after th
   assert.equal(r.fiveHour.used, 11);
   assert.equal(r.at, start + 6 * Q, 'when the app sampled it, not when we read it');
   assert.equal(r.fiveHour.resetsAt, start + 3 * Q + 5 * H, 'the first sample with usage in it opened the window by then');
-  assert.equal(r.sevenDay, null, 'the app gives no reset for the seven days, and none is invented');
+  // The week (Plans/goudmijn.md, tests/goldmine.test.mjs): its number, and no reset while the
+  // history shows the week never turning over.
+  assert.deepEqual(r.sevenDay, { used: 12, resetsAt: null }, 'no reset for the seven days is invented');
   assert.equal(goldOf(r, start + 6 * Q).bars, 89);
   assert.equal(goldOf(r, start + 6 * Q).source, 'desktop');
 

@@ -102,7 +102,10 @@ export function reachableFromSquare(village, size) {
 // this calls disconnected is a house nobody living in it could walk out of either.
 export function houseGate(village, size, door) {
   if (!door) return null;
-  const cells = walkableCells(village, size);
+  return gateIn(walkableCells(village, size), size, door);
+}
+
+function gateIn(cells, size, door) {
   const [hx, hz] = door;
   let best = null, bd = Infinity;
   for (let dz = -GATE_REACH; dz <= GATE_REACH; dz++) {
@@ -116,4 +119,40 @@ export function houseGate(village, size, door) {
     }
   }
   return best;
+}
+
+// A walk from one doorstep to another by road, as cells: `from`, every road cell between the
+// gate each of the two would step out onto (houseGate's), and `to`. Null when either has no
+// road within GATE_REACH or the roads between them do not join. Breadth first over the same
+// graph a settler walks (settlerwalk's roadRoute), so whatever takes this route - the gold
+// mine's cart and the goldsmith's barrow, web/js/goldrun.js - never takes a road a settler
+// could not. Plain arithmetic, like the rest of this file, so tests/goldmine.test.mjs asks it
+// the same question the page does.
+export function roadBetween(village, size, from, to) {
+  if (!from || !to) return null;
+  const cells = walkableCells(village, size);
+  const a = gateIn(cells, size, from), b = gateIn(cells, size, to);
+  if (a == null || b == null) return null;
+  const prev = new Map([[a, -1]]);
+  const queue = [a];
+  for (let head = 0; head < queue.length && !prev.has(b); head++) {
+    const k = queue[head];
+    const gx = k % size, gz = (k - gx) / size;
+    for (const [nx, nz] of [[gx + 1, gz], [gx - 1, gz], [gx, gz + 1], [gx, gz - 1]]) {
+      if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
+      const n = nx + nz * size;
+      if (!cells.has(n) || prev.has(n)) continue;
+      prev.set(n, k);
+      queue.push(n);
+    }
+  }
+  if (!prev.has(b)) return null;
+  const road = [];
+  for (let k = b; k !== -1; k = prev.get(k)) road.push([k % size, (k - (k % size)) / size]);
+  road.reverse();
+  const same = (c, d) => c[0] === d[0] && c[1] === d[1];
+  const out = [[from[0], from[1]]];
+  for (const c of road) if (!same(c, out[out.length - 1])) out.push(c);
+  if (!same(to, out[out.length - 1])) out.push([to[0], to[1]]);
+  return out;
 }

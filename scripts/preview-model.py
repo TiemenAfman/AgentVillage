@@ -3,8 +3,15 @@
     blender --background --python scripts/preview-model.py                  everything
     blender --background --python scripts/preview-model.py -- props         one set
     blender --background --python scripts/preview-model.py -- prop_barrel   one asset
+    blender --background --python scripts/preview-model.py -- --around prop_barrel
 
 or `npm run models:preview [-- props prop_barrel]`, which finds Blender for you.
+
+`--around` renders every asset from five sides instead of one - the usual front right, and
+then straight on from the front, the back, the left and the right - as
+assets/<set>/renders/<asset>-<side>.png. One view hides whatever the model's back is doing,
+and the island turns half its buildings round (Plans/goudmijn.md: "check it from several
+sides").
 
 The renders go to assets/<set>/renders/<asset>.png and are gitignored: they are made
 from a .blend that is committed, so anybody can make them again and nobody has to
@@ -34,6 +41,14 @@ asset_of, blend_of, model_sets = EXPORT['asset_of'], EXPORT['blend_of'], EXPORT[
 # 26 up and 40 back). Blender coordinates, so -Y is the island's +Z and the front of the
 # model. High enough to read a roof, low enough to see a door.
 VIEW = Vector((3, -4, 2.1)).normalized()
+# The four sides for --around, a little off square so a face straight on is not a flat card,
+# and a touch higher than VIEW so a roof still reads from the back.
+AROUND = {
+    'front': Vector((0.7, -4, 2.4)).normalized(),
+    'back': Vector((-0.7, 4, 2.4)).normalized(),
+    'left': Vector((-4, -0.7, 2.4)).normalized(),
+    'right': Vector((4, 0.7, 2.4)).normalized(),
+}
 MARGIN = 1.12          # how much air to leave around the asset
 SIZE = 640
 
@@ -79,14 +94,14 @@ def box_of(objects):
     return lo, hi
 
 
-def frame(scene, objects):
+def frame(scene, objects, view=VIEW):
     """One ortho camera, sized to what it is looking at, aimed at the middle of it."""
     lo, hi = box_of(objects)
     middle = (lo + hi) / 2
     reach = (hi - lo).length / 2 or 0.5
     camera = bpy.data.objects.new('Preview camera', bpy.data.cameras.new('Preview camera'))
     scene.collection.objects.link(camera)
-    camera.location = middle + VIEW * (reach * 4 + 1)
+    camera.location = middle + view * (reach * 4 + 1)
     camera.rotation_euler = (middle - camera.location).to_track_quat('-Z', 'Y').to_euler()
     camera.data.type = 'ORTHO'
     # Twice the reach is the whole asset corner to corner; the margin keeps it off the edge.
@@ -107,7 +122,7 @@ def assets_in(scene, set_name):
     return found
 
 
-def render_set(set_name, wanted):
+def render_set(set_name, wanted, around=False):
     source = blend_of(ROOT / 'assets' / set_name)
     bpy.ops.wm.open_mainfile(filepath=str(source))
     scene = bpy.context.scene
@@ -125,17 +140,21 @@ def render_set(set_name, wanted):
         keep = set(objects)
         for obj in scene.objects:
             obj.hide_render = obj not in keep
-        camera = frame(scene, objects)
         out.mkdir(parents=True, exist_ok=True)
-        scene.render.filepath = str(out / f'{asset}.png')
-        bpy.ops.render.render(write_still=True)
-        bpy.data.objects.remove(camera, do_unlink=True)
+        views = [('', VIEW)] + ([(f'-{side}', v) for side, v in AROUND.items()] if around else [])
+        for suffix, view in views:
+            camera = frame(scene, objects, view)
+            scene.render.filepath = str(out / f'{asset}{suffix}.png')
+            bpy.ops.render.render(write_still=True)
+            bpy.data.objects.remove(camera, do_unlink=True)
+            print(f'rendered {set_name}/{asset} -> assets/{set_name}/renders/{asset}{suffix}.png')
         done.append(asset)
-        print(f'rendered {set_name}/{asset} -> assets/{set_name}/renders/{asset}.png')
     return done
 
 
 args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+around = '--around' in args
+args = [a for a in args if a != '--around']
 # An argument is either a set or an asset, and which it is needs no flag: the sets are the
 # folders under assets/, and anything else is the name of a thing inside one.
 known = model_sets()
@@ -143,7 +162,7 @@ sets = [a for a in args if a in known]
 wanted = {a for a in args if a not in known}
 rendered = []
 for name in (sets or known):
-    rendered += render_set(name, wanted)
+    rendered += render_set(name, wanted, around)
 if wanted and not rendered:
     raise ValueError('no such asset: ' + ', '.join(sorted(wanted)))
 print(f'{len(rendered)} preview(s) rendered')

@@ -38,7 +38,7 @@ import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
 import { ensureStatusLine } from './lib/statusline.mjs';
-import { goldOf } from './shared/gold.mjs';
+import { goldOf, mineOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
 
@@ -541,7 +541,8 @@ async function handle(req, res) {
   // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
   // public path, so only the keeper's own page gets it - how much of somebody's
   // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
-  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold.
+  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold. The
+  // gold mine's week is in it as `mine`, under the same rule.
   if (p === '/api/gold') return json(res, 200, goldNow());
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
@@ -1510,7 +1511,14 @@ function watchData() {
 // The desktop app's own samples (lib/usage.mjs readDesktopUsage) ride the same poll: it
 // rewrites its file every quarter of an hour, and 75 kB parsed every five seconds is still
 // nothing beside a scan.
-const goldNow = () => goldOf(currentUsage(), Date.now());
+//
+// The gold mine's week rides along as `mine` (shared/gold.mjs mineOf, Plans/goudmijn.md):
+// the same reading, the same keeper, the same door - one place decides who sees any of it.
+const goldNow = () => {
+  const reading = currentUsage();
+  const now = Date.now();
+  return { ...goldOf(reading, now), mine: mineOf(reading, now) };
+};
 const GOLD_POLL_MS = 5000;
 function watchGold() {
   let said = JSON.stringify(goldNow());

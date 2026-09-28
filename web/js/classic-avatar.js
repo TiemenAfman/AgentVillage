@@ -193,6 +193,19 @@ function hammerGeometry() {
   ], false));
 }
 
+// The miner's pick (web/js/goldmine.js, Plans/goudmijn.md): the cleaver's terms - a villager's
+// tool, not in HAND_ITEMS, handed to him after normalising. The hammer's handle, longer, with a
+// head that comes to a point either way across the top of it, so it swings like the hammer.
+const PICK_HANDLE = 0x8b5e3c, PICK_HEAD = 0x4a4c52;
+function pickaxeGeometry() {
+  return withSheet(mergeGeometries([
+    box(0.02, 0.24, 0.02, PICK_HANDLE, { y: -0.03 }),
+    box(0.03, 0.035, 0.1, PICK_HEAD, { y: 0.155 }),
+    box(0.018, 0.022, 0.07, PICK_HEAD, { y: 0.15, z: 0.075 }),
+    box(0.018, 0.022, 0.07, PICK_HEAD, { y: 0.15, z: -0.075 }),
+  ], false));
+}
+
 // The butcher's cleaver (web/js/butcher.js, Plans/slagerij.md) - a villager's tool, not a
 // player's: it is deliberately not in HAND_ITEMS (avatar.js), so no inventory slot offers it,
 // normalizeAvatar drops it and the sea's lookOf never has to know it; the butcher is handed it
@@ -237,7 +250,7 @@ function heldPartGeometry(spec, names) {
 // a dozen primitives) that nothing here is worth caching; the baked ones go through
 // heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
 // exported for the inventory's slot icons, which show the item on its own.
-const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry };
+const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry, pickaxe: pickaxeGeometry };
 export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD, torch: TORCH };
 
 export function heldItemGeometry(item, spec) {
@@ -337,7 +350,7 @@ export function createClassicAvatar(spec, material) {
   // the counter-rotation takes over again at the end of the recovery. A block is a held pose, so it goes through the same targets and
   // damping as everything else: the shield arm comes up in front, and the shield turns from
   // its resting yaw to a quarter turn so its face points forward.
-  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol', 'cleaver']);
+  const SWING_S = 0.45, BLOCK_ARM_X = -1.25, WEAPONS = new Set(['sword', 'hammer', 'parasol', 'cleaver', 'pickaxe']);
   let swing = null;   // { side, t, from } while an attack is playing
   const ease = (u) => u * u * (3 - 2 * u);
   // The hand that swings when nobody says which: a weapon if there is one (right first),
@@ -588,6 +601,9 @@ export function createClassicAvatar(spec, material) {
     for (const side of blocks) targets[side] = BLOCK_ARM_X;
     // Both hands on the bars, whatever they are holding.
     if (ride) targets.leftArm = targets.rightArm = RIDE_ARM;
+    // Both hands on the handles of a barrow or the rim of a cart (web/js/goldrun.js): the
+    // angle is the caller's, since a barrow's handles are lower than a cart's rim.
+    if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
     // A glass being handed over: reached out for the first half second, through the same
     // damping as any held pose, and not in the hand at all until the settler has drunk it.
     for (const side of ['leftArm', 'rightArm']) {

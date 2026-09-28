@@ -393,6 +393,20 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
+// The goldsmith's fire, the same way (scripts/build-goldsmith.py, web/js/goldsmith.js): it
+// flares while a load of the mine's ore melts, so it cannot be part of the loaf.
+export const isGoldsmithMoving = (n) => /^civic_goldsmith glow(:\d+)?$/.test(n);
+// Where a still part of a baked asset stands - its Blender origin, which the bake keeps as
+// `at` on every one of its material slots. For the parts that are measured rather than drawn
+// apart: the mine's bin and cart stop, the goldsmith's bench.
+export function partAt(asset, name) {
+  const full = `${asset} ${name}`;
+  const slot = models.assetParts(asset).find((n) => n === full || n.startsWith(full + ':'));
+  return slot ? models.part(slot).at.slice() : null;
+}
+// How far the gold mine's hill is modelled too high (DATUM in scripts/build-goldmine.py): its
+// rim goes that far under the grass, and a bake stands on its lowest point.
+export const MINE_DATUM = 0.34;
 // The static shops of the town's plan (Plans/knus-dorpscentrum.md), each one baked asset
 // `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
 // part by part (APART) so the door can be reached between the crates on the pavement, and
@@ -1836,6 +1850,26 @@ function civic(parts, spec, rng) {
       animated.ship = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('batavia') - draught, solids: shipSolids(draught), floats: true };
     }
+    case 'goldmine': {
+      // The gold mine (Plans/goudmijn.md): the hill lowered by its datum so its rim is under the
+      // grass on any slope a lot may have, and the adit, the rails and the bin on the ground.
+      // The ore in the bin is instanced like the pit's bars (web/js/goldmine.js), and the cart
+      // is a mesh of its own because it leaves - web/js/goldrun.js pushes it down the road.
+      parts.push(...meshAsset('civic_goldmine_hill', 0xffffff, { y: -MINE_DATUM }), ...meshAsset('civic_goldmine'));
+      Object.assign(anchors, meshAnchors('civic_goldmine'));
+      animated.orepile = { at: partAt('civic_goldmine', 'bin') };
+      animated.minecart = { at: partAt('civic_goldmine', 'cartstop') };
+      return { anchors, animated, height: models.heightOf('civic_goldmine') };
+    }
+    case 'goldsmith': {
+      // The workshop, the furnace and the bench, less the fire in the furnace's mouth, which
+      // goldsmith.js hangs on its own and brightens while ore melts. The goldsmith and the
+      // miner are the player's rig, dressed there and walked by goldrun.js.
+      parts.push(...meshAsset('civic_goldsmith', 0xffffff, { skip: isGoldsmithMoving }));
+      Object.assign(anchors, meshAnchors('civic_goldsmith'));
+      animated.goldsmith = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_goldsmith') };
+    }
     case 'goldpit': {
       // Baked concrete and coping stay one draw call; the shrinking stock is instanced.
       parts.push(...meshAsset('civic_goldpit'));
@@ -2144,6 +2178,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The gold pit is a slab with walls on it, open at the front so a barrow could be run in;
   // a step across that mouth is the one thing a silo is built not to have.
   'goldpit',
+  // The gold mine is a hill with an apron of its own, both going under the grass: a step round
+  // a hill is a plinth under a mountain.
+  'goldmine',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',
@@ -2268,6 +2305,9 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   for (const a of Object.values(animated)) if (a && a.at) a.at = [a.at[0], a.at[1] + PORCH_RISE, a.at[2]];
 
   const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
+  // What it comes to, for whatever has to stand on it and walk off it: the upper course's
+  // outline and its height (web/js/goldrun.js walks the goldsmith off his).
+  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE };
   if (earthen) {
     // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
     // plateau to the actual tent, while keeping the top exactly under the groundsheet.
@@ -2275,7 +2315,7 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
       x, y: -PORCH_SKIRT, z,
       sx: r.x1 - r.x0 + .05, sy: PORCH_SKIRT + PORCH_RISE, sz: r.z1 - r.z0 + .05,
     }));
-    return;
+    return deck;
   }
   // Two courses, not one: the lower is wider and comes up half way, so whichever side the
   // door is on there is something to step onto before the floor. One tall kerb all round
@@ -2284,6 +2324,7 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
     slab(parts, x, z, (r.x1 - r.x0) + (over + tread) * 2, (r.z1 - r.z0) + (over + tread) * 2, PORCH_SKIRT + PORCH_RISE * 0.45);
     slab(parts, x, z, (r.x1 - r.x0) + over * 2, (r.z1 - r.z0) + over * 2, PORCH_SKIRT + PORCH_RISE);
   });
+  return deck;
 }
 
 // A rounded rectangle out of the primitives this file already has: two boxes crossed and
@@ -2369,8 +2410,9 @@ export function buildBuilding(spec, ctx = {}) {
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
   const wallRects = ownSolids || footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
+  let deck = null;
   if (wantsPorch(spec)) {
-    porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
+    deck = porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
   }
   // And the yard last of all, which is the whole reason houseBody() handed it back rather
@@ -2408,6 +2450,7 @@ export function buildBuilding(spec, ctx = {}) {
     geometry, anchors, animated, height, width: w,
     bbox: geometry.boundingBox.clone(), solids, walls,
     ...(floats ? { floats } : {}),
+    ...(deck && s === 1 ? { porch: deck } : {}),
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }

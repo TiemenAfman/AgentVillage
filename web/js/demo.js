@@ -23,6 +23,8 @@ import { createInterior, INDOOR_GLOW } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachGoldPile } from './goldpit.js';
+import { attachOrePile } from './goldmine.js';
+import { attachFurnace } from './goldsmith.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
@@ -43,6 +45,8 @@ const CIVIC = [
   ['issues', 'Island board', 'always'],
   ['mailbox', 'Postbox', 'with the hall'],
   ['goldpit', 'Gold pit', 'always'],
+  ['goldsmith', 'Goldsmith', 'always'],
+  ['goldmine', 'Gold mine', 'always'],
   ['well', 'Well', '5 settlers'],
   ['market', 'Market stalls', '10'],
   ['tavern', 'Tavern', '15'],
@@ -260,6 +264,19 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.goldpile) {
     const at = built.animated.goldpile.at;
     attachGoldPile(scene, [x + at[0], at[1], z + at[2]], material);
+  }
+  // The gold mine's week, a full bin for the same reason, and the goldsmith's furnace melting a
+  // load every other twelve seconds so its flare can be looked at without a window turning
+  // over (Plans/goudmijn.md; on the island goldrun.js lights it).
+  if (built.animated && built.animated.orepile) {
+    const at = built.animated.orepile.at;
+    attachOrePile(scene, [x + at[0], at[1], z + at[2]]);
+  }
+  if (built.animated && built.animated.goldsmith) {
+    const at = built.animated.goldsmith.at;
+    const furnace = attachFurnace(scene, [x + at[0], at[1], z + at[2]], material);
+    let t = 0;
+    if (furnace) lives.push((dt) => { t += dt; furnace.melt(t % 24 < 12); furnace.update(dt); });
   }
   // The lighthouse. Hung straight on the scene rather than on a group of its own, which is
   // how this page places every other moving part - the field has no plots and nothing on it
