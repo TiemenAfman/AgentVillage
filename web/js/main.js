@@ -58,6 +58,7 @@ import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
+import { opensChronicle, chronicleInteractable, isChronicle, HOVER as CHRONICLE_HOVER } from './chronicle-house.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
@@ -785,6 +786,9 @@ function interactables() {
         id: rec.id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
         get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
       });
+    } else if (opensChronicle(rec)) {
+      // At the foot of the portico, like the castle's gate: web/js/chronicle-house.js.
+      out.push(chronicleInteractable(rec));
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
@@ -1271,6 +1275,7 @@ function walkCallbacks() {
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
+      else if (it.kind === 'chronicle') openChronicle();
       else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
@@ -1283,7 +1288,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1884,6 +1889,24 @@ function openTownHall() {
   if (keeperOnly('read the register')) return;
   if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.townHall.open();
+}
+
+// The chronicle house keeps the island's history (Plans/kroniekhuis.md), and what it opens is
+// the chronicle bar: ▶ from the founding day, at the speed the bar is set to - the same state
+// onPlay moves, through the same setChronicleTime. Not keeper-only, unlike the register: the
+// chronicle is drawn from village.json, which every visitor already has. From the sky, because
+// the bar is the sky view's (ui.js hides it on foot) and a replay takes every house out from
+// around a walker, so E at its door flies up first; exitWalk frames the whole island on the way,
+// which is the view a replay wants. On the phone exitWalk refuses, and there is no chronicle
+// house of ours there to ask anyway.
+function openChronicle() {
+  if (state.mode === 'walk') exitWalk();
+  if (state.mode !== 'orbit') return;
+  state.ui.closeDossier();
+  const { start } = chronicleBounds();
+  state.chronicle.playing = true;
+  setChronicleTime(start);
+  state.ui.toast('The chronicle of the island, from its founding day. <b>Live</b> brings it back to now.');
 }
 
 // --------------------------------------------------------------- sending someone away
@@ -5082,6 +5105,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // water you cross - so a click on one is a click on nothing, and closing the dossier
     // is the right answer.
     // A body on a visiting island is the same: named on hover, but nothing to open.
+    // And our chronicle house opens the chronicle rather than a dossier: the dossier of a civic
+    // building is its name and a date, and the chronicle is that date and every other one. A
+    // neighbour's is never in state.byId, so it stays a click on nothing (chronicle-house.js).
+    if (hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
     if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else state.ui.closeDossier();
   }
@@ -5644,6 +5671,7 @@ function subPathOf(spec, d) {
 }
 
 function labelSub(spec) {
+  if (isChronicle(spec)) return [spec.title, CHRONICLE_HOVER].filter(Boolean).join(' · ');
   if (spec.kind === 'civic') return spec.title || '';
   const d = state.districts.get(spec.district);
   const style = (PALETTE[spec.style] || PALETTE.unknown).name;
