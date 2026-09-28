@@ -31,6 +31,7 @@ import { attachProp, updateProp, attachBakery, updateBakery } from './countrysid
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
 import { attachButcher, updateButcher } from './butcher.js';
+import { attachQuarry, updateQuarry } from './quarry.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -61,6 +62,12 @@ const CIVIC = [
   // is no river on the model sheet to stand it in.
   ['bridge', 'Bridge stone', '90'],
   ['castle', 'Castle', '100'],
+  // The trades past the castle (Plans/ambachten.md, Plans/mijlpalen-tot-tweehonderd.md): the
+  // copper steams on the island, not here - this page has no particles - and the quarry's crane
+  // swings a block round onto the tub, which runs it down to the stack.
+  ['brewery', 'Brewery', '106'],
+  ['trainingfield', 'Training field', '134'],
+  ['quarry', 'Quarry', '142'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
   // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
@@ -272,6 +279,11 @@ function place(spec, x, z, name, note) {
   if (built.animated && built.animated.butcher) {
     const at = built.animated.butcher.at;
     butchers.push(attachButcher(scene, [x + at[0], at[1], z + at[2]], material));
+  }
+  if (built.animated && built.animated.quarry) {
+    const at = built.animated.quarry.at;
+    const quarry = attachQuarry(scene, [x + at[0], at[1], z + at[2]], material);
+    if (quarry) lives.push((dt) => updateQuarry(quarry, dt));
   }
   drawHitbox(built, x, z);
   tag(x, z + 1.1, name, note);

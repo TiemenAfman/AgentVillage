@@ -73,6 +73,7 @@ import { clockBeat, wallBeat } from './dance.js';
 import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
 import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
 import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
+import { attachQuarry, updateQuarry, disposeQuarry } from './quarry.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -3684,6 +3685,13 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.butcher) {
     rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
   }
+  // The quarry's treadwheel crane and its tub (Plans/ambachten.md, web/js/quarry.js), hung on the
+  // record's group like the sawmill's blade. The brewery's copper steams from an anchor of its
+  // own beside the chimney's smoke.
+  if (built.animated && built.animated.quarry) {
+    rec.quarry = attachQuarry(group, built.animated.quarry.at, buildingMat);
+  }
+  if (built.animated && built.animated.steam) rec.steamAnchor = built.animated.steam.at;
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
   if (mail && built.animated && built.animated.mailflag) {
@@ -3785,6 +3793,7 @@ function disposeRecord(rec) {
   if (rec.bakery) disposeBakery(rec.bakery);
   if (rec.baker) disposeBaker(rec.baker);
   if (rec.butcher) disposeButcher(rec.butcher);
+  if (rec.quarry) disposeQuarry(rec.quarry);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -6444,6 +6453,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.butcher) updateButcher(rec.butcher, dt);
+  if (rec.quarry) updateQuarry(rec.quarry, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -6454,13 +6464,25 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
-    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron';
+    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'
+    // And the fire under the brewery's copper (Plans/ambachten.md).
+    || rec.spec.civicType === 'brewery';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
     if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {
       rec.smokeT = 0;
       const v = new THREE.Vector3(...rec.smokeAnchor).applyMatrix4(rec.group.matrixWorld);
+      state.particles.smoke([v.x, v.y, v.z]);
+    }
+  }
+  // The copper's steam, off the same particles and at twice the chimney's rate: a brew boils
+  // all day. `|| 0` because a guest island's records are not made by makeRecord.
+  if (rec.steamAnchor && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
+    rec.steamT = (rec.steamT || 0) + dt;
+    if (rec.steamT > 0.5) {
+      rec.steamT = 0;
+      const v = new THREE.Vector3(...rec.steamAnchor).applyMatrix4(rec.group.matrixWorld);
       state.particles.smoke([v.x, v.y, v.z]);
     }
   }

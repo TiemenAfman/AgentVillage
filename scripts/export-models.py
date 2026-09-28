@@ -19,6 +19,7 @@ on either. This file bakes what it is given and only refuses what it cannot expr
 """
 import bpy
 import json
+import re
 import sys
 from pathlib import Path
 from mathutils import Vector
@@ -78,7 +79,10 @@ def bake(set_name, source):
             assets.setdefault(asset, {'parts': [], 'anchors': {}})
         if obj.type == 'EMPTY' and obj.name.startswith('anchor.'):
             where = assets[asset]['anchors'] if asset is not None else anchors
-            where[obj.name.split('.', 1)[1]] = game(obj.matrix_world.translation)
+            # Blender keeps an object's name unique across the whole file, so a second asset's
+            # anchor.smoke comes out as anchor.smoke.001 (assets/workshops has two: the
+            # brewery's chimney and its copper). The anchor it names is still `smoke`.
+            where[re.sub(r'\.\d{3}$', '', obj.name.split('.', 1)[1])] = game(obj.matrix_world.translation)
         if obj.type != 'MESH' or not obj.get('building_part'):
             continue
         if asset is not None and not obj.name.startswith(asset):
