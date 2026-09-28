@@ -1,4 +1,4 @@
-# De ladder tot tweehonderd: de haven, het VOC-schip en de vloot
+| Naam | Het eerste schip is **de Batavia** (Tiemens naam ervoor). Voorstel voor het tweede en derde: naar de twee grootste wijken. | VOC-schepen heetten naar steden en kamers (Amsterdam, Batavia) || Hoe het in de layout staat | **Als civic-kavel**: `layout.plots['civic:ship']` = `{ gx, gz, w: 4, d: 16, rot }` (bij een oneven `rot` zijn `w` en `d` omgewisseld), zonder deur, en plakkerig zoals elk kavel. Het tweede en derde schip zijn `civic:ship:2` en `civic:ship:3`, met hetzelfde civicType. | Zo tekenen de bundel, elke pagina en elke bezoeker het via `buildings`, zonder nieuw veld. `planFairway` en `polderCandidate` weigeren al elke cel waar iets op staat, dus onder het schip wordt geen vaargeul gegraven en geen polder ingedijkt. De kroniek, de toast en het dossier komen gratis mee. `parseBundle` neemt een `w`/`d` tot **16** aan, ook als ze verschillen (`plot()`, `lib/islandbundle.mjs:342`). 16 is dus ook de grens: een langer kavel laat een oudere zee het hele eiland weigeren. Het is wel het eerste niet-vierkante civic-kavel: `lotOf`, het stempelen (`d: w`, `lib/layout.mjs:3352`) en alles wat alleen `p.w` leest, moet `p.d` leren. || Waar | **De rede**: een strook water van 4 bij 16 cellen, 8 tot 20 cellen van de kop van de kadehaven. De rede ligt evenwijdig aan de kust (vanaf de kade zie je het schip van opzij), en elke cel moet aan zes eisen voldoen (zie direct onder de tabel). Van de plekken die daaraan voldoen, wint de dichtste bij de kop. Is er geen plek, dan de volgende haven. | een gewone plekregel, zoals die van de vuurtoren en de kraan || Varen of niet | **Voor anker**, op de rede. Varen komt later, op de techniek die Martijn voor het galjoen bouwde (`CRAFTS` in `shared/crafts.mjs`, `stepOnDeck`, `shipBerth`). (Besloten met Tiemen, 28 september.) | Aan een steiger past hij niet. Een steiger is hoogstens vijf planken (`QUAY_REACH`), en ligplaatsen liggen vast op 2,0 van elkaar (`berthOf`); het galjoen ligt om die reden ook in diep water buiten zijn ligplaats (`shipBerth`). Het klopt ook historisch: VOC-schepen lagen op de rede van Texel, en de lading ging met lichters aan wal. || Hoe groot | **Groter dan het galjoen: een romp van ~12 eenheden (48 m), ~15 met de boegspriet, ~2,8 breed, de top van de grote mast ~11,5 boven het water.** Alles wat je belopen kunt is op mensenmaat: het hoofddek ~1,1 boven het water (zoals de kuil van het galjoen, 1,108), een reling van ~0,25 (1 m), treden binnen `STEP_UP`. (Besloten met Tiemen, 28 september; eerst 10 en 9, tot bleek dat het galjoen al 13 lang is.) | Settlers hebben de maat van het eiland: 0,43 eenheid is 1,72 m, bij 4 m per eenheid. Gemeten op de bakes, in eenheden: de speler 0,45, de deur van het stadhuis 0,72, een huis (`house`) 2,6 hoog, het stadhuis 3,8, het grote kasteel 5 breed en 6 hoog, de Benchy 1,3 lang. Het galjoen dat elk eiland sinds 28 september heeft (`boat:<region>`, Martijn, `scripts/build-pirateship.py`) is 13 lang met de boegspriet, 3,9 breed over de reling (7 over ra's en zeilen), met de top ~10,8 boven het water. Een verdiend schip dat kleiner is dan het gratis schip is geen beloning. De Batavia heeft echte VOC-verhoudingen: langer en slanker dan het galjoen, en hoger getuigd. Op ware grootte (45 m romp, 55 m mast) werd de mast 13,8, twee keer de nieuwe vuurtoren (hieronder); 11,5 houdt het silhouet van het eiland heel. |# De ladder tot tweehonderd: de haven, het VOC-schip en de vloot
 
 Begonnen op 28 september 2026. **Status: voorstel, er is nog niets gebouwd.** Onderaan staat wat
 Tiemen nog moet beslissen.
@@ -161,11 +161,24 @@ Dingen die per settler groeien, zodat de stukken tussen de treden niet leeg zijn
   bundel draagt geen aantal settlers (`stats` staat er bewust niet in), dus een bezoeker kan het
   niet zelf uitrekenen. Een oudere zee laat het veld vallen, en haar pagina's tekenen dan de lege
   helling.
+
+  Een romp van ~12 past niet op een 3x3. De werf krijgt een kavel van **5 bij 16**, loodrecht op
+  de kust:
+  - de landkant (minstens zes rijen, strand mag) draagt de loods, de bok en de stapels hout;
+  - de helling loopt de zeekant in het water af;
+  - de voorkant (+Z) is de zeekant.
+
+  16 is weer de grens van `parseBundle`.
 - **De vloot** (130–180): elke vijf settlers een boot, zie hieronder. Op het echte eiland zijn dat
   elf boten in elf stapjes.
 - **De polders** (150, 175, 200) en **het meubilair** (op leerlingen, tot 330): bestaan al.
 
 ## Het VOC-schip
+
+**Naast het galjoen.** Sinds 28 september (origin/main, Martijn) is de eerste boot van elk eiland
+een piratengaljoen dat vaart en waar je over het dek loopt. Dat blijft zo, en mag later ook eerder
+of anders verschijnen (Tiemen). De Batavia is het schip dat het dorp verdient en zelf bouwt:
+groter, en voor anker.
 
 | Vraag | Besluit | Waarom |
 |---|---|---|
@@ -177,17 +190,18 @@ Dingen die per settler groeien, zodat de stukken tussen de treden niet leeg zijn
 | Groei | Een groeistap die het water van de rede tot land maakt, verplaatst het schip opzettelijk, net als de kade, de vuurtoren en de kraan (`doomedBy`) | aanwas maakt alleen zee land die aan open water grenst, precies waar de rede ligt |
 | Botsen | De romp is een gebouw-botser voor lopers en zwemmers. De dekken zijn *levels*, net als de planken van de steiger (`main.js:3705`), dus de boeg van de Benchy stuit op een rand boven `BOAT_SCRAPE` en stopt. De uitjes van de zee varen eromheen: `openWater` in `shared/boating.mjs` leert ook de kavels die op water liggen. | hetzelfde mechanisme als bij de steiger. Een oudere zee vaart haar bootjes dwars door het schip heen, maar dat is alleen cosmetisch. |
 | Aan boord | **Ja, in stap 3, en goedkoop.** Voor anker beweegt het dek niet, dus er is geen dekstelsel (`shared/deck.mjs`) nodig. De dekken, de trappen ertussen en een staatsietrap langs de zijkant naar een vlonder op de waterlijn gaan als `decks` in de bundel, net als de bruggen van de vulkaan (`setDecks`). Dan staan de crowd van de zee en walk-mode erop. | alles uit `lopen-op-de-boot.md` is pas nodig voor een dek dat *vaart* |
-| Model | `scripts/build-voc.py` → `assets/voc/voc.blend` → `web/js/voc-mesh.js`, een hero (4000). De zeilen zijn opgegeid: voor anker hoort dat zo, en het is goedkoper. De vlaggen zijn bewegende delen (`skip`). De hek-lantaarns en de ramen van de kajuit gloeien 's nachts (`aEmissive`). De dekken en trappen zijn ankers. De werf tekent per stadium delen van hetzelfde model. | het enige budget met ruimte voor drie masten, en één model voor twee gebruikers. Eén materiaal, dus één draw call. |
+| Model | `scripts/build-voc.py` → `assets/voc/voc.blend` → `web/js/voc-mesh.js`, een hero (4000; het galjoen kreeg in `scripts/model-rules.mjs` een eigen ruimte, en de Batavia mag hoogstens dat). De zeilen zijn opgegeid: voor anker hoort dat zo, en het is goedkoper. De vlaggen zijn bewegende delen (`skip`). De hek-lantaarns en de ramen van de kajuit gloeien 's nachts (`aEmissive`). De dekken en trappen zijn ankers. De werf tekent per stadium delen van hetzelfde model. | het enige budget met ruimte voor drie masten, en één model voor twee gebruikers. Eén materiaal, dus één draw call. |
 | Beweging | Het schip deint en slingert een beetje op de eigen klok van de pagina, met een fase uit zijn id, en de vlaggen waaien. Niets gaat over de lijn. | cosmetisch, zoals de rook |
 | Naam | Voorstel: het eerste schip naar het eiland zelf ("De Promptholm"), het tweede en derde naar de twee grootste wijken | VOC-schepen heetten naar steden en kamers (Amsterdam, Batavia) |
 
-De vijf eisen voor elke cel van de rede:
+De zes eisen voor elke cel van de rede:
 
 - het is water dieper dan `REDE_DEPTH` (voorstel −0,4; de zee zakt aan de kust al naar −0,6);
 - het hangt aan open water;
 - het is geen vaargeul;
 - het ligt niet binnen twee cellen van een steiger, ligplaats of helling;
-- het ligt niet in de gang voor de kop (`seawardDirection`).
+- het ligt niet in de gang voor de kop (`seawardDirection`);
+- het ligt niet waar het galjoen ligt (`shipBerth`, naar `shared/` verhuisd zodat de layout en de pagina dezelfde som maken), met zijn draaicirkel erbij.
 
 ## De vuurtoren
 
@@ -279,7 +293,7 @@ Wat mee moet veranderen:
 
 - **Tests.**
   - `tests/trades.test.mjs`: de nieuwe ambachten hebben elk een eigen trede nodig.
-  - Nieuwe tests voor `redeSite`, `earnedBoats`, `yardStage`, een kavel van 4x13 door
+  - Nieuwe tests voor `redeSite`, `earnedBoats`, `yardStage`, een kavel van 4x16 door
     `parseBundle`, de kraan zonder kade-wijk, en de uitjes die om het schip heen varen.
   - `tests/harbour-crane.test.mjs` houdt 150 < kraan < 175 vast en blijft groen.
 - **De lijsten waar elk nieuw civicType in moet**:
@@ -293,7 +307,7 @@ Wat mee moet veranderen:
   - het commentaar in `lib/village.mjs` (84-101);
   - `README.md:158`.
 
-**Release: de volgende minor (0.6), geen 0.5.x.** Drie dingen kan een oudere 0.5 op hetzelfde
+**Release: de volgende minor (0.7), geen 0.6.x.** Drie dingen kan een oudere 0.6 op hetzelfde
 eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
 
 - een nieuw kavel in `layout.json`;
@@ -304,9 +318,7 @@ eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
 
 ## Open
 
-- ~~**De maat.**~~ **Besloten (28 september): een romp van 10, een mast van 9.** Het eerste voorstel
-  (6,5) ging uit van een ingekrompen eiland, maar de settlers blijken op schaal te zijn. Zie "Hoe
-  groot".
+- ~~**De maat.**~~ **Besloten (28 september): groter dan het galjoen, een romp van ~12 en een mast van ~11,5.** Het eerste voorstel (6,5) ging uit van een ingekrompen eiland; het tweede (10 en 9) was kleiner dan het galjoen dat intussen op origin/main stond. Zie "Hoe groot".
 - **De naam** van het schip.
 - **Bestaande treden.** Wil Tiemen 0–100 toch spreiden, bijvoorbeeld het theehuis, de bibliotheek en
   de toverstokkenwinkel uit het drukke stuk 30–45 halen? Dan met de `was`-regel:
