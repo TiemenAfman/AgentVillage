@@ -2417,11 +2417,20 @@ function buildDocks(homeVillage) {
   handOutDecks();
 }
 
+// How many boats lie at one of our harbours: what mooringsFor draws there, the first boat
+// (the galleon) and the earned ones included - `harbours[].boats` is the larger of built and
+// earned since the village started earning them (scan.mjs, shared/quay.mjs earnedBoats).
+// The prompt and B's own check both count this, so neither can say a harbour has room that
+// the water does not show, and the server builds one past the same count (lib/boatyard.mjs).
+function boatsAt(d) {
+  return mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+}
+
 // What E and B do at a dock. B only at one of our own harbours, and only while it has room.
 function dockPrompt(d, moored) {
   const take = moored ? 'take the boat' : 'no boat here';
   if (d.region !== state.region || !d.side || state.guest || !state.village) return take;
-  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  const here = boatsAt(d);
   return here < BOATS_PER_HARBOUR ? `${take} · B build a boat (${here} of ${BOATS_PER_HARBOUR})` : take;
 }
 
@@ -2436,7 +2445,7 @@ const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) ||
 async function buildBoatAt(d) {
   if (d.region !== state.region || !d.side) { state.ui.toast("Only your own island's harbours are yours to build at."); return; }
   if (keeperOnly('build a boat')) return;
-  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  const here = boatsAt(d);
   const word = SIDE_WORD[d.side];
   if (here >= BOATS_PER_HARBOUR) { state.ui.toast(`The ${word} harbour already moors ${BOATS_PER_HARBOUR} boats.`); return; }
   try {
@@ -2521,7 +2530,8 @@ function showMinimap(on) {
 // about it.
 //
 // The first is the island's own and the rest are what its keeper has built at its harbours
-// (at most three a harbour, Plans/vier-havens.md). None of them is conjured: a boat that
+// or its village has earned there (at most three a harbour, Plans/vier-havens.md and
+// Plans/mijlpalen-tot-tweehonderd.md). None of them is conjured: a boat that
 // belongs to nobody cannot also be always to hand, so if somebody has left one on the far
 // shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
 // at their moorings on a restart.

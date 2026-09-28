@@ -434,6 +434,13 @@ another — free, and three to a harbour at most, the island's own boat counting
 harbour's three — and the prompt at the planks says how many it has. A visitor can sail your
 boats but not add to them.
 
+From 130 settlers the village builds them itself: one boat at 130 and another every five
+settlers after that, dealt round the harbours — the first harbour first, then on round north,
+east, south and west, skipping any side without one — until every harbour moors its three.
+With four harbours that is every berth taken at 180, twelve boats in all. **B** still works,
+and builds one past whatever lies there now, so it is a way to have a harbour's boats before
+the village gets round to them; it never takes one away.
+
 Walk out along the planks and press **E**, and if a boat is lying there you are aboard; at a
 harbour with none, the prompt says so rather than pretending there is one. Aboard, **W** and **S**
 are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
@@ -470,10 +477,12 @@ down the lane, out along the planks, and takes a little boat round the bay for t
 of it. Not the island's boat — that one is the crossing, it is shared with everybody on the
 island and with whoever is across the channel, and a settler is never in your way to it.
 They bring a dinghy of their own instead, which comes alongside the far side of the head
-and goes away again when they step out. Two afternoons at a time at most, never after dark,
-and they always come home, which is why the route is a wide circle out and back rather than
-a wander. If the dock is up a creek too narrow to turn in, the walk to the end of the pier
-is the whole of the outing.
+and goes away again when they step out. Two afternoons at a time at most — three once the
+village is 140 strong, four from 180 — never after dark, and they always come home, which is
+why the route is a wide circle out and back rather than a wander. The circle keeps clear of
+anything standing in the water, a ship at anchor included: a wider one goes round her, a
+smaller one turns short of her. If the dock is up a creek too narrow to turn in, the walk to
+the end of the pier is the whole of the outing.
 
 On foot the open water is no longer a wall: you may swim anywhere, the strip of sea between
 two islands included. It used to stop two metres from the shore, and that trapped anybody

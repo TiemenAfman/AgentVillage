@@ -20,6 +20,7 @@ import { GOLDPIT_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
+import { fleetOf, earnedBoats } from './shared/quay.mjs';
 
 export function parseArgs(argv) {
   const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null };
@@ -470,6 +471,18 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     };
   });
 
+  // The boats at each harbour: however many the keeper has built there (lib/boatyard.mjs)
+  // or the village has earned (shared/quay.mjs earnedBoats, from FLEET_AT settlers),
+  // whichever is more - so B builds ahead of the count and never below it. Worked out on
+  // the walk mooringsFor takes (fleetOf), so the earned ones are dealt only to harbours
+  // that draw a boat, and the one holding the island's first boat - the galleon, which
+  // counts towards its three - is dealt one fewer. `first` marks that harbour for the
+  // boatyard's count of how many more fit there (serve.mjs); the bundle leaves it out
+  // (lib/islandbundle.mjs `harbour`), since every other machine derives it the same way.
+  const harbourList = (layout.harbours || []).filter(Boolean);
+  const fleet = fleetOf(terrain, { island: { landing: layout.landing, harbours: harbourList }, districts });
+  const earned = earnedBoats(model.stats.settlers, fleet.harbours, fleet.first);
+
   const all2 = [...buildings, ...civics];
   return {
     v: 1,
@@ -487,8 +500,13 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       // The island's harbours (lib/layout.mjs planHarbours): side, the shore cell the
       // planks start from, and the planks. The sides with none are left out; `side` says
       // which is which. The quay's own planks are one of these.
-      // `boats` is how many the keeper has built there (lib/boatyard.mjs, its own file).
-      harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier, boats: boats[h.side] || 0 })),
+      // `boats` is how many lie there besides the first boat: built by the keeper
+      // (lib/boatyard.mjs, its own file) or earned, whichever is more - see `fleet` above.
+      harbours: harbourList.map((h) => ({
+        side: h.side, shore: h.shore, pier: h.pier,
+        boats: Math.max(boats[h.side] || 0, earned[h.side] || 0),
+        ...(fleet.first === h.side ? { first: true } : {}),
+      })),
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: TOWN_CORE_R,
         // When the square reached each of its widths. The chronicle needs this to lay the
