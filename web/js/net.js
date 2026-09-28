@@ -47,6 +47,10 @@ export const FLAG_SITTING = 1024;
 // there is nothing else to send and nothing to keep in step. Same kind of word as the three
 // above, and a sea from before it masks it away the same way.
 export const FLAG_DANCING = 2048;
+// Nobody at the keys: the body the keeper left standing when they went up into the sky
+// (walk.js park, Plans/karakter-blijft-staan.md). peers.js puts a Zzz over it and the sea
+// neither sweeps it as idle nor lets a guard at it. A sea on 0.6.x masks it off.
+export const FLAG_ASLEEP = 4096;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -378,7 +382,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // beat, and also straight before a swing (see swing()), so the sea measures the blow from
   // where we are and which way we face now, not a tenth of a second ago.
   function sendPose() {
-    if (!walking || !here || !here.state.active || !berthKnown()) return;
+    if (!walking || !here || !(here.state.active || here.state.parked) || !berthKnown()) return;
     const s = here.state;
     const f = (s.moving ? FLAG_MOVING : 0)
       | (s.swimming ? FLAG_SWIMMING : 0)
@@ -391,7 +395,8 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.lying ? FLAG_LYING : 0)
       | (s.crouching && !s.lying ? FLAG_CROUCHING : 0)
       | (s.sitting ? FLAG_SITTING : 0)
-      | (s.dancing ? FLAG_DANCING : 0);
+      | (s.dancing ? FLAG_DANCING : 0)
+      | (s.parked && !s.moving ? FLAG_ASLEEP : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.

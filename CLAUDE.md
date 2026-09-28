@@ -993,6 +993,15 @@ at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them 
 walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
 key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
 
+**Leaving walk mode leaves the body standing** ([Plans/karakter-blijft-staan.md](Plans/karakter-blijft-staan.md)):
+`walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
+`ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
+parked walk in orbit without touching the camera. It walks only a route from above
+(`goTo`, fed by `walkBodyTo` in main.js: `findPath` over cells, blocked by the feet's own
+`blockedAt`), from a click on bare ground or the dossier's Walk here; `enterWalk` starts
+where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
+`afoot`. At a tiller or on a deck exitWalk still flies up the old way.
+
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only

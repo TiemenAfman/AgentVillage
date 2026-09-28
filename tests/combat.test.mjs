@@ -280,7 +280,7 @@ test('the roster keeps BLOCKING, the shields and RIDING in a pose, drops what is
   roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0.5, f: POSE.BLOCKING | POSE.MOVING }));
   assert.equal(p.f, 17);
   assert.equal(p.yaw, 0.5, 'the heading a swing is aimed by');
-  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 4096 | POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }));
+  roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 8192 | POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT }));
   assert.equal(p.f, POSE.BLOCKING | POSE.SHIELD_LEFT | POSE.SHIELD_RIGHT, 'the shields are kept, and nothing above the last bit');
   // The bicycle is relayed as it is (Plans/fiets.md), so a peer can draw it.
   roster.message(p.conn, JSON.stringify({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: POSE.RIDING | POSE.MOVING }));

@@ -6,7 +6,7 @@ import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
-import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
+import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
@@ -665,6 +665,78 @@ function blockersOf(rec) {
     ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
     id: rec.id,
   }));
+}
+
+// ---- the body left standing (Plans/karakter-blijft-staan.md) ---------------------------
+// Where the islander starts you: in front of the board on the square, as enterWalk's own
+// fallback does, facing it.
+function parkOnSquare() {
+  const board = state.byId.get('civic:board');
+  const town = state.village.island.town;
+  let at = [0, 0], facing = null;
+  if (board) {
+    at = [board.group.position.x, board.group.position.z + 2.2];
+    facing = [board.group.position.x, board.group.position.z];
+  } else if (town && state.terrain) {
+    at = state.terrain.cellWorld(town.centre[0], town.centre[1] + 2);
+    facing = state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  }
+  state.walk.park({ at, facing, blockers: walkableBlockers() });
+  if (state.net) state.net.setWalking(true);
+}
+
+// Walk the parked body to a point on our own island: an A* over the ground cells
+// (findPath, the settlers' own) round whatever the feet would bump into, then the last
+// stretch to the point itself unless that is inside something (a door's step is not).
+// False, and a word, when there is no way there - the sea, another island, a walled yard.
+function walkBodyTo(x, z, { exact = true } = {}) {
+  const w = state.walk, t = state.terrain;
+  if (!w || !w.parked() || !t) return false;
+  const half = t.size / 2;
+  const cell = (px, pz) => [Math.floor(px + half), Math.floor(pz + half)];
+  const from = cell(w.state.pos.x, w.state.pos.z), to = cell(x, z);
+  const say = () => { state.ui.toast('There is no way to walk there.'); return false; };
+  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || !t.isLand(to[0], to[1])) return say();
+  // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
+  // on a grown island, and A* looks at a few hundred.
+  const memo = new Map();
+  const blocked = { has(k) {
+    let v = memo.get(k);
+    if (v === undefined) {
+      const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
+      v = w.blockedAt(cx, cz);
+      memo.set(k, v);
+    }
+    return v;
+  } };
+  const path = findPath(t, from, to, blocked);
+  if (!path) return say();
+  const pts = path.slice(1);
+  if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
+  if (!pts.length) pts.push(path[0]);
+  return w.goTo(pts);
+}
+
+// A click on bare ground in the sky: where on our own ground it landed, if anywhere.
+const groundRay = new THREE.Raycaster();
+function walkToPointer() {
+  if (!state.walk || !state.walk.parked() || !state.world || !state.world.ground) return;
+  groundRay.setFromCamera(pointer, camera);
+  const hit = groundRay.intersectObject(state.world.ground, false)[0];
+  if (hit) walkBodyTo(hit.point.x, hit.point.z);
+}
+
+// The dossier's Walk here: to the step outside a building's door (DOOR_DIR, as the
+// settlers' doorsteps and castleGate go), or to the thing itself when it has no plot.
+function walkToBuilding(id) {
+  const rec = state.byId.get(id);
+  if (!rec) return;
+  const p = rec.group.position, plot = rec.spec.plot;
+  if (plot && Number.isInteger(plot.rot)) {
+    const [dx, dz] = DOOR_DIR[plot.rot || 0];
+    const reach = (plot.w || 3) / 2 + 0.45;
+    walkBodyTo(p.x + dx * reach, p.z + dz * reach, { exact: true });
+  } else walkBodyTo(p.x, p.z, { exact: false });
 }
 
 function walkableBlockers() {
@@ -1840,6 +1912,12 @@ function enterWalk(spot = null) {
   if (reboard) {
     spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
   }
+  // No place in mind and a body left standing (exitWalk parks it): down into it, wherever it
+  // walked to meanwhile (Plans/karakter-blijft-staan.md).
+  if (!spot && !reboard && state.walk.parked()) {
+    const p = state.walk.state.pos, y = state.walk.state.yaw;
+    spot = { at: [p.x, p.z], facing: [p.x + Math.sin(y) * 10, p.z + Math.cos(y) * 10] };
+  }
   // No place in mind: back where you last stood, and only the very first time the square.
   // `?square` skips the recall - the way home for somebody left treading water.
   if (!spot && !params.has('square')) spot = recalledSpot();
@@ -2066,7 +2144,11 @@ function exitWalk({ force = false } = {}) {
   // Back outdoors as far as the others are concerned, and the pose comes from the island's
   // walk mode again. Leaving this pointed at a room you have left is how you come back down
   // from the sky invisible: the room's walk mode is no longer active, so nothing is sent.
-  if (state.net) { state.net.setRoom(null, state.walk); state.net.setWalking(false); }
+  // Your body stays where you leave it, asleep, for you and for everybody on the sea
+  // (Plans/karakter-blijft-staan.md) - except at a tiller or on a deck, where the boat is
+  // what stays: that is still the flight up it always was.
+  const parks = !ownHull() && !state.walk.onDeck();
+  if (state.net) { state.net.setRoom(null, state.walk); if (!parks) state.net.setWalking(false); }
   state.walk.setPeerBlockers([]);
   reportWhere({ final: true });   // write down where you left off, and that you left
   // Flying up from the tiller. The hull stops where it is - walk mode was what stepped it,
@@ -2080,7 +2162,8 @@ function exitWalk({ force = false } = {}) {
     if (state.net) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
     skyBoat = b;
   }
-  state.walk.exit();
+  if (parks) state.walk.park({ blockers: walkableBlockers() });
+  else state.walk.exit();
   state.board.close();
   state.ui.setWalking(false);
   controls.enabled = true;
@@ -5112,7 +5195,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // is the right answer.
     // A body on a visiting island is the same: named on hover, but nothing to open.
     if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
-    else state.ui.closeDossier();
+    else {
+      state.ui.closeDossier();
+      // Our own ground, with nothing on it: send the body there (Plans/karakter-blijft-staan.md).
+      if (!hit && !pickedGuest.f && state.mode === 'orbit') walkToPointer();
+    }
   }
   downAt = null;
 });
@@ -5288,6 +5375,9 @@ function frame(nowMs) {
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
+  } else if (state.mode !== 'walk' && state.walk.parked()) {
+    // The body left standing: asleep, or walking where it was sent from the sky.
+    state.walk.update(dt);
   } else if (state.mode === 'walk') {
     wrapEye();
     const w = state.walk.update(dt);
@@ -5790,6 +5880,8 @@ async function boot() {
     onJoinSea: (url) => changeSea({ mode: 'join', url }),
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
+    onWalkHere: (id) => walkToBuilding(id),
+    canWalkHere: () => !!(state.walk && state.walk.parked()),
     onOverview: () => {
       if (state.mode === 'plan') { state.plan.frameIsland(); return; }
       state.intro = null; state.tween = null; controls.enabled = true; frameIsland();
@@ -6277,6 +6369,10 @@ async function boot() {
   //
   // ?nointro skips it along with the sweep. That parameter has always meant "just show me
   // the island", and it is what every measurement and every screenshot uses.
+  // Somebody to steer from the first frame: the body stands on the square, asleep, until you
+  // walk down into it or send it somewhere from the sky. Before the net exists, so the
+  // net's own start says it is walking.
+  if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro')) startIntro();
   else openMainMenu();

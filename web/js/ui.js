@@ -277,6 +277,7 @@ export function createUI(handlers) {
       ${b.kind === 'civic' || !b.sessionId ? '' : `<button class="btn primary" id="talk-btn">${w ? 'Answer' : 'Talk to them'}</button>`}
       ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
       <button class="btn" id="focus-btn">Focus camera</button>
+      ${handlers.canWalkHere && handlers.canWalkHere() ? '<button class="btn" id="walkhere-btn">Walk here</button>' : ''}
     </p>`;
     html += `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 
@@ -347,6 +348,8 @@ export function createUI(handlers) {
     body.innerHTML = html;
     body.scrollTop = 0;
     body.querySelector('#focus-btn').addEventListener('click', () => handlers.onFocus(b.id));
+    const walkHere = body.querySelector('#walkhere-btn');
+    if (walkHere) walkHere.addEventListener('click', () => handlers.onWalkHere(b.id));
     const talk = body.querySelector('#talk-btn');
     if (talk) talk.addEventListener('click', () => handlers.onTalk(b.id));
     const stall = body.querySelector('#stall-btn');
