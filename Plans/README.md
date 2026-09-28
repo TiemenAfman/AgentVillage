@@ -16,6 +16,13 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
+  door tot 200 (afstand ≈ 2 + n/25; 0–100 ligt er al op, erboven gaapte een gat van 50): elf
+  nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
+  bouwt vanaf 95 in stadia aan een VOC-schip dat op 120 op de rede voor anker gaat, en vanaf 130
+  groeit de vloot vanzelf tot drie boten per haven. Geen bestaande trede verschuift. Terloops
+  gevonden: de kraan (165) komt op het echte eiland nooit, want er is geen kade-wijk. Voorstel van
+  28 september 2026, nog niets gebouwd; eerste stap is meten waar de rede past.
 - 🚧 [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
   gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
   winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,

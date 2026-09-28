@@ -1,0 +1,329 @@
+# De ladder tot tweehonderd: de haven, het VOC-schip en de vloot
+
+Begonnen op 28 september 2026. **Status: voorstel, er is nog niets gebouwd.** Onderaan staat wat
+Tiemen nog moet beslissen.
+
+## Wat Tiemen vroeg
+
+> ja, zet een voorstel voor 100–150 in Plans/ neem ook een betere verdeling mee. de spreiding mag
+> wel van 0-200. ik wil ook een groot schip zoals die van de voc bij 120-ish inwoners en misschien
+> moet de vloot uitgebreid worden bij nog meer inwoners omdat het centrum vol is.
+
+## Stand van zaken
+
+De ladder (`MILESTONES` in `lib/village.mjs`) heeft 30 treden: 29 tellen settlers, de school telt
+leerlingen.
+
+| stuk | treden | afstand |
+|---|---|---|
+| 0–50 | 18 | 2 à 3 |
+| 51–100 | 9 | 5, en dan 10 naar het kasteel |
+| 101–150 | 1 (de poldermolen, helemaal aan het eind) | **50** |
+| 151–200 | 1 (de kraan op 165) | daarna alleen elke 25 een polder |
+
+Het echte eiland (28 september): 112 settlers, 28 van de 30 vrijgespeeld. Het tempo is 10 → 112 in
+18,4 dagen, zo'n **5,5 per dag**, en opvallend gelijkmatig (90 → 112 in 3,9 dagen is 5,6 per dag).
+Een gat van g settlers is dus g/5,5 dagen: vanaf nu ongeveer een week niets tot de poldermolen, en
+na de kraan (over ~10 dagen) is de ladder op.
+
+Wat verder op aantallen telt vult 100–150 ook niet: `SQUARE_STEPS` (30, 90), `FAIRWAY_AT` 25,
+`BRIDGE_AT` 90, `POLDER_AT` 150 plus elke `POLDER_EVERY` 25, en het meubilair op leerlingen
+(`FURNITURE`, tot het laatste terras op 330).
+
+**Gemeten bij het schrijven: de kraan komt op het echte eiland nooit.** Hij wil
+`layout.districts.quay` (`lib/layout.mjs:3293`: "No quay district means no planks, and the crane
+waits"), en dit eiland heeft geen kade-wijk: er is nooit een Cowork-taak geweest die er een
+stichtte. Wel vier havens met elk een steiger van vijf planken (`layout.harbours`, n/e/s/w). Dat
+lost dit plan meteen mee op, zie "De kadehaven" hieronder.
+
+## De regel voor de verdeling
+
+Het gat groeit met één settler per 25: **afstand ≈ 2 + n/25**. Dan staat trede k op
+n = 50·(e^(k/25) − 1), en is het aantal treden tot n gelijk aan 25·ln(1 + n/50):
+
+| tot | volgens de regel | nu | voorstel |
+|---|---|---|---|
+| 50 | 17 | 18 | 18 |
+| 100 | 27 | 27 | 28 |
+| 150 | 35 | 28 | 35 |
+| 200 | 40 | 29 | 40 |
+
+Het stuk 0–100 volgt de regel dus al: het is met de hand in stappen opgebouwd en ligt er toch op,
+op één trede na. Het probleem zit alleen boven de 100. "Een betere verdeling" betekent in dit plan
+dan ook drie dingen:
+
+- de ladder loopt op dezelfde kromme door tot 200, met elf nieuwe treden;
+- tussen de treden groeit er per settler iets;
+- daardoor duurt geen stuk langer dan ~9 settlers (bij het huidige tempo minder dan twee dagen)
+  zonder dat er iets nieuws verschijnt.
+
+**Geen bestaande trede verschuift.** Nagelezen in de code (niet op het eiland geprobeerd): een
+trede waarvan `at` boven het aantal van het eiland komt, gaat weer op slot (`unlocked: !!nth`,
+`lib/village.mjs:615-622`). Maar zijn kavel blijft in `layout.json` staan: gestempeld, met zijn pad
+en zijn straat geplaveid. Het eiland toont dan een lege kavel met een weg ernaartoe. Als het aantal
+het nieuwe getal haalt, komt het gebouw op dezelfde plek terug en laat `main.js` de toast van de
+mijlpaal nog een keer zien. Op het echte eiland zou dat gelden voor elke trede die boven 112 komt
+te liggen.
+
+Daar komt bij dat de eerste 50 de haak van een nieuw eiland zijn: elke twee à drie sessies iets.
+Juist daar zou je treden weghalen. Wil Tiemen toch spreiden, dan staat de regel ervoor onder Open
+(`was`).
+
+## Waarom niet in het centrum
+
+- Het plein groeit sinds 90 niet meer (`SQUARE_STEPS`), en de acht kavels van de ring zijn alle
+  acht vergeven (`RING_OF`).
+- Op papier zijn er van de zestien straatkavels zes vrij (#8–#13). Op het echte eiland is na de
+  verplaatsingen van de bewaarder alleen straatkavel #6 op [-6,7] nog helemaal open. De rest ligt
+  deels in de rivier of aan de kust, is geplaveid, of er staat een huis, de windmolen of de school.
+  Al een tweede nieuwe 3x3 in het dorp valt terug op `findBlockAround`. Dat kijkt niet naar de
+  eigenaar van de grond en geeft de kavel ook niet aan het dorp.
+- Elke nieuwe trede gaat daarom naar een van drie plekken:
+  - **de kadehaven** (hieronder);
+  - **het water**: de rede;
+  - **buiten het dorp**: `TRADES`/`TRADE_RING`, zoals de zagerij.
+
+  De haven wordt het tweede centrum, en het water is de ruimte die het land niet meer heeft.
+
+## De kadehaven
+
+Het woord in dit plan voor de haven waar de haven-gebouwen komen:
+
+- de haven van de kade-wijk als die er is;
+- anders de haven van de kade die het eiland al liet zien (`standingQuay`: de kant waar de eerste
+  boot van het eiland ligt);
+- anders de haven het dichtst bij het dorp (`nearestHarbour`).
+
+Op het echte eiland is dat waarschijnlijk de noordhaven: de landing ([180,88]) ligt ten noorden van
+het plein ([144,144]). Dat wordt nagemeten in stap 1.
+
+De kraan krijgt dezelfde terugval, zodat hij ook zonder kade-wijk een plek vindt. Hij zoekt dan
+naast de helling van die haven (`road:harbour:<n>`), met dezelfde regels als nu: niet op de planken,
+niet op de helling zelf, met de arm naar het water.
+
+## De nieuwe ladder, 90–200
+
+| trede | wat | civicType | waar | |
+|---|---|---|---|---|
+| 90 | De plankenbrug | `bridge` | | bestaat |
+| **95** | **De scheepswerf** | `shipyard` | kadehaven, met een helling het water in | nieuw |
+| 100 | Het kasteel | `castle` | | bestaat |
+| **106** | De brouwerij | `brewery` | `TRADES` | nieuw |
+| **113** | De vissershut | `fishery` | een *andere* haven dan de kadehaven | nieuw |
+| **120** | **De Oost-Indiëvaarder** | `ship` | de rede voor de kadehaven | nieuw |
+| **127** | Het pakhuis | `warehouse` | kadehaven | nieuw |
+| **134** | Het oefenveld | `trainingfield` | `TRADES` | nieuw |
+| **142** | De steengroeve | `quarry` | hoge, rotsige grond (eigen regel, zoals de windmolen) | nieuw |
+| 150 | De poldermolen, en de eerste polder | `poldermill` | | bestaat |
+| **158** | Het tweede schip | `ship` | de rede | nieuw |
+| 165 | De havenkraan | `crane` | kadehaven (met de terugval hierboven) | bestaat |
+| 175 | De tweede polder | — | | bestaat (`POLDER_EVERY`) |
+| **184** | De waag | `weighhouse` | kadehaven | nieuw |
+| **192** | Het derde schip: de retourvloot | `ship` | de rede | nieuw |
+| **200** | Het kroniekhuis | `chronicle` | `TRADES`, of naast het kasteel | nieuw |
+
+Het verhaal: na het kasteel keert het dorp zich naar zee. De werf legt op 95 een kiel, en 25
+settlers later gaat het schip te water. Het schip brengt de handel mee waar de haven van leeft
+(pakhuis, kraan, waag). De steengroeve levert de steen voor de eerste dijk. En de ladder eindigt
+waar het dorp zijn eigen geschiedenis gaat opschrijven.
+
+Waarom elk gebouw er staat:
+
+- **Brouwerij**: de kroeg tapt sinds `Plans/bier-en-dronken.md` bier, en dat moet ergens vandaan
+  komen.
+- **Vissershut** (`Ideas/Ideas.MD` §15): netten, een droogrek, een roeiboot en een visser, een
+  passieve settler zoals de smid. Bewust aan een andere haven, zodat elke haven iets eigens krijgt.
+- **Oefenveld** (§16, `Ideas/Images to Render/trainingarea.png`): strooien poppen en een
+  zwaardenrek, bij het vechten uit `Plans/aanvallen-en-blokkeren.md`.
+- **Steengroeve** (§15): de steen voor de dijk van 150, op de hoogste rotsige grond.
+- **Waag**: weegt wat de schepen brengen, met een torentje.
+- **Kroniekhuis** (§10, §17): de kroniek als gebouw. Klikken opent `history.js`, zoals het stadhuis
+  zijn register opent.
+
+**Een trede gaat pas in `MILESTONES` als zijn model er is.** Een onbekend of ongemodelleerd
+civicType wordt als stenen blokje van 0,5 getekend (de `default:` in `civic()`,
+`web/js/buildings.js:1643`). De tabel is het doel, en de ladder vult zich in ladder-volgorde naarmate
+de modellen gebakken worden.
+
+## Tussen de treden
+
+Dingen die per settler groeien, zodat de stukken tussen de treden niet leeg zijn:
+
+- **Het schip op de helling.** De werf laat de romp in stadia zien: kiel en stevens, spanten, huid,
+  masten, en dan gaat hij te water. Voor het eerste schip is dat 95, 102, 109, 115 en 120. Daarna
+  begint de werf meteen aan het volgende:
+  - het tweede schip: 133, 140, 147, 153, te water op 158;
+  - het derde schip: 167, 174, 181, 187, te water op 192.
+
+  Zo is er van 95 tot 192 elke zes à zeven settlers iets aan de helling veranderd. Eén functie
+  (`yardStage(n)`, naast `MILESTONES`) rekent het uit. De islander schrijft het resultaat als klein
+  veld `stage` (0–4) op het record van de werf, strikt in `parseBundle`. Het moet een veld zijn: de
+  bundel draagt geen aantal settlers (`stats` staat er bewust niet in), dus een bezoeker kan het
+  niet zelf uitrekenen. Een oudere zee laat het veld vallen, en haar pagina's tekenen dan de lege
+  helling.
+- **De vloot** (130–180): elke vijf settlers een boot, zie hieronder. Op het echte eiland zijn dat
+  elf boten in elf stapjes.
+- **De polders** (150, 175, 200) en **het meubilair** (op leerlingen, tot 330): bestaan al.
+
+## Het VOC-schip
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Wat voor schip | Een **spiegelretourschip**, met de Batavia (1628, de replica in Lelystad) als referentie: een hoog achterschip met de platte, beschilderde spiegel en een galerij, drie masten, een boegspriet met blinde, lantaarns op de hek | het schip waar iedereen aan denkt bij "VOC" |
+| Hoe groot | **Een romp van ongeveer 10 eenheden (40 m), zo'n 12,5 met de boegspriet, 2,3 breed, de grote mast ~9 boven het water.** Alles wat je belopen kunt is op mensenmaat: het hoofddek ~1 boven het water (4 m), een reling van ~0,25 (1 m), treden binnen `STEP_UP`. Alleen het tuig is lager dan echt. (Besloten met Tiemen, 28 september.) | Settlers hebben de maat van het eiland: 0,43 eenheid is 1,72 m, bij 4 m per eenheid. De rest, gemeten op de bakes, in eenheden: de speler 0,45, de deur van het stadhuis 0,72, een huis (`house`) 2,6 hoog, het stadhuis en de vuurtoren 3,8–3,9, het grote kasteel 5 breed en 6 hoog, de Benchy 1,3 lang. De gebouwen zijn in de hoogte ingedrukt: een stadhuis van 15 m is laag voor wat het voorstelt. Het schip volgt dezelfde regel: mensenmaat waar je loopt, ingedrukt in de hoogte. Op ware grootte (Batavia: 45 m romp, 55 m mast) werd de mast 13,8, twee keer de nieuwe vuurtoren (hieronder), en dat trekt het silhouet van het eiland scheef. Op 10 en 9 is het schip twee keer zo lang als het kasteel en anderhalf keer zo hoog, en aan boord klopt het met de speler. |
+| Varen of niet | **Voor anker**, op de rede. Varen is een later plan, samen met `Plans/lopen-op-de-boot.md`. | Aan een steiger past het niet. Een steiger is hoogstens vijf planken (`QUAY_REACH`), ligplaatsen liggen vast op 2,0 van elkaar (`berthOf`), en de palen van de kop staan op 0,9 van het midden. `stepBoat` test één punt op de boeg en kent geen breedte, geen diepgang en geen diepte, en voor een romp bijna acht keer zo lang als de Benchy klopt daar niets van. Bovendien klopt het historisch: VOC-schepen lagen op de rede van Texel, en de lading ging met lichters aan wal. |
+| Waar | **De rede**: een strook water van 4 bij 13 cellen, 8 tot 18 cellen van de kop van de kadehaven. De rede ligt evenwijdig aan de kust (vanaf de kade zie je het schip van opzij), en elke cel moet aan vijf eisen voldoen (zie direct onder de tabel). Van de plekken die daaraan voldoen, wint de dichtste bij de kop. Is er geen plek, dan de volgende haven. Is er nergens een, dan onthoudt de layout dat er gezocht is (zoals de vaargeul met `{ cells: [] }`). | een gewone plekregel, zoals die van de vuurtoren en de kraan |
+| Hoe het in de layout staat | **Als civic-kavel**: `layout.plots['civic:ship']` = `{ gx, gz, w: 4, d: 13, rot }`, zonder deur, en plakkerig zoals elk kavel | Zo tekenen de bundel, elke pagina en elke bezoeker het via `buildings`, zonder nieuw veld. `planFairway` en `polderCandidate` weigeren al elke cel waar iets op staat, dus onder het schip wordt geen vaargeul gegraven en geen polder ingedijkt. De kroniek, de toast en het dossier komen gratis mee. `parseBundle` neemt een `w`/`d` tot 16 aan, ook als ze verschillen (`plot()`, `lib/islandbundle.mjs:342`), dus een oudere zee accepteert het. Het is wel het eerste niet-vierkante civic-kavel: `lotOf`, het stempelen (`d: w`, `lib/layout.mjs:3352`) en alles wat alleen `p.w` leest, moet `p.d` leren. |
+| Groei | Een groeistap die het water van de rede tot land maakt, verplaatst het schip opzettelijk, net als de kade, de vuurtoren en de kraan (`doomedBy`) | aanwas maakt alleen zee land die aan open water grenst, precies waar de rede ligt |
+| Botsen | De romp is een gebouw-botser voor lopers en zwemmers. De dekken zijn *levels*, net als de planken van de steiger (`main.js:3705`), dus de boeg van de Benchy stuit op een rand boven `BOAT_SCRAPE` en stopt. De uitjes van de zee varen eromheen: `openWater` in `shared/boating.mjs` leert ook de kavels die op water liggen. | hetzelfde mechanisme als bij de steiger. Een oudere zee vaart haar bootjes dwars door het schip heen, maar dat is alleen cosmetisch. |
+| Aan boord | **Ja, in stap 3, en goedkoop.** Voor anker beweegt het dek niet, dus er is geen dekstelsel (`shared/deck.mjs`) nodig. De dekken, de trappen ertussen en een staatsietrap langs de zijkant naar een vlonder op de waterlijn gaan als `decks` in de bundel, net als de bruggen van de vulkaan (`setDecks`). Dan staan de crowd van de zee en walk-mode erop. | alles uit `lopen-op-de-boot.md` is pas nodig voor een dek dat *vaart* |
+| Model | `scripts/build-voc.py` → `assets/voc/voc.blend` → `web/js/voc-mesh.js`, een hero (4000). De zeilen zijn opgegeid: voor anker hoort dat zo, en het is goedkoper. De vlaggen zijn bewegende delen (`skip`). De hek-lantaarns en de ramen van de kajuit gloeien 's nachts (`aEmissive`). De dekken en trappen zijn ankers. De werf tekent per stadium delen van hetzelfde model. | het enige budget met ruimte voor drie masten, en één model voor twee gebruikers. Eén materiaal, dus één draw call. |
+| Beweging | Het schip deint en slingert een beetje op de eigen klok van de pagina, met een fase uit zijn id, en de vlaggen waaien. Niets gaat over de lijn. | cosmetisch, zoals de rook |
+| Naam | Voorstel: het eerste schip naar het eiland zelf ("De Promptholm"), het tweede en derde naar de twee grootste wijken | VOC-schepen heetten naar steden en kamers (Amsterdam, Batavia) |
+
+De vijf eisen voor elke cel van de rede:
+
+- het is water dieper dan `REDE_DEPTH` (voorstel −0,4; de zee zakt aan de kust al naar −0,6);
+- het hangt aan open water;
+- het is geen vaargeul;
+- het ligt niet binnen twee cellen van een steiger, ligplaats of helling;
+- het ligt niet in de gang voor de kop (`seawardDirection`).
+
+## De vuurtoren
+
+> maak de vuurtoren ook hoger. trek m niet uit, zorg dat de verhoudingen kloppen
+
+De vuurtoren (50) is nu 3,9 hoog (16 m), nauwelijks hoger dan het stadhuis, en naast een mast van
+9 zou hij een schuurtje zijn. Hij wordt opnieuw gebouwd (`scripts/build-lighthouse.py`), niet
+geschaald:
+
+- **Ongeveer 7 hoog (28 m)**: het hoogste op het land, net onder de mast van het schip, zoals een
+  echte vuurtoren naast een retourschip.
+- **Meer verdiepingen, niet hogere.**
+  - De deur blijft op mensenmaat (~0,72, die van het stadhuis).
+  - De ramen blijven zo groot als nu, maar er komen er meer, per verdieping een band.
+  - De omloop krijgt een reling van ~0,25.
+  - De lantaarnkamer is zo groot dat er iemand in kan staan.
+- **De voet wordt breder, met een taps verloop** (hoogte ~4,5 à 5 keer de voet), anders wordt het
+  een schoorsteen. Hij blijft op zijn ene cel (`SMALL`), en de plekregel verandert niet.
+- **Alles wat de vuurtoren leest, gaat mee**: het licht en de bundel van `web/js/beacon.js`, en
+  elke plek die zijn hoogte of ankers gebruikt (het mysterie bij de vuurtoren uit
+  `Plans/dierenverhalen.md`). Het budget is een hero (4000); de huidige zit op 1714.
+
+## De vloot
+
+"Vloot" betekent hier de boten van het eiland, niet `lib/fleet.mjs`: dat is de lijst van eilanden
+van de zee.
+
+Nu heeft elke haven plaats voor drie boten (`BOATS_PER_HARBOUR`). Er komt er alleen een bij als de
+bewaarder op B drukt. Het echte eiland heeft vier havens en één boot: `data/boats.json` bestaat
+niet, dus er ligt alleen de boot van de oude kade.
+
+1. **De vloot groeit vanzelf** (stap 2). Hiervoor verandert er niets aan de zee.
+   - `earnedBoats(settlers)` komt in `shared/quay.mjs`, naast `BOATS_PER_HARBOUR`, de enige kopie.
+   - Vanaf 130 komt er elke vijf settlers een boot bij. Ze worden rondgedeeld in de volgorde van
+     `HARBOUR_SIDES`, beginnend bij de kadehaven. `null`-kanten worden overgeslagen, en een haven
+     krijgt er hoogstens drie.
+   - `scan.mjs:491` (waar `harbours[].boats` geschreven wordt) neemt het grootste van gebouwd en
+     verdiend. B blijft de manier om vóór te bouwen, nooit eronder.
+   - Het aantal blijft ≤ 3. Elke zee en elke pagina, ook de oude, leidt dus met `mooringsFor`
+     dezelfde boten af.
+   - Op het echte eiland: van 1 naar 12 boten tussen 130 en 180.
+2. **Meer schepen op de rede** (158 en 192). Het tweede en derde schip gaan naast het eerste voor
+   anker, vijf cellen uit elkaar (een kavel van vier breed en één cel water), en krijgen hun plek als ze verdiend worden. Het is hetzelfde
+   model in andere kleuren, met een andere vlag. Een fluitschip als eigen model kan later.
+3. **Meer boten tegelijk op het water** (de kant van de zee). `MAX_OUT` in `shared/boating.mjs`
+   (nu 2) groeit mee met de crowd die de zee zelf laat lopen: 2 plus één per 40 settlers boven de
+   100, tot hoogstens 4. Een oudere zee houdt het op 2.
+4. **Niet in deze ronde: meer dan drie boten per haven.**
+   - `parseBundle` weigert de *hele* bundel als `boats` boven de 3 komt
+     (`whole(raw.boats, 0, BOATS_PER_HARBOUR)`). Een eiland dat dat doet, verdwijnt dus van elke
+     zee die nog niet bijgewerkt is.
+   - En `berthOf` zet elke boot vanaf k=2 op dezelfde plek.
+
+   Daar is een tweede steiger per haven voor nodig, en een zee die eerst uitgerold is: een eigen
+   plan.
+
+## Stappen
+
+1. **De ladder, de werf en het schip.**
+   - Eerst meten, op een kopie van het echte eiland (grid 288, 112 settlers) en op de seeds 5,
+     2024 en 1337:
+     - welke haven de kadehaven wordt;
+     - of er een rede past, en hoe ver van de kop;
+     - of er een kavel verschuift;
+     - of de tweede scan byte-identiek is.
+
+     Zet de server stil vóór het meten.
+   - Dan het bouwen:
+     - de plekregels: `harbourSite` voor de werf (later ook het pakhuis en de waag: een 3x3-blok
+       aan de kust met de voorkant naar het water, dicht bij de helling van de kadehaven) en
+       `redeSite`;
+     - de terugval van de kraan;
+     - het niet-vierkante kavel;
+     - de twee modellen;
+     - `stage` in de bundel;
+     - de botsers en de afscherming voor de uitjes.
+   - Treden 95 en 120 gaan in `MILESTONES`. Op het echte eiland komt de werf meteen, al in het
+     stadium van de huid (112), met masten op 115 en de tewaterlating op 120.
+   - Een tewaterlating als lokale animatie voor wie kijkt, met de romp die de helling af glijdt en
+     naar de rede vaart, mag erbij: `sailIn` (`main.js:4516`) is het voorbeeld.
+2. **De vloot die vanzelf groeit**: `earnedBoats`. Er is geen model voor nodig en er verandert
+   niets aan de zee, dus dit kan ook vóór of tegelijk met stap 1.
+3. **Aan boord van het schip**: de dekken en trappen als `decks`.
+4. **De andere gebouwen**, één voor één in ladder-volgorde, elk met een eigen kort plan zoals
+   `Plans/zagerij.md`. Een trede gaat erin tegelijk met zijn model.
+5. **Het tweede en derde schip, en meer boten tegelijk op het water** (de kant van de zee).
+
+Wat mee moet veranderen:
+
+- **Tests.**
+  - `tests/trades.test.mjs`: de nieuwe ambachten hebben elk een eigen trede nodig.
+  - Nieuwe tests voor `redeSite`, `earnedBoats`, `yardStage`, een kavel van 4x13 door
+    `parseBundle`, de kraan zonder kade-wijk, en de uitjes die om het schip heen varen.
+  - `tests/harbour-crane.test.mjs` houdt 150 < kraan < 175 vast en blijft groen.
+- **De lijsten waar elk nieuw civicType in moet**:
+  - `SHOPS` of de switch in `civic()`;
+  - `TOWN_LAID` (als het in het dorp staat), `TRADES`, `SMALL`;
+  - `MOVABLE_CIVICS`/`CIVIC_NAMES` (`lib/plan.mjs`);
+  - `web/js/demo.js`, `web/js/editor.js`;
+  - `KEEPERS`, als er een bewaarder bij hoort.
+- **Tekst**:
+  - `docs/manual.md`: 930, 936 ("the last one the ladder has") en 939-940;
+  - het commentaar in `lib/village.mjs` (84-101);
+  - `README.md:158`.
+
+**Release: de volgende minor (0.6), geen 0.5.x.** Drie dingen kan een oudere 0.5 op hetzelfde
+eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
+
+- een nieuw kavel in `layout.json`;
+- nieuwe velden in de bundel;
+- nieuwe civicTypes, die zij als stenen blokje tekent.
+
+`SEA_V` hoeft niet omhoog: alles is een toevoeging die een oude zee negeert of accepteert.
+
+## Open
+
+- ~~**De maat.**~~ **Besloten (28 september): een romp van 10, een mast van 9.** Het eerste voorstel
+  (6,5) ging uit van een ingekrompen eiland, maar de settlers blijken op schaal te zijn. Zie "Hoe
+  groot".
+- **De naam** van het schip.
+- **Bestaande treden.** Wil Tiemen 0–100 toch spreiden, bijvoorbeeld het theehuis, de bibliotheek en
+  de toverstokkenwinkel uit het drukke stuk 30–45 halen? Dan met de `was`-regel:
+  - een omgenummerde trede houdt zijn oude getal als `was`;
+  - hij telt als vrijgespeeld als het eiland het nieuwe getal heeft gehaald, of als het zijn kavel
+    al heeft én het oude getal heeft gehaald;
+  - de datum is dan de vroegste van die twee.
+
+  Dan verdwijnt niets wat er staat, en krijgen alleen nieuwe eilanden de nieuwe volgorde. Het kost
+  één veld per verschoven trede, en geen veld in de layout.
+- **B.** Blijft het de manier om vóór te bouwen, of kan het weg nu de vloot vanzelf groeit?
+- **Varen.** Het schip dat eens per week uitvaart en terugkomt (de retourvloot als gebeurtenis)
+  hoort bij fase 2–6 van `lopen-op-de-boot.md`. Daarvoor is nodig:
+  - een craft-soort voor het schip (`shared/crafts.mjs`);
+  - `stepBoat` met lengte, breedte en diepgang;
+  - een dieptecheck, die er nog nergens is.
+- **Weer op slot gaat nu al.** Het aantal settlers kan dalen (het echte eiland heeft zes
+  verbannenen). Een mijlpaal gaat dan weer op slot, laat zijn kavel leeg staan en laat zijn toast
+  opnieuw zien als hij terugkomt. Dat is niet het probleem van dit plan, maar de `was`-regel zou het
+  meteen oplossen.
