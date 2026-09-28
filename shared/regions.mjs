@@ -64,9 +64,24 @@ export const SEA_GAP = 48;
 
 // How big the world is: a square of twice this round the volcano, in world units (a cell,
 // 4 m, so some 16 km a side). 4032 is 14 cloud tiles (world.js CLOUD_TILE) and 42 islet
-// squares (shared/islets.mjs ISLET_PITCH), so both will seam up once the edge wraps round
-// (Plans/ronde-wereld.md). For now it is what the chart shows; nothing is refused by it yet.
+// squares (shared/islets.mjs ISLET_PITCH), so the sky seams up where the edge wraps round.
+//
+// The edge wraps by a jump, not by arithmetic (Plans/ronde-wereld.md): sail past it and the
+// page moves you, your boat or your bicycle 2 * WORLD_HALF back across (`wrapShift`), and
+// nothing else in the world knows the world is round. That is only invisible because
+// nothing stands near the edge: `nextOrigin` keeps every island's room SEA_BAND clear of it,
+// and the page closes the haze in near the edge (main.js setFogRange) so what lies across it
+// is always behind the fog on both sides of the jump.
 export const WORLD_HALF = 2016;
+export const SEA_BAND = 900;
+
+// How far to move a WORLD coordinate that has crossed the edge: 0 inside, otherwise the
+// whole width back the other way. Pure, one axis at a time.
+export function wrapShift(v) {
+  if (v > WORLD_HALF) return -2 * WORLD_HALF;
+  if (v < -WORLD_HALF) return 2 * WORLD_HALF;
+  return 0;
+}
 // The chart's grid square: a sixteenth of the world, so the grid is A-P by 1-16 with no
 // sliver at the edge. 252 units is 1008 m - "a kilometre" on the chart's scale bar.
 export const KM = WORLD_HALF / 8;
@@ -153,6 +168,9 @@ export function nextOrigin(placed, half, gap = SEA_GAP) {
   for (let ring = 1; ring < 64; ring++) {
     for (const origin of ringPoints(first + (ring - 1) * pitch, pitch)) {
       mine.origin = origin;
+      // Never into the band along the edge: an island there would be seen to vanish and
+      // reappear across the world as you jumped (see WORLD_HALF).
+      if (Math.max(Math.abs(origin[0]), Math.abs(origin[1])) + half > WORLD_HALF - SEA_BAND) continue;
       let ok = true;
       for (const p of placed) if (!clearOf(mine, p, gap)) { ok = false; break; }
       if (ok) return origin;

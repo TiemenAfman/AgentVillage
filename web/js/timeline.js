@@ -9,6 +9,7 @@
 // the difference (Plans/lopen-op-de-boot.md). Kept apart from peers.js so it can be tested:
 // that file reaches walk.js, and walk.js cannot be loaded under Node.
 import { lerpAngle } from 'shared/settlerwalk.mjs';
+import { WORLD_HALF } from 'shared/regions.mjs';
 
 // How far behind the newest sample we draw. Two server ticks: enough to always have a
 // pair to interpolate between, short enough that nobody feels remote.
@@ -46,7 +47,12 @@ export function sampleAt(a, b, render, out = {}, final = false) {
 // full speed. KEEP covers the lag with a beat to spare; only the newest stretch is ever
 // carried on past its end, and not at all when the newest is `final`.
 const KEEP = 4;
+// A sample more than half the world from the one before is somebody who sailed off the edge
+// and came in at the other side (Plans/ronde-wereld.md): the track starts again there, or
+// they would be drawn gliding back across the whole world in LAG_MS.
 export function pushSample(track, s) {
+  const last = track[track.length - 1];
+  if (last && (Math.abs(s.x - last.x) > WORLD_HALF || Math.abs(s.z - last.z) > WORLD_HALF)) track.length = 0;
   track.push(s);
   if (track.length > KEEP) track.splice(0, track.length - KEEP);
   return track;

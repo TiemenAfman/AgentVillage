@@ -233,6 +233,19 @@ test('islands holding a starter\'s room fill the first ring round the volcano, n
   allClear(placed, 'eight starters round the volcano');
 });
 
+test('a full sea of starter-sized islands stays out of the band along the world\'s edge', async () => {
+  const { WORLD_HALF, SEA_BAND, wrapShift } = await import('../shared/regions.mjs');
+  // MAX_ISLANDS (16, starters included) of the biggest room there is, round the volcano.
+  const placed = withVolcano(Array(16).fill(192));
+  for (const p of placed) {
+    assert.ok(Math.max(Math.abs(p.origin[0]), Math.abs(p.origin[1])) + p.half <= WORLD_HALF - SEA_BAND, `${p.origin}`);
+  }
+  allClear(placed, 'sixteen round the volcano');
+  // And the jump itself: only past the edge, and the whole width back.
+  assert.deepEqual([0, WORLD_HALF, -WORLD_HALF, WORLD_HALF + 1, -WORLD_HALF - 1].map(wrapShift),
+    [0, 0, 0, -2 * WORLD_HALF, 2 * WORLD_HALF]);
+});
+
 test('a phone looking for open water gets a free berth on the ring, not the volcano', () => {
   // web/js/main.js standaloneHome asks nextOrigin for a wanderer's home, fed the fleet rows.
   const placed = withVolcano([32, 32]);

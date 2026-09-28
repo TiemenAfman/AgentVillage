@@ -9,7 +9,7 @@ import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
 import { isletsNear } from 'shared/islets.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -2076,12 +2076,53 @@ function applyFogRange() {
 // numbers it has always had, to the decimal.
 function setFogRange(half, out, far) {
   const h = hazeRange({ near: half * 1.1, far, half, out, thick: haze() });
+  // Near the world's edge the haze closes in, so that whatever lies across it is behind the
+  // fog before the jump and after it (wrapEye). Across the edge nothing is nearer than the
+  // eye's own way to the edge plus the open water between the far edge and the fleet, and
+  // far from the edge that is more than the haze reaches anyway.
+  h.far = Math.min(h.far, edgeReach());
   // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
   const cap = camera.far * 0.95;
   scene.fog.far = Math.min(h.far, cap);
   scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
+}
+
+// How far the eye may see before something across the world's edge would come into view:
+// its way to the nearest edge, plus the open water between the edge and the fleet on the
+// other side. Infinity until there is a berth to measure from.
+function edgeReach() {
+  const home = state.homeOrigin;
+  if (!home) return Infinity;
+  const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
+  const ex = eye.position.x + home[0], ez = eye.position.z + home[1];
+  let fleet = 0;
+  for (const r of state.fleet || []) {
+    if (!r || !Array.isArray(r.origin)) continue;
+    const half = r.reach ?? (r.gridSize || 64) / 2;
+    fleet = Math.max(fleet, Math.abs(r.origin[0]) + half, Math.abs(r.origin[1]) + half);
+  }
+  const toEdge = WORLD_HALF - Math.max(Math.abs(ex), Math.abs(ez));
+  return Math.max(120, toEdge + (WORLD_HALF - fleet) - 40);
+}
+
+// Round the world by a jump (Plans/ronde-wereld.md): whoever sails, rides or swims past the
+// edge is moved the whole width back across, body, hull and bicycle together, before walk
+// mode steps. Everything is drawn relative to our berth, so the one frame later the world
+// looks exactly as it did; the sea is simply sent a pose on the other side, and every other
+// page starts that track again rather than gliding it back (timeline.js pushSample). Not in
+// a room: a room is not on the sea.
+function wrapEye() {
+  const home = state.homeOrigin;
+  if (!home || !state.walk || state.inside) return;
+  const w = state.walk.state;
+  const dx = wrapShift(w.pos.x + home[0]), dz = wrapShift(w.pos.z + home[1]);
+  if (!dx && !dz) return;
+  w.pos.x += dx; w.pos.z += dz;
+  if (w.vehicle) { w.vehicle.x += dx; w.vehicle.z += dz; }
+  if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
+  state.ui.toast('Round the world - the far side of the chart');
 }
 
 // Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
@@ -5118,6 +5159,7 @@ function frame(nowMs) {
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
+    wrapEye();
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
     touchHud(w && w.near, state.walk);
