@@ -12,7 +12,9 @@
 // It lives in shared/ and obeys shared/'s rule (see the top of rng.mjs): plain arithmetic,
 // no transcendental functions. The one place that would have wanted `atan2` is the bow's
 // heading, and there are exactly four of those, so they are written out as literals the way
-// terrain.mjs writes out DIRS16 for the same reason.
+// terrain.mjs writes out DIRS16 for the same reason. The galleon's berth (`shipBerth`, at
+// the bottom) turns a hull too, and does it the same way.
+import { CRAFTS } from './crafts.mjs';
 
 // The four ways water can lie off a coast cell, and the heading that points along each.
 // yaw is the island's own convention (walk.js:615-617): forward is (sin yaw, cos yaw), so
@@ -282,4 +284,73 @@ export function mooringFor(regionId, terrain, landing, origin = [0, 0], planks =
     z: quay.berth[1] + origin[1],
     yaw: quay.yaw,
   };
+}
+
+// ---- where the galleon lies ------------------------------------------------------------
+// The berths above are cut for a Benchy, a hull a metre long in a harbour basin, and a ship
+// thirteen long put there lay with her bow up the beach and could not be sailed off it. So
+// she is moved out from her berth, keeping its heading, to the nearest spot where every
+// point of her hull - bow, shoulders, stern - floats in real water. Arithmetic on the ground
+// alone, walked in a fixed order, so every page lays her in the same place without a word
+// from the sea.
+//
+// It lived in web/js/main.js until the layout had to know it too: lib/layout.mjs keeps the
+// rede - the anchorage of the ships the village earns, Plans/mijlpalen-tot-tweehonderd.md -
+// clear of where the galleon lies and of the room she turns in, and a second copy of this
+// sum in the scanner is a ship anchored on top of her the first time the two disagree. So
+// this is the one copy, and each caller hands it the ground it sees.
+//
+// `m` is a mooring as mooringsFor hands it out ({ x, z, yaw }, world frame); `height(x, z)`
+// is the ground at a world point - the page passes its archipelago's, the layout its own
+// island's through placeIsland, which is the same number wherever the island lies.
+export const SHIP_WATER = -0.3;
+
+// The page called `sin` and `cos`, which shared/'s rule forbids: on a mooring's yaw, which is
+// always one of SEAWARD's four literals, and on sixteen bearings k * PI / 8. So both are
+// written out here as exactly the doubles V8 hands back for those angles - Node and every
+// Chromium page run the same fdlibm port, and tests/ship-berth.test.mjs holds each of these
+// to Math.sin and Math.cos bit for bit - which is what makes this the page's old arithmetic
+// to the last digit rather than a close relative of it. `[sin, cos]`, in that order: the
+// tiny numbers where a zero was expected are the point, not a typo.
+const HEADINGS = [
+  [0, [0, 1]],
+  [1.5707963267948966, [1, 6.123233995736766e-17]],
+  [-1.5707963267948966, [-1, 6.123233995736766e-17]],
+  [3.141592653589793, [1.2246467991473532e-16, -1]],
+];
+const BEARINGS = [
+  [0, 1], [0.3826834323650898, 0.9238795325112867], [0.7071067811865475, 0.7071067811865476],
+  [0.9238795325112867, 0.38268343236508984], [1, 6.123233995736766e-17], [0.9238795325112867, -0.3826834323650897],
+  [0.7071067811865476, -0.7071067811865475], [0.3826834323650899, -0.9238795325112867], [1.2246467991473532e-16, -1],
+  [-0.38268343236508967, -0.9238795325112868], [-0.7071067811865475, -0.7071067811865477], [-0.9238795325112865, -0.38268343236509034],
+  [-1, -1.8369701987210297e-16], [-0.9238795325112866, 0.38268343236509], [-0.7071067811865477, 0.7071067811865474],
+  [-0.3826834323650904, 0.9238795325112865],
+];
+// For the test that holds the literals to Math.sin and Math.cos, and for nothing else.
+export const SHIP_TRIG = { HEADINGS, BEARINGS };
+// How far out she is looked for, in world units, one ring of sixteen bearings at a time.
+const SHIP_SEARCH = 40;
+
+// The points of her hull that must float: the middle, and the probes she sails by
+// (shared/crafts.mjs), mirrored astern.
+const SHIP_POINTS = (() => {
+  const probes = CRAFTS.galleon.sail.probes;
+  return [[0, 0], ...probes, ...probes.map(([x, z]) => [x, -z])];
+})();
+
+export function shipBerth(m, height) {
+  const heading = HEADINGS.find(([yaw]) => yaw === m.yaw);
+  // A heading that is not one of the four is not a mooring this file made, and there is no
+  // turning a hull to it without the trigonometry this file may not use.
+  if (!heading) return m;
+  const [fx, fz] = heading[1];
+  const clear = (x, z) => SHIP_POINTS.every(([px, pz]) => height(x + px * fz + pz * fx, z - px * fx + pz * fz) < SHIP_WATER);
+  if (clear(m.x, m.z)) return m;
+  for (let d = 1; d <= SHIP_SEARCH; d += 1) {
+    for (let k = 0; k < 16; k++) {
+      const x = m.x + BEARINGS[k][0] * d, z = m.z + BEARINGS[k][1] * d;
+      if (clear(x, z)) return { x, z };
+    }
+  }
+  return m;
 }

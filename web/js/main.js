@@ -11,7 +11,7 @@ import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
 import { isletsNear } from 'shared/islets.mjs';
-import { CRAFTS, kindOf } from 'shared/crafts.mjs';
+import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
@@ -19,7 +19,7 @@ import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
-import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
+import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld } from './world.js';
 import { worldTime, localZone } from 'shared/worldclock.mjs';
@@ -2525,29 +2525,9 @@ function showMinimap(on) {
 // belongs to nobody cannot also be always to hand, so if somebody has left one on the far
 // shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
 // at their moorings on a restart.
-// Where the galleon lies. The berths (shared/quay.mjs mooringsFor) are cut for a Benchy, a
-// hull a metre long in a harbour basin, and a ship thirteen long put there lay with her bow
-// up the beach and could not be sailed off it. So she is moved out from her berth, keeping
-// its heading, to the nearest spot where every point of her hull - bow, shoulders, stern -
-// floats in real water. Arithmetic on the ground alone, walked in a fixed order, so every
-// page lays her in the same place without a word from the sea.
-const SHIP_WATER = -0.3;
-function shipBerth(m) {
-  const probes = CRAFTS.galleon.sail.probes;
-  const pts = [[0, 0], ...probes, ...probes.map(([x, z]) => [x, -z])];
-  const fx = Math.sin(m.yaw), fz = Math.cos(m.yaw);
-  const clear = (x, z) => pts.every(([px, pz]) => state.sea.height(x + px * fz + pz * fx, z - px * fx + pz * fz) < SHIP_WATER);
-  if (clear(m.x, m.z)) return m;
-  for (let d = 1; d <= 40; d += 1) {
-    for (let k = 0; k < 16; k++) {
-      const a = (k * Math.PI) / 8;
-      const x = m.x + Math.sin(a) * d, z = m.z + Math.cos(a) * d;
-      if (clear(x, z)) return { x, z };
-    }
-  }
-  return m;
-}
-
+//
+// The galleon does not lie at her berth but out from it in deep water (`shipBerth`, in
+// shared/quay.mjs now, because lib/layout.mjs keeps the rede clear of where she lies).
 function boatsFor(region) {
   const v = region === state.region ? state.village : region.village;
   const out = [];
@@ -2556,7 +2536,7 @@ function boatsFor(region) {
     if (!b) {
       const ship = kindOf(m.id) === 'galleon';
       const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
-      const at = ship ? shipBerth(m) : m;
+      const at = ship ? shipBerth(m, state.sea.height) : m;
       craft.place(at.x, at.z, m.yaw);
       b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
       state.boats.push(b);
