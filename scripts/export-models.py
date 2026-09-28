@@ -80,7 +80,9 @@ def bake(set_name, source):
             where = assets[asset]['anchors'] if asset is not None else anchors
             # Blender keeps an object's name unique across the whole file, so in a set of
             # several buildings the second one to have a door gets `anchor.door.001`
-            # (assets/harbourhouses). The word is the anchor; the number is only Blender's.
+            # (assets/harbourhouses), and a second asset's anchor.smoke comes out as
+            # anchor.smoke.001 (assets/workshops: the brewery's chimney and its copper). The
+            # word is the anchor; the number is only Blender's.
             kind = obj.name.split('.')[1]
             if kind in where:
                 raise ValueError(f'{set_name}: {asset or set_name} has two anchor.{kind}')

@@ -63,8 +63,9 @@ import { GROCER } from './grocer-mesh.js';
 import { APOTHECARY } from './apothecary-mesh.js';
 import { CHRONICLE } from './chronicle-mesh.js';
 import { HARBOURHOUSES } from './harbourhouses-mesh.js';
+import { WORKSHOPS } from './workshops-mesh.js';
 
-const SETS = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES };
+const SETS = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
@@ -100,6 +101,21 @@ export const hasAsset = (name) => assets.has(name);
 export const assetParts = (name) => (assets.get(name) || { parts: [] }).parts;
 export const anchorsOf = (name) => (assets.get(name) || { anchors: {} }).anchors;
 export const heightOf = (name) => (SETS[(assets.get(name) || {}).set] || {}).height || 0;
+// How tall one asset stands, off its own vertices. `heightOf` is the set's building_height, one
+// number for every asset in it, and a set holding three buildings (assets/workshops: a brewery's
+// chimney, a training field's flagpole, a quarry's hill) would give all three the chimney.
+const tops = new Map();
+export function topOf(name) {
+  if (!tops.has(name)) {
+    let top = 0;
+    for (const n of assetParts(name)) {
+      const p = part(n);
+      for (let i = 1; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i] + p.at[1]);
+    }
+    tops.set(name, top);
+  }
+  return tops.get(name);
+}
 
 // Every asset there is, for the model sheet and for anything else that wants to lay the
 // whole catalogue out rather than ask for one shape by name. The triangle count is the

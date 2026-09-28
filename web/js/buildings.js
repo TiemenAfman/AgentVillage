@@ -377,6 +377,9 @@ export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
 // The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
 // although they hang on the house: every part that moves is in the yard's asset.
 export const isButcherMoving = (n) => /^civic_butcher_yard (awning|sign|hang \d+|joint|slice|embers)(:\d+)?$/.test(n);
+// The quarry's (scripts/build-workshops.py, web/js/quarry.js): the treadwheel, the jib, its rope
+// and hook, the block it carries and the tub on the rail.
+export const isQuarryMoving = (n) => /^civic_quarry_yard (wheel|jib|rope|hook|block|tub)(:\d+)?$/.test(n);
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1523,6 +1526,33 @@ function civic(parts, spec, rng) {
       Object.assign(anchors, meshAnchors('civic_butcher'));
       animated.butcher = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('civic_butcher') };
+    }
+    // The three trades past the castle, one Blender set between them (scripts/build-workshops.py,
+    // Plans/ambachten.md). Their heights are each asset's own (topOf): the set's building_height
+    // is the brewery's chimney, and that is no height for a field.
+    case 'brewery': {
+      // The brewhouse, the copper under its lean-to, and the casks, the dray and the hops. The
+      // chimney smokes and the copper steams, each off an anchor.smoke of its own - which is why
+      // the copper is an asset apart: an asset has one anchor of a name.
+      parts.push(...meshAsset('civic_brewery'), ...meshAsset('civic_brewery_copper'), ...meshAsset('civic_brewery_yard'));
+      Object.assign(anchors, meshAnchors('civic_brewery'));
+      const steam = meshAnchors('civic_brewery_copper').smoke;
+      if (steam) animated.steam = { at: steam };
+      return { anchors, animated, height: models.topOf('civic_brewery') };
+    }
+    case 'trainingfield': {
+      // The fenced field with its shelter and racks, and the dummies, pells and butts. The flag
+      // on the shelter's pole is the island's, flown by main.js off anchor.flag like the hall's.
+      parts.push(...meshAsset('civic_trainingfield'), ...meshAsset('civic_trainingfield_yard'));
+      Object.assign(anchors, meshAnchors('civic_trainingfield'));
+      return { anchors, animated, height: models.topOf('civic_trainingfield') };
+    }
+    case 'quarry': {
+      // The benches and the hill, and the yard less what turns, slews and runs: quarry.js hangs
+      // the treadwheel, the jib, the rope, the hook, the block and the tub on their own pivots.
+      parts.push(...meshAsset('civic_quarry'), ...meshAsset('civic_quarry_yard', 0xffffff, { skip: isQuarryMoving }));
+      animated.quarry = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.topOf('civic_quarry') };
     }
     case 'windmill':
     case 'poldermill':
