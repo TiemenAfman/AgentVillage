@@ -16,6 +16,12 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
+- 🚧 [batavia.md](batavia.md) — het VOC-schip uit de ladder tot tweehonderd: een
+  spiegelretourschip naar de Batavia van 1628, voor anker, 12 op de waterlijn, 15 over alles,
+  de grote mast 11,5 boven het water. Drie schepen uit één bake in drie kleuren, deinend en met
+  waaiende vlaggen, een zij waar zwemmers en boten tegenaan komen, en de dekken en trappen als
+  ankers voor wie er later op wil lopen. Getekend en te raken op 28 september 2026; nog niet te
+  belopen en nog niet op het eiland gezet.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 ligt er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf

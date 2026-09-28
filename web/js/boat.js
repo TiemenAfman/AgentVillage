@@ -94,6 +94,20 @@ export const BOAT_FLOAT = 0.06;
 // truths about one waterline.
 export const BOAT_SCRAPE = BEACH_MAX;
 
+// A ship's side, to a boat. The ground stepBoat is handed knows nothing of a Batavia lying at
+// anchor - under her is sea bed - so her hull arrives as blockers that carry `hull`, the height
+// of her main deck over the water (shipSolids in buildings.js), and a point inside one of
+// those reads that height instead. It is well above BOAT_SCRAPE, so a bow or a probe that
+// meets her side stops as it would at a bank, and backs off the same way. No padding: a probe
+// is already a point on the boat's own hull, and the Benchy's bow is her tip.
+export function hullOver(hulls, x, z, ground) {
+  let h = ground;
+  for (const b of hulls) {
+    if (b.hull > h && Math.abs(x - b.x) < b.hx && Math.abs(z - b.z) < b.hz) h = b.hull;
+  }
+  return h;
+}
+
 // What a scrape costs, per second of it, and the one number here that is not a matter of
 // taste. It has to beat the throttle: BOAT_ACCEL against this settles at
 // 5.0 / (30 + BOAT_DRAG) = 0.16 u/s, which is under CREEP, so a hull held against a bank

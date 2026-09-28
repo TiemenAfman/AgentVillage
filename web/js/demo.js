@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   createBuildingMaterial, buildBuilding, buildBladesGeometry, buildPlaqueGeometry,
   buildBridgeGeometry, buildPierGeometry, PALETTE, TIER_LABEL, WALK_CLEARANCE, WALK_BODY_R,
-  meshAsset, mergeParts,
+  meshAsset, mergeParts, shipLivery,
 } from './buildings.js';
 import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
@@ -33,6 +33,8 @@ import { createAnimal } from './fauna.js';
 import { attachButcher, updateButcher } from './butcher.js';
 import { attachQuarry, updateQuarry } from './quarry.js';
 import { YARD_FLOOR, YARD_STAGES, YARD_W, YARD_D } from './shipyard.js';
+import { attachBatavia, updateBatavia } from './batavia.js';
+import { createBoat } from './boat.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -850,6 +852,45 @@ function shorePatch(originX, originZ, cells, { inlet }) {
   });
   tag(HEADING_X + PITCH * 1.1, z, 'over a real beach', 'the run is derived, not hand-listed');
   row += 2;
+}
+
+// ---- the ships on the roads ------------------------------------------------------
+// The Batavia (Plans/batavia.md) in the three liveries an island's three ships wear, afloat
+// on a sheet of sea, with the galleon every island already has beside them at the same
+// waterline - she has to read as the bigger and nobler of the two, and this is where to see
+// whether she does. A row of its own rather than a place in CIVIC: the civic rows are a pitch
+// apart and a ship is fifteen long, so she would lie across three of them. Each is built by
+// the same buildBuilding the island uses, rocks and flies her flags through web/js/batavia.js,
+// and with Hitbox on shows the hull slabs walk mode and the boats meet.
+{
+  const z = row * ROW + 8;
+  heading('Ships', row * ROW);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(30, 22).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
+    color: 0x2f6f8c, roughness: 0.3, transparent: true, opacity: 0.88,
+  }));
+  sea.position.set(0, FIELD_Y + 0.004, z + 1);
+  scene.add(sea);
+  const LIVERIES = [['civic:ship', 'Batavia'], ['civic:ship:2', 'Second ship'], ['civic:ship:3', 'Third ship']];
+  LIVERIES.forEach(([id, name], i) => {
+    const x = (i - 1.5) * 6.5;
+    const spec = { id, kind: 'civic', civicType: 'ship', tier: 'civic', style: 'unknown', ornaments: [] };
+    const built = buildBuilding(spec, {});
+    const m = new THREE.Mesh(built.geometry, material);
+    m.position.set(x, FIELD_Y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+    const ship = attachBatavia(m, id, material);
+    if (ship) lives.push((dt) => updateBatavia(ship, dt));
+    drawHitbox(built, x, z);
+    tag(x, z + 9.2, name, `${shipLivery(id).name} · ${models.assetTris('batavia')} tris`);
+    placed.set(id, { x, z, built });
+  });
+  const galleon = createBoat({ scene, material, kind: 'ship' });
+  galleon.place(1.5 * 6.5, z, 0);
+  galleon.object.position.y = FIELD_Y;
+  tag(1.5 * 6.5, z + 8.2, 'Galleon', 'every island\'s first boat');
+  row += 5;
 }
 
 // How strong the ground tint should be: pick the one that still reads as farmland.

@@ -147,7 +147,11 @@ smooth normals - and because the island looks the way it looks.
   is, because every part of it belongs to that one building.
 - Empties named `anchor.<name>` become the anchors `main.js` hangs things on: `smoke`,
   `flag`, `door`, `sign`. Any other name is a typo rather than a feature, and the check
-  says so.
+  says so. A ship adds what she measures of herself (`assets/batavia`,
+  `scripts/build-batavia.py`): `waterline`, her draught, which is the one number the island
+  lowers her by; `deck.<name>.lo|hi` and `stair.<name>.lo|hi`, opposite corners of the
+  planking and the ladders a body will walk, at the heights a downward ray found them; and
+  `mast.<name>`. Corners come in pairs, and the check refuses half of one.
 - Variants are `_a`, `_b`, `_c`, so a caller can pick one with the rng; an optional `_lo`
   is the cheap one for the modest GPU mode.
 
@@ -176,7 +180,10 @@ and `scripts/model-rules.mjs` refuses anything over it:
 as one building, drawn once - and it sits at 2684 triangles as baked, 2956 as it stands
 on the island with its porch and foundation under it. `HERO_BUDGET` is 4000, which is
 where `tests/tavern.test.mjs` already put the ceiling for a modest GPU. A hero is
-something you decide to make, not something a set becomes by growing.
+something you decide to make, not something a set becomes by growing. Two heroes were
+decided bigger, each in `HERO_BUDGETS`: the pirate galleon (15000, a decimated download a
+settler walks the deck of) and the Batavia (8000, modelled whole in Blender Python and at
+6181), the ship the village earns and of which up to three lie on the roads.
 
 None of this costs draw calls. A baked part carries the same attributes as a `box()` and
 is merged into the same single geometry, so ten barrels are still zero extra draw calls -

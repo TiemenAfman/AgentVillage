@@ -61,7 +61,7 @@ const SHEDS = ['explore', 'plan', 'general', 'guide', 'other'];
 const ORNAMENTS = ['forge', 'lumber', 'lantern', 'weathervane', 'pigeons', 'banner', 'lightningrod'];
 const CIVIC = ['townhall', 'board', 'issues', 'well', 'market', 'tavern', 'clocktower', 'tables',
   'school', 'windmill', 'watertower', 'chapel', 'fountain', 'lighthouse', 'statue', 'castle', 'poldermill',
-  'crane', 'goldpit', 'chronicle', 'fishery', 'warehouse', 'weighhouse', 'brewery', 'trainingfield', 'quarry'];
+  'crane', 'goldpit', 'chronicle', 'fishery', 'warehouse', 'weighhouse', 'brewery', 'trainingfield', 'quarry', 'ship'];
 const FURNITURE = ['planter', 'lamp', 'bench', 'terrace', 'mailbox'];
 
 const title = (s) => s[0].toUpperCase() + s.slice(1);

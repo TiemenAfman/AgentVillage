@@ -37,6 +37,7 @@ import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
 import { BUOYS } from '../web/js/buoys-mesh.js';
 import { BENCHY } from '../web/js/benchy-mesh.js';
 import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
+import { BATAVIA } from '../web/js/batavia-mesh.js';
 import { BICYCLE } from '../web/js/bicycle-mesh.js';
 import { SAWMILL } from '../web/js/sawmill-mesh.js';
 import { SMITHY } from '../web/js/smithy-mesh.js';
@@ -62,7 +63,7 @@ import { SHIPYARD } from '../web/js/shipyard-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -282,9 +283,12 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wall', 'wandmaker', 'windmill', 'workshops']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wall', 'wandmaker', 'windmill', 'workshops']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
+    // The Batavia, a hero like the galleon: the ship the village earns, modelled whole in
+    // scripts/build-batavia.py, her flags parts that move inside the one asset.
+    'batavia',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
     // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
