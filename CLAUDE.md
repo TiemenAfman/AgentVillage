@@ -1238,7 +1238,11 @@ islander, so none of the desktop's reasons apply ([Plans/eiland-op-android.md](P
 APK is a zip anybody can read, so the open sea runs with no `SEA_KEY` (anybody may join;
 an island's claim token keeps its name) and the restart button has its own
 `SEA_ADMIN_KEY`; the pack only bakes a key given by name (`--key`), for a private sea.
-`release.yml`'s `android` job builds and signs it on every tag. `STANDALONE` in `web/js/api.js` makes
+`release.yml`'s `android` job builds and signs it on every tag. The launcher icon is the
+committed `gen/android/.../res/mipmap-*`, not `icons/` (which only the desktop reads) - it
+shipped as Tauri's default logo up to 0.6.3; regenerate it from the maskable island with
+`npx tauri icon ../web/icons/island-maskable-512.png -o <tmp>` in `src-android/` and copy
+`android/mipmap-*` over. `STANDALONE` in `web/js/api.js` makes
 `mine()` refuse without fetching (the app origin answers every path, and a 404 "from the
 islander" is the keeper's mode); the page then has no island at all: home is a free berth of water (`nextOrigin`, drawn on
 `makeTerrain(…, { open: true })`, which is sea edge to edge), the body joins as a wanderer
