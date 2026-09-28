@@ -1819,7 +1819,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
   key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
   key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
-  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  // key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  key.shadow.camera.near = 10; key.shadow.camera.far = opts.shadowDistance || 150;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
   // One step softer, now that the sun is low enough for a shadow to run the length of a

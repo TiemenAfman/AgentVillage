@@ -549,9 +549,40 @@ export function fitMap(b, w, h, pad = 40) {
   const scale = Math.min((w - pad * 2) / spanX, (h - pad * 2) / spanZ);
   const midX = (b.minX + b.maxX) / 2, midZ = (b.minZ + b.maxZ) / 2;
   return {
-    scale,
+    scale, midX, midZ,
     toPx: (x, z) => [w / 2 + (x - midX) * scale, h / 2 + (z - midZ) * scale],
     toWorld: (px, py) => [midX + (px - w / 2) / scale, midZ + (py - h / 2) / scale],
+  };
+}
+
+// The chart looked through a magnifier: `v` is { k, cx, cz }, k times the fitted scale
+// round the world point cx, cz in the middle of the sheet. No magnifier (null) is the fit
+// itself, so the sheet, its letters and its torn edge stay where the fit put them and only
+// what is drawn on the sheet moves. Pure, for the test.
+export const MAP_ZOOM_MAX = 12;
+export function zoomedFit(base, w, h, v) {
+  if (!v) return base;
+  const scale = base.scale * v.k;
+  return {
+    scale, midX: v.cx, midZ: v.cz,
+    toPx: (x, z) => [w / 2 + (x - v.cx) * scale, h / 2 + (z - v.cz) * scale],
+    toWorld: (px, py) => [v.cx + (px - w / 2) / scale, v.cz + (py - h / 2) / scale],
+  };
+}
+
+// The magnifier after one turn of the wheel by `factor` at pixel mx, my: the world point
+// under the pointer stays under it, as in any map on a screen, and the view is kept inside
+// what the unzoomed fit shows, so zooming never wanders off the sheet. Back at 1 it is null.
+export function zoomMapAt(v, base, w, h, mx, my, factor) {
+  const k = Math.min(MAP_ZOOM_MAX, Math.max(1, (v ? v.k : 1) * factor));
+  if (k <= 1.001) return null;
+  const [wx, wz] = zoomedFit(base, w, h, v).toWorld(mx, my);
+  const s = base.scale * k;
+  const keep = (c, mid, span, half) => Math.min(mid + span - half, Math.max(mid - span + half, c));
+  return {
+    k,
+    cx: keep(wx - (mx - w / 2) / s, base.midX, w / 2 / base.scale, w / 2 / s),
+    cz: keep(wz - (my - h / 2) / s, base.midZ, h / 2 / base.scale, h / 2 / s),
   };
 }
 
@@ -635,6 +666,25 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
   window.addEventListener('pointermove', aim);
   // A finger does not hover: a tap is where it points, and it stays pointed there.
   if (phone) window.addEventListener('pointerdown', aim);
+
+  // The wheel over an open chart zooms the chart. Caught on the window in the capture phase,
+  // before the canvas underneath hears it: the panel is `pointer-events: none` (above), so
+  // the orbit controls and walk.js's own wheel took every turn and zoomed the world behind
+  // the sheet instead (issue #77). Under a pointer lock there is no pointer, so the middle.
+  let view = null, zoomedAt = 0, lastFit = null;
+  window.addEventListener('wheel', (e) => {
+    if (panel.hidden) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!lastFit) return;
+    const r = panel.getBoundingClientRect();
+    const locked = !!document.pointerLockElement;
+    const mx = locked ? W / 2 : Math.min(W, Math.max(0, e.clientX - r.left));
+    const my = locked ? H / 2 : Math.min(H, Math.max(0, e.clientY - r.top));
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1);
+    view = zoomMapAt(view, lastFit, W, H, mx, my, Math.exp(-dy * 0.0015));
+    zoomedAt = performance.now();
+  }, { capture: true, passive: false });
   if (phone) {
     const close = document.createElement('button');
     close.className = 'x worldmap-close';
@@ -659,6 +709,9 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     return objIds.get(o);
   };
   let groundKey = '';
+  // The fit the ground sheet was painted with: while the wheel is turning it is stretched
+  // onto the new view rather than painted again every notch (see update).
+  let groundFit = null;
   // The parchment under it all, and its torn outline (paintPaper).
   const paper = document.createElement('canvas');
   let paperKey = '';
@@ -686,6 +739,7 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     groundKey = '';
+    groundFit = null;
     paperKey = '';
   }
   window.addEventListener('resize', () => { if (!panel.hidden) resize(); });
@@ -693,6 +747,7 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
   function setVisible(on) {
     if (panel.hidden === !on) return;
     panel.hidden = !on;
+    view = null;
     if (on) resize();
     else { tip.hidden = true; pointer = null; }
   }
@@ -826,15 +881,24 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     const w = data.world;
     // The pad leaves the grid's letters and numbers room outside the world's edge, and the
     // torn edge of the sheet room outside those.
-    const fit = fitMap(w || mapBounds(data.regions, data.far), W, H, w ? 58 : 40);
+    // `base` frames the sheet (paper, letters, compass, the words at the foot) and never
+    // zooms; `fit` is what is drawn on it, through the wheel's magnifier.
+    const base = fitMap(w || mapBounds(data.regions, data.far), W, H, w ? 58 : 40);
+    lastFit = base;
+    const fit = zoomedFit(base, W, H, view);
     const key = [W, H, w ? `${w.minX},${w.minZ}` : '', objId(data.district && data.district.owner),
+      view ? `${view.k.toFixed(4)},${view.cx.toFixed(2)},${view.cz.toFixed(2)}` : '',
       ...data.regions.map((r) => `${r.id}@${objId(r.region)}@${objId(r.village)}`)].join('|');
-    if (key !== groundKey) { paintGround(data, fit, w); groundKey = key; }
+    // A few hundred thousand height lookups is too many for every notch of the wheel, so
+    // the old sheet is stretched until the wheel has been still for a moment.
+    if (key !== groundKey && (!groundFit || performance.now() - zoomedAt > 150)) {
+      paintGround(data, fit, w); groundKey = key; groundFit = fit;
+    }
     // The sheet is cut to the world and its margin, not to the window: a square world on a
     // wide screen was a strip of blank parchment either side of it.
     let rect = [0, 0, W, H];
     if (w) {
-      const [x0, y0] = fit.toPx(w.minX, w.minZ), [x1, y1] = fit.toPx(w.maxX, w.maxZ);
+      const [x0, y0] = base.toPx(w.minX, w.minZ), [x1, y1] = base.toPx(w.maxX, w.maxZ);
       const a = Math.max(0, x0 - 52), b = Math.max(0, y0 - 52);
       rect = [a, b, Math.min(W, x1 + 52) - a, Math.min(H, y1 + 52) - b];
     }
@@ -852,10 +916,21 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     ctx.save();
     ctx.clip(sheet);
     ctx.globalAlpha = 0.55;
-    ctx.drawImage(ground, 0, 0, ground.width * step, ground.height * step);
+    {
+      const [gx, gy] = fit.toPx(...groundFit.toWorld(0, 0)), g = fit.scale / groundFit.scale;
+      ctx.drawImage(ground, gx, gy, ground.width * step * g, ground.height * step * g);
+    }
     ctx.restore();
-    if (w) drawGrid(w, fit);
-    compassRose(w ? fit.toPx(w.maxX, w.minZ)[0] - 46 : W - 70, w ? fit.toPx(w.maxX, w.minZ)[1] + 46 : 70, 30);
+    if (w) drawGrid(w, fit, base);
+    compassRose(w ? base.toPx(w.maxX, w.minZ)[0] - 46 : W - 70, w ? base.toPx(w.maxX, w.minZ)[1] + 46 : 70, 30);
+
+    // Zoomed in, what is drawn on the sheet stops at the world's edge as the sheet frames it,
+    // or the marks would run out over the letters and the table.
+    ctx.save();
+    if (w && view) {
+      const [x0, y0] = base.toPx(w.minX, w.minZ), [x1, y1] = base.toPx(w.maxX, w.maxZ);
+      ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+    }
 
     // Everything with a place and a name goes into `marks` as it is drawn, so the hover
     // test below looks at exactly what is on the sheet and nothing else.
@@ -1022,6 +1097,8 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     const sailingSelf = (data.boats || []).some((b) => b.isSelf);
     marks.push({ px, py, title: 'You', sub: sailingSelf ? 'Sailing a boat' : null, ring: 14 });
 
+    ctx.restore();
+
     const hit = pick(data, fit, marks);
     if (hit && hit.ring) {
       ctx.beginPath();
@@ -1045,33 +1122,46 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
   // on any sea chart, the world's edge as a dashed square and a one-kilometre bar in the
   // corner. `w` is in scene coordinates; `w.home` is the berth that turns them back into the
   // world's, which is what the lines are laid out on.
-  function drawGrid(w, fit) {
+  // `base` is the unzoomed frame: zoomed in, the lines follow `fit` but stay inside the
+  // frame's edge, and the letters and numbers stay along it, over the squares still in view.
+  function drawGrid(w, fit, base = fit) {
     const [ox, oz] = w.home;
-    const [x0, y0] = fit.toPx(w.minX, w.minZ), [x1, y1] = fit.toPx(w.maxX, w.maxZ);
+    const [fx0, fy0] = base.toPx(w.minX, w.minZ), [fx1, fy1] = base.toPx(w.maxX, w.maxZ);
+    const [ex0, ey0] = fit.toPx(w.minX, w.minZ), [ex1, ey1] = fit.toPx(w.maxX, w.maxZ);
+    const x0 = Math.max(fx0, ex0), y0 = Math.max(fy0, ey0), x1 = Math.min(fx1, ex1), y1 = Math.min(fy1, ey1);
     const xs = gridSteps(w.minX + ox, w.maxX + ox, w.km).map((k) => fit.toPx(k - ox, 0)[0]);
     const zs = gridSteps(w.minZ + oz, w.maxZ + oz, w.km).map((k) => fit.toPx(0, k - oz)[1]);
     ctx.save();
     ctx.lineWidth = 1;
     ctx.strokeStyle = INK_FAINT;
     ctx.beginPath();
-    for (const px of xs) { ctx.moveTo(Math.round(px) + 0.5, y0); ctx.lineTo(Math.round(px) + 0.5, y1); }
-    for (const py of zs) { ctx.moveTo(x0, Math.round(py) + 0.5); ctx.lineTo(x1, Math.round(py) + 0.5); }
+    for (const px of xs) if (px > x0 && px < x1) { ctx.moveTo(Math.round(px) + 0.5, y0); ctx.lineTo(Math.round(px) + 0.5, y1); }
+    for (const py of zs) if (py > y0 && py < y1) { ctx.moveTo(x0, Math.round(py) + 0.5); ctx.lineTo(x1, Math.round(py) + 0.5); }
     ctx.stroke();
     ctx.setLineDash([7, 5]);
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = INK;
-    ctx.strokeRect(Math.round(x0) + 0.5, Math.round(y0) + 0.5, Math.round(x1 - x0), Math.round(y1 - y0));
+    // The world's real edge, not the frame's: zoomed in it is off the sheet and not drawn.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(fx0 - 1, fy0 - 1, fx1 - fx0 + 2, fy1 - fy0 + 2); ctx.clip();
+    ctx.strokeRect(Math.round(ex0) + 0.5, Math.round(ey0) + 0.5, Math.round(ex1 - ex0), Math.round(ey1 - ey0));
+    ctx.restore();
     ctx.setLineDash([]);
     // A letter over the middle of every column and a number beside every row, the lines
     // being the squares' edges rather than their names.
-    const mids = (a, lines, b) => [a, ...lines, b].slice(1).map((v, i, all) => ((i ? all[i - 1] : a) + v) / 2);
+    // Each square's name goes over the middle of the part of it still on the sheet (all of
+    // it, unzoomed); a square wholly off the sheet gets none. Null keeps the index its name.
+    const mids = (a, lines, b, lo, hi) => [a, ...lines, b].slice(1).map((v, i, all) => {
+      const l = Math.max(lo, i ? all[i - 1] : a), r = Math.min(hi, v);
+      return r - l > 8 ? (l + r) / 2 : null;
+    });
     const size = Math.max(11, Math.min(18, Math.round((x1 - x0) / 55)));
     ctx.font = `${size}px Georgia, 'Times New Roman', serif`;
     ctx.fillStyle = INK;
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    mids(x0, xs, x1).forEach((px, i) => ctx.fillText(columnName(i), px, y0 - 6));
+    mids(ex0, xs, ex1, x0, x1).forEach((px, i) => px != null && ctx.fillText(columnName(i), px, y0 - 6));
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    mids(y0, zs, y1).forEach((py, i) => ctx.fillText(String(i + 1), x0 - 8, py));
+    mids(ey0, zs, ey1, y0, y1).forEach((py, i) => py != null && ctx.fillText(String(i + 1), x0 - 8, py));
     // The bar, bottom left, inside the edge.
     const len = w.km * fit.scale, bx = x0 + 14, by = y1 - 14;
     ctx.strokeStyle = INK;

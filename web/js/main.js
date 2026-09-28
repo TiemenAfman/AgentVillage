@@ -5563,7 +5563,7 @@ function frame(nowMs) {
   if (!state.youMarker) state.youMarker = createYouMarker(scene);
   const sky = state.mode === 'orbit' && state.walk.parked() && !state.inside;
   state.youMarker.update(sky ? state.walk.state.pos : null, state.walk.state.route,
-    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youArrowEnabled());
+    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youMarkerMode());
 
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
