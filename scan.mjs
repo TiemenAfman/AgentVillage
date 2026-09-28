@@ -8,18 +8,19 @@ import { discover } from './lib/sources.mjs';
 import { discoverCodex, foldCodex } from './lib/codex-sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
-import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
+import { buildVillage, readArrivals, MILESTONES, civicIdOf, yardStage } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, clearRoads, doorCell, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
+import { fleetOf, earnedBoats } from './shared/quay.mjs';
 
 export function parseArgs(argv) {
   const o = { all: false, quiet: false, persistLayout: true, out: null, layoutFile: null, cacheFile: null };
@@ -249,8 +250,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
   };
   // lib/layout.mjs's own door, not a copy of it: the castle's seven-wide lot has its gate
-  // three cells in, and a copy that only knew three by three said one.
-  const doorOf = (p) => (p && p.w >= 3 ? doorCell(p.gx, p.gz, p.rot, p.w) : null);
+  // three cells in, and a copy that only knew three by three said one. Asked by id as well as
+  // plot since the ladder went past a hundred: a ship has no door, and the yard's is at its
+  // landward end rather than on its front.
+  const doorOf = (id, p) => { const d = plotDoor(id, p); return d ? d.door : null; };
 
   // Work handed out at the sprint board, so a house can show what its settler took on.
   const assignments = readAssignments();
@@ -271,7 +274,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     buildings.push({
       ...b,
       plot: p,
-      door: doorOf(p),
+      door: doorOf(b.id, p),
       startedAt: iso(b.startedAt),
       lastAt: iso(b.lastAt),
       workOrders: openBySettler.get(b.id) || [],
@@ -288,7 +291,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   if (townPlot) {
     civics.push({
       id: 'civic:townhall', kind: 'civic', civicType: 'townhall', district: model.districts[0] ? model.districts[0].id : null,
-      plot: townPlot, door: doorOf(townPlot), name: `${islandNameOf(config)} Town Hall`,
+      plot: townPlot, door: doorOf('civic:townhall', townPlot), name: `${islandNameOf(config)} Town Hall`,
       title: `Founded ${new Date(config.foundedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
       label: 'Town Hall', startedAt: iso(new Date(config.foundedAt).getTime()), lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
@@ -321,7 +324,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   if (pitPlot) {
     civics.push({
       id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit', district: null,
-      plot: pitPlot, door: doorOf(pitPlot), name: 'The gold pit', label: 'Gold pit',
+      plot: pitPlot, door: doorOf(GOLDPIT_ID, pitPlot), name: 'The gold pit', label: 'Gold pit',
       title: 'The five-hour usage window, one bar a percent',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
@@ -382,7 +385,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     if (!d.gitRepo || !op) continue;
     civics.push({
       id, kind: 'civic', civicType: 'office', district: d.id,
-      plot: op, door: doorOf(op),
+      plot: op, door: doorOf(id, op),
       name: `${d.name} office`, label: 'Office', repoName: d.name,
       title: `The register of ${d.name}`,
       startedAt: iso(d.firstSeenAt), lastAt: null,
@@ -394,11 +397,14 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   }
 
   for (const m of model.milestones) {
-    const id = `civic:${m.civicType}`;
+    const id = civicIdOf(m);
     const p = plot(id);
     if (!m.unlocked || !p) continue;
     civics.push({
-      id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(p),
+      id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(id, p),
+      // What stands on the yard's slipway (lib/village.mjs yardStage), 0 to 4. On the record
+      // because a bundle carries no settler count, so a visitor could not work it out.
+      ...(id === YARD_ID ? { stage: yardStage(model.stats.settlers) } : {}),
       name: m.label, title: `Unlocked at ${m.at} ${m.on === 'apprentices' ? 'apprentices' : 'settlers'}`, label: m.label,
       startedAt: iso(m.unlockedAt), lastAt: null, style: 'unknown', model: null, models: {},
       tier: 'civic', ornaments: [], active: false, archived: false,
@@ -470,6 +476,20 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     };
   });
 
+  // The boats at each harbour: however many the keeper has built there (lib/boatyard.mjs)
+  // or the village has earned (shared/quay.mjs earnedBoats, from FLEET_AT settlers),
+  // whichever is more - so B builds ahead of the count and never below it. Worked out on
+  // the walk mooringsFor takes (fleetOf), so the earned ones are dealt only to harbours
+  // that draw a boat, and the one holding the island's first boat - the galleon, which
+  // counts towards its three - is dealt one fewer. `first` marks that harbour for the
+  // boatyard's count of how many more fit there (serve.mjs); the bundle leaves it out
+  // (lib/islandbundle.mjs `harbour`), since every other machine derives it the same way.
+  const harbourList = (layout.harbours || []).filter(Boolean);
+  const fleet = fleetOf(terrain, { island: { landing: layout.landing, harbours: harbourList }, districts });
+  // Dealt from the kadehaven, where the plan puts the harbour's life; the harbour holding the
+  // first boat is still the one that takes one fewer.
+  const earned = earnedBoats(model.stats.settlers, fleet.harbours, fleet.first, kadehaven(layout, terrain)?.side ?? fleet.first);
+
   const all2 = [...buildings, ...civics];
   return {
     v: 1,
@@ -487,8 +507,13 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       // The island's harbours (lib/layout.mjs planHarbours): side, the shore cell the
       // planks start from, and the planks. The sides with none are left out; `side` says
       // which is which. The quay's own planks are one of these.
-      // `boats` is how many the keeper has built there (lib/boatyard.mjs, its own file).
-      harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier, boats: boats[h.side] || 0 })),
+      // `boats` is how many lie there besides the first boat: built by the keeper
+      // (lib/boatyard.mjs, its own file) or earned, whichever is more - see `fleet` above.
+      harbours: harbourList.map((h) => ({
+        side: h.side, shore: h.shore, pier: h.pier,
+        boats: Math.max(boats[h.side] || 0, earned[h.side] || 0),
+        ...(fleet.first === h.side ? { first: true } : {}),
+      })),
       town: {
         ...layout.town, commons: undefined, parcel: rleParcel(layout.town.commons), coreR: TOWN_CORE_R,
         // When the square reached each of its widths. The chronicle needs this to lay the

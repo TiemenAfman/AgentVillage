@@ -7,16 +7,22 @@
 // Save writes those lines into `buildings.js`, and is careful about it: the page sends the
 // line as it stands in the file and the line that takes its place, and the server refuses
 // unless it finds the first exactly once. A line the file works out rather than writes down
-// cannot be matched that way, and is named instead of guessed at - which is why Copy is
-// still here.
+// cannot be matched that way, so it is found by where it was called from and has only its
+// moved numbers changed (inPlace); what even that cannot do is named instead of guessed
+// at - which is why Copy is still here.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import {
-  createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT,
+  createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT, traceParts,
   box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad, mesh,
 } from './buildings.js';
+import { YARD_STAGE_NAMES } from './shipyard.js';
 import { mine } from './api.js';
+
+// Every part this page builds notes the line and column it was asked for at, which is
+// what lets Save edit a line that works its numbers out - see inPlace() below.
+traceParts(true);
 
 // ---------------------------------------------------------------- the shapes
 // Every primitive takes its dimensions, then a colour, then a placement, which is what
@@ -56,7 +62,7 @@ const SHEDS = ['explore', 'plan', 'general', 'guide', 'other'];
 const ORNAMENTS = ['forge', 'lumber', 'lantern', 'weathervane', 'pigeons', 'banner', 'lightningrod'];
 const CIVIC = ['townhall', 'board', 'issues', 'well', 'market', 'tavern', 'clocktower', 'tables',
   'school', 'windmill', 'watertower', 'chapel', 'fountain', 'lighthouse', 'statue', 'castle', 'poldermill',
-  'crane', 'goldpit'];
+  'crane', 'goldpit', 'chronicle', 'fishery', 'warehouse', 'weighhouse', 'brewery', 'trainingfield', 'quarry', 'ship'];
 const FURNITURE = ['planter', 'lamp', 'bench', 'terrace', 'mailbox'];
 
 const title = (s) => s[0].toUpperCase() + s.slice(1);
@@ -93,6 +99,13 @@ const CATALOGUE = [
     label: 'Quay house',
     spec: { id: 'h:harbour', kind: 'house', tier: 'cottage', style: 'sonnet', harbour: true, ornaments: [] },
   },
+  // The shipyard with its ship at each of its five stages (web/js/shipyard.js). Last, so the
+  // numbers the picker remembers for everything above do not move.
+  ...YARD_STAGE_NAMES.map((what, stage) => ({
+    group: 'Shipyard',
+    label: `Stage ${stage} · ${what.toLowerCase()}`,
+    spec: { ...civicSpec('shipyard'), id: `c:shipyard:${stage}`, stage },
+  })),
 ];
 
 // ---------------------------------------------------------------- numbers
@@ -669,6 +682,194 @@ function trueLine(rec) {
   return { line: partLine(rec), name: hexName(rec.hex), exact: false };
 }
 
+// ---------------------------------------------------------------- editing a line where it stands
+// Most lines in buildings.js cannot be written back word for word: the colour is a
+// variable (`frame`, shared by both notice boards), a position is `W / 2 - 0.08`, a
+// height is `0.33 + BRIM`. For those the part's note carries where it was called from
+// (traceParts), and Save opens that call and changes only the numbers that moved - by
+// how far they moved, so a formula stays a formula and a lift() done after the call is
+// not written in twice. The file on disk is still what decides: the whole line goes to
+// the server as `find`, exactly as for any other edit.
+let lineCache = null;
+const srcLines = () => (lineCache ||= source.split('\n').map((l) => l.replace(/\r$/, '')));
+
+// The innermost frame on the stack whose line has this call at that column: the first
+// frames are note() and the primitive itself, which say `note(` there.
+function callAt(rec) {
+  for (const [ln, col] of rec.sites || []) {
+    const text = srcLines()[ln - 1];
+    if (text && text.startsWith(`${rec.fn}(`, col - 1)) return { ln, col, text, at: col - 1 };
+  }
+  return null;
+}
+
+// The comma-separated pieces from `from` up to the bracket that closes the one before it,
+// trimmed, with their positions. Null when that bracket is not on this line.
+function splitTop(text, from) {
+  const spans = [];
+  let depth = 0, start = from, quote = null;
+  const push = (end) => {
+    let s = start, e = end;
+    while (s < e && /\s/.test(text[s])) s++;
+    while (e > s && /\s/.test(text[e - 1])) e--;
+    if (e > s) spans.push({ s, e, src: text.slice(s, e) });
+  };
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+    if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) return null;
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') {
+      if (!depth) { push(i); return { spans, close: i }; }
+      depth--;
+    } else if (c === ',' && !depth) { push(i); start = i + 1; }
+  }
+  return null;
+}
+
+const NUM = /^-?(\d+\.?\d*|\.\d+)(e-?\d+)?$/;
+const ROT = new Set(['rx', 'ry', 'rz']);
+const restOf = (k) => (k === 'repaint' ? false : PLACE_REST[k] ?? 0);
+const lit = (k, v) => (v === true ? 'true' : ROT.has(k) ? angle(v) : num(v));
+
+// `src` moved by `d`. A plain number just becomes the new one; a formula ending in a
+// constant has that constant changed (`W / 2 - 0.08` down by 0.02 is `W / 2 - 0.1`, not
+// `W / 2 - 0.08 - 0.02`); anything else gets the difference added on the end.
+function bump(src, d, k) {
+  if (!r6(d)) return src;
+  if (NUM.test(src)) return lit(k, Number(src) + d);
+  const m = /^(.*?\S)\s*([+-])\s*(\d+\.?\d*|\.\d+)$/.exec(src);
+  if (m && !/[*/%+\-(,]$/.test(m[1]) && !/[?:<>=&|]/.test(m[1])) {
+    const v = r6((m[2] === '-' ? -1 : 1) * Number(m[3]) + d);
+    return v ? `${m[1]} ${v < 0 ? '-' : '+'} ${num(Math.abs(v))}` : m[1];
+  }
+  const head = /[?:<>=&|,]/.test(src) ? `(${src})` : src;
+  return `${head} ${d < 0 ? '-' : '+'} ${num(Math.abs(d))}`;
+}
+
+// What Save would do to the line this piece was called from: a list of [start, end, text]
+// replacements on that line, `remove` when the piece is gone and the line is nothing but
+// its push, or `why` it cannot.
+function inPlace(it) {
+  const was = it.origRec, now = it.rec, fn = was.fn;
+  const call = callAt(was);
+  if (!call) return { why: `a ${fn} (there is no line to point at)` };
+  const top = splitTop(call.text, call.at + fn.length + 1);
+  if (!top) return { why: `a ${fn} (its call runs over more than one line)` };
+  const key = `${call.ln}:${call.col}`;
+  const base = { ln: call.ln, key, text: call.text };
+  if (it.state === 'removed') {
+    const alone = call.text.slice(0, call.at).trim() === 'parts.push('
+      && /^\);\s*(\/\/.*)?$/.test(call.text.slice(top.close + 1).trim());
+    return alone ? { ...base, remove: true } : { why: `a ${fn} (its line does more than push it)` };
+  }
+  const args = top.spans;
+  const n = was.args.length;
+  if (args.length < n) return { why: `a ${fn} (its call spreads its arguments)` };
+  const reps = [];
+  for (let i = 0; i < n; i++) {
+    const a = was.args[i], b = now.args[i];
+    if (JSON.stringify(deep(a)) === JSON.stringify(deep(b))) continue;
+    if (typeof a !== 'number' || typeof b !== 'number') return { why: `a ${fn} (only numbers can be changed in place)` };
+    reps.push([args[i].s, args[i].e, bump(args[i].src, b - a, '')]);
+  }
+  let tail = '';
+  if (was.hex !== now.hex) {
+    if (args[n]) reps.push([args[n].s, args[n].e, hexName(now.hex)]);
+    else tail += `, ${hexName(now.hex)}`;
+  }
+  const from = canonO(was.o), to = canonO(now.o);
+  const keys = PLACE_KEYS.filter((k) => (from[k] ?? restOf(k)) !== (to[k] ?? restOf(k)));
+  const delta = (k) => (to[k] ?? restOf(k)) - (from[k] ?? restOf(k));
+  if (keys.length) {
+    const oArg = args[n + 1];
+    // What the file does not say is taken to be at rest, which is what place() reads.
+    const fresh = (k) => (k === 'repaint' ? (to[k] ? 'true' : null)
+      : r6(restOf(k) + delta(k)) === restOf(k) ? null : lit(k, restOf(k) + delta(k)));
+    if (!oArg) {
+      const bits = keys.map((k) => [k, fresh(k)]).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${v}`);
+      if (bits.length) {
+        if (!args[n] && !tail) tail += `, ${hexName(now.hex)}`;
+        tail += `, { ${bits.join(', ')} }`;
+      }
+    } else if (oArg.src.startsWith('{') && oArg.src.endsWith('}')) {
+      const inner = splitTop(oArg.src, 1);
+      if (!inner) return { why: `a ${fn} (its placement could not be read)` };
+      const props = inner.spans.map(({ src }) => {
+        const m = /^([A-Za-z_$][\w$]*)\s*(?::\s*([\s\S]+))?$/.exec(src);
+        return m ? { k: m[1], v: m[2] ?? m[1], src } : { k: null, src };
+      });
+      const spread = props.some((p) => p.k == null);
+      for (const k of keys) {
+        const p = props.find((q) => q.k === k);
+        if (!p) {
+          // A spread may already carry this key, and writing it after would override it.
+          if (spread) return { why: `a ${fn} (its placement is spread in from elsewhere)` };
+          const v = fresh(k);
+          if (v != null) props.push({ k, src: `${k}: ${v}` });
+          continue;
+        }
+        if (k === 'repaint') { p.src = to[k] ? `${k}: true` : null; continue; }
+        const v = bump(p.v, delta(k), k);
+        p.src = NUM.test(v) && r6(Number(v)) === restOf(k) && NUM.test(p.v) ? null : `${k}: ${v}`;
+      }
+      const kept = props.filter((p) => p.src != null).map((p) => p.src);
+      reps.push([oArg.s, oArg.e, kept.length ? `{ ${kept.join(', ')} }` : '{}']);
+    } else {
+      return { why: `a ${fn} (its placement is worked out by ${oArg.src.split('(')[0]})` };
+    }
+  }
+  if (tail) reps.push([top.close, top.close, tail]);
+  return { ...base, reps };
+}
+
+function applyReps(text, reps) {
+  const sorted = reps.slice().sort((a, b) => b[0] - a[0]);
+  for (let i = 1; i < sorted.length; i++) if (sorted[i][1] > sorted[i - 1][0]) return null;
+  let out = text;
+  for (const [s, e, t] of sorted) out = out.slice(0, s) + t + out.slice(e);
+  return out;
+}
+
+// One line of the file can draw several pieces - a loop, or a helper the model calls more
+// than once - and changing it changes all of them. So a line is only written when every
+// piece it draws in this model asks for the very same change; otherwise it is by hand.
+function inPlaceEdits(changedItems) {
+  const edits = [];
+  const byHand = [];
+  const lines = new Map();
+  const done = new Set();
+  for (const it of changedItems) {
+    const p = inPlace(it);
+    if (p.why) { byHand.push(p.why); continue; }
+    if (done.has(p.key)) continue;
+    done.add(p.key);
+    const want = JSON.stringify(p.remove ? 'remove' : p.reps);
+    const same = items.filter((o) => fromFile(o) && !o.origRec.group && o !== it
+      && (() => { const c = callAt(o.origRec); return c && `${c.ln}:${c.col}` === p.key; })());
+    if (same.some((o) => { const q = inPlace(o); return q.why || JSON.stringify(q.remove ? 'remove' : q.reps) !== want; })) {
+      byHand.push(`a ${it.origRec.fn} (line ${p.ln} draws ${same.length + 1} pieces, and they were not all changed alike)`);
+      continue;
+    }
+    const line = lines.get(p.ln) || { text: p.text, reps: [], remove: false };
+    if (p.remove) line.remove = true; else line.reps.push(...p.reps);
+    lines.set(p.ln, line);
+  }
+  for (const [ln, l] of lines) {
+    if (timesInSource(l.text) !== 1) { byHand.push(`line ${ln} (it is in the file more than once)`); continue; }
+    if (l.remove) {
+      if (l.reps.length) byHand.push(`line ${ln} (one piece on it went and another moved)`);
+      else edits.push({ op: 'remove', find: l.text });
+      continue;
+    }
+    const out = applyReps(l.text, l.reps);
+    if (out == null) { byHand.push(`line ${ln} (two changes on it overlap)`); continue; }
+    if (out !== l.text) edits.push({ op: 'replace', find: l.text, line: out });
+  }
+  return { edits, byHand };
+}
+
 function kitLine(kit) {
   const d = KIT[kit.kind].defaults;
   const bits = [];
@@ -760,6 +961,17 @@ function codeChanges() {
     if (loaded && !from) {
       for (const i of u.indices) {
         const t = trueLine(items[i].origRec);
+        if (!t.exact) {
+          // Shown as Save will write it: the line as it stands, and that line changed.
+          const p = inPlace(items[i]);
+          const out = p.reps ? applyReps(p.text, p.reps) : null;
+          if (out != null) {
+            say('del', `- ${p.text.trim()}`);
+            say('note', `// line ${p.ln}: Save changes the numbers where they stand.`);
+            say('add', `+ ${out.trim()}`, out.trim());
+            continue;
+          }
+        }
         say('del', `- ${t.line}`);
         if (!t.exact) {
           say('note', '// the file writes this one with a variable or inside a loop, so it will not');
@@ -818,6 +1030,7 @@ function saveable() {
   const byHand = [];
   let anchor = null;
   const news = [];
+  const inexact = [];
   for (const u of units()) {
     const it = u.item;
     const loaded = fromFile(it);
@@ -847,7 +1060,7 @@ function saveable() {
       continue;
     }
     const t = trueLine(it.origRec);
-    if (!t.exact) { byHand.push(`a ${it.rec.fn} (the file works that line out)`); continue; }
+    if (!t.exact) { inexact.push(it); continue; }
     if (!live.length) edits.push({ op: 'remove', find: t.line });
     else edits.push({ op: 'replace', find: t.line, line: partLine(it.rec, t.name) });
   }
@@ -857,6 +1070,9 @@ function saveable() {
     if (anchor) edits.push({ op: 'insertAfter', find: anchor, line });
     else byHand.push('a new piece');
   }
+  const there = inPlaceEdits(inexact);
+  edits.push(...there.edits);
+  byHand.push(...there.byHand);
   return { edits, byHand: [...new Set(byHand)] };
 }
 

@@ -65,7 +65,10 @@ puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does no
 a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
 C again, to get back up. (It was Ctrl until crouching and walking turned out to be
 ctrl+W, which closes the tab: Chrome keeps that one for itself and a page cannot refuse
-it.) You can walk into
+it.) **R** dances, where you stand - the dance the settlers do on the castle's floor on a
+Saturday night, two moves of your own and on the beat of whatever you hear - until you walk,
+jump, crouch, swing, raise a shield or press R again; everybody else on the sea sees you
+dance (up on the D-pad on a controller). You can walk into
 the sea and you swim rather than walk once you are past the waterline - as far as you
 like, even to another island, but slowly: the boat is five times faster. You cannot jump
 out of the water.
@@ -431,6 +434,13 @@ another — free, and three to a harbour at most, the island's own boat counting
 harbour's three — and the prompt at the planks says how many it has. A visitor can sail your
 boats but not add to them.
 
+From 130 settlers the village builds them itself: one boat at 130 and another every five
+settlers after that, dealt round the harbours — the first harbour first, then on round north,
+east, south and west, skipping any side without one — until every harbour moors its three.
+With four harbours that is every berth taken at 180, twelve boats in all. **B** still works,
+and builds one past whatever lies there now, so it is a way to have a harbour's boats before
+the village gets round to them; it never takes one away.
+
 Walk out along the planks and press **E**, and if a boat is lying there you are aboard; at a
 harbour with none, the prompt says so rather than pretending there is one. Aboard, **W** and **S**
 are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
@@ -467,10 +477,12 @@ down the lane, out along the planks, and takes a little boat round the bay for t
 of it. Not the island's boat — that one is the crossing, it is shared with everybody on the
 island and with whoever is across the channel, and a settler is never in your way to it.
 They bring a dinghy of their own instead, which comes alongside the far side of the head
-and goes away again when they step out. Two afternoons at a time at most, never after dark,
-and they always come home, which is why the route is a wide circle out and back rather than
-a wander. If the dock is up a creek too narrow to turn in, the walk to the end of the pier
-is the whole of the outing.
+and goes away again when they step out. Two afternoons at a time at most — three once the
+village is 140 strong, four from 180 — never after dark, and they always come home, which is
+why the route is a wide circle out and back rather than a wander. The circle keeps clear of
+anything standing in the water, a ship at anchor included: a wider one goes round her, a
+smaller one turns short of her. If the dock is up a creek too narrow to turn in, the walk to
+the end of the pier is the whole of the outing.
 
 On foot the open water is no longer a wall: you may swim anywhere, the strip of sea between
 two islands included. It used to stop two metres from the shore, and that trapped anybody
@@ -813,7 +825,7 @@ Two things it will not do. It will not build where the roads have already crosse
 bridge is built once and every later road comes over it, so on an island whose hamlet
 roads got there first the rung is *that* crossing, and only the marker stone is new.
 And it will not build at all where there is no reach to carry a deck - the rung then
-waits, the way the polder mill waits for shallows and the harbour crane waits for a quay.
+waits, the way the polder mill waits for shallows and the harbour crane for a harbour.
 Measured over thirty islands: ten build a crossing, eleven adopt one, nine go without.
 
 The deck goes up after the hamlet roads and not with the other milestones, because a
@@ -867,19 +879,65 @@ reclaiming on the *next* scan, and then a second scan of an unchanged island wou
 `data/layout.json`, which is the one thing that must never happen. A settler count is a
 pure function of the model, so a rescan reclaims exactly the same land.
 
-The polder mill used to be the last thing the village ever built. At **165 settlers** it
-puts up a **harbour crane** as well, on the quay's own waterfront with its jib out over
-the water - looking at the berth rather than back at the town, which no other civic on the
-island does. It wants the cell beside the ramp onto the planks, and by the time it is
-earned that cell is usually somebody's front garden: a settled quay is harbour houses
-shoulder to shoulder. So it walks along the water's edge instead of inland, and stands on
-the nearest open ground to the berth, never further from it than the planks are long.
+At **165 settlers** the village puts up a **harbour crane**, on the quay's own waterfront
+with its jib out over the water - looking at the berth rather than back at the town, which
+no other civic on the island does. It wants the cell beside the ramp onto the planks, and by
+the time it is earned that cell is usually somebody's front garden: a settled quay is
+harbour houses shoulder to shoulder. So it walks along the water's edge instead of inland,
+and stands on the nearest open ground to the berth, never further from it than the planks
+are long.
 
 The number sits in the window between the first polder and the second, because every dike
 after the first is stone and timber that has to come ashore and the crane wants to be
 standing before it is asked to land it. An island that has never run a Cowork task has no
-quay and no planks, so the crane waits, exactly as the polder mill waits for a village
-with no shallows to reclaim.
+quay district, and its crane used to wait for one for good; it stands at the **kadehaven**
+instead (below), beside that harbour's slipway, on exactly the same terms. Only an island
+with no harbour at all goes without, the way the polder mill goes without shallows.
+
+### When the village turns to the sea
+
+Below a hundred settlers the ladder lies on a curve - a new rung every two or three settlers
+at first, and the gap growing by about one for every twenty-five - and above a hundred it
+used to stop: the polder mill fifty settlers after the castle, the crane fifteen after that,
+and then nothing. It carries on along the same curve to two hundred now, with eleven rungs,
+and none of them in the centre. The square stopped growing at ninety and the castle has the
+last good ground of the town's plan, so the village turns to the sea
+(`Plans/mijlpalen-tot-tweehonderd.md`).
+
+The **kadehaven** is the harbour where the harbour's buildings gather: the quay district's,
+when there is one; else the harbour where the island's first boat lies - the quay every page
+derives from the landing, or the harbour on its side of the town when that quay is none of
+the four; else the harbour nearest the town. It is worked out on every scan and never
+stored, because only a plot is sticky.
+
+- **The shipyard**, at **95**: a lot five cells by sixteen, square to the kadehaven's coast -
+  its landward rows on dry, low ground, its seaward rows in the open sea, the slipway running
+  down between them. On the slipway is the next ship, one stage every six or seven settlers, in
+  the Dutch order of her century - the bottom before the frames: the keel and stems 25 settlers
+  before her launch, the bottom planking at 18, the frames at 11 and her hull complete at 5
+  (`yardStage` in `lib/village.mjs`), and she is launched at 120, 158 and 192. She has no masts
+  on the slipway: a ship was masted afloat, so she comes to the roads rigged. The hull on the
+  slipway at the last stage is the Batavia herself, in bare timber. Between a launch and the next
+  keel the slipway is empty. The stage travels with the island's bundle, since a visitor has no
+  settler count to work it out from.
+- **The Batavia**, at **120**, and **the second and third ships** at **158** and **192**: at
+  anchor on the **rede**, four cells by sixteen of deep water parallel to the coast, eight to
+  twenty cells from the kadehaven's pier head, so from the quay you see her broadside. None of
+  it is shallower than -0.4, closed off from the open sea, the fairway, within two cells of any
+  plank, slipway or berth, in the lane out from any pier head, where the galleon lies and
+  turns, or a polder. The second and third anchor beside the first, five cells apart. A ship
+  is a lot with no door and no road; the polders leave her and a cell of water round her
+  alone, and a growth ring that fills her water moves her on purpose, like the lighthouse.
+- **The warehouse** at **127** and **the weigh house** at **184**: on the kadehaven's quay,
+  with their fronts on the water. **The fisherman's hut** at **113** does the same at a
+  *different* harbour, so that each harbour has something of its own.
+- **The brewery** at **106**, **the training field** at **134** and **the chronicle house** at
+  **200**: workshops, out beyond the shopping streets with the sawmill and the smithy.
+- **The quarry** at **142**: the stone for the first dike, cut from the highest, roughest
+  ground there is, out beyond the town.
+
+None of them ever comes down half on a lot of the town's plan, and none of them moves
+anything that stood: they are new plots and nothing else.
 
 ## What you are looking at
 
@@ -931,9 +989,17 @@ with no shallows to reclaim.
 | The shops round the square and along the four streets: bakery, grocer, apothecary, clothes shop, library, tea room, wand maker, butcher, sweet shop, cauldron maker, owl post | 12, 18, 22, 28, 33, 38, 42, 48, 65, 80 and 85 settlers |
 | A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the smithy's and the bakery's own people, who work by day and go indoors at night |
 | A horse in a paddock and two hens by the stall doors | The stable's animals, scenery rather than somebody — not the named animals with a story (see [The animals](#the-animals)) |
+| An empty paddock on a Saturday night | The stable's horse and hens are at the castle's rave, dancing under the mirror ball until three |
 | Sheep or cows in a field, hens outside a hut, ducks on the water, gulls over a quay | The island's ambient animals: scenery, placed from its fields, huts, river and quays, up to forty (see [The animals](#the-animals)) |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
-| A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
+| A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, on the quay or beside the kadehaven's slipway |
+| A red and white tower on the coast, the tallest thing on land | The lighthouse, at 50 settlers, on the stretch of coast farthest from the square. It is built to the settlers' measure - a door as high as the town hall's, a window on each of its eight storeys, a lantern room somebody could stand in - so it is tall by having more storeys, not bigger ones. After dark its lamp turns |
+| A shipyard on the coast, with a hull on its slipway | 95 settlers. The hull grows a stage every six or seven settlers - keel, bottom planking, frames, the whole hull - and is launched at 120, 158 and 192, to be masted afloat |
+| A three-masted ship at anchor off the harbour | The Batavia at 120 settlers, with the second and third ships beside her at 158 and 192 - see [When the village turns to the sea](#when-the-village-turns-to-the-sea) |
+| A warehouse and a weigh house with their fronts on the quay | 127 and 184 settlers, at the kadehaven |
+| A fisherman's hut with nets and a rowing boat | 113 settlers, at another harbour than the kadehaven |
+| A brewery, a training field and a chronicle house beyond the streets | 106, 134 and 200 settlers: the top of the ladder |
+| A quarry high on the island | 142 settlers: the stone for the first dike |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
 | A pale row that glows after dark | Moonleeks, ready to pull |
 | The school | 25 apprentices: it is where they are taught |

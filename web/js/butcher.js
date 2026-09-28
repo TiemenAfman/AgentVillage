@@ -194,6 +194,10 @@ export function attachButcher(group, at, material, yaw = 0) {
   figure.rotation.order = 'YXZ';
   figure.scale.setScalar(BUTCHER_SCALE);
   figure.add(butcher.object);
+  // classic-avatar.js mirrors its rig so a player's "Right hand" is on the right; this
+  // villager's work was placed against the unmirrored one (the tool over the block, the
+  // anvil, the oven), and nobody holds the mouse for them, so he keeps the old side.
+  butcher.object.scale.x = 1;
   root.add(figure);
 
   const shop = {

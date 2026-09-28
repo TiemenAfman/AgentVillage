@@ -1,7 +1,8 @@
 // The castle's great hall on a Saturday night (Plans/rave-in-het-kasteel.md): a dark stone
 // hall twice the height of the tavern, a stage with the DJ at the north end, a truss of
 // lasers and moving heads over the floor, a mirror ball, a bar along the west wall, and the
-// island's own settlers dancing.
+// island's own settlers dancing - and, on an island with a stable, the stable's horse under the
+// mirror ball with its two hens at its feet, which is why the paddock is empty tonight.
 //
 // It is the second entry in interior.js's ROOMS and uses all of that machinery - the walk
 // mode, the camera kept inside the walls, the stage as a deck to stand on, the stools and
@@ -20,6 +21,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, cylinder, sphere } from './buildings.js';
 import { createFigures, settlerLook } from './settler-figures.js';
+import { createAnimal, stepDance, applyPose } from './fauna.js';
 import { RAVE_SONG } from './sound.js';
 import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 
@@ -34,6 +36,17 @@ const STAGE_H = 0.14;
 const TRUSS_Z = -1.85;
 const TRUSS_HALF = 3.3;
 const MAX_DANCERS = 90;
+
+// The stable out for the night (stable.js `away`): the horse under the mirror ball, where the
+// first look in from the gate finds it, turned three-quarters to the stage, and its hens at its
+// feet on the side the gate sees. The hens' places are in the horse's own frame - x across it,
+// z along it, its nose at +z - so turning the horse takes them with it. The floor gives it room
+// (HORSE_ROOM from its spine, rump to nose off the bake), and it gives none back: a horse is not
+// a settler who steps aside, so it and its hens are in the walk's way like a pillar is.
+const HORSE = { x: 0, z: 0.75, yaw: Math.PI - 0.6 };
+const HORSE_SPINE = [-0.35, 0.47];
+const HORSE_ROOM = 0.45;
+const HENS = [{ at: [-0.28, 0.3], turn: 0.5 }, { at: [-0.3, -0.16], turn: -0.8 }];
 
 const C = {
   floor: 0x26232b, stone: 0x4a4652, plinth: 0x2e2b33, beam: 0x2a1d15, iron: 0x2a2a30,
@@ -266,8 +279,30 @@ export function buildRave({ FLOOR, rect }) {
   }
   spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);                     // the front fills first
 
+  // The horse and the hens, where HORSE puts them, and what of the floor they take: every spot
+  // within HORSE_ROOM of the horse's spine goes to whoever is next in line further back, so the
+  // floor holds as many dancers with the horse as without it.
+  const sin = Math.sin(HORSE.yaw), cos = Math.cos(HORSE.yaw);
+  const local = ([lx, lz]) => [HORSE.x + lx * cos + lz * sin, HORSE.z - lx * sin + lz * cos];
+  const herd = [
+    { kind: 'horse', at: [HORSE.x, HORSE.z], yaw: HORSE.yaw, lag: 0, r: 0 },
+    ...HENS.map((h, i) => ({ kind: 'chicken', at: local(h.at), yaw: HORSE.yaw + h.turn, lag: 0.04 * (i + 1), r: 0.05 })),
+  ];
+  const spine = (x, z) => {
+    const dx = x - HORSE.x, dz = z - HORSE.z;
+    const along = clamp(dx * sin + dz * cos, HORSE_SPINE[0], HORSE_SPINE[1]);
+    return Math.hypot(dx - along * sin, dz - along * cos);
+  };
+  // The horse as three rounds along its spine, rump, belly and chest; a hen as one small one.
+  const herdBlockers = [
+    ...[-0.18, 0.06, 0.28].map((t) => ({ x: HORSE.x + t * sin, z: HORSE.z + t * cos, r: 0.13 })),
+    ...herd.filter((h) => h.r).map((h) => ({ x: h.at[0], z: h.at[1], r: h.r })),
+  ];
+
   const layout = {
-    FLOOR, STAGE_TOP, lasers, heads, BALL, LED, spots: spots.slice(0, MAX_DANCERS),
+    FLOOR, STAGE_TOP, lasers, heads, BALL, LED, spots,
+    roomy: spots.filter(([x, z]) => spine(x, z) > HORSE_ROOM),
+    herd, herdBlockers,
     dj: [0, STAGE_TOP, -3.05],
   };
   blockers.push(rect(0, -3.05, 0.1, 0.1));
@@ -387,7 +422,20 @@ function createRaveShow({ scene, material, layout }) {
   let dancers = [];
   const faceStage = (x, z) => Math.atan2(0 - x, -2.6 - z);
 
-  function dress(guests) {
+  // The stable's horse and hens, built once like everything else here and shown only on the
+  // visits the island has a stable to empty. Their brains stay asleep: stepDance poses them on
+  // the count the settlers dance to, and applyPose stands them where the layout says.
+  const herd = layout.herd.map((h) => {
+    const a = createAnimal(h.kind, material, { area: { x: h.at[0], z: h.at[1], r: 0 }, seed: `rave:${h.kind}` });
+    if (!a) return null;
+    a.yaw = h.yaw;
+    a.object.visible = false;
+    scene.add(a.object);
+    return { ...h, a };
+  }).filter(Boolean);
+  let stableHere = false;
+
+  function dress(guests, stable) {
     for (const d of dancers) view.free(d.f);
     dancers = [];
     figs.length = 0;
@@ -407,7 +455,9 @@ function createRaveShow({ scene, material, layout }) {
         moves: [rng.int(5), rng.int(5)], eager: rng.next(), dj: move === 5,
       });
     };
-    layout.spots.forEach(([x, z], i) => {
+    stableHere = !!stable && herd.length > 0;
+    for (const h of herd) h.a.object.visible = stableHere;
+    (stableHere ? layout.roomy : layout.spots).slice(0, MAX_DANCERS).forEach(([x, z], i) => {
       // Somebody from this island, most active first; past the end of them, people who
       // came over from the other islands for it, in the island's own styles.
       const g = pool[i];
@@ -633,13 +683,31 @@ function createRaveShow({ scene, material, layout }) {
       if (!d.dj && Math.random() < dt * 0.004) view.drinkBeer(d.f);
     }
     view.draw(figs, dt);
+    // The horse rears and the hens throw their wings out when every settler's hands go up:
+    // the first beats of the drop, and the whole last bar of the build.
+    if (stableHere) {
+      const up = S.bar >= BUILD + 3 || S.hype > 0.35;
+      for (const h of herd) {
+        stepDance(h.kind, h.a.pose, { beat: S.beats + h.lag, up }, dt);
+        applyPose(h.a, h.at[0], FLOOR, h.at[1]);
+      }
+    }
   }
 
   function dispose() {
     view.dispose();
+    for (const h of herd) h.a.dispose();
     for (const mesh of [beams, cones, pools, specks, cells]) { mesh.geometry.dispose(); mesh.material.dispose(); }
     ball.geometry.dispose();
   }
 
-  return { enter: ({ dancers: guests } = {}) => { own = 0; dress(guests); }, update, dispose };
+  return {
+    enter: ({ dancers: guests, stable = false } = {}) => { own = 0; dress(guests, stable); },
+    // Asked by interior.js after enter, for the walk's list of what is in the way.
+    blockers: () => (stableHere ? layout.herdBlockers : []),
+    // How many beats in the hall is, for a player dancing on the floor (Plans/dansen.md): the
+    // same count the settlers dance to, so a player keeps time with the crowd music or not.
+    beat: () => S.beats,
+    update, dispose,
+  };
 }

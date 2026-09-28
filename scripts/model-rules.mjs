@@ -31,8 +31,19 @@ export const isSheet = (name) => name in SHEETS || CANOPY.includes(name);
 export const sheetNames = () => [...Object.keys(SHEETS), ...CANOPY];
 
 // Empties named `anchor.<name>` become the anchors main.js hangs smoke, flags and signs
-// on. A name nothing reads is a typo rather than a feature.
-export const ANCHORS = ['smoke', 'flag', 'door', 'sign'];
+// on. A name nothing reads is a typo rather than a feature. `waterline` is a ship's draught
+// (scripts/build-batavia.py): she is modelled keel on the ground like everything else, and
+// this is the one number the island lowers her by.
+export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline'];
+// And what a ship measures of herself, for whoever walks or sails her later rather than for
+// anything that hangs on her now: `deck.<name>.lo|hi`, opposite corners of a rectangle of
+// planking at its height; `stair.<name>.lo|hi`, a ladder running fore and aft, `lo` the
+// corner at its foot on the floor it starts from and `hi` the opposite corner at its head
+// on the floor it reaches; and `mast.<name>`, where a mast stands. Corners come in pairs -
+// checkSet refuses half of one - because a rectangle is the thing being carried, and an
+// empty can only carry a point.
+export const SHIP_ANCHOR = /^(?:(?:deck|stair)\.[a-z]+(?:-[a-z]+)*\.(?:lo|hi)|mast\.[a-z]+)$/;
+export const isAnchor = (name) => ANCHORS.includes(name) || SHIP_ANCHOR.test(name);
 
 // What an asset is for, taken from its name. A collection in a .blend has to start with
 // one of these, so the budget below can be found without anyone writing it down twice.
@@ -47,6 +58,14 @@ export const BUDGETS = [
   // a moment at the edge of a wood, and there are thousands of it. Forty is what a rock
   // gets for the same reason.
   ['flora_bush', 40],
+  // A palm is not forest: it stands on the unclaimable islets (Plans/starter-eilanden.md),
+  // one to a sandbank and a handful to a round one, never twenty thousand to a canopy. A
+  // crown of fronds is also a shape sixty triangles cannot draw - five fronds at a dozen
+  // each is the whole budget with no trunk. At 250 the fronds lost their serrated edges and
+  // their fold, and it no longer looked like the model it came from; at 1000 the two cannot be
+  // told apart. Twenty palms in reach, shadow pass included, is 40k - a fifth of the houses.
+  // The `_lo` (250) is for the phone and the far ones.
+  ['flora_palm', 1000],
   ['flora_', 60],
   ['prop_', 120],
   ['addon_', 150],
@@ -64,12 +83,20 @@ export const BUDGETS = [
 // at most and is worth looking at up close. The tavern sits at 2684 of these, and the
 // ceiling is where tests/tavern.test.mjs already put it - bounded enough for a modest GPU.
 export const HERO_BUDGET = 4000;
+// Heroes allowed more. The pirate ship is a whole galleon a settler walks the deck of, one
+// draw call, and a handful of them in the world at most - 14k was chosen by eye against the
+// source's 73k (scripts/build-pirateship.py). The Batavia is the ship the village earns, up to
+// three of her on the roads (civic:ship, :2, :3), modelled from nothing in
+// scripts/build-batavia.py rather than decimated from a download, so she needs far less than
+// the galleon for more ship: she came out near 6200, and 8000 leaves room for a boat on her
+// waist, not for a second hull.
+export const HERO_BUDGETS = { pirateship: 15000, batavia: 8000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand
 
 export function budgetOf(asset, hero) {
-  if (asset === hero) return HERO_BUDGET;
+  if (asset === hero) return HERO_BUDGETS[hero] ?? HERO_BUDGET;
   for (const [prefix, tris] of BUDGETS) if (asset.startsWith(prefix)) return tris;
   return null;             // not a class the island knows; checkSet says so
 }
@@ -142,8 +169,11 @@ export function checkSet(set, data) {
         if (Math.abs(middle) > CENTRED) bad.push(`${set}/${asset}: its middle is ${middle.toFixed(3)} off the ${axis} origin, and props are placed by their middle`);
       }
     }
-    for (const name of Object.keys(info.anchors || {})) {
-      if (!ANCHORS.includes(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}`);
+    const anchors = info.anchors || {};
+    for (const name of Object.keys(anchors)) {
+      if (!isAnchor(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}, nor a ship's deck.<name>.lo|hi, stair.<name>.lo|hi or mast.<name>`);
+      const pair = /^((?:deck|stair)\..+)\.(lo|hi)$/.exec(name);
+      if (pair && !(`${pair[1]}.${pair[2] === 'lo' ? 'hi' : 'lo'}` in anchors)) bad.push(`${set}/${asset}: anchor.${name} is one corner of ${pair[1]} and the other is missing`);
     }
   }
   return bad;

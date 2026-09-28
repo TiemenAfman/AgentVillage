@@ -1,5 +1,7 @@
 # Aanvallen en blokkeren met de muis, en de browser zijn sneltoetsen afpakken
 
+**✅ DONE**
+
 ## Aanleiding
 
 Met een zwaard in de ene hand en een schild in de andere (zie `inventory-scherm.md`) wil

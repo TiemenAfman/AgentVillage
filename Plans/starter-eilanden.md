@@ -1,5 +1,7 @@
 # Starter-eilanden: een zee die nooit leeg is
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Wens (Martijn, 2026-09-26): de zee legt zelf een paar **kleine starter-eilandjes** neer, zonder
 agents, alleen met een stadscentrum. Een nieuwe speler claimt er een, en dan wordt dat eilandje
 vervangen door zijn eigen eiland.
@@ -104,9 +106,16 @@ varen.
 | Wie legt ze neer? | **De pagina**, niet de zee. Deterministisch uit een vast wereldrooster met kandidaat-plekken, met per plek een hash voor variant, grootte en draaiing. Een plek telt alleen als hij vrij is van elk eiland in de vloot, gemeten op `reach` plus een marge. | Geen zee-wijziging, geen bericht, geen `SEA_V`. Elke pagina ziet dezelfde vloot, dus iedereen ziet dezelfde eilandjes op dezelfde plek. |
 | Mogen ze ligplaatsen blokkeren? | **Nee.** Ze gaan niet mee in `nextOrigin` en tellen niet voor `MAX_ISLANDS`. Komt er een eiland of starter op die plek, dan verdwijnt het eilandje. | `clearOf` houdt `SEA_GAP` (48) aan tot elk eiland. Telden ze mee, dan zou een zandplaat een hele ligplaats onbruikbaar maken. Verdwijnen gebeurt alleen als de vloot verandert, en dan wordt er toch al opnieuw getekend. |
 | Hoe groot? | Klein: 6 tot 20 cellen doorsnede, in drie soorten (zandplaat met één palm, rond met een groepje palmen, groter met struiken). | Zichtbaar vanaf zee, geen dorp erop mogelijk, en goedkoop genoeg om er een handvol van te tekenen. |
-| Wat staat erop? | **Palmbomen** (nieuw model, via de Blender-pipeline, zoals de andere gebakken props) en struiken. Geen gebouwen, geen bewaarders. | De bestaande `tree`-prop (`web/js/props.js`) is een loofboom en past niet bij een tropisch eilandje. |
+| Wat staat erop? | **Palmbomen** (nieuw model, via de Blender-pipeline, zoals de andere gebakken props) en struiken. Geen gebouwen, geen bewaarders. | De bestaande `tree`-prop (`web/js/props.js`) is een loofboom en past niet bij een tropisch eilandje. Gebakken (2026-09-27): `flora_palm_a` (~1000 driehoeken) en `flora_palm_a_lo` (~250), uit de CC0-palm van Quaternius (`assets/flora/palm-quaternius.glb`) via `build-flora.py`, met een eigen budget van 1000 in `model-rules.mjs`. Nog nergens neergezet. |
 | Tekenbudget | Mee in de ranking van `DETAILED`: dichtbij volledig, ver weg alleen het zand of niets. | Anders kosten tien zandplaten op de telefoon meer dan één echt eiland. |
 | Kun je erop lopen? | **Tweede stap.** Eerst alleen zien. Daarna het zand meenemen in de grondhoogte van walk mode, zodat je er vanuit je skiff op kunt stappen. | Lopen is aan de kant van de pagina. Omdat iedereen dezelfde eilandjes ziet, zien anderen je dan ook op het zand staan en niet in het water. |
+
+**Stap 1 gebouwd (2026-09-27):** `shared/islets.mjs` (rooster van 96, 25% van de vrije vakken,
+tot 800 van je berth, vrij van elk `reach` + 24 en van de berth van een telefoon) en
+`web/js/islets.js` (alle grond in één mesh, palmen en struiken geïnstancieerd, dichtbij de volle
+palm en verder de `_lo`), aangeroepen vanuit `doSyncFleet`. Nog niet: ondiep water rond het zand
+(de zee eronder weet niet dat ze er zijn), boten varen erdoorheen, en je kunt er niet op lopen -
+dat hoort bij stap 2, die `isletHeight` al klaar heeft liggen.
 
 Hangt niet van de starters af en kan ervoor of erna gebouwd worden. Samen met het logboek
 (eerder besproken: stempels voor bezochte eilanden) is een eilandje een goed doel voor een

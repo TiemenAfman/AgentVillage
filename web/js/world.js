@@ -102,6 +102,27 @@ export function sunDirection(hour) {
 const SHADOW_SPAN = [42, 190];
 const SHADOW_OF_DIST = 0.48;
 
+// The sea's cloud layer (createWorld, "clouds"): one tile, repeated over the whole sea. As
+// dense as the nine clouds over 180 by 140 units it replaces, and wide enough that a cloud
+// wrapping from one edge of the drawn three by three to the other does it 430 units out.
+const CLOUD_TILE = 288;
+const CLOUDS_PER_TILE = 30;
+// A whole number of periods of every wave term in the water shader - see update().
+export const WAVE_LOOP = 20 * Math.PI;
+export const WAVE_RATES = [1.1, 0.9, 1.3];
+
+// Where one cloud is along one axis of the sea, in world units: the image of it nearest
+// `focus`, from where it started in its tile (`start`, 0..CLOUD_TILE) and how far the wind
+// has carried it by `seconds` of sea time. Nothing here depends on who is asking - that is
+// what puts a cloud in the same place on every screen. The two other images drawn are this
+// one a tile either side.
+export function cloudNearest(start, speed, seconds, focus) {
+  const lo = focus - CLOUD_TILE / 2;
+  const v = start + speed * seconds - lo;
+  return lo + (v - Math.floor(v / CLOUD_TILE) * CLOUD_TILE);
+}
+export { CLOUD_TILE };
+
 // Where the sand gives up and the meadow takes over. The bands below still change on a
 // line at 0.35 - the height `terrain.mjs` calls the top of a beach, and the height the
 // Node layout decides where a house may stand by - but the *drawing* crossfades across
@@ -175,6 +196,19 @@ function sheet(name, onLoad) {
   }, undefined, () => {
     console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
   });
+}
+
+// A plant's two materials, bark and foliage, for plants the landscape does not scatter
+// itself (web/js/islets.js): the same recipe as the forest's own in createLandscape, so a
+// palm out on a sandbank is drawn on the same sheets as a pine on the island.
+export function plantMaterials() {
+  const base = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const bark = base.clone();
+  const foliage = base.clone();
+  base.dispose();
+  sheet('bark', (tex) => { tex.repeat.set(2, 1); bark.map = tex; bark.needsUpdate = true; });
+  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliage.map = tex; foliage.needsUpdate = true; });
+  return { bark, foliage };
 }
 
 // How big the detailed water patch is and where its middle sits. Exported and pure so the
@@ -1050,9 +1084,11 @@ export function createLandscape({
   // own normals, lighting and shadows: no raised strips and no colour-matched
   // skirts that turn into visible borders when the grass texture arrives.
   // The bridge stone is on the list for the same reason the statue is: it is a marker
-  // rather than a door, so nobody wears a patch of grass bare walking up to it.
+  // rather than a door, so nobody wears a patch of grass bare walking up to it. And the ship
+  // lies out on the roads: a worn yard of four by sixteen on the sea bed would be sand showing
+  // through the shallows round her.
   const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
-    'statue', 'well', 'fountain', 'watertower', 'bridge']);
+    'statue', 'well', 'fountain', 'watertower', 'bridge', 'ship', 'shipyard']);
   let wearVillage = village, wearGraph = null;
   let frontages = new Map(), frontageKey = '';
   function setHouseFrontages(records) {
@@ -1631,15 +1667,22 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
   // and an island of the largest grid reaches 256 further again, so the far water is
   // something you look at rather than past. It is the same shader now, sharing the same
-  // uniforms so there is one clock and one sun over the whole sea, and it runs out to
-  // 1200 - inside the camera's far plane, with the sky grown to stay outside it.
+  // uniforms so there is one clock and one sun over the whole sea, and it runs out past
+  // the camera's far plane (below).
   //
   // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
   // gives everything past its own edge, so the colour is constant and there is nothing to
   // interpolate; the waves are 5 cm on a surface a kilometre across.
   //
   // Opaque, unlike the patch, because there is nothing underneath it to show through.
-  const OCEAN_R = 1200;
+  //
+  // Now past the far plane (1400) rather than inside it. The patch above is a rectangle over
+  // every island's grid, fixed in the world, and with the volcano and the starters it runs
+  // well past 1200 from the eye: beyond a 1200 rim it stood up against the sky as a pale
+  // slab of sea. With the rim out of reach the far plane cuts both in the same place, in
+  // full haze. That the rim is now outside the sky (r1340) does not matter: the sky writes no
+  // depth, so the sea draws over it wherever the two overlap.
+  const OCEAN_R = 1500;
   const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
   oceanGeo.rotateX(-Math.PI / 2);
   const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
@@ -1693,15 +1736,48 @@ export function createWorld(scene, terrain, village, opts = {}) {
   group.add(sky);
 
   const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(11, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }));
-  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 14, 10), new THREE.MeshBasicMaterial({ color: 0xe6ecff, fog: false }));
+  // The moon has a phase: lit from a direction worked out from `worldTime`'s `moon` every
+  // frame (moonAt), so a new moon is a dark disc with the faintest earthshine and a full one
+  // the whole face. The sun's actual direction is no use for it - at night it is under the
+  // sea, and a moon lit from there is a new moon every night.
+  const moonMat = new THREE.ShaderMaterial({
+    uniforms: { uLight: { value: new THREE.Vector3(0, 0, 1) } },
+    vertexShader: `
+      varying vec3 vN;
+      void main() {
+        vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uLight;
+      varying vec3 vN;
+      void main() {
+        float lit = smoothstep(-0.06, 0.06, dot(normalize(vN), uLight));
+        gl_FragColor = vec4(mix(vec3(0.10, 0.12, 0.17), vec3(0.902, 0.925, 1.0), lit), 1.0);
+      }
+    `,
+  });
+  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 20, 14), moonMat);
+  // Phase 0 lights the far side (new), 0.5 the side facing us (full), and the light swings
+  // round through the horizontal in between: from the right while it waxes, as seen from
+  // the northern hemisphere, from the left while it wanes. `dir` points from us to the moon.
+  const moonSide = new THREE.Vector3();
+  const moonAt = (dir, phase) => {
+    const a = phase * Math.PI * 2;
+    moonSide.set(-dir.z, 0, dir.x);
+    if (moonSide.lengthSq() < 1e-6) moonSide.set(1, 0, 0);
+    moonSide.normalize();
+    moonMat.uniforms.uLight.value.copy(dir).multiplyScalar(Math.cos(a)).addScaledVector(moonSide, Math.sin(a)).normalize();
+  };
   group.add(sunDisc, moonDisc);
 
   // Where the backdrop is parked. The sky, the open sea and the sun are the horizon, and a
   // horizon is a direction rather than a place - so all four ride with the camera and none
   // of them is anchored to this island.
   //
-  // Not cosmetic. The sky sphere is r1340 and the ocean disc r1200, both centred here, and
-  // the camera's far plane is 1400 (main.js:261). Stand a hundred and seventy units east -
+  // Not cosmetic. The sky sphere is r1340 and the ocean disc was r1200 (r1500 now), both
+  // centred here, and the camera's far plane is 1400 (main.js:331). Before they rode along: stand a hundred and seventy units east -
   // which is where a neighbour's island is - look away from home, and the far side of the
   // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
   // cuts a straight line through the horizon. Invisible until somebody is over there, and
@@ -1710,13 +1786,20 @@ export function createWorld(scene, terrain, village, opts = {}) {
   //
   // `recentre` only stores it; `update` is what puts the sun and moon in their places, so
   // it adds this to their direction rather than being overwritten by it every frame. The
-  // clouds are deliberately NOT in here: they cast shadows, and a cloud shadow that slides
-  // as you pan is worse than a sky with no cloud over the far island. They drift in a fixed
-  // box for now and want widening to the archipelago, not parking on the camera.
+  // clouds are deliberately NOT parked on it: they cast shadows, and a cloud shadow that
+  // slides as you pan is worse than no cloud at all. They lie over the whole sea in the
+  // world frame instead, and the camera only picks which of them are drawn (placeClouds).
   const horizonAt = new THREE.Vector3();
-  const recentre = (x, z) => {
-    horizonAt.set(x, 0, z);
-    sky.position.x = x; sky.position.z = z;
+  //
+  // The sky rides the eye's height as well, and the ocean does not. Parked at sea level, the
+  // sky's underside is R + h from an eye at height h, and with the leash an archipelago
+  // allows (hundreds up) that went past the far plane: the clear colour showed through as a
+  // black polygon in the sphere's own low-poly shape. Centred on the eye every part of it is
+  // r1340 away, always inside 1400, and below eye level it is the horizon colour - the fog's.
+  // The sun and moon hang off the same centre so the disc stays inside its own halo.
+  const recentre = (x, y, z) => {
+    horizonAt.set(x, y, z);
+    sky.position.set(x, y, z);
     ocean.position.x = x; ocean.position.z = z;
   };
 
@@ -1750,44 +1833,79 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const rng = land.rng;
 
   // ---- clouds --------------------------------------------------------------
-  // Nine clouds, each a handful of squashed icosahedra. They used to be some 34 separate
-  // meshes, and every one cost a draw call in the colour pass and another in the shadow
-  // pass. One InstancedMesh over a unit icosahedron draws the whole layer in two: each
-  // puff is an instance whose matrix carries its radius, its squash and its place in the
-  // cloud. The random draws happen in the same order as before, so the clouds look the
-  // same and the fireflies further down still land where they did.
-  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1 });
-  const cloudGeo = new THREE.IcosahedronGeometry(1, 0);
-  const cloudPuffs = []; // one per instance: which cloud it belongs to, its offset and its size
-  const cloudDrift = []; // one per cloud: where it is and how fast it drifts
+  // One layer over the whole sea, the same for everybody on it. A cloud is a function of
+  // the sea's clock and its own place in the WORLD frame - `x = x0 + speed * t` in world
+  // seconds, wrapped - never a drift accumulated since this tab loaded, and never drawn off
+  // this island's seed: two players on one island used to see different skies, and a
+  // cloud's shadow fell on the town hall for one and on the sea for the other.
+  //
+  // "The whole sea" is a tile of CLOUD_TILE units repeated edge to edge, so a cloud that
+  // drifts out of one tile is already drifting into the next. Only the images near the
+  // camera are drawn: each cloud is placed at its image nearest the camera and the ones a
+  // tile either side of it, three by three, so the layer reaches 1.5 tiles out whichever
+  // way you look and anything that wraps does so out past the haze. The images are fixed
+  // in the world, so the camera moving only changes which ones are drawn, never where a
+  // cloud or its shadow is. One InstancedMesh over a unit icosahedron, so still two draw
+  // calls (colour and shadow) for all of it.
+  //
+  // The island's stream is still spent exactly as the nine clouds of old spent it: the
+  // fireflies below draw from it next and have to land where they always did.
   for (let i = 0; i < 9; i++) {
     const parts = 3 + rng.int(3);
+    for (let k = 0; k < parts * 5 + 4; k++) rng.next();
+  }
+  const cloudRng = makeRng('sea:clouds');
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1 });
+  const cloudGeo = new THREE.IcosahedronGeometry(1, 0);
+  const cloudPuffs = []; // one per puff: which cloud it belongs to, its offset and its size
+  const cloudDrift = []; // one per cloud: where it starts in the tile, and how fast it drifts
+  for (let i = 0; i < CLOUDS_PER_TILE; i++) {
+    const parts = 3 + cloudRng.int(3);
     for (let k = 0; k < parts; k++) {
-      const r = rng.range(1.6, 3.2);
-      const ox = rng.range(-3, 3), oy = rng.range(-0.4, 0.4), oz = rng.range(-2, 2);
-      const squash = rng.range(0.4, 0.6);
+      const r = cloudRng.range(1.6, 3.2);
+      const ox = cloudRng.range(-3, 3), oy = cloudRng.range(-0.4, 0.4), oz = cloudRng.range(-2, 2);
+      const squash = cloudRng.range(0.4, 0.6);
       cloudPuffs.push({ cloud: i, ox, oy, oz, sx: r, sy: r * squash, sz: r });
     }
-    cloudDrift.push({ x: rng.range(-70, 70), y: rng.range(24, 33), z: rng.range(-70, 70), speed: rng.range(0.35, 0.75) });
+    cloudDrift.push({ x: cloudRng.range(0, CLOUD_TILE), y: cloudRng.range(24, 33), z: cloudRng.range(0, CLOUD_TILE), speed: cloudRng.range(0.35, 0.75) });
   }
-  const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length);
+  const IMAGES = 9;
+  const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * IMAGES);
   clouds.castShadow = true;
-  // The instances drift and wrap around the island, so a bounding sphere taken at boot
-  // would go stale and cull clouds that are plainly in view. The layer is always in
-  // sight anyway, like the sky and the fireflies.
+  // The instances move with the camera's tile, so a bounding sphere taken at boot would go
+  // stale and cull clouds that are plainly in view.
   clouds.frustumCulled = false;
-  function placeClouds() {
-    for (let i = 0; i < cloudPuffs.length; i++) {
-      const p = cloudPuffs[i], c = cloudDrift[p.cloud];
-      tmpObj.position.set(c.x + p.ox, c.y + p.oy, c.z + p.oz);
-      tmpObj.rotation.set(0, 0, 0);
-      tmpObj.scale.set(p.sx, p.sy, p.sz);
-      tmpObj.updateMatrix();
-      clouds.setMatrixAt(i, tmpObj.matrix);
+  // Where the page's own island is in the sea (`state.homeOrigin`): the page draws it at
+  // the scene origin and translates the world, so a world position is scene + home.
+  const seaHome = [0, 0];
+  // Scale and translation only, written straight into the matrix array: over a thousand
+  // instances a frame, and a compose through Object3D for each is most of the cost.
+  function placeClouds(seconds) {
+    const m = clouds.instanceMatrix.array;
+    const fx = horizonAt.x + seaHome[0], fz = horizonAt.z + seaHome[1];
+    let n = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      // The image of this cloud nearest the camera, in world coordinates, then its eight
+      // neighbours a tile away.
+      const wx = cloudNearest(c.x, c.speed, seconds, fx);
+      const wz = cloudNearest(c.z, 0, 0, fz);
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          const o = n * 16;
+          m[o] = p.sx; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
+          m[o + 4] = 0; m[o + 5] = p.sy; m[o + 6] = 0; m[o + 7] = 0;
+          m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = p.sz; m[o + 11] = 0;
+          m[o + 12] = wx + i * CLOUD_TILE + p.ox - seaHome[0];
+          m[o + 13] = c.y + p.oy;
+          m[o + 14] = wz + j * CLOUD_TILE + p.oz - seaHome[1];
+          m[o + 15] = 1;
+          n++;
+        }
+      }
     }
     clouds.instanceMatrix.needsUpdate = true;
   }
-  placeClouds();
   group.add(clouds);
 
   // ---- fireflies -----------------------------------------------------------
@@ -1863,8 +1981,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
     cam.updateProjectionMatrix();
   };
 
-  function update(dt, hour, month) {
+  // `sea` is the sea's own clock, `{ t, moon }`: t in epoch milliseconds as the sea has it
+  // (`Date.now()` plus the page's skew), moon the phase from `worldTime`. Without it - the
+  // workbench pages - the tab's own clock stands in and the moon is full.
+  function update(dt, hour, month, sea = null) {
     time += dt;
+    const seaSeconds = sea && Number.isFinite(sea.t) ? sea.t / 1000 : time;
+    const moon = sea && Number.isFinite(sea.moon) ? sea.moon : 0.5;
     const d = dayAt(hour);
     const dir = sunDirection(hour);
     state.sun.copy(dir);
@@ -1889,7 +2012,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // distance in the reference picture is warm, not cold. Distances: see main.js.
     scene.fog.color.copy(d.hor).lerp(d.top, 0.15).lerp(d.key, 0.12);
 
-    waterMat.uniforms.uTime.value = time;
+    // The sea's seconds, not the tab's, so every screen has the same swell - folded into
+    // 20π, which is a whole number of periods of all three wave terms in the shader (1.1,
+    // 0.9 and 1.3 go 11, 9 and 13 times round in it), so the fold is seamless and the value
+    // stays small enough for a float32. A new wave term has to keep that true.
+    waterMat.uniforms.uTime.value = seaSeconds % WAVE_LOOP;
     waterMat.uniforms.uSunDir.value.copy(dir);
     waterMat.uniforms.uSunColor.value.copy(d.key);
     waterMat.uniforms.uNight.value = d.night;
@@ -1901,11 +2028,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
     (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430).add(horizonAt);
 
-    for (const c of cloudDrift) {
-      c.x += c.speed * dt;
-      if (c.x > 90) c.x = -90;
-    }
-    placeClouds();
+    placeClouds(seaSeconds);
+    moonAt(dir, moon);
 
     // None over a volcano: they gather by the lake and the forest edge, and it has neither.
     fireflies.visible = d.fire > 0.02 && !terrain.volcano;
@@ -1965,6 +2089,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   return {
     group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update,
+    // Where this page's island lies in the sea, so the cloud layer can be in the sea's frame.
+    setSeaHome: (origin) => { seaHome[0] = origin ? origin[0] : 0; seaHome[1] = origin ? origin[1] : 0; },
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,

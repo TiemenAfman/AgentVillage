@@ -1,5 +1,7 @@
 # De islander als eigen exe, het venster als interface
 
+**✅ DONE**
+
 ## Waarom
 
 De Tauri-app deed twee dingen tegelijk: het eiland tonen, en `node serve.mjs` starten als de

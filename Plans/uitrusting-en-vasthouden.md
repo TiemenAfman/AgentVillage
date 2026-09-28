@@ -1,5 +1,7 @@
 # Uitrusting: dingen vasthouden, en een rugzak die uit kan
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Context
 
 Aanleiding was een kleine bugfix (C-crouch die zichzelf saboteerde door herhaal-keydowns -

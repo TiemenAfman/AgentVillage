@@ -32,6 +32,7 @@
 // One call per lit lighthouse, and never more than one. That is not automatic: see
 // `forceSinglePass` below, which is the difference between this list and twice it.
 import * as THREE from 'three';
+import { BEACON_RISE, BEACON_THROAT } from './buildings.js';
 
 // How fast the lamp goes round, in radians a second. The number the island has always
 // swept at; it is here rather than in main.js so the beam and the light cannot drift.
@@ -49,16 +50,24 @@ const BEAM_LEN = 52;
 // would draw the falloff at full strength - a 17-degree wedge of lit air 52 units long,
 // standing between the viewer and the sea.
 const BEAM_ANGLE = 0.2;
-// And how far it tilts down over that reach. It cannot be the SpotLight's own aim: that
-// target sits 4.4 below the lamp at a radius of 16, which is 0.27 rad, and a beam at that
-// angle leaves a lamp 2.4 up and is in the ground 9 units from the tower. 0.06 puts the
-// far end of the axis at about the waterline, so the beam skims the sea for its whole
-// length - which is what the light and the pool under it are meant to look like together.
-const BEAM_DROP = 0.06;
-// Where the beam starts. The lantern's glass is a cylinder of exactly this radius in
-// buildings.js, so the cone leaves the lantern at the lantern's own width rather than
-// from a mathematical point somewhere inside it.
-const BEAM_THROAT = 0.19;
+// And how far it tilts down over that reach: just enough to put the far end of the axis at
+// about the waterline, so the beam skims the sea for its whole length - which is what the
+// light and the pool under it are meant to look like together. It cannot be the
+// SpotLight's own aim: that target is on the water 16 out (see attachBeacon), 0.45 rad
+// below a lamp this high, and a beam at that angle is in the sea 12 units from the tower.
+//
+// Worked out from the lamp rather than written down, because it was written down once -
+// 0.06, for a lamp 2.4 up - and the tower was then built again at its real height: that
+// number would have left the far end of the beam 2.7 over the sea. The lamp stands
+// BEACON_RISE up the model, and the model stands on the porch's step (0.18, buildings.js)
+// on a coast cell, which the lighthouse always is and which is about 0.17 over the water in
+// the median, measured on four islands.
+const ABOVE_SEA = 0.18 + 0.17;
+const BEAM_DROP = Math.atan((BEACON_RISE + ABOVE_SEA) / BEAM_LEN);
+// Where the beam starts: the radius of the lantern's glass, off the bake, so the cone
+// leaves the lantern at the lantern's own width rather than from a mathematical point
+// somewhere inside it.
+const BEAM_THROAT = BEACON_THROAT;
 // How bright at full night, before the cone's two walls are added together: it is
 // DoubleSide, so the near wall and the far wall both contribute, and that overlap is what
 // gives the beam a soft core without a texture.

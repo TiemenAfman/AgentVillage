@@ -1,5 +1,7 @@
 # Andere spelers zien zoals jij jezelf ziet
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Opgeschreven en gebouwd op 25 september 2026. Doel: wie je op zee tegenkomt ziet je liggen,
 hurken en zitten, ziet je armen bewegen als je slaat of drinkt, en ziet wat je draagt en
 vasthoudt - niet één rechtopstaand figuurtje zonder armen in de kleur van een model.

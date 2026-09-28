@@ -1,5 +1,7 @@
 # Een open zee, een tick, en eilanden die joinen
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Context
 
 Promptholm is vandaag één proces dat vijftien dingen tegelijk doet. `serve.mjs` (1443 regels,

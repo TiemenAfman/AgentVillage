@@ -183,6 +183,10 @@ export function attachBaker(group, at, material, yaw = 0) {
   figure.rotation.order = 'YXZ';
   figure.scale.setScalar(BAKER_SCALE);
   figure.add(rig.object);
+  // classic-avatar.js mirrors its rig so a player's "Right hand" is on the right; this
+  // villager's work was placed against the unmirrored one (the tool over the block, the
+  // anvil, the oven), and nobody holds the mouse for them, so he keeps the old side.
+  rig.object.scale.x = 1;
   root.add(figure);
 
   // The peel: a turned group on the right fist that keeps it at PITCH, and inside it the peel

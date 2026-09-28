@@ -82,6 +82,27 @@ test('the chart fits every island in, north up, one scale for both axes', async 
   assert.equal(nx, sx);
 });
 
+test('the chart\'s grid is every kilometre of the world strictly inside its edge', async () => {
+  const { gridSteps } = await import('../web/js/minimap.js');
+  const { WORLD_HALF, KM } = await import('../shared/regions.mjs');
+  const xs = gridSteps(-WORLD_HALF, WORLD_HALF, KM);
+  assert.equal(xs.length + 1, 16, 'sixteen columns, A to P, none of them a sliver');
+  assert.ok(xs.includes(0) && xs.every((k) => k % KM === 0 && Math.abs(k) < WORLD_HALF));
+  // A berth off the middle only shifts which lines fall inside, never where they are.
+  assert.deepEqual(gridSteps(0, 1000, KM), [KM, 2 * KM, 3 * KM]);
+});
+
+test('the chart names its columns like a sea chart and washes sea and land in light inks', async () => {
+  const { columnName, chartRGB, terrainRGB } = await import('../web/js/minimap.js');
+  assert.deepEqual([0, 1, 15, 25, 26, 27].map(columnName), ['A', 'B', 'P', 'Z', 'AA', 'AB']);
+  const shallow = chartRGB(terrainRGB(-0.2), -0.2), deep = chartRGB(terrainRGB(-2.5), -2.5);
+  assert.ok(shallow[2] > shallow[0] && deep[2] > deep[0], 'water is a blue wash');
+  assert.ok(deep[0] < shallow[0], 'and a little darker offshore');
+  // Land is faded towards the paper, so it reads lighter than any of the sea round it.
+  const sum = (c) => c[0] + c[1] + c[2];
+  for (const h of [0.2, 1, 3]) assert.ok(sum(chartRGB(terrainRGB(h), h)) > sum(shallow), `h ${h}`);
+});
+
 // What the chart puts on an island, off a village and the region's own cellWorld. A guest
 // bundle has no district parcels, so a hamlet is found by its centre - which this is.
 import { islandFeatures, LANDMARKS } from '../web/js/minimap.js';

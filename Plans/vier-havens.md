@@ -1,5 +1,7 @@
 # Vier havens, wegen naar het plein, meer boten per haven
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Wens (Martijn, 2026-09-23): elk eiland krijgt **vier** kades in plaats van één, elke kade een
 **weg naar het plein**, en per kade kun je **meerdere boten maken**.
 

@@ -9,7 +9,9 @@ import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
+import { isletsNear } from 'shared/islets.mjs';
+import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
@@ -17,7 +19,7 @@ import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
-import { quaysOf, mooringsFor, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
+import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { createWorld } from './world.js';
 import { worldTime, localZone } from 'shared/worldclock.mjs';
@@ -25,6 +27,7 @@ import { createRoadDebug } from './road-debug.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
+import { isShipyard, shipyardGround } from './shipyard.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -46,6 +49,7 @@ import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
+import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership } from './hamlets.js';
 import { createBoard } from './board.js';
@@ -55,6 +59,7 @@ import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
+import { opensChronicle, chronicleInteractable, isChronicle, HOVER as CHRONICLE_HOVER } from './chronicle-house.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
 import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mjs';
@@ -62,12 +67,16 @@ import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
+import { attachBatavia, updateBatavia, disposeBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
 import { attachStable, updateStable, disposeStable } from './stable.js';
+// The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
+import { clockBeat, wallBeat } from './dance.js';
 import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
 import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
 import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
+import { attachQuarry, updateQuarry, disposeQuarry } from './quarry.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -89,6 +98,7 @@ import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
+import { prefs as phonePrefs, setPref as setPhonePref } from './phoneprefs.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
@@ -310,7 +320,10 @@ async function openBoardWithoutIsland() {
   board.open();
 }
 
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu);
+// A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
+// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
+// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
@@ -322,6 +335,17 @@ if (modest) console.info('island: integrated graphics detected, running lighter'
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
+// The field of view is vertical, so a phone held upright at 45 degrees saw about 23 across:
+// a boat and a strip of sea. On the phone it opens up in portrait until there is about 60
+// across, and no further than 75 up and down, where the edges start to stretch.
+function fitFov() {
+  const aspect = innerWidth / innerHeight;
+  const want = STANDALONE && aspect < 1
+    ? Math.min(75, 2 * Math.atan(Math.tan(Math.PI / 6) / aspect) * 180 / Math.PI)
+    : 45;
+  if (camera.fov !== want) { camera.fov = want; camera.updateProjectionMatrix(); }
+}
+fitFov();
 // No browser menu over the island, in any mode.
 //
 // OrbitControls suppresses it for itself, because it uses the right button to pan - so from
@@ -643,6 +667,8 @@ function blockersOf(rec) {
     hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
     hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
     ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
+    // A ship's side, which is also what a boat meets (buildings.js shipSolids, walk.js hulls).
+    ...(r.hull != null ? { hull: r.hull } : {}),
     id: rec.id,
   }));
 }
@@ -665,6 +691,11 @@ function walkableBlockers() {
   return out;
 }
 
+// How slow a boat has to be going before E offers to put you off it.
+const OFFER_BELOW = 0.6;
+// The boat that is ours this frame: the one at whose helm we stand, or whose deck we walk.
+const ownHull = () => (state.walk && (state.walk.aboard() || state.walk.onDeck())) || null;
+
 function interactables() {
   const out = [];
   // One key does both. Aboard, E puts you ashore - but only where there is shore to put you
@@ -672,6 +703,23 @@ function interactables() {
   // offer and the prompt simply is not there. On foot it is the dock that offers a boat, and
   // any hull somebody left lying about.
   const aboard = state.walk && state.walk.aboard();
+  const deck = !aboard && state.walk && state.walk.deckWhere();
+  if (deck) {
+    const b = deck.boat;
+    if (deck.helm < 1.0) {
+      out.push({ id: b.id, kind: 'helm', x: b.x, z: b.z, r: 99, label: 'the wheel', prompt: 'take the helm' });
+    } else if (deck.side < 0.5) {
+      const w = state.walk.state.pos, under = (x, z) => state.walk.groundAt(x, z);
+      const land = LAND_PROBE.some(([dx, dz]) => under(w.x + dx * 1.6, w.z + dz * 1.6) >= 0.06);
+      out.push(land
+        ? { id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the shore', prompt: 'step ashore' }
+        : { id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the water', prompt: 'jump overboard' });
+    }
+    return out;
+  }
+  // Only once she has nearly stopped: under way the prompt sat on screen the whole voyage,
+  // and nobody steps off a boat doing nine knots anyway.
+  if (aboard && Math.abs(aboard.v || 0) > OFFER_BELOW) return out;
   if (aboard) {
     const bx = aboard.x + Math.sin(aboard.yaw) * (BOW + 0.7);
     const bz = aboard.z + Math.cos(aboard.yaw) * (BOW + 0.7);
@@ -680,6 +728,11 @@ function interactables() {
     // Asked of walk mode, not of the archipelago: a quay is planks over water, so the sea
     // says -0.4 where your own dock is and stepping out onto your own dock would be refused.
     const under = (x, z) => state.walk.groundAt(x, z);
+    const spec = aboard.craft && aboard.craft.spec;
+    if (spec && spec.crew > 1) {
+      out.push({ id: aboard.id, kind: 'leavehelm', x: aboard.x, z: aboard.z, r: 99, label: 'the deck', prompt: 'leave the helm' });
+      return out;
+    }
     const landAhead = under(bx, bz) >= 0.06;
     const landBeside = !landAhead && LAND_PROBE.some(([dx, dz]) =>
       under(aboard.x + dx * 1.6, aboard.z + dz * 1.6) >= 0.06);
@@ -687,6 +740,13 @@ function interactables() {
       out.push({
         id: aboard.id, kind: 'ashore', x: aboard.x, z: aboard.z, r: 99,
         label: 'the shore', prompt: 'step ashore',
+      });
+    } else {
+      // Out at sea E puts you over the side: a boat you could only leave at a coast was a
+      // boat you could not swim from, nor leave to jump the world's edge on your own.
+      out.push({
+        id: aboard.id, kind: 'ashore', x: aboard.x, z: aboard.z, r: 99,
+        label: 'the water', prompt: 'jump overboard',
       });
     }
     return out;
@@ -731,6 +791,9 @@ function interactables() {
         id: rec.id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
         get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
       });
+    } else if (opensChronicle(rec)) {
+      // At the foot of the portico, like the castle's gate: web/js/chronicle-house.js.
+      out.push(chronicleInteractable(rec));
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
@@ -791,10 +854,39 @@ function interactables() {
 let whereSentAt = 0;
 let whereLastX = null, whereLastZ = null;
 
+// Where you last stood on foot, so the sky and back (or a closed and reopened window)
+// puts you down there again rather than on the town square every time. Per browser and
+// per island - keyed by `terrain.seed`, the one identity the page has for sure - and in
+// scene coordinates, which for home are its local ones and never move (a grown grid grows
+// centred). The server's /api/where is not the store for it: a visitor is refused there,
+// and a spot is a convenience of this screen, not something the island has to know.
+function spotKey() {
+  return state.terrain ? `promptholm.walk.spot.${state.terrain.seed}` : null;
+}
+function rememberSpot(w) {
+  if (state.inside) return;             // a room's floor is not a place on the island
+  const spot = { at: [w.pos.x, w.pos.z], yaw: w.yaw, pitch: w.camPitch };
+  state.lastSpot = spot;
+  const key = spotKey();
+  if (!key) return;
+  try { localStorage.setItem(key, JSON.stringify(spot)); } catch { /* memory still has it */ }
+}
+function recalledSpot() {
+  let spot = state.lastSpot;
+  if (!spot) {
+    const key = spotKey();
+    try { spot = key && JSON.parse(localStorage.getItem(key)); } catch { spot = null; }
+  }
+  if (!spot || !Array.isArray(spot.at) || !spot.at.every(Number.isFinite) || !Number.isFinite(spot.yaw)) return null;
+  const [x, z] = spot.at;
+  return {
+    at: [x, z],
+    facing: [x + Math.sin(spot.yaw) * 10, z + Math.cos(spot.yaw) * 10],
+    pitch: Number.isFinite(spot.pitch) ? spot.pitch : undefined,
+  };
+}
+
 function reportWhere({ final = false } = {}) {
-  // Where the keeper stands is written down so an agent at the command line can find
-  // them. A visitor is not who that is about, and the server refuses them anyway.
-  if (state.guest) return;
   const w = state.walk && state.walk.state;
   if (!w || !w.pos) return;
   const now = performance.now();
@@ -803,6 +895,10 @@ function reportWhere({ final = false } = {}) {
   whereSentAt = now;
   whereLastX = w.pos.x;
   whereLastZ = w.pos.z;
+  if (state.mode === 'walk' || final) rememberSpot(w);
+  // Where the keeper stands is written down so an agent at the command line can find
+  // them. A visitor is not who that is about, and the server refuses them anyway.
+  if (state.guest) return;
   mine('/api/where', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1157,10 +1253,17 @@ function takeBoat(which) {
 
 // Off at the bow, which is the end pointing at whatever you have come alongside.
 function stepAshore() {
-  const b = state.walk && state.walk.aboard();
+  const b = ownHull();
   if (!b) return;
-  const at = [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
-  if (!state.walk.unboard(at)) { state.ui.toast('Nowhere to land here.'); return; }
+  const walking = !state.walk.aboard();
+  const w = state.walk.state.pos;
+  const at = walking ? [w.x, w.z] : [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
+  // No shore: over the starboard side, clear of the hull, into the water.
+  const beam = (b.craft && b.craft.beam) || 0.35;
+  // Which side: the one you stand at on a deck, starboard from the helm.
+  const sgn = walking && state.walk.state.deck && state.walk.state.deck.x < 0 ? -1 : 1;
+  const side = [b.x + sgn * Math.cos(b.yaw) * (beam + 0.5), b.z - sgn * Math.sin(b.yaw) * (beam + 0.5)];
+  if (!state.walk.unboard(at) && !state.walk.unboard(side, { water: true })) { state.ui.toast('Nowhere to land here.'); return; }
   if (state.net) { state.net.dropBoat(b.id); state.net.setRoom(null, state.walk); }
   state.walk.setInteractables(interactables());
 }
@@ -1177,17 +1280,20 @@ function walkCallbacks() {
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
+      else if (it.kind === 'chronicle') openChronicle();
       else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
       else if (it.kind === 'boat') takeBoat(it.id);
       else if (it.kind === 'dock') takeBoatAt(it.id);
       else if (it.kind === 'ashore') stepAshore();
+      else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) state.net.setRoom(null, state.walk); state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'helm') { if (state.walk.takeHelm()) { if (state.net) state.net.setRoom('boat', state.walk); state.walk.setInteractables(interactables()); } }
       else talkTo(it.id);
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1341,6 +1447,39 @@ function applyPanelMessage(m) {
 }
 
 // A board you are already working says how to let go of it, not how to take it.
+// The phone's buttons say what they would do: a word under X for what is in reach, and the
+// two hands only while there is ground under your feet to fight or drink on.
+const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter' };
+function touchHud(near, walk) {
+  if (!state.touch) return;
+  const word = !near ? ''
+    : near.prompt ? (CAPTION[near.prompt] || near.prompt.split(' ')[0].replace(/^./, (c) => c.toUpperCase()))
+      : near.kind === 'board' || near.kind === 'issues' ? 'Read'
+        : near.kind === 'bed' ? '' : 'Talk';
+  state.touch.caption(word);
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null);
+}
+
+// A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
+// Only somebody on a visiting island - a phone has no island of its own to have people on -
+// found by guest-pick.js's arithmetic along the ray through the finger, and said in a toast
+// with the island's name.
+function tapName(x, y) {
+  if (state.mode !== 'walk' || state.inside) return;
+  pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(pointer, camera);
+  let best = null;
+  for (const g of state.guests) {
+    if (!g.crowd) continue;
+    const h = nearestOnRay(g.crowd.figures(), ray.ray.origin, ray.ray.direction, GUEST_PICK_T);
+    if (h.f && (!best || h.t < best.t)) best = { f: h.f, t: h.t, g };
+  }
+  if (!best) return;
+  const v = best.g.region.village;
+  const said = guestLabel(best.f, v && v.island, state.fleet);
+  state.ui.toast(`<b>${escapeHtml(said.name)}</b>${said.sub ? ` · ${escapeHtml(said.sub)}` : ''}`);
+}
+
 function promptFor(near) {
   if (!near) return null;
   const held = state.walk.state.working;
@@ -1392,6 +1531,14 @@ function raveGuests() {
   return out;
 }
 
+// Whether the island's own stable is standing, and so whether its horse and hens are on the
+// dance floor tonight: that is where they went while the paddock stands empty (updateStable's
+// `away`, on the same raveOn). An island without a stable brings no horse.
+function stableComes() {
+  const rec = state.byId.get('civic:stable');
+  return !!(rec && rec.stable && rec.group.visible);
+}
+
 // What sound.js is told about the rave: nothing when there is none, the hall when you are
 // in it, and otherwise how far the castle is - a thump through the walls from the square.
 function raveHeard() {
@@ -1400,6 +1547,24 @@ function raveHeard() {
   const rec = state.byId.get('civic:castle');
   if (!rec || !rec.group.visible) return null;
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
+}
+
+// The beat everybody on this screen dances to (Plans/dansen.md): ourselves (R) and every other
+// player whose pose says they are dancing, since only the bit crosses the wire. The hall's own
+// count when we are in it, which already follows the music when there is music; outside, the
+// music when we can hear it (the thump through the castle walls); otherwise the wall clock at
+// the song's tempo. Everybody dances in time with what this screen plays, not with what theirs
+// does.
+function danceBeat() {
+  const hall = state.inside && state.inside.beat ? state.inside.beat() : null;
+  if (hall != null) return hall;
+  const clock = state.sound ? state.sound.raveClock() : null;
+  return clock != null ? clockBeat(clock) : wallBeat(performance.now());
+}
+// And who we are while we dance: the id the sea knows us by, which is the id everybody else's
+// peers.js picks our moves from (dance.js danceStep), so our screen and theirs agree.
+function danceNow() {
+  return { id: (state.net && state.net.id()) || 'me', beat: danceBeat() };
 }
 
 // Three o'clock: whoever is inside is put back out on the step, once.
@@ -1419,6 +1584,7 @@ function enterInterior(room, at) {
         onLeave: () => leaveInterior(),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
         onDrink: (side) => { if (state.net) state.net.drink(side); },
+        dance: danceNow,
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -1433,9 +1599,10 @@ function enterInterior(room, at) {
   cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
-  inside.enter({ avatar: loadAvatar(), guests: room === 'rave' ? raveGuests() : null });
+  const rave = room === 'rave';
+  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
   state.ui.setIndoors(true);
-  if (room === 'rave') state.ui.toast(RAVE_IN);
+  if (rave) state.ui.toast(RAVE_IN);
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -1519,17 +1686,119 @@ function minimapData() {
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
     district: minimapDistrict(),
+    // Names and distances for the nearest islands, on the phone, where a wanderer has
+    // nothing else to steer by (see the `named` pass in minimap.js).
+    named: STANDALONE ? namedIslands(w.pos) : null,
   };
+}
+
+// Every island the page knows a name for, but not the one underfoot: the raised regions,
+// named off the fleet, and the horizon's pinned marks for those further out.
+function namedIslands(pos) {
+  const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
+  const here = regionAt(pos);
+  const out = [];
+  for (const r of state.sea.regions()) {
+    const name = names.get(r.id);
+    if (r !== here && name) out.push({ x: r.origin[0], z: r.origin[1], name });
+  }
+  const seen = new Set(out.map((n) => n.name));
+  for (const m of state.horizon ? state.horizon.marks() : []) {
+    if (m.pinned && m.name && !seen.has(m.name)) out.push({ x: m.x, z: m.z, name: m.name });
+  }
+  return out;
+}
+// Android's back button (the phone). Tauri hands it to the webview's history, so while
+// anything is open over the island - a side panel, the chart, a keeper's words, the chat -
+// one history entry is held for it, and going back closes all of that instead of the app.
+// With nothing open there is no entry, and back leaves the app the way Android expects.
+let backHeld = false, backLetGo = false;
+function overlayOpen() {
+  return !!parley || minimapMode === 'map' || !!(state.islandchat && state.islandchat.isOpen())
+    || !!openPanel() || !!document.querySelector('aside.panel:not([hidden])');
+}
+function phoneBack() {
+  const open = overlayOpen();
+  if (open && !backHeld) { history.pushState({ overlay: true }, ''); backHeld = true; }
+  // Closed some other way (a ✕, a tap): give the entry back, quietly.
+  else if (!open && backHeld) { backHeld = false; backLetGo = true; history.back(); }
+}
+if (STANDALONE) {
+  addEventListener('popstate', () => {
+    if (backLetGo) { backLetGo = false; return; }
+    backHeld = false;
+    endParley();
+    if (minimapMode === 'map') setMinimapMode('radar');
+    if (state.islandchat && state.islandchat.isOpen()) state.islandchat.toggle();
+    const p = openPanel();
+    if (p) p.close();
+    state.ui.closeOverlays();
+  });
+}
+
+// Which raised region a scene position is over, or null out at sea.
+function regionAt(pos) {
+  for (const r of state.sea.regions()) {
+    if (Math.abs(pos.x - r.origin[0]) <= r.half && Math.abs(pos.z - r.origin[1]) <= r.half) return r;
+  }
+  return null;
+}
+
+// A ribbon with the island's name when you come into its waters (ui.arrival), and a word when
+// you leave them for the open sea -
+// on every page, since sailing over to a neighbour is the same arrival on a desktop. On the
+// phone the title card follows too: it said "The open sea" for good there - its home is open
+// water and nothing else ever wrote there - while the player rowed from island to island; on
+// a desktop it is the name of your own island and stays that. The first look is silent, so
+// stepping down onto your own island is not an arrival. Checked twice a second.
+let placeCheckedAt = 0, placeName;
+function islandWhere(pos) {
+  const now = performance.now();
+  if (now - placeCheckedAt < 500) return;
+  placeCheckedAt = now;
+  const r = regionAt(pos);
+  const home = r && r === state.region && state.village && state.village.island;
+  const row = r && !home ? (state.fleet || []).find((f) => f.id === r.id) : null;
+  const name = home ? state.village.island.name : row?.name || null;
+  if (name === placeName) return;
+  const first = placeName === undefined;
+  const was = placeName;
+  placeName = name;
+  if (STANDALONE) {
+    const card = document.getElementById('island-name');
+    if (card) card.textContent = name || 'The open sea';
+  }
+  if (first) return;
+  if (name) {
+    const keeper = home ? state.village.island.keeper : row?.keeper;
+    state.ui.arrival(name, keeper && keeper !== 'Someone' ? keeper : null);
+  } else if (was) state.ui.toast(`Out on the open sea, ${escapeHtml(was)} behind you.`);
 }
 
 // The chart's picture of the sea: every region with ground under it, named off the fleet
 // (home off its own village), plus the horizon's marks for everything further out.
+// From the sky there is no walker: "you" is where the camera looks, facing the way it
+// looks - the same (sin, cos) convention walk.js keeps its yaw in.
 function worldMapData() {
-  const w = state.walk.state;
+  const sky = state.mode !== 'walk';
+  const w = state.walk && state.walk.state;
+  const pos = sky || !w ? { x: controls.target.x, z: controls.target.z } : w.pos;
+  const yaw = sky || !w
+    ? Math.atan2(controls.target.x - camera.position.x, controls.target.z - camera.position.z)
+    : w.yaw;
   const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
   const homeName = state.village && state.village.island ? state.village.island.name : null;
+  const home = state.homeOrigin;
   return {
-    pos: w.pos, yaw: w.yaw,
+    pos, yaw, sky,
+    // The whole world, in scene coordinates, and the berth that turns them back into the
+    // world's for the grid. No berth yet, no world: the chart fits what it has instead.
+    world: home ? {
+      minX: -WORLD_HALF - home[0], maxX: WORLD_HALF - home[0],
+      minZ: -WORLD_HALF - home[1], maxZ: WORLD_HALF - home[1],
+      home, km: KM,
+    } : null,
+    islets: mapIslets(),
     sea: state.sea,
     regions: state.sea.regions().filter((r) => !r.id.startsWith('debug-')).map((r) => ({
       id: r.id, origin: r.origin, half: r.half, region: r, home: r === state.region,
@@ -1553,6 +1822,24 @@ function enterWalk(spot = null) {
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
   let at = [0, 0], facing = null;
+  // No place in mind and a boat left in the sky's keeping: down onto its deck, wherever it
+  // floats now. Only while it is still in the water and nobody else has taken its tiller -
+  // otherwise it is the spot you left, in the water, like before.
+  const kept = skyBoat && state.boats.includes(skyBoat) ? skyBoat : null;
+  skyBoat = null;
+  const reboard = !spot && kept && !(kept.pilot && state.net && kept.pilot !== state.net.id()) ? kept : null;
+  if (reboard) {
+    spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
+  }
+  // No place in mind: back where you last stood, and only the very first time the square.
+  // `?square` skips the recall - the way home for somebody left treading water.
+  if (!spot && !params.has('square')) spot = recalledSpot();
+  // `?edge`: in the water a few strokes short of the world's east edge, facing it, to try
+  // the jump round the world without sailing two kilometres for it (Plans/ronde-wereld.md).
+  if (params.has('edge') && state.homeOrigin && !reboard) {
+    const x = WORLD_HALF - 12 - state.homeOrigin[0], z = -state.homeOrigin[1];
+    spot = { at: [x, z], facing: [x + 10, z] };
+  }
   if (spot && spot.at) {
     at = spot.at;
     facing = spot.facing || null;
@@ -1582,6 +1869,9 @@ function enterWalk(spot = null) {
     interactables: interactables(),
     ...walkCallbacks(),
   });
+  // Back aboard the boat you flew up from, if you came down without a place in mind and it
+  // is still there and still yours (see exitWalk).
+  if (reboard) takeBoat(reboard);
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
 }
 
@@ -1604,6 +1894,24 @@ function openTownHall() {
   if (keeperOnly('read the register')) return;
   if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.townHall.open();
+}
+
+// The chronicle house keeps the island's history (Plans/kroniekhuis.md), and what it opens is
+// the chronicle bar: ▶ from the founding day, at the speed the bar is set to - the same state
+// onPlay moves, through the same setChronicleTime. Not keeper-only, unlike the register: the
+// chronicle is drawn from village.json, which every visitor already has. From the sky, because
+// the bar is the sky view's (ui.js hides it on foot) and a replay takes every house out from
+// around a walker, so E at its door flies up first; exitWalk frames the whole island on the way,
+// which is the view a replay wants. On the phone exitWalk refuses, and there is no chronicle
+// house of ours there to ask anyway.
+function openChronicle() {
+  if (state.mode === 'walk') exitWalk();
+  if (state.mode !== 'orbit') return;
+  state.ui.closeDossier();
+  const { start } = chronicleBounds();
+  state.chronicle.playing = true;
+  setChronicleTime(start);
+  state.ui.toast('The chronicle of the island, from its founding day. <b>Live</b> brings it back to now.');
 }
 
 // --------------------------------------------------------------- sending someone away
@@ -1741,6 +2049,8 @@ function leaveAnimation(rec) {
   };
 }
 
+// The boat you flew up from, held for the way back down (exitWalk, enterWalk).
+let skyBoat = null;
 function exitWalk({ force = false } = {}) {
   if (state.mode !== 'walk') return;
   // The phone has no sky to go up to: walk mode is all there is. `force` is for the one
@@ -1768,6 +2078,17 @@ function exitWalk({ force = false } = {}) {
   if (state.net) { state.net.setRoom(null, state.walk); state.net.setWalking(false); }
   state.walk.setPeerBlockers([]);
   reportWhere({ final: true });   // write down where you left off, and that you left
+  // Flying up from the tiller. The hull stops where it is - walk mode was what stepped it,
+  // and a boat left with way on it used to be caught up with the sea's last sample of it a
+  // few metres back, so coming down again meant swimming after your own boat. Its last
+  // position goes to the sea now, the tiller stays ours, and enterWalk climbs back aboard.
+  const b = ownHull();
+  if (b) {
+    b.v = 0;
+    b.track = null;
+    if (state.net) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
+    skyBoat = b;
+  }
   state.walk.exit();
   state.board.close();
   state.ui.setWalking(false);
@@ -1785,9 +2106,13 @@ function exitWalk({ force = false } = {}) {
 // several cells past the last beach, and a leash on the grid lets you drift out over empty
 // water until the island falls off the bottom of the frame. Both numbers are floors, so an
 // island on its own keeps exactly the framing it was tuned with.
+// The leash also has a ceiling. With the volcano and the starters the archipelago's radius
+// is several hundred, and twice that put the eye so far out that the island it orbits fell
+// behind the far plane (1400) itself. 1000 still frames the whole ring.
+const MAX_ORBIT = 1000;
 function applyCameraRange() {
   state.bounds = state.sea.bounds();
-  controls.maxDistance = Math.max(200, state.sea.radius() * 2);
+  controls.maxDistance = Math.min(MAX_ORBIT, Math.max(200, state.sea.radius() * 2));
 }
 
 // Where the haze begins and where it closes, and the only place that decides either.
@@ -1855,8 +2180,53 @@ function applyFogRange() {
 // numbers it has always had, to the decimal.
 function setFogRange(half, out, far) {
   const h = hazeRange({ near: half * 1.1, far, half, out, thick: haze() });
-  scene.fog.near = h.near;
-  scene.fog.far = h.far;
+  // Near the world's edge the haze closes in, so that whatever lies across it is behind the
+  // fog before the jump and after it (wrapEye). Across the edge nothing is nearer than the
+  // eye's own way to the edge plus the open water between the far edge and the fleet, and
+  // far from the edge that is more than the haze reaches anyway.
+  h.far = Math.min(h.far, edgeReach());
+  // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
+  // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
+  // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
+  const cap = camera.far * 0.95;
+  scene.fog.far = Math.min(h.far, cap);
+  scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
+}
+
+// How far the eye may see before something across the world's edge would come into view:
+// its way to the nearest edge, plus the open water between the edge and the fleet on the
+// other side. Infinity until there is a berth to measure from.
+function edgeReach() {
+  const home = state.homeOrigin;
+  if (!home) return Infinity;
+  const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
+  const ex = eye.position.x + home[0], ez = eye.position.z + home[1];
+  let fleet = 0;
+  for (const r of state.fleet || []) {
+    if (!r || !Array.isArray(r.origin)) continue;
+    const half = r.reach ?? (r.gridSize || 64) / 2;
+    fleet = Math.max(fleet, Math.abs(r.origin[0]) + half, Math.abs(r.origin[1]) + half);
+  }
+  const toEdge = WORLD_HALF - Math.max(Math.abs(ex), Math.abs(ez));
+  return Math.max(120, toEdge + (WORLD_HALF - fleet) - 40);
+}
+
+// Round the world by a jump (Plans/ronde-wereld.md): whoever sails, rides or swims past the
+// edge is moved the whole width back across, body, hull and bicycle together, before walk
+// mode steps. Everything is drawn relative to our berth, so the one frame later the world
+// looks exactly as it did; the sea is simply sent a pose on the other side, and every other
+// page starts that track again rather than gliding it back (timeline.js pushSample). Not in
+// a room: a room is not on the sea.
+function wrapEye() {
+  const home = state.homeOrigin;
+  if (!home || !state.walk || state.inside) return;
+  const w = state.walk.state;
+  const dx = wrapShift(w.pos.x + home[0]), dz = wrapShift(w.pos.z + home[1]);
+  if (!dx && !dz) return;
+  w.pos.x += dx; w.pos.z += dz;
+  if (w.vehicle) { w.vehicle.x += dx; w.vehicle.z += dz; }
+  if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
+  state.ui.toast('Round the world - the far side of the chart');
 }
 
 // Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
@@ -2075,11 +2445,20 @@ function buildDocks(homeVillage) {
   handOutDecks();
 }
 
+// How many boats lie at one of our harbours: what mooringsFor draws there, the first boat
+// (the galleon) and the earned ones included - `harbours[].boats` is the larger of built and
+// earned since the village started earning them (scan.mjs, shared/quay.mjs earnedBoats).
+// The prompt and B's own check both count this, so neither can say a harbour has room that
+// the water does not show, and the server builds one past the same count (lib/boatyard.mjs).
+function boatsAt(d) {
+  return mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+}
+
 // What E and B do at a dock. B only at one of our own harbours, and only while it has room.
 function dockPrompt(d, moored) {
   const take = moored ? 'take the boat' : 'no boat here';
   if (d.region !== state.region || !d.side || state.guest || !state.village) return take;
-  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  const here = boatsAt(d);
   return here < BOATS_PER_HARBOUR ? `${take} · B build a boat (${here} of ${BOATS_PER_HARBOUR})` : take;
 }
 
@@ -2094,7 +2473,7 @@ const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) ||
 async function buildBoatAt(d) {
   if (d.region !== state.region || !d.side) { state.ui.toast("Only your own island's harbours are yours to build at."); return; }
   if (keeperOnly('build a boat')) return;
-  const here = mooringsFor(d.region.id, d.region.terrain, state.village, d.region.origin).filter((m) => m.side === d.side).length;
+  const here = boatsAt(d);
   const word = SIDE_WORD[d.side];
   if (here >= BOATS_PER_HARBOUR) { state.ui.toast(`The ${word} harbour already moors ${BOATS_PER_HARBOUR} boats.`); return; }
   try {
@@ -2120,7 +2499,7 @@ function launchBoats() {
   // step off, and the sea says `gone` for it when it is.
   for (let i = state.boats.length - 1; i >= 0; i--) {
     const b = state.boats[i];
-    if (wanted.has(b.id) || (state.walk && state.walk.aboard() === b)) continue;
+    if (wanted.has(b.id) || ownHull() === b) continue;
     if (isSkiff(b.id)) continue;   // nobody's island: only the sea's `gone` takes one away
     b.craft.dispose();
     state.boats.splice(i, 1);
@@ -2132,6 +2511,37 @@ let wasAboard = false;
 // What M is showing, kept across a trip in and out of a building and up to the sky and
 // back: the radar by default, then the chart of every island, then neither.
 let minimapMode = 'radar';
+// The chart from the sky (M or the Map chip in orbit), apart from minimapMode: up there
+// there is no radar, so it is just open or shut, and walking down does not change what M
+// does on foot.
+let skyMap = false;
+function toggleMap() {
+  if (state.mode === 'walk') setMinimapMode(minimapMode === 'map' ? 'radar' : 'map');
+  else if (state.mode === 'orbit') skyMap = !skyMap;
+}
+addEventListener('keydown', (e) => {
+  if (state.mode !== 'orbit' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const k = e.key.toLowerCase();
+  if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
+  else if (k === 'escape' && skyMap) skyMap = false;
+});
+
+// Every islet in the world, for the chart - in the scene frame, like everything it draws.
+// The whole world is 1764 squares, so it is worked out once per fleet and berth rather than
+// every frame; `state.fleet` is replaced wholesale on every change, so the object is the key.
+let chartIslets = { fleet: null, home: null, list: [] };
+function mapIslets() {
+  const home = state.homeOrigin;
+  if (!home) return [];
+  if (chartIslets.fleet === state.fleet && chartIslets.home === home) return chartIslets.list;
+  const extra = STANDALONE ? [{ half: OPEN_HOME / 2, origin: home }] : [];
+  const list = isletsNear(state.fleet || [], [0, 0], { range: WORLD_HALF, extra })
+    .map((i) => ({ x: i.x - home[0], z: i.z - home[1], r: i.r, kind: i.kind }));
+  chartIslets = { fleet: state.fleet, home, list };
+  return list;
+}
 const MINIMAP_NEXT = { radar: 'map', map: 'off', off: 'radar' };
 function setMinimapMode(mode) {
   minimapMode = mode;
@@ -2148,19 +2558,25 @@ function showMinimap(on) {
 // about it.
 //
 // The first is the island's own and the rest are what its keeper has built at its harbours
-// (at most three a harbour, Plans/vier-havens.md). None of them is conjured: a boat that
+// or its village has earned there (at most three a harbour, Plans/vier-havens.md and
+// Plans/mijlpalen-tot-tweehonderd.md). None of them is conjured: a boat that
 // belongs to nobody cannot also be always to hand, so if somebody has left one on the far
 // shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
 // at their moorings on a restart.
+//
+// The galleon does not lie at her berth but out from it in deep water (`shipBerth`, in
+// shared/quay.mjs now, because lib/layout.mjs keeps the rede clear of where she lies).
 function boatsFor(region) {
   const v = region === state.region ? state.village : region.village;
   const out = [];
   for (const m of v ? mooringsFor(region.id, region.terrain, v, region.origin) : []) {
     let b = state.boats.find((x) => x.id === m.id);
     if (!b) {
-      const craft = createBoat({ scene, material: buildingMat });
-      craft.place(m.x, m.z, m.yaw);
-      b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
+      const ship = kindOf(m.id) === 'galleon';
+      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
+      const at = ship ? shipBerth(m, state.sea.height) : m;
+      craft.place(at.x, at.z, m.yaw);
+      b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
       state.boats.push(b);
     }
     out.push(b);
@@ -2241,7 +2657,7 @@ function hullSample(b, m, final) {
 const glide = {};
 function glideBoats() {
   const render = performance.now() - LAG_MS;
-  const mine = state.walk && state.walk.aboard();
+  const mine = ownHull();
   for (const b of state.boats) {
     if (!b.track || b === mine) continue;
     trackAt(b.track, render, glide);
@@ -2413,6 +2829,18 @@ function syncFleet(rows) {
   return syncing;
 }
 
+// The islets on the open water (web/js/islets.js): worked out from the fleet by every page
+// alike, so they follow every fleet change and every rehome from here. Not before our berth
+// is known - drawn relative to a berth of [0,0] they would stand in the wrong sea for the
+// moment it takes to arrive, and on top of whoever is really there. A phone's own berth is
+// open water nobody else holds, so it is handed over as water an islet may not take.
+function syncIslets() {
+  if (!state.islets) return;
+  if (!state.homeOrigin) { state.islets.apply([], null); return; }
+  const extra = STANDALONE ? [{ half: OPEN_HOME / 2, origin: state.homeOrigin }] : [];
+  state.islets.apply(state.fleet || [], state.homeOrigin, { extra, focus: focusPoint() });
+}
+
 async function doSyncFleet() {
   if (!state.terrain) return;
   const moored = state.fleet || [];
@@ -2482,6 +2910,7 @@ async function doSyncFleet() {
     if (region) arrived.push(row.name);
   }
   syncHorizon();
+  syncIslets();
   raiseGuestIslands();
   buildDocks();
   launchBoats();
@@ -3164,11 +3593,17 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
 // web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
 // breadth from where the building then turns up.
+// The shipyard is the one building not stood on the middle of its plot: that is over the sea,
+// and the yard stands on the land at its landward end (shipyardGround in web/js/shipyard.js).
 function poseOnPlot(spec, built) {
+  // A ship floats: the middle of her plot, on the sea and not on the bed under her
+  // (web/js/batavia.js, the one copy guest-island.js asks too).
+  if (built.floats) return floatingPose(spec.plot, state.terrain.half, built.bbox);
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  return { x, y: groundAt(x, z), z, yaw: pose.yaw };
+  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+  return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {
   const rec = state.byId.get(id);
@@ -3257,6 +3692,11 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
+  // The Batavia (web/js/batavia.js): her swell goes on her own mesh rather than on the group,
+  // whose position and turn blockersOf reads, and her flags hang on that mesh and lean with her.
+  if (built.animated && built.animated.ship) {
+    rec.ship = attachBatavia(rec.mesh, spec.id, buildingMat);
+  }
   // The stable (a trade) and the bakery (a shop of the square), the same way. The stable's horse and hens are scenery out of
   // web/js/fauna.js moving on their own clock, like the bees - not story animals, which are
   // the sea's and web/js/animal-view.js's. The bakery brings its oven's light, as the smithy
@@ -3273,6 +3713,13 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.butcher) {
     rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
   }
+  // The quarry's treadwheel crane and its tub (Plans/ambachten.md, web/js/quarry.js), hung on the
+  // record's group like the sawmill's blade. The brewery's copper steams from an anchor of its
+  // own beside the chimney's smoke.
+  if (built.animated && built.animated.quarry) {
+    rec.quarry = attachQuarry(group, built.animated.quarry.at, buildingMat);
+  }
+  if (built.animated && built.animated.steam) rec.steamAnchor = built.animated.steam.at;
   // A guest island's town hall gets no postbox flag. The count it would raise is OUR unread
   // mail, and hanging that on somebody else's wall is both wrong and a small leak.
   if (mail && built.animated && built.animated.mailflag) {
@@ -3374,6 +3821,8 @@ function disposeRecord(rec) {
   if (rec.bakery) disposeBakery(rec.bakery);
   if (rec.baker) disposeBaker(rec.baker);
   if (rec.butcher) disposeButcher(rec.butcher);
+  if (rec.quarry) disposeQuarry(rec.quarry);
+  if (rec.ship) disposeBatavia(rec.ship);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -4352,7 +4801,10 @@ function applyVillage(next, { animate }) {
     rec.spec = spec;
     const tierChanged = before.tier !== spec.tier || before.style !== spec.style
       || before.kind !== spec.kind || (before.ornaments || []).join() !== (spec.ornaments || []).join()
-      || JSON.stringify(before.sheds || []) !== JSON.stringify(spec.sheds || []);
+      || JSON.stringify(before.sheds || []) !== JSON.stringify(spec.sheds || [])
+      // The ship on the yard's slipway, one stage further (web/js/shipyard.js): a refit, so the
+      // yard is built again where it stands with a puff of dust rather than a scaffold.
+      || (before.stage ?? 0) !== (spec.stage ?? 0);
     if (tierChanged) {
       const upgraded = TIER_INDEX[spec.tier] > TIER_INDEX[before.tier];
       events.push({ type: upgraded ? 'upgrade' : 'refit', id, spec, silent: !animate });
@@ -4671,6 +5123,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // water you cross - so a click on one is a click on nothing, and closing the dossier
     // is the right answer.
     // A body on a visiting island is the same: named on hover, but nothing to open.
+    // And our chronicle house opens the chronicle rather than a dossier: the dossier of a civic
+    // building is its name and a date, and the chronicle is that date and every other one. A
+    // neighbour's is never in state.byId, so it stays a click on nothing (chronicle-house.js).
+    if (hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
     if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else state.ui.closeDossier();
   }
@@ -4831,7 +5287,7 @@ function frame(nowMs) {
   glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
-    state.peers.update(dt);
+    state.peers.update(dt, { beat: danceBeat() });
     // Only the people in the room you are standing in are people you can bump into.
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
     else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
@@ -4842,14 +5298,17 @@ function frame(nowMs) {
   if (state.inside) {
     const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
+    touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
     showMinimap(false);                   // the radar is for the shore, not the tavern floor
   } else if (state.mode === 'walk') {
+    wrapEye();
     const w = state.walk.update(dt);
     state.ui.setWalkPrompt(promptFor(w && w.near));
+    touchHud(w && w.near, state.walk);
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
     // What each mouse button does, for the key row: its hand's item picked up or put down in
     // the inventory changes it mid-walk, and ui.js redraws only on a change.
@@ -4858,6 +5317,8 @@ function frame(nowMs) {
     state.ui.setGive(offer ? (offer.spec && offer.spec.name) || 'them' : null);
     state.ui.setPouch(state.guest ? null : pouch());
     reportWhere();
+    islandWhere(state.walk.state.pos);
+    if (STANDALONE) phoneBack();
     showMinimap(true);
     if (minimapMode === 'radar') state.minimap.update(minimapData());
     else if (minimapMode === 'map') state.worldMap.update(worldMapData());
@@ -4908,7 +5369,11 @@ function frame(nowMs) {
   const calendar = worldNow();
   const month = calendar.month;
   if (state.world) {
-    state.world.update(dt, hour, month);
+    // The clouds and the swell run on the sea's clock and in the sea's frame, so they need
+    // its time (never the chronicle's - scrubbing is a lens on the island, not the weather)
+    // and where our island lies in it; the moon's phase comes with the calendar.
+    state.world.setSeaHome(state.homeOrigin);
+    state.world.update(dt, hour, month, { t: Date.now() + (state.seaSkewMs || 0), moon: calendar.moon });
     // Straight after it, and never before: the weather multiplies what the hour has just
     // set - the lights, the dome, the haze's colour - and world.js writes all of those
     // fresh every frame, which is exactly what stops a multiplier compounding.
@@ -4948,6 +5413,7 @@ function frame(nowMs) {
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
+  if (state.islets) state.islets.update(dt, focusPoint());
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -4959,7 +5425,7 @@ function frame(nowMs) {
 
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.
-  const mine = state.walk && state.walk.aboard();
+  const mine = ownHull();
   for (const b of state.boats) {
     // Only the hull under our own hands is reported; everybody else's arrives as a message.
     // Every frame, and not only the ones that moved far enough: net.js coalesces this onto
@@ -4980,7 +5446,7 @@ function frame(nowMs) {
   // been enough for the one route that goes that way and left every other route - a boat
   // taken away, a walk mode re-entered - standing on a quay with nothing in reach.
   if (state.mode === 'walk' && state.walk) {
-    const aboard = !!state.walk.aboard();
+    const aboard = !!ownHull();
     if (aboard || aboard !== wasAboard) state.walk.setInteractables(interactables());
     wasAboard = aboard;
   }
@@ -5013,7 +5479,7 @@ function frame(nowMs) {
   // either camera branch below, because both of them move the camera and neither of them
   // owns the horizon.
   const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
-  if (state.world) state.world.recentre(eye.position.x, eye.position.z);
+  if (state.world) state.world.recentre(eye.position.x, eye.position.y, eye.position.z);
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
@@ -5043,12 +5509,22 @@ function frame(nowMs) {
     // out of the shadow map.
     state.world.followShadow(camera.position.x, camera.position.z, 1);
   }
+  // The chart from the sky. On foot the walk's own branch shows and feeds it (showMinimap);
+  // everywhere else it is this flag's, and never over the planner or the intro.
+  if (state.mode !== 'walk' && state.worldMap) {
+    const on = skyMap && state.mode === 'orbit' && !state.intro;
+    state.worldMap.setVisible(on);
+    if (on) state.worldMap.update(worldMapData());
+  }
 
   // After the camera is settled, so the ray it casts is the one you are looking down.
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season);
+  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
+  // says so - nobody should screenshot "the world at noon" while it is evening out there.
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
+    state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
@@ -5213,6 +5689,7 @@ function subPathOf(spec, d) {
 }
 
 function labelSub(spec) {
+  if (isChronicle(spec)) return [spec.title, CHRONICLE_HOVER].filter(Boolean).join(' · ');
   if (spec.kind === 'civic') return spec.title || '';
   const d = state.districts.get(spec.district);
   const style = (PALETTE[spec.style] || PALETTE.unknown).name;
@@ -5284,6 +5761,13 @@ function playerName() {
 async function boot() {
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
+    onSpeechTap: () => endParley(),
+    onSay: () => state.islandchat && state.islandchat.toggle(),
+    phonePrefs: () => phonePrefs(),
+    onPhonePref: (name, value) => {
+      setPhonePref(name, value);
+      if (name === 'lefty' && state.touch) state.touch.relayout();
+    },
     // Only asks. The island writes the setting down and tells every open window, this
     // one included, so what is drawn always comes from the server's answer.
     onSigns: async (mode) => {
@@ -5347,6 +5831,7 @@ async function boot() {
     },
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
+    onToggleMap: () => toggleMap(),
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
@@ -5494,7 +5979,13 @@ async function boot() {
   });
   // On a phone the screen is the controller: a stick and two buttons drawn over the
   // canvas that poll exactly like a pad, so walk mode and the boat need nothing new.
-  state.pad = STANDALONE ? eitherPad(gamepad, createTouchPad(document.body)) : gamepad;
+  // A short tap on the look side names whoever is there (tapName), and the two hand buttons
+  // press the hands as a mouse would (walk.hand).
+  state.touch = STANDALONE ? createTouchPad(document.body, {
+    onTap: (x, y) => tapName(x, y),
+    onHand: (side, down) => { if (state.mode === 'walk' && !state.inside) state.walk.hand(side, down); },
+  }) : null;
+  state.pad = state.touch ? eitherPad(gamepad, state.touch) : gamepad;
 
   // Who the controller is talking to. First one that says it is up, wins - a panel over
   // a room, a room over the island, the island over the sky.
@@ -5512,6 +6003,11 @@ async function boot() {
       if (p.pad) p.pad(a, dt);              // the boards steer a cursor of their own
       else if (a.hit('back')) p.close();    // everything else: B is the way out
     },
+  });
+  // A keeper's conversation holds walk mode paused, so it needs its own way out on a pad.
+  state.input.mode('parley', {
+    active: () => !!parley,
+    handle: (a) => { if (a.hit('leave') || a.hit('back') || a.hit('exit')) endParley(); },
   });
   state.input.mode('inside', {
     active: () => !!state.inside,
@@ -5621,6 +6117,7 @@ async function boot() {
     onDrink: (side) => { if (state.net) state.net.drink(side); },
     tipsy: state.tipsy,
     bikes: true,
+    dance: danceNow,
   });
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
   // The island is built, so there is ground for everyone else to stand on.
@@ -5655,8 +6152,11 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
+  state.islets = createIslets({ scene, modest });
   state.minimap = createMinimap();
-  state.worldMap = createWorldMap();
+  state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
+  // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.
+  if (STANDALONE) document.getElementById('minimap').addEventListener('click', () => setMinimapMode('map'));
   syncFleet();        // whatever was already in the water when this page opened
   // And again as the viewer moves: which islands are near is a question of where you are.
   setInterval(recheckDetail, 2000);
@@ -5985,10 +6485,13 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
-  if (rec.stable) updateStable(rec.stable, dt);
+  if (rec.ship) updateBatavia(rec.ship, dt);
+  // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
+  if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.butcher) updateButcher(rec.butcher, dt);
+  if (rec.quarry) updateQuarry(rec.quarry, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);
   if (rec.flame) {
@@ -5999,13 +6502,26 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
-    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron';
+    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'
+    // And the fisherman's smokehouse, whose fish are smoked all day (Plans/havengebouwen.md),
+    // and the fire under the brewery's copper (Plans/ambachten.md).
+    || rec.spec.civicType === 'fishery' || rec.spec.civicType === 'brewery';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;
     if (rec.smokeT > (rec.spec.active ? 0.34 : nightAmt > 0.5 ? 0.7 : 1.1)) {
       rec.smokeT = 0;
       const v = new THREE.Vector3(...rec.smokeAnchor).applyMatrix4(rec.group.matrixWorld);
+      state.particles.smoke([v.x, v.y, v.z]);
+    }
+  }
+  // The copper's steam, off the same particles and at twice the chimney's rate: a brew boils
+  // all day. `|| 0` because a guest island's records are not made by makeRecord.
+  if (rec.steamAnchor && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
+    rec.steamT = (rec.steamT || 0) + dt;
+    if (rec.steamT > 0.5) {
+      rec.steamT = 0;
+      const v = new THREE.Vector3(...rec.steamAnchor).applyMatrix4(rec.group.matrixWorld);
       state.particles.smoke([v.x, v.y, v.z]);
     }
   }
@@ -6023,6 +6539,7 @@ window.settlers = {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  fitFov();
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();

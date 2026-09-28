@@ -39,6 +39,7 @@ anticlockwise once Blender has it and once the exporter has given it back: the w
 is the only thing that decides which way a face is lit, because no normals are exported
 and world.js recomputes them flat.
 """
+import bmesh
 import bpy
 import random
 import runpy
@@ -71,6 +72,10 @@ COLORS = {
     'foliage:grass': 0x7fb64d,
     'foliage:grass-light': 0x91c85a,
     'plain:rock': 0x7f7a72,
+    # The palm's two, read off the atlas of the model it comes from (flora_palm_a below):
+    # the only two colours its faces sample, so nothing of its look is lost in the move.
+    'bark:palm': 0x885e38,
+    'foliage:palm': 0x75ae33,
 }
 materials = {}
 for name, hex in COLORS.items():
@@ -314,15 +319,106 @@ rock_b = asset('flora_rock_b')
 rock_b_parts = [lobe('flora_rock_b shelf', 'plain:rock', rock_b, (0, .09, 0), .31,
                      scale=(1.25, .32, 1.12), seed=22, rough=.075)]
 
+# ----------------------------------------------------- flora_palm_a, flora_palm_a_lo
+# The one plant here not placed by hand: Quaternius' Palm Tree (poly.pizza/m/P0tgwyXBgr,
+# CC0), kept beside this script as palm-quaternius.glb. A bent trunk under a crown of
+# folded fronds is a shape the helpers above would spend a day and the budget on and still
+# draw as a green star on a stick, and that model already has the island's look.
+#
+# It comes in as 2924 triangles on a texture atlas, and leaves as two parts on the
+# island's own sheets: every face is sorted by the one atlas colour it samples (green
+# frond or brown trunk - there are no others) and each half is collapsed to its share of
+# the budget. Collapsing is deterministic for the same input, which `npm run models`
+# checks. The fronds get most of it: they are the silhouette, and the trunk is a bent
+# tube at any triangle count. A thousand is the least that still looks like the model (at
+# 250 the fronds lost their serrated edges and their fold); that 250 is the `_lo`. Stood on the ground and centred on its box, like every
+# plant, which puts the foot of the trunk off the middle - the crown leans out that far.
+PALM_GLB = OUT / 'palm-quaternius.glb'
+PALM_HEIGHT = 1.5      # six metres: a pine and a quarter, a young palm on a sandbank
+PALM_TRIS = {'flora_palm_a': (200, 800), 'flora_palm_a_lo': (60, 185)}
+
+
+def import_palm():
+    """The model as one mesh in island units, stood on the ground, with no parents."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=str(PALM_GLB))
+    new = [o for o in bpy.data.objects if o not in before]
+    src = next(o for o in new if o.type == 'MESH')
+    # The atlas colour of every face, before the UVs go.
+    img = next(n.image for n in src.data.materials[0].node_tree.nodes if n.type == 'TEX_IMAGE')
+    w, h = img.size
+    px = img.pixels[:]
+    uv = src.data.uv_layers.active.data
+    green = []
+    for p in src.data.polygons:
+        u = sum(uv[i].uv[0] for i in p.loop_indices) / p.loop_total
+        v = sum(uv[i].uv[1] for i in p.loop_indices) / p.loop_total
+        k = (min(h - 1, int(v % 1 * h)) * w + min(w - 1, int(u % 1 * w))) * 4
+        green.append(px[k + 1] > px[k])
+    # Its parents (a root node scaled by 100) folded into the vertices, then the rest of
+    # what the importer made thrown away, image and all.
+    mesh = src.data.copy()
+    mesh.transform(src.matrix_world)
+    for o in new:
+        bpy.data.objects.remove(o, do_unlink=True)
+    bpy.data.images.remove(img)
+    xs, ys, zs = zip(*(v.co for v in mesh.vertices))
+    s = PALM_HEIGHT / (max(zs) - min(zs))
+    mid = ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, min(zs))
+    for v in mesh.vertices:
+        v.co = ((v.co.x - mid[0]) * s, (v.co.y - mid[1]) * s, (v.co.z - mid[2]) * s)
+    while mesh.uv_layers:
+        mesh.uv_layers.remove(mesh.uv_layers[0])
+    mesh.materials.clear()
+    return mesh, green
+
+
+def palm_part(name, mat, coll, mesh, green, keep_green, tris):
+    """The fronds or the trunk of the palm, collapsed to `tris` triangles."""
+    part = mesh.copy()
+    bm = bmesh.new()
+    bm.from_mesh(part)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if green[f.index] != keep_green], context='FACES')
+    # Welded first: the model is 149 loose pieces, and a collapse cannot merge across a seam
+    # it does not know is one - unwelded, the fronds came apart into confetti.
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+    bmesh.ops.triangulate(bm, faces=bm.faces)
+    have = len(bm.faces)
+    bm.to_mesh(part)
+    bm.free()
+    obj = bpy.data.objects.new(name, part)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    mod = obj.modifiers.new('budget', 'DECIMATE')
+    mod.ratio = min(1.0, tris / have)
+    mod.use_collapse_triangulate = True
+    with bpy.context.temp_override(object=obj):
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    return adopt(name, mat, coll)
+
+
+palm_mesh, palm_green = import_palm()
+palm_parts = []
+for palm_name, (trunk_tris, frond_tris) in PALM_TRIS.items():
+    palm = asset(palm_name)
+    palm_parts.append([
+        palm_part(f'{palm_name} trunk', 'bark:palm', palm, palm_mesh, palm_green, False, trunk_tris),
+        palm_part(f'{palm_name} fronds', 'foliage:palm', palm, palm_mesh, palm_green, True, frond_tris),
+    ])
+bpy.data.meshes.remove(palm_mesh)
+
 # Only the things that have no trunk to stand on. A tree already reaches the ground - its
 # stem starts at y = 0 - and levelling its crown as well would pull the canopy down onto
 # the grass, which is exactly what it did the first time this ran.
-for parts in [bush_parts, rock_a_parts, rock_b_parts]:
+# The palm is the exception that proves it: its trunk does start at y = 0, but a collapse
+# moves the vertices it keeps, and the foot came out 3 mm under the grass.
+for parts in [bush_parts, rock_a_parts, rock_b_parts, *palm_parts]:
     sit_on_ground(parts)
 
-# The tallest thing in the set: the pine, trunk to tip. Only a building reads this; a
+# The tallest thing in the set: the palm, trunk to crown (the pine was, at 1.18). Only a building reads this; a
 # plant is stood on the ground by world.js and measures itself.
-bpy.context.scene['building_height'] = 1.18
+bpy.context.scene['building_height'] = PALM_HEIGHT
 
 # A studio to open the file in, excluded from the bake because nothing in it is a
 # building_part. The per-asset preview PNGs come from scripts/preview-model.py.

@@ -149,8 +149,8 @@ test('nearest is measured from home, not from the middle of the world', () => {
 // ---- the middle -----------------------------------------------------------------------
 
 // The volcano's own half - 96 since it grew to a 192-grid (it was 64). Ring 1 lies at that
-// plus SEA_GAP plus the biggest other island's half: 176 round 64-grids, 208 round 128s and
-// 272 round 256s.
+// plus SEA_GAP plus the biggest other island's half, but never less than one pitch: 176 round
+// 64-grids, 208 round 128s and 304 round 256s (272 by the first rule, inside their pitch).
 const VOLCANO_HALF = VOLCANO.size / 2;
 const withVolcano = (halves) => {
   const placed = [isle(VOLCANO_HALF, [0, 0])];
@@ -175,7 +175,7 @@ test('the first island hugs the volcano across exactly one sea gap, due east', (
   // Written out, so a change to the volcano's size is seen to move everybody's berth.
   assert.deepEqual(first.origin, [176, 0]);
   assert.deepEqual(withVolcano([64])[1].origin, [208, 0]);
-  assert.deepEqual(withVolcano([128])[1].origin, [272, 0]);
+  assert.deepEqual(withVolcano([128])[1].origin, [304, 0]);
 });
 
 test('eight 64-grids fit on the first ring round the volcano, and the ninth starts the next', () => {
@@ -183,8 +183,9 @@ test('eight 64-grids fit on the first ring round the volcano, and the ninth star
   const ring = VOLCANO_HALF + SEA_GAP + 32;
   const reach = (p) => Math.max(Math.abs(p.origin[0]), Math.abs(p.origin[1]));
   assert.deepEqual(placed.slice(1, 9).map(reach), Array(8).fill(ring));
-  // The four bearings first, in berthOf's order, so the horizon's "look east" still holds.
-  assert.deepEqual(placed.slice(1, 5).map((p) => p.origin), [[ring, 0], [-ring, 0], [0, ring], [0, -ring]]);
+  // The four bearings first, round the compass from east, so the horizon's "look east" still
+  // holds and three islands are not a line through the middle.
+  assert.deepEqual(placed.slice(1, 5).map((p) => p.origin), [[ring, 0], [0, ring], [-ring, 0], [0, -ring]]);
   // One pitch of an ordinary island further out - the volcano does not set the spacing.
   assert.equal(reach(placed[9]), ring + 2 * 32 + SEA_GAP);
   allClear(placed, 'nine round the volcano');
@@ -218,6 +219,31 @@ test('mixed sizes round the volcano still all clear each other and the middle', 
   for (const order of [[32, 64, 32], [64, 32, 128, 32], [128, 32, 32, 64], [32, 32, 32, 32, 32, 32, 32, 32, 64]]) {
     allClear(withVolcano(order), `${order}`);
   }
+});
+
+test('islands holding a starter\'s room fill the first ring round the volcano, not a line', () => {
+  // Every starter holds 384 of room (reach 192), and so does an island with room to grow.
+  // Round the 192 volcano the first rule gives a ring of 336 against a pitch of 432, which
+  // held only east and west: the open sea's first five islands lay on one line.
+  const placed = withVolcano([192, 192, 192, 192, 192, 192, 192, 192]);
+  const pitch = 2 * 192 + SEA_GAP;
+  const reach = (p) => Math.max(Math.abs(p.origin[0]), Math.abs(p.origin[1]));
+  assert.deepEqual(placed.slice(1).map(reach), Array(8).fill(pitch), 'all eight on ring 1');
+  assert.ok(placed.slice(1, 4).some((p) => p.origin[1] !== 0), 'the first three are not in a line');
+  allClear(placed, 'eight starters round the volcano');
+});
+
+test('a full sea of starter-sized islands stays out of the band along the world\'s edge', async () => {
+  const { WORLD_HALF, SEA_BAND, wrapShift } = await import('../shared/regions.mjs');
+  // MAX_ISLANDS (16, starters included) of the biggest room there is, round the volcano.
+  const placed = withVolcano(Array(16).fill(192));
+  for (const p of placed) {
+    assert.ok(Math.max(Math.abs(p.origin[0]), Math.abs(p.origin[1])) + p.half <= WORLD_HALF - SEA_BAND, `${p.origin}`);
+  }
+  allClear(placed, 'sixteen round the volcano');
+  // And the jump itself: only past the edge, and the whole width back.
+  assert.deepEqual([0, WORLD_HALF, -WORLD_HALF, WORLD_HALF + 1, -WORLD_HALF - 1].map(wrapShift),
+    [0, 0, 0, -2 * WORLD_HALF, 2 * WORLD_HALF]);
 });
 
 test('a phone looking for open water gets a free berth on the ring, not the volcano', () => {

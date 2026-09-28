@@ -1,5 +1,7 @@
 # Een knus dorpscentrum, met winkelstraten
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Begonnen op 26 september 2026. De vraag: meer gebouwen in het centrum (bakkerij, slager,
 bibliotheek, apotheek, kledingwinkel, toverstokkenwinkel, kruidenier), en het dorp knusser
 ingedeeld, zoals Hogsmeade in Hogwarts Legacy: winkels schouder aan schouder langs straten,

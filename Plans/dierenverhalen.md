@@ -1,5 +1,7 @@
 # Dierenverhalen: een kip, een geit en een mus die het eiland onthoudt
 
+**✅ DONE**
+
 Begonnen op 26 september 2026, op de branch `codex/dierenverhalen` (Codex legde de eerste steen:
 een journaal en een reducer zonder klok), verder gebouwd in `claude/dierenverhalen`. Het uitgewerkte
 Engelse plan staat in [docs/animal-stories.md](../docs/animal-stories.md); dit is het

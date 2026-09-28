@@ -1,6 +1,6 @@
 # Wie joint ziet de host als mist
 
-**Status: gebouwd en lokaal geverifieerd op 21 september 2026.** Onderaan staat wat het werd
+**✅ DONE — Status: gebouwd en lokaal geverifieerd op 21 september 2026.** Onderaan staat wat het werd
 en hoe het is nagekeken; de rest is het plan zoals het vóór de code stond.
 
 ## Wat er gebeurde

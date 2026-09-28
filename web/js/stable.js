@@ -1,8 +1,9 @@
 // The stable at home (scripts/build-stable.py, Plans/stal-en-veld.md): the horse loose in its
 // paddock and two hens scratching in front of the stall doors, each on its own time
-// (web/js/fauna.js). The paddock is the baked sand, `civic_stable_yard paddock`: where the horse
-// may go is measured off it, less a horse's half length so it never pokes its head through the
-// rails, and not written down here again.
+// (web/js/fauna.js) - except on Saturday night, when all three are at the rave. The paddock is
+// the baked sand, `civic_stable_yard paddock`: where the horse may go is measured off it, less
+// a horse's half length so it never pokes its head through the rails, and not written down
+// here again.
 import * as THREE from 'three';
 import * as models from './models.js';
 import { createAnimal } from './fauna.js';
@@ -42,8 +43,14 @@ export function attachStable(group, at, material, yaw = 0) {
   return { root, area, animals };
 }
 
-export function updateStable(stable, dt) {
+// `away` is Saturday night (Plans/rave-in-het-kasteel.md): the horse and the hens are at the
+// castle, dancing in the great hall (web/js/rave.js), and the paddock stands empty until three.
+// Nobody is stepped while they are out, so they are back where they left off in the morning -
+// and every island's stable empties at once, because it is the world's Saturday night.
+export function updateStable(stable, dt, { away = false } = {}) {
   if (!stable) return;
+  stable.root.visible = !away;
+  if (away) return;
   for (const a of stable.animals) a.update(dt);
 }
 

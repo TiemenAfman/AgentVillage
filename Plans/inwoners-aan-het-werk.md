@@ -1,5 +1,7 @@
 # Inwoners aan het werk
 
+**✅ DONE**
+
 ## Aanleiding
 
 Een inwoner zonder lopende sessie doet nu twee dingen: een beetje heen en weer drentelen voor

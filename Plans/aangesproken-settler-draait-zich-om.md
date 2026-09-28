@@ -1,6 +1,6 @@
 # Een aangesproken settler draait zich om, op elk scherm
 
-**Status: gebouwd en nagekeken op 24 september 2026.** Onderaan staat hoe.
+**✅ DONE — Status: gebouwd en nagekeken op 24 september 2026.** Onderaan staat hoe.
 
 ## Aanleiding
 

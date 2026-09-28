@@ -12,7 +12,9 @@
 // It lives in shared/ and obeys shared/'s rule (see the top of rng.mjs): plain arithmetic,
 // no transcendental functions. The one place that would have wanted `atan2` is the bow's
 // heading, and there are exactly four of those, so they are written out as literals the way
-// terrain.mjs writes out DIRS16 for the same reason.
+// terrain.mjs writes out DIRS16 for the same reason. The galleon's berth (`shipBerth`, at
+// the bottom) turns a hull too, and does it the same way.
+import { CRAFTS } from './crafts.mjs';
 
 // The four ways water can lie off a coast cell, and the heading that points along each.
 // yaw is the island's own convention (walk.js:615-617): forward is (sin yaw, cos yaw), so
@@ -230,6 +232,27 @@ function berthOf(q, k) {
   return [q.head[0] - q.dir[0] * 2 + side[0] * 1.3, q.head[1] - q.dir[1] * 2 + side[1] * 1.3];
 }
 
+// The quays an island moors boats at, each with its harbour record and whether the island's
+// first boat lies there - and that first boat's own quay when it lies at none of them. One
+// walk, taken by mooringsFor to lay the boats out and by fleetOf to say where the earned
+// ones may go, so the harbour that is dealt one boat fewer is the harbour that draws the
+// first boat by construction rather than by two copies of the same comparison agreeing.
+function mooredQuays(terrain, village) {
+  const landing = village && village.island && village.island.landing;
+  if (!landing) return { list: [], stray: null };
+  const legacy = quayFor(terrain, landing, planksOf(village));
+  const harbours = (village.island && Array.isArray(village.island.harbours)) ? village.island.harbours : [];
+  const list = [];
+  let placedLegacy = false;
+  for (const q of quaysOf(terrain, village, landing)) {
+    const h = harbours.find((x) => x && x.side === q.side) || null;
+    const isLegacy = !!legacy && !placedLegacy && legacy.shore[0] === q.shore[0] && legacy.shore[1] === q.shore[1];
+    if (isLegacy) placedLegacy = true;
+    list.push({ q, h, isLegacy });
+  }
+  return { list, stray: legacy && !placedLegacy ? legacy : null };
+}
+
 // Every boat an island puts in the water, in the world frame - what lib/boats.mjs is
 // handed by the sea and what every page puts in the water itself, so that an untouched boat
 // lies in the same place on every screen without a message about it.
@@ -238,20 +261,14 @@ function berthOf(q, k) {
 // always had - berth 0 of the harbour mooringFor would have put it at - because an older
 // page finds its boat by exactly that id and an older sea moors exactly that one. It counts
 // towards its harbour's three. Every other boat is `boat:<region>-<side><k>`: built by the
-// keeper (`harbours[].boats`, lib/layout.mjs), counted rather than listed, so its id and
-// berth follow from the harbour alone and need no message either. BOAT_ID in lib/boats.mjs
-// allows 32 characters after `boat:`; a 16-character island id and a three-character
-// suffix is 19.
+// keeper or earned by the village (`harbours[].boats`, which scan.mjs writes as the larger
+// of the two), counted rather than listed, so its id and berth follow from the harbour
+// alone and need no message either. BOAT_ID in lib/boats.mjs allows 32 characters after
+// `boat:`; a 16-character island id and a three-character suffix is 19.
 export function mooringsFor(regionId, terrain, village, origin = [0, 0]) {
-  const landing = village && village.island && village.island.landing;
-  if (!landing) return [];
-  const legacy = quayFor(terrain, landing, planksOf(village));
-  const harbours = (village.island && Array.isArray(village.island.harbours)) ? village.island.harbours : [];
+  const { list, stray } = mooredQuays(terrain, village);
   const out = [];
-  let placedLegacy = false;
-  for (const q of quaysOf(terrain, village, landing)) {
-    const h = harbours.find((x) => x && x.side === q.side) || null;
-    const isLegacy = !!legacy && !placedLegacy && legacy.shore[0] === q.shore[0] && legacy.shore[1] === q.shore[1];
+  for (const { q, h, isLegacy } of list) {
     const built = Math.max(0, Math.min(BOATS_PER_HARBOUR, (h && Number.isInteger(h.boats)) ? h.boats : 0));
     const n = Math.min(BOATS_PER_HARBOUR, built + (isLegacy ? 1 : 0));
     for (let k = 0; k < n; k++) {
@@ -259,13 +276,84 @@ export function mooringsFor(regionId, terrain, village, origin = [0, 0]) {
       const id = isLegacy && k === 0 ? `boat:${regionId}` : `boat:${regionId}-${q.side || 'q'}${k}`;
       out.push({ id, x: bx + origin[0], z: bz + origin[1], yaw: q.yaw, side: q.side });
     }
-    if (isLegacy) placedLegacy = true;
   }
   // The first boat is never lost: an island whose one quay is not among its harbours (the
   // ground no longer agrees with them, say) still has the boat it always had.
-  if (legacy && !placedLegacy) {
-    const [bx, bz] = legacy.berth;
-    out.unshift({ id: `boat:${regionId}`, x: bx + origin[0], z: bz + origin[1], yaw: legacy.yaw, side: null });
+  if (stray) {
+    const [bx, bz] = stray.berth;
+    out.unshift({ id: `boat:${regionId}`, x: bx + origin[0], z: bz + origin[1], yaw: stray.yaw, side: null });
+  }
+  return out;
+}
+
+// ---- the fleet the village earns (Plans/mijlpalen-tot-tweehonderd.md, "De vloot") ------
+//
+// From FLEET_AT settlers the harbours fill up by themselves: one boat at FLEET_AT and one
+// more every FLEET_EVERY after it, dealt round the harbours until each moors
+// BOATS_PER_HARBOUR. On an island with four harbours that is eleven boats by 180 on top of
+// the first one, which is every berth there is.
+//
+// It changes nothing on the wire. What it produces is the same per-harbour count the keeper's
+// B has always written (`harbours[].boats`, which scan.mjs now takes as the larger of built
+// and earned), never above BOATS_PER_HARBOUR - so parseBundle's `whole(raw.boats, 0,
+// BOATS_PER_HARBOUR)` still takes it, and every sea and every page, older ones included,
+// moors the same boats through mooringsFor without having heard of any of this. More than
+// three a harbour needs a second jetty and a sea that is rolled out first; see the plan.
+export const FLEET_AT = 130;
+export const FLEET_EVERY = 5;
+
+// The order the harbours are dealt round in: lib/layout.mjs's HARBOUR_SIDES, which shared/
+// may not import. tests/fleet-earned.test.mjs holds the two equal.
+export const FLEET_SIDES = ['n', 'e', 's', 'w'];
+
+// Which harbours an earned boat may go to, and which one the island's first boat lies at -
+// both read off the walk mooringsFor takes, so a harbour whose planks the ground no longer
+// agrees with (quaysOf leaves it out, and mooringsFor draws nothing there) is never dealt a
+// boat that would then not be in the water. `first` is null when the first boat lies at no
+// harbour at all: an island with no harbours on record, or whose quay is not among them.
+export function fleetOf(terrain, village) {
+  const { list } = mooredQuays(terrain, village);
+  const harbours = [];
+  let first = null;
+  for (const { q, h, isLegacy } of list) {
+    if (!h || !q.side) continue;
+    harbours.push(h);
+    if (isLegacy) first = q.side;
+  }
+  return { harbours, first };
+}
+
+// How many boats the village has earned at each harbour, `{ n, e, s, w }`, in the unit of
+// `harbours[].boats`: boats besides the first one, which mooringsFor adds by itself at its
+// own harbour. So that harbour takes one fewer here - a count of three there still draws
+// three, and a third earned boat dealt to it would be a boat nobody ever sees.
+//
+// Dealt one at a time in FLEET_SIDES order, starting at `from` - the kadehaven, which scan.mjs
+// passes. It defaults to `first`, the harbour whose first boat is the galleon, and the two part
+// only on an island whose galleon lies at a quay that is none of its four harbours (the live
+// island's case, Plans/mijlpalen-tot-tweehonderd.md) - and skipping every side with no harbour - `null` in layout.harbours,
+// or simply absent. Round and round rather than filling one harbour before the next, so the
+// fleet grows along the whole coast and not in one basin; an island with fewer harbours
+// runs out of berths sooner, and the count stops where the berths do.
+export function earnedBoats(settlers, harbours, first = null, from = first) {
+  const out = Object.fromEntries(FLEET_SIDES.map((s) => [s, 0]));
+  const n = Number.isFinite(settlers) ? settlers : 0;
+  if (n < FLEET_AT) return out;
+  const present = new Set((harbours || []).filter((h) => h && FLEET_SIDES.includes(h.side)).map((h) => h.side));
+  const start = present.has(from) ? FLEET_SIDES.indexOf(from) : present.has(first) ? FLEET_SIDES.indexOf(first) : 0;
+  const order = [...FLEET_SIDES.slice(start), ...FLEET_SIDES.slice(0, start)].filter((s) => present.has(s));
+  const room = (s) => BOATS_PER_HARBOUR - (s === first ? 1 : 0);
+  let left = Math.floor((n - FLEET_AT) / FLEET_EVERY) + 1;
+  while (left > 0) {
+    let dealt = false;
+    for (const s of order) {
+      if (left <= 0) break;
+      if (out[s] >= room(s)) continue;
+      out[s]++;
+      left--;
+      dealt = true;
+    }
+    if (!dealt) break;              // every berth taken
   }
   return out;
 }
@@ -282,4 +370,73 @@ export function mooringFor(regionId, terrain, landing, origin = [0, 0], planks =
     z: quay.berth[1] + origin[1],
     yaw: quay.yaw,
   };
+}
+
+// ---- where the galleon lies ------------------------------------------------------------
+// The berths above are cut for a Benchy, a hull a metre long in a harbour basin, and a ship
+// thirteen long put there lay with her bow up the beach and could not be sailed off it. So
+// she is moved out from her berth, keeping its heading, to the nearest spot where every
+// point of her hull - bow, shoulders, stern - floats in real water. Arithmetic on the ground
+// alone, walked in a fixed order, so every page lays her in the same place without a word
+// from the sea.
+//
+// It lived in web/js/main.js until the layout had to know it too: lib/layout.mjs keeps the
+// rede - the anchorage of the ships the village earns, Plans/mijlpalen-tot-tweehonderd.md -
+// clear of where the galleon lies and of the room she turns in, and a second copy of this
+// sum in the scanner is a ship anchored on top of her the first time the two disagree. So
+// this is the one copy, and each caller hands it the ground it sees.
+//
+// `m` is a mooring as mooringsFor hands it out ({ x, z, yaw }, world frame); `height(x, z)`
+// is the ground at a world point - the page passes its archipelago's, the layout its own
+// island's through placeIsland, which is the same number wherever the island lies.
+export const SHIP_WATER = -0.3;
+
+// The page called `sin` and `cos`, which shared/'s rule forbids: on a mooring's yaw, which is
+// always one of SEAWARD's four literals, and on sixteen bearings k * PI / 8. So both are
+// written out here as exactly the doubles V8 hands back for those angles - Node and every
+// Chromium page run the same fdlibm port, and tests/ship-berth.test.mjs holds each of these
+// to Math.sin and Math.cos bit for bit - which is what makes this the page's old arithmetic
+// to the last digit rather than a close relative of it. `[sin, cos]`, in that order: the
+// tiny numbers where a zero was expected are the point, not a typo.
+const HEADINGS = [
+  [0, [0, 1]],
+  [1.5707963267948966, [1, 6.123233995736766e-17]],
+  [-1.5707963267948966, [-1, 6.123233995736766e-17]],
+  [3.141592653589793, [1.2246467991473532e-16, -1]],
+];
+const BEARINGS = [
+  [0, 1], [0.3826834323650898, 0.9238795325112867], [0.7071067811865475, 0.7071067811865476],
+  [0.9238795325112867, 0.38268343236508984], [1, 6.123233995736766e-17], [0.9238795325112867, -0.3826834323650897],
+  [0.7071067811865476, -0.7071067811865475], [0.3826834323650899, -0.9238795325112867], [1.2246467991473532e-16, -1],
+  [-0.38268343236508967, -0.9238795325112868], [-0.7071067811865475, -0.7071067811865477], [-0.9238795325112865, -0.38268343236509034],
+  [-1, -1.8369701987210297e-16], [-0.9238795325112866, 0.38268343236509], [-0.7071067811865477, 0.7071067811865474],
+  [-0.3826834323650904, 0.9238795325112865],
+];
+// For the test that holds the literals to Math.sin and Math.cos, and for nothing else.
+export const SHIP_TRIG = { HEADINGS, BEARINGS };
+// How far out she is looked for, in world units, one ring of sixteen bearings at a time.
+const SHIP_SEARCH = 40;
+
+// The points of her hull that must float: the middle, and the probes she sails by
+// (shared/crafts.mjs), mirrored astern.
+const SHIP_POINTS = (() => {
+  const probes = CRAFTS.galleon.sail.probes;
+  return [[0, 0], ...probes, ...probes.map(([x, z]) => [x, -z])];
+})();
+
+export function shipBerth(m, height) {
+  const heading = HEADINGS.find(([yaw]) => yaw === m.yaw);
+  // A heading that is not one of the four is not a mooring this file made, and there is no
+  // turning a hull to it without the trigonometry this file may not use.
+  if (!heading) return m;
+  const [fx, fz] = heading[1];
+  const clear = (x, z) => SHIP_POINTS.every(([px, pz]) => height(x + px * fz + pz * fx, z - px * fx + pz * fz) < SHIP_WATER);
+  if (clear(m.x, m.z)) return m;
+  for (let d = 1; d <= SHIP_SEARCH; d += 1) {
+    for (let k = 0; k < 16; k++) {
+      const x = m.x + BEARINGS[k][0] * d, z = m.z + BEARINGS[k][1] * d;
+      if (clear(x, z)) return { x, z };
+    }
+  }
+  return m;
 }

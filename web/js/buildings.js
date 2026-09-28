@@ -14,6 +14,7 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
+import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -51,9 +52,25 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
-// Both the nearby beam and horizon light use the baked lantern's centre. Reading
-// its actual origin keeps a future Blender edit from leaving the distant lamp behind.
-export const BEACON_RISE = models.part('Lighthouse lantern glass').at[1];
+// Both the nearby beam and horizon light start at the baked lamp: the lens standing in the
+// lantern, whose origin scripts/build-lighthouse.py puts at the middle of the glass. Reading
+// its actual origin keeps a future Blender edit from leaving the distant lamp behind - which
+// is what rebuilding the tower at its real height did to every number that had been copied.
+export const BEACON_RISE = models.part('Lighthouse lamp lens').at[1];
+// And how wide the lantern is where the beam leaves it: the glass cylinder's own radius, off
+// its corners. web/js/beacon.js opens the cone at exactly this width, so the bar of air leaves
+// the lantern at the lantern's own size rather than from a point somewhere inside it.
+export const BEACON_THROAT = (() => {
+  const p = models.part('Lighthouse lantern glass').positions;
+  let r = 0;
+  for (let i = 0; i < p.length; i += 3) r = Math.max(r, Math.hypot(p[i], p[i + 2]));
+  return r;
+})();
+// The shipyard's datum over its own pile feet: the ground at the landward end, which is where
+// scripts/build-shipyard.py puts the slipway's origin. The yard is modelled in one frame from
+// the feet of its piles up (the ground rule wants a set's lowest point at zero) and the island
+// wants it from the land, so civic() lowers it by this and main.js stands it on the land.
+export const SHIPYARD_LAND = models.part('shipyard slipway').at[1];
 
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
@@ -247,7 +264,24 @@ function note(g, fn, args, hex, o) {
   // `o` is copied: the editor writes to it, and the call sites hand in literals they
   // reuse across a loop.
   g.userData.part = { fn, args, hex, o: { ...o }, group: openGroup };
+  if (tracing) g.userData.part.sites = callSites();
   return g;
+}
+
+// Where in this file a part was asked for, as line:column pairs off the stack, innermost
+// first. A line that says `x: W / 2 - 0.08` or passes a colour by variable can never be
+// found word for word, so the editor asks where the call *is* instead and edits the
+// numbers in place. Only the editor switches it on: an Error per part is nothing on one
+// model and not something three hundred houses should pay for.
+let tracing = false;
+export function traceParts(on) { tracing = !!on; }
+function callSites() {
+  const out = [];
+  for (const line of String(new Error().stack || '').split('\n')) {
+    const m = /\/buildings\.js(?:\?[^:\s)]*)?:(\d+):(\d+)/.exec(line);
+    if (m) out.push([Number(m[1]), Number(m[2])]);
+  }
+  return out;
 }
 // Moves a finished part and keeps its note honest, for the one or two places that build
 // a piece around the origin and hoist it afterwards.
@@ -274,12 +308,21 @@ function lift(g, dy) {
 // .blend - there is one gable and there are four styles - and multiplying two terracottas
 // gives neither of them. So the slots the island owns say so, and the timber under them
 // keeps the oak it was modelled in.
+// `keep(x, y, z, x0)` keeps only the triangles it answers true for, given their middle and the
+// least x of their corners in the set's own frame, for the one caller that draws a part of
+// somebody else's bake without all of it: the Batavia on the stocks, whose fittings carry a
+// boarding ladder and a spare anchor she is not given until she is afloat (bataviaOnStocks).
+// What it keeps comes back in that frame too, the part's own origin added in, so that a turn is
+// about the set's origin whatever `at` the bake gave the part. It stays out of what the part
+// remembers of its options, like meshAsset's `skip`: the editor reads those back.
 export function mesh(name, hex = 0xffffff, o = {}) {
-  const part = models.part(name);
-  if (!part) throw new Error(`Unknown Blender building part: ${name}`);
+  const found = models.part(name);
+  if (!found) throw new Error(`Unknown Blender building part: ${name}`);
+  const { keep, ...rest } = o;
+  const part = keep ? keptTriangles(found, keep) : found;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
-  const options = { sheet: part.sheet, emissive: part.emissive, ...o };
+  const options = { sheet: part.sheet, emissive: part.emissive, ...rest };
   finish(g, hex, options.emissive, sheetOf(options));
   if (!options.repaint) {
     const colors = g.attributes.color.array;
@@ -289,6 +332,24 @@ export function mesh(name, hex = 0xffffff, o = {}) {
     g.scale(options.sx ?? 1, options.sy ?? 1, options.sz ?? 1);
   }
   return note(place(g, options), 'mesh', [name], hex, options);
+}
+
+// A baked part with only the triangles `keep` wants, positions and colours still in step, in the
+// set's frame.
+function keptTriangles(part, keep) {
+  const p = part.positions, c = part.colors, [ax, ay, az] = part.at;
+  const positions = [], colors = [];
+  for (let i = 0; i < p.length; i += 9) {
+    const x = (p[i] + p[i + 3] + p[i + 6]) / 3 + ax;
+    const y = (p[i + 1] + p[i + 4] + p[i + 7]) / 3 + ay;
+    const z = (p[i + 2] + p[i + 5] + p[i + 8]) / 3 + az;
+    if (!keep(x, y, z, Math.min(p[i], p[i + 3], p[i + 6]) + ax)) continue;
+    for (let k = 0; k < 9; k++) {
+      positions.push(p[i + k] + part.at[k % 3]);
+      colors.push(c[i + k]);
+    }
+  }
+  return { ...part, positions, colors, at: [0, 0, 0] };
 }
 
 // Every part of one Blender asset, each where Blender had it, as parts to push. An asset
@@ -338,11 +399,100 @@ export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)
 // set on the tavern's step (porchOverhang). The bakery and the butcher's are
 // shops too, but they have a fire and a shopkeeper and cases of their own.
 export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
+// The harbour's buildings (scripts/build-harbourhouses.py, Plans/havengebouwen.md): the warehouse,
+// the weigh house and the fisherman's hut, one baked asset `civic_<type>` each, with nothing that
+// moves. Drawn, walked round and stood on the tavern's step exactly as the shops are; they differ
+// in one thing, which is why they are not in SHOPS: three buildings come out of one .blend, so the
+// set's building_height is the warehouse's gable and each asks for its own rise instead.
+export const HARBOUR_HOUSES = new Set(['warehouse', 'weighhouse', 'fishery']);
 // And the bakery's fire (scripts/build-bakery.py, web/js/countryside.js).
 export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
 // The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
 // although they hang on the house: every part that moves is in the yard's asset.
 export const isButcherMoving = (n) => /^civic_butcher_yard (awning|sign|hang \d+|joint|slice|embers)(:\d+)?$/.test(n);
+// The quarry's (scripts/build-workshops.py, web/js/quarry.js): the treadwheel, the jib, its rope
+// and hook, the block it carries and the tub on the rail.
+export const isQuarryMoving = (n) => /^civic_quarry_yard (wheel|jib|rope|hook|block|tub)(:\d+)?$/.test(n);
+// And the Batavia's (scripts/build-batavia.py, web/js/batavia.js): her five flags, each baked
+// with its origin at the middle of its hoist, left out of the hull and flown on their own.
+export const isBataviaMoving = (n) => /^batavia (flag|pennant) /.test(n);
+
+// ---------------------------------------------------------------- the ship
+// The Batavia on the roads (Plans/batavia.md): one bake, and the three ships an island can
+// earn drawn from it. `civic:ship` is her as she was modelled; `civic:ship:2` and `:3` are the
+// same hull in other paint, chosen from the id alone so every page and every visitor paints
+// them alike. Only the three livery parts change - scripts/build-batavia.py gathers every
+// face in those colours into them wherever it is on her - so a second ship is a different
+// ship for nothing: the same material, the same one draw call. The ensign and the jack stay
+// the Prinsenvlag on all three; `flag` repaints the main truck's flag and the pennants,
+// stripe by stripe, top first (null keeps the bake's).
+export const SHIP_LIVERIES = Object.freeze([
+  Object.freeze({ name: 'oak and green', topsides: null, panel: null, accent: null, flag: null }),
+  Object.freeze({ name: 'blue and gold', topsides: 0x4b3b2d, panel: 0x2d4b7c, accent: 0xc49a36, flag: [0x274a8c, 0xf3efe5, 0x274a8c] }),
+  Object.freeze({ name: 'red and black', topsides: 0x6c4a2f, panel: 0x8c2d24, accent: 0x262220, flag: [0xb3302a, 0xf3efe5, 0xb3302a] }),
+]);
+export function shipLivery(id) {
+  const m = /^civic:ship(?::(\d+))?$/.exec(String(id));
+  const k = m ? (m[1] ? Number(m[1]) - 1 : 0) : hash32(String(id));
+  return SHIP_LIVERIES[((k % SHIP_LIVERIES.length) + SHIP_LIVERIES.length) % SHIP_LIVERIES.length];
+}
+// Which colour of the livery a part takes: her skin (`batavia livery ...`) and what is on it
+// (`batavia trim ...`) alike. Kept as two sets of parts by the bake only so that shipSolids
+// can tell her side from a quarter gallery.
+const liveryRole = (name) => (/^batavia (?:livery|trim) (topsides|panel|accent)$/.exec(name) || [])[1] || null;
+
+// How deep she sits: the bake's `anchor.waterline`, the one number the island lowers her by,
+// exactly as the dock set is lowered by QUAY_DECK - DOCK_DECK. She is modelled keel on the
+// ground like every other building (scripts/model-rules.mjs), so it is her draught.
+export function shipDraught() {
+  const w = models.anchorsOf('batavia').waterline;
+  return w ? w[1] : 0;
+}
+
+// Where her side is, to a swimmer and to a boat: the plan of her skin from just under the
+// water to the waist rail, in slabs a unit long along her, measured off the bake - the hull
+// and livery parts only, her skin, so the float and the ladder beside her stay water you can
+// swim up to and the head rails and quarter galleries (the trim) overhang it as they do. The
+// rudder is left out with them: it is under the counter, and a tenth of a unit of it at most.
+// Each slab carries `hull`, how high her main deck stands over the sea, which walk.js
+// hands a boat's bow point and probes instead of the sea bed (boat.js hullOver). A rectangle
+// with a height rather than a deck on the level map, because the levels are a cell each and
+// her side falls on no cell edge: on the 4 by 16 plot it is 0.6 in from the plot's side, so a
+// level on her cells either stopped a Benchy 0.6 off her or let its bow 0.4 into her, and a
+// level beside her was a floor in the air that "step ashore" could put you on.
+const SHIP_SLAB = 1.0;
+export function shipSolids(draught = shipDraught()) {
+  const deck = (models.anchorsOf('batavia')['deck.waist.lo'] || [0, draught + 1.1, 0])[1];
+  const lo = draught - 0.05, hi = deck + 0.25;
+  const slabs = new Map();
+  for (const name of models.assetParts('batavia')) {
+    if (!/^batavia (hull|livery)/.test(name)) continue;
+    const { positions: p, at } = models.part(name);
+    for (let i = 0; i < p.length; i += 9) {
+      let y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity, x = 0;
+      for (let k = i; k < i + 9; k += 3) {
+        const y = p[k + 1] + at[1], z = p[k + 2] + at[2];
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+        if (z < z0) z0 = z;
+        if (z > z1) z1 = z;
+        x = Math.max(x, Math.abs(p[k] + at[0]));
+      }
+      if (y1 < lo || y0 > hi) continue;
+      for (let s = Math.floor(z0 / SHIP_SLAB); s * SHIP_SLAB <= z1; s++) {
+        const a = Math.max(z0, s * SHIP_SLAB), b = Math.min(z1, (s + 1) * SHIP_SLAB);
+        if (b < a) continue;
+        const slab = slabs.get(s) || { z0: Infinity, z1: -Infinity, hx: 0 };
+        slab.z0 = Math.min(slab.z0, a);
+        slab.z1 = Math.max(slab.z1, b);
+        slab.hx = Math.max(slab.hx, x);
+        slabs.set(s, slab);
+      }
+    }
+  }
+  return [...slabs.entries()].sort((a, b) => a[0] - b[0]).filter(([, s]) => s.z1 > s.z0)
+    .map(([, s]) => ({ x: 0, z: (s.z0 + s.z1) / 2, hx: s.hx, hz: (s.z1 - s.z0) / 2, hull: deck - draught }));
+}
 
 // Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
 // and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
@@ -1091,6 +1241,12 @@ function civic(parts, spec, rng) {
     Object.assign(anchors, meshAnchors(name));
     return { anchors, animated, height: models.heightOf(name) };
   }
+  if (HARBOUR_HOUSES.has(spec.civicType)) {
+    const name = `civic_${spec.civicType}`;
+    parts.push(...meshAsset(name));
+    Object.assign(anchors, meshAnchors(name));
+    return { anchors, animated, height: assetRise(name) };
+  }
   switch (spec.civicType) {
     case 'townhall': {
       // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
@@ -1484,6 +1640,33 @@ function civic(parts, spec, rng) {
       animated.butcher = { at: [0, 0, 0] };
       return { anchors, animated, height: models.heightOf('civic_butcher') };
     }
+    // The three trades past the castle, one Blender set between them (scripts/build-workshops.py,
+    // Plans/ambachten.md). Their heights are each asset's own (topOf): the set's building_height
+    // is the brewery's chimney, and that is no height for a field.
+    case 'brewery': {
+      // The brewhouse, the copper under its lean-to, and the casks, the dray and the hops. The
+      // chimney smokes and the copper steams, each off an anchor.smoke of its own - which is why
+      // the copper is an asset apart: an asset has one anchor of a name.
+      parts.push(...meshAsset('civic_brewery'), ...meshAsset('civic_brewery_copper'), ...meshAsset('civic_brewery_yard'));
+      Object.assign(anchors, meshAnchors('civic_brewery'));
+      const steam = meshAnchors('civic_brewery_copper').smoke;
+      if (steam) animated.steam = { at: steam };
+      return { anchors, animated, height: models.topOf('civic_brewery') };
+    }
+    case 'trainingfield': {
+      // The fenced field with its shelter and racks, and the dummies, pells and butts. The flag
+      // on the shelter's pole is the island's, flown by main.js off anchor.flag like the hall's.
+      parts.push(...meshAsset('civic_trainingfield'), ...meshAsset('civic_trainingfield_yard'));
+      Object.assign(anchors, meshAnchors('civic_trainingfield'));
+      return { anchors, animated, height: models.topOf('civic_trainingfield') };
+    }
+    case 'quarry': {
+      // The benches and the hill, and the yard less what turns, slews and runs: quarry.js hangs
+      // the treadwheel, the jib, the rope, the hook, the block and the tub on their own pivots.
+      parts.push(...meshAsset('civic_quarry'), ...meshAsset('civic_quarry_yard', 0xffffff, { skip: isQuarryMoving }));
+      animated.quarry = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.topOf('civic_quarry') };
+    }
     case 'windmill':
     case 'poldermill':
       parts.push(...meshAsset('civic_windmill'));
@@ -1508,6 +1691,16 @@ function civic(parts, spec, rng) {
       parts.push(...meshAsset(name));
       Object.assign(anchors, meshAnchors(name));
       return { anchors, animated, height: models.heightOf(name) };
+    }
+    case 'chronicle': {
+      // The chronicle house, the ladder's last rung (Plans/kroniekhuis.md): a brick hall with a
+      // portico and a lantern, baked whole in scripts/build-chronicle.py, nothing in it moving.
+      // It stands on the ordinary civic step rather than the shops' narrower one: it is not a
+      // shop on a street but a public building on its own lot, like the town hall. What it
+      // opens is web/js/chronicle-house.js's and main.js's; `anchor.door` is where it is asked.
+      parts.push(...meshAsset('civic_chronicle'));
+      Object.assign(anchors, meshAnchors('civic_chronicle'));
+      return { anchors, animated, height: models.heightOf('civic_chronicle') };
     }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
@@ -1629,6 +1822,20 @@ function civic(parts, spec, rng) {
       });
       return { anchors, animated, height: HEAD + 0.12 };
     }
+    case 'ship': {
+      // The Batavia at anchor (scripts/build-batavia.py, Plans/batavia.md), on a plot of 4 by
+      // 16 with her length along its long side - which housePlacement's turn gives her, since
+      // she is modelled bow to +z like every front on the island. Lowered by her draught, so
+      // her origin is her waterline and `floats` tells main.js to set that on the sea rather
+      // than on the bed under her; painted as the ship she is; less the flags batavia.js flies.
+      const draught = shipDraught();
+      const livery = shipLivery(spec.id);
+      const paint = (name) => (liveryRole(name) ? livery[liveryRole(name)] : null);
+      parts.push(...meshAsset('batavia', paint, { y: -draught, skip: isBataviaMoving }));
+      Object.assign(anchors, meshAnchors('batavia', { y: -draught }));
+      animated.ship = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('batavia') - draught, solids: shipSolids(draught), floats: true };
+    }
     case 'goldpit': {
       // Baked concrete and coping stay one draw call; the shrinking stock is instanced.
       parts.push(...meshAsset('civic_goldpit'));
@@ -1640,11 +1847,119 @@ function civic(parts, spec, rng) {
       animated.resetclock = { at: [-0.79, 1.05, 1.192], r: 0.075 };
       return { anchors, animated, height: 1.22 };
     }
+    case 'shipyard': {
+      // The yard and the ship on its stocks (scripts/build-shipyard.py, Plans/scheepswerf.md):
+      // one baked asset on a five by sixteen lot, the sea end on +z. What of the ship stands on
+      // the slipway is `spec.stage`, and the part names say which parts a stage draws - see
+      // shownAtStage in shipyard.js. Lowered by its datum, so y = 0 here is the land at the
+      // landward end like every other building's ground, and the slipway and its piles go on
+      // down below it into the water.
+      //
+      // From HULL_STAGE her hull is complete, and what stands on the ways then is the Batavia's
+      // own bake (bataviaOnStocks), not a copy of her: the ship on the stocks at 115 is the ship
+      // on the roads at 120 by construction, less what she is given afloat.
+      const stage = yardStage(spec);
+      const lift = { y: -SHIPYARD_LAND };
+      const start = parts.length;
+      parts.push(...meshAsset('shipyard', 0xffffff, { ...lift, skip: (n) => !shownAtStage(n, stage) }));
+      if (stage >= HULL_STAGE) parts.push(...bataviaOnStocks());
+      Object.assign(anchors, meshAnchors('shipyard', lift));
+      // As tall as the sheerlegs, or her crest's lanterns once she stands there: measured off
+      // what was drawn, which is the only thing that knows.
+      let height = 0;
+      for (let k = start; k < parts.length; k++) {
+        const y = parts[k].attributes.position.array;
+        for (let i = 1; i < y.length; i += 3) if (y[i] > height) height = y[i];
+      }
+      return { anchors, animated, height };
+    }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
       return { anchors, animated, height: 0.5 };
   }
   void rng;
+}
+
+// ---------------------------------------------------------------- the Batavia on the stocks
+// Where she lies on the ways: her own origin - the bottom of her keel amidships - is the baked
+// origin of the yard's keel (scripts/build-shipyard.py lays that keel on her lines, under her),
+// lowered by the yard's datum like the rest of it, and her declivity is that keel's own fall
+// from forefoot to heel. Read off the bake, so that moving the ship along the slipway in the
+// builder moves her bake with her keel and nothing here has to be told.
+export const STOCKS = (() => {
+  const keel = models.part('shipyard s1-3 keel');
+  const p = keel.positions, at = keel.at;
+  const pts = [];
+  for (let i = 0; i < p.length; i += 3) pts.push([p[i] + at[0], p[i + 1] + at[1], p[i + 2] + at[2]]);
+  const mid = pts.reduce((s, q) => s + q[2], 0) / pts.length;
+  const lowest = (side) => pts.filter((q) => (q[2] > mid) === side).reduce((a, b) => (b[1] < a[1] ? b : a));
+  const fore = lowest(false), aft = lowest(true);
+  return Object.freeze({ x: at[0], y: at[1] - SHIPYARD_LAND, z: at[2], tilt: Math.atan2(fore[1] - aft[1], aft[2] - fore[2]) });
+})();
+
+// What of her bake stands on the stocks, and in what colour. Everything that makes her hull -
+// skin, decks, bulwarks, the stern and its galleries, the head, the channels, the capstan - and
+// nothing she is given at the fitting-out quay: not her masts, yards, sails, rigging, bowsprit
+// or anchor cable (all of `batavia rig`) nor her flags; not the accommodation ladder and its
+// float, which hang over the water she is not in yet; and not the spare anchor at her cathead.
+// The ladder and the anchor are fitted parts in the middle of her fittings, so they go by where
+// they are, in her own frame (scripts/build-batavia.py LX0, FLOAT, CAT): the ladder is anything
+// abreast of the entry port reaching out past her side - past 1.42 below her channels, whose
+// widest is 1.40, and past 1.5 beside them, since they stand out to 1.47 - and by its outermost
+// corner rather than its middle, so the platform goes whole rather than cut down a diagonal;
+// the anchor is what hangs under the port cathead. The rig's tops are trim, painted with her
+// accent, and go by height - nothing of her hull stands above her crest's lanterns at 4.5.
+const onStocks = (name) => /^batavia (hull|livery|trim|fittings)\b/.test(name);
+const IRON_OR_YARD = new Set([0x2f2f33, 0x4d3625]);
+function stocksKeep(part) {
+  const anchor = IRON_OR_YARD.has(bakedHex(part));
+  return (x, y, z, x0) => !(y > 4.8
+    || (x0 < (y < 2.2 ? -1.42 : -1.5) && y < 2.45 && z > 1.1 && z < 4.2)
+    || (anchor && x > 0.8 && x < 1.4 && y > 1.7 && y < (bakedHex(part) === 0x2f2f33 ? 2.86 : 2.68) && z > 5.1 && z < 5.75));
+}
+// And her paint: on the stocks she is timber, because paint is the fitting out. The oak of her
+// topsides and the pale stuff and tar of her bottom stay - a bottom is paid before she is
+// launched, since nobody can do it afloat - but the green of her panels, the red of her
+// mouldings and bulwarks, the gilt of her carving, the red lion and the painted sky on her
+// transom are bare oak, and nothing on her is lit. By her baked colour rather than by part
+// name, so a colour the bake moves to another slot is still found.
+const STOCKS_PAINT = new Map([
+  [0x2f5b3d, 0x7d5735],   // green panels: the oak of her topsides
+  [0x8e2b20, 0x5e4128],   // red mouldings and rail caps: darker oak
+  [0x873323, 0x8a6a48],   // the red inside her bulwarks: oak, seen from inside
+  [0xc79634, 0x9c7a50],   // gilt carving: the carving, uncoated
+  [0xb8352a, 0x9c7a50],   // the red lion: the same
+  [0x3e6a92, 0x7d5735],   // the painted sky on her transom: bare boards
+]);
+const UNLIT = 0x2b2a2e;   // her windows and lanterns, dark
+const srgb = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+function bakedHex(part) {
+  const [r, g, b] = part.colors;
+  return (srgb(r) << 16) | (srgb(g) << 8) | srgb(b);
+}
+export function stocksPaint(part) {
+  if (part.emissive) return UNLIT;
+  return STOCKS_PAINT.get(bakedHex(part)) ?? null;
+}
+
+// Her bake laid on the ways: turned stern to the sea (a half turn, since she is modelled bow to
+// +z like every front on the island), pitched onto the declivity and set on her keel, less what
+// she is not given until she is afloat and in timber rather than paint. Turned about her own
+// origin, which is why every part goes through `keep` - it hands the part back in her frame.
+// Parts left empty by the cut are dropped rather than merged as nothing.
+export function bataviaOnStocks() {
+  const out = [];
+  for (const name of models.assetParts('batavia')) {
+    if (!onStocks(name)) continue;
+    const part = models.part(name);
+    const paint = stocksPaint(part);
+    const g = mesh(name, paint ?? 0xffffff, {
+      repaint: paint != null, emissive: 0, keep: stocksKeep(part),
+      ry: Math.PI, rx: STOCKS.tilt, x: STOCKS.x, y: STOCKS.y, z: STOCKS.z,
+    });
+    if (g.attributes.position.count) out.push(g);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- entry point
@@ -1778,13 +2093,24 @@ function scaleSolids(solids, s) {
 // and closed the diagonal between them - a gap you could see through and not walk. So a
 // round thing's solid also carries `r`, and walk.js tests a circle for it; hx/hz stay as
 // its bounds for everything that only wants a rectangle.
-const ROUND = new Set(['well', 'fountain', 'flowerbed']);
+// The lighthouse is round too, and since it was built at its real size (1.44 across at the
+// foot) the corners of its box stood 0.3 off the stone on every diagonal - on a coast cell,
+// where the way round it is often the strip between the tower and the water.
+const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // And what stands in an L is walked round the L. The two trestle tables and their benches
 // overlap at one corner, so merging closes the empty corner of the L into one box - and on
 // the square that corner faces the fountain one cell away, diagonally, which with the
 // fountain's own solid left no way between them. Unmerged, a gap narrower than a body
 // still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
-const APART = new Set(['tables', ...SHOPS]);
+// The harbour's buildings for the shops' reason. Merged, the warehouse's crates and barrels closed
+// with its walls into one block reaching 1.22 out, past the door at 0.80, and the fisherman's boat,
+// rack and barrels made his whole yard one block to 0.97, with the hut's door at -0.22 inside it.
+// The shipyard is kept apart too, for its size: merged, the shed, the sheerlegs'
+// feet, the stacks and the slipway lie within a gap of each other and became one solid over the
+// whole sixteen-long lot, the strip along the ship to the water included. Apart, the slipway is
+// one solid (nobody walks the ways - they have no deck level), the ship's parts fall inside it,
+// and the shed, the logs, the planks and the hearth are each walked round.
+const APART = new Set(['tables', 'shipyard', ...SHOPS, ...HARBOUR_HOUSES]);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -1823,7 +2149,13 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   'watertower',
   // The bridge stone has a footing course of its own and stands on the bank beside a
   // country road. A paved step round it would be a doorstep to a stone.
-  'bridge']);
+  'bridge',
+  // The shipyard carries its own footings - a plinth under the shed, a hearth, a bed of stone
+  // under the slipway and piles past it - and everything below 0.45 of it is sixteen cells of
+  // slipway: a porch fitted to that would be a stone quay the length of the lot.
+  'shipyard',
+  // And the ship floats. A step under her would be a stone quay laid out in the sea.
+  'ship']);
 function wantsPorch(spec) {
   if (spec.harbour) return false;                 // it stands on its own stilts, over water
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
@@ -1846,8 +2178,15 @@ function wantsPorch(spec) {
 // The shops are the tavern's size and stand on the tavern's step (Plans/knus-dorpscentrum.md).
 // They were built out to the edge of their lot at first and took the chapel's rule then; at the
 // village's size that left them the only buildings on the square not standing on something.
-const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' ? [0, 0]
-  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
+// The lighthouse takes the chapel's rule, for the shed's reason: it has one cell and no more,
+// and since it was built at its real size its own stone foot is 1.44 across. The full step
+// round that came out 1.9 square, most of the next cell over on every side; at its own
+// footprint it is a square plinth under a round tower, which still shows at the corners that
+// it stands on something, with the model's own foot course as a second step above it. On it
+// the tower covers 1.39 by 1.49, where the old one on its full step covered 1.32 by 1.34.
+const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' || spec.civicType === 'lighthouse' ? [0, 0]
+  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) || HARBOUR_HOUSES.has(spec.civicType) ? [0.06, 0.08]
+    : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line
 // that matters for walking into something, and a shed is knee high: all of it is down in
@@ -1968,10 +2307,16 @@ export function buildBuilding(spec, ctx = {}) {
   const rng = makeRng(hash32(spec.id));
   const parts = [];
   let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [];
+  // A building that says where it is solid itself (the ship, whose hull is measured off its
+  // bake rather than off everything below head height), and one that floats: main.js and
+  // guest-island.js set its origin on the sea instead of on the ground under the plot.
+  let ownSolids = null, floats = false;
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
     anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
+    ownSolids = r.solids || null;
+    floats = !!r.floats;
     if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
   } else if (spec.kind === 'shed') {
     const r = shed(parts, spec, pal);
@@ -2023,7 +2368,7 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  const wallRects = footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
+  const wallRects = ownSolids || footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
   if (wantsPorch(spec)) {
     porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
@@ -2062,6 +2407,7 @@ export function buildBuilding(spec, ctx = {}) {
   return {
     geometry, anchors, animated, height, width: w,
     bbox: geometry.boundingBox.clone(), solids, walls,
+    ...(floats ? { floats } : {}),
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }

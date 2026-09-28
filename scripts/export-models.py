@@ -78,7 +78,15 @@ def bake(set_name, source):
             assets.setdefault(asset, {'parts': [], 'anchors': {}})
         if obj.type == 'EMPTY' and obj.name.startswith('anchor.'):
             where = assets[asset]['anchors'] if asset is not None else anchors
-            where[obj.name.split('.', 1)[1]] = game(obj.matrix_world.translation)
+            # Blender keeps an object's name unique across the whole file, so in a set of
+            # several buildings the second one to have a door gets `anchor.door.001`
+            # (assets/harbourhouses), and a second asset's anchor.smoke comes out as
+            # anchor.smoke.001 (assets/workshops: the brewery's chimney and its copper). The
+            # word is the anchor; the number is only Blender's.
+            kind = obj.name.split('.')[1]
+            if kind in where:
+                raise ValueError(f'{set_name}: {asset or set_name} has two anchor.{kind}')
+            where[kind] = game(obj.matrix_world.translation)
         if obj.type != 'MESH' or not obj.get('building_part'):
             continue
         if asset is not None and not obj.name.startswith(asset):

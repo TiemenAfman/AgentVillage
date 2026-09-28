@@ -72,6 +72,22 @@ const MAX_OUT = 2;
 const WAIT_MIN = 50;
 const WAIT_MAX = 210;
 
+// A town of two hundred with the bay of a hamlet looks deserted, though - and by then its
+// harbours have filled with boats by themselves (shared/quay.mjs earnedBoats). So past
+// OUT_FROM settlers the cap rises by one for every OUT_EVERY more, to OUT_MOST at most:
+// three at 140, four at 180 (Plans/mijlpalen-tot-tweehonderd.md, "De vloot"). Counted off
+// the crowd the sea walks, which is the only thing that plans an outing; a sea from before
+// this keeps MAX_OUT, which is a quieter bay and nothing worse. Still well short of a
+// regatta: the timer above offers one outing at a time, so four at once is a busy afternoon
+// catching up, not the usual sight.
+const OUT_FROM = 100;
+const OUT_EVERY = 40;
+const OUT_MOST = 4;
+export function outingsAtOnce(settlers) {
+  const n = Number.isFinite(settlers) ? settlers : 0;
+  return Math.max(MAX_OUT, Math.min(OUT_MOST, MAX_OUT + Math.floor((n - OUT_FROM) / OUT_EVERY)));
+}
+
 // Nobody goes out in the dark. The same number the stroll uses to start thinning errands
 // out, read the other way: past this the quay is shut.
 const NIGHT_SHUT = 0.45;
@@ -94,15 +110,71 @@ function lerpAngle(a, b, t) {
 // enough for a boat drawn as a dot and is not enough for one a ground cell long, and the
 // margin is what keeps a circle that grazes a headland from being planned at all rather
 // than being sailed through it.
-export function openWater(terrain, x, z) {
+//
+// `blocked` is waterPlots() below, or null: water that something stands on is not water a
+// hull fits in either, with the same cell of margin round it that a headland gets.
+export function openWater(terrain, x, z, blocked = null) {
   const gx = Math.round(x + terrain.half - 0.5);
   const gz = Math.round(z + terrain.half - 0.5);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       if (!terrain.isWater(gx + dx, gz + dz)) return false;
+      if (blocked && standsOn(blocked, terrain.size, gx + dx, gz + dz)) return false;
     }
   }
   return true;
+}
+
+// The cells of the water that a building stands on: the ship at anchor on the rede, a
+// shipyard's slipway, whatever a harbour puts out over the sea (Plans/mijlpalen-tot-
+// tweehonderd.md). An outing is moved along its route rather than sailed - see the top of
+// this file - so nothing would stop it going straight through a ship's hull; the route has
+// to be planned round them instead, and this is what it is planned round.
+//
+// Water only. Land already fails openWater, and a mask that also held every house would
+// make the finer check between samples in planVoyage a new rule for every coast with a
+// cottage on it; left to the water, an island with nothing standing on it plans exactly
+// the voyages it always did. `plot` is `{ gx, gz, w, d }` as the layout stamps it - w cells
+// along x and d along z from (gx, gz), a turned non-square plot already carrying its w and
+// d swapped - and the keys are `gx + gz * size` in the island's own grid, like every other
+// cell set the crowd keeps. Worked out once per crowd, which is once per publish; never
+// per sample.
+export function waterPlots(terrain, buildings) {
+  const size = terrain.size;
+  const out = new Set();
+  for (const b of buildings || []) {
+    const p = b && b.plot;
+    if (!p) continue;
+    const w = p.w || 1, d = p.d || 1;
+    for (let gz = p.gz; gz < p.gz + d; gz++) {
+      for (let gx = p.gx; gx < p.gx + w; gx++) {
+        if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+        if (terrain.isWater(gx, gz)) out.add(gx + gz * size);
+      }
+    }
+  }
+  return out;
+}
+
+// Bounds first: a key built from a cell off the grid's edge is some other cell's key.
+function standsOn(blocked, size, gx, gz) {
+  return gx >= 0 && gz >= 0 && gx < size && gz < size && blocked.has(gx + gz * size);
+}
+
+// Between two samples a hull goes in a straight line, and on the widest circle the samples
+// are four and a half units apart - enough to step clean over the corner of a plot with both
+// ends a cell clear of it. So where anything stands on the water the legs are walked too,
+// every LEG_STEP, and no point of one may be over a plot's own cell. Only against the plots,
+// not the ground, for waterPlots' reason: a voyage the coast allowed before stays allowed.
+const LEG_STEP = 0.5;
+function crossesPlot(terrain, blocked, a, b) {
+  const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / LEG_STEP));
+  for (let k = 0; k <= n; k++) {
+    const x = a[0] + ((b[0] - a[0]) * k) / n;
+    const z = a[1] + ((b[1] - a[1]) * k) / n;
+    if (standsOn(blocked, terrain.size, Math.round(x + terrain.half - 0.5), Math.round(z + terrain.half - 0.5))) return true;
+  }
+  return false;
 }
 
 // The circle out and back. `start` is the berth in world coordinates and `dir` is the way
@@ -112,7 +184,13 @@ export function openWater(terrain, x, z) {
 // Answers the waypoints, ending on the berth it started from, or null if no radius this
 // rng picked would fit in open water. Null is a real answer: on an island whose only dock
 // is up a creek there is nowhere to go, and the settler walks home again.
-export function planVoyage(terrain, start, dir, rng, { samples = 20 } = {}) {
+//
+// `blocked` is waterPlots(): what stands on the water, which the circle must keep clear of
+// at every sample and along every leg between them. A ship lying across the bay does not
+// stop the outing - a bigger circle goes round it, a smaller one turns short of it - and
+// only when no radius does is the answer null.
+export function planVoyage(terrain, start, dir, rng, { samples = 20, blocked = null } = {}) {
+  const mask = blocked && blocked.size ? blocked : null;
   const len = Math.hypot(dir[0], dir[1]) || 1;
   const out = [dir[0] / len, dir[1] / len];
   const turn = rng.chance(0.5) ? 1 : -1;
@@ -125,6 +203,7 @@ export function planVoyage(terrain, start, dir, rng, { samples = 20 } = {}) {
     const a0 = Math.atan2(start[1] - cz, start[0] - cx);
     const points = [];
     let ok = true;
+    let prev = start;
     for (let i = 1; i <= samples && ok; i++) {
       const a = a0 + turn * (i / samples) * TAU;
       // The last point is the berth exactly - it is where the boat has to end up - so the
@@ -132,8 +211,8 @@ export function planVoyage(terrain, start, dir, rng, { samples = 20 } = {}) {
       const wob = i < samples ? rng.range(-0.09, 0.09) : 0;
       const x = cx + Math.cos(a) * r * (1 + wob);
       const z = cz + Math.sin(a) * r * (1 + wob);
-      if (!openWater(terrain, x, z)) ok = false;
-      else points.push([x, z]);
+      if (!openWater(terrain, x, z, mask) || (mask && crossesPlot(terrain, mask, prev, [x, z]))) ok = false;
+      else { points.push([x, z]); prev = [x, z]; }
     }
     if (ok) return points;
   }
@@ -149,7 +228,10 @@ export function planVoyage(terrain, start, dir, rng, { samples = 20 } = {}) {
 // hour is a long time to wait to see whether the boat still comes home. It shortens the
 // timer and nothing else - the cap, the night and the checks on the route all still hold,
 // so what it shows is the real thing happening more often.
-export function createBoating({ terrain, settlers, dock, fleet, rng, eager = false }) {
+// `maxOut` is how many may be out at once - outingsAtOnce() of the village, MAX_OUT when
+// nobody says. `blocked` answers waterPlots() for the same terrain, or null, and is asked
+// for fresh with it for the same reason.
+export function createBoating({ terrain, settlers, dock, fleet, rng, eager = false, maxOut = MAX_OUT, blocked = () => null }) {
   let wait = eager ? 2 : rng.range(20, WAIT_MAX);
   // The island's own clock, for the swell. Kept here rather than read off performance.now
   // because a dinghy that is in no list is bobbed by this file and by nothing else, and a
@@ -212,7 +294,7 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
     settlers.sendOut(person.id, ashore, (arrived) => {
       if (!arrived || !settlers.has(trip.id)) { abandon(trip); return; }
       const boat = fleet.take(trip.id);
-      const voyage = boat ? planVoyage(t, d.berth, d.dir, rng) : null;
+      const voyage = boat ? planVoyage(t, d.berth, d.dir, rng, { blocked: blocked() }) : null;
       if (!boat || !voyage) {
         // No hull free, or nowhere this dock can go. Either way it is a walk to the end of
         // the pier and back, which is a perfectly good afternoon and is at least honest
@@ -314,12 +396,14 @@ export function createBoating({ terrain, settlers, dock, fleet, rng, eager = fal
     if (wait > 0) return;
     wait = eager ? 6 : rng.range(WAIT_MIN, WAIT_MAX);
     if (nightAmount > NIGHT_SHUT) return;
-    if (trips.filter((t) => !t.done).length >= MAX_OUT) return;
+    if (trips.filter((t) => !t.done).length >= maxOut) return;
     begin();
   }
 
   return {
     update,
+    // The cap this bay was given, for whoever wants to know how busy it may get.
+    maxOut,
     // Who is out, for anything that wants to know whether a hull has somebody in it.
     crews: () => trips.filter((t) => t.boat).map((t) => ({ id: t.id, boat: t.boat.id })),
     // Every outing that is in a hull this moment: where the hull is, and where the body

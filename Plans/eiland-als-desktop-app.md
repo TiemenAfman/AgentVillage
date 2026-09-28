@@ -1,5 +1,7 @@
 # Het eiland als eigen venster: een Tauri-app naast de service
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Aanleiding
 
 Het eiland draait als service (`serve.mjs`, gestart door de scheduled task) en wordt bekeken

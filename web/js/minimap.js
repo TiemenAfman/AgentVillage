@@ -237,12 +237,21 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
   // 1.5 screen pixels to every one it drew - and with the ground in 4px blocks on top of
   // that, the coast came out as a staircase. `terrainStep` is 2 CSS pixels for the same
   // reason: about 6 400 height lookups a frame, which the chart does ~200 000 of once.
-  const w = canvas.width, h = canvas.height;
+  //
+  // Sized off the box it is shown in, not the markup's 180: the phone shows it at 144 (and
+  // 120 held sideways), where a 180 drawing shrunk by CSS put the compass letters at 7px.
+  // Checked every update, since the box only has a size once it is shown.
+  let w = canvas.width, h = canvas.height;
   const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const cx = w / 2, cy = h / 2;
-  const pixelRadius = Math.min(cx, cy) - 6;
+  let cx = 0, cy = 0, pixelRadius = 0;
+  function fit() {
+    const box = panel.clientWidth;
+    if (box > 0 && box !== w) { w = box; h = box; }
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    cx = w / 2; cy = h / 2;
+    pixelRadius = Math.min(cx, cy) - 6;
+  }
+  fit();
 
   function setVisible(on) {
     panel.hidden = !on;
@@ -330,6 +339,7 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
   }
 
   function update(data) {
+    fit();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
@@ -388,6 +398,42 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
 
     ctx.restore();   // drop the circular clip before the rim, which has to sit on top of it
 
+    // Where to go: the nearest islands by name and how far, the two closest of `named`
+    // (the phone's radar - main.js minimapData). A bearing on the rim was all a wanderer
+    // had to go on, with no word for what it was. Drawn unclipped, over the rim, and pulled
+    // in from it so the words stay inside the circle.
+    const named = (data.named || [])
+      .map((n) => ({ ...n, d: Math.hypot(n.x - data.pos.x, n.z - data.pos.z) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+    ctx.font = '600 10px sans-serif';
+    ctx.textBaseline = 'middle';
+    const taken = [];
+    for (const n of named) {
+      const p = projectToRadar(n.x - data.pos.x, n.z - data.pos.z, worldRadius, pixelRadius);
+      const r = Math.hypot(p.x, p.y) || 1;
+      const inward = Math.min(r, pixelRadius - 22);
+      const words = `${n.name} ${n.d < 1000 ? `${Math.round(n.d / 10) * 10} m` : `${(n.d / 1000).toFixed(1)} km`}`;
+      // Towards its bearing, off the one before it when the two lie the same way, and kept
+      // inside the circle - the canvas is round on screen (border-radius), so a name in a
+      // corner of the square was cut off - by sliding along the chord at that height.
+      const tw = ctx.measureText(words).width;
+      // No higher or lower than where a line this long still fits across the circle.
+      const reach = Math.sqrt(Math.max(0, (pixelRadius - 3) ** 2 - (tw / 2 + 2) ** 2)) - 6;
+      let ty = cy + Math.min(reach, Math.max(-reach, (p.y / r) * inward));
+      for (const t of taken) if (Math.abs(t - ty) < 13) ty = t + (t <= cy ? 13 : -13);
+      taken.push(ty);
+      const chord = Math.sqrt(Math.max(0, (pixelRadius - 3) ** 2 - (ty - cy) ** 2));
+      const room = Math.max(0, chord - tw / 2);
+      const tx = cx + Math.min(room, Math.max(-room, (p.x / r) * inward));
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(14,18,24,.85)';
+      ctx.strokeText(words, tx, ty);
+      ctx.fillStyle = 'rgba(244,236,224,.95)';
+      ctx.fillText(words, tx, ty);
+    }
+
     ctx.strokeStyle = 'rgba(232,180,92,.5)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -438,7 +484,49 @@ export function mapBounds(regions, far, margin = 12) {
   return { minX, maxX, minZ, maxZ };
 }
 
-export function createWorldMap({ step = 3 } = {}) {
+// The multiples of `step` strictly inside min..max - where the chart's grid lines go. Pure,
+// for the test: the lines hang off the WORLD frame (a kilometre from the volcano), and the
+// page hands in scene coordinates, so the caller adds the berth back before asking.
+export function gridSteps(min, max, step) {
+  const out = [];
+  for (let k = Math.floor(min / step) + 1; k * step < max; k++) out.push(k * step);
+  return out;
+}
+
+// The chart is a treasure map: ink on parchment. Two inks, and the colours the ground is
+// washed in - laid over the paper at half strength (update), so a watercolour blue rather
+// than the radar's sea, and land faded towards the paper's own cream.
+const INK = 'rgba(72,42,18,.82)';
+const INK_FAINT = 'rgba(72,42,18,.28)';
+const WASH_SHALLOW = [150, 196, 206];
+const WASH_DEEP = [96, 150, 178];
+const WASH_LAND = [246, 238, 214];
+
+// A column's letter, spreadsheet-style past Z so a bigger world still names every square.
+export function columnName(i) {
+  let s = '';
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+
+// What the chart washes a point in, from the radar's own colour for it and its height:
+// water a pale blue that deepens a little offshore, land the radar's colour faded most of
+// the way to paper, so a hamlet's tint still reads but an island looks drawn rather than
+// photographed. Pure, for the test.
+export function chartRGB(c, h) {
+  if (h <= 0) {
+    const t = Math.min(1, -h / 2.5);
+    return WASH_SHALLOW.map((v, k) => Math.round(v + (WASH_DEEP[k] - v) * t));
+  }
+  return c.map((v, k) => Math.round(v * 0.4 + WASH_LAND[k] * 0.6));
+}
+
+// What an islet is called under the pointer, by its kind in shared/islets.mjs.
+const ISLET_WORDS = { sandbank: 'A sandbank with a palm', round: 'A round islet', green: 'A green islet' };
+
+// `phone`: the app on a phone, which has no M key, no Esc and no hover. The chart then says
+// so in its own words, answers a tap with what is there, and has a close button of its own.
+export function createWorldMap({ step = 3, phone = false, onClose = null } = {}) {
   const panel = document.getElementById('worldmap');
   const canvas = document.getElementById('worldmap-canvas');
   const ctx = canvas.getContext('2d');
@@ -453,12 +541,23 @@ export function createWorldMap({ step = 3 } = {}) {
   tip.hidden = true;
   panel.appendChild(tip);
   let pointer = null;
-  window.addEventListener('pointermove', (e) => {
+  const aim = (e) => {
     if (panel.hidden || document.pointerLockElement) { pointer = null; return; }
     const r = panel.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
     pointer = x >= 0 && y >= 0 && x <= r.width && y <= r.height ? { x, y } : null;
-  });
+  };
+  window.addEventListener('pointermove', aim);
+  // A finger does not hover: a tap is where it points, and it stays pointed there.
+  if (phone) window.addEventListener('pointerdown', aim);
+  if (phone) {
+    const close = document.createElement('button');
+    close.className = 'x worldmap-close';
+    close.setAttribute('aria-label', 'Close the chart');
+    close.textContent = '✕';
+    close.addEventListener('click', () => onClose && onClose());
+    panel.appendChild(close);
+  }
 
   // The ground is a few hundred thousand height lookups, so it is painted once into a
   // sheet of its own and only redrawn when what it shows changes: a region raised or
@@ -475,6 +574,10 @@ export function createWorldMap({ step = 3 } = {}) {
     return objIds.get(o);
   };
   let groundKey = '';
+  // The parchment under it all, and its torn outline (paintPaper).
+  const paper = document.createElement('canvas');
+  let paperKey = '';
+  let sheet = new Path2D();
 
   // islandFeatures per village object. A village is replaced wholesale on every scan or
   // publish, so the object is the cache key and a WeakMap lets the old ones go.
@@ -498,6 +601,7 @@ export function createWorldMap({ step = 3 } = {}) {
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     groundKey = '';
+    paperKey = '';
   }
   window.addEventListener('resize', () => { if (!panel.hidden) resize(); });
 
@@ -516,7 +620,8 @@ export function createWorldMap({ step = 3 } = {}) {
 
   const ROAD = [201, 184, 142];
 
-  function paintGround(data, fit) {
+  // `w`, when the world is known, is where the ink stops: outside it the sheet is bare paper.
+  function paintGround(data, fit, w) {
     const gw = Math.ceil(W / step), gh = Math.ceil(H / step);
     ground.width = gw; ground.height = gh;
     const img = gctx.createImageData(gw, gh);
@@ -525,6 +630,7 @@ export function createWorldMap({ step = 3 } = {}) {
     for (let j = 0; j < gh; j++) {
       for (let i = 0; i < gw; i++) {
         const [x, z] = fit.toWorld((i + 0.5) * step, (j + 0.5) * step);
+        if (w && (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ)) continue;   // alpha 0
         const hgt = data.sea.height(x, z);
         let c = null;
         for (const { r, f } of lands) {
@@ -540,6 +646,7 @@ export function createWorldMap({ step = 3 } = {}) {
           break;
         }
         if (!c) c = terrainRGB(hgt);
+        c = chartRGB(c, hgt);
         const k = (i + j * gw) * 4;
         img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; img.data[k + 3] = 255;
       }
@@ -548,13 +655,13 @@ export function createWorldMap({ step = 3 } = {}) {
   }
 
   function label(x, y, text, strong) {
-    ctx.font = `${strong ? 600 : 500} ${strong ? 13 : 12}px sans-serif`;
+    ctx.font = `${strong ? 'bold ' : ''}italic ${strong ? 15 : 13}px Georgia, 'Times New Roman', serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(12,14,18,.75)';
+    ctx.strokeStyle = 'rgba(240,226,190,.8)';
     ctx.strokeText(text, x, y);
-    ctx.fillStyle = strong ? '#e8b45c' : 'rgba(244,236,224,.92)';
+    ctx.fillStyle = strong ? '#8e2f14' : INK;
     ctx.fillText(text, x, y);
   }
 
@@ -627,19 +734,62 @@ export function createWorldMap({ step = 3 } = {}) {
 
   function update(data) {
     if (panel.hidden) return;
-    const fit = fitMap(mapBounds(data.regions, data.far), W, H);
-    const key = [W, H, objId(data.district && data.district.owner),
+    // The whole world when the page knows how big it is, so the chart has a scale you can
+    // learn - fitted to whatever islands happened to be near, a kilometre was a different
+    // length every time somebody joined. The fitted frame is the fallback for a page that
+    // has no berth yet (no world to place it in).
+    const w = data.world;
+    // The pad leaves the grid's letters and numbers room outside the world's edge, and the
+    // torn edge of the sheet room outside those.
+    const fit = fitMap(w || mapBounds(data.regions, data.far), W, H, w ? 58 : 40);
+    const key = [W, H, w ? `${w.minX},${w.minZ}` : '', objId(data.district && data.district.owner),
       ...data.regions.map((r) => `${r.id}@${objId(r.region)}@${objId(r.village)}`)].join('|');
-    if (key !== groundKey) { paintGround(data, fit); groundKey = key; }
+    if (key !== groundKey) { paintGround(data, fit, w); groundKey = key; }
+    // The sheet is cut to the world and its margin, not to the window: a square world on a
+    // wide screen was a strip of blank parchment either side of it.
+    let rect = [0, 0, W, H];
+    if (w) {
+      const [x0, y0] = fit.toPx(w.minX, w.minZ), [x1, y1] = fit.toPx(w.maxX, w.maxZ);
+      const a = Math.max(0, x0 - 52), b = Math.max(0, y0 - 52);
+      rect = [a, b, Math.min(W, x1 + 52) - a, Math.min(H, y1 + 52) - b];
+    }
+    const pk = `${W}x${H}:${rect.map(Math.round).join(',')}`;
+    if (paperKey !== pk) paintPaper(pk, rect);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(paper, 0, 0, W, H);
+    // The sea and the land are washed onto the paper at half strength rather than laid over
+    // it, so the grain, the stains and the scorched edge show through every island as they
+    // would through a watercolour. Multiplying was tried first: a blue on tan came out as
+    // olive. Clipped to the torn sheet, so nothing is painted on the table beside it.
+    ctx.save();
+    ctx.clip(sheet);
+    ctx.globalAlpha = 0.55;
     ctx.drawImage(ground, 0, 0, ground.width * step, ground.height * step);
+    ctx.restore();
+    if (w) drawGrid(w, fit);
+    compassRose(w ? fit.toPx(w.maxX, w.minZ)[0] - 46 : W - 70, w ? fit.toPx(w.maxX, w.minZ)[1] + 46 : 70, 30);
 
     // Everything with a place and a name goes into `marks` as it is drawn, so the hover
     // test below looks at exactly what is on the sheet and nothing else.
     const marks = [];
+
+    // The islets, as dots at least big enough to see: at a whole world to the sheet the
+    // biggest of them is four pixels across, and the painted ground (a third of the canvas's
+    // resolution) loses every one. Sand, or green for the bushy kind.
+    for (const i of data.islets || []) {
+      const [px, py] = fit.toPx(i.x, i.z);
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(1.8, i.r * fit.scale), 0, Math.PI * 2);
+      ctx.fillStyle = i.kind === 'green' ? 'rgb(150,160,98)' : 'rgb(238,222,180)';
+      ctx.fill();
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = INK_FAINT;
+      ctx.stroke();
+      marks.push({ px, py, title: ISLET_WORDS[i.kind] || 'An islet', sub: 'nobody\'s, and nobody can claim it' });
+    }
 
     // Islands on the horizon: a place with no ground fetched, so a pin and a name. A
     // hashed bearing (not pinned) is a rumour from a sea we have not joined, and looks it.
@@ -647,7 +797,7 @@ export function createWorldMap({ step = 3 } = {}) {
       const [px, py] = fit.toPx(m.x, m.z);
       ctx.beginPath();
       ctx.arc(px, py, 5, 0, Math.PI * 2);
-      ctx.fillStyle = m.pinned ? 'rgba(244,236,224,.9)' : 'rgba(244,236,224,.35)';
+      ctx.fillStyle = m.pinned ? INK : INK_FAINT;
       ctx.fill();
       if (m.name) label(px, py - 8, m.name, false);
       marks.push({ px, py, title: m.name || 'An island', sub: m.pinned ? 'in a sea you have not joined' : 'a rumour on the horizon' });
@@ -682,10 +832,10 @@ export function createWorldMap({ step = 3 } = {}) {
       ctx.beginPath();
       ctx.moveTo(0, -6); ctx.lineTo(4.5, 5); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 5);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(127,199,217,.95)';
+      ctx.fillStyle = 'rgb(44,74,98)';
       ctx.fill();
       ctx.restore();
-      marks.push({ px, py, title: 'A boat', sub: 'walk up to it and press E' });
+      marks.push({ px, py, title: 'A boat', sub: phone ? 'row up to it and press X' : 'walk up to it and press E' });
     }
     // The player, with the same `Math.PI - yaw` as the radar's arrow (see there for why).
     const [px, py] = fit.toPx(data.pos.x, data.pos.z);
@@ -695,8 +845,8 @@ export function createWorldMap({ step = 3 } = {}) {
     ctx.beginPath();
     ctx.moveTo(0, -9); ctx.lineTo(5.5, 6.5); ctx.lineTo(-5.5, 6.5);
     ctx.closePath();
-    ctx.fillStyle = '#f4ece0';
-    ctx.strokeStyle = 'rgba(20,16,12,.7)';
+    ctx.fillStyle = '#b03a1c';
+    ctx.strokeStyle = 'rgba(245,232,200,.9)';
     ctx.lineWidth = 1.2;
     ctx.fill();
     ctx.stroke();
@@ -707,20 +857,169 @@ export function createWorldMap({ step = 3 } = {}) {
     if (hit && hit.ring) {
       ctx.beginPath();
       ctx.arc(hit.px, hit.py, hit.ring, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(232,180,92,.9)';
+      ctx.strokeStyle = 'rgba(176,58,28,.85)';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
     showTip(hit);
 
-    ctx.fillStyle = 'rgba(244,236,224,.75)';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('N', W / 2, 10);
+    ctx.fillStyle = INK;
+    ctx.font = 'italic 12px Georgia, serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('M  close   ·   Esc  back to the radar', W - 14, H - 10);
+    ctx.fillText(phone ? 'Tap a place to name it   ·   ✕  back to the radar'
+      : data.sky ? 'M  or  Esc  close' : 'M  close   ·   Esc  back to the radar', rect[0] + rect[2] - 30, rect[1] + rect[3] - 24);
+  }
+
+  // A line every kilometre of the world (`w.km`), counted from the volcano, drawn in ink:
+  // the squares lettered along the top and numbered down the left, A1 in the north-west as
+  // on any sea chart, the world's edge as a dashed square and a one-kilometre bar in the
+  // corner. `w` is in scene coordinates; `w.home` is the berth that turns them back into the
+  // world's, which is what the lines are laid out on.
+  function drawGrid(w, fit) {
+    const [ox, oz] = w.home;
+    const [x0, y0] = fit.toPx(w.minX, w.minZ), [x1, y1] = fit.toPx(w.maxX, w.maxZ);
+    const xs = gridSteps(w.minX + ox, w.maxX + ox, w.km).map((k) => fit.toPx(k - ox, 0)[0]);
+    const zs = gridSteps(w.minZ + oz, w.maxZ + oz, w.km).map((k) => fit.toPx(0, k - oz)[1]);
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = INK_FAINT;
+    ctx.beginPath();
+    for (const px of xs) { ctx.moveTo(Math.round(px) + 0.5, y0); ctx.lineTo(Math.round(px) + 0.5, y1); }
+    for (const py of zs) { ctx.moveTo(x0, Math.round(py) + 0.5); ctx.lineTo(x1, Math.round(py) + 0.5); }
+    ctx.stroke();
+    ctx.setLineDash([7, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = INK;
+    ctx.strokeRect(Math.round(x0) + 0.5, Math.round(y0) + 0.5, Math.round(x1 - x0), Math.round(y1 - y0));
+    ctx.setLineDash([]);
+    // A letter over the middle of every column and a number beside every row, the lines
+    // being the squares' edges rather than their names.
+    const mids = (a, lines, b) => [a, ...lines, b].slice(1).map((v, i, all) => ((i ? all[i - 1] : a) + v) / 2);
+    const size = Math.max(11, Math.min(18, Math.round((x1 - x0) / 55)));
+    ctx.font = `${size}px Georgia, 'Times New Roman', serif`;
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    mids(x0, xs, x1).forEach((px, i) => ctx.fillText(columnName(i), px, y0 - 6));
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    mids(y0, zs, y1).forEach((py, i) => ctx.fillText(String(i + 1), x0 - 8, py));
+    // The bar, bottom left, inside the edge.
+    const len = w.km * fit.scale, bx = x0 + 14, by = y1 - 14;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by); ctx.lineTo(bx + len, by); ctx.lineTo(bx + len, by - 4);
+    ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.font = 'italic 12px Georgia, serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('1 km', bx + len + 6, by + 2);
+    ctx.restore();
+  }
+
+  // An eight-point star in the chart's ink, the four cardinal points half dark, with the
+  // letters round it. North is up on this chart and always will be.
+  function compassRose(cx, cy, r) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.64, 0, Math.PI * 2); ctx.stroke();
+    for (let k = 0; k < 8; k++) {
+      const long = k % 2 === 0, len = long ? r : r * 0.55, a = (k * Math.PI) / 4;
+      const tip = [Math.sin(a) * len, -Math.cos(a) * len];
+      const side = long ? r * 0.13 : r * 0.1;
+      const l = [Math.sin(a - Math.PI / 2) * side, -Math.cos(a - Math.PI / 2) * side];
+      // Each point is two triangles, one inked and one left paper, which is what makes it
+      // read as a star rather than a blot at this size.
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(tip[0], tip[1]); ctx.lineTo(l[0], l[1]); ctx.closePath();
+      ctx.fillStyle = INK; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(tip[0], tip[1]); ctx.lineTo(-l[0], -l[1]); ctx.closePath();
+      ctx.fillStyle = 'rgba(240,226,190,.9)'; ctx.fill(); ctx.stroke();
+    }
+    ctx.font = `italic ${Math.round(r * 0.42)}px Georgia, serif`;
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const d = r + r * 0.35;
+    ctx.fillText('N', 0, -d); ctx.fillText('S', 0, d); ctx.fillText('E', d, 0); ctx.fillText('W', -d, 0);
+    ctx.restore();
+  }
+
+  // The sheet itself, painted once per canvas size: an uneven cream, a few stains, a grain
+  // of fibres, two fold lines, and an edge torn by hand and scorched brown. All of it off
+  // a seeded rng, so the same window always gets the same sheet and it does not shimmer
+  // between reopenings. `sheet` is the torn outline, which the ground is clipped to.
+  function paintPaper(key, [rx, ry, rw, rh]) {
+    paperKey = key;
+    paper.width = Math.round(W * dpr); paper.height = Math.round(H * dpr);
+    const p = paper.getContext('2d');
+    p.setTransform(dpr, 0, 0, dpr, 0, 0);
+    p.clearRect(0, 0, W, H);
+    let seed = 20260928;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    // The torn edge: a point every dozen pixels round the sheet's rectangle (in canvas
+    // coordinates, because the ground is clipped to the same path), each nudged inwards by
+    // a random bite, and now and then a deeper tear.
+    const m = 10, pts = [];
+    const L = rx + m, T = ry + m, R = rx + rw - m, B = ry + rh - m;
+    const edge = (ax, ay, bx, by, nx, ny) => {
+      const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 12));
+      for (let i = 0; i < n; i++) {
+        const t = i / n, bite = rnd() * 6 + (rnd() < 0.06 ? 8 + rnd() * 10 : 0);
+        pts.push([ax + (bx - ax) * t + nx * bite, ay + (by - ay) * t + ny * bite]);
+      }
+    };
+    edge(L, T, R, T, 0, 1); edge(R, T, R, B, -1, 0);
+    edge(R, B, L, B, 0, -1); edge(L, B, L, T, 1, 0);
+    sheet = new Path2D();
+    pts.forEach(([x, y], i) => (i ? sheet.lineTo(x, y) : sheet.moveTo(x, y)));
+    sheet.closePath();
+
+    p.save();
+    p.clip(sheet);
+    const cx = rx + rw / 2, cy = ry + rh / 2;
+    const g = p.createRadialGradient(cx - rw * 0.05, cy - rh * 0.05, 0, cx, cy, Math.hypot(rw, rh) / 2);
+    g.addColorStop(0, '#f1e0b6'); g.addColorStop(0.7, '#e4cc96'); g.addColorStop(1, '#cfae70');
+    p.fillStyle = g;
+    p.fillRect(rx, ry, rw, rh);
+    // Stains: soft blotches, mostly darker, a few lighter where the paper was rubbed.
+    for (let i = 0; i < 46; i++) {
+      const x = rx + rnd() * rw, y = ry + rnd() * rh, r = 30 + rnd() * Math.min(rw, rh) * 0.22;
+      const dark = rnd() < 0.75;
+      const s = p.createRadialGradient(x, y, 0, x, y, r);
+      s.addColorStop(0, dark ? `rgba(128,86,34,${0.04 + rnd() * 0.07})` : `rgba(255,248,226,${0.05 + rnd() * 0.08})`);
+      s.addColorStop(1, 'rgba(128,86,34,0)');
+      p.fillStyle = s;
+      p.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // Two folds, the sheet having been carried in a pocket: a faint dark crease with a
+    // lighter line beside it.
+    for (const [ax, ay, bx, by] of [[rx + rw / 3, ry, rx + rw / 3 + 8, ry + rh], [rx, cy - 4, rx + rw, cy + 6]]) {
+      p.lineWidth = 1.2; p.strokeStyle = 'rgba(110,72,30,.12)';
+      p.beginPath(); p.moveTo(ax, ay); p.lineTo(bx, by); p.stroke();
+      p.lineWidth = 2; p.strokeStyle = 'rgba(255,248,226,.14)';
+      p.beginPath(); p.moveTo(ax + 2, ay + 2); p.lineTo(bx + 2, by + 2); p.stroke();
+    }
+    // Scorched edge: the outline stroked wide and blurred, inside the clip, so it only
+    // browns the paper inwards.
+    p.filter = 'blur(10px)';
+    p.lineWidth = 36; p.strokeStyle = 'rgba(96,56,18,.55)';
+    p.stroke(sheet);
+    p.filter = 'none';
+    p.restore();
+    // Grain: a speckle of fibres over the paper alone.
+    const img = p.getImageData(0, 0, paper.width, paper.height), px = img.data;
+    for (let k = 0; k < px.length; k += 4) {
+      if (!px[k + 3]) continue;
+      const n = (rnd() - 0.5) * 18;
+      px[k] = Math.max(0, Math.min(255, px[k] + n));
+      px[k + 1] = Math.max(0, Math.min(255, px[k + 1] + n));
+      px[k + 2] = Math.max(0, Math.min(255, px[k + 2] + n * 0.8));
+    }
+    p.putImageData(img, 0, 0);
+    p.lineWidth = 1.2; p.strokeStyle = 'rgba(80,46,16,.55)';
+    p.stroke(sheet);
   }
 
   return { setVisible, update };

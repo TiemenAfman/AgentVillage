@@ -3,6 +3,7 @@
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
+import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -80,6 +81,8 @@ export function createUI(handlers) {
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+  // A keeper's words can be tapped away: on a phone there is no Esc to press.
+  el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
   // Tucks the menu away - New settler through Overview - leaving the clock and the
   // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
@@ -112,7 +115,7 @@ export function createUI(handlers) {
   // The side panels on the right, one open at a time. The last two are the animals'
   // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
   // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
-  const SIDE = ['dossier', 'legend', 'settings', 'animal-dossier', 'animal-journal'];
+  const SIDE = ['dossier', 'legend', 'settings', 'phone', 'animal-dossier', 'animal-journal'];
   const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
     if (!el(which)) return;
@@ -142,6 +145,7 @@ export function createUI(handlers) {
     el('chronicle').hidden = walking || planning;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
     el('settings-btn').classList.toggle('on', !el('settings').hidden);
+    el('phone-btn').classList.toggle('on', !el('phone').hidden);
   }
   let hasBuilders = false;
   let walking = false;
@@ -187,9 +191,12 @@ export function createUI(handlers) {
     el('live-text').textContent = mode === 'off' ? 'Offline' : mode === 'replay' ? 'Replay' : 'Live';
   }
 
-  function setClock(hour, seasonName) {
+  function setClock(hour, seasonName, lens = false) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
-    el('clock-chip').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}`;
+    const chip = el('clock-chip');
+    chip.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · local' : ''}`;
+    chip.classList.toggle('lens', lens);
+    chip.title = lens ? 'A time of day on this screen only - the sea keeps its own. Click to go on.' : 'Time of day on the island';
   }
 
   // --- now building --------------------------------------------------------
@@ -412,7 +419,41 @@ export function createUI(handlers) {
   // The app on a phone: on foot for good, so the ways up to the sky and into the planner
   // go, and so does building. A class on body rather than `hidden`, because other setters
   // (setWalking among them) hand some of these chips their `hidden` back later.
-  function setStandalone() { document.body.classList.add('standalone'); }
+  // The app on a phone. It also gets the two chips a phone needs and a keyboard does not:
+  // Say, for the island chat that otherwise only T opens, and Controls (phoneprefs.js).
+  function setStandalone() {
+    document.body.classList.add('standalone');
+    el('say-btn').hidden = false;
+    el('phone-btn').hidden = false;
+  }
+  el('say-btn').addEventListener('click', () => handlers.onSay && handlers.onSay());
+  el('phone-btn').addEventListener('click', () => (el('phone').hidden ? openPhone() : close('phone')));
+
+  // How the controls feel, for the phone's own player: drawn from the preferences each time
+  // it opens, and each change handed straight back (handlers.onPhonePref) to be kept and
+  // applied - everything on the next frame, except quality, which is the next start.
+  function openPhone() {
+    const p = handlers.phonePrefs ? handlers.phonePrefs() : {};
+    el('phone-body').innerHTML = `
+      <label class="phone-row">Look speed
+        <input type="range" id="pp-look" min="0.5" max="2" step="0.1" value="${Number(p.look) || 1}">
+        <output id="pp-look-out">${(Number(p.look) || 1).toFixed(1)}×</output></label>
+      <label class="phone-row"><input type="checkbox" id="pp-invert"${p.invert ? ' checked' : ''}> Drag up to look down</label>
+      <label class="phone-row"><input type="checkbox" id="pp-lefty"${p.lefty ? ' checked' : ''}> Left-handed: stick on the right</label>
+      <div class="phone-row">Drawing
+        <select id="pp-quality">
+          <option value="light"${p.quality !== 'full' ? ' selected' : ''}>Light (smoother)</option>
+          <option value="full"${p.quality === 'full' ? ' selected' : ''}>Full (sharper, warmer phone)</option>
+        </select></div>
+      <p class="muted">Drawing changes on the next start of the app.</p>
+      <p class="muted">Pinch with two fingers to bring the camera closer or further. Tap somebody to hear who they are.</p>`;
+    const set = (name, value) => handlers.onPhonePref && handlers.onPhonePref(name, value);
+    el('pp-look').addEventListener('input', (e) => { el('pp-look-out').textContent = `${Number(e.target.value).toFixed(1)}×`; set('look', Number(e.target.value)); });
+    el('pp-invert').addEventListener('change', (e) => set('invert', e.target.checked));
+    el('pp-lefty').addEventListener('change', (e) => set('lefty', e.target.checked));
+    el('pp-quality').addEventListener('change', (e) => set('quality', e.target.value));
+    openSide('phone');
+  }
 
   // The Sound chip. `on` is what the person asked for, which is not the same as whether a
   // note is playing: a browser will not start an AudioContext until the page has been
@@ -497,6 +538,16 @@ export function createUI(handlers) {
       + `<div style="display:flex;gap:6px;margin-top:8px"><input id="sea-url" class="field" placeholder="http://address:4750/" style="flex:1"><button class="chip" id="sea-add">Add</button></div>`;
   }
 
+  // Which action is waiting for its new key, if any.
+  let rebinding = null;
+  function controlsSection() {
+    const row = ([a, , says]) => `<button class="chip${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
+      + `<kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd> ${esc(says)}</button>`;
+    return '<h3 class="sec">Controls</h3>'
+      + `<p class="muted" style="margin:0 0 9px">On foot. Click one and press the key you want. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand.</p>`
+      + `<div class="chips wrap">${ACTIONS.map(row).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div>`;
+  }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
@@ -504,6 +555,7 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
+      + controlsSection()
       + sizeSection()
       + seaSection()
       + '<h3 class="sec">Debug</h3>'
@@ -521,6 +573,12 @@ export function createUI(handlers) {
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
     }));
+    el('settings-body').querySelectorAll('[data-rebind]').forEach((b) => b.addEventListener('click', () => {
+      rebinding = rebinding === b.dataset.rebind ? null : b.dataset.rebind;
+      renderSettings();
+    }));
+    const reset = el('settings-body').querySelector('[data-rebind-reset]');
+    if (reset) reset.addEventListener('click', () => { rebinding = null; resetKeys(); renderSettings(); });
     el('settings-body').querySelectorAll('[data-islandsize]')
       .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
@@ -533,6 +591,15 @@ export function createUI(handlers) {
       if (field && field.value.trim()) handlers.onJoinSea(field.value.trim());
     });
   }
+  // Capture phase on window, so the key never reaches walk.js or the panel's own Escape.
+  addEventListener('keydown', (e) => {
+    if (!rebinding) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const k = e.key.toLowerCase();
+    if (k !== 'escape') bind(rebinding, k);
+    rebinding = null;
+    renderSettings();
+  }, true);
   renderSettings();
 
   // --- labels & toasts -----------------------------------------------------
@@ -607,6 +674,25 @@ export function createUI(handlers) {
     setTimeout(() => { d.classList.add('fade'); setTimeout(() => d.remove(), 600); }, wire ? 11000 : 5600);
     const kids = el('toasts').children;
     while (kids.length > 4) kids[0].remove();
+  }
+
+  // Coming into an island's waters: its name on a ribbon across the top of the screen, the
+  // way a ship is hailed through a spyglass, and who keeps it underneath. Only the latest
+  // arrival shows - sailing on past two islands names the second.
+  let arrivalTimer = 0;
+  function arrival(name, keeper) {
+    const d = el('arrival');
+    d.querySelector('b').textContent = name;
+    d.querySelector('small').textContent = keeper ? `Kept by ${keeper}` : '';
+    d.hidden = false;
+    d.classList.remove('fade');
+    void d.offsetWidth;
+    d.classList.add('show');
+    clearTimeout(arrivalTimer);
+    arrivalTimer = setTimeout(() => {
+      d.classList.add('fade');
+      arrivalTimer = setTimeout(() => { d.hidden = true; d.classList.remove('show', 'fade'); }, 700);
+    }, 4200);
   }
 
   // Somebody in this world is running different code.
@@ -749,33 +835,41 @@ export function createUI(handlers) {
   // to send off the island from a bar stool - so the row says what there is instead.
   let indoors = false;
   // What each mouse button does now - one button per hand (walk.js): 'attack', 'block' for a
-  // shield, 'drink' for a beer (Plans/bier-en-dronken.md). main.js asks the walk every frame,
-  // so only a change - something else picked up in the inventory, a room entered - redraws
-  // the row.
+  // shield, 'drink' for a beer, 'relay' for a beer in each hand (Plans/bier-en-dronken.md).
+  // main.js asks the walk every frame, so only a change - something else picked up in the
+  // inventory, a room entered - redraws the row.
   let lmbDoes = 'attack', rmbDoes = 'attack';
   function setMouse(lmb, rmb) {
     if (lmb === lmbDoes && rmb === rmbDoes) return;
     lmbDoes = lmb; rmbDoes = rmb;
     renderWalkKeys();
   }
-  const MOUSE_SAYS = { attack: 'attack', block: 'hold to block', drink: 'drink' };
+  const MOUSE_SAYS = { attack: 'attack', block: 'hold to block', drink: 'drink', relay: 'beer relay' };
   const mouseKey = (button, does) => `<span><kbd>${button}</kbd> ${MOUSE_SAYS[does] || MOUSE_SAYS.attack}</span>`;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
   function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
+  // The row no longer fits beside everything else on foot: the keys are listed, and
+  // rebound, under Settings -> Controls instead. Kept as a function so every caller that
+  // redraws it on a change stays as it was; setting SHOW_KEY_ROW brings the row back.
+  const SHOW_KEY_ROW = false;
   function renderWalkKeys() {
+    el('walk-keys').hidden = !SHOW_KEY_ROW;
+    if (!SHOW_KEY_ROW) return;
     // Indoors the room's row has no fight in it, but a pint at the bar is the point of the
     // place, so a button that drinks is still said.
-    const drinks = (lmbDoes === 'drink' ? mouseKey('LMB', 'drink') : '') + (rmbDoes === 'drink' ? mouseKey('RMB', 'drink') : '');
+    const sips = (does) => does === 'drink' || does === 'relay';
+    const drinks = (sips(lmbDoes) ? mouseKey('LMB', lmbDoes) : '') + (sips(rmbDoes) ? mouseKey('RMB', rmbDoes) : '');
     if (indoors) {
       el('walk-keys').innerHTML = padConnected
         ? `<span class="pad-dot"><i></i>Controller</span><span>Left stick walk</span><span>Right stick look</span>`
           + `<span class="lit"><kbd>${padKey('inside', 'interact')}</kbd> sit down</span>`
           + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
+          + `<span><kbd>${padKey('inside', 'dance')}</kbd> dance</span>`
           + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
           + `<span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
           + drinks
-          + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span>`
+          + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span><span><kbd>R</kbd> dance</span>`
           + `<span><kbd>Esc</kbd><kbd>Esc</kbd> step outside</span>`;
       return;
     }
@@ -786,13 +880,14 @@ export function createUI(handlers) {
         + `<span class="lit"><kbd>${padKey('walk', 'primary')}</kbd> sow</span>`
         + `<span><kbd>${padKey('walk', 'prevTool')}</kbd><kbd>${padKey('walk', 'nextTool')}</kbd> seed</span>`
         + `<span><kbd>${padKey('walk', 'jump')}</kbd> jump</span><span><kbd>${padKey('walk', 'crouch')}</kbd> crouch, hold to lie down</span>`
+        + `<span><kbd>${padKey('walk', 'dance')}</kbd> dance</span>`
         + `<span><kbd>${padKey('walk', 'sprint')}</kbd> run</span><span><kbd>${padKey('walk', 'bike')}</kbd> bike</span>`
         + `<span><kbd>${padKey('walk', 'exit')}</kbd> back to the sky</span>`
       : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span><span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
         // The left button is the left hand and the right the right, so each says what its
         // own hand does rather than one line explaining the rule.
         + mouseKey('LMB', lmbDoes) + mouseKey('RMB', rmbDoes)
-        + `<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
+        + `<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>V</kbd> first person</span><span><kbd>Space</kbd> jump</span><span><kbd>C</kbd> crouch, hold to lie down</span><span><kbd>R</kbd> dance</span><span><kbd>E</kbd> talk</span><span class="lit"><kbd>T</kbd> say something</span>`
         + `<span class="lit"><kbd>P</kbd> sow</span><span><kbd>Q</kbd> next seed</span>`
         // Only while building by hand is switched on (Settings -> Debug): otherwise B says
         // it is off, and a key in the row that only answers with a toast is a key too many.
@@ -848,7 +943,8 @@ export function createUI(handlers) {
     if (!s) { p.hidden = true; p.innerHTML = ''; return; }
     p.hidden = false;
     p.innerHTML = `<b class="speech-who">${esc(s.who)}</b><span class="speech-line">${esc(s.line)}</span>`
-      + '<span class="speech-key"><kbd>Esc</kbd> walk on</span>';
+      + `<span class="speech-key">${document.body.classList.contains('standalone') ? 'Tap or <kbd>X</kbd> to walk on'
+        : padConnected ? '<kbd>X</kbd> walk on' : '<kbd>Esc</kbd> walk on'}</span>`;
   }
 
   function setGive(name) {
@@ -862,6 +958,9 @@ export function createUI(handlers) {
     const p = el('walk-prompt');
     if (!near) { p.hidden = true; return; }
     p.hidden = false;
+    // An offer that stands for as long as you do (the helm, while you steer) goes down in
+    // the HUD's own column: over the middle it hid the very ship you were sailing.
+    p.classList.toggle('low', near.kind === 'leavehelm');
     // Whatever is within reach answers to E, or to whatever the controller map calls
     // interact. A board you are already standing at is the exception: it names its own
     // key, because what it offers is the way back out.
@@ -938,6 +1037,7 @@ export function createUI(handlers) {
   }
 
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
+  el('map-btn').addEventListener('click', () => handlers.onToggleMap && handlers.onToggleMap());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
   el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
   el('build-btn').addEventListener('click', () => handlers.onBuild());
@@ -948,7 +1048,7 @@ export function createUI(handlers) {
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
     setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
-    setHover, toast, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
+    setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
     // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.

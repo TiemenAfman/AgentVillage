@@ -1,5 +1,7 @@
 # Eén thuis voor het eiland: `~/.promptholm`
 
+**✅ DONE**
+
 ## Waarom
 
 Tot nu toe hing het van de code af waar het eiland woonde: een checkout (en dus elke

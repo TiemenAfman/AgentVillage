@@ -9,7 +9,7 @@ import { BTN } from './gamepad.js';
 
 // Who wins when more than one says it is active. A panel covers the room it was opened
 // from, so it comes first; the sky is last because it is always true.
-const ORDER = ['panel', 'build', 'inside', 'walk', 'orbit'];
+const ORDER = ['panel', 'parley', 'build', 'inside', 'walk', 'orbit'];
 
 // The only place left in the codebase that names a button. `hit` fires once per press,
 // `down` is held, `label` is what the HUD calls it.
@@ -27,6 +27,7 @@ export const MAPS = {
     exit:      { hit: BTN.BACK, label: 'BACK' },
     exitAlt:   { hit: BTN.START },
     bike:      { hit: BTN.Y, label: 'Y' },                    // on and off the bicycle, like F
+    dance:     { hit: BTN.UP, label: '↑' },                   // like R (Plans/dansen.md)
   },
   // Indoors. There is nothing to sow in a tavern and nobody to send off the island from
   // a bar stool, so those actions are left out and the buttons go quiet on their own.
@@ -35,6 +36,7 @@ export const MAPS = {
     crouch:   { hit: BTN.B, down: BTN.B, label: 'B' },
     interact: { hit: BTN.X, label: 'X' },
     sprint:   { hit: BTN.L3, down: BTN.L3, label: 'L3' },
+    dance:    { hit: BTN.UP, label: '↑' },
     exit:     { hit: BTN.BACK, label: 'BACK' },
     exitAlt:  { hit: BTN.START },
   },
@@ -48,6 +50,15 @@ export const MAPS = {
     navRight:  { down: BTN.RIGHT },
     navUp:     { down: BTN.UP },
     navDown:   { down: BTN.DOWN },
+  },
+  // Face to face with a keeper (main.js speakToKeeper). Walk mode is paused, so its X does
+  // nothing, and Esc or E on a keyboard were the only ways out: a pad, and a phone above
+  // all, were stuck in the conversation for good. X that started it ends it, and so do B
+  // and BACK, the buttons that step back everywhere else.
+  parley: {
+    leave:   { hit: BTN.X, label: 'X' },
+    back:    { hit: BTN.B, label: 'B' },
+    exit:    { hit: BTN.BACK, label: 'BACK' },
   },
   // From up in the sky. The sticks fly the camera; see `orbitPad` in main.js.
   orbit: {

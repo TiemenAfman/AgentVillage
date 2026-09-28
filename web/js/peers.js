@@ -16,6 +16,7 @@ import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
+import { danceStep, wallBeat } from './dance.js';
 
 const FADE_S = 0.4;
 const BODY_R = 0.35;
@@ -35,6 +36,10 @@ const FLAG_RIDING = 128;
 const FLAG_LYING = 256;
 const FLAG_CROUCHING = 512;
 const FLAG_SITTING = 1024;
+// Dancing: net.js's FLAG_DANCING (Plans/dansen.md). The one bit is all there is - which move
+// comes out of their id (dance.js danceStep) and the beat is ours, whatever we hear, so they
+// dance in time with the music on this screen rather than on theirs.
+const FLAG_DANCING = 2048;
 // A rider on the saddle, leaning over the bars as walk.js's own rider does (its RIDE_PITCH).
 const RIDE_PITCH = 0.28;
 // The rest of these poses are walk.js's numbers for our own figure, copied rather than
@@ -308,7 +313,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
   let showing = true;
   function setVisible(on) { showing = !!on; }
 
-  function update(dt) {
+  // `beat` is the one we dance to (main.js danceBeat): whoever dances here, dances to it.
+  function update(dt, { beat = wallBeat(performance.now()) } = {}) {
     const now = performance.now();
     const render = now - LAG_MS;
     for (const list of byRoom.values()) list.length = 0;
@@ -353,6 +359,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const lying = !!(f & FLAG_LYING) && !swimming;
       const sitting = !!(f & FLAG_SITTING) && !swimming;
       const crouching = !!(f & FLAG_CROUCHING) && !lying && !swimming;
+      const dancing = !!(f & FLAG_DANCING) && !moving && !airborne && !swimming && !lying && !sitting && !p.aboard;
 
       // Standing on our own ground rather than on the height we were sent. If a visitor
       // generated the island from a different seed the two terrains disagree, and this is
@@ -368,9 +375,11 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       // Aboard, the deck is what they stand on: the hull's own, or - for a hull this page
       // does not draw - the deck height their pose was sent with, rather than the sea bed.
       // A seat is the one other place the height they were sent is the truth: a bar stool
-      // holds you above the floor, and the floor is all this page's ground knows of.
+      // holds you above the floor, and the floor is all this page's ground knows of. So is a
+      // dancer: indoors the stage is walk levels this page's flat floor knows nothing of, and
+      // somebody dancing up on it was drawn knee-deep in the boards.
       const base = seat ? seat.y
-        : p.aboard || airborne || sitting ? (a.y + (b.y - a.y) * k)
+        : p.aboard || airborne || sitting || dancing ? (a.y + (b.y - a.y) * k)
           : (ground < 0 ? -0.07 : ground);
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
@@ -401,6 +410,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
         riding: riding ? { crank: p.ride.crank, standing: false } : null,
+        dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
       }, dt);
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot

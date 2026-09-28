@@ -26,6 +26,7 @@ import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
 import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
+import { isShipyard, shipyardGround } from './shipyard.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeSawmill } from './sawmill.js';
 import { disposeSmithy } from './smithy.js';
@@ -33,6 +34,8 @@ import { disposeStable } from './stable.js';
 import { disposeBakery } from './countryside.js';
 import { disposeBaker } from './bakery-keeper.js';
 import { disposeButcher } from './butcher.js';
+import { disposeQuarry } from './quarry.js';
+import { disposeBatavia, floatingPose } from './batavia.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -172,11 +175,14 @@ export function createGuestIsland({
       return null;
     }
     const nudge = yardNudge(spec, built);
-    const pose = housePlacement(spec, built.bbox, buildings);
+    // A ship floats on their sea, as she does on ours (main.js poseOnPlot asks the same).
+    const pose = built.floats ? floatingPose(spec.plot, local.half, built.bbox) : housePlacement(spec, built.bbox, buildings);
     const c = plotCentre(spec.plot);
-    const x = c[0] + nudge[0] + pose.x;
-    const z = c[1] + nudge[1] + pose.z;
-    let y = local.worldHeight(x, z);
+    const x = built.floats ? pose.x : c[0] + nudge[0] + pose.x;
+    const z = built.floats ? pose.z : c[1] + nudge[1] + pose.z;
+    // The shipyard on the land at its landward end, as main.js's poseOnPlot stands ours.
+    let y = built.floats ? pose.y
+      : isShipyard(spec) ? shipyardGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz)) : local.worldHeight(x, z);
     if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
 
     const g = new THREE.Group();
@@ -232,6 +238,7 @@ export function createGuestIsland({
       }
       group.remove(rec.group);
       rec.built.geometry.dispose();
+      if (rec.ship) disposeBatavia(rec.ship);
       records.splice(i, 1);
       removed.push(rec);
     }
@@ -262,6 +269,7 @@ export function createGuestIsland({
           hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
           hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
           ...(r.r ? { r: r.r } : {}),
+          ...(r.hull != null ? { hull: r.hull } : {}),
           id: `guest:${region.id}:${rec.id}`,
         });
       }
@@ -296,6 +304,8 @@ export function createGuestIsland({
         if (rec.bakery) disposeBakery(rec.bakery);
         if (rec.baker) disposeBaker(rec.baker);
         if (rec.butcher) disposeButcher(rec.butcher);
+        if (rec.quarry) disposeQuarry(rec.quarry);
+        if (rec.ship) disposeBatavia(rec.ship);
       }
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },

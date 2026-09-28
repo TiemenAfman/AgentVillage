@@ -1,5 +1,7 @@
 # Lopen op een varende boot, met z'n vijven
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Opgeschreven op 25 september 2026; fase 0 en 1 gebouwd op dezelfde dag en met een tweede
 speler op de open zee bekeken, en voor fase 2 tot en met 6 staat het grondwerk (zie Fases):
 alles behalve een nieuwe boot en het aanzetten ervan in walk-mode. Doel: een boot waar tot vijf spelers
@@ -108,13 +110,19 @@ vrachtwagen of op een lift staat, en dat iedereen op zee dat vloeiend ziet.
    Losgelaten glijdt hij het laatste stuk naar waar hij achterbleef en stopt daar (`final`).
    `glideBoats()` draait vóór de peers, zodat de stuurder op de romp van dít frame staat.
    `tests/timeline.test.mjs` vaart een romp op topsnelheid, ook over een haperende lijn.
-2. **De sloep.** Het model met zijn ankers door de pijplijn, varend en aangemeerd, nog met
+2. **De sloep.** *Deels gebouwd (28 september), als het piratenschip:* `CRAFTS.galleon` in
+   `shared/crafts.mjs` (crew 5, roer, vijf dekvlakken en relingen, gemeten met de stralen van
+   `scripts/build-pirateship.py`, en `sail`: sneller, trager in de bocht, botsen op boeg en
+   schouders); nog achter `?ship` en `kindOf` kent hem nog niet.
+   Oorspronkelijk: Het model met zijn ankers door de pijplijn, varend en aangemeerd, nog met
    één persoon aan het roer zoals nu. *Grondwerk klaar:* `shared/crafts.mjs` is de ene plek
    die zegt wat een soort boot is (`crew`, `helm`, `deck`, `rails`, in het rompstelsel) en
    `kindOf` welke soort een boot-id is; er staat alleen de Benchy in, met plek voor haar
    stuurder. *Nog te doen:* het model, zijn ankers als `deck`/`rails`, en `kindOf` dat de
    sloep herkent (waarschijnlijk via een `craft` op de ligplaats in `shared/quay.mjs`).
-3. **Zelf lopen op een varend dek.** `state.deck`, `stepDeck`, de overgangen, springen.
+3. **Zelf lopen op een varend dek.** *Gebouwd (28 september) op het piratenschip:* `leaveHelm`,
+   `takeHelm`, `stepOnDeck` in walk.js; E: roer loslaten, roer pakken, aan land, overboord.
+   Oorspronkelijk: `state.deck`, `stepDeck`, de overgangen, springen.
    Alleen op je eigen scherm; de pose gaat nog in wereldcoördinaten. *Grondwerk klaar:*
    `shared/deck.mjs`, puur en zonder goniometrie (de romp komt binnen als vector, `frameOf`):
    heen en terug tussen romp en wereld, `deckAt`, `clampToDeck`, `stepDeck` (reling glijdt,

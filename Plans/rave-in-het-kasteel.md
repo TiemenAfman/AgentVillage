@@ -1,5 +1,7 @@
 # Een rave in het kasteel
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Begonnen op 26 september 2026 (een zaterdag). Gevraagd: "als ik het kasteel inloop op zaterdag
 tussen 21:00 en 03:00 dan wil ik terechtkomen in een rave, net zoals ik de tavern betreed. Grote
 donkere zaal met lasers en ravende settlers."
@@ -58,7 +60,39 @@ donkere zaal met lasers en ravende settlers."
 - Het beeld is op 26 september in het eiland goedgekeurd zoals het is ("the scene is perfect") -
   niet bijstellen zonder dat erom gevraagd wordt.
 
+## Het paard (27 september)
+
+Gevraagd: "Tijdens de rave moet de stable leeg zijn. Je mag raden waar het paard dan staat.."
+
+- **De stal is leeg zolang de rave duurt**: `updateStable(stable, dt, { away })` in `stable.js`,
+  met `away = raveOn()` uit `main.js` - dezelfde vraag als de poort, dus ook `?rave`. Paard én
+  kippen gaan weg (de kippen horen bij de stal, `attachStable`), en tijdens hun afwezigheid wordt
+  niemand gestapt, zodat ze 's ochtends staan waar ze stonden. Het is de zaterdagavond van de
+  zee, dus de stal van een buur is op hetzelfde moment leeg.
+- **Ze staan in de grote zaal**: het paard onder de discobal (`HORSE` in `rave.js`), het eerste wat
+  je vanaf de poort ziet, driekwart naar het podium gedraaid, met de twee kippen aan zijn voeten
+  aan de kant van de poort. Alleen als het eiland een stal heeft (`stableComes()` in `main.js`,
+  `enter({ stable })`): zonder stal geen paard.
+- **De vloer maakt ruimte zonder dansers te verliezen**: elke plek binnen `HORSE_ROOM` van de
+  ruggengraat van het paard gaat naar de volgende in de rij verder naar achteren
+  (`layout.roomy`), dus met paard dansen er evenveel settlers als zonder. Zonder paard is de vloer
+  precies de goedgekeurde vloer van 26 september.
+- **Een paard gaat niet opzij**: dansers wijken voor je uit, het paard en de kippen staan in de
+  weg zoals een pilaar (drie rondjes langs de ruggengraat, één kleintje per kip; `show.blockers()`,
+  die `interior.js` na `enter` vraagt, want alleen de show weet of het paard er vannacht is).
+- **Het dansen is `stepDance` in `fauna.js`**, de pose-helft naast `stepPose`: op dezelfde tel als
+  de settlers (`S.beats`), dus een hoef komt neer op de kick die je hoort. Headbangen op elke tel,
+  om de tel een voorhoef die klauwt, een zwiepende staart; in de eerste tellen van de drop en de
+  hele laatste maat van de build (als alle handen omhoog gaan) steigert het. Steigeren kantelt
+  om het midden en tilt precies op wat dat de achterhoeven onder de vloer zou brengen, met de
+  achterbenen recht naar beneden: het staat op zijn achterhoeven (`tests/rave-stable.test.mjs`
+  meet het aan de bake). De kippen knikken met hun kop op de tel en slaan hun vleugels uit
+  als het paard steigert.
+- Op `/demo` heeft de rave het paard altijd (`enter({ stable: true })`); de stal op het veld houdt
+  daar het zijne, want dat is een modellenblad.
+
 ## Nog niet
 
-- Andere spelers in de rave zien elkaar wel (`peers.place`), maar niet dansen: een dans is geen pose.
-- Geen dansknop voor jezelf.
+- ~~Andere spelers in de rave zien elkaar wel (`peers.place`), maar niet dansen: een dans is geen pose.~~
+- ~~Geen dansknop voor jezelf.~~ Allebei klaar op 27 september: **R** (Plans/dansen.md). Een dans
+  is nu wel een pose-bit, en de ravers doen dezelfde dans als de settlers op de vloer.

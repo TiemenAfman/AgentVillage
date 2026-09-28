@@ -393,7 +393,14 @@ the berth it always had, because older pages and seas find it by that id; the re
 `BOATS_PER_HARBOUR` (3, the one copy) where it is made, where it arrives and where it is laid
 out. B at one of your own harbours posts `/api/harbour/boat` (keeper-only, not on
 `PUBLIC_API`); the rescan after it republishes, and `harbourSig` in `applyVillage` is what
-makes the new hull appear without a reload, since harbours are not districts. A bundle with no
+makes the new hull appear without a reload, since harbours are not districts. The village also
+earns boats (`earnedBoats` in shared/quay.mjs: one every `FLEET_EVERY` settlers from `FLEET_AT`,
+dealt round from the kadehaven, the first boat's harbour one fewer). scan.mjs writes
+`max(built, earned)`, which never leaves 0..3, so an older sea moors exactly what a newer page
+draws; B builds *ahead* of that count and never below it (`harbourRoom`), and `first: true` marks
+the first boat's harbour in village.json only (the bundle's whitelist drops it). The sea's
+outings grow with the crowd it walks (`outingsAtOnce`, 2 to 4) and sail round every plot that
+lies on water (`waterPlots`). A bundle with no
 harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
@@ -446,15 +453,26 @@ hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boa
 pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works the world
 position out itself, and sends decks as their own list `d` beside the rows - a row's slots
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
-crew). None of it runs yet: no walk mode sets `state.deck`.
+crew). Walk mode sets `state.deck` on the galleon only (`CRAFTS.galleon`, the pirate ship,
+crew 5): E at its wheel is *leave the helm*, the hull coasts under `stepBoat` with the gas off
+while you walk it (`stepOnDeck` in walk.js), and `ownHull()` in main.js is the hull that is
+ours whether at the wheel or on the planks. `kindOf` makes every island's first boat
+(`boat:<region>`, no suffix) the galleon, for the sea and every page alike, and `shipBerth` in
+main.js lays it in deep water off a berth cut for a Benchy - by arithmetic on the ground, so
+every page agrees. A sea from before this counts the ship's crew as one and holds nobody on
+its deck: the open sea has to be redeployed before others see you walk it.
 
 **Other players are drawn with your own rig** (Plans/andere-spelers-zoals-jij.md): peers.js
 gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
 connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
 `identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
-`CROUCHING`, `SITTING` are 256/512/1024 (`POSE_MASK` 2047) - and by events for the arms:
-`{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}` as
-`drank`. Events, not bits: a swing is over in less than two pose beats.
+`CROUCHING`, `SITTING`, `DANCING` are 256/512/1024/2048 (`POSE_MASK` 4095) - and by events for
+the arms: `{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}`
+as `drank`. Events, not bits: a swing is over in less than two pose beats. A dance is a bit
+because it lasts (R, [Plans/dansen.md](Plans/dansen.md)), and only the bit crosses: every page
+picks the move from the dancer's id (`danceStep` in `web/js/dance.js`, the one copy of the
+moves the rave's settlers dance too) and dances them to the beat *it* plays (`danceBeat` in
+main.js: the hall, else the music, else the wall clock at the song's tempo).
 
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
@@ -540,7 +558,7 @@ away and leaves a swimmer. The camera on a bike is free: any look input resets
 still trails every frame). The mesh
 hangs each baked part (`scripts/build-bicycle.py`) on its Blender origin, and the steering axis
 is read off the steer and front-axle origins - move a pivot in the builder, not in JS. Peers
-see a rider through `FLAG_RIDING` (128; `POSE_MASK` is 255 now); a sea still running the old
+see a rider through `FLAG_RIDING` (128, within `POSE_MASK`); a sea still running the old
 `lib/players.mjs` masks it away, so a remote-hosted sea has to be redeployed before other
 players see bicycles.
 
@@ -594,9 +612,11 @@ dock and no boat. Nobody else may publish `volcano: true`. It travels like any i
 the horizon row, which carries `volcano` because a silhouette never sees the bundle), or the
 middle of the world is an ordinary island and a skew banner. Its seed is the one word
 `parseBundle` accepts, and only beside `volcano: true`. `nextOrigin` treats whoever holds
-`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half (176 for
-64-grids round the 192-grid volcano, 208 for 128s, 272 for 256s; eight to a ring, bearings
-first), later rings one ordinary pitch further, so the volcano does not spread everybody else
+`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half, but never
+inside one pitch (176 for 64-grids round the 192-grid volcano, 208 for 128s, 304 for 256s,
+432 for a starter's 384 of room - tighter than the pitch a ring holds only east and west, and
+the open sea was a line; eight to a ring, bearings first, round the compass from east), later
+rings one ordinary pitch further, so the volcano does not spread everybody else
 out. Its shape (`volcanoGround` + `volcanoRelief` in `shared/terrain.mjs`): a buildable apron
 up to ~3.5, then a concave cone to a rim ~38 up (summit 41, crater ~10 deep), with radial
 ridges and ravines, broken cliff bands, crags, a jagged rim breached where each of its three
@@ -842,8 +862,8 @@ measured strike frame) later from where both stand *then* (`REACH_SLACK` of give
 page never guesses at an attack, and a shield raised or a step back during the wind-up counts.
 A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per hand the pose
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
-then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16; mask in
-`lib/players.mjs` 127) faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
+then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
+faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
 Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
@@ -861,6 +881,26 @@ is a target. The private `{t:'health', hp, max, regenIn, rate}` carries relative
 the page fills the bar on its own clock; it is sent only when the page's number would be
 wrong without it: after every hit that leaves you standing, and "whole" after an evict the
 page was told less than.
+
+**The islets are the page's, worked out from the fleet, and never regions**
+([Plans/starter-eilanden.md](Plans/starter-eilanden.md)). `shared/islets.mjs isletsNear(fleet, at)`
+is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet's square is
+`clearOf` every row's `reach` plus `ISLET_MARGIN` (and a phone's own berth, handed in as
+`extra`) - so every page sees the same islets, the sea gains nothing, and they never go into
+`nextOrigin`. `web/js/islets.js` draws them relative to `state.homeOrigin` from `syncIslets()` in
+`doSyncFleet`, and draws nothing until the berth is known. Not being regions is why the sea under
+them is open-sea blue and boats sail through; `isletHeight` is the one ground for the walk-on step.
+The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
+shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
+line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
+fleet and berth). **The world is round by a jump** ([Plans/ronde-wereld.md](Plans/ronde-wereld.md)):
+past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back
+(`wrapShift`) before walk mode steps, `pushSample` (timeline.js) starts a track again on a
+jump of over half the world instead of gliding it, `nextOrigin` keeps every island's room
+`SEA_BAND` (900) off the edge, and `setFogRange` closes the haze in near it (`edgeReach`) so
+what is across is behind the fog on both sides. The sea knows none of it and needs no
+redeploy for it: a pose on the far side is just a pose. `?edge` starts walk mode 12 units
+short of the east edge.
 
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
@@ -891,8 +931,16 @@ workbench and real-date labels excepted). The sea reads its zone by name (`SEA_T
 `shared/daylight.mjs`, which say what an hour means and never what the hour is - and
 hands both to `crowds.tick` / `setGather`. Without `SEA_TZ` it is the host's zone — which in a
 container is UTC, hence `ENV SEA_TZ=Europe/Amsterdam` in `Dockerfile.sea`.
-[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest (the
-borrel, the clouds, the moon).
+The clouds, the swell and the moon run on the sea's clock too (`world.update`'s fourth
+argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer is one
+`CLOUD_TILE` of clouds from a fixed seed repeated over the **whole sea in the world frame**
+(`cloudNearest`, `setSeaHome(state.homeOrigin)` every frame), drawn three by three round the
+camera, so every screen has the same cloud and the same shadow; the island's own rng is still
+spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
+`WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
+chronicle) marks the clock chip `· local`.
+[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
@@ -940,6 +988,11 @@ pint and the sway are this page's alone and live per house id in the crowd view,
 `f.pos`; the settler is held with `attend` under the name the **sea** knows them by
 (`seaIdOf`, the inverse of `/api/crowd-ids`) - our own `house:<uuid>` is nobody on the sea.
 
+**The keys on foot are rebindable and listed only under Settings → Controls** (the key row
+at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them per browser;
+walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
+key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
+
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only
@@ -951,6 +1004,16 @@ where every request is refused: the desktop app's browser pane throws `WrongDocu
 pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
 and a `setTimeout` loop polling the page sees time stand still.
+
+**First person is the wheel's last notch (or V), and it is a view model, not a body.**
+`state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the
+avatar's own matrix, so a crouch or the saddle moves it) and pulls the near plane in to
+`FP_NEAR` only while it is on, because the island's camera keeps 0.5 for depth precision at the
+horizon. `classic-avatar.js` then hides everything but the two arms (`FP_HIDDEN`) and carries
+held items higher and tilted (`FP_HOLD_X`, `FP_TILT`), following `camPitch` - none of it is on
+the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scale.x = -1`):
+the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand. The villagers' own rigs (smith, butcher, baker) set it back to 1: their tools were placed
+against the unmirrored rig, and `tests/butcher.test.mjs` fails on the cleaver if one is not.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -1014,20 +1077,59 @@ for the one reader that must leave it out: the Friday gathering (`gatherCells` i
 terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
 round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
-**The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
+**The castle is the one square civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
 `web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
 `scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
 one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
 bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
 the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
-`p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
-`doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
+`p.w` and `p.d` and never assume 3 - `doorCell`/`outsideDoor` take both, and `plotDoor` (below)
+is the door every reader asks. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
 block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
 commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
 cells only - never over a road, its own included, because a road laid later over another's
 cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
 the gate.
+
+**Past a hundred the ladder goes to the sea, on the first lots that are not square**
+([Plans/mijlpalen-tot-tweehonderd.md](Plans/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
+to 200; three share civicType `ship`, so a rung may name its building (`civicId`, and
+`civicIdOf` in lib/village.mjs is the one copy - the model, scan.mjs and the placing loop all
+ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd rot: a ship is
+4 x 16 (`civic:ship`, `civic:ship:2`, `civic:ship:3`: no door, no road), the shipyard 5 x 16 with
+its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
+web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
+scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
+`outsideDoor(..., p.w)` of a lot that may not be square. **Sixteen is a ceiling, not headroom**:
+`parseBundle` takes a `w`/`d` of 1 to 16, and a lot one cell longer makes every older sea refuse
+the whole island. What stands at the water goes to the **kadehaven** (`kadehaven`: the quay
+district's harbour; else where the island's first boat lies - the landing's quay, or the harbour
+on its side of the town; else the one nearest the town), worked out every scan and never
+stored; the crane falls back to it, which is what gives an island with no quay district - the
+live one - a crane at all. Ships anchor on the **rede** (`redeCell`: deeper than `REDE_DEPTH`,
+open sea, not the fairway, two cells off every plank, slipway and berth - all three berths of
+every harbour, boats or not - out of every pier head's lane, out of the galleon's `GALLEON_ROOM`,
+not a polder; 8 to 20 cells from the head), the second and third beside the first `FLEET_PITCH`
+apart. Where the galleon lies is `shipBerth` in **shared/quay.mjs**, the page's old sum with its
+`sin`/`cos` written out as V8's own doubles, so the layout and every page agree to the bit
+(`tests/ship-berth.test.mjs`). The polders keep off a ship and the yard and a ring round them
+(`keptWater`), a ladder polder that would pond one is filled in again in the same scan
+(`afloatDrowned`) and a keeper's is refused; a growth ring that fills their water moves them on
+purpose (`strandedAtSea` in `doomedBy`) and lifts their `path:` with them. The rungs at the water
+wait for the harbours on an island's first scan (`deferred` in `placeAll`) and are placed straight
+after `planHarbours` in the same pass, so the scan after it is still a no-op. The yard's record
+carries `stage` 0-4 (`yardStage`), strict in `parseBundle`, because a bundle has no settler
+count. No version gate: nothing but new plots. On the page the Batavia floats (`floatingPose` in
+web/js/batavia.js, never `groundAt` of the sea bed) and is solid through `shipSolids`: slabs a
+unit long with a `hull` height that `hullOver` in boat.js hands a boat's bow and probes, because
+a level is a cell and her side lies on no cell edge. The yard stands on its land end
+(`shipyardGround` in web/js/shipyard.js, never below `YARD_FLOOR`), which is why its site keeps
+the dry rows under `YARD_LAND_MAX`: any higher and the slipway's toe comes out of the water. Its
+last stage is not the yard's own model but the Batavia's bake laid on its keel (`bataviaOnStocks`
+in web/js/buildings.js: turned stern to sea, less her rig, flags, boarding ladder and spare
+anchor, repainted in timber by her baked colours), so a change to scripts/build-batavia.py is a
+change to the yard too - tests/shipyard.test.mjs says so.
 
 ## The Blender pipeline
 
@@ -1069,12 +1171,18 @@ geometry; the bake still only allows 0 or 1.
   **Hitbox** view (amber is the solid part, red is where a settler's middle stops).
 - `/editor` — the same sheet with drag handles. **Save** posts whole lines to
   `/api/model-save`, which rewrites `web/js/buildings.js` only when each line is found
-  exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
-  to match and are reported rather than guessed at.
+  exactly once. A line that does not match word for word (a colour by variable,
+  `x: W / 2 - 0.08`) is found by its call site instead: with `traceParts(true)` (the
+  editor only) every primitive's note carries line:col off the stack, and `inPlace` in
+  `web/js/editor.js` changes only the moved numbers *by their delta*, folding into a
+  trailing constant, so formulas survive. Refused and named: a placement that is a call
+  (`inside(a, {})`) or a spread missing the key, a call over several lines, and a line
+  that draws several pieces (loop, helper called twice) not all changed alike. A line
+  in a helper two models share (`noticeBoard`) changes both.
 
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
-drunk). (`?sail` is gone with the
+drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 
@@ -1187,6 +1295,31 @@ driven by `web/js/touchpad.js`, which polls like a gamepad so walk.js needs no t
 Gradle 8.14 does not run on 25) and `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`. To try the
 page without a phone, serve `src-android/dist/` from any static server — that origin has no
 islander behind it either.
+
+**Touch is a pad with two extras, and the phone's HUD is one CSS block.** `web/js/touchpad.js`
+polls in `gamepad.js`'s shape (A jump, X interact, Run = `L3`, and on foot B crouch and Y
+bike - the walk map's own buttons, so they needed no code in walk.js), laid out after Xbox
+Cloud Gaming's touch controls: `.tp-cluster`, a faint thumb circle with every button placed by
+`--x/--y` from its middle and mirrored by `--flip` for `lefty`, outline SVG icons with the pad
+letter as a coloured badge (`ICONS` in touchpad.js). Plus two fields only
+`walk.pad()` reads through `p.raw`: `drag` (px since the last poll, turned like the mouse by
+`DRAG_YAW`/`DRAG_PITCH`, **never × dt** - that made look speed follow the frame rate) and
+`zoom` (a pinch factor for `zoomBy`). The stick is round with a dead zone (`stickOut`, tested).
+The hand buttons bypass the pad and call `walk.hand(side, down)`; `touchHud` in main.js sets
+X's caption and shows the hands, B and Y (`.tp-foot`) only `walk.onFoot()`. A short still tap on the look side is
+`tapName` (guest figures only - the phone has no island). The camera's distance is `base ×
+zoomPref` (`place()`), so a zoom survives boarding; a boat now waits `RECENTRE_AFTER` like the
+bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (localStorage,
+read live; `quality: 'light'` is the default and means `modest`, since `MODEST_GPU` knows no
+phone GPU). A keeper's conversation has its own input mode (`parley` in `input.js`: X/B/BACK)
+and a tappable `#speech` - Esc was the only way out. Android's back button: `phoneBack()`
+holds one `history` entry while any overlay is open and `popstate` closes them. All phone
+layout is under `body.standalone` in `web/css/ui.css`, edges from `--sl/--sr/--st/--sb`
+(`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
+the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
+serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
 **Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
 `tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks

@@ -113,6 +113,7 @@
     <div class="chips" id="nav-chips">
       <button class="chip" id="found-btn" title="Start a new session on the island">New settler</button>
       <button class="chip" id="walk-btn" title="Walk the island on foot">Walk</button>
+      <button class="chip" id="map-btn" title="The chart of the whole world (M)">Map</button>
       <button class="chip" id="build-btn" title="Put something on the island">Build</button>
       <button class="chip" id="plan-btn" title="The island from above: move hamlets, zone ground" hidden>Plan</button>
       <button class="chip" id="avatar-btn" title="Compose the settler you walk as (I)">Inventory</button>
@@ -121,6 +122,8 @@
       <button class="chip" id="animals-btn" title="The island's animals, and what they have been up to" hidden>Animals</button>
       <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
       <button class="chip" id="legend-btn">Legend</button>
+      <button class="chip" id="say-btn" title="Say something to everybody on the island" hidden>Say</button>
+      <button class="chip" id="phone-btn" title="How the controls feel" hidden>Controls</button>
       <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
       <button class="chip" id="reset-btn" title="Frame the whole island">Overview</button>
     </div>
@@ -156,6 +159,10 @@
   </section>
 </div>
 
+<aside class="panel" id="phone" hidden>
+  <div class="panel-head"><h2>Controls</h2><button class="x" data-close="phone">✕</button></div>
+  <div class="panel-body" id="phone-body"></div>
+</aside>
 <aside class="panel" id="legend" hidden>
   <div class="panel-head"><h2>Legend</h2><button class="x" data-close="legend">✕</button></div>
   <div class="panel-body" id="legend-body"></div>
@@ -269,6 +276,7 @@
 
 <div id="labels"></div>
 <div id="toasts"></div>
+<div id="arrival" class="arrival" aria-live="polite" hidden><b></b><small></small></div>
 <div id="skew" class="skew" role="status" hidden></div>
 <div id="update-gate" class="update-gate" hidden role="dialog" aria-modal="true" aria-labelledby="update-gate-title">
   <div class="update-gate-card">

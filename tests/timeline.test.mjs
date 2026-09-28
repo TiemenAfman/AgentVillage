@@ -93,6 +93,16 @@ test('a track of one sample is that sample, and a released track stops at its la
   near(trackAt(track, 250).x, 2.5, 1e-9, 'still drawn along the older stretch');
 });
 
+test('somebody who sails off the edge of the world starts again at the far side, not gliding back', async () => {
+  const { WORLD_HALF } = await import('../shared/regions.mjs');
+  const track = [];
+  pushSample(track, { x: WORLD_HALF - 1, z: 0, yaw: 0, at: 0 });
+  pushSample(track, { x: WORLD_HALF - 0.5, z: 0, yaw: 0, at: 100 });
+  pushSample(track, { x: -WORLD_HALF + 0.2, z: 0, yaw: 0, at: 200 });
+  assert.equal(track.length, 1, 'the old stretch is gone');
+  near(trackAt(track, 150).x, -WORLD_HALF + 0.2, 1e-9, 'drawn where they came in, at once');
+});
+
 test('the people and the boats are drawn on one lag, and a pilot is not a room', () => {
   const peers = read('peers.js'), main = read('main.js');
   // One copy of the lag: a pilot drawn on a hull that is on a different lag from their own

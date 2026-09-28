@@ -1,5 +1,7 @@
 # Een huis naar een eigen wijkje
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Aanleiding
 
 Lovely Meteor ("Crypto trading setup Bitvavo") is in de map Settlers gestart en woont dus in

@@ -9,15 +9,22 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
-import { stepBoat, DECK_Y } from './boat.js';
+import { stepBoat, hullOver, DECK_Y } from './boat.js';
+import { stepDeck, toWorld, dirToLocal, deckAt } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
+import { danceStep, wallBeat } from './dance.js';
+import { canon } from './keybinds.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
+// A finger's drag, turned the way the mouse turns: radians per px dragged (touchpad.js hands
+// it over as `drag`). A little livelier than the mouse, because a phone is a short stroke.
+const DRAG_YAW = 0.0055;
+const DRAG_PITCH = 0.0042;
 const CAM_UP = 1.6;
 // Eye level, asked of the figure instead of written down here. This is the height the
 // third-person camera looks at, so a wrong number tilts the whole frame: it used to be a
@@ -174,6 +181,11 @@ export function createWalkMode({
   // Whether F puts you on a bicycle here (web/js/bicycle.js). The island and the workbench
   // say yes; a room does not - there is no riding a bike round the tavern.
   bikes = false,
+  // Who is dancing and to what, when R is pressed (Plans/dansen.md): `{ id, beat }`, the id the
+  // sea knows us by - so our own screen picks the move everybody else's does - and the beat of
+  // whatever we hear (main.js danceBeat). Without one (the workbench) it is nobody in
+  // particular on the wall clock.
+  dance = null,
 }) {
   const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
@@ -222,6 +234,9 @@ export function createWalkMode({
     yaw: 0,          // where the player faces
     camYaw: 0,       // where the camera looks from
     camPitch: 0.28,
+    // Through the settler's own eyes: the wheel past its nearest stop, or V. The pose that
+    // goes to the sea is the same either way - this is only where our own camera stands.
+    firstPerson: false,
     bob: 0,
     vy: 0,           // vertical speed; zero whenever the feet are down
     grounded: true,
@@ -271,6 +286,7 @@ export function createWalkMode({
     // What the beer has done so far, and the clock the stagger runs on.
     tipsy: tipsy || createTipsy(),
     sway: 0,
+    dancing: false,  // R (Plans/dansen.md): on the spot, until the feet do anything else
     blocking: false, // a shield is up in either hand - what net.js puts in the pose
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
@@ -288,18 +304,33 @@ export function createWalkMode({
     state.lying = false;
     state.sitting = null;
     state.crouchSince = 0;
+    state.dancing = false;
   }
 
   // Jumping and crouching live here rather than in the key handler because the controller
   // does both as well, and two copies of "only from the ground" would drift apart.
   function jump() {
     if (state.bike) { hopWanted = true; return; }   // taken by the next stepBike, tyres down
+    if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
   }
   function crouchToggle() {
     if (state.lying) standUp();                 // pressing it again is how you get up
-    else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); }
+    else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); state.dancing = false; }
+  }
+  // Dancing, where you stand (Plans/dansen.md). A pose like sitting, held until you do anything
+  // else: walk, jump, crouch, get on something, fight, or press R again. Only with both feet on
+  // dry ground and nothing else going on - not on the bike, at a tiller, in the water, on a
+  // stool or lying down. A crouch is stood up out of, the way a jump stands you off a stool.
+  const canDance = () => state.active && !state.working && state.grounded && !state.swimming
+    && !state.vehicle && !state.bike && !state.sitting && !state.lying;
+  function danceToggle() {
+    if (state.dancing) { state.dancing = false; return; }
+    if (!canDance()) return;
+    state.crouching = false;
+    state.crouchSince = 0;
+    state.dancing = true;
   }
 
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
@@ -310,6 +341,7 @@ export function createWalkMode({
     state.crouching = false;
     state.lying = false;
     state.crouchSince = 0;
+    state.dancing = false;
     state.sitting = { x, z, y: y != null ? y : groundAt(x, z, state.pos.y), yaw, since: performance.now() };
     state.pos.set(x, state.sitting.y, z);
     keys.clear();                            // whatever walked you here is not walking you off
@@ -321,7 +353,10 @@ export function createWalkMode({
 
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
-    const k = e.key.toLowerCase();
+    // Rebound keys (keybinds.js) arrive as the default key of their action, so everything
+    // below keeps testing the defaults. Not for a board being worked: its letters are typed.
+    const typed = e.key.toLowerCase();
+    const k = state.working ? typed : canon(typed);
     // A key with ctrl, meta or alt on it is not a game key - which also covers AltGr on a
     // Dutch layout, where it arrives as ctrl+alt. But on foot the browser's own shortcuts
     // are a hazard (ctrl+S next to the walking keys, ctrl+P beside the sowing one), so the
@@ -330,15 +365,17 @@ export function createWalkMode({
     // preventDefault on them: those only come to the page under the keyboard lock that
     // lockKeys() asks for, and only in fullscreen.
     if (e.ctrlKey || e.metaKey || e.altKey) {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(k)) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(typed)) e.preventDefault();
       return;
     }
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
     // inside a field, where those keys are letters somebody is typing.
+    if (k == null) return;
     if (state.working) {
       if (k === 'escape') { e.preventDefault(); release(); return; }
-      if (!typingInto(e.target) && MOVE_KEYS.includes(k)) { keys.add(k); e.preventDefault(); }
+      const mk = canon(typed);
+      if (!typingInto(e.target) && MOVE_KEYS.includes(mk)) { keys.add(mk); e.preventDefault(); }
       return;
     }
     if (MOVE_KEYS.includes(k)) {
@@ -347,6 +384,7 @@ export function createWalkMode({
     }
     // On or off the bike. Not on a repeat, or holding F would bounce you on and off it.
     if (k === 'f' && !e.repeat) { e.preventDefault(); toggleBike(); }
+    if (k === 'v' && !e.repeat) { e.preventDefault(); setFirstPerson(!state.firstPerson); }
     // Only from the ground, so holding space does not climb the sky. On the bike it is a hop.
     if (k === ' ') { e.preventDefault(); jump(); }
     // Not on a repeat: crouchToggle() is a toggle, and the OS keeps sending keydown for
@@ -356,6 +394,8 @@ export function createWalkMode({
     // the crouch over - an infinite loop that never spent a rendered frame lying down,
     // reachable only by physically releasing and re-pressing the key.
     if (k === 'c' && !e.repeat) { e.preventDefault(); if (!state.bike) crouchToggle(); }
+    // Not on a repeat either, or holding R would start and stop the dance every few frames.
+    if (k === 'r' && !e.repeat) { e.preventDefault(); danceToggle(); }
     // Whatever E and X reach for - a door, a stool, a boat, a settler - is done on foot, so
     // they get you off the bike first; so does sowing, which happens where the feet are.
     if (k === 'e' && state.near) { e.preventDefault(); dismount(); state.onInteract && state.onInteract(state.near); }
@@ -383,7 +423,7 @@ export function createWalkMode({
     }
   };
   const onKeyUp = (e) => {
-    const k = e.key.toLowerCase();
+    const k = canon(e.key.toLowerCase());
     keys.delete(k);
     if (k === 'c') releaseCrouch();
   };
@@ -429,10 +469,16 @@ export function createWalkMode({
   // refused, so a mashed button is not a volley the sea sees and nobody else does. A shield
   // up in the other hand is no reason not to: the sea takes a swing from a blocker.
   // `side` goes with it, so everybody else sees that arm come down (Plans/andere-spelers-zoals-jij.md).
-  const fight = (side) => { if (canFight() && classicAvatar.attack(side) && onSwing) onSwing(side); };
+  // A swing ends a dance: fighting is doing something else with your arms.
+  const fight = (side) => {
+    if (!canFight() || !classicAvatar.attack(side)) return;
+    state.dancing = false;
+    if (onSwing) onSwing(side);
+  };
   const SIDE_OF = { 0: 'leftArm', 2: 'rightArm' };
   const shieldIn = (side) => classicAvatar.held(side) === 'shield';
   function guardUp(side, on) {
+    if (on) state.dancing = false;              // and so does a shield going up
     state.guard[side] = on;
     state.blocking = state.guard.leftArm || state.guard.rightArm;
   }
@@ -493,7 +539,15 @@ export function createWalkMode({
     if (dragging && !pressMoved && !pressLocks && !shieldIn(side)) act(side);
     dragging = false; pressLocks = false;
   };
+  // A second button pressed while one is already down is no pointerdown: Pointer Events
+  // report it as a pointermove with `button` set (a "chorded" press), and its release the same
+  // way, until the last button up is a real pointerup. Without this the shield held up in one
+  // hand swallowed every swing of the other - you could block or fight, never both.
+  const BUTTON_BIT = { 0: 1, 1: 4, 2: 2 };
   const onMove = (e) => {
+    if (e.button >= 0 && BUTTON_BIT[e.button]) {
+      if (e.buttons & BUTTON_BIT[e.button]) onDown(e); else onUp(e);
+    }
     if (!state.active) return;
     const locked = document.pointerLockElement === dom;
     let dx = 0, dy = 0;
@@ -502,17 +556,54 @@ export function createWalkMode({
     if (!dx && !dy) return;
     if (dx) lookedAround();
     state.camYaw -= dx * 0.0042;
-    state.camPitch = clamp(state.camPitch + dy * 0.0032, -0.25, 0.95);
+    state.camPitch = clamp(state.camPitch + dy * 0.0032, ...pitchRange());
   };
   // The wheel pulls the camera in and pushes it out, the same as it does from the sky. It
   // listens on the canvas and not the window, and gives up while an overlay owns the input,
   // so scrolling a panel of text never also zooms the island behind it.
-  let back = camBack;
+  //
+  // How far back is two things: `base`, what you are doing asks for (on foot, on the bike, at
+  // a tiller), and `zoomPref`, what the wheel or a pinch asked for on top of it, which stays
+  // yours from one to the next rather than being put back at every step ashore. At a tiller
+  // it may go further out than on foot, since the base is already at the old limit there.
+  let base = camBack, zoomPref = 1, back = camBack;
+  const farthest = () => Math.max(camBack * 2.2, base * 1.4);
+  function place(b) { base = b; back = clamp(base * zoomPref, camBack * 0.35, farthest()); }
+  function zoomBy(f) {
+    if (!Number.isFinite(f) || f <= 0) return;
+    back = clamp(back * f, camBack * 0.35, farthest());
+    zoomPref = back / base;
+  }
   const onWheel = (e) => {
     if (!state.active || state.paused) return;
     e.preventDefault();
-    back = clamp(back * Math.exp(clamp(e.deltaY, -240, 240) * 0.0016), camBack * 0.35, camBack * 2.2);
+    // One notch past the nearest stop goes in behind the eyes, and the first notch out
+    // comes back to that stop - never both in one notch, or a trackpad flick would flicker.
+    if (state.firstPerson) { if (e.deltaY > 0) setFirstPerson(false); return; }
+    if (e.deltaY < 0 && back <= camBack * 0.35 + 1e-9) { setFirstPerson(true); return; }
+    zoomBy(Math.exp(clamp(e.deltaY, -240, 240) * 0.0016));
   };
+  // From behind the eyes the camera may look nearly straight up and down; from behind the
+  // back it may not, or it swings under the ground or over the head.
+  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [-0.25, 0.95]);
+  // The island's camera keeps its near plane half a cell out, which in first person would
+  // cut away the hands and everything in them. Pulled in only while we are looking out of
+  // the head, since a near plane that close costs depth precision at the horizon.
+  const FP_NEAR = 0.03, FP_BACK = 0.3;
+  const fpEye = new THREE.Vector3(), fpLook = new THREE.Vector3();
+  let farNear = camera.near;
+  function setFirstPerson(on) {
+    if (state.firstPerson === on) return;
+    state.firstPerson = on;
+    if (on) { farNear = camera.near; camera.near = Math.min(camera.near, FP_NEAR); }
+    else {
+      camera.near = farNear;
+      back = camBack * 0.35;
+      zoomPref = back / base;
+      state.camPitch = clamp(state.camPitch, -0.25, 0.95);
+    }
+    camera.updateProjectionMatrix();
+  }
   dom.addEventListener('wheel', onWheel, { passive: false });
 
   dom.addEventListener('pointerdown', onDown);
@@ -625,6 +716,18 @@ export function createWalkMode({
     return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
   }
 
+  // The blockers that are a ship's side (a Batavia at anchor: buildings.js shipSolids) are
+  // kept apart as well, for the boats. Feet and swimmers meet every blocker as a wall at any
+  // height, as they always have; a hull under way asks the ground, and a ship lying on the
+  // roads is not in the ground - so the ground a boat is handed is the terrain and the levels
+  // with her sides stood up out of the water on top (boat.js hullOver).
+  let hulls = [];
+  function takeBlockers(list) {
+    state.blockers = list || [];
+    hulls = state.blockers.filter((b) => b.hull != null);
+  }
+  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity));
+
   function blocked(x, z, from = state.pos.y, placing = false) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -659,24 +762,145 @@ export function createWalkMode({
     state.swimming = false;
     state.grounded = true;
     state.vy = 0;
-    back = camBack * 2.2;
+    // Further back for a bigger hull: behind the wheel of a galleon at a rowing boat's
+    // distance, all you see is the mizzen mast.
+    place(camBack * ((boat.craft && boat.craft.camScale) || 2.2));
+    // Straight behind the bow from the first stroke: a look from before you boarded is not
+    // a look round the boat.
+    riddenSinceLook = Infinity;
   }
 
   // Ashore at `at`, which is where the bow is pointing. The same step-back loop `enter`
   // uses, so you never land inside a wall or in the water you have just crossed - and if
   // forty tries find nothing legal you stay aboard, which is a stuck boat rather than a
   // drowned settler.
-  function unboard(at) {
-    if (!state.vehicle) return false;
+  // ---- on a deck (Plans/lopen-op-de-boot.md, fase 3) --------------------------------------
+  // Walking a hull that may be moving: where you stand is kept in the hull's own frame
+  // (state.deck, shared/deck.mjs) and the world position is worked out from it every frame,
+  // so the planks carry you however the boat turns. Only on a hull whose craft has room for
+  // more than its pilot (the galleon; the Benchy's whole deck is her helm). `deckBoat` is the
+  // hull object itself, the same one state.boats and the fleet loop hold.
+  let deckBoat = null;
+  let deckJump = false;
+  const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
+  const specOf = (b) => (b && b.craft && b.craft.spec) || null;
+  function offDeck() { state.deck = null; deckBoat = null; deckJump = false; }
+  // How high a point of the hull's frame stands in the world, swell and all: the hull pitches
+  // and rolls as well as rising (boat.js bob), and on a hull thirteen long a pitch of 0.04 is a
+  // quarter of a unit at the bow - feet kept at the middle's height floated over the forecastle
+  // and sank into the poop. Asked of the hull's own object, the one that is drawn.
+  const swellAt = new THREE.Vector3();
+  function hullHeight(b, lx, y, lz) {
+    const o = b.craft && b.craft.object;
+    if (!o) return DECK_Y + y;
+    o.updateMatrixWorld();
+    return o.localToWorld(swellAt.set(lx, DECK_Y + y, lz)).y;
+  }
+  // From the helm onto the deck, a pace forward of the wheel.
+  function leaveHelm() {
+    const b = state.vehicle, spec = specOf(b);
+    if (!b || !spec || spec.crew < 2) return false;
+    const x = spec.helm[0], z = spec.helm[1] + 0.6;
+    const y = deckAt(spec, x, z);
+    if (y === null) return false;
+    state.vehicle = null;
+    deckBoat = b;
+    state.deck = { boat: b.id, x, z, y, vy: 0, grounded: true, yaw: 0 };
+    state.swimming = false;
+    place(camBack * 1.5);
+    return true;
+  }
+  // Back to the wheel: the same board() as climbing in from the dock.
+  function takeHelm() {
+    const b = deckBoat;
+    if (!b) return false;
+    offDeck();
+    board(b);
+    return true;
+  }
+  // How far you are from the wheel, and from the nearest side of the planking you stand on.
+  function deckWhere() {
+    const spec = specOf(deckBoat);
+    if (!state.deck || !spec) return null;
+    const d = state.deck;
+    const helm = Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]);
+    let side = Infinity;
+    for (const r of spec.deck) {
+      if (Math.abs(d.z - r.z) <= r.hz && Math.abs(d.x - r.x) <= r.hx) side = Math.min(side, r.hx - Math.abs(d.x - r.x));
+    }
+    return { helm, side, boat: deckBoat };
+  }
+  // One frame on the deck. The hull coasts on under nobody's hand (gas off, the same
+  // stepBoat), the feet step in its frame, and the body is put back in the world from there.
+  function stepOnDeck(dt, ix, iz, boost) {
+    const b = deckBoat, spec = specOf(b);
+    stepBoat(b, {}, dt, boatGround);
+    const push = Math.min(1, Math.hypot(ix, iz));
+    const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
+    stepPool(state.stamina.boat, false, dt);
+    state.turbo = turbo;
+    let wx = 0, wz = 0;
+    state.moving = push > 0.02;
+    if (state.moving) {
+      const len = Math.hypot(ix, iz);
+      forward.set(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
+      right.set(-Math.cos(state.camYaw), 0, Math.sin(state.camYaw));
+      wx = ((forward.x * iz + right.x * ix) / len) * push;
+      wz = ((forward.z * iz + right.z * ix) / len) * push;
+    }
+    const frame = frameOf(b);
+    const [lx, lz] = dirToLocal(frame, wx, wz);
+    const d = state.deck;
+    stepDeck(d, { x: lx, z: lz, jump: deckJump }, spec, dt,
+      { speed: turbo ? RUN_SPEED : WALK_SPEED, radius: BODY_R, jumpV: JUMP_V, gravity: GRAVITY });
+    deckJump = false;
+    // Facing: where you walk, and kept relative to the hull while you stand, so she can turn
+    // under you without you spinning on the spot.
+    if (state.moving) {
+      state.yaw = Math.atan2(wx, wz);
+      d.yaw = state.yaw - b.yaw;
+    } else {
+      state.yaw = b.yaw + d.yaw;
+    }
+    const [x, z] = toWorld(frame, d.x, d.z);
+    state.pos.set(x, hullHeight(b, d.x, d.y, d.z), z);
+    state.floor = state.pos.y;
+    state.grounded = d.grounded;
+    state.vy = d.vy;
+    state.running = turbo && state.moving;
+    state.swimming = false;
+    state.bob += dt * (state.moving ? 6 : 1);
+    // Off the planks with nowhere to land (there are rails all round, so only a gap in them
+    // does it): into the water beside her rather than standing on the sea.
+    if (d.off) { offDeck(); state.pos.y = WATER_Y - SWIM_SINK; state.swimming = true; }
+    return afterMove(dt);
+  }
+
+  // `water`: over the side instead, wherever the boat is - no shore wanted, and you come up
+  // swimming beside the hull.
+  function unboard(at, { water = false } = {}) {
+    if (!state.vehicle && !state.deck) return false;
     let [x, z] = at;
-    let ok = !blocked(x, z, undefined, true);
+    let ok = !blocked(x, z, undefined, !water);
     for (let i = 0; i < 40 && !ok; i++) {
       x += 0.25; z += 0.18;
-      ok = !blocked(x, z, undefined, true);
+      ok = !blocked(x, z, undefined, !water);
     }
     if (!ok) return false;
+    if (water && groundAt(x, z) < WATER_Y) {
+      state.vehicle = null;
+      offDeck();
+      place(camBack);
+      state.pos.set(x, WATER_Y - SWIM_SINK, z);
+      state.floor = groundAt(x, z);
+      state.grounded = true;
+      state.swimming = true;
+      state.vy = 0;
+      return true;
+    }
     state.vehicle = null;
-    back = camBack;
+    offDeck();
+    place(camBack);
     state.pos.set(x, groundAt(x, z), z);
     state.floor = state.pos.y;
     state.grounded = true;
@@ -705,7 +929,7 @@ export function createWalkMode({
     state.crouching = false;
     state.crouchSince = 0;
     state.vy = 0;
-    back = camBack * 1.35;
+    place(camBack * 1.35);
     return true;
   }
 
@@ -737,12 +961,12 @@ export function createWalkMode({
     if (!state.bike) return;
     state.bike = null;
     if (bikeMesh) bikeMesh.visible = false;
-    back = camBack;
+    place(camBack);
   }
 
   function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive }) {
-    state.blockers = blockers || [];
+    takeBlockers(blockers);
     state.onGive = onGive;
     state.interactables = interactables || [];
     state.working = null;
@@ -777,9 +1001,11 @@ export function createWalkMode({
   }
 
   function exit() {
+    setFirstPerson(false);
     state.vehicle = null;
+    offDeck();
     putBikeAway();
-    back = camBack;
+    place(camBack);
     // Inactive before the release, or release() would ask for the lock back on the way out.
     state.active = false;
     release();
@@ -793,7 +1019,7 @@ export function createWalkMode({
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
   }
 
-  function setBlockers(list) { state.blockers = list; }
+  function setBlockers(list) { takeBlockers(list); }
   function setPeerBlockers(list) { state.peerBlockers = list; }
   function setInteractables(list) { state.interactables = list; }
 
@@ -830,10 +1056,20 @@ export function createWalkMode({
     if (p.down('sprint')) stick.run = true;
     if (Math.abs(p.look.x) > 0.05) lookedAround();
     state.camYaw -= p.look.x * 2.6 * dt;
-    state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, -0.25, 0.95);
+    state.camPitch = clamp(state.camPitch + p.look.y * 1.7 * dt, ...pitchRange());
+    // A finger on the glass (touchpad.js): a drag is a distance, turned like the mouse and
+    // not by dt, and a pinch is a factor on how far back the camera sits.
+    const raw = p.raw || p;
+    if (raw.drag && (raw.drag.x || raw.drag.y)) {
+      if (Math.abs(raw.drag.x) > 1) lookedAround();
+      state.camYaw -= raw.drag.x * DRAG_YAW;
+      state.camPitch = clamp(state.camPitch + raw.drag.y * DRAG_PITCH, ...pitchRange());
+    }
+    if (raw.zoom && raw.zoom !== 1) zoomBy(raw.zoom);
     if (p.hit('bike')) toggleBike();
     if (p.hit('jump')) jump();
     if (p.hit('crouch') && !state.bike) crouchToggle();
+    if (p.hit('dance')) danceToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
     const held = p.down('crouch');
@@ -904,6 +1140,8 @@ export function createWalkMode({
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
+    if (state.deck && deckBoat) return stepOnDeck(dt, ix, iz, boost);
+
     // ---- aboard ------------------------------------------------------------
     // A boat is not feet, so `blocked` knows nothing about it: teaching it about vehicles
     // would have put a mode flag inside the collision test of every walking frame. The
@@ -914,14 +1152,25 @@ export function createWalkMode({
       const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
-      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, (x, z) => groundAt(x, z, Infinity));
-      state.pos.set(state.vehicle.x, state.vehicle.deckY ?? DECK_Y, state.vehicle.z);
+      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround);
+      // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
+      // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
+      const v = state.vehicle, h = v.craft && v.craft.helm;
+      const s = Math.sin(v.yaw), c = Math.cos(v.yaw);
+      const hx = h ? h.x * c + h.z * s : 0, hz = h ? h.z * c - h.x * s : 0;
+      // And at the wheel's own height in the swell, not the middle's (see hullHeight).
+      const helmY = h && v.craft && v.craft.object ? hullHeight(v, h.x, h.y - DECK_Y, h.z) : (v.deckY ?? DECK_Y);
+      state.pos.set(v.x + hx, helmY, v.z + hz);
       state.yaw = state.vehicle.yaw;
       // The camera trails the bow rather than staying where the mouse left it. You steer
       // with a rudder here, not by walking towards what you are looking at, so a camera
-      // that did not follow would leave you sailing sideways out of frame. It lerps, so a
-      // look around still works and simply drifts back.
-      state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5));
+      // that did not follow would leave you sailing sideways out of frame. But not while you
+      // are looking round: like the bike, it waits until you have sailed RECENTRE_AFTER
+      // without touching it and then eases back in. It used to pull every frame, which on a
+      // phone - where looking is a drag and not a flick - meant you could not look at all.
+      if (Math.abs(state.vehicle.v) > 0.05) riddenSinceLook += dt;
+      const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
+      if (ease > 0) state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5 * ease));
       state.moving = Math.abs(state.vehicle.v) > 0.05;
       state.running = false;
       state.grounded = true;
@@ -1072,11 +1321,26 @@ export function createWalkMode({
     return afterMove(dt);
   }
 
+  // The move and the beat for the rig while dancing, the same way peers.js works them out for
+  // somebody else: danceStep off the dancer's id, on the beat we hear.
+  function dancingNow() {
+    if (!state.dancing) return null;
+    const d = dance ? dance() : { id: 'me', beat: wallBeat(performance.now()) };
+    return { ...danceStep(d.id, d.beat), beat: d.beat };
+  }
+
   // What both a walker and a boat end with: the pose, the animation, where the camera sits
   // and what is within reach. Split out when the boat arrived, because a boat needs all of
   // it and none of the walking above it - and a second copy of the camera block would have
   // been two places to remember the next time the eye height changes.
   function afterMove(dt) {
+    // Looking out of the head: on foot the body faces where you look, as it would; a boat
+    // is its own thing, and sitting or lying down puts the camera back behind you.
+    // A dance ends the way a nap does: the moment the feet do anything else, or the body is
+    // somewhere it cannot dance (a hull, the saddle, the water).
+    if (state.dancing && (state.moving || state.crouching || !canDance())) state.dancing = false;
+    const fp = state.firstPerson && !state.vehicle && !state.lying && !state.sitting;
+    if (fp && !state.bike) state.yaw = state.camYaw;
     avatar.scale.setScalar(1);
     lounge.visible = state.lying;
     // The body's share of the beer, on its own axes (rotation order YXZ: a nod and a roll
@@ -1128,8 +1392,9 @@ export function createWalkMode({
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded,
       crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
-      swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob,
+      swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
+      dancing: dancingNow(),
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');
@@ -1141,8 +1406,12 @@ export function createWalkMode({
     const dist = state.lying ? back * 1.7 : back;
     const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
     const cz = state.pos.z - Math.cos(state.camYaw) * dist * Math.cos(state.camPitch);
-    const eyeDrop = state.lying ? camUp * 0.55 : state.crouching || state.sitting ? camUp * 0.3 : 0;
-    const cy = state.pos.y + camUp - eyeDrop + Math.sin(state.camPitch) * dist;
+    // Wheeled in, the lift comes in with the distance: a camera a third as far away but still
+    // camUp over the head looked straight down on the hat, and never at a face. Wheeled out it
+    // stays camUp, so the view from further back is the one it always was.
+    const up = camUp * Math.min(1, back / camBack);
+    const eyeDrop = state.lying ? up * 0.55 : state.crouching || state.sitting ? up * 0.3 : 0;
+    const cy = state.pos.y + up - eyeDrop + Math.sin(state.camPitch) * dist;
     camera.position.set(cx, Math.max(cy, groundAt(cx, cz, cy) + 0.55), cz);
     if (clampCam) clampCam(camera.position);
     // The aim follows the eye down as the body folds: crouching and sitting shorten the
@@ -1154,6 +1423,17 @@ export function createWalkMode({
       : state.crouching ? camAim * CROUCH_SCALE
         : state.sitting ? camAim * SIT_SCALE : camAim;
     camera.lookAt(state.pos.x, state.pos.y + aim, state.pos.z);
+    if (fp) {
+      // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
+      // saddle's lean), and a little behind it so the hands are in front of the lens.
+      avatar.updateMatrixWorld(true);
+      const eye = avatar.localToWorld(fpEye.set(0, EYE, 0));
+      const cp = Math.cos(state.camPitch);
+      fpLook.set(Math.sin(state.camYaw) * cp, -Math.sin(state.camPitch), Math.cos(state.camYaw) * cp);
+      camera.position.set(eye.x - fpLook.x * FP_BACK, eye.y - fpLook.y * FP_BACK, eye.z - fpLook.z * FP_BACK);
+      if (clampCam) clampCam(camera.position);
+      camera.lookAt(camera.position.x + fpLook.x, camera.position.y + fpLook.y, camera.position.z + fpLook.z);
+    }
 
     // what is within reach?
     let near = null, bestD = Infinity;
@@ -1197,18 +1477,32 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle,
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, onDeck: () => (state.deck ? deckBoat : null),
     mount, dismount, riding: () => state.bike,
     // What is underfoot here, decks included. The archipelago alone answers with water
     // over a quay, because planks are a level rather than ground - and "can I step out
     // here" has to mean the same thing as "will my feet find something".
     groundAt: (x, z) => groundAt(x, z),
-    // What a hand's button does right now - 'attack', 'block' or 'drink' - for the key row.
-    handAction: (side) => (beerIn(side) ? 'drink' : shieldIn(side) ? 'block' : 'attack'),
+    // What a hand's button does right now - 'attack', 'block', 'drink', or 'relay' when both
+    // hands hold a beer (classic-avatar.js drink) - for the key row.
+    handAction: (side) => (beerIn(side) ? (beerIn(side === 'leftArm' ? 'rightArm' : 'leftArm') ? 'relay' : 'drink')
+      : shieldIn(side) ? 'block' : 'attack'),
     // Which hand a beer could be handed over from, the right first, or null; and handing it
     // over (classic-avatar.js handOver), gone from the fist for `away` seconds.
     beerHand: () => (beerIn('rightArm') ? 'rightArm' : beerIn('leftArm') ? 'leftArm' : null),
     handOver: (side, away) => classicAvatar.handOver(side, away),
+    // A hand's button from something that is not a mouse - the phone's hand buttons
+    // (touchpad.js) - pressed and let go: a shield is held up while it is down, anything
+    // else swings or sips on the press, exactly as onDown / onUp do for a mouse button.
+    hand(side, down) {
+      if (!state.active || state.paused) return;
+      if (!down) { guardUp(side, false); return; }
+      if (shieldIn(side)) { if (canFight()) guardUp(side, true); } else act(side);
+    },
+    // On foot and on land, which is when the hands have anything to do.
+    onFoot: () => state.active && !state.paused && !state.vehicle && !state.bike && !state.swimming,
+    // How far back the camera sits against what it would for this mode: the wheel's or the pinch's.
+    zoom: () => zoomPref,
     dispose, isActive: () => state.active };
 }
 
