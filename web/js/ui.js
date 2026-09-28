@@ -416,6 +416,14 @@ export function createUI(handlers) {
   function applyBuild() { el('build-btn').hidden = !buildOn; }
   applyBuild();
 
+  // The YOU arrow over the body left standing when you go up into the sky (you-marker.js).
+  // On unless switched off, per browser like Build mode, and for the same reason: it changes
+  // what this page draws, not the island. Only the arrow - the dots and the ring of a route
+  // given from above stay, because without them you cannot see where you sent yourself.
+  const YOU_KEY = 'promptholm.youarrow';
+  let youOn = true;
+  try { youOn = localStorage.getItem(YOU_KEY) !== '0'; } catch { /* private window: on */ }
+
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
@@ -561,6 +569,11 @@ export function createUI(handlers) {
       + controlsSection()
       + sizeSection()
       + seaSection()
+      + '<h3 class="sec">From the sky</h3>'
+      + `<div class="chips wrap"><button class="chip${youOn ? ' on' : ''}" data-youarrow="1" aria-pressed="${youOn}">YOU arrow</button></div>`
+      + `<p class="muted" style="margin-top:9px">${youOn
+        ? 'On: when you go up into the sky, YOU and an arrow hang over where you left yourself standing.'
+        : 'Off: you still stand where you left yourself, without the arrow. A route you give from above keeps its dots and ring.'}</p>`
       + '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -575,6 +588,11 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
+    el('settings-body').querySelectorAll('[data-youarrow]').forEach((b) => b.addEventListener('click', () => {
+      youOn = !youOn;
+      try { if (youOn) localStorage.removeItem(YOU_KEY); else localStorage.setItem(YOU_KEY, '0'); } catch { /* kept for this page only */ }
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-rebind]').forEach((b) => b.addEventListener('click', () => {
       rebinding = rebinding === b.dataset.rebind ? null : b.dataset.rebind;
@@ -1050,7 +1068,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close

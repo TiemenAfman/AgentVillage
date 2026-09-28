@@ -62,9 +62,10 @@ export function createYouMarker(scene) {
   const m4 = new THREE.Matrix4();
 
   // `at` the body's feet (or null to hide everything), `route` what is left of its walk
-  // ([[x, z], ...] or null), `heightAt(x, z)` the ground under a dot.
-  function update(at, route, heightAt, t) {
-    arrow.visible = !!at;
+  // ([[x, z], ...] or null), `heightAt(x, z)` the ground under a dot. `showArrow` false
+  // leaves the YOU arrow off and the route on (Settings → From the sky, ui.js).
+  function update(at, route, heightAt, t, showArrow = true) {
+    arrow.visible = !!at && showArrow;
     if (at) arrow.position.set(at.x, at.y + 0.9 + Math.abs(Math.sin(t * 3)) * 0.25, at.z);
     const going = !!(at && route && route.length);
     ring.visible = going;
