@@ -1,6 +1,6 @@
 # Het kasteel op twee bij twee super-cellen
 
-**Status: gebouwd op 25 september 2026.** Onderaan staat wat er nog openstaat.
+**🚧 NOG NIET KLAAR — Status: gebouwd op 25 september 2026.** Onderaan staat wat er nog openstaat.
 
 ## Wat Tiemen vroeg
 

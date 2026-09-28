@@ -4,7 +4,7 @@
 > uitgroeit, of ik wil iets van 50×50 inpolderen." — en daarna: "Die 256 kan dan wel voor
 > nieuwe mensen eerst 16×16 worden, en dan laten we het eiland écht groeien."
 
-**Status:** alle fasen gebouwd of bewust afgewogen op 24 september 2026 (1 terrein, 2 layout + Grow-knop, 3 gemeten, 4 doek groeit, 5 zee + Settings, 7 klein beginnen), zie de secties "gebouwd"; wat nog open staat, staat onder "Bekend, nog niet gedaan". Ook gebouwd, los hiervan,
+**🚧 NOG NIET KLAAR — Status:** alle fasen gebouwd of bewust afgewogen op 24 september 2026 (1 terrein, 2 layout + Grow-knop, 3 gemeten, 4 doek groeit, 5 zee + Settings, 7 klein beginnen), zie de secties "gebouwd"; wat nog open staat, staat onder "Bekend, nog niet gedaan". Ook gebouwd, los hiervan,
 op dezelfde dag: een handmatige polder mag nu ook een super-cel nemen waar de kustlijn doorheen
 loopt (`polderCandidate(…, { shore: true })`). Dat was de reden dat polderen langs een kust
 met een strook ondiep water vóór het strand onmogelijk was.

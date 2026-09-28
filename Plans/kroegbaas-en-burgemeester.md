@@ -1,5 +1,7 @@
 # Een kroegbaas, een burgemeester en de andere bewaarders
 
+**✅ DONE**
+
 ## Aanleiding
 
 Tiemen wil een kroegbaas bij de kroeg op het plein en een burgemeester bij het stadhuis. Daarna

@@ -1,5 +1,7 @@
 # Het eiland op Android
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Een APK die de open zee joint — geen islander, geen LAN, geen hosten, en universeel: hij
 hoort bij niemands eiland. Je start midden op zee in een bootje; geen planner, geen bouwen,
 geen overzicht vanuit de lucht.

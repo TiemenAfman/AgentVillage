@@ -1,5 +1,7 @@
 # Bier in de hand, drinken met de muis, en wat het met je doet
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Aanleiding
 
 Naast de wapens wil Martijn dat een speler ook een biertje kan vasthouden (inventory,

@@ -1,5 +1,7 @@
 # Lopen op een varende boot, met z'n vijven
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Opgeschreven op 25 september 2026; fase 0 en 1 gebouwd op dezelfde dag en met een tweede
 speler op de open zee bekeken, en voor fase 2 tot en met 6 staat het grondwerk (zie Fases):
 alles behalve een nieuwe boot en het aanzetten ervan in walk-mode. Doel: een boot waar tot vijf spelers

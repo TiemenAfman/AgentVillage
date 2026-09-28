@@ -1,5 +1,7 @@
 # Een fiets om op te rijden
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Begonnen op 24 september 2026. Referentie: `Ideas/Images to Render/bicycle_parts.png` (een
 lowpoly blauwe fiets in losse onderdelen). Doel: een werkend, bruikbaar model: je stapt op
 in walk-mode, fietst over het eiland, en andere spelers zien je fietsen.

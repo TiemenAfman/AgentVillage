@@ -1,5 +1,7 @@
 # Een ronde wereld: een kaart met maat, een rand die je rondvaart
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Wens (Martijn, 2026-09-28): de wereld voelt als een bol. Je kunt rechtdoor varen en komt
 dan weer bij je eigen eiland uit. De wereldkaart laat zien hoe groot de wereld is, met een
 raster, en is ook vanuit de lucht (orbit) te openen. De kleine eilandjes staan erop. En de

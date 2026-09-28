@@ -1,6 +1,6 @@
 # De goudkuil: het 5-uurslimiet als een berg goud naast het plein
 
-**Status: gebouwd op 24 september 2026.** Onderaan staat wat er nog openstaat.
+**🚧 NOG NIET KLAAR — Status: gebouwd op 24 september 2026.** Onderaan staat wat er nog openstaat.
 
 ## Wat Tiemen vroeg
 

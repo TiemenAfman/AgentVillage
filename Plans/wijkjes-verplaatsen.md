@@ -6,7 +6,7 @@
 > het centrum veranderen." — en daarna: "Nee, de huizen verhuizen nooit, daarom wil ik een
 > editor om wijkjes te selecteren en wél te verhuizen."
 
-**Status:** fase 1, 2 en 3 gebouwd op 22 september 2026. Fase 1: zones, wijkjes verplaatsen en de
+**✅ DONE — Status:** fase 1, 2 en 3 gebouwd op 22 september 2026. Fase 1: zones, wijkjes verplaatsen en de
 planner-modus. Fase 2: handmatige polder met toegangsweg, `unpolder` om land terug te geven, `parcel`
 (Land-tool, 5) om een wijkje grond bij te geven of af te nemen, en een bundel-test dat de zee een
 handmatige polder accepteert. Fase 3: geen reload meer na Apply. De pagina bouwt een verplaatst

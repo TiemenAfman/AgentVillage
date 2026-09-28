@@ -1,5 +1,7 @@
 # Starter-eilanden: een zee die nooit leeg is
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Wens (Martijn, 2026-09-26): de zee legt zelf een paar **kleine starter-eilandjes** neer, zonder
 agents, alleen met een stadscentrum. Een nieuwe speler claimt er een, en dan wordt dat eilandje
 vervangen door zijn eigen eiland.

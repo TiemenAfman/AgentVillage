@@ -1,5 +1,7 @@
 # Het inventory-scherm: een RPG-inventory in plaats van een kleurenformulier
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 ## Aanleiding
 
 Het paneel achter de `I`-toets en de Avatar-chip (`web/js/studio.js`) heette "Your settler"

@@ -1,5 +1,7 @@
 # Een rave in het kasteel
 
+**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+
 Begonnen op 26 september 2026 (een zaterdag). Gevraagd: "als ik het kasteel inloop op zaterdag
 tussen 21:00 en 03:00 dan wil ik terechtkomen in een rave, net zoals ik de tavern betreed. Grote
 donkere zaal met lasers en ravende settlers."
