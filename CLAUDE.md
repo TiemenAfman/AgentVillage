@@ -396,6 +396,11 @@ out. B at one of your own harbours posts `/api/harbour/boat` (keeper-only, not o
 makes the new hull appear without a reload, since harbours are not districts. A bundle with no
 harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
+The welcome carries **every** boat (`snapshot` in `lib/boats.mjs`), untouched ones at their
+mooring - leaving those out let two pages that had heard different things draw one ship in
+two places. The sea knows no galleon, so its mooring for `boat:<region>` is the Benchy's
+berth; `onBoatFromServer` in main.js reads a position on that berth as `shipBerth`.
+
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.

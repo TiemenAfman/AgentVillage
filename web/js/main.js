@@ -2559,6 +2559,7 @@ function boatsFor(region) {
       const at = ship ? shipBerth(m) : m;
       craft.place(at.x, at.z, m.yaw);
       b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
+      if (ship) { b.berth = { x: m.x, z: m.z }; b.shipAt = at; }
       state.boats.push(b);
     }
     out.push(b);
@@ -2603,6 +2604,15 @@ function onBoatFromServer(m) {
   // whose hand is on it, so taking `m.pilot` as authoritative there wiped the tiller ten
   // times a second - the boat moved for everybody and belonged to nobody.
   if ('pilot' in m) craft.pilot = m.pilot || null;
+  // The sea knows no galleon: to it `boat:<region>` is a Benchy, and "at her mooring" - a
+  // take and let go, or lib/boats.mjs walking her home after five quiet minutes - is the
+  // Benchy's berth, up the beach for a ship. A page that heard that put her there, and one
+  // that heard nothing left her at shipBerth, so two screens drew her in two places. Her
+  // mooring means shipBerth, on every page alike.
+  if (craft.shipAt && Number.isFinite(m.x) && Number.isFinite(m.z)
+    && Math.abs(m.x - craft.berth.x) < 0.05 && Math.abs(m.z - craft.berth.z) < 0.05) {
+    m = { ...m, x: craft.shipAt.x, z: craft.shipAt.z };
+  }
   const mine = state.net && craft.pilot && craft.pilot === state.net.id();
   // Somebody else has the tiller: their word is where it is. Our own boat we are steering
   // ourselves, and taking the server's echo of our own message would jitter it back a

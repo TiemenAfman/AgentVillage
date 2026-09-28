@@ -320,8 +320,12 @@ test('only the pilot moves the boat, and dropping it remembers where', () => {
   const moored = boats.drop('boat:home-jetty', ANN);
   assert.deepEqual(moored, { id: 'boat:home-jetty', x: 50, z: -30, yaw: 1, pilot: null });
   assert.equal(boats.drop('boat:home-jetty', ANN), null, 'a boat was dropped twice');
-  // And it stays where it was left, for everybody.
-  assert.deepEqual(boats.snapshot(), [{ id: 'boat:home-jetty', x: 50, z: -30, yaw: 1, pilot: null }]);
+  // And it stays where it was left, for everybody - and the one nobody touched is told too,
+  // at its mooring, so no page lays it out on its own.
+  assert.deepEqual(boats.snapshot(), [
+    { id: 'boat:home-jetty', x: 50, z: -30, yaw: 1, pilot: null },
+    { id: 'boat:guest-jetty', x: 88, z: -30, yaw: -0.5, pilot: null },
+  ]);
   assert.equal(boats.take('boat:home-jetty', BEN).x, 50, 'the next person found it back at its mooring');
 });
 
