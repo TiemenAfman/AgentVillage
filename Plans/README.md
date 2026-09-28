@@ -121,6 +121,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - 🚧 [gebouwen-verplaatsen.md](gebouwen-verplaatsen.md) — Gebouwen rond het plein verplaatsen en draaien
 - 🚧 [ik-wil-graag-mutliplayer-splendid-nest.md](ik-wil-graag-mutliplayer-splendid-nest.md) — Een open zee, een tick, en eilanden die joinen
 - ✅ [islander-als-eigen-exe.md](islander-als-eigen-exe.md) — De islander als eigen exe, het venster als interface
+- 🚧 [kroniekhuis.md](kroniekhuis.md) — Het kroniekhuis, de laatste trede (200): een klik of E bij de deur opent de kroniek
 - 🚧 [rave-in-het-kasteel.md](rave-in-het-kasteel.md) — Een rave in het kasteel
 - 🚧 [ronde-wereld.md](ronde-wereld.md) — Een ronde wereld: een kaart met maat, een rand die je rondvaart
 - 🚧 [slagerij.md](slagerij.md) — De slagerij

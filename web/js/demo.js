@@ -63,6 +63,9 @@ const CIVIC = [
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
+  // The ladder's last rung (Plans/kroniekhuis.md): on the island it opens the chronicle, which
+  // the model sheet has no village to replay, so here it only stands.
+  ['chronicle', 'Chronicle house', '200'],
   // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
   // baker (who goes in at night too) on a corner of the square, the butcher's (whose awning rolls in when he goes home,
   // Plans/slagerij.md) and the rest along the four streets.

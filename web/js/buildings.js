@@ -1537,6 +1537,16 @@ function civic(parts, spec, rng) {
       Object.assign(anchors, meshAnchors(name));
       return { anchors, animated, height: models.heightOf(name) };
     }
+    case 'chronicle': {
+      // The chronicle house, the ladder's last rung (Plans/kroniekhuis.md): a brick hall with a
+      // portico and a lantern, baked whole in scripts/build-chronicle.py, nothing in it moving.
+      // It stands on the ordinary civic step rather than the shops' narrower one: it is not a
+      // shop on a street but a public building on its own lot, like the town hall. What it
+      // opens is web/js/chronicle-house.js's and main.js's; `anchor.door` is where it is asked.
+      parts.push(...meshAsset('civic_chronicle'));
+      Object.assign(anchors, meshAnchors('civic_chronicle'));
+      return { anchors, animated, height: models.heightOf('civic_chronicle') };
+    }
     case 'board': {
       // The sprint board: a cork panel under a little roof, with cards pinned to it.
       const height = noticeBoard(parts, spec, {
