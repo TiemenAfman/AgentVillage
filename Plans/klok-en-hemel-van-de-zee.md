@@ -1,6 +1,6 @@
 # De klok en de hemel horen bij de zee
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Doel: iedereen in één zee ziet hetzelfde uur, dezelfde zon en maan, dezelfde maand/seizoen,
 hetzelfde weer, dezelfde wolken — en de borrel begint voor iedereen tegelijk. De zee is de

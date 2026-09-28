@@ -1,6 +1,6 @@
 # De slagerij
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Begonnen op 25 september 2026, na de zagerij en de smidse (`Plans/zagerij.md`,
 `Plans/smidse.md`), met dezelfde opzet en in dezelfde stijl als de smidse: een klein vakwerkhuis

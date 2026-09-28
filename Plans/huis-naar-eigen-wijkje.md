@@ -1,6 +1,6 @@
 # Een huis naar een eigen wijkje
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 ## Aanleiding
 
