@@ -384,7 +384,7 @@ Besloten waar het plan niets over zei:
 - **De werf**: zes rijen droog (strand mag, geen hoek boven 1.2, zodat de teen van de helling in
   het water blijft), vier rijen open zee, de zes ertussen strand, waterlijn of getijdewater. De
   poort is de `anchor.door` van het model (lokaal 2.2 bij -8), niet het midden van de landkant.
-  Hij en de havengebouwen blijven van de grond van gehuchten af, zoals de ambachten.
+  De werf en de havengebouwen blijven van de grond van gehuchten af, zoals de ambachten.
 - **De havengebouwen** staan op land met het vak vóór hun voorkant in open water; zonder plek bij de
   kadehaven gaan ze naar de volgende haven. **De vissershut** gaat naar de andere haven die het
   dichtst bij het dorp ligt, anders naar elke kust.

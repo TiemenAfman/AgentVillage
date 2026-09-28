@@ -323,3 +323,21 @@ test('on an island that grows, a ring that fills a ship\'s water moves her on pu
   for (const id of lots) assert.ok(at[id], `${id} stands at 200`);
   assert.ok(movedOnPurpose > 0, 'no ring ever reached the rede, so this measured nothing');
 });
+
+test('an island founded with its village already on it puts to sea on its first scan', () => {
+  // The harbours are planned after the hamlet roads, so on the first scan of a new island there
+  // are none when the milestones are placed: the rungs at the water wait for them and are set
+  // down straight after, in the same pass - or the scan after this one would be the one to
+  // place them, and a second scan of an unchanged island is meant to change nothing.
+  for (const seed of SEEDS) {
+    const layout = emptyLayout(seed, SIZE);
+    placeAll(layout, ladder(200), { seed, size: SIZE });
+    for (const id of [...SHIPS, YARD_ID, 'civic:warehouse', 'civic:weighhouse', 'civic:fishery', 'civic:crane']) {
+      assert.ok(layout.plots[id], `seed ${seed}: ${id} on the first scan`);
+    }
+    const once = JSON.stringify(layout.plots);
+    placeAll(layout, ladder(200), { seed, size: SIZE });
+    assert.equal(JSON.stringify(layout.plots), once, `seed ${seed}: the second scan moves and adds nothing`);
+    assertClearOfEachOther(layout);
+  }
+});
