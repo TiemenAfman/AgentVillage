@@ -41,12 +41,15 @@ await scanOnce();
 const layout0 = readJson(files.layout);
 const SETTLED = Object.keys(layout0.plots).filter((id) => id.startsWith('house:')).length >= 12;
 
-// A super-cell that is wholly on the island, outside the town's core and nobody's: the
-// first one found walking out from the centre.
+// A super-cell that is wholly on the island, outside the town's core, nobody's and not
+// zoned already: the first one found walking out from the centre. The copy is of a real
+// island, which may carry the keeper's own zones (the live one has one at [-4, -3]), and
+// re-adding one of those is accepted as a no-op - a test that zoned nothing.
 function freeSuper(layout) {
   const owned = new Set();
   for (const d of Object.values(layout.districts)) for (const l of d.lobes || []) for (const c of l.cells) owned.add(`${c[0]},${c[1]}`);
   for (const c of layout.town.commons || []) owned.add(`${c[0]},${c[1]}`);
+  for (const z of layout.zones || []) for (const c of z.supers) owned.add(`${c[0]},${c[1]}`);
   const R = Math.floor(layout.size / layout.lattice.pitch / 2) - 2;
   for (let r = TOWN_CORE_R + 1; r < R; r++) {
     for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
@@ -89,7 +92,14 @@ test('an applied zone: one snapshot equal to the file before, zones in village.j
   assert.deepEqual(snapshots(), [r.plan.snapshot]);
   assert.equal(bytes(path.join(work, r.plan.snapshot)), before, 'the snapshot is not the file as it was');
   const layout1 = readJson(files.layout);
-  assert.deepEqual(layout1.zones, [{ kind: 'no-build', supers: [target] }]);
+  // What was there plus the target: opZone adds into the kind's existing entry, sorted by
+  // row then column, and leaves every other entry where it was.
+  const zones0 = layout0.zones || [];
+  const bySuper = (a, b) => a[1] - b[1] || a[0] - b[0];
+  const expected = zones0.some((z) => z.kind === 'no-build')
+    ? zones0.map((z) => (z.kind === 'no-build' ? { kind: z.kind, supers: [...z.supers, target].sort(bySuper) } : z))
+    : [...zones0, { kind: 'no-build', supers: [target] }];
+  assert.deepEqual(layout1.zones, expected);
   assert.deepEqual(readJson(files.village).zones, layout1.zones, 'village.json does not carry the zones');
   assert.deepEqual(movedBetween(stands(layout0), stands(layout1)), [], 'a zone moved a plot');
 
