@@ -50,7 +50,11 @@ delete globalThis.document;
 // seeds at three sizes, two or three of each answer, so that a change which quietly turns
 // one answer into another fails here rather than on somebody's island.
 const BUILDS = [{ seed: 314, size: 128 }, { seed: 8888, size: 192 }, { seed: 1337, size: 256 }, { seed: 90210, size: 256 }];
-const ADOPTS = [{ seed: 7, size: 128 }, { seed: 7, size: 256 }];
+// 7 at 128 adopted a crossing that Demo's annex road had thrown over the river. A project
+// founds no annex any more (Plans/wijkjes-samenvoegen.md), so Demo stands in one piece, the
+// same deck is the quay's road, and a crossing at the quay is never adopted: that island now
+// goes without, which is right. 2 at 256 took its place off the same kind of sweep.
+const ADOPTS = [{ seed: 2, size: 256 }, { seed: 7, size: 256 }];
 // Seed 42 at 128 used to be an adopter, and the crossing it adopted is the one on the
 // quay's own road into town. The rung may not take that (it would be the quay's bridge,
 // not the town's) nor build beside it (two decks side by side), so it goes without.
