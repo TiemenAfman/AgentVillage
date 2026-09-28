@@ -3,6 +3,7 @@
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
+import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -537,6 +538,16 @@ export function createUI(handlers) {
       + `<div style="display:flex;gap:6px;margin-top:8px"><input id="sea-url" class="field" placeholder="http://address:4750/" style="flex:1"><button class="chip" id="sea-add">Add</button></div>`;
   }
 
+  // Which action is waiting for its new key, if any.
+  let rebinding = null;
+  function controlsSection() {
+    const row = ([a, , says]) => `<button class="chip${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
+      + `<kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd> ${esc(says)}</button>`;
+    return '<h3 class="sec">Controls</h3>'
+      + `<p class="muted" style="margin:0 0 9px">On foot. Click one and press the key you want. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand.</p>`
+      + `<div class="chips wrap">${ACTIONS.map(row).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div>`;
+  }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
@@ -544,6 +555,7 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
+      + controlsSection()
       + sizeSection()
       + seaSection()
       + '<h3 class="sec">Debug</h3>'
@@ -561,6 +573,12 @@ export function createUI(handlers) {
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
     }));
+    el('settings-body').querySelectorAll('[data-rebind]').forEach((b) => b.addEventListener('click', () => {
+      rebinding = rebinding === b.dataset.rebind ? null : b.dataset.rebind;
+      renderSettings();
+    }));
+    const reset = el('settings-body').querySelector('[data-rebind-reset]');
+    if (reset) reset.addEventListener('click', () => { rebinding = null; resetKeys(); renderSettings(); });
     el('settings-body').querySelectorAll('[data-islandsize]')
       .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
@@ -573,6 +591,15 @@ export function createUI(handlers) {
       if (field && field.value.trim()) handlers.onJoinSea(field.value.trim());
     });
   }
+  // Capture phase on window, so the key never reaches walk.js or the panel's own Escape.
+  addEventListener('keydown', (e) => {
+    if (!rebinding) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const k = e.key.toLowerCase();
+    if (k !== 'escape') bind(rebinding, k);
+    rebinding = null;
+    renderSettings();
+  }, true);
   renderSettings();
 
   // --- labels & toasts -----------------------------------------------------
@@ -821,7 +848,13 @@ export function createUI(handlers) {
   const mouseKey = (button, does) => `<span><kbd>${button}</kbd> ${MOUSE_SAYS[does] || MOUSE_SAYS.attack}</span>`;
   function setPad(on) { padConnected = on; renderWalkKeys(); }
   function setIndoors(on) { indoors = !!on; renderWalkKeys(); }
+  // The row no longer fits beside everything else on foot: the keys are listed, and
+  // rebound, under Settings -> Controls instead. Kept as a function so every caller that
+  // redraws it on a change stays as it was; setting SHOW_KEY_ROW brings the row back.
+  const SHOW_KEY_ROW = false;
   function renderWalkKeys() {
+    el('walk-keys').hidden = !SHOW_KEY_ROW;
+    if (!SHOW_KEY_ROW) return;
     // Indoors the room's row has no fight in it, but a pint at the bar is the point of the
     // place, so a button that drinks is still said.
     const sips = (does) => does === 'drink' || does === 'relay';
