@@ -1,25 +1,40 @@
 # De goudmijn en de goudsmid: het weeklimiet, en elke vijf uur een vracht goud
 
-**🚧 Status: plan van 28 september 2026, in aanbouw.** Onderaan staat wat er nog openstaat.
+**✅ Status: gebouwd op 28 september 2026, op branch `main-bh81q4`.** Nog niet op main en niet op
+het eiland: samenvoegen en het eiland herstarten is voor als Tiemen terug is.
 
-## Stand van zaken (28 september, verhuisd naar de cloud)
+## Stand van zaken (28 september)
 
-Gebouwd, op branch `goudmijn`: het weekgetal (`weekResetOf`, `currentUsage`, `mineOf`, `mine` op
-`/api/gold`), de plaatsing (`goldsmithSite`, `mineSite` in `lib/layout.mjs`, de records in
-`scan.mjs`, beide in `MOVABLE_CIVICS`), `roadBetween` in `shared/roads.mjs`, beide modellen
-gebakken en van vijf kanten bekeken, `web/js/goldmine.js` / `goldsmith.js` / `goldrun.js` en de
-bedrading in `main.js`, `?goldrun`, en beide op `/demo`. Op een kopie van het echte eiland: niets
-verplaatst, de tweede scan byte-identiek.
+Gebouwd: het weekgetal (`weekResetOf`, `currentUsage`, `mineOf`, `mine` op `/api/gold`), de
+plaatsing (`goldsmithSites`, `mineSites`, `standAt` in `lib/layout.mjs`, de records in
+`scan.mjs`, beide in `MOVABLE_CIVICS`), `roadBetween` in `shared/roads.mjs`, beide modellen,
+`web/js/goldmine.js` / `goldsmith.js` / `goldrun.js` en de bedrading in `main.js`, `?goldrun`,
+beide op `/demo`, en `tests/goldmine.test.mjs`. De hele suite is groen.
 
-Nog niet:
+Wat er in de cloud nog bij kwam:
 
-- Vijf tests rood, allemaal in de plaatsing: `tests/layout-measure.test.mjs:177, 226, 273`,
-  `tests/harbours.test.mjs:83`, `tests/plan-civic.test.mjs:220`. Eerste lezing: `markPath` legt
-  geen `path:civic:goldmine` vast als de stoep al een weg is (seed 7, 128), waarna een tweede scan
-  iets anders legt en "every civic lot keeps its road" hem mist.
-- De vracht zelf is nog niet in de browser gezien (`?goldrun`), en de figuren niet van meerdere
-  kanten; de gebouwen wel, maar nog niet op het eiland zelf.
-- `tests/goldmine.test.mjs`, CLAUDE.md en `Plans/README.md` bijwerken.
+- **Een kavel pas nemen als zijn weg het plein haalt.** Op seed 7 (128) stond de mijn aan de
+  overkant van de rivier: de eerste scan legde geen weg (een civic-weg bouwt geen brug), de
+  tweede wel, over de brug die een gehucht intussen had gelegd - en dan is de tweede scan geen
+  no-op. `standAt` zet nu elke kandidaat op het rooster, probeert zijn weg in alle vier de
+  deurrichtingen en geeft hem terug als die het plein niet haalt, of als de kavel een stuk land
+  afsnijdt (`reachCount`): op het stichtingseiland (32 op 64) sloot de goudsmid anders de strook
+  af waar een havenhelling doorheen moest. Staat er op het rooster niets meer vrij, dan een losse
+  drie bij drie, het dichtst bij het plein.
+- **De planner en grond van het dorp die los ligt.** De mijn claimt zijn grond voor het dorp, en
+  die ligt buiten de commons; de `commons`-op weigerde daarna elke uitbreiding ("the town's
+  ground would come apart"). Nu weigert hij alleen grond die er een los stuk bij maakt (`pieces`
+  in `lib/plan.mjs`) - de werf en een kasteel konden dat al eerder veroorzaken.
+- **De vracht kreeg het getal niet.** `/api/gold` antwoordt meestal voordat het terrein er is;
+  dan was er nog geen vracht om het te vertellen, en het eerste woord voor de vracht was pas het
+  volgende `event: gold` - een omgeslagen venster werd zo voor een eerste meting aangezien en
+  meteen getoond, en `?goldrun` deed niets. `goldRunOf` geeft het getal nu mee zodra hij gemaakt
+  wordt.
+- **In de browser bekeken**, overdag en om 21 uur, op het eiland zelf: de mijnwerker duwt de
+  volle kar over de weg, de goudsmid wacht bij de werkbank, rijdt de kruiwagen naar de kuil en
+  de kuil telt op (20 → 78 → 100), daarna gaan ze allebei terug. Beide gebouwen van vier kanten.
+  De achterkant van de mijn is nog steeds een steile rotswand met een rechte voet; dat is het
+  model, en dat vraagt Blender (hier niet beschikbaar).
 
 ## Wat Tiemen vroeg
 

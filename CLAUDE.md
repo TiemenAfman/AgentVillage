@@ -1075,6 +1075,24 @@ the crowd before it (`walk.adopt`, only when their doorstep did not move): a wor
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
 
+**The pit's gold comes from a mine, by way of a goldsmith** ([Plans/goudmijn.md](Plans/goudmijn.md)).
+The mine holds the keeper's seven-day window as ore (`shared/gold.mjs mineOf`, one lump a
+percent, the pit's bargain: no reading is a full mine), riding along as `mine` on `/api/gold`
+and `event: gold` - never the bundle. The desktop app's `sd` has no reset, so `weekResetOf` in
+lib/usage.mjs takes the last real drop it sampled (to half or less, or to 5) plus a week, and
+`currentUsage` takes the week from the newest source that has one. `civic:goldsmith` (nearest
+the pit) and `civic:goldmine` (high ground within `MINE_RING`) are placed right after the pit,
+sticky 3x3s with the town's claim, and `standAt` in `placeAll` takes a lot only if its road
+reaches the square on that same scan and it cuts no land off (`reachCount`) - the mine once
+stood across a river and got its road the scan after, and a goldsmith on a founding island's
+last dry block sealed a slipway's way up. Because the mine's claim can lie apart from the
+commons, the planner's `commons` op refuses only ground that adds a piece (`pieces`), not a
+town that is already in several. The delivery is the page's alone (`web/js/goldrun.js`): a
+rise of `MIN_RISE` bars or more is a window turned over, and the pit holds its old count while
+the miner pushes a cart by road (`roadBetween` in shared/roads.mjs) to the goldsmith, who
+smelts and barrows the bars to the pit; no buildings or no road between them fills it at once.
+`?goldrun` plays one from 20 bars. `tests/goldmine.test.mjs`.
+
 **The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
 `TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
 `CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets

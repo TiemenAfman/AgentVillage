@@ -94,6 +94,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
   settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
   overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
+- ✅ [goudmijn.md](goudmijn.md) — een goudmijn met het weeklimiet als erts (één klomp per procent)
+  en een goudsmid bij de kuil: als het vijfuursvenster omslaat duwt de mijnwerker een kar over
+  de weg naar de goudsmid, die smelt en de staven met de kruiwagen naar de kuil brengt. Gebouwd
+  op 28 september 2026, op branch `main-bh81q4`; nog niet op main en niet op het eiland.
 - ✅ [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
   een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
   Gebouwd en op het eiland toegepast op 23 september 2026.

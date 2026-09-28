@@ -1319,6 +1319,11 @@ function smithWords() {
 function goldRunOf() {
   if (!state.goldRun && state.terrain) {
     state.goldRun = createGoldRun({ scene, material: buildingMat, groundAt, onBars: pitBars });
+    // /api/gold usually answers before the terrain is there, when showGold had no run to tell
+    // and drew the pit itself. Without this the run's first word would be the next `event:
+    // gold` - which comes only when the number moves, so the window turning over was taken
+    // for a first reading and shown at once, and ?goldrun had no count to play up to.
+    if (state.gold) state.goldRun.setGold(goldBarsNow());
   }
   return state.goldRun || null;
 }
