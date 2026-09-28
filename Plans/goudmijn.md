@@ -1,7 +1,7 @@
 # De goudmijn en de goudsmid: het weeklimiet, en elke vijf uur een vracht goud
 
-**✅ Status: gebouwd op 28 september 2026, op branch `main-bh81q4`.** Nog niet op main en niet op
-het eiland: samenvoegen en het eiland herstarten is voor als Tiemen terug is.
+**✅ Status: gebouwd op 28 september 2026, en op main.** Het eiland draait het pas als het islander-
+proces herstart is (serverkant: `lib/`, `scan.mjs`, `serve.mjs`).
 
 ## Stand van zaken (28 september)
 
