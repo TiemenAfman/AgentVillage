@@ -70,6 +70,7 @@ export const SEA_GAP = 48;
 // to its neighbours, and the four bearings are always the first four points of a ring.
 const BEARINGS = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // east, west, south, north
 export const MAX_BERTHS = BEARINGS.length;
+const RING_ORDER = [[1, 0], [0, 1], [-1, 0], [0, -1]];   // east, south, west, north
 
 // Where the `index`th berth lies, for an island of `theirHalf` beside one of `ownHalf`.
 export function berthOf(index, ownHalf, theirHalf, gap = SEA_GAP) {
@@ -131,7 +132,14 @@ export function nextOrigin(placed, half, gap = SEA_GAP) {
   // With nobody at the origin - the first island went home and nothing took the middle -
   // the rings are laid as though an island of the ordinary size stood there, which is the
   // lattice this always was, and the origin itself is left empty as it always was.
-  const first = (centre ? centre.half : biggest) + gap + biggest;
+  //
+  // And never closer in than one pitch. Points on a ring stand `r` apart along it, so a ring
+  // tighter than the pitch holds only its two opposite bearings: round the 192 volcano,
+  // islands holding 384 of room (every starter, and any island with room to grow) got a ring
+  // of 336 against a pitch of 432, and the whole open sea filled up east and west in one line
+  // (28 September 2026). A 64-grid's pitch is 112, well inside its 176, which is why nobody
+  // saw it before the starters.
+  const first = Math.max((centre ? centre.half : biggest) + gap + biggest, pitch);
   const mine = { half, origin: [0, 0] };
   for (let ring = 1; ring < 64; ring++) {
     for (const origin of ringPoints(first + (ring - 1) * pitch, pitch)) {
@@ -192,7 +200,10 @@ function ringPoints(r, pitch) {
   const step = Math.floor(r / per);
   const at = (i) => (Math.abs(i) === per ? Math.sign(i) * r : i * step);
   const out = [];
-  for (const [dx, dz] of BEARINGS) out.push([dx * r, dz * r]);
+  // Round the compass rather than berthOf's east, west, south, north: taken in that order a
+  // ring filled across the middle first, and a sea of three islands was a line through the
+  // volcano. East stays first, so the first neighbour is still due east.
+  for (const [dx, dz] of RING_ORDER) out.push([dx * r, dz * r]);
   const rest = [];
   for (let i = -per; i <= per; i++) {
     for (let j = -per; j <= per; j++) {

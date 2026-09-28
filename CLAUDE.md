@@ -598,9 +598,11 @@ dock and no boat. Nobody else may publish `volcano: true`. It travels like any i
 the horizon row, which carries `volcano` because a silhouette never sees the bundle), or the
 middle of the world is an ordinary island and a skew banner. Its seed is the one word
 `parseBundle` accepts, and only beside `volcano: true`. `nextOrigin` treats whoever holds
-`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half (176 for
-64-grids round the 192-grid volcano, 208 for 128s, 272 for 256s; eight to a ring, bearings
-first), later rings one ordinary pitch further, so the volcano does not spread everybody else
+`[0,0]` as the middle: ring 1 lies at its half + `SEA_GAP` + the biggest other half, but never
+inside one pitch (176 for 64-grids round the 192-grid volcano, 208 for 128s, 304 for 256s,
+432 for a starter's 384 of room - tighter than the pitch a ring holds only east and west, and
+the open sea was a line; eight to a ring, bearings first, round the compass from east), later
+rings one ordinary pitch further, so the volcano does not spread everybody else
 out. Its shape (`volcanoGround` + `volcanoRelief` in `shared/terrain.mjs`): a buildable apron
 up to ~3.5, then a concave cone to a rim ~38 up (summit 41, crater ~10 deep), with radial
 ridges and ravines, broken cliff bands, crags, a jagged rim breached where each of its three
