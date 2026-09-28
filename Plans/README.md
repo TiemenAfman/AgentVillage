@@ -16,23 +16,25 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
-- 🚧 [batavia.md](batavia.md) — het VOC-schip uit de ladder tot tweehonderd: een
-  spiegelretourschip naar de Batavia van 1628, voor anker, 12 op de waterlijn, 15 over alles,
-  de grote mast 11,5 boven het water. Drie schepen uit één bake in drie kleuren, deinend en met
-  waaiende vlaggen, een zij waar zwemmers en boten tegenaan komen, en de dekken en trappen als
-  ankers voor wie er later op wil lopen. Getekend en te raken op 28 september 2026; nog niet te
-  belopen en nog niet op het eiland gezet.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
-  door tot 200 (afstand ≈ 2 + n/25; 0–100 ligt er al op, erboven gaapte een gat van 50): elf
+  door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
-  bouwt vanaf 95 in stadia aan een VOC-schip dat op 120 op de rede voor anker gaat, en vanaf 130
-  groeit de vloot vanzelf tot drie boten per haven. Geen bestaande trede verschuift. Terloops
-  gevonden: de kraan (165) komt op het echte eiland nooit, want er is geen kade-wijk. Voorstel van
-  28 september 2026, nog niets gebouwd; eerste stap is meten waar de rede past.
-- 🚧 [havengebouwen.md](havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut (113)
-  van die ladder als modellen: één Blender-set met drie assets, tekenbaar in `civic()` en te zien
-  op `/demo`. De treden en hun plek aan de haven komen met de ladder; een visser bij de hut staat
-  onder Later. Modellen gebouwd op 28 september 2026.
+  bouwt vanaf 95 in stadia aan de Batavia, die op 120 op de rede voor anker gaat (en een tweede
+  en derde schip op 158 en 192); vanaf 130 groeit de vloot vanzelf tot drie boten per haven; de
+  vuurtoren is op zijn echte maat herbouwd; de kraan staat nu ook zonder kade-wijk. Geen
+  bestaande trede verschuift. Gebouwd op de branch `mijlpalen-tot-tweehonderd` op 28 september
+  2026, nog niet op main en niet op het eiland. De gebouwen hebben elk een eigen plan:
+  - 🚧 [batavia.md](batavia.md) — het spiegelretourschip: 12 op de waterlijn, 15 over alles, de
+    grote mast 11,5 boven het water; drie kleuren uit één bake, deinend, met waaiende vlaggen en een
+    zij waar zwemmers en boten tegenaan komen. Nog niet te belopen.
+  - 🚧 [scheepswerf.md](scheepswerf.md) — de werf op 5 bij 16 cellen, met de romp in vijf stadia
+    op de helling (leeg, kiel, spanten, huid, masten), de achtersteven naar zee.
+  - 🚧 [havengebouwen.md](havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut
+    (113). Een visser bij de hut staat onder Later.
+  - 🚧 [ambachten.md](ambachten.md) — de brouwerij (106), het oefenveld (134) en de steengroeve
+    (142), met een tredmolenkraan die blokken op een karretje zet.
+  - 🚧 [kroniekhuis.md](kroniekhuis.md) — de laatste trede (200): een klik of E bij de deur speelt
+    de kroniek af.
 - 🚧 [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
   gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
   winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
@@ -131,7 +133,6 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - 🚧 [gebouwen-verplaatsen.md](gebouwen-verplaatsen.md) — Gebouwen rond het plein verplaatsen en draaien
 - 🚧 [ik-wil-graag-mutliplayer-splendid-nest.md](ik-wil-graag-mutliplayer-splendid-nest.md) — Een open zee, een tick, en eilanden die joinen
 - ✅ [islander-als-eigen-exe.md](islander-als-eigen-exe.md) — De islander als eigen exe, het venster als interface
-- 🚧 [kroniekhuis.md](kroniekhuis.md) — Het kroniekhuis, de laatste trede (200): een klik of E bij de deur opent de kroniek
 - 🚧 [rave-in-het-kasteel.md](rave-in-het-kasteel.md) — Een rave in het kasteel
 - 🚧 [ronde-wereld.md](ronde-wereld.md) — Een ronde wereld: een kaart met maat, een rand die je rondvaart
 - 🚧 [slagerij.md](slagerij.md) — De slagerij

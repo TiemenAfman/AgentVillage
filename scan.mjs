@@ -13,7 +13,7 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID } from './shared/gold.mjs';
@@ -486,7 +486,9 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   // (lib/islandbundle.mjs `harbour`), since every other machine derives it the same way.
   const harbourList = (layout.harbours || []).filter(Boolean);
   const fleet = fleetOf(terrain, { island: { landing: layout.landing, harbours: harbourList }, districts });
-  const earned = earnedBoats(model.stats.settlers, fleet.harbours, fleet.first);
+  // Dealt from the kadehaven, where the plan puts the harbour's life; the harbour holding the
+  // first boat is still the one that takes one fewer.
+  const earned = earnedBoats(model.stats.settlers, fleet.harbours, fleet.first, kadehaven(layout, terrain)?.side ?? fleet.first);
 
   const all2 = [...buildings, ...civics];
   return {

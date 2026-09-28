@@ -393,7 +393,14 @@ the berth it always had, because older pages and seas find it by that id; the re
 `BOATS_PER_HARBOUR` (3, the one copy) where it is made, where it arrives and where it is laid
 out. B at one of your own harbours posts `/api/harbour/boat` (keeper-only, not on
 `PUBLIC_API`); the rescan after it republishes, and `harbourSig` in `applyVillage` is what
-makes the new hull appear without a reload, since harbours are not districts. A bundle with no
+makes the new hull appear without a reload, since harbours are not districts. The village also
+earns boats (`earnedBoats` in shared/quay.mjs: one every `FLEET_EVERY` settlers from `FLEET_AT`,
+dealt round from the kadehaven, the first boat's harbour one fewer). scan.mjs writes
+`max(built, earned)`, which never leaves 0..3, so an older sea moors exactly what a newer page
+draws; B builds *ahead* of that count and never below it (`harbourRoom`), and `first: true` marks
+the first boat's harbour in village.json only (the bundle's whitelist drops it). The sea's
+outings grow with the crowd it walks (`outingsAtOnce`, 2 to 4) and sail round every plot that
+lies on water (`waterPlots`). A bundle with no
 harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
@@ -1113,7 +1120,12 @@ purpose (`strandedAtSea` in `doomedBy`) and lifts their `path:` with them. The r
 wait for the harbours on an island's first scan (`deferred` in `placeAll`) and are placed straight
 after `planHarbours` in the same pass, so the scan after it is still a no-op. The yard's record
 carries `stage` 0-4 (`yardStage`), strict in `parseBundle`, because a bundle has no settler
-count. No version gate: nothing but new plots.
+count. No version gate: nothing but new plots. On the page the Batavia floats (`floatingPose` in
+web/js/batavia.js, never `groundAt` of the sea bed) and is solid through `shipSolids`: slabs a
+unit long with a `hull` height that `hullOver` in boat.js hands a boat's bow and probes, because
+a level is a cell and her side lies on no cell edge. The yard stands on its land end
+(`shipyardGround` in web/js/shipyard.js, never below `YARD_FLOOR`), which is why its site keeps
+the dry rows under `YARD_LAND_MAX`: any higher and the slipway's toe comes out of the water.
 
 ## The Blender pipeline
 

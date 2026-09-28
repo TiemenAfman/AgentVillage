@@ -1088,7 +1088,7 @@ export function createLandscape({
   // lies out on the roads: a worn yard of four by sixteen on the sea bed would be sand showing
   // through the shallows round her.
   const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
-    'statue', 'well', 'fountain', 'watertower', 'bridge', 'ship']);
+    'statue', 'well', 'fountain', 'watertower', 'bridge', 'ship', 'shipyard']);
   let wearVillage = village, wearGraph = null;
   let frontages = new Map(), frontageKey = '';
   function setHouseFrontages(records) {

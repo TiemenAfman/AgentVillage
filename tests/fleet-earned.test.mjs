@@ -198,3 +198,14 @@ test('the bundle carries the count and not the mark', () => {
   ]);
   assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))).island.harbours, packed.island.harbours);
 });
+
+test('dealing starts at the kadehaven when the first boat lies at none of the harbours', () => {
+  // The live island's case: its galleon lies at the quay the landing derives, which is none of
+  // its four harbours, so `first` is null - and the plan deals from the kadehaven, not from n.
+  const h = all(['n', 'e', 's', 'w']);
+  assert.deepEqual(earnedBoats(130, h, null, 'e'), { n: 0, e: 1, s: 0, w: 0 }, 'the first boat goes to the kadehaven');
+  assert.deepEqual(earnedBoats(140, h, null, 's'), { n: 1, e: 0, s: 1, w: 1 }, 'then round from there: s, w, n');
+  assert.deepEqual(earnedBoats(185, h, null, 's'), { n: 3, e: 3, s: 3, w: 3 }, 'and with no first boat every harbour takes three');
+  assert.deepEqual(earnedBoats(180, h, 'n', 'w'), { n: 2, e: 3, s: 3, w: 3 }, 'a first boat still takes one fewer where it lies');
+  assert.deepEqual(earnedBoats(130, h, 'n', 'x'), earnedBoats(130, h, 'n'), 'an unknown start falls back to the first boat');
+});

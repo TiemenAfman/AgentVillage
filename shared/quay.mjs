@@ -328,17 +328,19 @@ export function fleetOf(terrain, village) {
 // own harbour. So that harbour takes one fewer here - a count of three there still draws
 // three, and a third earned boat dealt to it would be a boat nobody ever sees.
 //
-// Dealt one at a time in FLEET_SIDES order, starting at `first` (the kadehaven, whose first
-// boat is the galleon) and skipping every side with no harbour - `null` in layout.harbours,
+// Dealt one at a time in FLEET_SIDES order, starting at `from` - the kadehaven, which scan.mjs
+// passes. It defaults to `first`, the harbour whose first boat is the galleon, and the two part
+// only on an island whose galleon lies at a quay that is none of its four harbours (the live
+// island's case, Plans/mijlpalen-tot-tweehonderd.md) - and skipping every side with no harbour - `null` in layout.harbours,
 // or simply absent. Round and round rather than filling one harbour before the next, so the
 // fleet grows along the whole coast and not in one basin; an island with fewer harbours
 // runs out of berths sooner, and the count stops where the berths do.
-export function earnedBoats(settlers, harbours, first = null) {
+export function earnedBoats(settlers, harbours, first = null, from = first) {
   const out = Object.fromEntries(FLEET_SIDES.map((s) => [s, 0]));
   const n = Number.isFinite(settlers) ? settlers : 0;
   if (n < FLEET_AT) return out;
   const present = new Set((harbours || []).filter((h) => h && FLEET_SIDES.includes(h.side)).map((h) => h.side));
-  const start = present.has(first) ? FLEET_SIDES.indexOf(first) : 0;
+  const start = present.has(from) ? FLEET_SIDES.indexOf(from) : present.has(first) ? FLEET_SIDES.indexOf(first) : 0;
   const order = [...FLEET_SIDES.slice(start), ...FLEET_SIDES.slice(0, start)].filter((s) => present.has(s));
   const room = (s) => BOATS_PER_HARBOUR - (s === first ? 1 : 0);
   let left = Math.floor((n - FLEET_AT) / FLEET_EVERY) + 1;
