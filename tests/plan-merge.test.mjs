@@ -214,8 +214,10 @@ test('a village that fills its island founds no annex for any project', () => {
 
 test('on an island with room to grow, every project keeps all its houses on its own land', () => {
   // The live island's situation: founded small, room to grow, a settler or so per project a
-  // scan. Measured before this on the same seed and steps: five projects in pieces and 17 of
-  // 240 houses on the commons.
+  // scan. On this seed that now holds for every house; it took the beach rung of `growLobe`
+  // (13 of proj:0's houses went to the commons without it), a house asking for land it can
+  // stand on (`roomy`) and waiting for the ring when it got none. Not every seed gets there:
+  // see the next test.
   const layout = emptyLayout(7, 256, { base: 32, steps: [] });
   for (let n = 12; n <= 240; n += 12) placeAll(layout, village(n), { seed: 7, size: 256 });
   for (const [id, p] of Object.entries(layout.plots)) {
@@ -225,5 +227,49 @@ test('on an island with room to grow, every project keeps all its houses on its 
     assert.equal(p.district, d);
     assert.equal(p.lobe, 0, `${id} stands on piece ${p.lobe} of ${d}`);
   }
+  assert.ok(Object.values(layout.districts).every((d) => d.lobes.length <= 1), 'a project stands in more than one piece');
+});
+
+test('a house goes to the commons only when its project is walled in', () => {
+  // The seed where it does not all fit: the first two projects, founded beside the square
+  // while the island was small, are walled in by the town and by neighbours that grew up
+  // against them (`growLobe`'s belt-0 rung) before they needed the land themselves - 31 of
+  // 240 houses on the commons, one to eight super-cells from home (Plans/wijkjes-samenvoegen.md,
+  // still open). What must hold is that none of them had anywhere of its own to go: no free
+  // 3x3 on its project's land, and none on the free ground beside it, when it was placed.
+  const seed = 3;
+  const layout = emptyLayout(seed, 256, { base: 32, steps: [] });
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const seen = new Set();
+  for (let n = 12; n <= 240; n += 12) {
+    const model = village(n);
+    placeAll(layout, model, { seed, size: 256 });
+    const lodgers = Object.entries(layout.plots).filter(([id, p]) => id.startsWith('house:') && p.commons && !seen.has(id));
+    if (!lodgers.length) continue;
+    const terrain = makeTerrain(seed, { size: layout.size, polders: layout.polders, fairway: layout.fairway, grow: layout.grow });
+    const sup = new Super(terrain, layout.lattice, heldOf(layout));
+    registerLand(sup, layout, districtOrder(model).ordOf, null);
+    const used = new Set();
+    for (const p of layout.paths) for (const c of p.cells) used.add(k(c));
+    for (const p of Object.values(layout.plots)) for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) used.add(k([p.gx + x, p.gz + z]));
+    const free = ([i, j]) => {
+      const [gx, gz] = blockOf(layout.lattice, i, j);
+      for (let z = 0; z < 3; z++) for (let x = 0; x < 3; x++) if (used.has(k([gx + x, gz + z])) || !terrain.isBuildable(gx + x, gz + z)) return false;
+      return true;
+    };
+    for (const [id, p] of lodgers) {
+      seen.add(id);
+      for (const lobe of layout.districts[p.district].lobes) {
+        for (const c of lobe.cells) {
+          assert.ok(!free(c), `${id} went to the commons with ${k(c)} of its own land free`);
+          for (const [a, b] of N4) {
+            const o = [c[0] + a, c[1] + b];
+            if (sup.at(o[0], o[1]) === NONE && sup.usable(o[0], o[1], true)) assert.ok(!free(o), `${id} went to the commons with ${k(o)} free beside its land`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(seen.size > 0, 'this seed was chosen because not everything fits; if it all does now, tighten the test above');
   assert.ok(Object.values(layout.districts).every((d) => d.lobes.length <= 1), 'a project stands in more than one piece');
 });

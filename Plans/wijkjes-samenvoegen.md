@@ -48,7 +48,8 @@ tussen de snapshots van 26 september).
 | De kade | Geweigerd: de kade volgt de kustlijn en mag daar in stukken liggen. | Een kade-annex is de volgende strook kade, geen verspreid project. |
 | Voorkomen: annexen | Een project dat al land heeft sticht **geen annex meer**. Zit het stuk klem, dan groeit het ruimer: eerst zonder de straalgrens (`RCAP`), dan tot tegen de buren aan (gordel 0, nooit óp hun land). Pas als ook dat niet kan, is er echt geen plek (zie hieronder). | Een wijkje dat tegen de buren aan groeit of een L-vorm krijgt is minder erg dan een project in drie stukken. Alleen voor wat nodig is: de tuinen (`parcelTarget`) groeien alleen op de gewone manier. |
 | Voorkomen: alleen het laatste stuk | Een ouder project met meerdere stukken probeert elk stuk, het laatste eerst. | Zodat een eiland dat nog niet samengevoegd is ook niet verder uit elkaar groeit. |
-| Voorkomen: geteld maar bezet | Vindt een huis geen blok in zijn eigen land, dan vraagt het land voor één huis meer dan er cellen zijn, niet voor één meer dan de bevolking. | Anders gaat het naar de gemeentegrond terwijl er naast het wijkje nog ruimte is. |
+| Voorkomen: geteld maar bezet | Vindt een huis geen blok in zijn eigen land, dan vraagt het land voor één huis meer dan er cellen zijn, niet voor één meer dan de bevolking. Geeft dat een cel met een weg erdoor, dan vraagt het nog één super-cel waar een huis *op kan* (`roomy` in `growLobe`: een filter per trede, geen voorkeur). Lukt ook dat niet, dan telt het wijkje als krap (`rec.guest`) en wacht het huis op de ring als het aan zee ligt. | Anders gaat het naar de gemeentegrond terwijl er naast het wijkje nog ruimte is. Een voorkeur was niet genoeg: elke trede telt cellen, dus de eerste was al tevreden met een cel vol weg en de ruimere treden, waar de open grond lag, kwamen nooit aan de beurt. |
+| Voorkomen: strand | De laatste trede van `growLobe` neemt ook strand-super-cellen (zand en gras, niet helemaal bebouwbaar). Het huis moet nog steeds op bebouwbare grond (`freeBlock(…, false)`). | Vaak is een meeroever het enige wat er naast een wijkje bij het plein over is (seed 7). |
 | Wachten op een ring | Een huis zonder plek wacht één ring als het eiland kan groeien en het wijkje aan zee ligt (`landWouldHelp`); een ingesloten wijkje landinwaarts wacht niet. | Zonder annexen kan nieuwe kust alleen helpen als het wijkje er zelf naartoe kan groeien. |
 | En als er echt geen plek is? | Dan blijft het de gemeentegrond, zoals nu - maar alleen voor een wijkje dat helemaal ingesloten is door water, steilte, zones en andermans land, op een eiland dat niet meer kan groeien. De planner laat dat project dan zien als verspreid met de knop Merge. | Een huis automatisch verhuizen, of een heel wijkje, breekt "een huis verhuist nooit vanzelf". |
 | De planner | Klikken kiest het hele project (alle stukken), zodat een sleep het niet meer uit elkaar trekt. Staat een gekozen project verspreid, dan verschijnt **Merge**: één `merge`-op per verspreid project, met het stuk met de meeste huizen als het blijvende. Na een merge in het concept kan dat project in hetzelfde concept niet meer gesleept worden (eerst toepassen); ervóór wel, zodat "verplaats en voeg samen" één plan is. | De nummers van de stukken veranderen door een merge; een sleep erna zou het verkeerde stuk noemen. |
@@ -57,8 +58,9 @@ tussen de snapshots van 26 september).
 
 ## Stand van zaken (28 september 2026)
 
-Gebouwd: `merge`-op, geen annexen meer, ruimer groeien (`growLobe`), meerdere pogingen
-tot er een vrij blok is (`ROOM_TRIES`), het kantoor zoekt tot `OFFICE_REACH` wegvakken van de
+Gebouwd: `merge`-op, geen annexen meer, ruimer groeien (`growLobe`, ook op strand), een
+huis vraagt land waar het op kan staan (`roomy`, in plaats van de vier blinde pogingen van
+`ROOM_TRIES`), het kantoor zoekt tot `OFFICE_REACH` wegvakken van de
 poort, en in de planner kiest een klik het hele project, met een knop Merge / Merge all.
 
 Gemeten op een kopie van het live eiland:
@@ -81,19 +83,39 @@ Geprobeerd en weer verwijderd: een ingesloten wijkje een lege tuin van de buren 
 overnemen (`borrowGarden`). Geen verschil gemeten - de grenscellen van de buren zijn bijna
 altijd zelf bebouwd - en het was de enige plek waar een scan land van iemand afpakt.
 
+Gemeten, klein gesticht (32 op 256), stappen van 12 tot 240, huizen op de gemeentegrond:
+
+| seed | vóór strand + `roomy` | nu |
+|---|---|---|
+| 7 | 13 | 0 |
+| 4 | - | 0 |
+| 11 | 17 | 17 |
+| 2 | - | 24 |
+| 3 | 31 | 31 |
+
+Nergens een project in stukken, en overal geldt nu: geen huis gaat naar de gemeentegrond terwijl
+er op of naast het land van zijn project een vrij 3x3-blok is (`tests/plan-merge.test.mjs`,
+seed 3). Wat overblijft is telkens hetzelfde geval.
+
 Nog open:
-- Twee randgevallen gaan nog naar de gemeentegrond: (a) de eerste scan van een klein gesticht
-  eiland waar één groot project in één keer binnenkomt (een huis wacht maar één ring), en
-  (b) een boerderij (1-2 sessies) in een gat tussen wijkjes die ingesloten raakt voor ze een
-  wijkje wordt - zo ontstond TradingBot's losse huisje. De test "on an island with room to
-  grow" faalt daar nu op (seed 7, 256, stappen van 12: `house:proj:0:7`).
-- De volledige testsuite draaien, de planner in de browser nakijken, CLAUDE.md bijwerken.
+- **Het eerste project bij het plein wordt ingesloten.** Op een klein gesticht eiland liggen de
+  eerste wijkjes tegen het dorp aan. Hun buren groeien met de gordel-0-trede van `growLobe` tot
+  tegen hen aan, vaak voordat dat eerste wijkje het land zelf nodig heeft (seed 3: tussen 36 en 60
+  settlers pakken proj:2, 7 en 9 de laatste vrije cellen naast proj:1, dat toen drie huizen had).
+  Daarna staat elk nieuw huis van dat project op de gemeentegrond, 1 tot 9 super-cellen van huis.
+  Zonder gordel-0 is het overal slechter (seed 1337: 26 in plaats van 1), dus die blijft. Een
+  oplossing vraagt een keuze die Tiemen moet maken: wie krijgt een omstreden cel, het wijkje dat
+  hem nu vraagt of het wijkje dat er later om zal vragen? Mogelijke richtingen: een gordel-0-cel
+  niet geven als hij de laatste vrije buur van een ander wijkje is; of de planner zo'n project
+  laten verhuizen en dan samenvoegen (dat kan nu al, met de hand, in één plan).
+- De planner in de browser nakijken (Merge all, hele-project-selectie, de zin in het grootboek,
+  Delete die een merge-op weghaalt).
 - Op het live eiland toepassen: branch in main, eiland herstarten, Merge all in de planner.
 
 ## Bestanden
 
-- `lib/layout.mjs` - `growParcel` met straal en gordel als optie, `growLobe` (gewoon, dan
-  ruimer), `ensureParcel` zonder annex voor projecten, `landWouldHelp` op zee-ligging, de
+- `lib/layout.mjs` - `growParcel` met straal, gordel en `roomy` als optie, `growLobe` (gewoon,
+  dan ruimer, dan op strand), `ensureParcel` zonder annex voor projecten, `landWouldHelp` op zee-ligging, de
   huizenlus vraagt land voor één huis meer dan er cellen zijn.
 - `lib/plan.mjs` - `parsePlan` + `opMerge`, `diff.scattered` in `runPlan`.
 - `web/js/plan-mode.js`, `web/js/plan-panel.js` - klik kiest het hele project, knop Merge.
