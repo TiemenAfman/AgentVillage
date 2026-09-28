@@ -140,3 +140,24 @@ test('islandFeatures survives a village with nothing in it', () => {
   const f = islandFeatures({}, (gx, gz) => [gx, gz], 4);
   assert.deepEqual([f.hamlets, f.landmarks, f.houses], [[], [], 0]);
 });
+
+test('other players project onto the radar and world map within bounds', async () => {
+  const { projectToRadar, fitMap } = await import('../web/js/minimap.js');
+  // Player walking 20m north, 15m east of local player
+  const radarPos = projectToRadar(15, -20, 130, 80);
+  assert.equal(radarPos.clamped, false);
+  assert.ok(radarPos.x > 0, 'east is right (+x)');
+  assert.ok(radarPos.y < 0, 'north is up (-y)');
+
+  // Player sailing far away clamps to radar rim
+  const radarFar = projectToRadar(300, 400, 130, 80);
+  assert.equal(radarFar.clamped, true);
+  assert.ok(Math.abs(Math.hypot(radarFar.x, radarFar.y) - 80) < 1e-9);
+
+  // Player on world map
+  const b = { minX: -200, maxX: 200, minZ: -200, maxZ: 200 };
+  const fit = fitMap(b, 800, 800, 40);
+  const [px, py] = fit.toPx(50, -100);
+  assert.ok(px > 400, 'east of center');
+  assert.ok(py < 400, 'north of center');
+});

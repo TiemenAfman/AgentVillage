@@ -1659,6 +1659,23 @@ function mapDocks() {
   return state.docks.map((d) => ({ x: d.head[0], z: d.head[1], region: d.region.id, side: d.side || null }));
 }
 
+function mapBoats() {
+  const selfId = state.net ? state.net.id() : null;
+  return (state.boats || []).map((b) => ({
+    id: b.id,
+    x: b.x,
+    z: b.z,
+    yaw: b.yaw,
+    pilot: b.pilot || null,
+    pilotName: b.pilot ? (b.pilot === selfId ? 'You' : (state.peers ? state.peers.nameOf(b.pilot) : 'Somebody')) : null,
+    isSelf: b.pilot != null && b.pilot === selfId,
+  }));
+}
+
+function mapPlayers() {
+  return state.peers ? state.peers.list() : [];
+}
+
 function minimapData() {
   const w = state.walk.state;
   return {
@@ -1671,7 +1688,8 @@ function minimapData() {
     // not only on home - see drawTerrain in minimap.js.
     sea: state.sea,
     docks: mapDocks(),
-    boats: state.boats,
+    boats: mapBoats(),
+    players: mapPlayers(),
     near: state.sea.regions().filter((r) => r !== state.region).map((r) => ({ x: r.origin[0], z: r.origin[1] })),
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
@@ -1799,7 +1817,8 @@ function worldMapData() {
     })),
     docks: mapDocks(),
     far: state.horizon ? state.horizon.marks() : [],
-    boats: state.boats,
+    boats: mapBoats(),
+    players: mapPlayers(),
     town: townCentreScenePos(),
     district: minimapDistrict(),
   };

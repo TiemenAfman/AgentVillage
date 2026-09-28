@@ -499,6 +499,32 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     nameOf: (id) => (peers.get(id) ? peers.get(id).name : 'Somebody'),
     setSelf: (id) => { selfId = id; if (peers.has(id)) drop(peers.get(id)); },
     count: () => peers.size,
+    list: () => {
+      if (!showing) return [];
+      const out = [];
+      for (const p of peers.values()) {
+        if (p.leaving || !p.to) continue;
+        if (p.room && p.room !== 'boat') continue;
+        const hasPos = p.mesh && p.mesh.visible;
+        const x = hasPos ? p.mesh.position.x : p.to.x;
+        const y = hasPos ? p.mesh.position.y : p.to.y;
+        const z = hasPos ? p.mesh.position.z : p.to.z;
+        const yaw = hasPos ? p.mesh.rotation.y : (p.to.yaw || 0);
+        out.push({
+          id: p.id,
+          name: p.name,
+          x,
+          y,
+          z,
+          yaw,
+          room: p.room,
+          sailing: p.aboard || !!p.deckTo,
+          swimming: !!(p.to.f & FLAG_SWIMMING),
+          riding: !!(p.to.f & FLAG_RIDING),
+        });
+      }
+      return out;
+    },
     dispose: () => { clear(); },
   };
 }
