@@ -59,12 +59,15 @@ export const BUDGETS = [
 // at most and is worth looking at up close. The tavern sits at 2684 of these, and the
 // ceiling is where tests/tavern.test.mjs already put it - bounded enough for a modest GPU.
 export const HERO_BUDGET = 4000;
+// The walkable galleon retains round cannon bores, wheels and separate deck planks.
+// It is one mesh/material, used only a few times, rather than a repeated town building.
+export const HERO_BUDGETS = { pirateship: 30000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand
 
 export function budgetOf(asset, hero) {
-  if (asset === hero) return HERO_BUDGET;
+  if (asset === hero) return HERO_BUDGETS[hero] ?? HERO_BUDGET;
   for (const [prefix, tris] of BUDGETS) if (asset.startsWith(prefix)) return tris;
   return null;             // not a class the island knows; checkSet says so
 }
