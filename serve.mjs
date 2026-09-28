@@ -1175,7 +1175,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
     const q = String(url.searchParams.get('q') || '').toLowerCase().trim();
     const village = readJson(VILLAGE_FILE, null);
     const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
-    let rows = catalog({ config: loadConfig(), onIslandIds: onIsland });
+    let rows = catalog({ config: loadConfig(), onIslandIds: onIsland, leftIds: new Set((village && village.departed) || []) });
     if (q) {
       rows = rows.filter((r) => [r.name, r.title, r.project, r.cwd, r.sessionId, r.model]
         .some((f) => f && String(f).toLowerCase().includes(q)));
@@ -1197,7 +1197,8 @@ if (req.url === '/api/command' && req.method === 'POST') {
       try {
         const village = readJson(VILLAGE_FILE, null);
         const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
-        const ids = catalog({ config: loadConfig(), onIslandIds: onIsland }).filter((r) => !r.onIsland).map((r) => r.sessionId);
+        const leftIds = new Set((village && village.departed) || []);
+        const ids = catalog({ config: loadConfig(), onIslandIds: onIsland, leftIds }).filter((r) => !r.onIsland).map((r) => r.sessionId);
         const { founders, added } = addFounders(ids);
         log(`adopted ${added} at once; founders now ${founders.length}`);
         if (added) await rescan('adopt');

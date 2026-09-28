@@ -5074,8 +5074,9 @@ function applyVillage(next, { animate }) {
     for (const d of next.districts) if (!hadD.has(d.id)) events.push({ type: 'district', d });
   }
 
-  // Anyone no longer in the village has left: a visitor who finished, or someone sent
-  // away. Take their building out of the scene rather than leaving a ghost standing.
+  // Anyone no longer in the village has left: a visitor who finished, a tent nobody gave
+  // anything to do (lib/village.mjs), or someone sent away. Take their building out of the
+  // scene rather than leaving a ghost standing.
   for (const [id, rec] of [...state.byId]) {
     if (nextSpecs.has(id)) continue;
     if (animate && rec.group.visible) leaveAnimation(rec);

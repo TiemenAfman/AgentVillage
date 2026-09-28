@@ -19,6 +19,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
+  (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
+  mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
+  een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
+  genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf

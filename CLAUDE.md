@@ -162,6 +162,23 @@ for the smallest one that does the job. [docs/branches.md](docs/branches.md) lis
 assert after a layout change, and the trap: **stop the server before measuring**
 (tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
 
+**A tent may leave; what the village earned never does** ([Plans/tenten-vertrekken.md](Plans/tenten-vertrekken.md)).
+A resident drawn as a tent (`tier === 'tent'`: fewer than three human turns, not a harbour
+house, not a hotel), not running, not a founder, not rehomed and quiet for `tentGraceMs` (a
+week) packs up in `buildVillage`: house and sheds into `dropped`, front path lifted in
+`scan.mjs` like a banishment's, session id in `model.departed` (village.json `departed`, which
+the town hall's register reads to offer **Invite**). So `stats.settlers` can go *down*, and
+nothing earned may be gated on it: the ladder counts `stats.reached`, the most there have ever
+been at once, kept in `layout.ladder = { since, settlers, apprentices }` (written back by
+scan.mjs, moved only by a new most-ever). **`reachedOf(model)` in lib/village.mjs is the one
+reading** - milestones, furniture, `yardStage`, `earnedBoats` and every gate in `placeAll`
+(fairway, polders, square, bridge) take it; only the header count and `nextMilestone`'s
+`remaining` measure from who lives here now, which is what makes the next rung take longer.
+`model.arrivals` is now "the first moment n lived here at once" (`firstsOf`), with a departure
+dated `lastAt + tentGraceMs` but never before `ladder.since`: a layout from before the rule has
+no `ladder`, starts it at its first scan and keeps every date it had; `emptyLayout` carries
+`{ since: 0 }` because a new town has no such past; `resetForNewTerrain` keeps it.
+
 **The planner is a third mode, and nothing real moves in it before Apply.** `state.mode`
 is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
 `OrthographicCamera` (north up, so a screen rectangle is a world rectangle) and never touches
