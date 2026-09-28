@@ -13,10 +13,15 @@
 // And the one thing `TRADES` takes on trust: that each bake fits the lot `findBlockAround`
 // hands it. Read off the plot's own `w`, so a trade that one day needs a bigger lot fails
 // here rather than standing half on its neighbour's road.
+//
+// The ladder past a hundred (Plans/mijlpalen-tot-tweehonderd.md) adds three: the brewery at
+// 106, the training field at 134 and the chronicle house at 200. They are held to the same two
+// rules - a rung of their own, and none of the lots round the square - on a village that has
+// earned them; their bakes are measured by their own sets' tests, which is where they live.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyLayout, placeAll } from '../lib/layout.mjs';
-import { MILESTONES } from '../lib/village.mjs';
+import { MILESTONES, civicIdOf } from '../lib/village.mjs';
 import { SAWMILL } from '../web/js/sawmill-mesh.js';
 import { SMITHY } from '../web/js/smithy-mesh.js';
 import { STABLE } from '../web/js/stable-mesh.js';
@@ -107,5 +112,49 @@ for (const seed of SEEDS) {
     assert.ok(!withTrades.early.some((id) => id && TRADES.includes(id.slice('civic:'.length))), 'no trade on a lot');
     assert.deepEqual(withTrades.early, without.early, 'the lots hold what they would have held without the trades');
     assert.deepEqual(withTrades.late, without.late, 'and so they do once the school comes');
+  });
+}
+
+// The three past a hundred, each on a rung of its own, beyond the castle and apart from the
+// harbour's rungs.
+const LATER = ['brewery', 'trainingfield', 'chronicle'];
+
+test('the trades past a hundred have a rung each, and share it with nobody', () => {
+  const at = (id) => MILESTONES.find((m) => m.id === id).at;
+  assert.equal(at('brewery'), 106);
+  assert.equal(at('trainingfield'), 134);
+  assert.equal(at('chronicle'), 200);
+  assert.ok(at('castle') < at('brewery'));
+  const settlers = MILESTONES.filter((m) => (m.on || 'settlers') === 'settlers').map((m) => m.at);
+  for (const t of LATER) assert.equal(settlers.filter((n) => n === at(t)).length, 1, `the ${t} shares its rung`);
+});
+
+for (const seed of SEEDS) {
+  test(`seed ${seed}: the trades past a hundred stand off the square's lots too, on a lot with a door`, () => {
+    const n = 202;
+    const t0 = Date.UTC(2026, 0, 1);
+    // Twelve projects rather than one, or a village of two hundred on a 128 island is a single
+    // hamlet with nowhere left for a workshop to stand.
+    const districts = Array.from({ length: 12 }, (_, k) => ({ id: `p:d${k}`, kind: 'project', name: `D${k}`, population: 0, firstSeenAt: t0 + k }));
+    const buildings = [];
+    for (let i = 0; i < n; i++) {
+      const d = districts[i % 12];
+      d.population++;
+      buildings.push({ id: `house:d-${i}`, sessionId: `d-${i}`, kind: 'house', district: d.id, harbour: false, tier: 'hut', startedAt: t0 + 100 + i * 1000 });
+    }
+    const model = {
+      districts, buildings, furniture: [], stats: { settlers: n },
+      milestones: MILESTONES.map((m) => ({ ...m, on: m.on || 'settlers', unlocked: m.at <= n, unlockedAt: t0, building: m.at <= n ? civicIdOf(m) : null })),
+    };
+    const layout = emptyLayout(seed, SIZE);
+    placeAll(layout, model, { seed, size: SIZE });
+    const lots = new Set((layout.town.lots || []).map(([gx, gz]) => `${gx},${gz}`));
+    for (const t of LATER) {
+      const p = layout.plots[`civic:${t}`];
+      assert.ok(p, `the ${t} was given ground`);
+      assert.deepEqual([p.w, p.d], [3, 3], `the ${t}'s lot is three by three`);
+      assert.ok(!lots.has(`${p.gx},${p.gz}`), `the ${t} took a lot round the square`);
+      assert.ok(layout.paths.some((q) => q.id === `path:civic:${t}`), `the ${t} has a road to its door`);
+    }
   });
 }

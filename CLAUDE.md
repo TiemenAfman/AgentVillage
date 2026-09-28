@@ -1070,20 +1070,50 @@ for the one reader that must leave it out: the Friday gathering (`gatherCells` i
 terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
 round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
-**The castle is the one civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
+**The castle is the one square civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
 `web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
 `scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
 one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
 bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
 the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
-`p.w` and never assume 3 - `doorCell`/`outsideDoor` take the width, `scan.mjs`'s `doorOf` is
-`doorCell`. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
+`p.w` and `p.d` and never assume 3 - `doorCell`/`outsideDoor` take both, and `plotDoor` (below)
+is the door every reader asks. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
 block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
 commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
 cells only - never over a road, its own included, because a road laid later over another's
 cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
 the gate.
+
+**Past a hundred the ladder goes to the sea, on the first lots that are not square**
+([Plans/mijlpalen-tot-tweehonderd.md](Plans/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
+to 200; three share civicType `ship`, so a rung may name its building (`civicId`, and
+`civicIdOf` in lib/village.mjs is the one copy - the model, scan.mjs and the placing loop all
+ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd rot: a ship is
+4 x 16 (`civic:ship`, `civic:ship:2`, `civic:ship:3`: no door, no road), the shipyard 5 x 16 with
+its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
+web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
+scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
+`outsideDoor(..., p.w)` of a lot that may not be square. **Sixteen is a ceiling, not headroom**:
+`parseBundle` takes a `w`/`d` of 1 to 16, and a lot one cell longer makes every older sea refuse
+the whole island. What stands at the water goes to the **kadehaven** (`kadehaven`: the quay
+district's harbour; else where the island's first boat lies - the landing's quay, or the harbour
+on its side of the town; else the one nearest the town), worked out every scan and never
+stored; the crane falls back to it, which is what gives an island with no quay district - the
+live one - a crane at all. Ships anchor on the **rede** (`redeCell`: deeper than `REDE_DEPTH`,
+open sea, not the fairway, two cells off every plank, slipway and berth - all three berths of
+every harbour, boats or not - out of every pier head's lane, out of the galleon's `GALLEON_ROOM`,
+not a polder; 8 to 20 cells from the head), the second and third beside the first `FLEET_PITCH`
+apart. Where the galleon lies is `shipBerth` in **shared/quay.mjs**, the page's old sum with its
+`sin`/`cos` written out as V8's own doubles, so the layout and every page agree to the bit
+(`tests/ship-berth.test.mjs`). The polders keep off a ship and the yard and a ring round them
+(`keptWater`), a ladder polder that would pond one is filled in again in the same scan
+(`afloatDrowned`) and a keeper's is refused; a growth ring that fills their water moves them on
+purpose (`strandedAtSea` in `doomedBy`) and lifts their `path:` with them. The rungs at the water
+wait for the harbours on an island's first scan (`deferred` in `placeAll`) and are placed straight
+after `planHarbours` in the same pass, so the scan after it is still a no-op. The yard's record
+carries `stage` 0-4 (`yardStage`), strict in `parseBundle`, because a bundle has no settler
+count. No version gate: nothing but new plots.
 
 ## The Blender pipeline
 

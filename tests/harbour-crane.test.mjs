@@ -12,13 +12,17 @@
 //   - a quay whose waterfront has filled up still gets one, which is the case that
 //     matters: by 165 settlers the harbour houses are shoulder to shoulder, and the first
 //     draft of the placement quietly gave up on the real island for exactly that reason;
-//   - an island with no quay simply does not have one, and says so instead of throwing.
+//   - an island with no quay district - which is most of them, the live island included -
+//     stands it at the kadehaven instead (Plans/mijlpalen-tot-tweehonderd.md), beside that
+//     harbour's slipway and on the same terms, where it used to wait for good;
+//   - an island with no harbour at all simply does not have one, and says so instead of
+//     throwing.
 //
 // No coordinate is written down: every seed puts its quay somewhere else, so each of
 // these is a relation between the crane and the planks it was placed against.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyLayout, placeAll } from '../lib/layout.mjs';
+import { emptyLayout, placeAll, kadehaven } from '../lib/layout.mjs';
 import { MILESTONES } from '../lib/village.mjs';
 import { QUAY_REACH } from '../shared/quay.mjs';
 
@@ -181,18 +185,47 @@ test('the crane takes nobody\'s ground, and a second scan leaves it alone', () =
   assert.deepEqual(layout.plots, after, 'a second pass over the same village moves nothing');
 });
 
-test('an island with no quay has no crane, and does not fall over', () => {
-  const seed = 1337;
-  const layout = emptyLayout(seed, SIZE);
-  const village = bigVillage();
-  // Every Cowork house and the district they belong to, gone: this is an island where
-  // nobody has ever run a Cowork task, which is most of them.
+// Every Cowork house and the district they belong to, gone: this is an island where nobody
+// has ever run a Cowork task, which is most of them - the live island among them.
+function withoutQuay(village) {
   village.districts = village.districts.filter((d) => d.id !== 'quay');
   village.buildings = village.buildings.filter((b) => b.district !== 'quay');
   village.stats.settlers = village.buildings.length;
+  return village;
+}
+
+for (const seed of SEEDS) {
+  test(`an island with no quay stands its crane beside the kadehaven's slipway (seed ${seed})`, () => {
+    const layout = emptyLayout(seed, SIZE);
+    const village = withoutQuay(bigVillage());
+    const { terrain, unplaced } = placeAll(layout, village, { seed, size: SIZE });
+    assert.equal(layout.districts.quay, undefined, 'no quay');
+    assert.ok(!unplaced.includes('civic:crane'), 'and the crane does not wait for one');
+
+    // The harbour it stands at is the kadehaven, and the kadehaven is one of the four.
+    const kade = kadehaven(layout, terrain);
+    assert.ok(kade && kade.n >= 0, 'the kadehaven is one of the harbours');
+    assertStandsAtTheQuay(layout, terrain, kade);
+    const crane = layout.plots['civic:crane'];
+    for (const c of kade.slip) assert.notDeepEqual([crane.gx, crane.gz], c, 'and not on the slipway');
+    assert.ok(layout.paths.some((p) => p.id === `road:harbour:${kade.n}`), 'which is road:harbour:<n>');
+
+    const after = structuredClone(layout.plots);
+    placeAll(layout, village, { seed, size: SIZE });
+    assert.deepEqual(layout.plots, after, 'a second pass moves nothing');
+  });
+}
+
+test('an island with no harbour at all has no crane, and does not fall over', () => {
+  const seed = 1337;
+  const layout = emptyLayout(seed, SIZE);
+  const village = withoutQuay(bigVillage());
+  placeAll(layout, village, { seed, size: SIZE });
+  // The harbours asked for and none found, the way an island whose coast is all cliff has it.
+  delete layout.plots['civic:crane'];
+  layout.harbours = [null, null, null, null];
 
   const { unplaced } = placeAll(layout, village, { seed, size: SIZE });
-  assert.equal(layout.districts.quay, undefined, 'no quay');
-  assert.equal(layout.plots['civic:crane'], undefined, 'and so no crane');
+  assert.equal(layout.plots['civic:crane'], undefined, 'no harbour, so no crane');
   assert.ok(unplaced.includes('civic:crane'), 'it is on record as waiting, not as forgotten');
 });
