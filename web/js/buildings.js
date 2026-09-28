@@ -247,7 +247,24 @@ function note(g, fn, args, hex, o) {
   // `o` is copied: the editor writes to it, and the call sites hand in literals they
   // reuse across a loop.
   g.userData.part = { fn, args, hex, o: { ...o }, group: openGroup };
+  if (tracing) g.userData.part.sites = callSites();
   return g;
+}
+
+// Where in this file a part was asked for, as line:column pairs off the stack, innermost
+// first. A line that says `x: W / 2 - 0.08` or passes a colour by variable can never be
+// found word for word, so the editor asks where the call *is* instead and edits the
+// numbers in place. Only the editor switches it on: an Error per part is nothing on one
+// model and not something three hundred houses should pay for.
+let tracing = false;
+export function traceParts(on) { tracing = !!on; }
+function callSites() {
+  const out = [];
+  for (const line of String(new Error().stack || '').split('\n')) {
+    const m = /\/buildings\.js(?:\?[^:\s)]*)?:(\d+):(\d+)/.exec(line);
+    if (m) out.push([Number(m[1]), Number(m[2])]);
+  }
+  return out;
 }
 // Moves a finished part and keeps its note honest, for the one or two places that build
 // a piece around the origin and hoist it afterwards.

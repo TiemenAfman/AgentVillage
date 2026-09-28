@@ -981,6 +981,11 @@ pint and the sway are this page's alone and live per house id in the crowd view,
 `f.pos`; the settler is held with `attend` under the name the **sea** knows them by
 (`seaIdOf`, the inverse of `/api/crowd-ids`) - our own `house:<uuid>` is nobody on the sea.
 
+**The keys on foot are rebindable and listed only under Settings → Controls** (the key row
+at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them per browser;
+walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
+key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
+
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only
@@ -1120,8 +1125,14 @@ geometry; the bake still only allows 0 or 1.
   **Hitbox** view (amber is the solid part, red is where a settler's middle stops).
 - `/editor` — the same sheet with drag handles. **Save** posts whole lines to
   `/api/model-save`, which rewrites `web/js/buildings.js` only when each line is found
-  exactly once. Computed lines (`{ y: f + 0.62 }`, loop-generated windows) have no literal
-  to match and are reported rather than guessed at.
+  exactly once. A line that does not match word for word (a colour by variable,
+  `x: W / 2 - 0.08`) is found by its call site instead: with `traceParts(true)` (the
+  editor only) every primitive's note carries line:col off the stack, and `inPlace` in
+  `web/js/editor.js` changes only the moved numbers *by their delta*, folding into a
+  trailing constant, so formulas survive. Refused and named: a placement that is a call
+  (`inside(a, {})`) or a spread missing the key, a call over several lines, and a line
+  that draws several pieces (loop, helper called twice) not all changed alike. A line
+  in a helper two models share (`noticeBoard`) changes both.
 
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
