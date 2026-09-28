@@ -8,11 +8,18 @@
 // of its plot, and the middle of this one is over water.
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 
-// What the islander writes on the yard's record: 0 the empty stocks, 1 the keel and stems,
-// 2 the frames, 3 the planked hull, 4 the lower masts stepped. Anything missing, broken or out
-// of range is read as the empty stocks - a sea older than the field drops it, and its pages
-// are meant to draw a slipway with nothing on it rather than refuse the building.
+// What the islander writes on the yard's record, in the order a Dutch yard of her century built
+// a ship - the bottom before the frames (schaalbouw, as Witsen describes it): 0 the empty stocks,
+// 1 the keel and the stems, 2 the bottom planking held by cleats, 3 the frames set into it and
+// rising to the height of her sides, 4 her hull complete. The masts are never here: a ship was
+// masted at the fitting-out quay after her launch, so she comes to the roads rigged. Anything
+// missing, broken or out of range is read as the empty stocks - a sea older than the field drops
+// it, and its pages are meant to draw a slipway with nothing on it rather than refuse the yard.
 export const YARD_STAGES = 5;
+export const YARD_STAGE_NAMES = Object.freeze(['Empty stocks', 'Keel and stems', 'Bottom planking', 'Frames', 'Hull']);
+// From this stage the hull on the ways is the Batavia's own bake (bataviaOnStocks in
+// buildings.js) rather than anything of the yard's: the ship at 115 is the ship at 120.
+export const HULL_STAGE = 4;
 export function yardStage(spec) {
   const s = Math.floor(Number(spec && spec.stage));
   return Number.isFinite(s) ? Math.min(YARD_STAGES - 1, Math.max(0, s)) : 0;
@@ -20,8 +27,9 @@ export function yardStage(spec) {
 
 // A part of the ship is named `shipyard s<a>-<b> <what>` and is drawn at stages a to b; a part
 // without the token is the yard itself and is always drawn. The range is the whole rule, and a
-// later stage leaves out what it covers: the frames are `s2-2` because the planking goes over
-// them, the stem braces `s1-2` because the side shores take over, the keel `s1-4`.
+// later stage leaves out what it covers: the cleats are `s2-2` because the frames hold the
+// strakes once they are in, the stem braces `s1-2` for the same reason, and the keel, the stems,
+// the bottom and the frames all end at 3, where her own hull takes the ways.
 const STAGED = /^shipyard s(\d)-(\d) /;
 export function shownAtStage(partName, stage) {
   const m = STAGED.exec(partName);

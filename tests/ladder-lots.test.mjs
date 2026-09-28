@@ -47,8 +47,9 @@ test('the eleven rungs from 95 to 200, each standing as a building of its own', 
 });
 
 test('the slipway, at every settler count from nothing to past the top of the ladder', () => {
-  // [first settler count, stage] - each launch at 120, 158 and 192, and the keel 25, the frames
-  // 18, the hull 11 and the masts 5 settlers before it. Written out as the plan gives them.
+  // [first settler count, stage] - each launch at 120, 158 and 192, and the keel 25, the bottom
+  // planking 18, the frames 11 and the finished hull 5 settlers before it. Written out as the
+  // plan gives them.
   const from = [[0, 0], [95, 1], [102, 2], [109, 3], [115, 4], [120, 0],
     [133, 1], [140, 2], [147, 3], [153, 4], [158, 0],
     [167, 1], [174, 2], [181, 3], [187, 4], [192, 0]];

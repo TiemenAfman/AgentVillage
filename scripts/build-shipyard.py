@@ -8,25 +8,30 @@ again replaces both, so edits made by hand in the .blend are lost: this script i
 A VOC yard in the manner of the Oostenburg one in Amsterdam (Plans/scheepswerf.md): a timber
 slipway (helling) running down into the water on piles, keel blocks along it, a tarred shed
 (loods) and a pair of sheerlegs (bok) at the landward end, timber and planks stacked beside
-them and a tar kettle on its hearth. On the slipway the yard builds a ship in stages, and the
-stage is a number the islander writes on the building record (`spec.stage`, 0 to 4):
+them and a tar kettle on its hearth. On the slipway the yard builds the Batavia in stages, in
+the Dutch order of her century - the bottom before the frames (schaalbouw, as Witsen has it) -
+and the stage is a number the islander writes on the building record (`spec.stage`, 0 to 4):
 
     0  empty stocks: the slipway and its keel blocks
-    1  the keel laid, the stem and the sternpost raised and braced
-    2  the frames (spanten) standing on the keel, held by ribbands, with the transom framed
-       and the deck beams across
-    3  the hull planked: bottom, wales, topsides, the flat transom, the decks
-    4  the lower masts stepped - no rigging and no sails yet
+    1  the keel laid, the stem and the sternpost raised and braced, the wing transom across
+    2  the bottom planking (bodemhuid): a shell of strakes round the turn of the bilge, held
+       by cleats (klampen) on the outside, and not a frame yet
+    3  the frames (spanten) set into that shell and rising out of it to the height of her
+       sides, with ribbands along them, her deck beams and her stern timbers standing free
+    4  her hull complete: the upper planking, the decks and the high stern - which is her own
+       bake, drawn on these ways by buildings.js (bataviaOnStocks), not anything in this file
+
+No masts at any stage: a ship was masted at the fitting-out quay after her launch, so she
+comes to the roads at 120 rigged, and the yard never shows her with them.
 
 **One hero asset, not five civic ones.** Every part is baked into the one asset `shipyard`,
 and buildings.js picks what a stage shows by the part's name: a part called
 `shipyard s<a>-<b> <what>` is drawn at stages a to b, and a part with no such token is the
 yard itself and always drawn. The stages cannot be assets of their own, and it is the ground
 rule that says so rather than taste: scripts/model-rules.mjs holds every asset's lowest point
-to y = 0, and a keel laid on blocks halfway up a slipway, or a mast stepped on it, is nowhere
-near the pile feet the set stands on. A hero is measured as a whole, and that is exactly the
-honest reading here - it is one building, drawn once on an island, whose ship is part of it.
-The whole set is inside HERO_BUDGET; what one stage draws is well under it.
+to y = 0, and a keel laid on blocks halfway up a slipway is nowhere near the pile feet the set
+stands on. A hero is measured as a whole, and that is exactly the honest reading here - it is
+one building, drawn once on an island, whose ship is part of it.
 
 **Modelled in one frame, like the docks.** y = 0 is the feet of the piles, which is the
 lowest thing in the set and what the ground rule wants. The yard's own datum is LAND above
@@ -43,17 +48,14 @@ runs down the rest into the water. The ship is built stern to the sea, as ships 
 were launched stern first, because the stern is the fuller end and lifts first, and a bow
 that dips before the ship is afloat can dig in and trip the launch.
 
-The hull is modelled to the numbers of the finished Batavia (Plans/mijlpalen-tot-
-tweehonderd.md, "Het VOC-schip"): about 12 long at the waterline, 2.8 in the beam, a main
-deck 1.1 above where her waterline will be, a high stern with a flat transom, and lower masts
-reaching about 7.7 above the keel. On the stocks there is no waterline, so the bottom is
-paid with the pale stuff the Batavia replica wears below it, and the join of the pale and the
-tarred brown is where she will float - which is also what tests/shipyard.test.mjs measures
-the length at. She lies on the ways at their own declivity, 1 in 24, as a keel is laid.
+Stages 1 to 3 are drawn on her own lines (the tables are copied from scripts/build-batavia.py
+below, and tests/shipyard.test.mjs holds the frames to her bake), so the skeleton at 109 is
+the ship that is planked up at 115 and lies on the roads at 120. She lies on the ways at their
+own declivity, 1 in 24, as a keel is laid.
 
 Written in island coordinates (x right, y up, z to the front) through xyz(); the ship is
-drawn in a frame of her own - x across, y up from the bottom of the keel, z aft - and turned
-onto the slipway by ship().
+drawn in her own frame - x across, y up from the bottom of the keel, z towards her bow, as
+build-batavia.py draws her - and turned stern to the sea and onto the slipway by her().
 """
 import bpy
 import math
@@ -83,9 +85,8 @@ def material(sheet, name, color, emissive=False):
 
 
 # The colours. The yard is tarred timber and red pantiles under a white fascia, which is what
-# a Dutch yard shed is; the slipway is weathered oak with its ways dark with grease; the ship
-# is fresh oak where she is still a skeleton, and, planked, tarred brown above her waterline
-# with black wales and pale below it.
+# a Dutch yard shed is; the slipway is weathered oak with its ways dark with grease; the ship,
+# until her own bake stands there at stage 4, is fresh oak.
 SLIP = material('plank', 'slip deck', 0x9a7450)
 WAYS = material('plankZ', 'greased ways', 0x4a3524)
 BLOCK = material('plank', 'keel block', 0x7c5838)
@@ -111,14 +112,8 @@ PITCH = material('plain', 'tar', 0x1c1714)
 OAK = material('plankZ', 'keel oak', 0x7a5232)
 TIMBER = material('plank', 'frame oak', 0xa27a4e)
 TIMBER_Z = material('plankZ', 'ribband oak', 0xa27a4e)
-BOTTOM = material('plankZ', 'white stuff', 0xd8cfb4)
-HULL = material('plankZ', 'tarred strakes', 0x5a3f2c)
-WALE = material('plankZ', 'wales', 0x2e2620)
-DECK = material('plankZ', 'deck planks', 0xb08a5c)
-TRANSOM = material('plank', 'transom', 0x6b4a32)
-WINDOW = material('plain', 'stern windows', 0x2b2a2e)
-MAST = material('plank', 'mast', 0x9a7a52)
-TOP = material('plank', 'mast top', 0x6e5034)
+BOARDS_Z = material('plankZ', 'bottom strakes', 0xb58a5a)
+CLEAT = material('plank', 'cleat', 0x6e4c30)
 
 
 # ---------------------------------------------------------------- building blocks
@@ -270,9 +265,11 @@ def slip_top(z):
 
 # The ship's frame, and where it lies on the slipway: her keel's midship point sits BLOCK_H
 # over the slipway at SHIP_Z, and she is turned by the declivity so the keel lies parallel to
-# the ways - stern down towards the water.
+# the ways - stern down towards the water. SHIP_Z is as far to sea as her gallery lets her go
+# (it ends 0.3 inside the lot): that much room at the bow is what takes her beakhead and its
+# lion clear of the sheerlegs' stay.
 BLOCK_H = 0.26
-SHIP_Z = 0.73
+SHIP_Z = 1.1
 TILT = math.atan(DECLIVITY)
 KEEL_Y0 = slip_top(SHIP_Z) + BLOCK_H
 COS, SIN = math.cos(TILT), math.sin(TILT)
@@ -335,7 +332,7 @@ blocks = Part('blocks', (0, LAND, 0))
 # The keel blocks, a stack under every metre of keel with its top on the line the keel will lie
 # on, old and new timber by turns. The stocks are what the yard is when there is no ship.
 for i in range(11):
-    z = -4.35 + i * 1.07
+    z = -4.0 + i * 1.04
     mat = BLOCK if i % 2 else BLOCK_DARK
     lo, hi = slip_top(z - 0.09), slip_top(z + 0.09)
     klo, khi = keel_line(z - 0.09), keel_line(z + 0.09)
@@ -481,284 +478,335 @@ spares.build()
 
 
 # ================================================================ the ship
-# Her lines, in her own frame: y up from the bottom of the keel, z aft, x to starboard. Every
-# row below is a level line round the hull at one height (the sheer, the top one, rises to the
-# bow and steps up aft to the high stern), and every one of them runs from the stem to the
-# sternpost - or, above the wing transom, to the flat transom.
-KEEL_TOP = 0.14         # the rabbet: where the planking meets the keel
-WL = 0.95               # where she will float: the main deck is 1.1 over it
-WING = 1.30             # the wing transom, the lower edge of the flat stern
-STEM_HALF = 0.05
-# The stem's fore edge, (height, z): it rakes forward from the forefoot.
-STEM = [(KEEL_TOP, -5.30), (0.40, -5.70), (WL, -6.00), (1.60, -6.25), (2.30, -6.47), (2.72, -6.56)]
+# She is the Batavia (scripts/build-batavia.py, Plans/batavia.md), and she is built the Dutch
+# way of her century - the bottom first, as Witsen describes it (schaalbouw): the keel and the
+# stems, then a shell of bottom planks held by cleats, then the frames set into that shell and
+# rising to the height of her sides, then the upper planking, the decks and the high stern. The
+# masts are stepped at the fitting-out quay after the launch, so none of them stands here.
+#
+# Her lines are hers, table for table: the half-beam at each height, where she ends fore and
+# aft at each height, what her transom leaves of the beam, how bluff her bow is, where her
+# decks break and how her rails sweep. Copied from build-batavia.py rather than imported,
+# because that builder builds her the moment it is run; tests/shipyard.test.mjs holds the
+# frames here to her bake, so the copy cannot drift without a test saying so. Stage 4 is not
+# modelled here at all: buildings.js draws her own bake on these ways (bataviaOnStocks), so
+# the hull that stands on the slipway at 115 is the hull that lies on the roads at 120.
+#
+# Her frame: x across (her port is +x), y up from the bottom of her keel, z towards her bow.
+# her() turns her stern to the sea - a half turn about y - and lays her on the ways.
+BEAM_T = [(0, .07), (.3, .78), (.65, 1.18), (1.0, 1.34), (1.3, 1.40), (1.7, 1.37), (2.1, 1.30),
+          (2.6, 1.21), (3.1, 1.12), (3.9, 1.04)]
+AFT_T = [(0, -5.45), (.3, -5.62), (.65, -5.8), (1.0, -5.98), (1.3, -6.08), (1.7, -6.15), (2.1, -6.2)]
+FORE_T = [(0, 5.25), (.3, 5.55), (.65, 5.78), (1.0, 6.0), (1.3, 6.12), (1.7, 6.26), (2.1, 6.36)]
+TRANSOM_T = [(0, 1.0), (.12, .12), (.65, .12), (1.0, .22), (1.3, .42), (1.7, .62), (2.1, .72), (3.9, .74)]
+BLUFF_T = [(0, 1.25), (.65, 1.55), (1.0, 1.8), (1.3, 2.1), (2.1, 2.2)]
+UM, UA = .56, .38
+STATIONS = [0, .015, .04, .075, .12, .17, .25, .31, UA, .5, UM, .68, .8, .85, .89, .925, .955, .978, .993, 1.0]
 
 
-def fore_z(y):
-    return lerp(STEM, y)
+def plan(u, y):
+    if u >= UM:
+        s = (u - UM) / (1 - UM)
+        return max(0.0, 1 - s ** lerp(BLUFF_T, y)) ** .5
+    if u <= UA:
+        s = (UA - u) / UA
+        fs = lerp(TRANSOM_T, y)
+        return fs + (1 - fs) * max(0.0, 1 - s * s) ** .5
+    return 1.0
 
 
-def aft_z(y):
-    if y <= WING:
-        return 5.62 + (y - KEEL_TOP) * (0.60 / (WING - KEEL_TOP))    # the sternpost, raking aft
-    return 6.22 + (y - WING) * 0.20                                   # the transom, raking too
+def ends(y):
+    return lerp(AFT_T, y), lerp(FORE_T, y)
 
 
-# Half the breadth amidships at each height: widest a little above the waterline (2.8 over the
-# wales, 2.7 on the waterline) and then drawing in towards the rail - the tumblehome these
-# ships had, which is what makes a VOC hull read as one rather than as a barge.
-BREADTH = [(KEEL_TOP, 0.07), (0.32, 0.80), (0.60, 1.17), (WL, 1.35), (1.15, 1.40), (WING, 1.40),
-           (1.75, 1.33), (1.88, 1.30), (2.30, 1.20), (3.40, 1.08)]
-# And the transom's half breadth: the flat stern is nearly as wide as the ship, as it was.
-TRANSOM_HALF = [(WING, 0.98), (1.75, 1.03), (1.88, 1.03), (2.30, 0.98), (3.30, 0.84)]
-MIDSHIP = 0.46          # where along her the section is fullest, a little forward of the middle
-# The sheer: forecastle rail, waist, quarterdeck, poop and taffrail.
-SHEER = [(0.0, 2.72), (0.10, 2.66), (0.21, 2.60), (0.27, 2.32), (0.62, 2.30), (0.68, 2.62), (0.84, 3.00), (1.0, 3.30)]
+def hull(u, y, sign=1.0):
+    a, b = ends(y)
+    return Vector((sign * lerp(BEAM_T, y) * plan(u, y), y, a + u * (b - a)))
 
 
-def fullness(y):
-    """How bluff the ends are at a height: fine low down, round and full above the water."""
-    fore = (lerp([(KEEL_TOP, 1.5), (0.32, 1.7), (0.60, 1.9), (WL, 2.1), (1.15, 2.3)], y),
-            lerp([(KEEL_TOP, 1.0), (0.32, 0.9), (0.60, 0.75), (WL, 0.6), (1.15, 0.5)], y))
-    aft = (lerp([(KEEL_TOP, 1.4), (0.32, 1.5), (0.60, 1.7), (WL, 2.0), (1.15, 2.3)], y),
-           lerp([(KEEL_TOP, 1.3), (0.32, 1.2), (0.60, 1.0), (WL, 0.8), (1.15, 0.65)], y))
-    return fore, aft
+def u_of(z, y):
+    a, b = ends(y)
+    return (z - a) / (b - a)
 
 
-def half_breadth(t, y):
-    """Half the breadth at height y, at t along the row (0 the stem, 1 the stern)."""
-    B = lerp(BREADTH, y)
-    fore, aft = fullness(y)
-    if t <= MIDSHIP:
-        u = (MIDSHIP - t) / MIDSHIP
-        f = (1 - u ** fore[0]) ** fore[1]
-    else:
-        u = (t - MIDSHIP) / (1 - MIDSHIP)
-        if y < WING - 1e-9:
-            f = max(0.0, 1 - u ** aft[0]) ** aft[1]
-        else:
-            f = 1 - (1 - lerp(TRANSOM_HALF, y) / B) * u ** 2.6
-    return max(STEM_HALF, B * f)
+def side(z, y):
+    return hull(min(1.0, max(0.0, u_of(z, y))), y).x
 
 
-ROW_Y = [KEEL_TOP, 0.32, 0.60, WL, 1.15, WING, 1.75, 1.88, None]   # None: the sheer
-SHEER_ROW = len(ROW_Y) - 1
+def reaches(z, y):
+    """Whether her side at height y runs as far as z, rather than ending at a stem short of it."""
+    a, b = ends(y)
+    return a + 0.02 < z < b - 0.02
 
 
-def row_point(r, t):
-    y = lerp(SHEER, t) if ROW_Y[r] is None else ROW_Y[r]
-    z = fore_z(y) + (aft_z(y) - fore_z(y)) * t
-    return Vector((half_breadth(t, y), y, z))
+def sheer(z):
+    return (z / 6.2) ** 2
 
 
-def row_t_at(r, z):
-    """Where along row r it passes a given z, by bisection: every row runs stem to stern."""
-    lo, hi = 0.0, 1.0
-    for _ in range(40):
-        mid = (lo + hi) / 2
-        if row_point(r, mid).z < z:
-            lo = mid
-        else:
-            hi = mid
-    return (lo + hi) / 2
+# Her decks and rails: the poop, the quarterdeck, the waist and the forecastle, with the rails
+# sweeping up to the taffrail aft and a little to the head forward.
+Z_POOP, Z_QD, Z_FC = -3.7, -0.5, 3.2
+TRANSOM_Z, STEM_Z = ends(2.1)
 
 
-COLUMNS = 17            # stations round the shell, closer together towards the ends
-TS = [0.5 - 0.5 * math.cos(math.pi * j / (COLUMNS - 1)) for j in range(COLUMNS)]
-GRID = [[row_point(r, t) for t in TS] for r in range(len(ROW_Y))]
+def aft_sweep(z):
+    return 0.22 * min(1.0, max(0.0, (Z_POOP - z) / (Z_POOP - TRANSOM_Z))) ** 1.6
 
 
-def mirror(p):
-    return Vector((-p.x, p.y, p.z))
+def fore_sweep(z):
+    return 0.12 * min(1.0, max(0.0, (z - Z_FC) / (STEM_Z - Z_FC))) ** 2
 
 
-def outward(p):
-    """Which way is out from the hull at a point on it, for orienting faces - see Part.poly."""
-    return Vector((p.x, p.y - 1.1, p.z * 0.3))
+def deck_and_rail(z):
+    if z < Z_POOP:
+        return 3.1, 3.35 + aft_sweep(z)
+    if z < Z_QD:
+        return 2.65, 2.9
+    if z < Z_FC:
+        return 2.1, 2.35
+    return 2.6, 2.85 + fore_sweep(z)
 
 
-def shell_band(part, r, mat, scale=1.0):
-    """The planking between rows r and r+1, both sides, as seen from outside."""
-    for side in (1, -1):
-        for j in range(COLUMNS - 1):
-            q = [GRID[r][j], GRID[r][j + 1], GRID[r + 1][j + 1], GRID[r + 1][j]]
-            q = [Vector((p.x * side * scale, p.y, p.z)) for p in q]
-            mid = sum(q, Vector()) / 4
-            part.poly([ship(p) for p in q], mat, ship_dir(outward(mid)))
+TAFFRAIL = deck_and_rail(TRANSOM_Z)[1]
+ENTRY_Z = 1.4        # the middle of her entry port, in the starboard waist
 
 
-def ship_dir(v):
-    """A direction in the ship's frame, turned onto the slipway with her."""
-    return ship(v) - ship((0, 0, 0))
+def her(p):
+    """A point in her frame, on the slipway."""
+    x, y, z = p
+    return ship((-x, y, -z))
+
+
+def her_dir(v):
+    return her(v) - her((0, 0, 0))
+
+
+def out_of(c):
+    """Away from her own axis: what her skin is wound by (build-batavia.py outward())."""
+    c = Vector(c)
+    return c - Vector((0, min(max(c.y, 0.3), 3.0), min(max(c.z, -4.0), 4.0)))
+
+
+def transom_half(y):
+    return lerp(BEAM_T, y) * lerp(TRANSOM_T, y)
+
+
+def prism(part, levels, mat):
+    """A timber along a line of cross-sections (each four corners, the same way round), its
+    sides faced away from the line's own middle and both ends capped."""
+    for a, b in zip(levels, levels[1:]):
+        mid = (sum(a, Vector()) + sum(b, Vector())) / 8
+        for i in range(4):
+            q = [a[i], a[(i + 1) % 4], b[(i + 1) % 4], b[i]]
+            part.poly([her(p) for p in q], mat, her_dir(sum(q, Vector()) / 4 - mid))
+    for ring, far in ((levels[0], levels[1]), (levels[-1], levels[-2])):
+        part.poly([her(p) for p in ring], mat, her_dir(sum(ring, Vector()) / 4 - sum(far, Vector()) / 4))
 
 
 # ---------------------------------------------------------------- stage 1: keel and stems
-keel = Part('s1-4 keel', (0, LAND, 0))
-# The keel on its blocks, its heel under the sternpost.
-KEEL_HALF = 0.07
-kpts = [(-KEEL_HALF, 0, -5.30), (KEEL_HALF, 0, -5.30), (KEEL_HALF, KEEL_TOP + 0.02, -5.30), (-KEEL_HALF, KEEL_TOP + 0.02, -5.30),
-        (-KEEL_HALF, 0, 5.76), (KEEL_HALF, 0, 5.76), (KEEL_HALF, KEEL_TOP + 0.02, 5.76), (-KEEL_HALF, KEEL_TOP + 0.02, 5.76)]
-hexa(keel, [ship(p) for p in kpts], OAK)
+# The keel, on its blocks: as wide as the flat of her bottom and a little proud of it, from
+# under her sternpost to her forefoot. Its origin is her own origin laid on the ways - the
+# bottom of her keel amidships - and that is how buildings.js knows where to lay her bake at
+# stage 4: it reads it off this part, and her declivity off the fall of this keel.
+KEEL_HALF, KEEL_H = 0.08, 0.18
+keel = Part('s1-3 keel', her((0, 0, 0)))
+k0, k1 = AFT_T[0][1] - 0.10, FORE_T[0][1] + 0.02
+hexa(keel, [her(p) for p in [(-KEEL_HALF, 0, k0), (KEEL_HALF, 0, k0), (KEEL_HALF, KEEL_H, k0), (-KEEL_HALF, KEEL_H, k0),
+                             (-KEEL_HALF, 0, k1), (KEEL_HALF, 0, k1), (KEEL_HALF, KEEL_H, k1), (-KEEL_HALF, KEEL_H, k1)]], OAK)
 keel.build()
 
-stems = Part('s1-4 stems', (0, LAND, 0))
-# The stem, a curve of timber rising and raking forward out of the forefoot, 0.13 deep fore and
-# aft outside the rabbet, and the sternpost raking aft out of the heel. Faces are oriented, not
-# counted on fingers: see Part.poly.
-STEM_DEPTH = 0.13
-prev = None
-for k, (y, z) in enumerate(STEM):
-    pts = [Vector((-0.06, y, z + 0.08)), Vector((0.06, y, z + 0.08)),
-           Vector((0.06, y, z - STEM_DEPTH)), Vector((-0.06, y, z - STEM_DEPTH))]
-    if k == 0:
-        # down to the bottom of the keel at the forefoot
-        base = [Vector((p.x, 0.0, p.z)) for p in pts]
-        prev = base
-    for i in range(4):
-        q = [prev[i], prev[(i + 1) % 4], pts[(i + 1) % 4], pts[i]]
-        mid = sum(q, Vector()) / 4
-        centre = (sum(prev, Vector()) + sum(pts, Vector())) / 8
-        stems.poly([ship(p) for p in q], OAK, ship_dir(mid - centre))
-    prev = pts
-stems.poly([ship(p) for p in prev], OAK, ship_dir(Vector((0, 1, -0.3))))
-# The sternpost: from the heel of the keel to the wing transom, and on up the middle of the
-# stern to the taffrail, which is the post the whole transom is hung on.
-sp = [(KEEL_TOP * 0, 5.62), (WING, aft_z(WING)), (3.30, aft_z(3.30))]
-for (y0, z0), (y1, z1) in zip(sp, sp[1:]):
-    a = [Vector((-0.06, y0, z0 - 0.02)), Vector((0.06, y0, z0 - 0.02)), Vector((0.06, y0, z0 + 0.12)), Vector((-0.06, y0, z0 + 0.12))]
-    b = [Vector((-0.06, y1, z1 - 0.02)), Vector((0.06, y1, z1 - 0.02)), Vector((0.06, y1, z1 + 0.10)), Vector((-0.06, y1, z1 + 0.10))]
-    centre = (sum(a, Vector()) + sum(b, Vector())) / 8
-    for i in range(4):
-        q = [a[i], a[(i + 1) % 4], b[(i + 1) % 4], b[i]]
-        stems.poly([ship(p) for p in q], OAK, ship_dir(sum(q, Vector()) / 4 - centre))
-    top = b
-stems.poly([ship(p) for p in top], OAK, ship_dir(Vector((0, 1, 0))))
+stems = Part('s1-3 stems', her((0, 0, 0)))
+# The stem, a curve of timber rising out of the forefoot along her own bow and upright above
+# the main deck line to the head of the forecastle; and the sternpost, raked along her own
+# stern up to the counter, with the wing transom (the hekbalk) across it - the timber the whole
+# flat stern will be hung on, set up with the post before anything else of the stern exists.
+STEM_Y = [0, .3, .65, 1.0, 1.3, 1.7, 2.1, 2.6, 2.97]
+prism(stems, [[Vector((sx, y, ends(y)[1] + dz)) for sx, dz in ((-0.065, -0.07), (0.065, -0.07), (0.065, 0.10), (-0.065, 0.10))]
+              for y in STEM_Y], OAK)
+POST_Y = [0, .3, .65, 1.0, 1.3, 1.7, 2.1, 2.3]
+prism(stems, [[Vector((sx, y, ends(y)[0] + dz)) for sx, dz in ((-0.065, 0.06), (0.065, 0.06), (0.065, -0.10), (-0.065, -0.10))]
+              for y in POST_Y], OAK)
+WING_Y = 1.3
+w, zw = transom_half(WING_Y), ends(WING_Y)[0]
+hexa(stems, [her(p) for p in [(-w, WING_Y - 0.07, zw - 0.04), (w, WING_Y - 0.07, zw - 0.04), (w, WING_Y + 0.07, zw - 0.04),
+                              (-w, WING_Y + 0.07, zw - 0.04), (-w, WING_Y - 0.07, zw + 0.08), (w, WING_Y - 0.07, zw + 0.08),
+                              (w, WING_Y + 0.07, zw + 0.08), (-w, WING_Y + 0.07, zw + 0.08)]], OAK)
 stems.build()
 
 braces = Part('s1-2 braces', (0, LAND, 0))
 # While there is nothing to hold them, the stem and the sternpost are held up by shores of their
-# own, from the slipway on either side.
-# From the sides rather than from ahead: ahead of the stem is the head of the slipway and the
-# sheerlegs' feet, and it is sideways that a single timber on a keel falls.
-for y, z, lean in ((1.9, fore_z(1.9) - 0.05, 0.6), (2.2, aft_z(2.2) + 0.05, -0.6)):
-    for side in (1, -1):
-        top = ship((side * 0.065, y, z))
-        foot = Vector((side * (SLIP_W - 0.2), 0, top.z + lean))
+# own from either side of the slipway: sideways is how a single timber on a keel falls, and
+# ahead of the stem are the head of the slipway and the sheerlegs' feet.
+for y, z, lean in ((1.9, ends(1.9)[1], 0.6), (2.1, ends(2.1)[0], -0.6)):
+    for s in (1, -1):
+        top = her((s * 0.07, y, z))
+        foot = Vector((math.copysign(SLIP_W - 0.2, top.x), 0, top.z + lean))
         foot.y = slip_top(foot.z) - 0.01
         rod(braces, foot, top, 0.045, SPAR, sides=4, turn=math.pi / 4)
 braces.build()
 
-# ---------------------------------------------------------------- stage 2: the frames
-# Thirteen frames from the stem to the sternpost, each one rib from rail to rail across a floor
-# over the keel. A frame is a section through the hull at one z - the rows are found where they
-# pass it - drawn as a three-sided timber, its outer face on the skin the planking will lie on
-# and its back ridged inwards: the least that reads as a timber rather than as a slat from
-# every side. Rows 4 and 7, the edges of the wales, are skipped, because a rib with a knot at
-# every strake is twice the triangles and the eye does not follow it.
-#
-# The first and last stand out over the rake of the stem and the sternpost, where the lower
-# rows have already ended: those frames start at the lowest row that reaches them, on the stem
-# or the post, rather than dropping a leg into the air ahead of the forefoot. Twelve from the
-# forefoot to the heel left a bare cell at either end, and the skeleton read as a box.
-FRAME_ROWS = [0, 2, 3, 5, 6, SHEER_ROW]
-FRAME_Z = [-5.45 + k * (11.3 / 12) for k in range(13)]
-RIB_W, RIB_D = 0.045, 0.075
+# ---------------------------------------------------------------- stage 2: the bottom shell
+# Her bottom planking, laid before a single frame: strakes from the keel round the turn of the
+# bilge, on her own lines to a height a little over the bottom's own three rows, rising a hand
+# towards the ends. Planked both faces and along its top edge, because at this stage you look
+# into it from above, and closed at the stern where it comes in to the post.
+SHELL_T = 0.04
+SHELL_ROWS = [(0.0, 0.0), (0.3, 0.0), (0.65, 0.0), (0.84, 0.18)]      # height, and how much of the sheer
 
 
-def reaches(r, z):
-    """Whether row r runs as far as z, rather than ending at the stem or the post short of it."""
-    ends = [row_point(r, 0).z, row_point(r, 1).z]
-    return ends[0] + 0.02 < z < ends[1] - 0.02
+def shell_point(u, row, sign=1.0):
+    base, lift = row
+    z = hull(u, base).z
+    return hull(u, base + lift * sheer(z), sign)
 
 
-def section(z):
-    return [row_point(r, row_t_at(r, z)) for r in FRAME_ROWS if reaches(r, z)]
+def inboard(v, sign):
+    return Vector((sign * max(0.0, abs(v.x) - SHELL_T), v.y, v.z))
 
 
-frames = Part('s2-2 frames', (0, LAND, 0))
+shell = Part('s2-3 bottom', her((0, 0, 0)))
+for sign in (1.0, -1.0):
+    for u0, u1 in zip(STATIONS, STATIONS[1:]):
+        for r in range(len(SHELL_ROWS) - 1):
+            q = [shell_point(u0, SHELL_ROWS[r], sign), shell_point(u1, SHELL_ROWS[r], sign),
+                 shell_point(u1, SHELL_ROWS[r + 1], sign), shell_point(u0, SHELL_ROWS[r + 1], sign)]
+            c = sum(q, Vector()) / 4
+            shell.poly([her(p) for p in q], BOARDS_Z, her_dir(out_of(c)))
+            shell.poly([her(inboard(p, sign)) for p in q], BOARDS_Z, her_dir(-out_of(c)))
+        a, b = shell_point(u0, SHELL_ROWS[-1], sign), shell_point(u1, SHELL_ROWS[-1], sign)
+        shell.poly([her(p) for p in (a, b, inboard(b, sign), inboard(a, sign))], BOARDS_Z, her_dir(Vector((0, 1, 0))))
+for r in range(len(SHELL_ROWS) - 1):
+    a, b = shell_point(0, SHELL_ROWS[r]), shell_point(0, SHELL_ROWS[r + 1])
+    q = [Vector((-a.x, a.y, a.z)), a, b, Vector((-b.x, b.y, b.z))]
+    shell.poly([her(p) for p in q], BOARDS_Z, her_dir(Vector((0, 0, -1))))
+    shell.poly([her(p + Vector((0, 0, SHELL_T))) for p in q], BOARDS_Z, her_dir(Vector((0, 0, 1))))
+shell.build()
+
+cleats = Part('s2-2 cleats', her((0, 0, 0)))
+# The cleats (klampen) that hold the bottom strakes to each other until the frames are in: a
+# short batten nailed across the upper seams on the outside, every metre and a half or so.
+for sign in (1.0, -1.0):
+    for u in (0.2, 0.31, 0.44, 0.56, 0.68, 0.8, 0.89):
+        lo, hi = hull(u, 0.52, sign), shell_point(u, SHELL_ROWS[-1], sign) - Vector((0, 0.03, 0))
+        n = Vector((sign, 0, 0))
+        back = [lo + Vector((0, 0, -0.05)), lo + Vector((0, 0, 0.05)), hi + Vector((0, 0, 0.05)), hi + Vector((0, 0, -0.05))]
+        front = [p + n * 0.025 for p in back]
+        c = (lo + hi) / 2 + n * 0.0125
+        cleats.poly([her(p) for p in front], CLEAT, her_dir(n))
+        for i in range(4):
+            q = [back[i], back[(i + 1) % 4], front[(i + 1) % 4], front[i]]
+            cleats.poly([her(p) for p in q], CLEAT, her_dir(sum(q, Vector()) / 4 - c))
+cleats.build()
+
+shores = Part('s2-4 shores', (0, LAND, 0))
+# Five shores a side from the edge of the slipway to the turn of her bilge: what holds a hull on
+# a single line of blocks upright, from the first strakes of the bottom until the cradle is
+# built under her for the launch.
+for z in (-3.9, -2.0, 0.0, 2.0, 3.9):
+    for s in (1, -1):
+        top = her((s * (side(z, 0.75) + 0.03), 0.78, z))
+        foot = Vector((math.copysign(SLIP_W - 0.12, top.x), 0, top.z))
+        foot.y = slip_top(foot.z) - 0.01
+        rod(shores, foot, top, 0.045, SPAR, sides=4, turn=math.pi / 4)
+shores.build()
+
+# ---------------------------------------------------------------- stage 3: the frames
+# Thirteen frames set into the bottom shell and rising out of it to the height of her sides:
+# each one timber from rail to rail across a floor over the keel, a section through her at one
+# z on her own lines, just inside the planking it will carry. A three-sided timber, its outer
+# face towards the skin and its back ridged inwards - the least that reads as a timber rather
+# than a slat from every side. Out over the rake of the stem and the post, where her lower
+# heights have already ended, a frame starts at the lowest height that reaches it, on the stem
+# or the post, rather than dropping a leg into the air.
+FRAME_Z = [-5.75 + k * (11.35 / 12) for k in range(13)]
+FRAME_Y = [0.3, 0.65, 1.0, 1.7, 2.1, 3.1]
+RIB_W, RIB_D, RIB_IN = 0.045, 0.075, SHELL_T + 0.005
+
+
+def frame_section(z):
+    """Her side at z, heights up to her rail there, just inside her planking."""
+    top = deck_and_rail(z)[1]
+    ys = [y for y in FRAME_Y if y < top - 0.05 and reaches(z, y)] + ([top] if reaches(z, min(top, 2.1)) else [])
+    return [Vector((side(z, y) - RIB_IN, y, z)) for y in ys]
+
+
+frames = Part('s3-3 frames', her((0, 0, 0)))
 for z in FRAME_Z:
-    pts = section(z)
-    # Port rail down to the floor across the keel - or across the stem or the post, out at the
-    # ends - and up to the starboard rail, in one plane.
-    floor = Vector((0, pts[0].y + (0.06 if pts[0].y <= KEEL_TOP else 0.0), z))
-    line = [mirror(p) for p in reversed(pts)] + [floor] + pts
-    line = [Vector((p.x * 0.985, p.y, z)) for p in line]
+    pts = frame_section(z)
+    floor_y = KEEL_H + 0.02 if reaches(z, 0.0) else pts[0].y
+    line = [Vector((-p.x, p.y, p.z)) for p in reversed(pts)] + [Vector((0, floor_y, z))] + pts
     inward = []
-    for i, p in enumerate(line):
+    for i in range(len(line)):
         a, b = line[max(0, i - 1)], line[min(len(line) - 1, i + 1)]
         t = Vector((b.x - a.x, b.y - a.y, 0)).normalized()
-        # left of the direction of travel, port to starboard, is into the hull
-        inward.append(Vector((-t.y, t.x, 0)))
+        inward.append(Vector((-t.y, t.x, 0)))       # left of the way the line runs, -x to +x, is into her
     for i in range(len(line) - 1):
         a, b = line[i], line[i + 1]
         ia, ib = a + inward[i] * RIB_D, b + inward[i + 1] * RIB_D
         af, aa = a + Vector((0, 0, -RIB_W)), a + Vector((0, 0, RIB_W))
         bf, ba = b + Vector((0, 0, -RIB_W)), b + Vector((0, 0, RIB_W))
-        mid = (a + b) / 2
         out = -(inward[i] + inward[i + 1])
-        frames.poly([ship(p) for p in (af, bf, ba, aa)], TIMBER, ship_dir(out))
-        frames.poly([ship(p) for p in (aa, ba, ib, ia)], TIMBER, ship_dir(Vector((0, 0, 1)) - out * 0.3))
-        frames.poly([ship(p) for p in (af, ia, ib, bf)], TIMBER, ship_dir(Vector((0, 0, -1)) - out * 0.3))
-    for end, k in ((line[0], 0), (line[-1], len(line) - 1)):
-        tip = end + inward[k] * RIB_D
-        frames.poly([ship(p) for p in (end + Vector((0, 0, -RIB_W)), end + Vector((0, 0, RIB_W)), tip)], TIMBER,
-                    ship_dir(Vector((0, 1, 0))))
+        frames.poly([her(p) for p in (af, bf, ba, aa)], TIMBER, her_dir(out))
+        frames.poly([her(p) for p in (aa, ba, ib, ia)], TIMBER, her_dir(Vector((0, 0, 1)) - out * 0.3))
+        frames.poly([her(p) for p in (af, ia, ib, bf)], TIMBER, her_dir(Vector((0, 0, -1)) - out * 0.3))
+    for k in (0, len(line) - 1):
+        end = line[k]
+        frames.poly([her(p) for p in (end + Vector((0, 0, -RIB_W)), end + Vector((0, 0, RIB_W)), end + inward[k] * RIB_D)],
+                    TIMBER, her_dir(Vector((0, 1, 0))))
 frames.build()
 
-ribbands = Part('s2-2 ribbands', (0, LAND, 0))
-# Battens bent round the frames at the height of the main wale and at the sheer, which is what
-# holds a skeleton to its shape until it is planked - and what shows its lines from the quay.
-for r in (5, SHEER_ROW):
-    run = [row_point(r, row_t_at(r, z)) for z in FRAME_Z]
-    for side in (1, -1):
+ribbands = Part('s3-3 ribbands', her((0, 0, 0)))
+# Battens bent round the frames along the lines of her two wales, sweeping with her sheer as
+# the wales will: what holds the skeleton to its shape until it is planked, and what shows her
+# lines from the quay.
+for base, lift in ((1.18, 0.14), (1.76, 0.28)):
+    run = [Vector((side(z, base + lift * sheer(z)), base + lift * sheer(z), z)) for z in FRAME_Z if reaches(z, base)]
+    for sign in (1, -1):
         for a, b in zip(run, run[1:]):
-            a2, b2 = Vector((a.x * side * 1.01, a.y, a.z)), Vector((b.x * side * 1.01, b.y, b.z))
+            a2, b2 = Vector((a.x * sign, a.y, a.z)), Vector((b.x * sign, b.y, b.z))
             lo, hi = Vector((0, -0.05, 0)), Vector((0, 0.03, 0))
-            out = Vector((side, 0, 0))
-            ribbands.poly([ship(p) for p in (a2 + lo, b2 + lo, b2 + hi, a2 + hi)], TIMBER_Z, ship_dir(out))
-            inset = Vector((-side * 0.05, 0, 0))
-            ribbands.poly([ship(p) for p in (a2 + hi, b2 + hi, b2 + hi + inset, a2 + hi + inset)], TIMBER_Z, ship_dir(Vector((0, 1, 0))))
+            ribbands.poly([her(p) for p in (a2 + lo, b2 + lo, b2 + hi, a2 + hi)], TIMBER_Z, her_dir(Vector((sign, 0, 0))))
+            inset = Vector((-sign * 0.045, 0, 0))
+            ribbands.poly([her(p) for p in (a2 + hi, b2 + hi, b2 + hi + inset, a2 + hi + inset)], TIMBER_Z,
+                          her_dir(Vector((0, 1, 0))))
 ribbands.build()
 
-beams = Part('s2-2 beams', (0, LAND, 0))
-# The main deck's beams across every other frame, and the stern's own framing: the wing
-# transom, the two fashion pieces up its edges and the rail across its top.
-DECK_Y = 2.05
-for z in FRAME_Z[2:9:2]:
-    w = min(row_point(7, row_t_at(7, z)).x, row_point(SHEER_ROW, row_t_at(SHEER_ROW, z)).x) * 0.97
-    pts = [(-w, DECK_Y - 0.08, z - 0.05), (w, DECK_Y - 0.08, z - 0.05), (w, DECK_Y, z - 0.05), (-w, DECK_Y, z - 0.05),
-           (-w, DECK_Y - 0.08, z + 0.05), (w, DECK_Y - 0.08, z + 0.05), (w, DECK_Y, z + 0.05), (-w, DECK_Y, z + 0.05)]
-    hexa(beams, [ship(p) for p in pts], TIMBER, ('left', 'right'))
-for y0, y1 in ((WING - 0.05, WING + 0.07), (3.20, 3.30), (2.24, 2.32)):
-    w0, w1 = lerp(TRANSOM_HALF, y0), lerp(TRANSOM_HALF, y1)
-    z0, z1 = aft_z(y0), aft_z(y1)
-    pts = [(-w0, y0, z0 - 0.06), (w0, y0, z0 - 0.06), (w1, y1, z1 - 0.06), (-w1, y1, z1 - 0.06),
-           (-w0, y0, z0 + 0.04), (w0, y0, z0 + 0.04), (w1, y1, z1 + 0.04), (-w1, y1, z1 + 0.04)]
-    hexa(beams, [ship(p) for p in pts], TIMBER)
-for side in (1, -1):
-    a = Vector((side * (lerp(TRANSOM_HALF, WING) - 0.04), WING, aft_z(WING)))
-    b = Vector((side * (lerp(TRANSOM_HALF, 3.30) - 0.04), 3.30, aft_z(3.30)))
-    rod(beams, ship(a), ship(b), 0.05, TIMBER, sides=4, turn=math.pi / 4)
+beams = Part('s3-3 beams', her((0, 0, 0)))
+# Her deck beams across every other frame, each at the height of the deck it will carry, so the
+# steps of the forecastle, the quarterdeck and the poop are there before a plank of them is.
+for z in FRAME_Z[1::2]:
+    deck = deck_and_rail(z)[0]
+    if not reaches(z, deck):
+        continue
+    w = side(z, deck) - RIB_IN - 0.02
+    hexa(beams, [her(p) for p in [(-w, deck - 0.08, z - 0.05), (w, deck - 0.08, z - 0.05), (w, deck, z - 0.05), (-w, deck, z - 0.05),
+                                  (-w, deck - 0.08, z + 0.05), (w, deck - 0.08, z + 0.05), (w, deck, z + 0.05), (-w, deck, z + 0.05)]],
+         TIMBER, ('left', 'right'))
 beams.build()
 
-shores = Part('s2-4 shores', (0, LAND, 0))
-# Five shores a side from the edge of the slipway to the turn of the bilge: what holds a hull
-# upright on a single line of blocks until the cradle is built under it for the launch.
-for z in (-3.7, -1.7, 0.3, 2.3, 4.2):
-    t = row_t_at(3, z)
-    hull = row_point(3, t)
-    for side in (1, -1):
-        top = ship(Vector((side * (hull.x + 0.03), hull.y + 0.05, hull.z)))
-        foot = Vector((side * (SLIP_W - 0.12), slip_top(top.z) - 0.01, top.z))
-        rod(shores, foot, top, 0.045, SPAR, sides=4, turn=math.pi / 4)
-shores.build()
+stern = Part('s3-3 stern timbers', her((0, 0, 0)))
+# Her stern standing free above the planked bottom: the fashion pieces up the edges of the flat
+# transom from the counter to the taffrail, the post up its middle, and beams across it at her
+# main deck, at the poop and under the taffrail - the frame her spiegel will be planked on.
+EDGE_Y = [1.0, 1.3, 1.7, 2.1, 2.6, 3.1, TAFFRAIL]
+for s in (1, -1):
+    for y0, y1 in zip(EDGE_Y, EDGE_Y[1:]):
+        rod(stern, her((s * (transom_half(y0) - 0.04), y0, ends(y0)[0] + 0.02)),
+            her((s * (transom_half(y1) - 0.04), y1, ends(y1)[0] + 0.02)), 0.05, TIMBER, sides=4, turn=math.pi / 4)
+rod(stern, her((0, 2.3, TRANSOM_Z + 0.02)), her((0, TAFFRAIL, TRANSOM_Z + 0.02)), 0.055, TIMBER, sides=4, turn=math.pi / 4)
+for y in (2.1, 3.1, TAFFRAIL - 0.05):
+    w = transom_half(y) - 0.02
+    z0 = ends(y)[0]
+    hexa(stern, [her(p) for p in [(-w, y - 0.05, z0 - 0.02), (w, y - 0.05, z0 - 0.02), (w, y + 0.05, z0 - 0.02), (-w, y + 0.05, z0 - 0.02),
+                                  (-w, y - 0.05, z0 + 0.08), (w, y - 0.05, z0 + 0.08), (w, y + 0.05, z0 + 0.08), (-w, y + 0.05, z0 + 0.08)]],
+         TIMBER)
+stern.build()
 
-ladder = Part('s2-4 ladder', (0, LAND, 0))
-# A ladder up her starboard side from the slipway to the rail in the waist, on the side of the
-# gate: the way the shipwrights go aboard, and the thing that gives the hull its size.
-LADDER_Z = -0.4
-rail = row_point(SHEER_ROW, row_t_at(SHEER_ROW, LADDER_Z))
-top = ship((rail.x + 0.02, rail.y + 0.12, rail.z))
-foot = Vector((SLIP_W - 0.08, 0, top.z - 0.02))
+ladder = Part('s3-4 ladder', (0, LAND, 0))
+# A ladder up her starboard side from the slipway to her entry port in the waist: the way the
+# shipwrights go aboard while she is on the stocks, and on the gate's side of the yard.
+top = her((-(side(ENTRY_Z, 2.1) + 0.03), 2.12, ENTRY_Z))
+foot = Vector((SLIP_W - 0.09, 0, top.z - 0.02))
 foot.y = slip_top(foot.z)
 for dz in (-0.11, 0.11):
     rod(ladder, foot + Vector((0, 0, dz)), top + Vector((0, 0, dz)), 0.018, SPAR, sides=4, turn=math.pi / 4)
@@ -766,140 +814,6 @@ for k in range(1, 9):
     p = foot + (top - foot) * (k / 9)
     rod(ladder, p + Vector((0, 0, -0.11)), p + Vector((0, 0, 0.11)), 0.012, SPAR, sides=3)
 ladder.build()
-
-# ---------------------------------------------------------------- stage 3: the planked hull
-# The shell in eight bands: three of bottom, paid pale to the waterline; a strake of tarred
-# brown; the main wale; the topsides; the channel wale; the upper works to the rail. Each band
-# is a strip of quads between two rows, so the colour changes exactly on a row and the join of
-# pale and brown is the waterline the test measures.
-bottom = Part('s3-4 bottom', (0, LAND, 0))
-for r in (0, 1, 2):
-    shell_band(bottom, r, BOTTOM)
-bottom.build()
-
-topsides = Part('s3-4 topsides', (0, LAND, 0))
-for r in (3, 5, 7):
-    shell_band(topsides, r, HULL)
-topsides.build()
-
-wales = Part('s3-4 wales', (0, LAND, 0))
-for r in (4, 6):
-    shell_band(wales, r, WALE)
-wales.build()
-
-bulwark = Part('s3-4 bulwark', (0, LAND, 0))
-# The inside of the upper works and the cap on the rail. Without them, a hull seen from above
-# has no far side: the shell is drawn from outside only, and its inner face is a hole.
-INNER = 0.955
-for side in (1, -1):
-    for j in range(COLUMNS - 1):
-        a, b = GRID[7][j], GRID[7][j + 1]
-        c, d = GRID[SHEER_ROW][j + 1], GRID[SHEER_ROW][j]
-        q = [Vector((p.x * side * INNER, p.y, p.z)) for p in (a, b, c, d)]
-        mid = sum(q, Vector()) / 4
-        bulwark.poly([ship(p) for p in q], HULL, ship_dir(-outward(mid)))
-        o = [Vector((p.x * side, p.y, p.z)) for p in (d, c)]
-        i = [Vector((p.x * side * INNER, p.y, p.z)) for p in (c, d)]
-        bulwark.poly([ship(p) for p in (o[0], o[1], i[0], i[1])], WALE, ship_dir(Vector((0, 1, 0))))
-bulwark.build()
-
-transom = Part('s3-4 transom', (0, LAND, 0))
-# The flat stern, raked, from the wing transom to the taffrail, with the cabin's windows in it.
-rows = list(range(5, len(ROW_Y)))
-for r0, r1 in zip(rows, rows[1:]):
-    a, b = GRID[r0][-1], GRID[r1][-1]
-    transom.poly([ship(p) for p in (mirror(a), a, b, mirror(b))], TRANSOM, ship_dir(Vector((0, 0.2, 1))))
-# Its top is crowned rather than cut straight across, as a transom's is: an arc of the same
-# plane standing above the taffrail, faced both ways because the poop deck looks at its back.
-CROWN = [(-0.84, 0.0), (-0.45, 0.13), (0.0, 0.18), (0.45, 0.13), (0.84, 0.0)]
-crown = [Vector((x, 3.30 + h, aft_z(3.30 + h))) for x, h in CROWN]
-transom.poly([ship(p) for p in crown], TRANSOM, ship_dir(Vector((0, 0.2, 1))))
-transom.poly([ship(p) for p in crown], TRANSOM, ship_dir(Vector((0, -0.2, -1))))
-for x in (-0.62, -0.26, 0.26, 0.62):
-    y0, y1 = 2.55, 2.85
-    pts = [Vector((x - 0.12, y0, aft_z(y0) + 0.012)), Vector((x + 0.12, y0, aft_z(y0) + 0.012)),
-           Vector((x + 0.12, y1, aft_z(y1) + 0.012)), Vector((x - 0.12, y1, aft_z(y1) + 0.012))]
-    transom.poly([ship(p) for p in pts], WINDOW, ship_dir(Vector((0, 0.2, 1))))
-# The rudder, hung on the sternpost before she is launched.
-# Its fore edge is the sternpost's aft face, from the heel to where it goes up under the counter.
-R0, R1 = (0.02, 5.75), (WING, aft_z(WING) + 0.12)
-rpts = [(-0.05, R0[0], R0[1]), (0.05, R0[0], R0[1]), (0.05, R1[0], R1[1]), (-0.05, R1[0], R1[1]),
-        (-0.05, R0[0], R0[1] + 0.30), (0.05, R0[0], R0[1] + 0.30), (0.05, R1[0], R1[1] + 0.30), (-0.05, R1[0], R1[1] + 0.30)]
-hexa(transom, [ship(p) for p in rpts], OAK)
-transom.build()
-
-decks = Part('s3-4 decks', (0, LAND, 0))
-# Four decks at four heights: the forecastle, the main deck in the waist, the quarterdeck and the
-# poop under the taffrail. Each is a strip across the hull at its height, as wide as the hull
-# is there, with a bulkhead where one steps up to the next.
-DECKS = [(0.02, 0.22, 2.40), (0.22, 0.66, DECK_Y), (0.66, 0.82, 2.36), (0.82, 0.995, 2.74)]
-
-
-def deck_edge(t, y):
-    """The inside of the hull at height y, at t along it: between rows 7 and the sheer."""
-    lo, hi = row_point(7, t), row_point(SHEER_ROW, t)
-    k = (y - lo.y) / (hi.y - lo.y)
-    return Vector((lo.x + (hi.x - lo.x) * k, y, lo.z + (hi.z - lo.z) * k)) * 1.0
-
-
-for t0, t1, y in DECKS:
-    steps = [t0 + (t1 - t0) * k / 4 for k in range(5)]
-    for a, b in zip(steps, steps[1:]):
-        pa, pb = deck_edge(a, y), deck_edge(b, y)
-        pa.x *= INNER
-        pb.x *= INNER
-        decks.poly([ship(p) for p in (mirror(pa), pa, pb, mirror(pb))], DECK, ship_dir(Vector((0, 1, 0))))
-for (t, y_lo, y_hi, face) in ((0.22, DECK_Y, 2.40, 1), (0.66, DECK_Y, 2.36, -1), (0.82, 2.36, 2.74, -1)):
-    lo, hi = deck_edge(t, y_lo), deck_edge(t, y_hi)
-    lo.x *= INNER
-    hi.x *= INNER
-    decks.poly([ship(p) for p in (mirror(lo), lo, hi, mirror(hi))], TRANSOM, ship_dir(Vector((0, 0, face))))
-decks.build()
-
-fittings = Part('s3-4 fittings', (0, LAND, 0))
-# Two hatches and the capstan in the waist, so that the longest deck on the island is not one
-# flat board from the forecastle to the quarterdeck.
-for z, hx, hz in ((-3.1, 0.28, 0.25), (-1.55, 0.36, 0.36)):
-    pts = [(-hx, DECK_Y, z - hz), (hx, DECK_Y, z - hz), (hx, DECK_Y + 0.08, z - hz), (-hx, DECK_Y + 0.08, z - hz),
-           (-hx, DECK_Y, z + hz), (hx, DECK_Y, z + hz), (hx, DECK_Y + 0.08, z + hz), (-hx, DECK_Y + 0.08, z + hz)]
-    hexa(fittings, [ship(p) for p in pts], WALE, ('bottom',))
-rod(fittings, ship((0, DECK_Y, 1.35)), ship((0, DECK_Y + 0.2, 1.35)), 0.12, OAK, sides=8)
-rod(fittings, ship((0, DECK_Y + 0.2, 1.35)), ship((0, DECK_Y + 0.25, 1.35)), 0.17, OAK, sides=8, caps=(True, True))
-fittings.build()
-
-beak = Part('s3-4 beak', (0, LAND, 0))
-# The beakhead under where the bowsprit will be: a wedge out ahead of the stem.
-a, b, c = Vector((0, 1.55, fore_z(1.55) - 0.1)), Vector((0, 2.30, fore_z(2.30) - 0.1)), Vector((0, 2.05, fore_z(2.05) - 0.75))
-hw = 0.07
-wedge = [a + Vector((-hw, 0, 0)), b + Vector((-hw, 0, 0)), c + Vector((-hw * 0.5, 0, 0)),
-         a + Vector((hw, 0, 0)), b + Vector((hw, 0, 0)), c + Vector((hw * 0.5, 0, 0))]
-beak.poly([ship(p) for p in wedge[:3]], HULL, ship_dir(Vector((-1, 0, 0))))
-beak.poly([ship(p) for p in wedge[3:]], HULL, ship_dir(Vector((1, 0, 0))))
-beak.poly([ship(p) for p in (wedge[0], wedge[2], wedge[5], wedge[3])], HULL, ship_dir(Vector((0, -1, -1))))
-beak.poly([ship(p) for p in (wedge[1], wedge[4], wedge[5], wedge[2])], WALE, ship_dir(Vector((0, 1, -0.3))))
-beak.build()
-
-# ---------------------------------------------------------------- stage 4: the lower masts
-# Fore, main and mizzen, stepped and standing with their tops on, and nothing on them yet. They
-# stand square to her keel, so on the stocks they lean aft with her by the declivity.
-MASTS = [('fore', -4.25, 6.95, 0.13, 0.36), ('main', -0.35, 7.70, 0.155, 0.42), ('mizzen', 3.55, 6.00, 0.10, 0.30)]
-masts = Part('s4-4 masts', (0, LAND, 0))
-for name, z, top, r, top_r in MASTS:
-    rod(masts, ship((0, 1.9, z)), ship((0, top, z)), r, MAST, sides=6, r1=r * 0.68, caps=(False, True))
-    yt = top - 0.75
-    ring_lo = [Vector((math.cos(a) * top_r, yt, z + math.sin(a) * top_r)) for a in (2 * math.pi * i / 6 for i in range(6))]
-    ring_hi = [p + Vector((0, 0.06, 0)) for p in ring_lo]
-    masts.poly([ship(p) for p in ring_hi], TOP, ship_dir(Vector((0, 1, 0))))
-    masts.poly([ship(p) for p in ring_lo], TOP, ship_dir(Vector((0, -1, 0))))
-    for i in range(6):
-        j = (i + 1) % 6
-        q = [ring_lo[i], ring_lo[j], ring_hi[j], ring_hi[i]]
-        mid = sum(q, Vector()) / 4
-        masts.poly([ship(p) for p in q], TOP, ship_dir(Vector((mid.x, 0, mid.z - z))))
-    cap = [(-0.09, top - 0.05, z - 0.14), (0.09, top - 0.05, z - 0.14), (0.09, top + 0.05, z - 0.14), (-0.09, top + 0.05, z - 0.14),
-           (-0.09, top - 0.05, z + 0.12), (0.09, top - 0.05, z + 0.12), (0.09, top + 0.05, z + 0.12), (-0.09, top + 0.05, z + 0.12)]
-    hexa(masts, [ship(p) for p in cap], TOP)
-masts.build()
 
 # ---------------------------------------------------------------- anchors
 # anchor.smoke is the kettle's, and anchor.door the gate of the yard: the landward end of the
@@ -911,8 +825,12 @@ for name, at in (('smoke', (KX, LAND + 0.62, KZ)), ('door', (GATE_X, LAND, -HALF
     e.location = xyz(at)
     bpy.context.scene.collection.objects.link(e)
 
-# The tallest thing in the set: the mainmast's cap, over the pile feet.
-bpy.context.scene['building_height'] = round(max(ship((0, top + 0.05, z)).y for _, z, top, _, _ in MASTS), 4)
+# The tallest thing in the set, over the pile feet: the head of the sheerlegs. At stage 4 her
+# own bake stands a little higher, with the lanterns on her crest, and buildings.js measures what
+# it drew rather than reading this.
+bpy.context.view_layer.update()
+bpy.context.scene['building_height'] = round(max(
+    (o.matrix_world @ Vector(c)).z for o in bpy.context.scene.objects if o.get('building_part') for c in o.bound_box), 4)
 
 # A studio to open the file in, out of the bake because nothing in it is a building_part: the
 # sea at the height it stands at when the yard is on the lowest land it may be given

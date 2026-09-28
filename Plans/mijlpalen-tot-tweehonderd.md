@@ -149,9 +149,14 @@ de modellen gebakken worden.
 
 Dingen die per settler groeien, zodat de stukken tussen de treden niet leeg zijn:
 
-- **Het schip op de helling.** De werf laat de romp in stadia zien: kiel en stevens, spanten, huid,
-  masten, en dan gaat hij te water. Voor het eerste schip is dat 95, 102, 109, 115 en 120. Daarna
-  begint de werf meteen aan het volgende:
+- **Het schip op de helling.** De werf laat de romp in stadia zien, in de Hollandse volgorde van
+  haar eeuw (schaalbouw, zoals Witsen het beschrijft): kiel en stevens, de bodemhuid (de
+  onderste gangen van de huid, met klampen bijeengehouden en nog zonder spant), de spanten die in
+  die bodem worden gezet en tot de hoogte van de zijden oprijzen, en de romp: de bovenhuid, de
+  dekken en het hoge achterschip. Dan gaat hij te water. De masten komen er pas na de
+  tewaterlating in, aan de kade waar het schip wordt afgebouwd, dus op de rede ligt hij op 120
+  meteen getuigd. Voor het eerste schip is dat 95, 102, 109, 115 en 120. Daarna begint de werf
+  meteen aan het volgende:
   - het tweede schip: 133, 140, 147, 153, te water op 158;
   - het derde schip: 167, 174, 181, 187, te water op 192.
 
@@ -308,7 +313,7 @@ niet, dus er ligt alleen de boot van de oude kade.
      - `stage` in de bundel;
      - de botsers en de afscherming voor de uitjes.
    - Treden 95 en 120 gaan in `MILESTONES`. Op het echte eiland komt de werf meteen, al in het
-     stadium van de huid (112), met masten op 115 en de tewaterlating op 120.
+     stadium van de spanten (112), met de romp af op 115 en de tewaterlating op 120.
    - Een tewaterlating als lokale animatie voor wie kijkt, met de romp die de helling af glijdt en
      naar de rede vaart, mag erbij: `sailIn` (`main.js:4516`) is het voorbeeld.
 2. **De vloot die vanzelf groeit**: `earnedBoats`. Er is geen model voor nodig en er verandert
@@ -350,20 +355,12 @@ eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
 - ~~**De maat.**~~ **Besloten (28 september): groter dan het galjoen, een romp van ~12 en een mast van ~11,5.** Het eerste voorstel (6,5) ging uit van een ingekrompen eiland; het tweede (10 en 9) was kleiner dan het galjoen dat intussen op origin/main stond. Zie "Hoe groot".
 - ~~**De naam** van het schip.~~ **De Batavia** (Tiemen). De tweede en derde hebben nog geen naam;
   in de ladder heten ze "The second ship" en "The third ship".
-- **De romp op de helling en de afgebouwde Batavia verschillen achteruit.**
-
-  | | op de helling | de Batavia |
-  |---|---|---|
-  | lengte op de waterlijn | 12,04 | 11,98 |
-  | breedte | 2,80 | 2,80 |
-  | hoofddek boven de waterlijn | 1,10 | 1,10 |
-  | achterdek boven de waterlijn | 1,79 | 2,10 |
-  | spiegel | kroon op 2,53 | reling op 2,57, kam op 3,03 |
-  | diepgang | 0,95 | 1,00 |
-
-  Historisch valt dat te verdedigen: het achterschip en de versiering kwamen bij de afbouw aan
-  de kade, na de tewaterlating. Maar wie op 115 de werf ziet en op 120 de rede, ziet het schip
-  op één dag hoger worden. Gelijktrekken kan in `scripts/build-shipyard.py` (stadium 3 en 4).
+- ~~**De romp op de helling en de afgebouwde Batavia verschillen achteruit.**~~ **Opgelost
+  (28 september).** In stadium 4 staat nu de bake van de Batavia zelf op de helling
+  (`bataviaOnStocks` in `web/js/buildings.js`): dezelfde romp, met het achterschip naar zee en op
+  de helling van 1 op 24 gelegd, zonder tuig en in kaal hout. Wie op 115 de werf ziet en op 120 de
+  rede, ziet dus hetzelfde schip, alleen geschilderd en getuigd. Stadium 1 tot 3 zijn op haar
+  lijnen getekend. Zie `Plans/scheepswerf.md`.
 - **Bestaande treden.** Wil Tiemen 0–100 toch spreiden, bijvoorbeeld het theehuis, de bibliotheek en
   de toverstokkenwinkel uit het drukke stuk 30–45 halen? Dan met de `was`-regel:
   - een omgenummerde trede houdt zijn oude getal als `was`;

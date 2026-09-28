@@ -14,7 +14,7 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
-import { yardStage, shownAtStage } from './shipyard.js';
+import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -308,12 +308,21 @@ function lift(g, dy) {
 // .blend - there is one gable and there are four styles - and multiplying two terracottas
 // gives neither of them. So the slots the island owns say so, and the timber under them
 // keeps the oak it was modelled in.
+// `keep(x, y, z, x0)` keeps only the triangles it answers true for, given their middle and the
+// least x of their corners in the set's own frame, for the one caller that draws a part of
+// somebody else's bake without all of it: the Batavia on the stocks, whose fittings carry a
+// boarding ladder and a spare anchor she is not given until she is afloat (bataviaOnStocks).
+// What it keeps comes back in that frame too, the part's own origin added in, so that a turn is
+// about the set's origin whatever `at` the bake gave the part. It stays out of what the part
+// remembers of its options, like meshAsset's `skip`: the editor reads those back.
 export function mesh(name, hex = 0xffffff, o = {}) {
-  const part = models.part(name);
-  if (!part) throw new Error(`Unknown Blender building part: ${name}`);
+  const found = models.part(name);
+  if (!found) throw new Error(`Unknown Blender building part: ${name}`);
+  const { keep, ...rest } = o;
+  const part = keep ? keptTriangles(found, keep) : found;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
-  const options = { sheet: part.sheet, emissive: part.emissive, ...o };
+  const options = { sheet: part.sheet, emissive: part.emissive, ...rest };
   finish(g, hex, options.emissive, sheetOf(options));
   if (!options.repaint) {
     const colors = g.attributes.color.array;
@@ -323,6 +332,24 @@ export function mesh(name, hex = 0xffffff, o = {}) {
     g.scale(options.sx ?? 1, options.sy ?? 1, options.sz ?? 1);
   }
   return note(place(g, options), 'mesh', [name], hex, options);
+}
+
+// A baked part with only the triangles `keep` wants, positions and colours still in step, in the
+// set's frame.
+function keptTriangles(part, keep) {
+  const p = part.positions, c = part.colors, [ax, ay, az] = part.at;
+  const positions = [], colors = [];
+  for (let i = 0; i < p.length; i += 9) {
+    const x = (p[i] + p[i + 3] + p[i + 6]) / 3 + ax;
+    const y = (p[i + 1] + p[i + 4] + p[i + 7]) / 3 + ay;
+    const z = (p[i + 2] + p[i + 5] + p[i + 8]) / 3 + az;
+    if (!keep(x, y, z, Math.min(p[i], p[i + 3], p[i + 6]) + ax)) continue;
+    for (let k = 0; k < 9; k++) {
+      positions.push(p[i + k] + part.at[k % 3]);
+      colors.push(c[i + k]);
+    }
+  }
+  return { ...part, positions, colors, at: [0, 0, 0] };
 }
 
 // Every part of one Blender asset, each where Blender had it, as parts to push. An asset
@@ -1827,11 +1854,24 @@ function civic(parts, spec, rng) {
       // shownAtStage in shipyard.js. Lowered by its datum, so y = 0 here is the land at the
       // landward end like every other building's ground, and the slipway and its piles go on
       // down below it into the water.
+      //
+      // From HULL_STAGE her hull is complete, and what stands on the ways then is the Batavia's
+      // own bake (bataviaOnStocks), not a copy of her: the ship on the stocks at 115 is the ship
+      // on the roads at 120 by construction, less what she is given afloat.
       const stage = yardStage(spec);
       const lift = { y: -SHIPYARD_LAND };
+      const start = parts.length;
       parts.push(...meshAsset('shipyard', 0xffffff, { ...lift, skip: (n) => !shownAtStage(n, stage) }));
+      if (stage >= HULL_STAGE) parts.push(...bataviaOnStocks());
       Object.assign(anchors, meshAnchors('shipyard', lift));
-      return { anchors, animated, height: shipyardTop(stage) };
+      // As tall as the sheerlegs, or her crest's lanterns once she stands there: measured off
+      // what was drawn, which is the only thing that knows.
+      let height = 0;
+      for (let k = start; k < parts.length; k++) {
+        const y = parts[k].attributes.position.array;
+        for (let i = 1; i < y.length; i += 3) if (y[i] > height) height = y[i];
+      }
+      return { anchors, animated, height };
     }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
@@ -1840,21 +1880,86 @@ function civic(parts, spec, rng) {
   void rng;
 }
 
-// How tall the shipyard stands at a stage, over its land: the sheerlegs until the masts go in.
-// Measured off the bake rather than written down, once per stage, so a mast made longer in
-// build-shipyard.py moves the label over it without anybody remembering this line.
-const shipyardTops = new Map();
-function shipyardTop(stage) {
-  if (!shipyardTops.has(stage)) {
-    let top = 0;
-    for (const name of models.assetParts('shipyard')) {
-      if (!shownAtStage(name, stage)) continue;
-      const p = models.part(name);
-      for (let i = 1; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i] + p.at[1]);
-    }
-    shipyardTops.set(stage, top - SHIPYARD_LAND);
+// ---------------------------------------------------------------- the Batavia on the stocks
+// Where she lies on the ways: her own origin - the bottom of her keel amidships - is the baked
+// origin of the yard's keel (scripts/build-shipyard.py lays that keel on her lines, under her),
+// lowered by the yard's datum like the rest of it, and her declivity is that keel's own fall
+// from forefoot to heel. Read off the bake, so that moving the ship along the slipway in the
+// builder moves her bake with her keel and nothing here has to be told.
+export const STOCKS = (() => {
+  const keel = models.part('shipyard s1-3 keel');
+  const p = keel.positions, at = keel.at;
+  const pts = [];
+  for (let i = 0; i < p.length; i += 3) pts.push([p[i] + at[0], p[i + 1] + at[1], p[i + 2] + at[2]]);
+  const mid = pts.reduce((s, q) => s + q[2], 0) / pts.length;
+  const lowest = (side) => pts.filter((q) => (q[2] > mid) === side).reduce((a, b) => (b[1] < a[1] ? b : a));
+  const fore = lowest(false), aft = lowest(true);
+  return Object.freeze({ x: at[0], y: at[1] - SHIPYARD_LAND, z: at[2], tilt: Math.atan2(fore[1] - aft[1], aft[2] - fore[2]) });
+})();
+
+// What of her bake stands on the stocks, and in what colour. Everything that makes her hull -
+// skin, decks, bulwarks, the stern and its galleries, the head, the channels, the capstan - and
+// nothing she is given at the fitting-out quay: not her masts, yards, sails, rigging, bowsprit
+// or anchor cable (all of `batavia rig`) nor her flags; not the accommodation ladder and its
+// float, which hang over the water she is not in yet; and not the spare anchor at her cathead.
+// The ladder and the anchor are fitted parts in the middle of her fittings, so they go by where
+// they are, in her own frame (scripts/build-batavia.py LX0, FLOAT, CAT): the ladder is anything
+// abreast of the entry port reaching out past her side - past 1.42 below her channels, whose
+// widest is 1.40, and past 1.5 beside them, since they stand out to 1.47 - and by its outermost
+// corner rather than its middle, so the platform goes whole rather than cut down a diagonal;
+// the anchor is what hangs under the port cathead. The rig's tops are trim, painted with her
+// accent, and go by height - nothing of her hull stands above her crest's lanterns at 4.5.
+const onStocks = (name) => /^batavia (hull|livery|trim|fittings)\b/.test(name);
+const IRON_OR_YARD = new Set([0x2f2f33, 0x4d3625]);
+function stocksKeep(part) {
+  const anchor = IRON_OR_YARD.has(bakedHex(part));
+  return (x, y, z, x0) => !(y > 4.8
+    || (x0 < (y < 2.2 ? -1.42 : -1.5) && y < 2.45 && z > 1.1 && z < 4.2)
+    || (anchor && x > 0.8 && x < 1.4 && y > 1.7 && y < (bakedHex(part) === 0x2f2f33 ? 2.86 : 2.68) && z > 5.1 && z < 5.75));
+}
+// And her paint: on the stocks she is timber, because paint is the fitting out. The oak of her
+// topsides and the pale stuff and tar of her bottom stay - a bottom is paid before she is
+// launched, since nobody can do it afloat - but the green of her panels, the red of her
+// mouldings and bulwarks, the gilt of her carving, the red lion and the painted sky on her
+// transom are bare oak, and nothing on her is lit. By her baked colour rather than by part
+// name, so a colour the bake moves to another slot is still found.
+const STOCKS_PAINT = new Map([
+  [0x2f5b3d, 0x7d5735],   // green panels: the oak of her topsides
+  [0x8e2b20, 0x5e4128],   // red mouldings and rail caps: darker oak
+  [0x873323, 0x8a6a48],   // the red inside her bulwarks: oak, seen from inside
+  [0xc79634, 0x9c7a50],   // gilt carving: the carving, uncoated
+  [0xb8352a, 0x9c7a50],   // the red lion: the same
+  [0x3e6a92, 0x7d5735],   // the painted sky on her transom: bare boards
+]);
+const UNLIT = 0x2b2a2e;   // her windows and lanterns, dark
+const srgb = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+function bakedHex(part) {
+  const [r, g, b] = part.colors;
+  return (srgb(r) << 16) | (srgb(g) << 8) | srgb(b);
+}
+export function stocksPaint(part) {
+  if (part.emissive) return UNLIT;
+  return STOCKS_PAINT.get(bakedHex(part)) ?? null;
+}
+
+// Her bake laid on the ways: turned stern to the sea (a half turn, since she is modelled bow to
+// +z like every front on the island), pitched onto the declivity and set on her keel, less what
+// she is not given until she is afloat and in timber rather than paint. Turned about her own
+// origin, which is why every part goes through `keep` - it hands the part back in her frame.
+// Parts left empty by the cut are dropped rather than merged as nothing.
+export function bataviaOnStocks() {
+  const out = [];
+  for (const name of models.assetParts('batavia')) {
+    if (!onStocks(name)) continue;
+    const part = models.part(name);
+    const paint = stocksPaint(part);
+    const g = mesh(name, paint ?? 0xffffff, {
+      repaint: paint != null, emissive: 0, keep: stocksKeep(part),
+      ry: Math.PI, rx: STOCKS.tilt, x: STOCKS.x, y: STOCKS.y, z: STOCKS.z,
+    });
+    if (g.attributes.position.count) out.push(g);
   }
-  return shipyardTops.get(stage);
+  return out;
 }
 
 // ---------------------------------------------------------------- entry point
