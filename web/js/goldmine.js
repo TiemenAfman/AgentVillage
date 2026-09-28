@@ -22,6 +22,9 @@ export const LUMP = { r: 0.04, h: 0.045 };
 // The inside of the bin, from the middle of its floor (the bake's `civic_goldmine bin`): the
 // planks are 0.62 across and 0.03 thick, and a lump's own half width is kept off them.
 export const BIN_IN = 0.27;
+// A week turning over is a rise of at least this much, and fills the bin over ORE_FILL_S.
+export const ORE_RISE = 5;
+export const ORE_FILL_S = 10;
 const GLINT = 0.18;
 
 function glinting(g, glint) {
@@ -79,6 +82,12 @@ export function attachOrePile(group, at) {
   const geometry = oreGeometry();
   const slots = oreSlots();
   const mesh = new THREE.InstancedMesh(geometry, material, slots.length);
+  let told = false, shown = MINE_ORE;
+  const draw = () => {
+    const n = Math.round(shown);
+    mesh.count = n;
+    mesh.visible = n > 0;
+  };
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   const m = new THREE.Matrix4();
@@ -95,12 +104,26 @@ export function attachOrePile(group, at) {
   const handle = {
     mesh,
     ore: MINE_ORE,
+    // What the bin should hold. The first word is shown as it is; a rise of ORE_RISE or more
+    // after that is the week turning over, and the bin fills over ORE_FILL_S instead of being
+    // whole in one frame - the miner at the face beside it is what fills it. Anything else,
+    // spending included, is shown at once.
     setOre(n) {
       const ore = Math.max(0, Math.min(MINE_ORE, Math.round(Number.isFinite(n) ? n : MINE_ORE)));
+      const rise = told && ore - shown >= ORE_RISE;
+      told = true;
       handle.ore = ore;
-      mesh.count = ore;
-      mesh.visible = ore > 0;
+      if (rise) return;
+      shown = ore;
+      draw();
     },
+    // Counts the bin up towards `ore`; main.js calls it every frame (animateExtras).
+    update(dt) {
+      if (shown >= handle.ore || !(dt > 0)) return;
+      shown = Math.min(handle.ore, shown + MINE_ORE / ORE_FILL_S * Math.min(dt, 0.1));
+      draw();
+    },
+    shown: () => Math.round(shown),
     dispose() {
       group.remove(mesh);
       geometry.dispose();

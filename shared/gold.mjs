@@ -85,3 +85,19 @@ export function mineOf(reading, now) {
     source,
   };
 }
+
+// ---- what the pit holds, all told ---------------------------------------------------------
+// The pit is what can be spent now, and that is the five-hour window *and* what is left of the
+// week, whichever is less: with the week used up the five hours are no use to anybody, and a
+// pit refilled to a hundred bars beside an empty mine told the keeper they could work when
+// they could not. So the pit never holds more than the mine could give it (Plans/goudmijn.md,
+// "Een lege week"), and the gold run can only ever bring what the mine has. `window` is the
+// five-hour window's own count, `capped` whether the week is what held the pit down, and
+// `mine` rides along so /api/gold and `event: gold` stay one answer. A week nobody has
+// measured caps nothing - mineOf's full mine.
+export function purseOf(reading, now) {
+  const gold = goldOf(reading, now);
+  const mine = mineOf(reading, now);
+  const bars = mine.known ? Math.min(gold.bars, mine.ore) : gold.bars;
+  return { ...gold, window: gold.bars, bars, capped: bars < gold.bars, mine };
+}

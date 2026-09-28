@@ -22,7 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { register } from 'node:module';
 
-import { mineOf, MINE_ORE, GOLDMINE_ID, GOLDSMITH_ID, GOLDPIT_ID, GOLD_BARS } from '../shared/gold.mjs';
+import { mineOf, purseOf, MINE_ORE, GOLDMINE_ID, GOLDSMITH_ID, GOLDPIT_ID, GOLD_BARS } from '../shared/gold.mjs';
 import { weekResetOf, readDesktopUsage, currentUsage, readingOf, writeUsage } from '../lib/usage.mjs';
 import { emptyLayout, placeAll } from '../lib/layout.mjs';
 import { stranded } from '../lib/plan.mjs';
@@ -30,11 +30,13 @@ import { MILESTONES } from '../lib/village.mjs';
 import { roadBetween } from '../shared/roads.mjs';
 import { DOOR_DIR } from '../shared/settlerwalk.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
+import { village as spreadVillage } from './support/village.mjs';
 
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const THREE = await import('three');
 const { createGoldRun, MIN_RISE } = await import('../web/js/goldrun.js');
+const { attachOrePile, ORE_RISE, ORE_FILL_S } = await import('../web/js/goldmine.js');
 delete globalThis.document;
 
 const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'goldmine-'));
@@ -284,4 +286,102 @@ test('without the buildings or a road between them, a new window fills the pit a
   cut.run.setGold(GOLD_BARS);
   assert.equal(cut.run.busy(), false, 'a run with no road was started');
   assert.equal(cut.run.bars(), GOLD_BARS);
+});
+
+// ---- the pit never holds more than the mine can give ---------------------------------------
+
+test('the pit is the five hours or the rest of the week, whichever is less', () => {
+  const now = Date.UTC(2026, 8, 25, 12);
+  const of = (five, week) => ({
+    fiveHour: { used: five, resetsAt: now + H },
+    sevenDay: week == null ? null : { used: week, resetsAt: now + DAY },
+    at: now - 1000, source: 'statusline',
+  });
+  const plenty = purseOf(of(20, 10), now);
+  assert.deepEqual([plenty.bars, plenty.window, plenty.capped], [80, 80, false], 'a week with room caps nothing');
+  const tight = purseOf(of(20, 70), now);
+  assert.deepEqual([tight.bars, tight.window, tight.capped], [30, 80, true], 'thirty percent of the week left is thirty bars');
+  assert.equal(tight.mine.ore, 30, 'and the mine says the same thirty');
+  const spent = purseOf(of(0, 100), now);
+  assert.equal(spent.bars, 0, 'a fresh five hours in a spent week is an empty pit');
+  // A five-hour window gone by refills the pit - only as far as the week allows.
+  const turned = purseOf({ ...of(90, 95), fiveHour: { used: 90, resetsAt: now - 1 } }, now);
+  assert.deepEqual([turned.window, turned.bars, turned.reset], [GOLD_BARS, 5, true]);
+  // No week on record is no cap: the full mine of mineOf.
+  const unknown = purseOf(of(20, null), now);
+  assert.deepEqual([unknown.bars, unknown.capped], [80, false]);
+  assert.equal(purseOf(null, now).bars, GOLD_BARS, 'no reading at all is still a full pit');
+});
+
+test('a gold run can never bring more than the mine has', () => {
+  // The run counts the pit up to whatever it is told, and it is told the purse: after a window
+  // turns over with ten percent of the week left, it brings ten bars and not a hundred.
+  const now = Date.UTC(2026, 8, 25, 12);
+  const before = purseOf({ fiveHour: { used: 100, resetsAt: now + 1000 }, sevenDay: { used: 90, resetsAt: now + DAY }, at: now }, now);
+  const after = purseOf({ fiveHour: { used: 100, resetsAt: now + 1000 }, sevenDay: { used: 90, resetsAt: now + DAY }, at: now }, now + 2000);
+  assert.equal(before.bars, 0);
+  assert.equal(after.bars, 10);
+  assert.equal(after.window, GOLD_BARS);
+});
+
+// ---- the week turning over fills the mine ---------------------------------------------------
+
+test('the mine\'s bin fills over time when the week turns over, and empties at once', () => {
+  const group = new THREE.Group();
+  const pile = attachOrePile(group, [0, 0, 0]);
+  pile.setOre(40);
+  assert.equal(pile.shown(), 40, 'the first word is shown as it is');
+  pile.setOre(35);
+  assert.equal(pile.shown(), 35, 'ore spent comes off at once');
+  pile.setOre(35 + ORE_RISE - 1);
+  assert.equal(pile.shown(), 35 + ORE_RISE - 1, 'a small rise is a rounding, shown at once');
+  pile.setOre(MINE_ORE);
+  assert.equal(pile.shown(), 35 + ORE_RISE - 1, 'a week turned over does not fill the bin in one frame');
+  let t = 0, last = pile.shown();
+  while (pile.shown() < MINE_ORE && t < ORE_FILL_S * 2) {
+    pile.update(0.1);
+    t += 0.1;
+    assert.ok(pile.shown() >= last, 'the bin never counts down while it fills');
+    last = pile.shown();
+  }
+  assert.equal(pile.shown(), MINE_ORE);
+  assert.ok(t > ORE_FILL_S * 0.4 && t <= ORE_FILL_S + 0.2, `it filled in ${t.toFixed(1)} s`);
+  assert.equal(pile.mesh.count, MINE_ORE);
+  pile.setOre(12);
+  assert.equal(pile.mesh.count, 12, 'and spending it shows at once again');
+  pile.dispose();
+});
+
+// ---- the mine keeps off the beach ------------------------------------------------------------
+
+test('on an island founded small the mine waits for ground off the coast, and then stands on it', () => {
+  const seed = 1337;
+  const settle = (n) => {
+    const layout = emptyLayout(seed, 128, { base: 32, steps: [] });
+    const m = spreadVillage(n, { projects: Math.max(1, Math.round(n / 3)) });
+    const first = placeAll(layout, m, { seed, size: 128 });
+    placeAll(layout, m, { seed, size: 128 });
+    return { layout, first, m };
+  };
+  // Nobody yet: the island does not grow, there is no lot off the sand, and the mine waits -
+  // without asking for room the way a house left over would.
+  const bare = settle(0);
+  assert.equal(bare.layout.grow.steps.length, 0);
+  assert.equal(bare.layout.plots[GOLDMINE_ID], undefined, 'the mine stood on the founding island\'s beach');
+  assert.ok(!bare.first.unplaced.includes(GOLDMINE_ID), 'a mine waiting is not a building left over');
+
+  // The first settler grows the island, and the mine comes with the new ground.
+  const one = settle(1);
+  const p = one.layout.plots[GOLDMINE_ID];
+  assert.ok(p, 'the mine never came');
+  const T = makeTerrain(seed, { size: one.layout.size, polders: one.layout.polders || [], fairway: one.layout.fairway || null, grow: one.layout.grow });
+  for (let z = p.gz - 2; z < p.gz + 5; z++) {
+    for (let x = p.gx - 2; x < p.gx + 5; x++) {
+      assert.ok(T.isLand(x, z) && !T.isBeach(x, z), `the mine stands by the sea at ${x},${z}`);
+    }
+  }
+  assert.ok(one.layout.paths.some((q) => q.id === `path:${GOLDMINE_ID}`), 'and it has its road');
+  const before = JSON.stringify(one.layout);
+  placeAll(one.layout, one.m, { seed, size: 128 });
+  assert.equal(JSON.stringify(one.layout), before, 'the scan after it moved something');
 });

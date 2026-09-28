@@ -106,9 +106,12 @@ links, rechts) naast het gewone schuine beeld; zo zijn beide gebouwen nagekeken,
 
 ## Wat er nog openstaat
 
-- **Een lege week.** Als de mijn leeg is (het weeklimiet op), kan het vijfuursvenster ook niet
-  meer gebruikt worden, maar de kuil vult nog steeds tot honderd. Eerlijker zou zijn: de vracht
-  brengt nooit meer dan er in de mijn zit. Niet gedaan, omdat het de betekenis van de kuil
-  verandert (goudkuil.md: honderd staven is het vijfuursvenster, niets anders).
-- **De weekreset zelf** heeft geen animatie; de ertsbak is gewoon weer vol.
 - **Bezoekers** zien nooit een vracht, om dezelfde reden als de volle kuil.
+
+## Later besloten (28 september, op Tiemens vraag "zorg dat het allemaal klopt")
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Een lege week | De kuil is het vijfuursvenster **of** wat er van de week over is, wat het minste is (`purseOf` in `shared/gold.mjs`, de enige kopie; `/api/gold` geeft het al zo). `window` is het vijfuursgetal zelf, `capped` zegt dat de week de kuil laag houdt, en de kuil en de goudsmid zeggen dat ook. | Met een lege week is het vijfuursvenster niets waard; een volle kuil naast een lege mijn zei dat je kon werken terwijl dat niet kon. Hiermee brengt de vracht ook nooit meer dan de mijn heeft. Dit verandert wat de kuil betekent (goudkuil.md), en dat was de reden om het eerst niet te doen - Tiemen heeft het nu gevraagd. |
+| De weekreset | De ertsbak vult zich in `ORE_FILL_S` (10 s) bij een stijging van `ORE_RISE` (5) of meer, zoals de kuil optelt bij een vracht; uitgeven blijft meteen. De mijnwerker staat er intussen aan de wand te hakken, zoals altijd overdag. | Een ertsbak die ineens vol is, is hetzelfde als een kuil die ineens vol is: er gebeurt niets. |
+| De mijn op het strand | De mijn neemt eerst kavels met twee cellen droog, niet-strand land rondom (`byCoast`), en wacht zolang het eiland nog kan groeien als er geen zo'n kavel is. Wachten is geen `unplaced`: een wachtende mijn laat het eiland niet groeien, alleen huizen doen dat. De goudsmid neemt landinwaarts eerst en anders de kust. Beide lijsten hebben elk hun eigen `MINE_TRIES`. | Op het stichtingseiland (32 op 64) stond de mijn anders naast de pier van een haven. Met één settler groeit het eiland al twee ringen, en dan staat de mijn landinwaarts. Eén lijst voor beide deed op seed 7 (128) alle pogingen op landinwaartse kavels aan de overkant van de rivier op, zodat de mijn pas een scan later kwam. |

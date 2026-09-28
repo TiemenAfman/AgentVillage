@@ -1249,6 +1249,13 @@ function goldWords(g) {
   if (!g || !g.known) {
     return 'A full pit, because nothing has said otherwise yet. The Claude desktop app notes how much of the five-hour window is used every quarter of an hour, and a Claude Code status line on every answer - the island put one in when it started - and neither has written a number down on this machine yet.';
   }
+  // Held down by the week (shared/gold.mjs purseOf): the five hours would allow more, but the
+  // pit never holds more than the mine can still give.
+  if (g.capped) {
+    const m = g.mine || {};
+    const back = m.resetsAt ? ` The mine fills again ${m.source === 'desktop' ? 'by' : 'on'} <b>${dayTime(m.resetsAt)}</b>${m.source === 'desktop' ? ' at the latest' : ''}.` : '';
+    return `<b>${g.bars} of ${g.max}</b> bars left — the five-hour window would allow ${g.window}, but only ${g.bars}% of this week is left in the mine, and the pit never holds more than the mine can give.${back}`;
+  }
   if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
   const used = Math.round(g.used);
   // The app's sample is up to a quarter of an hour old and its reset an estimate that errs
@@ -1307,6 +1314,13 @@ function mineWords(g) {
 function smithWords() {
   if (state.goldRun && state.goldRun.busy()) return 'At work: a cartload from the mine is on its way to the gold pit.';
   const g = state.gold;
+  // The pit can hold no more than the mine gives (purseOf): a pit already at what is left of
+  // the week gets nothing when the five hours turn over, and saying otherwise was a promise.
+  if (!state.guest && g && g.capped) {
+    const m = g.mine || {};
+    const when = m.resetsAt ? `, ${m.source === 'desktop' ? 'by' : 'on'} <b>${dayTime(m.resetsAt)}</b>${m.source === 'desktop' ? ' at the latest' : ''}` : '';
+    return `The pit already holds all the mine can give this week, so no cartload comes when the five-hour window turns over. The next is when the week does${when}.`;
+  }
   if (state.guest || !g || !g.known || g.reset || !g.resetsAt) {
     return 'The goldsmith casts the mine\'s ore into bars and wheels them to the gold pit whenever the five-hour window turns over.';
   }
@@ -6762,6 +6776,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
   if (rec.furnace) rec.furnace.update(dt);
+  if (rec.orePile) rec.orePile.update(dt);
   if (rec.ship) updateBatavia(rec.ship, dt);
   // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
   if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });

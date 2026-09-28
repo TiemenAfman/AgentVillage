@@ -38,7 +38,7 @@ import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
 import { ensureStatusLine } from './lib/statusline.mjs';
-import { goldOf, mineOf } from './shared/gold.mjs';
+import { purseOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
 
@@ -1512,13 +1512,10 @@ function watchData() {
 // rewrites its file every quarter of an hour, and 75 kB parsed every five seconds is still
 // nothing beside a scan.
 //
-// The gold mine's week rides along as `mine` (shared/gold.mjs mineOf, Plans/goudmijn.md):
+// The gold mine's week rides along as `mine` (shared/gold.mjs purseOf, Plans/goudmijn.md):
 // the same reading, the same keeper, the same door - one place decides who sees any of it.
-const goldNow = () => {
-  const reading = currentUsage();
-  const now = Date.now();
-  return { ...goldOf(reading, now), mine: mineOf(reading, now) };
-};
+// And the pit's count is already held to what the mine can give, so no page has to know.
+const goldNow = () => purseOf(currentUsage(), Date.now());
 const GOLD_POLL_MS = 5000;
 function watchGold() {
   let said = JSON.stringify(goldNow());

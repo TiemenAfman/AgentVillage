@@ -1092,12 +1092,19 @@ The mine holds the keeper's seven-day window as ore (`shared/gold.mjs mineOf`, o
 percent, the pit's bargain: no reading is a full mine), riding along as `mine` on `/api/gold`
 and `event: gold` - never the bundle. The desktop app's `sd` has no reset, so `weekResetOf` in
 lib/usage.mjs takes the last real drop it sampled (to half or less, or to 5) plus a week, and
-`currentUsage` takes the week from the newest source that has one. `civic:goldsmith` (nearest
+`currentUsage` takes the week from the newest source that has one. **The pit never holds more
+than the mine can give**: `purseOf` (shared/gold.mjs, the one copy, what `/api/gold` answers)
+is the five hours or the rest of the week, whichever is less (`window` the five hours' own count,
+`capped` when the week held it down), so a gold run can only bring what the mine has. A week
+turning over fills the bin over `ORE_FILL_S` (`attachOrePile` in web/js/goldmine.js, stepped
+from `animateExtras`), spending shows at once. `civic:goldsmith` (nearest
 the pit) and `civic:goldmine` (high ground within `MINE_RING`) are placed right after the pit,
 sticky 3x3s with the town's claim, and `standAt` in `placeAll` takes a lot only if its road
 reaches the square on that same scan and it cuts no land off (`reachCount`) - the mine once
 stood across a river and got its road the scan after, and a goldsmith on a founding island's
-last dry block sealed a slipway's way up. Because the mine's claim can lie apart from the
+last dry block sealed a slipway's way up. Lots with `INLAND` cells of dry non-beach ground round
+them go first (`byCoast`, `MINE_TRIES` per list), and the mine *waits* for one while the island
+can still grow - not as `unplaced`, which would make the island grow for it. Because the mine's claim can lie apart from the
 commons, the planner's `commons` op refuses only ground that adds a piece (`pieces`), not a
 town that is already in several. The delivery is the page's alone (`web/js/goldrun.js`): a
 rise of `MIN_RISE` bars or more is a window turned over, and the pit holds its old count while
