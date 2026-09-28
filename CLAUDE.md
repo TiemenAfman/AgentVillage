@@ -446,7 +446,12 @@ hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boa
 pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works the world
 position out itself, and sends decks as their own list `d` beside the rows - a row's slots
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
-crew). None of it runs yet: no walk mode sets `state.deck`.
+crew). Walk mode sets `state.deck` on the galleon only (`CRAFTS.galleon`, the pirate ship,
+crew 5): E at its wheel is *leave the helm*, the hull coasts under `stepBoat` with the gas off
+while you walk it (`stepOnDeck` in walk.js), and `ownHull()` in main.js is the hull that is
+ours whether at the wheel or on the planks. `kindOf` still says Benchy for every id, so the sea
+counts nobody but the pilot and others see you at your world pose - the ship itself is only
+what `?ship` draws (the first boat of each island) until it has a place of its own.
 
 **Other players are drawn with your own rig** (Plans/andere-spelers-zoals-jij.md): peers.js
 gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every

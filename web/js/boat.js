@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
+import { CRAFTS } from 'shared/crafts.mjs';
 import { buildBoatGeometry, mesh } from './buildings.js';
 import * as models from './models.js';
 
@@ -155,13 +156,17 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   const step = Math.min(dt, boost || b.v > BOAT_TOP ? TURBO_STEP : MAX_STEP);
   const t = axis(throttle);
   const r = axis(turn);
-  const top = boost ? BOAT_TOP * BOAT_TURBO : BOAT_TOP;
+  // How this hull handles (shared/crafts.mjs sail); a boat with none is the Benchy.
+  const sail = (b.craft && b.craft.spec && b.craft.spec.sail) || null;
+  const TOP = sail ? sail.top : BOAT_TOP;
+  const top = boost ? TOP * BOAT_TURBO : TOP;
 
   // ---- the tiller ---------------------------------------------------------------
   // The rudder works on water flowing past it, so the turn tightens with the way on. From
   // an oar's worth at rest up to the full rate by TURN_FULL, which is the speed a hull
   // this size is actually steering at rather than being shoved around at.
-  const rate = BOAT_TURN_MIN + (BOAT_TURN - BOAT_TURN_MIN) * Math.min(1, Math.abs(b.v) / TURN_FULL);
+  const TURN = sail ? sail.turn : BOAT_TURN, TURN_MIN = sail ? sail.turnMin : BOAT_TURN_MIN;
+  const rate = TURN_MIN + (TURN - TURN_MIN) * Math.min(1, Math.abs(b.v) / TURN_FULL);
   b.yaw -= r * rate * step;
   // Kept inside one turn so a long session cannot walk the yaw out to a number
   // lib/players.mjs clamps (it caps a pose's yaw at 1e4) instead of relaying. One step
@@ -182,7 +187,7 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   // without a ceiling the tightest turn in the game would cost a boat under power exactly
   // nothing and the hull would corner on rails.
   const want = (t >= 0 ? t * top : t * BOAT_REVERSE) * (1 - BOAT_TURN_BITE * Math.abs(r));
-  const accel = want >= 0 ? BOAT_ACCEL * (top / BOAT_TOP) : ASTERN_ACCEL;
+  const accel = want >= 0 ? (sail ? sail.accel : BOAT_ACCEL) * (top / TOP) : ASTERN_ACCEL;
   const sameWay = want !== 0 && (b.v === 0 || Math.sign(b.v) === Math.sign(want));
   if (want === 0) {
     // Hands off: the water takes it off, and only the water.
@@ -207,7 +212,7 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   // The turbo ceiling whether or not the turbo is on this frame: the frame it runs out, the
   // hull is still doing fifteen, and clamping to BOAT_TOP here would stop it dead at 9.5 in
   // one step instead of letting the drag above ease it down.
-  b.v = clamp(b.v, -BOAT_REVERSE, BOAT_TOP * BOAT_TURBO);
+  b.v = clamp(b.v, -BOAT_REVERSE, TOP * BOAT_TURBO);
   if (!t && Math.abs(b.v) < CREEP) b.v = 0;
 
   // ---- the crossing -------------------------------------------------------------
@@ -221,7 +226,19 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   const lead = b.v >= 0 ? BOW : -BOW;
   // Where the bow would be if the hull stood at (x, z). The heading does not change below
   // this line, so the offset is fixed and the whole of the test is this one point.
-  const bow = (x, z) => heightAt(x + fx * lead, z + fz * lead);
+  // A big hull is tested at its bow and shoulders (sail.probes, mirrored astern when backing),
+  // the highest ground under any of them - a bow point alone let a galleon lie half in the dunes.
+  const probes = sail && sail.probes;
+  const bow = probes
+    ? (x, z) => {
+      let high = -Infinity;
+      for (const [px, pz0] of probes) {
+        const pz = b.v >= 0 ? pz0 : -pz0;
+        high = Math.max(high, heightAt(x + px * fz + pz * fx, z - px * fx + pz * fz));
+      }
+      return high;
+    }
+    : (x, z) => heightAt(x + fx * lead, z + fz * lead);
   const touched = bow(nx, nz);
   if (touched < BOAT_FLOAT) {
     b.x = nx;
@@ -267,11 +284,24 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
 const BOB_RISE = 0.03;    // sailIn's own numbers, for the same feel: a hull at anchor is
 const BOB_PITCH = 0.04;   // never quite still, and a boat that is reads as a prop
 const BOB_ROLL = 0.03;
-export function createBoat({ scene, material }) {
+// The pirate ship (scripts/build-pirateship.py, Greggory_Fisher's model, CC-BY-4.0): baked keel
+// on y = 0 like the Benchy, its waterline and main deck read off the source's own proportions
+// (7 and 12.55 of 58.56 up, the bake's SHIP_TALL). Every island's first boat is one
+// (shared/crafts.mjs kindOf), laid in deep water off its berth (main.js shipBerth).
+const SHIP = 'pirateship hull';
+const SHIP_TALL = 12.29;    // the bake's height, keel to masthead (build-pirateship.py prints it)
+const SHIP_DRAUGHT = SHIP_TALL * 7 / 58.56;
+// The wheel, on the quarterdeck two units abaft the middle: measured by the bake's own
+// downward rays (build-pirateship.py prints the deck heights, 1.631 above the keel there).
+// In the hull's frame, +z forward. The pilot stands here rather than on the middle of the
+// hull, which on a ship this size is the foot of the main mast.
+const SHIP_HELM = { x: 0, y: 3.262 - SHIP_DRAUGHT, z: -3.2 };
+export function createBoat({ scene, material, kind = 'benchy' }) {
+  const ship = kind === 'ship' && models.has(SHIP);
   // The Benchy, if it has been baked; the drawn hull otherwise. The same `models.has` guard
   // barrel() in props.js uses, and for the same reason: a set that is not there yet should
   // leave the island drawing something rather than throwing on the boot path.
-  const geometry = models.has(HULL)
+  const geometry = ship ? mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }) : models.has(HULL)
     ? mesh(HULL, 0xffffff, { y: -DRAUGHT })
     : buildBoatGeometry();
   const object = new THREE.Mesh(geometry, material);
@@ -281,6 +311,12 @@ export function createBoat({ scene, material }) {
 
   return {
     object,
+    // Where the pilot stands in the hull's frame (null: the middle), how far back the camera
+    // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side.
+    helm: ship ? SHIP_HELM : null,
+    spec: ship ? CRAFTS.galleon : CRAFTS.benchy,
+    camScale: ship ? 10 : 2.2,
+    beam: ship ? 3.5 : 0.35,
 
     // Where it floats and which way it is pointed. The y is left to `bob`, so placing a
     // boat never fights the swell it is sitting on.
@@ -303,7 +339,7 @@ export function createBoat({ scene, material }) {
 
     // Where a body standing in it has its feet, swell and all.
     deck() {
-      return object.position.y + DECK_Y;
+      return object.position.y + (ship ? SHIP_HELM.y : DECK_Y);
     },
 
     dispose() {

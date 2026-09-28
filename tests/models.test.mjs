@@ -36,6 +36,7 @@ import { BOARDWALK } from '../web/js/boardwalk-mesh.js';
 import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
 import { BUOYS } from '../web/js/buoys-mesh.js';
 import { BENCHY } from '../web/js/benchy-mesh.js';
+import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
 import { BICYCLE } from '../web/js/bicycle-mesh.js';
 import { SAWMILL } from '../web/js/sawmill-mesh.js';
 import { SMITHY } from '../web/js/smithy-mesh.js';
@@ -57,7 +58,7 @@ import { APOTHECARY } from '../web/js/apothecary-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON };
+const BAKED = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -277,7 +278,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'grocer', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wall', 'wandmaker', 'windmill']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldpit', 'greatcastle', 'grocer', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wall', 'wandmaker', 'windmill']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The boat. A hero, because it is one hull authored as one thing and you ride in it -
@@ -316,6 +317,9 @@ test('the register spans every set and answers by part name alone', () => {
     'greatcastle',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     'lighthouse',
+    // The pirate ship, a hero like the Benchy: Greggory_Fisher's galleon (CC-BY-4.0) reduced
+    // to one painted mesh by scripts/build-pirateship.py.
+    'pirateship',
     // All sets' `prop_` assets, sorted back together: the register is flat across sets
     // on purpose, and this is the one place that shows it.
     ...[...PROP_ASSETS, ...BOUNDARY_ASSETS, ...DOCK_ASSETS, 'prop_buoy_red', 'prop_buoy_green', 'prop_goldbar', 'prop_goldcoin',

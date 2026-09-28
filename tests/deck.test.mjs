@@ -95,12 +95,14 @@ test('getting on is worked out once, and getting off takes the boat\'s way with 
   near(off.vx, 4 * Math.sin(1.1), 1e-9, 'with the hull\'s speed');
 });
 
-test('every boat today is a Benchy, and a Benchy is her pilot and nobody else', () => {
-  for (const id of ['boat:a1b2c3d4', 'boat:a1b2c3d4-n1', 'boat:w-0123456789ab']) {
+test('an island\'s first boat is its galleon, every other boat a Benchy, and a Benchy is her pilot alone', () => {
+  for (const id of ['boat:a1b2c3d4-n1', 'boat:a1b2c3d4-w2', 'boat:w-0123456789ab']) {
     assert.equal(kindOf(id), 'benchy');
     assert.equal(crewOf(id), 1);
   }
-  const b = craftOf('boat:a1b2c3d4');
+  assert.equal(kindOf('boat:a1b2c3d4'), 'galleon');
+  assert.equal(crewOf('boat:a1b2c3d4'), 5);
+  const b = craftOf('boat:a1b2c3d4-n1');
   assert.equal(deckAt(b, ...b.helm), 0, 'the helm is on her deck');
   // Every craft's helm stands on its own deck and clear of its own rails, or its pilot is
   // put somewhere the deck walk would refuse.

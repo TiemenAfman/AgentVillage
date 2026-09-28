@@ -10,10 +10,12 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, DECK_Y } from './boat.js';
+import { stepDeck, toWorld, dirToLocal, deckAt } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
+import { canon } from './keybinds.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -309,6 +311,7 @@ export function createWalkMode({
   // does both as well, and two copies of "only from the ground" would drift apart.
   function jump() {
     if (state.bike) { hopWanted = true; return; }   // taken by the next stepBike, tyres down
+    if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
   }
@@ -350,7 +353,10 @@ export function createWalkMode({
 
   const onKeyDown = (e) => {
     if (!state.active || state.paused) return;   // the board has the keyboard
-    const k = e.key.toLowerCase();
+    // Rebound keys (keybinds.js) arrive as the default key of their action, so everything
+    // below keeps testing the defaults. Not for a board being worked: its letters are typed.
+    const typed = e.key.toLowerCase();
+    const k = state.working ? typed : canon(typed);
     // A key with ctrl, meta or alt on it is not a game key - which also covers AltGr on a
     // Dutch layout, where it arrives as ctrl+alt. But on foot the browser's own shortcuts
     // are a hazard (ctrl+S next to the walking keys, ctrl+P beside the sowing one), so the
@@ -359,15 +365,17 @@ export function createWalkMode({
     // preventDefault on them: those only come to the page under the keyboard lock that
     // lockKeys() asks for, and only in fullscreen.
     if (e.ctrlKey || e.metaKey || e.altKey) {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(k)) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(typed)) e.preventDefault();
       return;
     }
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
     // inside a field, where those keys are letters somebody is typing.
+    if (k == null) return;
     if (state.working) {
       if (k === 'escape') { e.preventDefault(); release(); return; }
-      if (!typingInto(e.target) && MOVE_KEYS.includes(k)) { keys.add(k); e.preventDefault(); }
+      const mk = canon(typed);
+      if (!typingInto(e.target) && MOVE_KEYS.includes(mk)) { keys.add(mk); e.preventDefault(); }
       return;
     }
     if (MOVE_KEYS.includes(k)) {
@@ -415,7 +423,7 @@ export function createWalkMode({
     }
   };
   const onKeyUp = (e) => {
-    const k = e.key.toLowerCase();
+    const k = canon(e.key.toLowerCase());
     keys.delete(k);
     if (k === 'c') releaseCrouch();
   };
@@ -742,7 +750,9 @@ export function createWalkMode({
     state.swimming = false;
     state.grounded = true;
     state.vy = 0;
-    place(camBack * 2.2);
+    // Further back for a bigger hull: behind the wheel of a galleon at a rowing boat's
+    // distance, all you see is the mizzen mast.
+    place(camBack * ((boat.craft && boat.craft.camScale) || 2.2));
     // Straight behind the bow from the first stroke: a look from before you boarded is not
     // a look round the boat.
     riddenSinceLook = Infinity;
@@ -752,16 +762,132 @@ export function createWalkMode({
   // uses, so you never land inside a wall or in the water you have just crossed - and if
   // forty tries find nothing legal you stay aboard, which is a stuck boat rather than a
   // drowned settler.
-  function unboard(at) {
-    if (!state.vehicle) return false;
+  // ---- on a deck (Plans/lopen-op-de-boot.md, fase 3) --------------------------------------
+  // Walking a hull that may be moving: where you stand is kept in the hull's own frame
+  // (state.deck, shared/deck.mjs) and the world position is worked out from it every frame,
+  // so the planks carry you however the boat turns. Only on a hull whose craft has room for
+  // more than its pilot (the galleon; the Benchy's whole deck is her helm). `deckBoat` is the
+  // hull object itself, the same one state.boats and the fleet loop hold.
+  let deckBoat = null;
+  let deckJump = false;
+  const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
+  const specOf = (b) => (b && b.craft && b.craft.spec) || null;
+  function offDeck() { state.deck = null; deckBoat = null; deckJump = false; }
+  // How high a point of the hull's frame stands in the world, swell and all: the hull pitches
+  // and rolls as well as rising (boat.js bob), and on a hull thirteen long a pitch of 0.04 is a
+  // quarter of a unit at the bow - feet kept at the middle's height floated over the forecastle
+  // and sank into the poop. Asked of the hull's own object, the one that is drawn.
+  const swellAt = new THREE.Vector3();
+  function hullHeight(b, lx, y, lz) {
+    const o = b.craft && b.craft.object;
+    if (!o) return DECK_Y + y;
+    o.updateMatrixWorld();
+    return o.localToWorld(swellAt.set(lx, DECK_Y + y, lz)).y;
+  }
+  // From the helm onto the deck, a pace forward of the wheel.
+  function leaveHelm() {
+    const b = state.vehicle, spec = specOf(b);
+    if (!b || !spec || spec.crew < 2) return false;
+    const x = spec.helm[0], z = spec.helm[1] + 0.6;
+    const y = deckAt(spec, x, z);
+    if (y === null) return false;
+    state.vehicle = null;
+    deckBoat = b;
+    state.deck = { boat: b.id, x, z, y, vy: 0, grounded: true, yaw: 0 };
+    state.swimming = false;
+    place(camBack * 1.5);
+    return true;
+  }
+  // Back to the wheel: the same board() as climbing in from the dock.
+  function takeHelm() {
+    const b = deckBoat;
+    if (!b) return false;
+    offDeck();
+    board(b);
+    return true;
+  }
+  // How far you are from the wheel, and from the nearest side of the planking you stand on.
+  function deckWhere() {
+    const spec = specOf(deckBoat);
+    if (!state.deck || !spec) return null;
+    const d = state.deck;
+    const helm = Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]);
+    let side = Infinity;
+    for (const r of spec.deck) {
+      if (Math.abs(d.z - r.z) <= r.hz && Math.abs(d.x - r.x) <= r.hx) side = Math.min(side, r.hx - Math.abs(d.x - r.x));
+    }
+    return { helm, side, boat: deckBoat };
+  }
+  // One frame on the deck. The hull coasts on under nobody's hand (gas off, the same
+  // stepBoat), the feet step in its frame, and the body is put back in the world from there.
+  function stepOnDeck(dt, ix, iz, boost) {
+    const b = deckBoat, spec = specOf(b);
+    stepBoat(b, {}, dt, (x, z) => groundAt(x, z, Infinity));
+    const push = Math.min(1, Math.hypot(ix, iz));
+    const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
+    stepPool(state.stamina.boat, false, dt);
+    state.turbo = turbo;
+    let wx = 0, wz = 0;
+    state.moving = push > 0.02;
+    if (state.moving) {
+      const len = Math.hypot(ix, iz);
+      forward.set(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
+      right.set(-Math.cos(state.camYaw), 0, Math.sin(state.camYaw));
+      wx = ((forward.x * iz + right.x * ix) / len) * push;
+      wz = ((forward.z * iz + right.z * ix) / len) * push;
+    }
+    const frame = frameOf(b);
+    const [lx, lz] = dirToLocal(frame, wx, wz);
+    const d = state.deck;
+    stepDeck(d, { x: lx, z: lz, jump: deckJump }, spec, dt,
+      { speed: turbo ? RUN_SPEED : WALK_SPEED, radius: BODY_R, jumpV: JUMP_V, gravity: GRAVITY });
+    deckJump = false;
+    // Facing: where you walk, and kept relative to the hull while you stand, so she can turn
+    // under you without you spinning on the spot.
+    if (state.moving) {
+      state.yaw = Math.atan2(wx, wz);
+      d.yaw = state.yaw - b.yaw;
+    } else {
+      state.yaw = b.yaw + d.yaw;
+    }
+    const [x, z] = toWorld(frame, d.x, d.z);
+    state.pos.set(x, hullHeight(b, d.x, d.y, d.z), z);
+    state.floor = state.pos.y;
+    state.grounded = d.grounded;
+    state.vy = d.vy;
+    state.running = turbo && state.moving;
+    state.swimming = false;
+    state.bob += dt * (state.moving ? 6 : 1);
+    // Off the planks with nowhere to land (there are rails all round, so only a gap in them
+    // does it): into the water beside her rather than standing on the sea.
+    if (d.off) { offDeck(); state.pos.y = WATER_Y - SWIM_SINK; state.swimming = true; }
+    return afterMove(dt);
+  }
+
+  // `water`: over the side instead, wherever the boat is - no shore wanted, and you come up
+  // swimming beside the hull.
+  function unboard(at, { water = false } = {}) {
+    if (!state.vehicle && !state.deck) return false;
     let [x, z] = at;
-    let ok = !blocked(x, z, undefined, true);
+    let ok = !blocked(x, z, undefined, !water);
     for (let i = 0; i < 40 && !ok; i++) {
       x += 0.25; z += 0.18;
-      ok = !blocked(x, z, undefined, true);
+      ok = !blocked(x, z, undefined, !water);
     }
     if (!ok) return false;
+    if (water && groundAt(x, z) < WATER_Y) {
+      state.vehicle = null;
+      offDeck();
+      place(camBack);
+      state.pos.set(x, WATER_Y - SWIM_SINK, z);
+      state.floor = groundAt(x, z);
+      state.grounded = true;
+      state.swimming = true;
+      state.vy = 0;
+      return true;
+    }
     state.vehicle = null;
+    offDeck();
     place(camBack);
     state.pos.set(x, groundAt(x, z), z);
     state.floor = state.pos.y;
@@ -865,6 +991,7 @@ export function createWalkMode({
   function exit() {
     setFirstPerson(false);
     state.vehicle = null;
+    offDeck();
     putBikeAway();
     place(camBack);
     // Inactive before the release, or release() would ask for the lock back on the way out.
@@ -1001,6 +1128,8 @@ export function createWalkMode({
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
 
+    if (state.deck && deckBoat) return stepOnDeck(dt, ix, iz, boost);
+
     // ---- aboard ------------------------------------------------------------
     // A boat is not feet, so `blocked` knows nothing about it: teaching it about vehicles
     // would have put a mode flag inside the collision test of every walking frame. The
@@ -1012,7 +1141,14 @@ export function createWalkMode({
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
       stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, (x, z) => groundAt(x, z, Infinity));
-      state.pos.set(state.vehicle.x, state.vehicle.deckY ?? DECK_Y, state.vehicle.z);
+      // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
+      // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
+      const v = state.vehicle, h = v.craft && v.craft.helm;
+      const s = Math.sin(v.yaw), c = Math.cos(v.yaw);
+      const hx = h ? h.x * c + h.z * s : 0, hz = h ? h.z * c - h.x * s : 0;
+      // And at the wheel's own height in the swell, not the middle's (see hullHeight).
+      const helmY = h && v.craft && v.craft.object ? hullHeight(v, h.x, h.y - DECK_Y, h.z) : (v.deckY ?? DECK_Y);
+      state.pos.set(v.x + hx, helmY, v.z + hz);
       state.yaw = state.vehicle.yaw;
       // The camera trails the bow rather than staying where the mouse left it. You steer
       // with a rudder here, not by walking towards what you are looking at, so a camera
@@ -1329,7 +1465,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle,
+  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, onDeck: () => (state.deck ? deckBoat : null),
     mount, dismount, riding: () => state.bike,
     // What is underfoot here, decks included. The archipelago alone answers with water
     // over a quay, because planks are a level rather than ground - and "can I step out

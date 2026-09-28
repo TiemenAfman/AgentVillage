@@ -11,6 +11,7 @@ import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
 import { isletsNear } from 'shared/islets.mjs';
+import { CRAFTS, kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
@@ -684,6 +685,11 @@ function walkableBlockers() {
   return out;
 }
 
+// How slow a boat has to be going before E offers to put you off it.
+const OFFER_BELOW = 0.6;
+// The boat that is ours this frame: the one at whose helm we stand, or whose deck we walk.
+const ownHull = () => (state.walk && (state.walk.aboard() || state.walk.onDeck())) || null;
+
 function interactables() {
   const out = [];
   // One key does both. Aboard, E puts you ashore - but only where there is shore to put you
@@ -691,6 +697,23 @@ function interactables() {
   // offer and the prompt simply is not there. On foot it is the dock that offers a boat, and
   // any hull somebody left lying about.
   const aboard = state.walk && state.walk.aboard();
+  const deck = !aboard && state.walk && state.walk.deckWhere();
+  if (deck) {
+    const b = deck.boat;
+    if (deck.helm < 1.0) {
+      out.push({ id: b.id, kind: 'helm', x: b.x, z: b.z, r: 99, label: 'the wheel', prompt: 'take the helm' });
+    } else if (deck.side < 0.5) {
+      const w = state.walk.state.pos, under = (x, z) => state.walk.groundAt(x, z);
+      const land = LAND_PROBE.some(([dx, dz]) => under(w.x + dx * 1.6, w.z + dz * 1.6) >= 0.06);
+      out.push(land
+        ? { id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the shore', prompt: 'step ashore' }
+        : { id: b.id, kind: 'ashore', x: b.x, z: b.z, r: 99, label: 'the water', prompt: 'jump overboard' });
+    }
+    return out;
+  }
+  // Only once she has nearly stopped: under way the prompt sat on screen the whole voyage,
+  // and nobody steps off a boat doing nine knots anyway.
+  if (aboard && Math.abs(aboard.v || 0) > OFFER_BELOW) return out;
   if (aboard) {
     const bx = aboard.x + Math.sin(aboard.yaw) * (BOW + 0.7);
     const bz = aboard.z + Math.cos(aboard.yaw) * (BOW + 0.7);
@@ -699,6 +722,11 @@ function interactables() {
     // Asked of walk mode, not of the archipelago: a quay is planks over water, so the sea
     // says -0.4 where your own dock is and stepping out onto your own dock would be refused.
     const under = (x, z) => state.walk.groundAt(x, z);
+    const spec = aboard.craft && aboard.craft.spec;
+    if (spec && spec.crew > 1) {
+      out.push({ id: aboard.id, kind: 'leavehelm', x: aboard.x, z: aboard.z, r: 99, label: 'the deck', prompt: 'leave the helm' });
+      return out;
+    }
     const landAhead = under(bx, bz) >= 0.06;
     const landBeside = !landAhead && LAND_PROBE.some(([dx, dz]) =>
       under(aboard.x + dx * 1.6, aboard.z + dz * 1.6) >= 0.06);
@@ -706,6 +734,13 @@ function interactables() {
       out.push({
         id: aboard.id, kind: 'ashore', x: aboard.x, z: aboard.z, r: 99,
         label: 'the shore', prompt: 'step ashore',
+      });
+    } else {
+      // Out at sea E puts you over the side: a boat you could only leave at a coast was a
+      // boat you could not swim from, nor leave to jump the world's edge on your own.
+      out.push({
+        id: aboard.id, kind: 'ashore', x: aboard.x, z: aboard.z, r: 99,
+        label: 'the water', prompt: 'jump overboard',
       });
     }
     return out;
@@ -1209,10 +1244,17 @@ function takeBoat(which) {
 
 // Off at the bow, which is the end pointing at whatever you have come alongside.
 function stepAshore() {
-  const b = state.walk && state.walk.aboard();
+  const b = ownHull();
   if (!b) return;
-  const at = [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
-  if (!state.walk.unboard(at)) { state.ui.toast('Nowhere to land here.'); return; }
+  const walking = !state.walk.aboard();
+  const w = state.walk.state.pos;
+  const at = walking ? [w.x, w.z] : [b.x + Math.sin(b.yaw) * (BOW + 0.6), b.z + Math.cos(b.yaw) * (BOW + 0.6)];
+  // No shore: over the starboard side, clear of the hull, into the water.
+  const beam = (b.craft && b.craft.beam) || 0.35;
+  // Which side: the one you stand at on a deck, starboard from the helm.
+  const sgn = walking && state.walk.state.deck && state.walk.state.deck.x < 0 ? -1 : 1;
+  const side = [b.x + sgn * Math.cos(b.yaw) * (beam + 0.5), b.z - sgn * Math.sin(b.yaw) * (beam + 0.5)];
+  if (!state.walk.unboard(at) && !state.walk.unboard(side, { water: true })) { state.ui.toast('Nowhere to land here.'); return; }
   if (state.net) { state.net.dropBoat(b.id); state.net.setRoom(null, state.walk); }
   state.walk.setInteractables(interactables());
 }
@@ -1235,11 +1277,13 @@ function walkCallbacks() {
       else if (it.kind === 'boat') takeBoat(it.id);
       else if (it.kind === 'dock') takeBoatAt(it.id);
       else if (it.kind === 'ashore') stepAshore();
+      else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) state.net.setRoom(null, state.walk); state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'helm') { if (state.walk.takeHelm()) { if (state.net) state.net.setRoom('boat', state.walk); state.walk.setInteractables(interactables()); } }
       else talkTo(it.id);
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -1778,7 +1822,8 @@ function enterWalk(spot = null) {
     spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
   }
   // No place in mind: back where you last stood, and only the very first time the square.
-  if (!spot) spot = recalledSpot();
+  // `?square` skips the recall - the way home for somebody left treading water.
+  if (!spot && !params.has('square')) spot = recalledSpot();
   // `?edge`: in the water a few strokes short of the world's east edge, facing it, to try
   // the jump round the world without sailing two kilometres for it (Plans/ronde-wereld.md).
   if (params.has('edge') && state.homeOrigin && !reboard) {
@@ -2009,7 +2054,7 @@ function exitWalk({ force = false } = {}) {
   // and a boat left with way on it used to be caught up with the sea's last sample of it a
   // few metres back, so coming down again meant swimming after your own boat. Its last
   // position goes to the sea now, the tiller stays ours, and enterWalk climbs back aboard.
-  const b = state.walk.aboard();
+  const b = ownHull();
   if (b) {
     b.v = 0;
     b.track = null;
@@ -2417,7 +2462,7 @@ function launchBoats() {
   // step off, and the sea says `gone` for it when it is.
   for (let i = state.boats.length - 1; i >= 0; i--) {
     const b = state.boats[i];
-    if (wanted.has(b.id) || (state.walk && state.walk.aboard() === b)) continue;
+    if (wanted.has(b.id) || ownHull() === b) continue;
     if (isSkiff(b.id)) continue;   // nobody's island: only the sea's `gone` takes one away
     b.craft.dispose();
     state.boats.splice(i, 1);
@@ -2480,15 +2525,40 @@ function showMinimap(on) {
 // belongs to nobody cannot also be always to hand, so if somebody has left one on the far
 // shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
 // at their moorings on a restart.
+// Where the galleon lies. The berths (shared/quay.mjs mooringsFor) are cut for a Benchy, a
+// hull a metre long in a harbour basin, and a ship thirteen long put there lay with her bow
+// up the beach and could not be sailed off it. So she is moved out from her berth, keeping
+// its heading, to the nearest spot where every point of her hull - bow, shoulders, stern -
+// floats in real water. Arithmetic on the ground alone, walked in a fixed order, so every
+// page lays her in the same place without a word from the sea.
+const SHIP_WATER = -0.3;
+function shipBerth(m) {
+  const probes = CRAFTS.galleon.sail.probes;
+  const pts = [[0, 0], ...probes, ...probes.map(([x, z]) => [x, -z])];
+  const fx = Math.sin(m.yaw), fz = Math.cos(m.yaw);
+  const clear = (x, z) => pts.every(([px, pz]) => state.sea.height(x + px * fz + pz * fx, z - px * fx + pz * fz) < SHIP_WATER);
+  if (clear(m.x, m.z)) return m;
+  for (let d = 1; d <= 40; d += 1) {
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8;
+      const x = m.x + Math.sin(a) * d, z = m.z + Math.cos(a) * d;
+      if (clear(x, z)) return { x, z };
+    }
+  }
+  return m;
+}
+
 function boatsFor(region) {
   const v = region === state.region ? state.village : region.village;
   const out = [];
   for (const m of v ? mooringsFor(region.id, region.terrain, v, region.origin) : []) {
     let b = state.boats.find((x) => x.id === m.id);
     if (!b) {
-      const craft = createBoat({ scene, material: buildingMat });
-      craft.place(m.x, m.z, m.yaw);
-      b = { id: m.id, x: m.x, z: m.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
+      const ship = kindOf(m.id) === 'galleon';
+      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
+      const at = ship ? shipBerth(m) : m;
+      craft.place(at.x, at.z, m.yaw);
+      b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
       state.boats.push(b);
     }
     out.push(b);
@@ -2569,7 +2639,7 @@ function hullSample(b, m, final) {
 const glide = {};
 function glideBoats() {
   const render = performance.now() - LAG_MS;
-  const mine = state.walk && state.walk.aboard();
+  const mine = ownHull();
   for (const b of state.boats) {
     if (!b.track || b === mine) continue;
     trackAt(b.track, render, glide);
@@ -5310,7 +5380,7 @@ function frame(nowMs) {
 
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.
-  const mine = state.walk && state.walk.aboard();
+  const mine = ownHull();
   for (const b of state.boats) {
     // Only the hull under our own hands is reported; everybody else's arrives as a message.
     // Every frame, and not only the ones that moved far enough: net.js coalesces this onto
@@ -5331,7 +5401,7 @@ function frame(nowMs) {
   // been enough for the one route that goes that way and left every other route - a boat
   // taken away, a walk mode re-entered - standing on a quay with nothing in reach.
   if (state.mode === 'walk' && state.walk) {
-    const aboard = !!state.walk.aboard();
+    const aboard = !!ownHull();
     if (aboard || aboard !== wasAboard) state.walk.setInteractables(interactables());
     wasAboard = aboard;
   }
