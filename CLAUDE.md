@@ -1093,6 +1093,23 @@ the miner pushes a cart by road (`roadBetween` in shared/roads.mjs) to the golds
 smelts and barrows the bars to the pit; no buildings or no road between them fills it at once.
 `?goldrun` plays one from 20 bars. `tests/goldmine.test.mjs`.
 
+**The sawmill's horse takes timber to the yard, on the sea's clock** ([Plans/houtkar.md](Plans/houtkar.md)).
+`web/js/timberrun.js` is the gold run's pattern with no state: where the horse, the wagon, the
+carter and the yard's three hands are is `tripAt` / `crewAt` of the sea's time (`timeNow()` in
+main.js), so every screen - visitors' too, since nothing in it is the keeper's - has the wagon at
+the same place, and a page loaded mid-trip finds it mid-road. The trip is one closed loop
+(`tripLoop`: out on the right of the road, a U-turn at each end, back on the other side), so the
+horse is one arc length and the wagon's axle trails it by `hitch`, measured off the bake
+(`scripts/build-wagon.py`, `prop_wagon` + `prop_timber`; the bake splits parts per material, so
+they are asked for by prefix). The horse always walks (`HORSE_SPEED`): a road too long for
+`TIMBER_EVERY` gets a longer period (`tripPlan`), never a trot. The horse is fauna.js's, posed
+from outside its brain like the rave's, and is not the stable's. The crew hang in the yard
+group's frame on rounds picked off the bake per `yardStage`, stand on whatever of the yard is
+under them (a raycast into the yard's own meshes, cached per spot), are in the shed after dark,
+and the carrier leaves his round `CARRIER_LEAD` before the wagon arrives to unload it. main.js
+wraps every call into it: a fault there once stopped the boot. `?timber` starts a trip now.
+`tests/timberrun.test.mjs`.
+
 **The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
 `TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
 `CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets

@@ -86,6 +86,7 @@ import { attachGoldPile } from './goldpit.js';
 import { attachOrePile } from './goldmine.js';
 import { attachFurnace } from './goldsmith.js';
 import { createGoldRun } from './goldrun.js';
+import { createTimberRun } from './timberrun.js';
 import { GOLD_BARS, GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID, MINE_ORE } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
@@ -1326,6 +1327,33 @@ function goldRunOf() {
     if (state.gold) state.goldRun.setGold(goldBarsNow());
   }
   return state.goldRun || null;
+}
+// The timber run (Plans/houtkar.md): made once the scene is there, like the gold run. Nothing
+// in it is the keeper's, so a visitor gets the same wagon at the same moment.
+function syncTimberRun() {
+  // A wagon that cannot be drawn must never cost the island its boot: this runs inside
+  // applyVillage, and an exception here once left the page on its loading screen.
+  try {
+    if (!state.timberRun && state.terrain) state.timberRun = createTimberRun({ scene, material: buildingMat, groundAt });
+  } catch (err) {
+    console.warn('[island] the timber run could not be made', err);
+    state.timberRun = null;
+  }
+  if (!state.timberRun) return;
+  try {
+    state.timberRun.setSites({
+      sawmill: state.byId.get('civic:sawmill') || null,
+      yard: state.byId.get('civic:shipyard') || null,
+      village: state.village,
+      terrain: state.terrain,
+    });
+  } catch (err) {
+    console.warn('[island] the timber run could not be set up', err);
+    state.timberRun = null;
+    return;
+  }
+  // ?timber: a departure now rather than within six minutes.
+  if (params.has('timber') && !state.timberPlayed) { state.timberPlayed = true; state.timberRun.playNow(timeNow()); }
 }
 function syncGoldRun() {
   const run = goldRunOf();
@@ -5059,6 +5087,8 @@ function applyVillage(next, { animate }) {
 
   // Where the mine, the goldsmith and the pit now stand, and the roads between them.
   syncGoldRun();
+  // And the sawmill and the yard, for the timber wagon and the yard's crew (timberrun.js).
+  syncTimberRun();
 
   if (!animate) { for (const e of events) applyEventInstantly(e); reportPlacements(); return; }
   for (const e of events) scheduleEvent(e);
@@ -5686,6 +5716,14 @@ function frame(nowMs) {
   for (const rec of state.byId.values()) animateExtras(rec, dt, hour, nightAmt, nowMs);
   // The miner and the goldsmith, and the cart and the barrow between them (goldrun.js).
   if (state.goldRun) state.goldRun.update(dt);
+  // The timber wagon from the sawmill to the yard, and the hands at the yard (timberrun.js),
+  // on the sea's clock so every screen has the wagon at the same place.
+  if (state.timberRun) {
+    try { state.timberRun.update(dt, timeNow()); } catch (err) {
+      console.warn('[island] the timber run stopped', err);
+      state.timberRun = null;
+    }
+  }
   // The same hands turn the mills on somebody else's island. None of this is the server's:
   // it only ever said which building this is, and the turning, the clock, the fountain and
   // the chimney smoke have always been the browser's own. So a guest island gets them for

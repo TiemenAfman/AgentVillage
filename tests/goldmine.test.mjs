@@ -211,7 +211,7 @@ function standing() {
   const rec = (id) => {
     const plot = layout.plots[id];
     const group = new THREE.Group();
-    const [x, , z] = terrain.cellWorld(plot.gx + 1, plot.gz + 1);
+    const [x, z] = terrain.cellWorld(plot.gx + 1, plot.gz + 1);
     const [dx, dz] = DOOR_DIR[plot.rot % 4];
     group.position.set(x, terrain.heightAt(plot.gx + 1, plot.gz + 1), z);
     group.rotation.y = Math.atan2(dx, dz);

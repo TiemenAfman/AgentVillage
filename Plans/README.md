@@ -94,6 +94,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
   settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
   overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
+- ✅ [houtkar.md](houtkar.md) — de zagerij levert hout aan de werf met paard en wagen, op de klok
+  van de zee zodat elk scherm dezelfde rit ziet, en drie werknemers op de werf: een
+  scheepstimmerman langs de romp, een teerkoker bij de ketel en een drager die planken sjouwt en
+  de wagen lost. Gebouwd op 28 september 2026.
 - ✅ [goudmijn.md](goudmijn.md) — een goudmijn met het weeklimiet als erts (één klomp per procent)
   en een goudsmid bij de kuil: als het vijfuursvenster omslaat duwt de mijnwerker een kar over
   de weg naar de goudsmid, die smelt en de staven met de kruiwagen naar de kuil brengt. Gebouwd
