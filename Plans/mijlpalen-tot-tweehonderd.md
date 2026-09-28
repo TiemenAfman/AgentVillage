@@ -339,3 +339,56 @@ eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
   verbannenen). Een mijlpaal gaat dan weer op slot, laat zijn kavel leeg staan en laat zijn toast
   opnieuw zien als hij terugkomt. Dat is niet het probleem van dit plan, maar de `was`-regel zou het
   meteen oplossen.
+
+## Gemeten en besloten bij het bouwen van de kern (28 september)
+
+De ladder, de kavels, de plekregels en `stage` staan op de branch `wp-kern`. Gemeten op een kopie
+van `layout.json` en `village.json` van het echte eiland (grid 288, 114 settlers, geen kade-wijk,
+vier havens), met het model opgeblazen tot 200 settlers, één settler per scan:
+
+| wat | waar | afstand |
+|---|---|---|
+| kadehaven | de noordhaven, kop [154,41] | |
+| werf | [143,35], 5x16, rot 0 (zee op het noorden) | 9 van de wal van de kadehaven |
+| Batavia | [166,20], 16x4 | 18 van de kop |
+| tweede en derde schip | [166,15] en [166,10], ernaast | 23 en 28 van de kop |
+| kraan | [150,44] | 4 van de wal |
+| pakhuis, waag | [160,42], [159,36], voorkant naar het water | 8 en 9 van de wal |
+| vissershut | [232,195], aan de oosthaven | 8 van die kop |
+| brouwerij, oefenveld, kroniekhuis | [135,127], [147,127], [151,127] | 16 van het plein |
+| steengroeve | [240,138] | 98 van het plein |
+
+Niets verschoof, geen huis raakte zijn weg kwijt (`stranded`), de tweede scan was byte voor byte
+gelijk, en alleen de poldermolen wacht (het eiland kan nog groeien, dus de polderladder wacht
+ook). Op de seeds 5, 2024 en 1337 (grid 128, 200 settlers in stappen van 5) vindt alles een plek;
+op 2024 staan het pakhuis en de waag aan de volgende haven, omdat de kade van de kadehaven dan
+al van gehuchten is. Op een eiland dat groeit (32 op 64, ruimte tot 384) verplaatst een ring de
+werf, de schepen en de havengebouwen opzettelijk, net als de vuurtoren, en nooit een huis.
+
+Besloten waar het plan niets over zei:
+
+- **De kadehaven zonder kade-wijk**: de haven waar de eerste boot ligt is de haven van de kade die
+  elke pagina uit de landing afleidt, en als die geen van de vier is, de haven aan *diezelfde kant*
+  van het dorp. Op het echte eiland ligt het galjoen aan een kade van zichzelf ([209,66]), die na
+  het groeien geen haven meer is; zonder die regel werd het de oosthaven, 120 cellen verderop.
+- **Afstand tot de kop** is de afstand van de kop tot de dichtste cel van de strook (Chebyshev),
+  8 tot 20; van de strookjes die mogen, wint het midden het dichtst bij de kop. De boeg wijst langs
+  de kust, een kwartslag gedraaid van de richting van de steiger.
+- **De gang voor een kop** is twee cellen aan weerszijden van de lijn van de steiger, van de kop tot
+  de rand van het grid. **De draaicirkel van het galjoen** is 7 (de helft van haar 13, plus een halve
+  cel). **Ligplaatsen** zijn alle drie van elke haven, boten of niet, omdat de vloot erin groeit.
+- **Schip twee en drie** mogen tot 4 cellen langs het eerste schuiven: op seed 5 nam de draaicirkel
+  van het galjoen net de laatste cel van het vak naast de Batavia. Is er naast haar geen plek, dan
+  zoeken ze een rede zoals zij.
+- **Een cel water rond elk schip en de werf**: niets staat er direct tegenaan.
+- **De werf**: zes rijen droog (strand mag, geen hoek boven 1.2, zodat de teen van de helling in
+  het water blijft), vier rijen open zee, de zes ertussen strand, waterlijn of getijdewater. De
+  poort is de `anchor.door` van het model (lokaal 2.2 bij -8), niet het midden van de landkant.
+  Hij en de havengebouwen blijven van de grond van gehuchten af, zoals de ambachten.
+- **De havengebouwen** staan op land met het vak vóór hun voorkant in open water; zonder plek bij de
+  kadehaven gaan ze naar de volgende haven. **De vissershut** gaat naar de andere haven die het
+  dichtst bij het dorp ligt, anders naar elke kust.
+- **De steengroeve** buiten het dorpsplan (TOWN_REACH, zoals een nieuw kasteel): op een eiland van
+  128 is de heuvel vaak de rug van het dorp zelf, en op seed 5 stond hij anders tussen twee straten.
+- **Polders**: de ladder slaat ook een polder over die een schip in een vijver zou opsluiten, en
+  een polder van de bewaarder die dat doet, of eroverheen gaat, wordt geweigerd.

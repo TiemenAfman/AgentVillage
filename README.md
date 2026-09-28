@@ -156,6 +156,7 @@ before you first look:
 | A forge with smoke, a lumber pile, a lantern | Heavy shell use, lots of file edits, mostly reading and searching |
 | The Outlands | Sessions whose folder is not a project: System32, a downloads folder, a shelf full of other repos |
 | A polder behind an earth wall | Land reclaimed once the island ran out, from 150 settlers on |
+| A shipyard, and a VOC ship at anchor off the harbour | From 95 and 120 settlers: past a hundred the ladder turns to the sea, and ends at 200 |
 
 The full table — sixty-odd rows, every ornament and civic building and what earns it — is
 [What you are looking at](docs/manual.md#what-you-are-looking-at). The day and night follow
