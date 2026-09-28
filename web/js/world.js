@@ -1665,15 +1665,22 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
   // and an island of the largest grid reaches 256 further again, so the far water is
   // something you look at rather than past. It is the same shader now, sharing the same
-  // uniforms so there is one clock and one sun over the whole sea, and it runs out to
-  // 1200 - inside the camera's far plane, with the sky grown to stay outside it.
+  // uniforms so there is one clock and one sun over the whole sea, and it runs out past
+  // the camera's far plane (below).
   //
   // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
   // gives everything past its own edge, so the colour is constant and there is nothing to
   // interpolate; the waves are 5 cm on a surface a kilometre across.
   //
   // Opaque, unlike the patch, because there is nothing underneath it to show through.
-  const OCEAN_R = 1200;
+  //
+  // Now past the far plane (1400) rather than inside it. The patch above is a rectangle over
+  // every island's grid, fixed in the world, and with the volcano and the starters it runs
+  // well past 1200 from the eye: beyond a 1200 rim it stood up against the sky as a pale
+  // slab of sea. With the rim out of reach the far plane cuts both in the same place, in
+  // full haze. That the rim is now outside the sky (r1340) does not matter: the sky writes no
+  // depth, so the sea draws over it wherever the two overlap.
+  const OCEAN_R = 1500;
   const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
   oceanGeo.rotateX(-Math.PI / 2);
   const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
@@ -1767,8 +1774,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // horizon is a direction rather than a place - so all four ride with the camera and none
   // of them is anchored to this island.
   //
-  // Not cosmetic. The sky sphere is r1340 and the ocean disc r1200, both centred here, and
-  // the camera's far plane is 1400 (main.js:261). Stand a hundred and seventy units east -
+  // Not cosmetic. The sky sphere is r1340 and the ocean disc was r1200 (r1500 now), both
+  // centred here, and the camera's far plane is 1400 (main.js:331). Before they rode along: stand a hundred and seventy units east -
   // which is where a neighbour's island is - look away from home, and the far side of the
   // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
   // cuts a straight line through the horizon. Invisible until somebody is over there, and
@@ -1781,9 +1788,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // slides as you pan is worse than no cloud at all. They lie over the whole sea in the
   // world frame instead, and the camera only picks which of them are drawn (placeClouds).
   const horizonAt = new THREE.Vector3();
-  const recentre = (x, z) => {
-    horizonAt.set(x, 0, z);
-    sky.position.x = x; sky.position.z = z;
+  //
+  // The sky rides the eye's height as well, and the ocean does not. Parked at sea level, the
+  // sky's underside is R + h from an eye at height h, and with the leash an archipelago
+  // allows (hundreds up) that went past the far plane: the clear colour showed through as a
+  // black polygon in the sphere's own low-poly shape. Centred on the eye every part of it is
+  // r1340 away, always inside 1400, and below eye level it is the horizon colour - the fog's.
+  // The sun and moon hang off the same centre so the disc stays inside its own halo.
+  const recentre = (x, y, z) => {
+    horizonAt.set(x, y, z);
+    sky.position.set(x, y, z);
     ocean.position.x = x; ocean.position.z = z;
   };
 

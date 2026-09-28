@@ -1985,9 +1985,13 @@ function exitWalk({ force = false } = {}) {
 // several cells past the last beach, and a leash on the grid lets you drift out over empty
 // water until the island falls off the bottom of the frame. Both numbers are floors, so an
 // island on its own keeps exactly the framing it was tuned with.
+// The leash also has a ceiling. With the volcano and the starters the archipelago's radius
+// is several hundred, and twice that put the eye so far out that the island it orbits fell
+// behind the far plane (1400) itself. 1000 still frames the whole ring.
+const MAX_ORBIT = 1000;
 function applyCameraRange() {
   state.bounds = state.sea.bounds();
-  controls.maxDistance = Math.max(200, state.sea.radius() * 2);
+  controls.maxDistance = Math.min(MAX_ORBIT, Math.max(200, state.sea.radius() * 2));
 }
 
 // Where the haze begins and where it closes, and the only place that decides either.
@@ -2055,8 +2059,12 @@ function applyFogRange() {
 // numbers it has always had, to the decimal.
 function setFogRange(half, out, far) {
   const h = hazeRange({ near: half * 1.1, far, half, out, thick: haze() });
-  scene.fog.near = h.near;
-  scene.fog.far = h.far;
+  // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
+  // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
+  // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
+  const cap = camera.far * 0.95;
+  scene.fog.far = Math.min(h.far, cap);
+  scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
 }
 
 // Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
@@ -5235,7 +5243,7 @@ function frame(nowMs) {
   // either camera branch below, because both of them move the camera and neither of them
   // owns the horizon.
   const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
-  if (state.world) state.world.recentre(eye.position.x, eye.position.z);
+  if (state.world) state.world.recentre(eye.position.x, eye.position.y, eye.position.z);
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
