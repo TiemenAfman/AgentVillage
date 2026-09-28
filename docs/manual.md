@@ -477,10 +477,12 @@ down the lane, out along the planks, and takes a little boat round the bay for t
 of it. Not the island's boat — that one is the crossing, it is shared with everybody on the
 island and with whoever is across the channel, and a settler is never in your way to it.
 They bring a dinghy of their own instead, which comes alongside the far side of the head
-and goes away again when they step out. Two afternoons at a time at most, never after dark,
-and they always come home, which is why the route is a wide circle out and back rather than
-a wander. If the dock is up a creek too narrow to turn in, the walk to the end of the pier
-is the whole of the outing.
+and goes away again when they step out. Two afternoons at a time at most — three once the
+village is 140 strong, four from 180 — never after dark, and they always come home, which is
+why the route is a wide circle out and back rather than a wander. The circle keeps clear of
+anything standing in the water, a ship at anchor included: a wider one goes round her, a
+smaller one turns short of her. If the dock is up a creek too narrow to turn in, the walk to
+the end of the pier is the whole of the outing.
 
 On foot the open water is no longer a wall: you may swim anywhere, the strip of sea between
 two islands included. It used to stop two metres from the shore, and that trapped anybody
