@@ -947,6 +947,7 @@ with no shallows to reclaim.
 | Sheep or cows in a field, hens outside a hut, ducks on the water, gulls over a quay | The island's ambient animals: scenery, placed from its fields, huts, river and quays, up to forty (see [The animals](#the-animals)) |
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, and the last one the ladder has |
+| A red and white tower on the coast, the tallest thing on land | The lighthouse, at 50 settlers, on the stretch of coast farthest from the square. It is built to the settlers' measure - a door as high as the town hall's, a window on each of its eight storeys, a lantern room somebody could stand in - so it is tall by having more storeys, not bigger ones. After dark its lamp turns |
 | A vegetable bed | Something you sowed yourself, growing in real time — see [Market gardening](#market-gardening) |
 | A pale row that glows after dark | Moonleeks, ready to pull |
 | The school | 25 apprentices: it is where they are taught |

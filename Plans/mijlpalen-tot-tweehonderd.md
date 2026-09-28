@@ -224,6 +224,35 @@ geschaald:
   elke plek die zijn hoogte of ankers gebruikt (het mysterie bij de vuurtoren uit
   `Plans/dierenverhalen.md`). Het budget is een hero (4000); de huidige zit op 1714.
 
+**Gebouwd op 28 september (branch `wp-vuurtoren`).** Gemeten op de bake en op wat `buildBuilding`
+tekent:
+
+- 6,52 hoog in het model en 6,70 op zijn opstap (27 m). De bounding box met de fundering onder
+  de grond erbij is 7,40, waar de oude 3,90 was. Het grote kasteel is 5,34, het stadhuis 3,09.
+- Een voet van 1,44 (1,39 tussen de vlakken), dus 6,70 is 4,8 keer de voet. De schacht loopt taps
+  van 1,20 naar 0,80. De omloop is 1,36 breed, met een reling van 0,25.
+- Acht verdiepingen van 0,47 (de oude band was 0,46), rood en crème zoals de oude vier. Op elke
+  verdieping zitten twee ramen, precies de oude, per verdieping een kwartslag verdraaid, zoals een
+  wenteltrap. De deur is 0,34 bij 0,72, dus zo hoog als die van het stadhuis, in een stenen voet
+  van 0,88.
+- De lantaarn heeft 0,66 glas, is 0,72 breed en heeft een vloer tot het dak van 0,91. De lamp
+  staat erin: `BEACON_RISE` leest nu de lens (`Lighthouse lamp lens`, op 5,46), en
+  `BEACON_THROAT` de straal van het glas.
+- 2282 driehoeken.
+
+Wat meeging:
+
+- `web/js/beacon.js` rekent de hoek van de bundel uit (`BEAM_DROP`) in plaats van 0,06 te
+  onthouden, en de keel van de bundel komt van het glas.
+- De opstap volgt de kapel-regel (`[0, 0]`), anders was hij 1,9 in het vierkant geweest.
+- De vuurtoren is `ROUND` voor het lopen.
+- `lib/animal-places.mjs` kent `DRAWN_REACH` (1,0). Anders stond de kip bij de deur op de
+  opstap, en kon het laatste spoor van het mysterie 0,6 uit het midden terechtkomen, in de steen.
+- `tests/lighthouse.test.mjs` houdt dit allemaal samen.
+
+Een spoor dat al in `data/animal-events.jsonl` staat, blijft staan waar het ligt. Dat is een
+dagboek, en het verschuift niet.
+
 ## De vloot
 
 "Vloot" betekent hier de boten van het eiland, niet `lib/fleet.mjs`: dat is de lijst van eilanden

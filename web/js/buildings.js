@@ -51,9 +51,20 @@ export const C = {
 export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
 export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
 
-// Both the nearby beam and horizon light use the baked lantern's centre. Reading
-// its actual origin keeps a future Blender edit from leaving the distant lamp behind.
-export const BEACON_RISE = models.part('Lighthouse lantern glass').at[1];
+// Both the nearby beam and horizon light start at the baked lamp: the lens standing in the
+// lantern, whose origin scripts/build-lighthouse.py puts at the middle of the glass. Reading
+// its actual origin keeps a future Blender edit from leaving the distant lamp behind - which
+// is what rebuilding the tower at its real height did to every number that had been copied.
+export const BEACON_RISE = models.part('Lighthouse lamp lens').at[1];
+// And how wide the lantern is where the beam leaves it: the glass cylinder's own radius, off
+// its corners. web/js/beacon.js opens the cone at exactly this width, so the bar of air leaves
+// the lantern at the lantern's own size rather than from a point somewhere inside it.
+export const BEACON_THROAT = (() => {
+  const p = models.part('Lighthouse lantern glass').positions;
+  let r = 0;
+  for (let i = 0; i < p.length; i += 3) r = Math.max(r, Math.hypot(p[i], p[i + 2]));
+  return r;
+})();
 
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
@@ -1795,7 +1806,10 @@ function scaleSolids(solids, s) {
 // and closed the diagonal between them - a gap you could see through and not walk. So a
 // round thing's solid also carries `r`, and walk.js tests a circle for it; hx/hz stay as
 // its bounds for everything that only wants a rectangle.
-const ROUND = new Set(['well', 'fountain', 'flowerbed']);
+// The lighthouse is round too, and since it was built at its real size (1.44 across at the
+// foot) the corners of its box stood 0.3 off the stone on every diagonal - on a coast cell,
+// where the way round it is often the strip between the tower and the water.
+const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // And what stands in an L is walked round the L. The two trestle tables and their benches
 // overlap at one corner, so merging closes the empty corner of the L into one box - and on
 // the square that corner faces the fountain one cell away, diagonally, which with the
@@ -1863,7 +1877,13 @@ function wantsPorch(spec) {
 // The shops are the tavern's size and stand on the tavern's step (Plans/knus-dorpscentrum.md).
 // They were built out to the edge of their lot at first and took the chapel's rule then; at the
 // village's size that left them the only buildings on the square not standing on something.
-const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' ? [0, 0]
+// The lighthouse takes the chapel's rule, for the shed's reason: it has one cell and no more,
+// and since it was built at its real size its own stone foot is 1.44 across. The full step
+// round that came out 1.9 square, most of the next cell over on every side; at its own
+// footprint it is a square plinth under a round tower, which still shows at the corners that
+// it stands on something, with the model's own foot course as a second step above it. On it
+// the tower covers 1.39 by 1.49, where the old one on its full step covered 1.32 by 1.34.
+const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' || spec.civicType === 'lighthouse' ? [0, 0]
   : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line
