@@ -111,8 +111,8 @@ en de bezaan; alleen banen, geen letters of monogram).
   de zee dwars door hem heen; alleen de boot die je zelf stuurt stopt ertegen.
 - **Echt licht uit de hek-lantaarns** (nu gloeien ze alleen), en een sloep aan dek of aan de
   davits, als er budget over is.
-- **Gelijktrekken met de werf.** De romp op de helling van het werfpakket heeft de kampanje op 1,79
-  boven het water (hier 2,10), de kroon van de spiegel op 2,53 (hier de reling op 2,57 en de kroon
-  op 3,03), de diepgang 0,95 (hier 1,00) en de ondermast van de grote mast tot 7,75 boven de kiel
-  (hier 6,3). De breedte (2,80), de lengte op de waterlijn (~12) en de kuil (1,10) zijn gelijk.
-  Een van de twee moet naar de ander toe.
+- ~~**Gelijktrekken met de werf.**~~ **Opgelost (28 september):** de werf tekent in stadium 4 deze
+  bake zelf op de helling (`bataviaOnStocks` in `web/js/buildings.js`), zonder tuig, vlaggen,
+  staatsietrap, vlonder en reserveanker, en in kaal hout. Wie hier een deel hernoemt of een kleur
+  verplaatst, moet dus ook naar de werf kijken: `tests/shipyard.test.mjs` houdt vast dat de romp
+  op de helling haar romp is, en dat er geen verf, licht of tuig op staat.

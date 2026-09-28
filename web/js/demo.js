@@ -32,7 +32,7 @@ import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
 import { attachButcher, updateButcher } from './butcher.js';
 import { attachQuarry, updateQuarry } from './quarry.js';
-import { YARD_FLOOR, YARD_STAGES, YARD_W, YARD_D } from './shipyard.js';
+import { YARD_FLOOR, YARD_STAGES, YARD_STAGE_NAMES, YARD_W, YARD_D } from './shipyard.js';
 import { attachBatavia, updateBatavia } from './batavia.js';
 import { createBoat } from './boat.js';
 import { modelUrl } from './assets.js';
@@ -357,7 +357,8 @@ for (let i = 0; i < CIVIC.length; i += 8) {
 
 // The shipyard (Plans/scheepswerf.md), which the ladder will put at 95: five by sixteen, so it
 // has a block of its own rather than a place in the civic rows, and all five stages of the ship
-// on its slipway side by side - empty stocks, keel, frames, planked, masts. Each stands on a bank
+// on its slipway side by side, in the Dutch order: empty stocks, keel and stems, bottom planking,
+// frames, and her hull - the Batavia's own bake, unmasted, as she is launched. Each stands on a bank
 // of land over a strip of sea, as main.js stands it on the coast (shipyardGround): the yard's
 // ground YARD_FLOOR over the water, which is the lowest the island ever sets it. The sea end is
 // towards the camera. Walk mode here knows only the field, so on foot you walk through the bank.
@@ -367,7 +368,6 @@ for (let i = 0; i < CIVIC.length; i += 8) {
   heading('Shipyard', z);
   const landMat = new THREE.MeshStandardMaterial({ color: 0x8fae5a, roughness: 1 });
   const seaMat = new THREE.MeshStandardMaterial({ color: 0x3d6e8c, roughness: 0.35 });
-  const NAMES = ['Empty stocks', 'Keel and stems', 'Frames', 'Planked', 'Masts stepped'];
   const LAND_D = 6;                        // the landward rows the site rule keeps on land
   for (let stage = 0; stage < YARD_STAGES; stage++) {
     // A little right of the middle, so the leftmost bank clears the row's heading.
@@ -390,7 +390,7 @@ for (let i = 0; i < CIVIC.length; i += 8) {
     sea.receiveShadow = true;
     scene.add(land, sea);
     drawHitbox(built, x, z, y);
-    tag(x, z + YARD_D / 2 + 0.8, NAMES[stage], `stage ${stage}`);
+    tag(x, z + YARD_D / 2 + 0.8, YARD_STAGE_NAMES[stage], `stage ${stage}`);
     placed.set(spec.id, { x, z, built });
   }
   row += Math.ceil((YARD_D + 3) / ROW);

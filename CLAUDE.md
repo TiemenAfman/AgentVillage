@@ -1125,7 +1125,11 @@ web/js/batavia.js, never `groundAt` of the sea bed) and is solid through `shipSo
 unit long with a `hull` height that `hullOver` in boat.js hands a boat's bow and probes, because
 a level is a cell and her side lies on no cell edge. The yard stands on its land end
 (`shipyardGround` in web/js/shipyard.js, never below `YARD_FLOOR`), which is why its site keeps
-the dry rows under `YARD_LAND_MAX`: any higher and the slipway's toe comes out of the water.
+the dry rows under `YARD_LAND_MAX`: any higher and the slipway's toe comes out of the water. Its
+last stage is not the yard's own model but the Batavia's bake laid on its keel (`bataviaOnStocks`
+in web/js/buildings.js: turned stern to sea, less her rig, flags, boarding ladder and spare
+anchor, repainted in timber by her baked colours), so a change to scripts/build-batavia.py is a
+change to the yard too - tests/shipyard.test.mjs says so.
 
 ## The Blender pipeline
 

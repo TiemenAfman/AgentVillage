@@ -17,6 +17,7 @@ import {
   createBuildingMaterial, buildBuilding, PALETTE, TIER_LABEL, C, KIT, traceParts,
   box, cylinder, cone, dome, sphere, prismRoof, pyramidRoof, quad, mesh,
 } from './buildings.js';
+import { YARD_STAGE_NAMES } from './shipyard.js';
 import { mine } from './api.js';
 
 // Every part this page builds notes the line and column it was asked for at, which is
@@ -100,9 +101,9 @@ const CATALOGUE = [
   },
   // The shipyard with its ship at each of its five stages (web/js/shipyard.js). Last, so the
   // numbers the picker remembers for everything above do not move.
-  ...['empty stocks', 'keel', 'frames', 'planked', 'masts'].map((what, stage) => ({
+  ...YARD_STAGE_NAMES.map((what, stage) => ({
     group: 'Shipyard',
-    label: `Stage ${stage} · ${what}`,
+    label: `Stage ${stage} · ${what.toLowerCase()}`,
     spec: { ...civicSpec('shipyard'), id: `c:shipyard:${stage}`, stage },
   })),
 ];

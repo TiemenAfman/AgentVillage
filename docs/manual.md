@@ -912,11 +912,14 @@ stored, because only a plot is sticky.
 
 - **The shipyard**, at **95**: a lot five cells by sixteen, square to the kadehaven's coast -
   its landward rows on dry, low ground, its seaward rows in the open sea, the slipway running
-  down between them. On the slipway is the next ship, one stage every six or seven settlers:
-  the keel and stems 25 settlers before her launch, the frames at 18, the planked hull at 11
-  and the masts at 5 (`yardStage` in `lib/village.mjs`), and she is launched at 120, 158 and
-  192. Between a launch and the next keel the slipway is empty. The stage travels with the
-  island's bundle, since a visitor has no settler count to work it out from.
+  down between them. On the slipway is the next ship, one stage every six or seven settlers, in
+  the Dutch order of her century - the bottom before the frames: the keel and stems 25 settlers
+  before her launch, the bottom planking at 18, the frames at 11 and her hull complete at 5
+  (`yardStage` in `lib/village.mjs`), and she is launched at 120, 158 and 192. She has no masts
+  on the slipway: a ship was masted afloat, so she comes to the roads rigged. The hull on the
+  slipway at the last stage is the Batavia herself, in bare timber. Between a launch and the next
+  keel the slipway is empty. The stage travels with the island's bundle, since a visitor has no
+  settler count to work it out from.
 - **The Batavia**, at **120**, and **the second and third ships** at **158** and **192**: at
   anchor on the **rede**, four cells by sixteen of deep water parallel to the coast, eight to
   twenty cells from the kadehaven's pier head, so from the quay you see her broadside. None of
@@ -991,7 +994,7 @@ anything that stood: they are new plots and nothing else.
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, on the quay or beside the kadehaven's slipway |
 | A red and white tower on the coast, the tallest thing on land | The lighthouse, at 50 settlers, on the stretch of coast farthest from the square. It is built to the settlers' measure - a door as high as the town hall's, a window on each of its eight storeys, a lantern room somebody could stand in - so it is tall by having more storeys, not bigger ones. After dark its lamp turns |
-| A shipyard on the coast, with a hull on its slipway | 95 settlers. The hull grows a stage every six or seven settlers - keel, frames, planking, masts - and is launched at 120, 158 and 192 |
+| A shipyard on the coast, with a hull on its slipway | 95 settlers. The hull grows a stage every six or seven settlers - keel, bottom planking, frames, the whole hull - and is launched at 120, 158 and 192, to be masted afloat |
 | A three-masted ship at anchor off the harbour | The Batavia at 120 settlers, with the second and third ships beside her at 158 and 192 - see [When the village turns to the sea](#when-the-village-turns-to-the-sea) |
 | A warehouse and a weigh house with their fronts on the quay | 127 and 184 settlers, at the kadehaven |
 | A fisherman's hut with nets and a rowing boat | 113 settlers, at another harbour than the kadehaven |
