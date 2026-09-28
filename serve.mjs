@@ -33,7 +33,7 @@ import { createAnimalLife } from './lib/animal-life.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
-import { buildBoat } from './lib/boatyard.mjs';
+import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
@@ -1373,11 +1373,22 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // Plans/vier-havens.md). The count lives in its own file; the rescan after it puts the
   // count into village.json, every page of ours moors the new hull from that, and the
   // publish the rescan ends with is how the sea and everybody else's page learn of it.
+  //
+  // One past what the harbour moors now, earned boats included, and never into the berth
+  // the island's first boat already takes - both read off the village the page is drawing
+  // (harbourRoom), because that is the count the prompt showed the keeper. Called with
+  // neither, as it was, it wrote a third boat at the first boat's harbour that mooringsFor
+  // could never draw, and a boat under an earned count that changed nothing in the water.
   if (p === '/api/harbour/boat' && req.method === 'POST') {
     let body;
     try { body = await readBody(req, 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     let done;
-    try { done = buildBoat(String((body || {}).side || '')); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    try {
+      const side = String((body || {}).side || '');
+      const at = harbourRoom(readJson(VILLAGE_FILE, null), side);
+      if (!at && BOAT_SIDES.includes(side)) throw new Error(`there is no ${side} harbour`);
+      done = buildBoat(side, at || {});
+    } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     log(`built a boat at the ${done.side} harbour (${done.built} built there now)`);
     await rescan('boat');
     return json(res, 200, { ok: true, ...done });

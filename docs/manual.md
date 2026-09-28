@@ -434,6 +434,13 @@ another — free, and three to a harbour at most, the island's own boat counting
 harbour's three — and the prompt at the planks says how many it has. A visitor can sail your
 boats but not add to them.
 
+From 130 settlers the village builds them itself: one boat at 130 and another every five
+settlers after that, dealt round the harbours — the first harbour first, then on round north,
+east, south and west, skipping any side without one — until every harbour moors its three.
+With four harbours that is every berth taken at 180, twelve boats in all. **B** still works,
+and builds one past whatever lies there now, so it is a way to have a harbour's boats before
+the village gets round to them; it never takes one away.
+
 Walk out along the planks and press **E**, and if a boat is lying there you are aboard; at a
 harbour with none, the prompt says so rather than pretending there is one. Aboard, **W** and **S**
 are the oars and **A** and **D** the tiller, and **E** again puts you ashore wherever
