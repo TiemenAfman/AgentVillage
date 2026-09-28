@@ -8,7 +8,7 @@ import { discover } from './lib/sources.mjs';
 import { discoverCodex, foldCodex } from './lib/codex-sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
-import { buildVillage, readArrivals, MILESTONES, civicIdOf, yardStage } from './lib/village.mjs';
+import { buildVillage, readArrivals, civicIdOf, yardStage, reachedOf, nextMilestone } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
@@ -16,7 +16,7 @@ import {
   loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
-import { GOLDPIT_ID } from './shared/gold.mjs';
+import { GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
@@ -147,8 +147,17 @@ async function runScan(o) {
   // not about the ground, and buildVillage has to hear it before it counts the hamlets.
   const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   let size = layout.size;
-  const survey = (rehomed) => buildVillage({ sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed });
+  // `layout.ladder` is the other: the most settlers the village has ever had at once, which
+  // the model counts its milestones in (Plans/tenten-vertrekken.md). Read on every survey
+  // rather than captured once, so a plan's re-survey sees the one written back below.
+  const survey = (rehomed) => buildVillage({
+    sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed,
+    ladder: layout.ladder || null,
+  });
   let model = survey(layout.rehomed || null);
+  // Written back straight away, and moved only when the village sets a new most-ever or on
+  // the first scan that has one at all: a scan of an unchanged island leaves it as it was.
+  layout.ladder = model.ladder;
   // /roads delete: the same reset a ROAD_VERSION bump does, run once on this scan rather
   // than gated behind the version number. placeAll below lays everything fresh from it.
   if (o.clearRoads) clearRoads(layout);
@@ -170,7 +179,16 @@ async function runScan(o) {
     const sid = String(id).split(':')[1];
     if (!hasTranscript.has(sid)) delete layout.plots[id];
   }
-  layout.paths = layout.paths.filter((p) => !banished.has(String(p.id).replace(/^path:/, '')));
+  // A settler sent away takes their front path with them, and so does a tent that packed up:
+  // the path was theirs, and a neighbour's that leaned on it is laid again by the lines below
+  // (`pruneUnreachable`, then the front paths `placeAll` relays for any door left without).
+  {
+    const left = new Set((model.departed || []).map((sid) => `house:${sid}`));
+    layout.paths = layout.paths.filter((p) => {
+      const of = String(p.id).replace(/^path:/, '');
+      return !banished.has(of) && !left.has(of);
+    });
+  }
 
   // A district whose last session was dropped stops being a place, and its land goes back
   // to being countryside. The quay is the exception: its planks are real construction.
@@ -333,6 +351,26 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     });
   }
 
+  // The goldsmith and the gold mine (Plans/goudmijn.md), on the pit's terms: where they
+  // stand and nothing more. How much ore is in the mine is the keeper's week, read live by
+  // their own page with the pit's count, and the cart that runs between the three when the
+  // five-hour window turns over is the page's alone.
+  for (const [id, civicType, name, label, title] of [
+    [GOLDSMITH_ID, 'goldsmith', 'The goldsmith', 'Goldsmith', 'Where the ore becomes bars for the pit'],
+    [GOLDMINE_ID, 'goldmine', 'The gold mine', 'Gold mine', 'The seven-day usage window, one lump of ore a percent'],
+  ]) {
+    const p = plot(id);
+    if (!p) continue;
+    civics.push({
+      id, kind: 'civic', civicType, district: null,
+      plot: p, door: doorOf(id, p), name, label, title,
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
   // The sprint board on the town square, with one pinned card per open issue.
   const boardPlot = plot('civic:board');
   if (boardPlot) {
@@ -404,7 +442,9 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(id, p),
       // What stands on the yard's slipway (lib/village.mjs yardStage), 0 to 4. On the record
       // because a bundle carries no settler count, so a visitor could not work it out.
-      ...(id === YARD_ID ? { stage: yardStage(model.stats.settlers) } : {}),
+      // On the ladder like the ships it launches, or a village that shrank below a launch would
+      // take her back up the slipway while she lies on the rede.
+      ...(id === YARD_ID ? { stage: yardStage(reachedOf(model)) } : {}),
       name: m.label, title: `Unlocked at ${m.at} ${m.on === 'apprentices' ? 'apprentices' : 'settlers'}`, label: m.label,
       startedAt: iso(m.unlockedAt), lastAt: null, style: 'unknown', model: null, models: {},
       tier: 'civic', ornaments: [], active: false, archived: false,
@@ -488,7 +528,8 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   const fleet = fleetOf(terrain, { island: { landing: layout.landing, harbours: harbourList }, districts });
   // Dealt from the kadehaven, where the plan puts the harbour's life; the harbour holding the
   // first boat is still the one that takes one fewer.
-  const earned = earnedBoats(model.stats.settlers, fleet.harbours, fleet.first, kadehaven(layout, terrain)?.side ?? fleet.first);
+  // Earned on the ladder: a boat the village had does not sink when a tent packs up.
+  const earned = earnedBoats(reachedOf(model), fleet.harbours, fleet.first, kadehaven(layout, terrain)?.side ?? fleet.first);
 
   const all2 = [...buildings, ...civics];
   return {
@@ -576,6 +617,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     // they do from the polders, so it travels as the layout keeps it.
     grow: layout.grow || null,
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
+    // The tents that packed up for want of anything to do (lib/village.mjs), by session: the
+    // town hall's register offers them an invitation back instead of saying they live here.
+    // The keeper's file only - the bundle is built field by field and never carries it.
+    departed: model.departed || [],
     active: all2.filter((b) => b.active).map((b) => b.id),
     assignments: assignments.slice(0, 60),
     stats: { ...model.stats, nextMilestone: nextMilestone(model.stats) },
@@ -606,20 +651,6 @@ function hasSkill(cwd, skill) {
   try { has = fs.statSync(path.join(cwd, '.claude', 'skills', skill, 'SKILL.md')).isFile(); } catch { has = false; }
   skillCache.set(key, has);
   return has;
-}
-
-// Milestones no longer all count the same heads, so the nearest one wins rather than
-// the first one in the list.
-function nextMilestone(stats) {
-  let best = null;
-  for (const m of MILESTONES) {
-    const on = m.on === 'apprentices' ? 'apprentices' : 'settlers';
-    const have = on === 'apprentices' ? stats.apprentices : stats.settlers;
-    if (m.at <= have) continue;
-    const remaining = m.at - have;
-    if (!best || remaining < best.remaining) best = { id: m.id, at: m.at, on, label: m.label, remaining };
-  }
-  return best;
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(path.join(ROOT, 'scan.mjs'));

@@ -128,6 +128,18 @@ after an apply is byte-identical again. `placeAll` refuses nothing handed to it 
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
 feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
+**A project keeps to one piece of land** ([Plans/wijkjes-samenvoegen.md](Plans/wijkjes-samenvoegen.md)).
+The scan founds no annex for a project any more (only the quay, `annexes(rec)`): a boxed-in
+hamlet grows wider through `growLobe`'s rungs - past `RCAP`, then belt 0 up against its
+neighbours (never onto their land), then onto beach - and a house that finds its land roaded
+asks for one super-cell it can stand on (`roomy`, a *filter* per rung: as a preference the
+first rung was satisfied by a roaded cell and the wider ones never ran). Only a project walled
+in on every side goes to the commons. What already stands in pieces is brought home by the
+planner's `merge` op (`{ district, lobe }`, the lobe that stays becomes lobe 0 with its road
+and office renamed to match; `diff.scattered` must be empty), and in plan mode a click selects
+the whole project, so a drag no longer tears one apart. Known gap: on an island founded small
+the first hamlet by the square can be walled in by neighbours' belt-0 growth before it needs
+the land, and its later houses lodge on the commons.
 The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
 exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
 paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
@@ -149,6 +161,23 @@ hamlet roads and nothing else), `SQUARE_VERSION`,
 for the smallest one that does the job. [docs/branches.md](docs/branches.md) lists what to
 assert after a layout change, and the trap: **stop the server before measuring**
 (tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
+
+**A tent may leave; what the village earned never does** ([Plans/tenten-vertrekken.md](Plans/tenten-vertrekken.md)).
+A resident drawn as a tent (`tier === 'tent'`: fewer than three human turns, not a harbour
+house, not a hotel), not running, not a founder, not rehomed and quiet for `tentGraceMs` (a
+week) packs up in `buildVillage`: house and sheds into `dropped`, front path lifted in
+`scan.mjs` like a banishment's, session id in `model.departed` (village.json `departed`, which
+the town hall's register reads to offer **Invite**). So `stats.settlers` can go *down*, and
+nothing earned may be gated on it: the ladder counts `stats.reached`, the most there have ever
+been at once, kept in `layout.ladder = { since, settlers, apprentices }` (written back by
+scan.mjs, moved only by a new most-ever). **`reachedOf(model)` in lib/village.mjs is the one
+reading** - milestones, furniture, `yardStage`, `earnedBoats` and every gate in `placeAll`
+(fairway, polders, square, bridge) take it; only the header count and `nextMilestone`'s
+`remaining` measure from who lives here now, which is what makes the next rung take longer.
+`model.arrivals` is now "the first moment n lived here at once" (`firstsOf`), with a departure
+dated `lastAt + tentGraceMs` but never before `ladder.since`: a layout from before the rule has
+no `ladder`, starts it at its first scan and keeps every date it had; `emptyLayout` carries
+`{ since: 0 }` because a new town has no such past; `resetForNewTerrain` keeps it.
 
 **The planner is a third mode, and nothing real moves in it before Apply.** `state.mode`
 is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
@@ -221,7 +250,7 @@ out of `p.dike` (so every reader - makeTerrain, heldOf, world.js, older seas - s
 shorter wall with no new field), keeping any dike cell within one of a plot or bridge (the
 poldermill's) and giving a dike back whole if levelling would let water in; `p.absorbed`
 (the step's index, provenance, off the bundle) makes `unpolder` refuse it. The planner's Grow button is the
-`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 32 island on a
+`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 40 island on a
 64 grid; both grow) - deliberately not the defaults, which also fill in old configs.
 **The grid is the layout's; `gridSize` is what a new island is founded on and
 `maxGridSize` (default 384, Settings → Island size, `/api/island-size`) the most it may
@@ -1074,6 +1103,48 @@ include the pit), so nothing about it is on the wire and every screen parks the 
 the crowd before it (`walk.adopt`, only when their doorstep did not move): a working island
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
+
+**The pit's gold comes from a mine, by way of a goldsmith** ([Plans/goudmijn.md](Plans/goudmijn.md)).
+The mine holds the keeper's seven-day window as ore (`shared/gold.mjs mineOf`, one lump a
+percent, the pit's bargain: no reading is a full mine), riding along as `mine` on `/api/gold`
+and `event: gold` - never the bundle. The desktop app's `sd` has no reset, so `weekResetOf` in
+lib/usage.mjs takes the last real drop it sampled (to half or less, or to 5) plus a week, and
+`currentUsage` takes the week from the newest source that has one. **The pit never holds more
+than the mine can give**: `purseOf` (shared/gold.mjs, the one copy, what `/api/gold` answers)
+is the five hours or the rest of the week, whichever is less (`window` the five hours' own count,
+`capped` when the week held it down), so a gold run can only bring what the mine has. A week
+turning over fills the bin over `ORE_FILL_S` (`attachOrePile` in web/js/goldmine.js, stepped
+from `animateExtras`), spending shows at once. `civic:goldsmith` (nearest
+the pit) and `civic:goldmine` (high ground within `MINE_RING`) are placed right after the pit,
+sticky 3x3s with the town's claim, and `standAt` in `placeAll` takes a lot only if its road
+reaches the square on that same scan and it cuts no land off (`reachCount`) - the mine once
+stood across a river and got its road the scan after, and a goldsmith on a founding island's
+last dry block sealed a slipway's way up. Lots with `INLAND` cells of dry non-beach ground round
+them go first (`byCoast`, `MINE_TRIES` per list), and the mine *waits* for one while the island
+can still grow - not as `unplaced`, which would make the island grow for it. Because the mine's claim can lie apart from the
+commons, the planner's `commons` op refuses only ground that adds a piece (`pieces`), not a
+town that is already in several. The delivery is the page's alone (`web/js/goldrun.js`): a
+rise of `MIN_RISE` bars or more is a window turned over, and the pit holds its old count while
+the miner pushes a cart by road (`roadBetween` in shared/roads.mjs) to the goldsmith, who
+smelts and barrows the bars to the pit; no buildings or no road between them fills it at once.
+`?goldrun` plays one from 20 bars. `tests/goldmine.test.mjs`.
+
+**The sawmill's horse takes timber to the yard, on the sea's clock** ([Plans/houtkar.md](Plans/houtkar.md)).
+`web/js/timberrun.js` is the gold run's pattern with no state: where the horse, the wagon, the
+carter and the yard's three hands are is `tripAt` / `crewAt` of the sea's time (`timeNow()` in
+main.js), so every screen - visitors' too, since nothing in it is the keeper's - has the wagon at
+the same place, and a page loaded mid-trip finds it mid-road. The trip is one closed loop
+(`tripLoop`: out on the right of the road, a U-turn at each end, back on the other side), so the
+horse is one arc length and the wagon's axle trails it by `hitch`, measured off the bake
+(`scripts/build-wagon.py`, `prop_wagon` + `prop_timber`; the bake splits parts per material, so
+they are asked for by prefix). The horse always walks (`HORSE_SPEED`): a road too long for
+`TIMBER_EVERY` gets a longer period (`tripPlan`), never a trot. The horse is fauna.js's, posed
+from outside its brain like the rave's, and is not the stable's. The crew hang in the yard
+group's frame on rounds picked off the bake per `yardStage`, stand on whatever of the yard is
+under them (a raycast into the yard's own meshes, cached per spot), are in the shed after dark,
+and the carrier leaves his round `CARRIER_LEAD` before the wagon arrives to unload it. main.js
+wraps every call into it: a fault there once stopped the boot. `?timber` starts a trip now.
+`tests/timberrun.test.mjs`.
 
 **The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
 `TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old

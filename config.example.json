@@ -16,6 +16,7 @@
   },
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
+  "tentGraceMs": 604800000,
   "network": {
     "public": true,
     "inviteCode": null,

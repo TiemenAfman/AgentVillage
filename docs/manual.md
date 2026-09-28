@@ -611,8 +611,12 @@ the island ignores them. A session earns a house by saying something.
 Agents the island sends out itself, from the sprint board, are **visitors**. They pitch a
 tent, do the one job they were sent for, and are gone half an hour after they fall quiet.
 Their dossier says *Visiting*, and the record of what they did stays on the board under
-"Handed out". Everyone else is a resident and keeps their house until you send them away.
-The grace period is `visitorGraceMs` in `config.json`.
+"Handed out". The grace period is `visitorGraceMs` in `config.json`.
+
+Everyone else is a resident. A resident who never got past a **tent** - fewer than three
+things asked of them - and has been given nothing to do for a week packs up and leaves too,
+and the village counts one fewer (see [When tents pack up](#when-tents-pack-up)). Anyone
+with a hut or better keeps their house until you send them away.
 
 ## Sending a settler away
 
@@ -792,6 +796,28 @@ Sessions that started before the island was founded are ignored, so the village 
 empty and grows from the founding session onward. `npm run scan:all` shows what the
 island would look like with the entire history on it, written to separate files so it
 never disturbs the real village.
+
+### When tents pack up
+
+A tent is a session that was asked fewer than three things. If nobody asks it anything
+more for a week it packs up: the tent comes down, its apprentices' sheds go with it, the
+plot is land again and the header counts one settler fewer. A hut, a cottage and
+everything above it stays for good, whatever happens. So does a tent that is still
+running, a house at the quay (always a hut on stilts), a tower full of apprentices, anybody
+you invited from the town hall's register, and anybody you gave a hamlet of their own.
+
+Nothing the village has earned goes with them. The milestones count **the most settlers
+the village has ever had at once**, not who lives here now: a well that stood at five still
+stands when the village is back at three. What changes is the next rung - it waits until
+the village is that big again, so after a clear-out it takes longer before anything new
+goes up. Hover over the settler count in the header to see the most-ever when the two
+differ. The polders, the square, the bridge, the shipyard's hull and the boats the
+village earned count the same way.
+
+A session that is picked up again is simply back, on a new plot. One that is not appears
+in the town hall's register as *packed up*, with **Invite**; an invited settler never packs
+up. The week is `tentGraceMs` in `config.json`; `0` keeps every tent for good. The
+most-ever lives in `data/layout.json` as `ladder`.
 
 ### When the village crosses the river
 
@@ -975,7 +1001,7 @@ anything that stood: they are new plots and nothing else.
 | Timber frame, green roof | Sonnet |
 | Small house under thatch | Haiku |
 | A yard sign | The session's own name (its title), e.g. "Sybolt digital twin" |
-| Tent → hut → cottage → house → manor → keep | 1, 3, 9, 21, 51 and 121 human turns |
+| Tent → hut → cottage → house → manor → keep | 1, 3, 9, 21, 51 and 121 human turns. A tent left a week with nothing to do packs up |
 | Scaffolding and hammering | That session is running right now |
 | Campfire and tent | A settler just arrived; no transcript yet |
 | Forge with smoke | Heavy shell use |

@@ -19,6 +19,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
+  (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
+  mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
+  een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
+  genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
@@ -94,6 +99,14 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
   settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
   overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
+- ✅ [houtkar.md](houtkar.md) — de zagerij levert hout aan de werf met paard en wagen, op de klok
+  van de zee zodat elk scherm dezelfde rit ziet, en drie werknemers op de werf: een
+  scheepstimmerman langs de romp, een teerkoker bij de ketel en een drager die planken sjouwt en
+  de wagen lost. Gebouwd op 28 september 2026.
+- ✅ [goudmijn.md](goudmijn.md) — een goudmijn met het weeklimiet als erts (één klomp per procent)
+  en een goudsmid bij de kuil: als het vijfuursvenster omslaat duwt de mijnwerker een kar over
+  de weg naar de goudsmid, die smelt en de staven met de kruiwagen naar de kuil brengt. Gebouwd
+  op 28 september 2026, op main; het eiland draait het pas na een herstart.
 - ✅ [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
   een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
   Gebouwd en op het eiland toegepast op 23 september 2026.

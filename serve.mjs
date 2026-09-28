@@ -38,7 +38,7 @@ import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
 import { ensureStatusLine } from './lib/statusline.mjs';
-import { goldOf } from './shared/gold.mjs';
+import { purseOf } from './shared/gold.mjs';
 import os from 'node:os';
 import { executeCommand } from './lib/commands.mjs';
 
@@ -541,7 +541,8 @@ async function handle(req, res) {
   // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
   // public path, so only the keeper's own page gets it - how much of somebody's
   // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
-  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold.
+  // full pit. The same answer rides `event: gold` whenever it changes; see watchGold. The
+  // gold mine's week is in it as `mine`, under the same rule.
   if (p === '/api/gold') return json(res, 200, goldNow());
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
@@ -1174,7 +1175,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
     const q = String(url.searchParams.get('q') || '').toLowerCase().trim();
     const village = readJson(VILLAGE_FILE, null);
     const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
-    let rows = catalog({ config: loadConfig(), onIslandIds: onIsland });
+    let rows = catalog({ config: loadConfig(), onIslandIds: onIsland, leftIds: new Set((village && village.departed) || []) });
     if (q) {
       rows = rows.filter((r) => [r.name, r.title, r.project, r.cwd, r.sessionId, r.model]
         .some((f) => f && String(f).toLowerCase().includes(q)));
@@ -1196,7 +1197,8 @@ if (req.url === '/api/command' && req.method === 'POST') {
       try {
         const village = readJson(VILLAGE_FILE, null);
         const onIsland = new Set((village && village.buildings || []).map((b) => b.sessionId).filter(Boolean));
-        const ids = catalog({ config: loadConfig(), onIslandIds: onIsland }).filter((r) => !r.onIsland).map((r) => r.sessionId);
+        const leftIds = new Set((village && village.departed) || []);
+        const ids = catalog({ config: loadConfig(), onIslandIds: onIsland, leftIds }).filter((r) => !r.onIsland).map((r) => r.sessionId);
         const { founders, added } = addFounders(ids);
         log(`adopted ${added} at once; founders now ${founders.length}`);
         if (added) await rescan('adopt');
@@ -1510,7 +1512,11 @@ function watchData() {
 // The desktop app's own samples (lib/usage.mjs readDesktopUsage) ride the same poll: it
 // rewrites its file every quarter of an hour, and 75 kB parsed every five seconds is still
 // nothing beside a scan.
-const goldNow = () => goldOf(currentUsage(), Date.now());
+//
+// The gold mine's week rides along as `mine` (shared/gold.mjs purseOf, Plans/goudmijn.md):
+// the same reading, the same keeper, the same door - one place decides who sees any of it.
+// And the pit's count is already held to what the mine can give, so no page has to know.
+const goldNow = () => purseOf(currentUsage(), Date.now());
 const GOLD_POLL_MS = 5000;
 function watchGold() {
   let said = JSON.stringify(goldNow());

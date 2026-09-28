@@ -177,7 +177,13 @@ export function createUI(handlers) {
       [s.districts, s.districts === 1 ? 'district' : 'districts'],
     ];
     if (s.quayArrivals) bits.push([s.quayArrivals, 'at the quay']);
-    let html = bits.map(([n, l]) => `<span><b>${fmtInt(n)}</b> ${l}</span>`).join('');
+    // The ladder counts the most there have ever been at once (lib/village.mjs `reachedOf`),
+    // so once tents have packed up the count and the next milestone no longer add up without
+    // saying so.
+    const most = s.reached && s.reached.settlers > s.settlers ? s.reached.settlers : 0;
+    let html = bits.map(([n, l], i) => (i === 0 && most
+      ? `<span title="The most the village has had at once: ${fmtInt(most)}. Milestones count that, so the next one waits until the village is that big again."><b>${fmtInt(n)}</b> ${l}</span>`
+      : `<span><b>${fmtInt(n)}</b> ${l}</span>`)).join('');
     if (s.nextMilestone) html += `<span title="Population milestone">${esc(s.nextMilestone.label)} in <b>${s.nextMilestone.remaining}</b></span>`;
     el('counts').innerHTML = html;
     for (const id of ['titlecard', 'topright']) el(id).hidden = false;

@@ -257,9 +257,11 @@ const BARROW_HOME_AT = [0.17, 0, 0.1];
 // How many can be seen at once: every builder on a few islands, parked or on the move.
 const BARROWS = 256;
 // The gold in the tray: one bar while it is being loaded, all three once it is.
-const TRAY_BARS = [[-0.03, 0, -0.02, 0.1], [0.03, 0, 0.015, -0.08], [0, 0.034, 0, 0.05]];
+export const TRAY_BARS = [[-0.03, 0, -0.02, 0.1], [0.03, 0, 0.015, -0.08], [0, 0.034, 0, 0.05]];
 
-function barrowGeometry() {
+// Exported, with the wheel below, for the goldsmith's own barrow (web/js/goldrun.js): the
+// same barrow the settlers fetch their gold with, at the same size, since he is a villager.
+export function barrowGeometry() {
   const wood = 0x9a6b42, dark = 0x6b4a2e;
   const box = (w, h, d, hex, x, y, z, rx = 0) => {
     const g = new THREE.BoxGeometry(w, h, d);
@@ -295,7 +297,7 @@ function barrowGeometry() {
 // The wheel on its own, because it turns: a rim with two spokes across it, which is what
 // shows it turning at all - a plain disc spun about its axle looks exactly like one standing
 // still. Centred on the axle, which runs along x.
-function wheelGeometry() {
+export function wheelGeometry() {
   const r = BARROW.r;
   const rim = new THREE.CylinderGeometry(r, r, 0.02, 12);
   rim.rotateZ(Math.PI / 2);

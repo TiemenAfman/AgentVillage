@@ -17,6 +17,9 @@
 // the model sheet, the shape catalogue - reads it through this file.
 import * as THREE from 'three';
 import { GOLDPIT } from './goldpit-mesh.js';
+import { GOLDMINE } from './goldmine-mesh.js';
+import { WAGON } from './wagon-mesh.js';
+import { GOLDSMITH } from './goldsmith-mesh.js';
 import { LIGHTHOUSE } from './lighthouse-mesh.js';
 import { CLOCKTOWER } from './clocktower-mesh.js';
 import { STATUE } from './statue-mesh.js';
@@ -67,7 +70,7 @@ import { HARBOURHOUSES } from './harbourhouses-mesh.js';
 import { WORKSHOPS } from './workshops-mesh.js';
 import { SHIPYARD } from './shipyard-mesh.js';
 
-const SETS = { goldpit: GOLDPIT, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the

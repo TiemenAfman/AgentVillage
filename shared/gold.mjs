@@ -44,3 +44,60 @@ export function goldOf(reading, now) {
     source,
   };
 }
+
+// ---- the gold mine and the goldsmith (Plans/goudmijn.md) ------------------------------
+// The mine holds the week: the seven-day window as ore in its bin, one lump a percent, as
+// the pit holds the five hours. When the five-hour window turns over and the pit may be
+// full again, the page has that gold brought from the mine, by way of the goldsmith, rather
+// than standing it back in the pit in one frame (web/js/goldrun.js). Placed once each by
+// lib/layout.mjs, like the pit, and never moved by a scan.
+export const GOLDMINE_ID = 'civic:goldmine';
+export const GOLDSMITH_ID = 'civic:goldsmith';
+
+// How many lumps a full mine holds: one per percent of the week.
+export const MINE_ORE = 100;
+
+// What the week comes to in ore, from the same reading goldOf takes. `sevenDay.resetsAt`
+// may be null: the desktop app's history can show no reset at all (lib/usage.mjs
+// weekResetOf), and then the number stands without a refill time. When the week came from
+// the other source than the five hours did, `sevenDayAt` and `sevenDaySource` say so.
+// No window, or one whose reset has gone by, is a full mine - goldOf's bargain again.
+export function mineOf(reading, now) {
+  const w = reading && reading.sevenDay;
+  const at = reading ? (reading.sevenDayAt ?? reading.at ?? null) : null;
+  const source = reading ? (reading.sevenDaySource ?? reading.source ?? null) : null;
+  if (!w || !Number.isFinite(w.used)) {
+    return { ore: MINE_ORE, max: MINE_ORE, used: null, resetsAt: null, at: null, known: false, reset: false, source: null };
+  }
+  const resetsAt = Number.isFinite(w.resetsAt) ? w.resetsAt : null;
+  if (resetsAt != null && now >= resetsAt) {
+    return { ore: MINE_ORE, max: MINE_ORE, used: 0, resetsAt: null, at, known: true, reset: true, source };
+  }
+  const used = Math.min(100, Math.max(0, w.used));
+  return {
+    ore: Math.min(MINE_ORE, Math.max(0, Math.round(MINE_ORE - used * MINE_ORE / 100))),
+    max: MINE_ORE,
+    used,
+    resetsAt,
+    at,
+    known: true,
+    reset: false,
+    source,
+  };
+}
+
+// ---- what the pit holds, all told ---------------------------------------------------------
+// The pit is what can be spent now, and that is the five-hour window *and* what is left of the
+// week, whichever is less: with the week used up the five hours are no use to anybody, and a
+// pit refilled to a hundred bars beside an empty mine told the keeper they could work when
+// they could not. So the pit never holds more than the mine could give it (Plans/goudmijn.md,
+// "Een lege week"), and the gold run can only ever bring what the mine has. `window` is the
+// five-hour window's own count, `capped` whether the week is what held the pit down, and
+// `mine` rides along so /api/gold and `event: gold` stay one answer. A week nobody has
+// measured caps nothing - mineOf's full mine.
+export function purseOf(reading, now) {
+  const gold = goldOf(reading, now);
+  const mine = mineOf(reading, now);
+  const bars = mine.known ? Math.min(gold.bars, mine.ore) : gold.bars;
+  return { ...gold, window: gold.bars, bars, capped: bars < gold.bars, mine };
+}

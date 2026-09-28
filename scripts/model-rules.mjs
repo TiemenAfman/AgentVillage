@@ -84,13 +84,15 @@ export const BUDGETS = [
 // ceiling is where tests/tavern.test.mjs already put it - bounded enough for a modest GPU.
 export const HERO_BUDGET = 4000;
 // Heroes allowed more. The pirate ship is a whole galleon a settler walks the deck of, one
-// draw call, and a handful of them in the world at most - 14k was chosen by eye against the
-// source's 73k (scripts/build-pirateship.py). The Batavia is the ship the village earns, up to
+// draw call, and a handful of them in the world at most. 14k was first chosen by eye against the
+// source's 73k; the plank deck, the round cannon bores, the carriage wheels and the rigging
+// kept since (scripts/build-pirateship.py, docs/galleon-render-inspection.md) come to about
+// 29.8k, so the ceiling is 30k - still one mesh. The Batavia is the ship the village earns, up to
 // three of her on the roads (civic:ship, :2, :3), modelled from nothing in
 // scripts/build-batavia.py rather than decimated from a download, so she needs far less than
 // the galleon for more ship: she came out near 6200, and 8000 leaves room for a boat on her
 // waist, not for a second hull.
-export const HERO_BUDGETS = { pirateship: 15000, batavia: 8000 };
+export const HERO_BUDGETS = { pirateship: 30000, batavia: 8000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand

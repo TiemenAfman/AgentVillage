@@ -83,7 +83,11 @@ import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
 import { attachGoldPile } from './goldpit.js';
-import { GOLD_BARS, GOLDPIT_ID } from 'shared/gold.mjs';
+import { attachOrePile } from './goldmine.js';
+import { attachFurnace } from './goldsmith.js';
+import { createGoldRun } from './goldrun.js';
+import { createTimberRun } from './timberrun.js';
+import { GOLD_BARS, GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID, MINE_ORE } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
 import { createGhost } from './ghost.js';
@@ -848,6 +852,11 @@ function interactables() {
       // The count over the keys, like the postbox's: walking past the pit tells you how
       // much is left without anything to open.
       out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
+    } else if (rec.spec.civicType === 'goldmine') {
+      // The week over the keys, the pit's way (Plans/goudmijn.md).
+      out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: minePrompt() });
+    } else if (rec.spec.civicType === 'goldsmith') {
+      out.push({ id: rec.id, kind: 'goldsmith', x: p.x, z: p.z, r: 2.4, label: 'the goldsmith' });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
     } else if (rec.spec.civicType === 'tavern') {
@@ -1240,6 +1249,13 @@ function goldWords(g) {
   if (!g || !g.known) {
     return 'A full pit, because nothing has said otherwise yet. The Claude desktop app notes how much of the five-hour window is used every quarter of an hour, and a Claude Code status line on every answer - the island put one in when it started - and neither has written a number down on this machine yet.';
   }
+  // Held down by the week (shared/gold.mjs purseOf): the five hours would allow more, but the
+  // pit never holds more than the mine can still give.
+  if (g.capped) {
+    const m = g.mine || {};
+    const back = m.resetsAt ? ` The mine fills again ${m.source === 'desktop' ? 'by' : 'on'} <b>${dayTime(m.resetsAt)}</b>${m.source === 'desktop' ? ' at the latest' : ''}.` : '';
+    return `<b>${g.bars} of ${g.max}</b> bars left — the five-hour window would allow ${g.window}, but only ${g.bars}% of this week is left in the mine, and the pit never holds more than the mine can give.${back}`;
+  }
   if (g.reset) return `All ${g.max} bars are back: the last five-hour window ran out, and the next one starts with your next message.`;
   const used = Math.round(g.used);
   // The app's sample is up to a quarter of an hour old and its reset an estimate that errs
@@ -1250,13 +1266,119 @@ function goldWords(g) {
   return `<b>${g.bars} of ${g.max}</b> bars left — ${used}% of this five-hour window is spent, one bar for every percent.${seen}${refill}`;
 }
 
-// Everything that shows the count, from one place.
+// Everything that shows the count, from one place. The pit's bars go by way of the gold run
+// (goldrun.js): a count that went up is a window turned over, and is delivered from the mine
+// rather than stood back in the pit - see pitBars for the one place that draws them.
 function showGold(g) {
   state.gold = g && typeof g === 'object' ? g : null;
   const bars = goldBarsNow();
-  for (const rec of state.byId.values()) if (rec.goldPile && !rec.goldPile.foreign) rec.goldPile.setBars(bars);
+  const run = goldRunOf();
+  if (run) run.setGold(bars);
+  else pitBars(bars);
+  const ore = oreNow();
+  for (const rec of state.byId.values()) if (rec.orePile && !rec.orePile.foreign) rec.orePile.setOre(ore);
   if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
-  if (state.selected === GOLDPIT_ID) select(GOLDPIT_ID);
+  for (const id of [GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID]) if (state.selected === id) select(id);
+}
+function pitBars(n) {
+  for (const rec of state.byId.values()) if (rec.goldPile && !rec.goldPile.foreign) rec.goldPile.setBars(n);
+}
+
+// --------------------------------------------------------------- the gold mine
+// The keeper's week as ore in the mine's bin, and the run that brings the pit's gold out of it
+// by way of the goldsmith whenever the five-hour window turns over (Plans/goudmijn.md). The
+// week comes in with the pit's count - `mine` on /api/gold and on `event: gold` - under the
+// same rule: the keeper's page only, a full mine for anybody else.
+const oreNow = () => (state.gold && state.gold.mine && Number.isFinite(state.gold.mine.ore) ? state.gold.mine.ore : MINE_ORE);
+const dayTime = (ms) => new Date(ms).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+
+function minePrompt() {
+  const m = state.gold && state.gold.mine;
+  if (state.guest || !m || !m.known) return 'the gold mine';
+  return `the gold mine — ${m.ore} of ${m.max} left this week`;
+}
+function mineWords(g) {
+  if (state.guest) return 'Whose week this is stays on their own machine: every visitor sees a full mine.';
+  const m = g && g.mine;
+  if (!m || !m.known) {
+    return 'A full mine, because nothing has said otherwise yet. The week comes from the same two places as the gold pit\'s five hours - the Claude desktop app and a Claude Code status line - and neither has written a number for it down on this machine yet.';
+  }
+  if (m.reset) return `All ${m.max} lumps are back: the week turned over, and the mine is full again.`;
+  // The app has no reset for the week in its file; it is worked out from the last one it saw,
+  // and errs late (lib/usage.mjs weekResetOf), so it is said as one.
+  const app = m.source === 'desktop';
+  const seen = app && m.at ? ` As the desktop app saw it at ${hhmm(m.at)}.` : '';
+  const refill = m.resetsAt ? ` Full again ${app ? 'by' : 'on'} <b>${dayTime(m.resetsAt)}</b>${app ? ' at the latest' : ''}.` : '';
+  return `<b>${m.ore} of ${m.max}</b> lumps of ore left — ${Math.round(m.used)}% of this week is spent, one lump for every percent. Whenever the five-hour window turns over, a cartload of it goes down to the goldsmith and comes back to the pit as bars.${seen}${refill}`;
+}
+function smithWords() {
+  if (state.goldRun && state.goldRun.busy()) return 'At work: a cartload from the mine is on its way to the gold pit.';
+  const g = state.gold;
+  // The pit can hold no more than the mine gives (purseOf): a pit already at what is left of
+  // the week gets nothing when the five hours turn over, and saying otherwise was a promise.
+  if (!state.guest && g && g.capped) {
+    const m = g.mine || {};
+    const when = m.resetsAt ? `, ${m.source === 'desktop' ? 'by' : 'on'} <b>${dayTime(m.resetsAt)}</b>${m.source === 'desktop' ? ' at the latest' : ''}` : '';
+    return `The pit already holds all the mine can give this week, so no cartload comes when the five-hour window turns over. The next is when the week does${when}.`;
+  }
+  if (state.guest || !g || !g.known || g.reset || !g.resetsAt) {
+    return 'The goldsmith casts the mine\'s ore into bars and wheels them to the gold pit whenever the five-hour window turns over.';
+  }
+  const app = g.source === 'desktop';
+  return `The next cartload from the mine comes when the five-hour window turns over, ${app ? 'by' : 'at'} <b>${hhmm(g.resetsAt)}</b>${app ? ' at the latest' : ''}, and its bars go to the gold pit.`;
+}
+
+// The run itself, made once the scene is there. A visitor gets one too, so the miner and the
+// goldsmith are at work on the island they are looking at; they are never told a count
+// (fetchGold), so nothing is ever delivered on their screen.
+function goldRunOf() {
+  if (!state.goldRun && state.terrain) {
+    state.goldRun = createGoldRun({ scene, material: buildingMat, groundAt, onBars: pitBars });
+    // /api/gold usually answers before the terrain is there, when showGold had no run to tell
+    // and drew the pit itself. Without this the run's first word would be the next `event:
+    // gold` - which comes only when the number moves, so the window turning over was taken
+    // for a first reading and shown at once, and ?goldrun had no count to play up to.
+    if (state.gold) state.goldRun.setGold(goldBarsNow());
+  }
+  return state.goldRun || null;
+}
+// The timber run (Plans/houtkar.md): made once the scene is there, like the gold run. Nothing
+// in it is the keeper's, so a visitor gets the same wagon at the same moment.
+function syncTimberRun() {
+  // A wagon that cannot be drawn must never cost the island its boot: this runs inside
+  // applyVillage, and an exception here once left the page on its loading screen.
+  try {
+    if (!state.timberRun && state.terrain) state.timberRun = createTimberRun({ scene, material: buildingMat, groundAt });
+  } catch (err) {
+    console.warn('[island] the timber run could not be made', err);
+    state.timberRun = null;
+  }
+  if (!state.timberRun) return;
+  try {
+    state.timberRun.setSites({
+      sawmill: state.byId.get('civic:sawmill') || null,
+      yard: state.byId.get('civic:shipyard') || null,
+      village: state.village,
+      terrain: state.terrain,
+    });
+  } catch (err) {
+    console.warn('[island] the timber run could not be set up', err);
+    state.timberRun = null;
+    return;
+  }
+  // ?timber: a departure now rather than within six minutes.
+  if (params.has('timber') && !state.timberPlayed) { state.timberPlayed = true; state.timberRun.playNow(timeNow()); }
+}
+function syncGoldRun() {
+  const run = goldRunOf();
+  if (!run) return;
+  run.setSites({
+    mine: state.byId.get(GOLDMINE_ID) || null,
+    smith: state.byId.get(GOLDSMITH_ID) || null,
+    pit: state.byId.get(GOLDPIT_ID) || null,
+    village: state.village,
+    terrain: state.terrain,
+  });
 }
 
 async function fetchGold() {
@@ -1264,6 +1386,9 @@ async function fetchGold() {
   try {
     showGold(await answerOf(await mine('/api/gold', { cache: 'no-store' })));
   } catch { /* an islander from before the pit, or none at all: a full pit */ }
+  // ?goldrun: a delivery now, from twenty bars up to the pit's count, to look at without
+  // waiting up to five hours for a window to turn over.
+  if (params.has('goldrun')) setTimeout(() => { syncGoldRun(); goldRunOf()?.play(20); }, 2500);
 }
 
 // Every overlay is the same shape - `open`, `close`, `isOpen` - which is what lets the
@@ -1351,6 +1476,8 @@ function walkCallbacks() {
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
+      else if (it.kind === 'goldmine') state.ui.toast(mineWords(state.gold));
+      else if (it.kind === 'goldsmith') state.ui.toast(smithWords());
       else if (it.kind === 'tavern') enterInterior(it.room, it);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'chronicle') openChronicle();
@@ -1366,7 +1493,7 @@ function walkCallbacks() {
     },
     onSendAway: (it) => {
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
     },
     onPlant: () => sowHere(),
     onNextSeed: () => cycleSeed(1),
@@ -3843,9 +3970,21 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   // our own island, and a full pit on anybody else's - see showGold.
   if (built.animated && built.animated.goldpile) {
     rec.goldPile = attachGoldPile(group, built.animated.goldpile.at, buildingMat);
-    rec.goldPile.setBars(gold ? goldBarsNow() : GOLD_BARS);
+    // What the run is showing if one is under way - a pit rebuilt mid-delivery keeps counting
+    // from where it was, not from the number the barrow has not brought yet.
+    const shown = state.goldRun ? state.goldRun.bars() : null;
+    rec.goldPile.setBars(gold ? (shown ?? goldBarsNow()) : GOLD_BARS);
     if (!gold) rec.goldPile.foreign = true;
   }
+  // The ore in the gold mine's bin (web/js/goldmine.js): the keeper's week on our island, and a
+  // full bin on anybody else's, like the pit.
+  if (built.animated && built.animated.orepile && built.animated.orepile.at) {
+    rec.orePile = attachOrePile(group, built.animated.orepile.at);
+    rec.orePile.setOre(gold ? oreNow() : MINE_ORE);
+    if (!gold) rec.orePile.foreign = true;
+  }
+  // The goldsmith's furnace (web/js/goldsmith.js), which the gold run lights.
+  if (built.animated && built.animated.goldsmith) rec.furnace = attachFurnace(group, built.animated.goldsmith.at, buildingMat);
   // And the clock over the office door, at the hour the pit is full again. Ours only, like
   // the count: on anybody else's pit it hangs there with no hands - see attachResetClock.
   if (built.animated && built.animated.resetclock) {
@@ -3928,6 +4067,8 @@ function disposeRecord(rec) {
   }
   if (rec.nameplate) rec.nameplate.dispose();
   if (rec.goldPile) rec.goldPile.dispose();
+  if (rec.orePile) rec.orePile.dispose();
+  if (rec.furnace) rec.furnace.dispose();
   if (rec.sawmill) disposeSawmill(rec.sawmill);
   if (rec.smithy) disposeSmithy(rec.smithy);
   if (rec.stable) disposeStable(rec.stable);
@@ -4933,8 +5074,9 @@ function applyVillage(next, { animate }) {
     for (const d of next.districts) if (!hadD.has(d.id)) events.push({ type: 'district', d });
   }
 
-  // Anyone no longer in the village has left: a visitor who finished, or someone sent
-  // away. Take their building out of the scene rather than leaving a ghost standing.
+  // Anyone no longer in the village has left: a visitor who finished, a tent nobody gave
+  // anything to do (lib/village.mjs), or someone sent away. Take their building out of the
+  // scene rather than leaving a ghost standing.
   for (const [id, rec] of [...state.byId]) {
     if (nextSpecs.has(id)) continue;
     if (animate && rec.group.visible) leaveAnimation(rec);
@@ -4957,6 +5099,11 @@ function applyVillage(next, { animate }) {
     state.walk.setBlockers(walkableBlockers());
     state.walk.setInteractables(interactables());
   }
+
+  // Where the mine, the goldsmith and the pit now stand, and the roads between them.
+  syncGoldRun();
+  // And the sawmill and the yard, for the timber wagon and the yard's crew (timberrun.js).
+  syncTimberRun();
 
   if (!animate) { for (const e of events) applyEventInstantly(e); reportPlacements(); return; }
   for (const e of events) scheduleEvent(e);
@@ -5175,6 +5322,8 @@ function decorate(spec) {
   // The gold pit's line is the count, which is this page's to know and not village.json's
   // (see showGold). The dossier escapes a title, so the words go in without their markup.
   if (spec.id === GOLDPIT_ID) out.title = goldWords(state.gold).replace(/<[^>]+>/g, '');
+  if (spec.id === GOLDMINE_ID) out.title = mineWords(state.gold).replace(/<[^>]+>/g, '');
+  if (spec.id === GOLDSMITH_ID) out.title = smithWords().replace(/<[^>]+>/g, '');
   return out;
 }
 function select(id) {
@@ -5580,6 +5729,16 @@ function frame(nowMs) {
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
   for (const rec of state.byId.values()) animateExtras(rec, dt, hour, nightAmt, nowMs);
+  // The miner and the goldsmith, and the cart and the barrow between them (goldrun.js).
+  if (state.goldRun) state.goldRun.update(dt);
+  // The timber wagon from the sawmill to the yard, and the hands at the yard (timberrun.js),
+  // on the sea's clock so every screen has the wagon at the same place.
+  if (state.timberRun) {
+    try { state.timberRun.update(dt, timeNow()); } catch (err) {
+      console.warn('[island] the timber run stopped', err);
+      state.timberRun = null;
+    }
+  }
   // The same hands turn the mills on somebody else's island. None of this is the server's:
   // it only ever said which building this is, and the turning, the clock, the fountain and
   // the chimney smoke have always been the browser's own. So a guest island gets them for
@@ -6420,7 +6579,7 @@ async function boot() {
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),
       onApply: () => state.plan.apply(), onRestore: () => state.plan.restore(),
-      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(),
+      onGrow: () => state.plan.grow(), onTurn: () => state.plan.turn(), onMerge: () => state.plan.merge(),
     }),
     toast: (html) => state.ui.toast(html),
     onExit: () => leftPlan(),
@@ -6631,6 +6790,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
+  if (rec.furnace) rec.furnace.update(dt);
+  if (rec.orePile) rec.orePile.update(dt);
   if (rec.ship) updateBatavia(rec.ship, dt);
   // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
   if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });

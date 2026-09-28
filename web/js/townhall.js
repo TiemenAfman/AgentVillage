@@ -141,7 +141,9 @@ export function createTownHall(root, { onInvited, onFound, onClose }) {
         <div class="th-who">
           <b>${esc(s.name)}</b>
           <span class="tag style-${esc(s.style)}">${esc(STYLE_LABEL[s.style] || s.style)}</span>
-          ${s.onIsland ? '<span class="tag ok">on the island</span>' : `<span class="tag">${esc(TIER_LABEL[s.tier] || s.tier)}</span>`}
+          ${s.onIsland ? '<span class="tag ok">on the island</span>'
+    : s.left ? '<span class="tag" title="Given nothing to do for too long, so the tent was packed up. Invite them and they stay for good.">packed up</span>'
+      : `<span class="tag">${esc(TIER_LABEL[s.tier] || s.tier)}</span>`}
         </div>
         <p class="th-title">${esc(s.title || 'Untitled session')}</p>
         <div class="th-meta">

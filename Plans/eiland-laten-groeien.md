@@ -51,7 +51,7 @@ Er zijn dus twee losse assen:
 
 ## Besloten door Martijn (24 september 2026)
 
-- **Startgrootte `minSize` = 32 cellen** (8×8 super-cellen). Eerst meten of het plein met
+- **Startgrootte `minSize` = 32 cellen** (8×8 super-cellen; sinds 28 september 2026 40, zie onder). Eerst meten of het plein met
   zijn civic-kavels daarop past. Past het niet, dan is dat de eerste groeistap, niet een
   grotere `minSize`.
 - **Groeien op vraag:** alleen als de volgende wijk niet meer past (open vraag 5). De stap
@@ -509,3 +509,11 @@ Gedeeltelijk slechten (alleen de cellen ver van het water) kan later.
    niet) geeft het kleinste eiland, maar het maakt de terrein-vraag afhankelijk van de
    plaatsing, dus een groeistap valt pas één scan later. Op aantal settlers is eenvoudiger,
    maar groeit ook als het dorp nog ruimte heeft.
+
+## 28 september 2026: een tik groter beginnen
+
+Nieuwe eilanden worden op 40 cellen gesticht in plaats van 32, nog steeds op een rooster van 64
+(`FOUNDING` in `lib/paths.mjs`). Op 32 hield het plan van het dorp bijna elk droog blok vast, en
+bleven de goudsmid en de goudmijn alleen de rand van het strand over. Op 40 staat de mijn op drie
+van vier seeds meteen landinwaarts, ook zonder settlers, en de tweede scan verandert niets.
+Eilanden die al staan houden hun `grow.base`; alleen een nieuw eiland krijgt 40.
