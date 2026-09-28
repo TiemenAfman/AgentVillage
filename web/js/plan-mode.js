@@ -60,6 +60,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   let indexed = null;              // the village the index below was built from
   let lobes = new Map();           // 'district#lobe' -> { district, lobe, k, name, hue, supers, buildings }
   let lobeAt = new Map();          // 'i,j' -> lobe record, as the island stands
+  let apart = new Map();           // district -> { name, kind, pieces, strays, keep }: not in one piece
   let townAt = new Set();          // 'i,j' the town holds
   let islandZones = new Set();     // 'i,j' zoned on the island today
   let polderAt = new Map();        // 'i,j' -> index into village.polders, for the ones standing
@@ -156,11 +157,30 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       });
     });
     const houseLobe = new Map();
+    const tally = new Map();         // district -> { per: [houses on each lobe], strays }
     for (const b of v.buildings || []) {
       if (!b.plot || b.kind === 'civic' || b.kind === 'shed') continue;
       const s = superOf(lat, b.plot.gx, b.plot.gz);
       const rec = lobeAt.get(key(s[0], s[1]));
-      if (rec && rec.district === b.district) { rec.buildings.push(b.id); houseLobe.set(b.id, rec); }
+      const t = tally.get(b.district) || { per: [], strays: 0 };
+      tally.set(b.district, t);
+      if (rec && rec.district === b.district) {
+        rec.buildings.push(b.id); houseLobe.set(b.id, rec);
+        t.per[rec.lobe] = (t.per[rec.lobe] || 0) + 1;
+      } else t.strays++;
+    }
+    // The projects that stand in more than one place - several pieces of land, or a house of
+    // theirs on the commons or on somebody else's land - and the piece a `merge` keeps: the
+    // one with the most of their houses (Plans/wijkjes-samenvoegen.md). Not the quay, which
+    // follows its shore in as many stretches as it needs.
+    apart = new Map();
+    for (const d of v.districts) {
+      const pieces = (d.lobes || []).length;
+      const t = tally.get(d.id) || { per: [], strays: 0 };
+      if (!pieces || d.kind === 'quay' || (pieces < 2 && !t.strays)) continue;
+      let keep = 0;
+      for (let li = 1; li < pieces; li++) if ((t.per[li] || 0) > (t.per[keep] || 0)) keep = li;
+      apart.set(d.id, { name: d.name || d.id, kind: d.kind, pieces, strays: t.strays, keep });
     }
     for (const b of v.buildings || []) {
       if (b.kind !== 'shed' || !b.master) continue;
@@ -179,7 +199,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     // A draft may name a hamlet the island no longer has.
     const before = ops.length;
     ops = ops.filter((o) => (o.op !== 'move' || o.lobes.every((l) => lobes.has(lkey(l))))
-      && (o.op !== 'parcel' || lobes.has(lkey(o)))
+      && ((o.op !== 'parcel' && o.op !== 'merge') || lobes.has(lkey(o)))
       && (o.op !== 'civic' || !!specOf(o.id)));
     for (const k of [...sel]) if (!lobes.has(k)) sel.delete(k);
     if (selCivic && !specOf(selCivic)) selCivic = null;
@@ -196,12 +216,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   // apply them: a move shifts it, a parcel op adds and takes away. In order, and not as one
   // summed delta, because land given and then moved is not the same land as land moved and
   // then given - the second is painted where the hamlet will be, the first where it was.
+  // A merge gives every other piece of the project back to the countryside; how far the piece
+  // that stays grows is the server's to work out, and the dry run says it in its notes.
   function supersOf(k, list = ops) {
     const rec = lobes.get(k);
     if (!rec) return [];
     let cells = rec.supers.map(([i, j]) => [i, j]);
     for (const o of list) {
-      if (o.op === 'move' && o.lobes.some((l) => lkey(l) === k)) cells = cells.map(([i, j]) => [i + o.di, j + o.dj]);
+      if (o.op === 'merge' && o.district === rec.district && o.lobe !== rec.lobe) cells = [];
+      else if (o.op === 'move' && o.lobes.some((l) => lkey(l) === k)) cells = cells.map(([i, j]) => [i + o.di, j + o.dj]);
       else if (o.op === 'parcel' && lkey(o) === k) {
         const gone = new Set(o.remove.map(([i, j]) => key(i, j)));
         const have = new Set(cells.map(([i, j]) => key(i, j)));
@@ -405,9 +428,11 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (selTown) outlines.push({ supers: [...townAt, ...draftTown].map((k) => k.split(',').map(Number)), color: new THREE.Color(0xe8b45c) });
     overlay.setMarks({ rects, lines, outlines });
     const picked = selCivic ? civicName(selCivic) : null;
+    const hamlets = [...selectedDistricts()];
     panel.setSelection({
-      count: sel.size, names: [...sel].map((k) => lobes.get(k).name), polder: selPolder,
+      count: hamlets.length, names: hamlets.map((d) => (lobes.get(`${d}#0`) || { name: d }).name), polder: selPolder,
       civic: picked && picked[0].toUpperCase() + picked.slice(1), town: selTown,
+      merge: { n: mergeable().length, picked: sel.size > 0 },
     });
     ledger();
   }
@@ -456,6 +481,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       return still ? `Turn ${civicName(o.id)} to face ${FACING[o.rot]}` : `Move ${civicName(o.id)} to [${o.gx}, ${o.gz}], facing ${FACING[o.rot]}`;
     }
     if (o.op === 'commons') return `Ground for the town: +${o.add.length} super-cell${o.add.length === 1 ? '' : 's'}`;
+    if (o.op === 'merge') return `Merge ${(lobes.get(lkey(o)) || { name: o.district }).name}: every house onto one piece of land`;
     if (o.op === 'parcel') return `Land for ${(lobes.get(lkey(o)) || { name: o.district }).name}: ${[o.add.length ? `+${o.add.length}` : '', o.remove.length ? `−${o.remove.length}` : ''].filter(Boolean).join(' / ')}`;
     return `Zone: ${o.add.length ? `+${o.add.length}` : ''}${o.add.length && o.remove.length ? ' / ' : ''}${o.remove.length ? `−${o.remove.length}` : ''} super-cell${o.add.length + o.remove.length === 1 ? '' : 's'}`;
   }
@@ -477,7 +503,18 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   }
 
   // ------------------------------------------------------------------ the draft
+  // A merge numbers the project's land anew (the piece that stays becomes lobe 0), so a step
+  // after it that names one of the old pieces would name the wrong one, or one that is gone.
+  // Before it is fine - "move it somewhere roomier, then merge" is one plan.
+  const mergedInDraft = (district) => ops.some((x) => x.op === 'merge' && x.district === district);
   function pushOp(o) {
+    const named = o.op === 'move' ? o.lobes.map((l) => l.district) : o.op === 'parcel' ? [o.district] : [];
+    const merged = named.find(mergedInDraft);
+    if (merged) {
+      toast(`Apply the merge of ${(apart.get(merged) || { name: merged }).name} first; its land is numbered anew by it.`);
+      redraw();
+      return;
+    }
     redo = [];
     const last = ops[ops.length - 1];
     if (o.op === 'move' && last && last.op === 'move' && sameLobes(last.lobes, o.lobes)) {
@@ -565,10 +602,29 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       return;
     }
     if (!sel.size) return;
+    const picked = selectedDistricts();
     for (let i = ops.length - 1; i >= 0; i--) {
       const o = ops[i];
-      if (o.op === 'move' && o.lobes.some((l) => sel.has(lkey(l)))) { redo.push(...ops.splice(i, 1)); changed(); return; }
+      const mine = (o.op === 'move' && o.lobes.some((l) => sel.has(lkey(l)))) || (o.op === 'merge' && picked.has(o.district));
+      if (mine) { redo.push(...ops.splice(i, 1)); changed(); return; }
     }
+  }
+  const selectedDistricts = () => new Set([...sel].map((k) => lobes.get(k).district));
+  // The projects Merge would bring together: the picked ones that stand apart, or with nothing
+  // picked every project that does (not the Outlands, which is nobody's project - pick it to
+  // merge it). Less the ones the draft already merges.
+  function mergeable() {
+    const picked = selectedDistricts();
+    const which = picked.size ? [...picked].filter((d) => apart.has(d)) : [...apart.keys()].filter((d) => apart.get(d).kind === 'project');
+    return which.filter((d) => !mergedInDraft(d));
+  }
+  function mergeApart() {
+    if (!active) return;
+    const todo = mergeable();
+    if (!todo.length) { toast(sel.size ? 'That hamlet already stands in one piece.' : 'Every hamlet already stands in one piece.'); return; }
+    redo = [];
+    for (const d of todo) ops.push({ op: 'merge', district: d, lobe: apart.get(d).keep });
+    changed();
   }
   function saveDraft() {
     try {
@@ -663,6 +719,17 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const hits = ray.intersectObjects(pickables().filter((m) => m.parent && m.parent.visible && recs.has(m.userData.id)), false);
     return hits.length ? hits[0].object.userData.id : null;
   }
+  // A hamlet is picked whole, every piece of land its project has: picking one piece let a
+  // drag carry it off and leave the rest behind, which is how two projects on the live island
+  // came to stand in pieces two and fifteen super-cells apart (Plans/wijkjes-samenvoegen.md).
+  // The piece clicked goes in first, for the Land tool to paint onto.
+  function pickHamlet(rec) {
+    sel.add(lkey(rec));
+    for (const r of lobes.values()) if (r.district === rec.district) sel.add(lkey(r));
+  }
+  function dropHamlet(rec) {
+    for (const r of lobes.values()) if (r.district === rec.district) sel.delete(lkey(r));
+  }
   function lobeUnder(px, py) {
     const id = pickBuilding(px, py);
     if (id) for (const rec of lobes.values()) if (rec.buildings.includes(id)) return rec;
@@ -687,8 +754,11 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       redraw();
       return;
     }
-    const forTown = tool === 'land' && sel.size !== 1 && selTown;
-    if (tool === 'land' && sel.size !== 1 && !forTown) { toast('Land goes to one hamlet at a time, or to the town: select it first (1), then paint.'); return; }
+    // One hamlet, which may still be in several pieces: the land goes to the piece clicked,
+    // which a click puts first in the selection.
+    const oneHamlet = selectedDistricts().size === 1;
+    const forTown = tool === 'land' && !oneHamlet && selTown;
+    if (tool === 'land' && !oneHamlet && !forTown) { toast('Land goes to one hamlet at a time, or to the town: select it first (1), then paint.'); return; }
     if (forTown && (e.button === 2 || e.altKey)) { toast("The town's ground is only ever given; there is nothing to take away here."); return; }
     if (painting && (e.button === 0 || e.button === 2)) {
       paint = { kind: tool === 'land' ? (forTown ? 'commons' : 'parcel') : tool, lobe: tool === 'land' && !forTown ? [...sel][0] : null, add: new Set(), remove: new Set(), mode: e.button === 2 || e.altKey ? 'remove' : 'add', last: null };
@@ -926,7 +996,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
           const x = gx + lat.pitch / 2 - t.half, z = gz + lat.pitch / 2 - t.half;
           return x >= x0 && x <= x1 && z >= z0 && z <= z1;
         });
-        if (inside) sel.add(lkey(rec));
+        if (inside) pickHamlet(rec);
       }
       press = null;
       redraw();
@@ -952,7 +1022,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       }
       selCivic = null; selTown = false;
       if (!press.shift) sel.clear();
-      if (rec) { if (press.shift && sel.has(lkey(rec))) sel.delete(lkey(rec)); else sel.add(lkey(rec)); }
+      if (rec) { if (press.shift && sel.has(lkey(rec))) dropHamlet(rec); else pickHamlet(rec); }
       else if (pickBuilding(e.clientX, e.clientY)) toast('That one belongs where it stands; the buildings round the square and the hamlets move.');
       else {
         // The town's own ground: the town is picked, for the Land tool to give it more.
@@ -1035,7 +1105,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       : "click a hamlet, a town building or the town's ground; drag a box; <kbd>Shift</kbd> adds")
       : tool === 'move' ? 'drag to carry the selected hamlets (super-grid) or town building (cell by cell); <kbd>R</kbd> turns it'
         : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
-          : tool === 'land' ? (sel.size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : selTown ? 'paint more ground onto the edge of the town' : 'select one hamlet or the town first (1), then paint its land')
+          : tool === 'land' ? (selectedDistricts().size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : selTown ? 'paint more ground onto the edge of the town' : 'select one hamlet or the town first (1), then paint its land')
           : tool === 'road' ? 'drag a road out from one that reaches the square; over a river it is bridged to size'
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
@@ -1110,6 +1180,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     resize: () => { if (active) applyView(); },
     undo: undoOp, redo: redoOp, clear: clearOps, apply: applyDraft, restore: restorePrevious,
     grow: () => { if (active) pushOp({ op: 'grow' }); },
+    merge: () => mergeApart(),
     turn: (dir = 1) => turn(dir),
   };
 }

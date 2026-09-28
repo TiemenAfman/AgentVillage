@@ -38,6 +38,9 @@ export function createPlanPanel(handlers) {
     // A quarter turn for the picked town building. R does the same, but a key nobody told
     // you about is a key nobody presses.
     + '<button class="btn tiny" id="plan-turn" hidden title="Turn the picked building a quarter to the right (R; Shift+R to the left)">Turn</button>'
+    // Every house of a project home onto one piece of its land (Plans/wijkjes-samenvoegen.md).
+    // Shown only while there is a project standing apart, so its label can say how many.
+    + '<button class="btn tiny" id="plan-merge" hidden>Merge</button>'
     + '</div>';
   ledger.querySelector('.panel-body').innerHTML = '<ol class="plan-ops" id="plan-ops"></ol>'
     + '<div class="plan-verdict muted" id="plan-verdict"></div>'
@@ -55,6 +58,7 @@ export function createPlanPanel(handlers) {
   el('plan-overview').addEventListener('click', () => handlers.onOverview());
   el('plan-grow').addEventListener('click', () => handlers.onGrow && handlers.onGrow());
   el('plan-turn').addEventListener('click', () => handlers.onTurn && handlers.onTurn());
+  el('plan-merge').addEventListener('click', () => handlers.onMerge && handlers.onMerge());
   el('plan-undo').addEventListener('click', () => handlers.onUndo());
   el('plan-redo').addEventListener('click', () => handlers.onRedo());
   el('plan-clear').addEventListener('click', () => handlers.onClear());
@@ -75,7 +79,9 @@ export function createPlanPanel(handlers) {
     tools.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
   }
 
-  function setSelection({ count = 0, names = [], polder = null, civic = null, town = false } = {}) {
+  // `merge` is { n, picked }: how many projects Merge would bring together, and whether they
+  // are the picked ones or, with nothing picked, every project that stands apart.
+  function setSelection({ count = 0, names = [], polder = null, civic = null, town = false, merge = null } = {}) {
     el('plan-sel').textContent = count
       ? `${count} hamlet${count === 1 ? '' : 's'}: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
       : civic ? `${civic} picked — drag it, R turns it`
@@ -83,6 +89,13 @@ export function createPlanPanel(handlers) {
           : polder !== null ? `Polder ${polder + 1} picked — Delete gives it back to the sea`
             : 'Nothing selected';
     el('plan-turn').hidden = !civic;
+    const m = el('plan-merge');
+    const n = (merge && merge.n) || 0;
+    m.hidden = !n || !!civic || polder !== null || town;
+    m.textContent = merge && merge.picked ? 'Merge' : `Merge all (${n})`;
+    m.title = merge && merge.picked
+      ? 'Bring every house of the picked hamlet home onto one piece of its land'
+      : `${n} hamlet${n === 1 ? ' stands' : 's stand'} in more than one place: bring each one's houses home onto one piece of its land`;
   }
 
   // `ops` as sentences; `verdicts` aligned with them from the dry run, or null while one is
