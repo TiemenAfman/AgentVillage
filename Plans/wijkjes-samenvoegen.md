@@ -97,6 +97,14 @@ Nergens een project in stukken, en overal geldt nu: geen huis gaat naar de gemee
 er op of naast het land van zijn project een vrij 3x3-blok is (`tests/plan-merge.test.mjs`,
 seed 3). Wat overblijft is telkens hetzelfde geval.
 
+In de browser nagekeken (28 september 2026), op een synthetisch eiland van vijf projecten met één
+Harbour-huis met de hand op de gemeentegrond gezet, via een echte `serve.mjs` en Playwright: zonder
+selectie staat er **Merge all (1)**; een klik op een huis kiest het hele project ("1 hamlet:
+Harbour", knop **Merge**); het grootboek zegt "Merge Harbour: every house onto one piece of land"
+met de notitie van de droogtest en "The island agrees"; Delete haalt de merge-op weer weg; Apply
+zet het huis terug op zijn eigen cel in stuk 0, verandert geen andere plot, schrijft de
+`before-plan`-snapshot, en de scan erna is byte-identiek. Geen fouten in de console.
+
 Nog open:
 - **Het eerste project bij het plein wordt ingesloten.** Op een klein gesticht eiland liggen de
   eerste wijkjes tegen het dorp aan. Hun buren groeien met de gordel-0-trede van `growLobe` tot
@@ -108,8 +116,6 @@ Nog open:
   hem nu vraagt of het wijkje dat er later om zal vragen? Mogelijke richtingen: een gordel-0-cel
   niet geven als hij de laatste vrije buur van een ander wijkje is; of de planner zo'n project
   laten verhuizen en dan samenvoegen (dat kan nu al, met de hand, in één plan).
-- De planner in de browser nakijken (Merge all, hele-project-selectie, de zin in het grootboek,
-  Delete die een merge-op weghaalt).
 - Op het live eiland toepassen: branch in main, eiland herstarten, Merge all in de planner.
 
 ## Bestanden
