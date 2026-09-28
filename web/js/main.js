@@ -1768,8 +1768,23 @@ function enterWalk(spot = null) {
   const town = state.village.island.town;
   // Start on the town square, a couple of paces in front of the board, facing it.
   let at = [0, 0], facing = null;
+  // No place in mind and a boat left in the sky's keeping: down onto its deck, wherever it
+  // floats now. Only while it is still in the water and nobody else has taken its tiller -
+  // otherwise it is the spot you left, in the water, like before.
+  const kept = skyBoat && state.boats.includes(skyBoat) ? skyBoat : null;
+  skyBoat = null;
+  const reboard = !spot && kept && !(kept.pilot && state.net && kept.pilot !== state.net.id()) ? kept : null;
+  if (reboard) {
+    spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
+  }
   // No place in mind: back where you last stood, and only the very first time the square.
   if (!spot) spot = recalledSpot();
+  // `?edge`: in the water a few strokes short of the world's east edge, facing it, to try
+  // the jump round the world without sailing two kilometres for it (Plans/ronde-wereld.md).
+  if (params.has('edge') && state.homeOrigin && !reboard) {
+    const x = WORLD_HALF - 12 - state.homeOrigin[0], z = -state.homeOrigin[1];
+    spot = { at: [x, z], facing: [x + 10, z] };
+  }
   if (spot && spot.at) {
     at = spot.at;
     facing = spot.facing || null;
@@ -1799,6 +1814,9 @@ function enterWalk(spot = null) {
     interactables: interactables(),
     ...walkCallbacks(),
   });
+  // Back aboard the boat you flew up from, if you came down without a place in mind and it
+  // is still there and still yours (see exitWalk).
+  if (reboard) takeBoat(reboard);
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
 }
 
@@ -1958,6 +1976,8 @@ function leaveAnimation(rec) {
   };
 }
 
+// The boat you flew up from, held for the way back down (exitWalk, enterWalk).
+let skyBoat = null;
 function exitWalk({ force = false } = {}) {
   if (state.mode !== 'walk') return;
   // The phone has no sky to go up to: walk mode is all there is. `force` is for the one
@@ -1985,6 +2005,17 @@ function exitWalk({ force = false } = {}) {
   if (state.net) { state.net.setRoom(null, state.walk); state.net.setWalking(false); }
   state.walk.setPeerBlockers([]);
   reportWhere({ final: true });   // write down where you left off, and that you left
+  // Flying up from the tiller. The hull stops where it is - walk mode was what stepped it,
+  // and a boat left with way on it used to be caught up with the sea's last sample of it a
+  // few metres back, so coming down again meant swimming after your own boat. Its last
+  // position goes to the sea now, the tiller stays ours, and enterWalk climbs back aboard.
+  const b = state.walk.aboard();
+  if (b) {
+    b.v = 0;
+    b.track = null;
+    if (state.net) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
+    skyBoat = b;
+  }
   state.walk.exit();
   state.board.close();
   state.ui.setWalking(false);

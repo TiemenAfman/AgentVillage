@@ -878,8 +878,15 @@ is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet'
 them is open-sea blue and boats sail through; `isletHeight` is the one ground for the walk-on step.
 The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
-line every `KM` (250 units) and every islet (`mapIslets`, once per fleet and berth); the
-world's edge wrapping round is still to come ([Plans/ronde-wereld.md](Plans/ronde-wereld.md)).
+line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
+fleet and berth). **The world is round by a jump** ([Plans/ronde-wereld.md](Plans/ronde-wereld.md)):
+past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back
+(`wrapShift`) before walk mode steps, `pushSample` (timeline.js) starts a track again on a
+jump of over half the world instead of gliding it, `nextOrigin` keeps every island's room
+`SEA_BAND` (900) off the edge, and `setFogRange` closes the haze in near it (`edgeReach`) so
+what is across is behind the fog on both sides. The sea knows none of it and needs no
+redeploy for it: a pose on the far side is just a pose. `?edge` starts walk mode 12 units
+short of the east edge.
 
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
@@ -1111,7 +1118,7 @@ geometry; the bake still only allows 0 or 1.
 
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
-drunk). (`?sail` is gone with the
+drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 

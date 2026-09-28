@@ -11,7 +11,14 @@ Stap 1 en 4 gebouwd op 28 september 2026:
   (M, de Map-chip).
 - De open zee draait dit pas na een redeploy.
 
-Stap 2, 3 en 5 staan nog.
+Stap 2 en 3 gebouwd op 28 september 2026, met twee afwijkingen van het plan hieronder:
+- `worldBound` op de zee is 4000 gebleven. De zee hoeft niets te weten, dus teleporteren
+  vraagt geen redeploy, en een oude pagina die verder vaart wordt niet vastgezet.
+- De islets lopen (nog) niet om. Ze worden alleen binnen `ISLET_RANGE` (800) van de eigen
+  berth getekend, en de rand ligt verder weg dan dat.
+
+`?edge` zet je te voet 12 eenheden voor de oostrand, om de sprong te proberen. Stap 5 (de
+kromming) staat nog.
 
 Twee dingen hier bewust *niet*:
 - **Een echte bol** (terrein, raster en super-cells op een bol): dat zou het hele project
