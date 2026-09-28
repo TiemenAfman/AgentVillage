@@ -760,7 +760,9 @@ two equal). The page knows its own release from `/api/hello` (`build`) or, in th
 what the pack baked in, and compares it with the welcome's on every connect: older is a
 banner with the release link, newer says the sea is behind - by `version`, never by commit,
 which differs between players on the same release all the time, and by the *line* only
-(`compareLines`, major.minor): a patch apart says nothing. **A patch release never breaks
+(`compareLines`, major.minor): a patch apart says nothing - except on the phone, whose
+`updateGate` compares whole versions, because a phone cannot pull and that card (with a
+Later) is the only way a patch ever reaches it. **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
 `TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
