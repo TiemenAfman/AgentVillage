@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
-import { stepBoat, DECK_Y } from './boat.js';
+import { stepBoat, hullOver, DECK_Y } from './boat.js';
 import { stepDeck, toWorld, dirToLocal, deckAt } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
@@ -716,6 +716,18 @@ export function createWalkMode({
     return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
   }
 
+  // The blockers that are a ship's side (a Batavia at anchor: buildings.js shipSolids) are
+  // kept apart as well, for the boats. Feet and swimmers meet every blocker as a wall at any
+  // height, as they always have; a hull under way asks the ground, and a ship lying on the
+  // roads is not in the ground - so the ground a boat is handed is the terrain and the levels
+  // with her sides stood up out of the water on top (boat.js hullOver).
+  let hulls = [];
+  function takeBlockers(list) {
+    state.blockers = list || [];
+    hulls = state.blockers.filter((b) => b.hull != null);
+  }
+  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity));
+
   function blocked(x, z, from = state.pos.y, placing = false) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -822,7 +834,7 @@ export function createWalkMode({
   // stepBoat), the feet step in its frame, and the body is put back in the world from there.
   function stepOnDeck(dt, ix, iz, boost) {
     const b = deckBoat, spec = specOf(b);
-    stepBoat(b, {}, dt, (x, z) => groundAt(x, z, Infinity));
+    stepBoat(b, {}, dt, boatGround);
     const push = Math.min(1, Math.hypot(ix, iz));
     const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
     stepPool(state.stamina.boat, false, dt);
@@ -954,7 +966,7 @@ export function createWalkMode({
 
   function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive }) {
-    state.blockers = blockers || [];
+    takeBlockers(blockers);
     state.onGive = onGive;
     state.interactables = interactables || [];
     state.working = null;
@@ -1007,7 +1019,7 @@ export function createWalkMode({
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
   }
 
-  function setBlockers(list) { state.blockers = list; }
+  function setBlockers(list) { takeBlockers(list); }
   function setPeerBlockers(list) { state.peerBlockers = list; }
   function setInteractables(list) { state.interactables = list; }
 
@@ -1140,7 +1152,7 @@ export function createWalkMode({
       const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
-      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, (x, z) => groundAt(x, z, Infinity));
+      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround);
       // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
       // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
       const v = state.vehicle, h = v.craft && v.craft.helm;

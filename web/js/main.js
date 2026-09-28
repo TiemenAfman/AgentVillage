@@ -65,6 +65,7 @@ import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
+import { attachBatavia, updateBatavia, disposeBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
 import { attachStable, updateStable, disposeStable } from './stable.js';
@@ -663,6 +664,8 @@ function blockersOf(rec) {
     hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
     hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
     ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
+    // A ship's side, which is also what a boat meets (buildings.js shipSolids, walk.js hulls).
+    ...(r.hull != null ? { hull: r.hull } : {}),
     id: rec.id,
   }));
 }
@@ -3576,6 +3579,9 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
 // breadth from where the building then turns up.
 function poseOnPlot(spec, built) {
+  // A ship floats: the middle of her plot, on the sea and not on the bed under her
+  // (web/js/batavia.js, the one copy guest-island.js asks too).
+  if (built.floats) return floatingPose(spec.plot, state.terrain.half, built.bbox);
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
@@ -3667,6 +3673,11 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   }
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
+  }
+  // The Batavia (web/js/batavia.js): her swell goes on her own mesh rather than on the group,
+  // whose position and turn blockersOf reads, and her flags hang on that mesh and lean with her.
+  if (built.animated && built.animated.ship) {
+    rec.ship = attachBatavia(rec.mesh, spec.id, buildingMat);
   }
   // The stable (a trade) and the bakery (a shop of the square), the same way. The stable's horse and hens are scenery out of
   // web/js/fauna.js moving on their own clock, like the bees - not story animals, which are
@@ -3785,6 +3796,7 @@ function disposeRecord(rec) {
   if (rec.bakery) disposeBakery(rec.bakery);
   if (rec.baker) disposeBaker(rec.baker);
   if (rec.butcher) disposeButcher(rec.butcher);
+  if (rec.ship) disposeBatavia(rec.ship);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -6439,6 +6451,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
+  if (rec.ship) updateBatavia(rec.ship, dt);
   // Saturday night the paddock is empty: its horse and hens are at the rave (stableComes).
   if (rec.stable) updateStable(rec.stable, dt, { away: raveOn() });
   if (rec.bakery) updateBakery(rec.bakery, dt);

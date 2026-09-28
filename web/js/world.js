@@ -1084,9 +1084,11 @@ export function createLandscape({
   // own normals, lighting and shadows: no raised strips and no colour-matched
   // skirts that turn into visible borders when the grass texture arrives.
   // The bridge stone is on the list for the same reason the statue is: it is a marker
-  // rather than a door, so nobody wears a patch of grass bare walking up to it.
+  // rather than a door, so nobody wears a patch of grass bare walking up to it. And the ship
+  // lies out on the roads: a worn yard of four by sixteen on the sea bed would be sand showing
+  // through the shallows round her.
   const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
-    'statue', 'well', 'fountain', 'watertower', 'bridge']);
+    'statue', 'well', 'fountain', 'watertower', 'bridge', 'ship']);
   let wearVillage = village, wearGraph = null;
   let frontages = new Map(), frontageKey = '';
   function setHouseFrontages(records) {
