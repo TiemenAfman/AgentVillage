@@ -65,8 +65,13 @@ const key = (c) => `${c[0]},${c[1]}`;
 
 // A village past the rung, with a Cowork district so the island has a quay and an ordinary
 // one so there are hamlets, roads and houses for a crossing to be measured against. Every
-// milestone is unlocked, because the bridge is laid after the roads and what matters is
-// where it lands once the rest of the island is standing.
+// milestone it has earned is unlocked, because the bridge is laid after the roads and what
+// matters is where it lands once the rest of the island is standing - and only those, since
+// the ladder went on to two hundred (Plans/mijlpalen-tot-tweehonderd.md): with every rung
+// standing at once, the quarry at 142 stood in the way of the quay's road on seed 314, which
+// went round and over the very reach the bridge would have taken - the quay's crossing, which
+// the rung may not adopt. No island that grows a scan at a time meets that: its bridge is
+// fifty settlers older than its quarry.
 function bigVillage(settlers = BRIDGE.at + 5) {
   const t0 = Date.UTC(2026, 0, 1);
   const buildings = [];
@@ -89,7 +94,7 @@ function bigVillage(settlers = BRIDGE.at + 5) {
     ],
     buildings,
     milestones: MILESTONES.map((m) => ({
-      ...m, unlocked: true, unlockedAt: t0, on: m.on || 'settlers', building: `civic:${m.civicType}`,
+      ...m, unlocked: m.at <= settlers, unlockedAt: t0, on: m.on || 'settlers', building: `civic:${m.civicType}`,
     })),
     furniture: [],
     stats: { settlers },

@@ -8,12 +8,12 @@ import { discover } from './lib/sources.mjs';
 import { discoverCodex, foldCodex } from './lib/codex-sources.mjs';
 import { parseIncremental, mapPool } from './lib/parse.mjs';
 import { loadCache, saveCache, fileKey } from './lib/cache.mjs';
-import { buildVillage, readArrivals, MILESTONES } from './lib/village.mjs';
+import { buildVillage, readArrivals, MILESTONES, civicIdOf, yardStage } from './lib/village.mjs';
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, clearRoads, doorCell, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID } from './shared/gold.mjs';
@@ -249,8 +249,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     return p ? { gx: p.gx, gz: p.gz, w: p.w, d: p.d, rot: p.rot, quay: p.quay || undefined } : null;
   };
   // lib/layout.mjs's own door, not a copy of it: the castle's seven-wide lot has its gate
-  // three cells in, and a copy that only knew three by three said one.
-  const doorOf = (p) => (p && p.w >= 3 ? doorCell(p.gx, p.gz, p.rot, p.w) : null);
+  // three cells in, and a copy that only knew three by three said one. Asked by id as well as
+  // plot since the ladder went past a hundred: a ship has no door, and the yard's is at its
+  // landward end rather than on its front.
+  const doorOf = (id, p) => { const d = plotDoor(id, p); return d ? d.door : null; };
 
   // Work handed out at the sprint board, so a house can show what its settler took on.
   const assignments = readAssignments();
@@ -271,7 +273,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     buildings.push({
       ...b,
       plot: p,
-      door: doorOf(p),
+      door: doorOf(b.id, p),
       startedAt: iso(b.startedAt),
       lastAt: iso(b.lastAt),
       workOrders: openBySettler.get(b.id) || [],
@@ -288,7 +290,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   if (townPlot) {
     civics.push({
       id: 'civic:townhall', kind: 'civic', civicType: 'townhall', district: model.districts[0] ? model.districts[0].id : null,
-      plot: townPlot, door: doorOf(townPlot), name: `${islandNameOf(config)} Town Hall`,
+      plot: townPlot, door: doorOf('civic:townhall', townPlot), name: `${islandNameOf(config)} Town Hall`,
       title: `Founded ${new Date(config.foundedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
       label: 'Town Hall', startedAt: iso(new Date(config.foundedAt).getTime()), lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
@@ -321,7 +323,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   if (pitPlot) {
     civics.push({
       id: GOLDPIT_ID, kind: 'civic', civicType: 'goldpit', district: null,
-      plot: pitPlot, door: doorOf(pitPlot), name: 'The gold pit', label: 'Gold pit',
+      plot: pitPlot, door: doorOf(GOLDPIT_ID, pitPlot), name: 'The gold pit', label: 'Gold pit',
       title: 'The five-hour usage window, one bar a percent',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
@@ -382,7 +384,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     if (!d.gitRepo || !op) continue;
     civics.push({
       id, kind: 'civic', civicType: 'office', district: d.id,
-      plot: op, door: doorOf(op),
+      plot: op, door: doorOf(id, op),
       name: `${d.name} office`, label: 'Office', repoName: d.name,
       title: `The register of ${d.name}`,
       startedAt: iso(d.firstSeenAt), lastAt: null,
@@ -394,11 +396,14 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
   }
 
   for (const m of model.milestones) {
-    const id = `civic:${m.civicType}`;
+    const id = civicIdOf(m);
     const p = plot(id);
     if (!m.unlocked || !p) continue;
     civics.push({
-      id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(p),
+      id, kind: 'civic', civicType: m.civicType, district: null, plot: p, door: doorOf(id, p),
+      // What stands on the yard's slipway (lib/village.mjs yardStage), 0 to 4. On the record
+      // because a bundle carries no settler count, so a visitor could not work it out.
+      ...(id === YARD_ID ? { stage: yardStage(model.stats.settlers) } : {}),
       name: m.label, title: `Unlocked at ${m.at} ${m.on === 'apprentices' ? 'apprentices' : 'settlers'}`, label: m.label,
       startedAt: iso(m.unlockedAt), lastAt: null, style: 'unknown', model: null, models: {},
       tier: 'civic', ornaments: [], active: false, archived: false,
