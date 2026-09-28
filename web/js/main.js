@@ -6492,7 +6492,9 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
-    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron';
+    || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'
+    // And the fisherman's smokehouse, whose fish are smoked all day (Plans/havengebouwen.md).
+    || rec.spec.civicType === 'fishery';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {
     rec.smokeT += dt;

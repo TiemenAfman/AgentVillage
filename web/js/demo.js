@@ -61,11 +61,16 @@ const CIVIC = [
   // is no river on the model sheet to stand it in.
   ['bridge', 'Bridge stone', '90'],
   ['castle', 'Castle', '100'],
+  // The harbour's own buildings, which stand at the harbours and not in town
+  // (Plans/havengebouwen.md): the fisherman's hut smokes all day.
+  ['fishery', "Fisherman's hut", '113'],
+  ['warehouse', 'Warehouse', '127'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
   // The ladder's last rung (Plans/kroniekhuis.md): on the island it opens the chronicle, which
   // the model sheet has no village to replay, so here it only stands.
   ['chronicle', 'Chronicle house', '200'],
+  ['weighhouse', 'Weigh house', '184'],
   // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
   // baker (who goes in at night too) on a corner of the square, the butcher's (whose awning rolls in when he goes home,
   // Plans/slagerij.md) and the rest along the four streets.

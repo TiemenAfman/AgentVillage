@@ -23,6 +23,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   groeit de vloot vanzelf tot drie boten per haven. Geen bestaande trede verschuift. Terloops
   gevonden: de kraan (165) komt op het echte eiland nooit, want er is geen kade-wijk. Voorstel van
   28 september 2026, nog niets gebouwd; eerste stap is meten waar de rede past.
+- 🚧 [havengebouwen.md](havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut (113)
+  van die ladder als modellen: één Blender-set met drie assets, tekenbaar in `civic()` en te zien
+  op `/demo`. De treden en hun plek aan de haven komen met de ladder; een visser bij de hut staat
+  onder Later. Modellen gebouwd op 28 september 2026.
 - 🚧 [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
   gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
   winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
