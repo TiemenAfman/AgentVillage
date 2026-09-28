@@ -3,13 +3,14 @@
 Orientation and traps for an agent working on this repository. Compact by design: the
 exhaustive invariants live in [CLAUDE.md](CLAUDE.md), the *why* behind a feature in
 [Plans/](Plans/README.md) (`✅` done, `🚧` partly built) and what a thing on the island means
-in [docs/manual.md](docs/manual.md). When the two disagree, the code is the truth and
-`CLAUDE.md` should be fixed.
+in [docs/manual.md](docs/manual.md). When any of them disagrees with the code, the code is the
+truth and the document should be fixed.
 
 ## What this is
 
-Promptholm: a 3D island (three.js, **no build step**) where every Claude Code / Codex session
-on this machine is a settler with a house. `scan.mjs` reads the session transcripts already on
+Promptholm: a 3D island (three.js, **no build step**) where every Claude Code / Cowork session
+on this machine is a settler with a house (Codex sessions are settlers too, but they live on the
+sea's volcano, not on this island). `scan.mjs` reads the session transcripts already on
 disk, `serve.mjs` serves the island and pushes updates, `web/` draws it. Windows, Node 22+,
 the only runtime dependency is a vendored copy of three.js.
 
@@ -55,8 +56,10 @@ node --test "tests/sea-*.test.mjs"     # one group
   resolve the `shared/` import-map prefix and stub `globalThis.document` before importing
   anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at import time).
   Copy that preamble when adding a test that touches `web/js/`.
-- `tests/layout-measure.test.mjs` measures the live `data/layout.json`, so two of its
-  assertions can fail on this machine without your change. Check against a clean tree first.
+- `tests/layout-measure.test.mjs` copies this machine's island into a scratch directory and
+  runs the real scanner there. It never writes `layout.json`, but it holds `data/scan.lock`
+  while it runs, and what it measures is whatever island this machine has — so a failure can
+  be the island rather than your change. Check against a clean tree before blaming either.
 - `tests/support/sea.mjs` defaults `starters: false`; pass `starters: true` when a test needs
   starter islands, since every berth and island count otherwise assumes an empty ring.
 
@@ -89,7 +92,9 @@ byte means the bake is not deterministic.
 
 **`Dockerfile.sea` and `scripts/pack-release.mjs` copy the island by name**, so a runtime
 import from a new top-level folder works locally and produces an image or release that dies on
-its first line. `tests/sea-image.test.mjs` walks the real import graph and holds both.
+its first line. `tests/sea-image.test.mjs` walks the sea's real import graph and holds the
+Dockerfile; **nothing holds `pack-release.mjs`'s `FILES`/`DIRS`**, so a new top-level folder the
+islander imports has to be added there by hand.
 
 **A new file under `web/js/` must not need a build step or a loader.** Baked shapes are plain
 modules imported synchronously through `web/js/models.js`, and `web/index.html` maps `shared/`
@@ -122,11 +127,18 @@ never reaches in. Do not add an inbound half without reading that section in `CL
   `TOWN_VERSION` (re-lays the town centre and its roads; no house moves), `ROAD_VERSION`,
   `SQUARE_VERSION`, `QUAY_VERSION`. Reach for the smallest one that does the job; each
   re-planning is destructive and a release is not the place for one.
-- **A patch release never breaks compatibility** — no `SEA_V` bump, no version gate, nothing
-  in `layout.json` or a bundle that an older 0.x would misread. Any of those is the next minor.
-- **`shared/` runs identically in Node and in the browser**, so it stays plain arithmetic: no
-  `sin`, `cos` or `pow` (last-bit differences), no clock, no three.js. Crowd code counts *ticks*
-  (`DT = 0.05`), never `dt`. `tests/settler-walk.test.mjs` reads the source to enforce this.
+- **A patch release never breaks compatibility within its minor** (0.4.x runs on any 0.4.y's
+  island and meets it on any sea) — no `SEA_V` bump, no version gate, nothing in `layout.json`,
+  `config.json` or a bundle that an older patch of the same minor would misread. Any of those
+  is the next minor.
+- **`shared/` runs identically in Node and in the browser.** Whatever two runtimes must agree
+  on to the bit — the terrain, the walks the sea steps, decks, islets, the lattice — is plain
+  arithmetic: no `sin`, `cos` or `pow` (they can differ in the last bit). The walks also read
+  no clock and import no three.js, and count *ticks* (`DT = 0.05`), never `dt`. This is held
+  **per file**, not for the folder: `settler-walk`, `animal-walk`, `deck`, `islets`, `lattice`
+  and `volcano` tests each read their own module's source, while `crops.mjs` and
+  `worldclock.mjs` read the date and `boating.mjs` calls `sin`/`cos`. A new module the sea
+  steps needs its own such test.
 - **One world frame, many island-local frames.** `shared/regions.mjs` is the contract; terrain
   and `layout.json` are always local and origin-centred, and a second island is a *region* with
   a world offset. `cellWorld` adds the origin, `worldHeight` subtracts it.
