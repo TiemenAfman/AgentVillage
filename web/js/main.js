@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
+import { createYouMarker } from './you-marker.js';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
@@ -5363,6 +5364,12 @@ function frame(nowMs) {
     if (state.inside) state.inside.walk.setPeerBlockers(state.peers.blockers(state.inside.room));
     else if (state.mode === 'walk') state.walk.setPeerBlockers(state.peers.blockers());
   }
+
+  // YOU, the way there and where to, over the body left standing - from the sky only.
+  if (!state.youMarker) state.youMarker = createYouMarker(scene);
+  const sky = state.mode === 'orbit' && state.walk.parked() && !state.inside;
+  state.youMarker.update(sky ? state.walk.state.pos : null, state.walk.state.route,
+    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000);
 
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
