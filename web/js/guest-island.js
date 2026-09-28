@@ -26,6 +26,7 @@ import { createLandscape, seasonOf } from './world.js';
 import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
 import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
+import { isShipyard, shipyardGround } from './shipyard.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeSawmill } from './sawmill.js';
 import { disposeSmithy } from './smithy.js';
@@ -177,7 +178,8 @@ export function createGuestIsland({
     const c = plotCentre(spec.plot);
     const x = c[0] + nudge[0] + pose.x;
     const z = c[1] + nudge[1] + pose.z;
-    let y = local.worldHeight(x, z);
+    // The shipyard on the land at its landward end, as main.js's poseOnPlot stands ours.
+    let y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz)) : local.worldHeight(x, z);
     if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
 
     const g = new THREE.Group();

@@ -27,6 +27,7 @@ import { createRoadDebug } from './road-debug.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW } from './boat.js';
 import { housePlacement } from './house-placement.js';
+import { isShipyard, shipyardGround } from './shipyard.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -3609,11 +3610,14 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
 // web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
 // breadth from where the building then turns up.
+// The shipyard is the one building not stood on the middle of its plot: that is over the sea,
+// and the yard stands on the land at its landward end (shipyardGround in web/js/shipyard.js).
 function poseOnPlot(spec, built) {
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  return { x, y: groundAt(x, z), z, yaw: pose.yaw };
+  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+  return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {
   const rec = state.byId.get(id);
@@ -4805,7 +4809,10 @@ function applyVillage(next, { animate }) {
     rec.spec = spec;
     const tierChanged = before.tier !== spec.tier || before.style !== spec.style
       || before.kind !== spec.kind || (before.ornaments || []).join() !== (spec.ornaments || []).join()
-      || JSON.stringify(before.sheds || []) !== JSON.stringify(spec.sheds || []);
+      || JSON.stringify(before.sheds || []) !== JSON.stringify(spec.sheds || [])
+      // The ship on the yard's slipway, one stage further (web/js/shipyard.js): a refit, so the
+      // yard is built again where it stands with a puff of dust rather than a scaffold.
+      || (before.stage ?? 0) !== (spec.stage ?? 0);
     if (tierChanged) {
       const upgraded = TIER_INDEX[spec.tier] > TIER_INDEX[before.tier];
       events.push({ type: upgraded ? 'upgrade' : 'refit', id, spec, silent: !animate });

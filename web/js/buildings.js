@@ -14,6 +14,7 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
+import { yardStage, shownAtStage } from './shipyard.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -65,6 +66,11 @@ export const BEACON_THROAT = (() => {
   for (let i = 0; i < p.length; i += 3) r = Math.max(r, Math.hypot(p[i], p[i + 2]));
   return r;
 })();
+// The shipyard's datum over its own pile feet: the ground at the landward end, which is where
+// scripts/build-shipyard.py puts the slipway's origin. The yard is modelled in one frame from
+// the feet of its piles up (the ground rule wants a set's lowest point at zero) and the island
+// wants it from the land, so civic() lowers it by this and main.js stands it on the land.
+export const SHIPYARD_LAND = models.part('shipyard slipway').at[1];
 
 // ---------------------------------------------------------------- sheets
 // world.js keeps the same three lines for the ground and the trees and does not export
@@ -1720,11 +1726,41 @@ function civic(parts, spec, rng) {
       animated.resetclock = { at: [-0.79, 1.05, 1.192], r: 0.075 };
       return { anchors, animated, height: 1.22 };
     }
+    case 'shipyard': {
+      // The yard and the ship on its stocks (scripts/build-shipyard.py, Plans/scheepswerf.md):
+      // one baked asset on a five by sixteen lot, the sea end on +z. What of the ship stands on
+      // the slipway is `spec.stage`, and the part names say which parts a stage draws - see
+      // shownAtStage in shipyard.js. Lowered by its datum, so y = 0 here is the land at the
+      // landward end like every other building's ground, and the slipway and its piles go on
+      // down below it into the water.
+      const stage = yardStage(spec);
+      const lift = { y: -SHIPYARD_LAND };
+      parts.push(...meshAsset('shipyard', 0xffffff, { ...lift, skip: (n) => !shownAtStage(n, stage) }));
+      Object.assign(anchors, meshAnchors('shipyard', lift));
+      return { anchors, animated, height: shipyardTop(stage) };
+    }
     default:
       parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
       return { anchors, animated, height: 0.5 };
   }
   void rng;
+}
+
+// How tall the shipyard stands at a stage, over its land: the sheerlegs until the masts go in.
+// Measured off the bake rather than written down, once per stage, so a mast made longer in
+// build-shipyard.py moves the label over it without anybody remembering this line.
+const shipyardTops = new Map();
+function shipyardTop(stage) {
+  if (!shipyardTops.has(stage)) {
+    let top = 0;
+    for (const name of models.assetParts('shipyard')) {
+      if (!shownAtStage(name, stage)) continue;
+      const p = models.part(name);
+      for (let i = 1; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i] + p.at[1]);
+    }
+    shipyardTops.set(stage, top - SHIPYARD_LAND);
+  }
+  return shipyardTops.get(stage);
 }
 
 // ---------------------------------------------------------------- entry point
@@ -1870,7 +1906,12 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // The harbour's buildings for the shops' reason. Merged, the warehouse's crates and barrels closed
 // with its walls into one block reaching 1.22 out, past the door at 0.80, and the fisherman's boat,
 // rack and barrels made his whole yard one block to 0.97, with the hut's door at -0.22 inside it.
-const APART = new Set(['tables', ...SHOPS, ...HARBOUR_HOUSES]);
+// The shipyard is kept apart too, for its size: merged, the shed, the sheerlegs'
+// feet, the stacks and the slipway lie within a gap of each other and became one solid over the
+// whole sixteen-long lot, the strip along the ship to the water included. Apart, the slipway is
+// one solid (nobody walks the ways - they have no deck level), the ship's parts fall inside it,
+// and the shed, the logs, the planks and the hearth are each walked round.
+const APART = new Set(['tables', 'shipyard', ...SHOPS, ...HARBOUR_HOUSES]);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -1909,7 +1950,11 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   'watertower',
   // The bridge stone has a footing course of its own and stands on the bank beside a
   // country road. A paved step round it would be a doorstep to a stone.
-  'bridge']);
+  'bridge',
+  // The shipyard carries its own footings - a plinth under the shed, a hearth, a bed of stone
+  // under the slipway and piles past it - and everything below 0.45 of it is sixteen cells of
+  // slipway: a porch fitted to that would be a stone quay the length of the lot.
+  'shipyard']);
 function wantsPorch(spec) {
   if (spec.harbour) return false;                 // it stands on its own stilts, over water
   if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
