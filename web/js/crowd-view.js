@@ -106,7 +106,8 @@ const HELD_TURN = 0.12;
 // once. See syncImps below.
 export function createCrowdView({
   scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = IMP_LIMIT,
-}) {
+  range = 0,
+} = {}) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
   // this is only what makes it look like they mean it). Read off the bundle the region
   // was raised from, the same flag the sea reads - there is no second copy of it.
@@ -126,6 +127,25 @@ export function createCrowdView({
   // there is a pit, so every screen draws the same barrows, after a reload too.
   let barrowsAtHome = byId.has(GOLDPIT_ID);
   const [ox, oz] = region.origin;
+
+  // NPC Distance, and 0 for "draw them all". Two ways to turn it off and they are not the
+  // same: a range of 0 because nobody has touched the slider, and a range of 0 because the
+  // planner is looking at the island from above and wants the whole village. The planner
+  // says so through setRange, not by having a second switch.
+  let far = Math.max(0, range) || Infinity;
+
+  // Is this body past the range? Flat, because a person is judged by how far along the ground
+  // they are and not by how high the camera happens to be - otherwise walking up a hill
+  // would empty the village. `f.pos` is already scene-absolute (the rides branch adds the
+  // region's own origin to the sea's numbers), and so is the eye, so there is nothing to
+  // translate. No eye means nobody is asking - which is the volcano's imps and nothing else.
+  const beyond = (f) => {
+    if (far === Infinity) return false;
+    if (!eye) return false;
+    const e = eye();
+    const dx = f.pos[0] - e.x, dz = f.pos[1] - e.z;
+    return dx * dx + dz * dz >= far * far;
+  };
 
   // The afternoon boats. index -> what the last message said about that outing, and
   // index -> the hull drawn for it. Two maps rather than one object, because the hull is
@@ -520,6 +540,17 @@ export function createCrowdView({
       // is enrolled and walked up from the beach in the same breath, so the arrival began
       // with them standing on the square and vanishing.
       if (!f.to) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
+      // NPC Distance. Past the range the body is neither placed nor drawn, and the sea's
+      // account of it is left exactly as it arrived: f.to, f.from, f.took and f.said are the
+      // message, not this screen's opinion of it, and the next word is applied whether this
+      // one was drawn or not. What stops is the expensive half - the glide, the gait, the
+      // face, the ground under them - which is the body of this loop.
+      //
+      // f.pos keeps the last place they were drawn, so stepping back into range puts them
+      // where they were rather than a message behind, and hide() is the same one the rest of
+      // this file uses for a body it may not show, so the instanced slots are handed back
+      // the way every other exit from this loop hands them back.
+      if (beyond(f)) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
       if (!f.visible) f.visible = true;
       // Where along the glide we are: 0 is where the body was drawn when the word landed,
       // 1 is the word itself, reached as the next one is due. Never below 0 - a frame's
@@ -605,6 +636,10 @@ export function createCrowdView({
 
   return {
     roster, apply, applyRides, held, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
+    // NPC Distance, live. Not remembered per figure: the next draw asks again, so a body that
+    // has just come back inside the range is placed on that same frame and a body that has
+    // just gone past it is handed back without waiting for the sea to say anything.
+    setRange: (r) => { far = Math.max(0, r) || Infinity; },
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

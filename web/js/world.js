@@ -1820,7 +1820,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
   key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
   key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
   // key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
-  key.shadow.camera.near = 10; key.shadow.camera.far = opts.shadowDistance || 150;
+  // NOT opts.shadowDistance. See setShadowDistance below: the slider is the width the
+  // frustum may grow to, and the depth follows from the width. Putting the number straight
+  // into `far` looks like it works until you zoom out, at which point the box is wider than
+  // the depth that reaches it and shadows get sliced off at an invisible plane.
+  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
   // One step softer, now that the sun is low enough for a shadow to run the length of a
@@ -1969,17 +1973,34 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const shadowFocus = new THREE.Vector3();
   let shadowSpan = SHADOW_SPAN[0];
   let lightRange = shadowSpan + 60;
-  const followShadow = (x, z, dist) => {
-    shadowFocus.set(x, 0, z);
-    if (!(dist > 0)) return;
-    const f = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
-    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+  // Shadow Distance, as the widest the shadow box is allowed to get. Half of it, because
+  // the frustum is built from a half-width and a distance is a full one.
+  let shadowLimit = Math.max(0, opts.shadowDistance || 150) / 2;
+  const applyShadowSpan = (f) => {
     shadowSpan = f;
     lightRange = f + 60;
     const cam = key.shadow.camera;
     cam.left = -f; cam.right = f; cam.top = f; cam.bottom = -f;
     cam.near = 10; cam.far = 2 * f + 90;
     cam.updateProjectionMatrix();
+  };
+  const followShadow = (x, z, dist) => {
+    shadowFocus.set(x, 0, z);
+    if (!(dist > 0)) return;
+    // Zoom still decides, and still tightens as you come in - the box follows the camera
+    // exactly as it always has. Shadow Distance is only a ceiling on how far it follows.
+    const wanted = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
+    const f = Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit));
+    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+    applyShadowSpan(f);
+  };
+  // Shadow Distance, live. Rebuilt here rather than left for the next followShadow so that
+  // the shadows change under the slider instead of on the next camera move, and so that
+  // raising it while zoomed out does nothing at all (the box is already at SHADOW_SPAN[1])
+  // while lowering it pulls the box in immediately.
+  const setShadowDistance = (range) => {
+    shadowLimit = Math.max(0, range) / 2;
+    applyShadowSpan(Math.min(shadowSpan, Math.max(SHADOW_SPAN[0], shadowLimit)));
   };
 
   // `sea` is the sea's own clock, `{ t, moon }`: t in epoch milliseconds as the sea has it
@@ -2097,7 +2118,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
-    followShadow, recentre, reshapeWater, state, reshape,
+    followShadow, setShadowDistance, recentre, reshapeWater, state, reshape,
   };
 }
 

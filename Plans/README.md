@@ -5,6 +5,13 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- 🚧 [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
+  en Shadow Distance) in plaats van één `camera.far` op 1400. De pop-in hoeft niet weggewerkt
+  te worden, want de mist sluit op `0.95 * camera.far` al dicht vóór de knip; de fade-shader
+  compileert daarom alleen in als de knip ín de mist zou vallen. Bewoners krijgen een tweede
+  material (zelfde programma) omdat Object en NPC twee bereiken nodig hebben, en buiten
+  bereik wordt een inwoner niet meer bijgewerkt maar níet vergeten.
+
 - **Een onbezette boot drift terug naar zijn aanlegplaats.** Een boot die niemand aan het
   sturen heeft en die 5 minuten (`IDLE_HOME_MS` in `lib/boats.mjs`) niet is aangeraakt, gaat
   vanzelf terug naar zijn mooring — zie `driftHome()` in `lib/boats.mjs`, aangehaakt op de

@@ -14,6 +14,8 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
+import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
+  FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY } from './fade.js';
 import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
@@ -125,10 +127,22 @@ export function createBuildingMaterial() {
     uNight: { value: 0 },
     uWall: { value: BLANK }, uRoof: { value: BLANK }, uStone: { value: BLANK }, uPlank: { value: BLANK },
     uGrass: { value: BLANK }, uEarthDetail: { value: BLANK },
+    [FADE_RANGE_UNIFORM]: { value: 0 },
   };
+  // Whether the fade is in the compiled shader at all - see fadeNeeded() for why this is a
+  // question worth asking. Flipping it costs a recompile, so it flips once per session at
+  // most, and only when a slider is dragged across the fog.
+  //
+  // Calling this twice is a supported thing to do and not a mistake: main.js does it, once
+  // for the world and once for the crowd, because Object Distance and NPC Distance are two
+  // numbers and a shared material has one uniform slot. Same onBeforeCompile below and the
+  // same customProgramCacheKey, so three hands both the same compiled program - two uniform
+  // sets, one program, and one draw call per building either way.
+  mat.userData.fadeOn = false;
   sheetUsers.push(mat.userData.uniforms);
   mat.onBeforeCompile = (shader) => {
     const u = mat.userData.uniforms;
+    shader.uniforms[FADE_RANGE_UNIFORM] = u[FADE_RANGE_UNIFORM];
     shader.uniforms.uNight = u.uNight;
     shader.uniforms.uWall = u.uWall;
     shader.uniforms.uRoof = u.uRoof;
@@ -209,8 +223,38 @@ export function createBuildingMaterial() {
       .replace('#include <emissivemap_fragment>', glsl(
         '#include <emissivemap_fragment>',
         'totalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);'));
+    // The distance fade, and only while fadeNeeded() says the cut would land out in clear
+    // air rather than inside fog that has already closed over it. It rides the hook points
+    // that are already here: <fog_vertex> is the last place mvPosition is still in view
+    // space, and <emissivemap_fragment> is the last point before the lighting begins, so a
+    // pixel thrown away here never paid for a single light.
+    if (mat.userData.fadeOn) {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${FADE_VERTEX_DECL}`)
+        .replace('#include <fog_vertex>', `#include <fog_vertex>\n${FADE_VERTEX_BODY}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FADE_FRAGMENT_DECL}`)
+        .replace('#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>\n${FADE_FRAGMENT_BODY}`);
+    }
   };
-  mat.customProgramCacheKey = () => 'settlers-emissive-ground-v1';
+  mat.customProgramCacheKey = () => (mat.userData.fadeOn
+    ? 'settlers-emissive-ground-v1-fade'
+    : 'settlers-emissive-ground-v1');
+  // Ask for a range, get the right shader. `fogFar` is where the fog closed, and it is the
+  // whole argument: a cut out past the fog is a cut nobody can see, and a shader that
+  // costs every building on the island its early depth test to hide a cut nobody can see is
+  // a bad trade at any default.
+  mat.userData.fade = (range, fogFar) => {
+    const on = fadeNeeded(range, fogFar);
+    if (on !== mat.userData.fadeOn) {
+      mat.userData.fadeOn = on;
+      mat.needsUpdate = true;
+    }
+    // Out of range as well as off: a range of 0 has to read as "no fade", never as
+    // "distance divided by zero, so everything within an inch is gone".
+    mat.userData.uniforms[FADE_RANGE_UNIFORM].value = on ? Math.max(0, range) : 0;
+  };
   return mat;
 }
 
