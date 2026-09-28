@@ -62,6 +62,15 @@ export const BLEND_CELLS = 4;
 // measure roughly sixty units of real water, coast to coast.
 export const SEA_GAP = 48;
 
+// How big the world is: a square of twice this round the volcano, in world units (a cell,
+// 4 m, so some 16 km a side). 4032 is 14 cloud tiles (world.js CLOUD_TILE) and 42 islet
+// squares (shared/islets.mjs ISLET_PITCH), so both will seam up once the edge wraps round
+// (Plans/ronde-wereld.md). For now it is what the chart shows; nothing is refused by it yet.
+export const WORLD_HALF = 2016;
+// The chart's grid square: a sixteenth of the world, so the grid is A-P by 1-16 with no
+// sliver at the edge. 252 units is 1008 m - "a kilometre" on the chart's scale bar.
+export const KM = WORLD_HALF / 8;
+
 // Four berths, snapped to the compass. Axis-aligned, so the strip of sea between two
 // islands is a rectangle - which is what lets one water plane cover it without waste - and
 // snapped rather than hashed so a neighbour keeps the property the horizon already gives

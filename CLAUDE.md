@@ -876,6 +876,10 @@ is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet'
 `nextOrigin`. `web/js/islets.js` draws them relative to `state.homeOrigin` from `syncIslets()` in
 `doSyncFleet`, and draws nothing until the berth is known. Not being regions is why the sea under
 them is open-sea blue and boats sail through; `isletHeight` is the one ground for the walk-on step.
+The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
+shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
+line every `KM` (250 units) and every islet (`mapIslets`, once per fleet and berth); the
+world's edge wrapping round is still to come ([Plans/ronde-wereld.md](Plans/ronde-wereld.md)).
 
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven

@@ -314,13 +314,14 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .minimap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
 /* The second press of M: the whole sea on one sheet. Still a HUD - the walk keeps the
    keyboard and the mouse underneath it - so no pointer events either. */
+/* A sheet of parchment (minimap.js paints it, torn edge and all), so no box of its own:
+   the shadow follows the torn outline because it is a filter on what was drawn. */
 .worldmap {
-  position: fixed; inset: 48px; z-index: 12; overflow: hidden;
-  border-radius: 14px; background: rgb(33,94,120);
-  border: 1px solid rgba(232,180,92,.45); box-shadow: var(--shadow);
+  position: fixed; inset: 40px; z-index: 12;
+  background: none;
   pointer-events: none;
 }
-.worldmap canvas { width: 100%; height: 100%; display: block; }
+.worldmap canvas { width: 100%; height: 100%; display: block; filter: drop-shadow(0 12px 22px rgba(0,0,0,.5)); }
 /* The phone's way out of the chart (minimap.js createWorldMap `phone`): the sheet itself
    lets touches through to the stick underneath, so only this takes them. */
 .worldmap-close { position: absolute; top: 8px; right: 8px; pointer-events: auto;

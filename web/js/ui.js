@@ -1001,6 +1001,7 @@ export function createUI(handlers) {
   }
 
   el('walk-btn').addEventListener('click', () => handlers.onToggleWalk());
+  el('map-btn').addEventListener('click', () => handlers.onToggleMap && handlers.onToggleMap());
   el('found-btn').addEventListener('click', () => handlers.onFoundSettler());
   el('avatar-btn').addEventListener('click', () => handlers.onCustomize());
   el('build-btn').addEventListener('click', () => handlers.onBuild());

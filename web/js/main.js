@@ -9,7 +9,8 @@ import { quayDeckHeights } from 'shared/quay-basin.mjs';
 import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
-import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin } from 'shared/regions.mjs';
+import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM } from 'shared/regions.mjs';
+import { isletsNear } from 'shared/islets.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight } from './imp.js';
@@ -1722,12 +1723,28 @@ function islandWhere(pos) {
 
 // The chart's picture of the sea: every region with ground under it, named off the fleet
 // (home off its own village), plus the horizon's marks for everything further out.
+// From the sky there is no walker: "you" is where the camera looks, facing the way it
+// looks - the same (sin, cos) convention walk.js keeps its yaw in.
 function worldMapData() {
-  const w = state.walk.state;
+  const sky = state.mode !== 'walk';
+  const w = state.walk && state.walk.state;
+  const pos = sky || !w ? { x: controls.target.x, z: controls.target.z } : w.pos;
+  const yaw = sky || !w
+    ? Math.atan2(controls.target.x - camera.position.x, controls.target.z - camera.position.z)
+    : w.yaw;
   const names = new Map((state.fleet || []).map((r) => [r.id, r.name]));
   const homeName = state.village && state.village.island ? state.village.island.name : null;
+  const home = state.homeOrigin;
   return {
-    pos: w.pos, yaw: w.yaw,
+    pos, yaw, sky,
+    // The whole world, in scene coordinates, and the berth that turns them back into the
+    // world's for the grid. No berth yet, no world: the chart fits what it has instead.
+    world: home ? {
+      minX: -WORLD_HALF - home[0], maxX: WORLD_HALF - home[0],
+      minZ: -WORLD_HALF - home[1], maxZ: WORLD_HALF - home[1],
+      home, km: KM,
+    } : null,
+    islets: mapIslets(),
     sea: state.sea,
     regions: state.sea.regions().filter((r) => !r.id.startsWith('debug-')).map((r) => ({
       id: r.id, origin: r.origin, half: r.half, region: r, home: r === state.region,
@@ -2340,6 +2357,37 @@ let wasAboard = false;
 // What M is showing, kept across a trip in and out of a building and up to the sky and
 // back: the radar by default, then the chart of every island, then neither.
 let minimapMode = 'radar';
+// The chart from the sky (M or the Map chip in orbit), apart from minimapMode: up there
+// there is no radar, so it is just open or shut, and walking down does not change what M
+// does on foot.
+let skyMap = false;
+function toggleMap() {
+  if (state.mode === 'walk') setMinimapMode(minimapMode === 'map' ? 'radar' : 'map');
+  else if (state.mode === 'orbit') skyMap = !skyMap;
+}
+addEventListener('keydown', (e) => {
+  if (state.mode !== 'orbit' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const k = e.key.toLowerCase();
+  if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
+  else if (k === 'escape' && skyMap) skyMap = false;
+});
+
+// Every islet in the world, for the chart - in the scene frame, like everything it draws.
+// The whole world is 1764 squares, so it is worked out once per fleet and berth rather than
+// every frame; `state.fleet` is replaced wholesale on every change, so the object is the key.
+let chartIslets = { fleet: null, home: null, list: [] };
+function mapIslets() {
+  const home = state.homeOrigin;
+  if (!home) return [];
+  if (chartIslets.fleet === state.fleet && chartIslets.home === home) return chartIslets.list;
+  const extra = STANDALONE ? [{ half: OPEN_HOME / 2, origin: home }] : [];
+  const list = isletsNear(state.fleet || [], [0, 0], { range: WORLD_HALF, extra })
+    .map((i) => ({ x: i.x - home[0], z: i.z - home[1], r: i.r, kind: i.kind }));
+  chartIslets = { fleet: state.fleet, home, list };
+  return list;
+}
 const MINIMAP_NEXT = { radar: 'map', map: 'off', off: 'radar' };
 function setMinimapMode(mode) {
   minimapMode = mode;
@@ -5273,6 +5321,13 @@ function frame(nowMs) {
     // out of the shadow map.
     state.world.followShadow(camera.position.x, camera.position.z, 1);
   }
+  // The chart from the sky. On foot the walk's own branch shows and feeds it (showMinimap);
+  // everywhere else it is this flag's, and never over the planner or the intro.
+  if (state.mode !== 'walk' && state.worldMap) {
+    const on = skyMap && state.mode === 'orbit' && !state.intro;
+    state.worldMap.setVisible(on);
+    if (on) state.worldMap.update(worldMapData());
+  }
 
   // After the camera is settled, so the ray it casts is the one you are looking down.
   if (state.ghost) state.ghost.update(dt);
@@ -5587,6 +5642,7 @@ async function boot() {
     },
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
+    onToggleMap: () => toggleMap(),
     onTalk: (id) => talkTo(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
