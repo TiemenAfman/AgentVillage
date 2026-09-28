@@ -87,6 +87,8 @@ import { attachOrePile } from './goldmine.js';
 import { attachFurnace } from './goldsmith.js';
 import { createGoldRun } from './goldrun.js';
 import { createTimberRun } from './timberrun.js';
+import { createDirector } from './director.js';
+import { attachFisher, updateFisher, disposeFisher, fisherAt } from './fisher.js';
 import { GOLD_BARS, GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID, MINE_ORE } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
@@ -1361,6 +1363,98 @@ function goldRunOf() {
   }
   return state.goldRun || null;
 }
+// ---- the director (web/js/director.js, Plans/regisseur.md) --------------------------------
+// After a while with nobody touching the island, the camera goes to look at something happening
+// and follows it. What there is to look at is asked for here, where all of it is to hand; any
+// input stops it where it stands.
+const ARRIVAL_MS = 90000;
+// A settler, an animal or the fisherman is watched from this close; the wagon and the yard from
+// the director's own SHOT_DIST.
+const CLOSE = 5;
+const TIMBER_WORDS = {
+  load: 'Timber going onto the wagon at the sawmill',
+  out: 'The timber wagon on its way to the shipyard',
+  unload: 'Timber coming off the wagon at the shipyard',
+  back: 'The timber wagon on its way back to the sawmill',
+};
+const WORK_WORDS = {
+  hammer: 'A settler at work', hoe: 'A settler hoeing the field', weed: 'A settler weeding the garden',
+  chop: 'A settler felling a tree', gather: 'A settler gathering wood', fish: 'A settler fishing',
+  load: 'A settler loading gold at the pit', haul: 'A settler hauling wood home',
+  carry: 'A settler bringing a bar of gold home', barrow: 'A settler off to fetch gold from the pit',
+};
+const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the sparrow' };
+state.arrivals = new Map();
+function directorShots() {
+  const out = [];
+  const now = Date.now(), sea = timeNow();
+  const lift = (xz, up = 0.35) => (xz && Number.isFinite(xz[0]) ? [xz[0], groundAt(xz[0], xz[1]) + up, xz[1]] : null);
+  // Somebody just arrived: before anything else, for as long as they are still on their way.
+  for (const [id, until] of state.arrivals) {
+    if (until < now) { state.arrivals.delete(id); continue; }
+    out.push({
+      key: `arrive:${id}`, first: true, dist: CLOSE, label: 'A new settler arriving',
+      where: () => { const f = state.settlers && state.settlers.figure(id); return f && f.visible && Date.now() < until ? lift(f.pos) : null; },
+    });
+  }
+  const gold = state.goldRun;
+  if (gold && gold.busy()) out.push({ key: 'gold', weight: 4, dist: CLOSE + 1, label: 'Gold on its way from the mine to the gold pit', where: () => (gold.busy() ? lift(gold.focus()) : null) });
+  const timber = state.timberRun;
+  if (timber) {
+    const w = timber.where(sea);
+    if (w && w.stage !== 'parked') {
+      out.push({ key: 'timber', weight: 3, label: TIMBER_WORDS[w.stage], where: () => { const x = timber.where(timeNow()); return x && x.stage !== 'parked' ? lift(x.horse, 0.3) : null; } });
+    }
+    if (timber.handAt(sea)) out.push({ key: 'yard', weight: 2, label: 'Work on the ship at the shipyard', where: () => lift(timber.handAt(timeNow())) });
+  }
+  // One settler at work, picked now and followed for the whole shot even once they walk on.
+  const workers = [];
+  if (state.settlers) for (const f of state.settlers.figures().values()) if (f && f.visible && WORK_WORDS[f.anim]) workers.push(f);
+  if (workers.length) {
+    const f = workers[Math.floor(Math.random() * workers.length)];
+    out.push({ key: `work:${f.id}`, weight: 3, dist: CLOSE, label: WORK_WORDS[f.anim], where: () => (f.visible ? lift(f.pos) : null) });
+  }
+  // The story animals, the goat most of all.
+  if (state.homeHerd) {
+    for (const a of state.homeHerd.animals()) {
+      if (!a || !a.visible) continue;
+      const name = a.name ? `${a.name}, ${SPECIES_WORDS[a.species] || 'one of the animals'}` : `One of the animals`;
+      out.push({ key: `animal:${a.id}`, dist: CLOSE - 1, weight: a.species === 'goat' ? 3 : 1, label: name, where: () => { const b = state.homeHerd.animal(a.id); return b && b.visible ? lift(b.pos, 0.15) : null; } });
+    }
+  }
+  const hut = state.byId.get('civic:fishery');
+  if (hut && hut.fisher && fisherAt(hut.fisher)) out.push({ key: 'fisher', weight: 2, dist: CLOSE, label: 'The fisherman at his hut', where: () => lift(fisherAt(hut.fisher)) });
+  return out;
+}
+// ?director=5 wanders off after five seconds instead of IDLE_S, to try it without waiting.
+const directorIdle = Number(params.get('director'));
+state.director = createDirector({ sources: directorShots, ...(directorIdle > 0 ? { idleS: directorIdle } : {}) });
+const directorCaption = document.createElement('div');
+directorCaption.id = 'director-caption';
+directorCaption.hidden = true;
+document.body.appendChild(directorCaption);
+// Nothing open, looking from above, the live island, and switched on.
+function directorMay() {
+  if (state.mode !== 'orbit' || state.intro || state.tween || document.hidden) return false;
+  if (state.chronicle && state.chronicle.t != null) return false;
+  if (state.ui && state.ui.directorEnabled && !state.ui.directorEnabled()) return false;
+  return !document.querySelector('aside.panel:not([hidden])');
+}
+function stepDirector(dt) {
+  const pose = state.director.step(dt, directorMay(), { target: controls.target.toArray(), position: camera.position.toArray() });
+  if (pose) {
+    controls.target.set(...pose.target);
+    camera.position.set(...pose.position);
+  }
+  const words = state.director.caption();
+  directorCaption.hidden = !words;
+  if (words && directorCaption.textContent !== words) directorCaption.textContent = words;
+}
+// Any sign of somebody at the island stops it where it stands and starts the count again.
+const pokeDirector = () => state.director.poke();
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'touchstart']) renderer.domElement.addEventListener(type, pokeDirector, { passive: true });
+addEventListener('keydown', pokeDirector, { capture: true });
+
 // The timber run (Plans/houtkar.md): made once the scene is there, like the gold run. Nothing
 // in it is the keeper's, so a visitor gets the same wagon at the same moment.
 function syncTimberRun() {
@@ -4059,6 +4153,10 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   if (built.animated && built.animated.butcher) {
     rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
   }
+  // The fisherman at the fisherman's hut (web/js/fisher.js, Plans/regisseur.md). Our own island
+  // only: he finds the water's edge off the ground this page walks on, and a guest's hut stands
+  // on a region whose ground is not `groundAt`'s.
+  if (mail && spec.civicType === 'fishery') rec.fisher = attachFisher(group, buildingMat, groundAt);
   // The quarry's treadwheel crane and its tub (Plans/ambachten.md, web/js/quarry.js), hung on the
   // record's group like the sawmill's blade. The brewery's copper steams from an anchor of its
   // own beside the chimney's smoke.
@@ -4181,6 +4279,7 @@ function disposeRecord(rec) {
   if (rec.bakery) disposeBakery(rec.bakery);
   if (rec.baker) disposeBaker(rec.baker);
   if (rec.butcher) disposeButcher(rec.butcher);
+  if (rec.fisher) disposeFisher(rec.fisher);
   if (rec.quarry) disposeQuarry(rec.quarry);
   if (rec.ship) disposeBatavia(rec.ship);
   scene.remove(rec.group);
@@ -5294,6 +5393,8 @@ function applyEventInstantly(e) {
 function scheduleEvent(e) {
   if (e.type === 'arrive') {
     const rec = e.rec;
+    // Somebody new: the director goes to watch them walk up for the next ARRIVAL_MS.
+    state.arrivals.set(rec.spec.id, Date.now() + ARRIVAL_MS);
     rec.popping = true;
     rec.group.visible = false;
     const d = state.districts.get(rec.spec.district);
@@ -5898,6 +5999,7 @@ function frame(nowMs) {
   if (state.sea.count() > 1) applyFogRange();
 
   if (!state.intro && state.mode === 'orbit') {
+    stepDirector(dt);
     controls.update();
     // Whatever ground is under the camera, on whichever island - and out between them the
     // archipelago answers with open sea rather than with the nearest coast, so the camera
@@ -6928,6 +7030,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.bakery) updateBakery(rec.bakery, dt);
   if (rec.baker) updateBaker(rec.baker, dt);
   if (rec.butcher) updateButcher(rec.butcher, dt);
+  if (rec.fisher) updateFisher(rec.fisher, dt);
   if (rec.quarry) updateQuarry(rec.quarry, dt);
   if (rec.mailFlag) updateMailFlag(rec.mailFlag, dt);
   if (rec.beacon) updateBeacon(rec.beacon, dt, nightAmt);

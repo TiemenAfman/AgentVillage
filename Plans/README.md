@@ -106,6 +106,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
   settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
   overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
+- ✅ [regisseur.md](regisseur.md) — laat je het eiland een poos met rust, dan gaat de camera zelf
+  kijken waar wat gebeurt: een net aangekomen inwoner, de goudvracht, de houtkar, de werf, een
+  werkende inwoner, een verhaaldier, en de nieuwe visser bij de vissershut. Elke aanraking stopt hem.
+  Gebouwd op 28 september 2026.
 - ✅ [houtkar.md](houtkar.md) — de zagerij levert hout aan de werf met paard en wagen, op de klok
   van de zee zodat elk scherm dezelfde rit ziet, en drie werknemers op de werf: een
   scheepstimmerman langs de romp, een teerkoker bij de ketel en een drager die planken sjouwt en

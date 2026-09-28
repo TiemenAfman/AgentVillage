@@ -1169,6 +1169,22 @@ and the carrier leaves his round `CARRIER_LEAD` before the wagon arrives to unlo
 wraps every call into it: a fault there once stopped the boot. `?timber` starts a trip now.
 `tests/timberrun.test.mjs`.
 
+**Left alone, the camera goes to watch something happen** ([Plans/regisseur.md](Plans/regisseur.md)).
+`web/js/director.js` has no DOM and no camera (`createDirector`, `pickShot`, tested): after
+`IDLE_S` of no pointer, wheel, touch or key, from above only (`directorMay` in main.js: orbit,
+no intro, no tween, no open `aside.panel`, not the chronicle, Settings' *Wander by itself* on),
+it picks a shot from `directorShots()` - an arrival first (`state.arrivals`, fed by the `arrive`
+event), then by weight the gold run (`goldRun.focus()`), the timber wagon (`timberRun.where`),
+a yard hand (`timberRun.handAt`), a working settler (a visible figure whose `anim` is in
+`WORK_WORDS`), a story animal (the goat weighted up) and the fisherman - never the same key
+twice running, flies to it over `FLY_S`, follows and circles it for `HOLD_S` from the shot's
+`dist`, and says what it is in `#director-caption`. `stepDirector` runs just before
+`controls.update()` in the orbit branch, and any input `poke()`s it: it stops where it stands.
+`?director=5` starts after five seconds. The fisherman is `web/js/fisher.js` (the smith's
+pattern, our own island only because he measures the water's edge off `groundAt`), with a
+villager's `rod` in classic-avatar.js whose line is modelled for `FISH_ARM`, and a `reach` pose
+for one arm.
+
 **The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
 `TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
 `CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets

@@ -206,6 +206,26 @@ function pickaxeGeometry() {
   ], false));
 }
 
+// The fisherman's rod (web/js/fisher.js, Plans/regisseur.md): a villager's tool like the pick,
+// not in HAND_ITEMS. A pole pointing +y out of the fist, and the line off its tip modelled for
+// the one angle he fishes at (fisher.js FISH_ARM): with the arm turned by FISH_ARM about x, a
+// line along ROD_LINE in the hand's frame hangs straight down into the water. Swung with the
+// arm (a strike, a cast) it swings with the rod, which is what a line does.
+const ROD_POLE = 0x6b4a2b, ROD_LINE_HEX = 0xe8e2d0;
+const ROD_ARM = -1.9;
+const ROD_LINE = [0, -Math.cos(-ROD_ARM), -Math.sin(-ROD_ARM)];
+function rodGeometry() {
+  const tip = 0.42, line = 0.34;
+  const lineGeo = box(0.004, line, 0.004, ROD_LINE_HEX);
+  // Laid along ROD_LINE from the tip: turned about x off +y, then set on the tip.
+  lineGeo.rotateX(Math.atan2(ROD_LINE[2], ROD_LINE[1]));
+  lineGeo.translate(0, tip, 0);
+  return withSheet(mergeGeometries([
+    box(0.014, 0.5, 0.014, ROD_POLE, { y: -0.08 }),
+    lineGeo,
+  ], false));
+}
+
 // The butcher's cleaver (web/js/butcher.js, Plans/slagerij.md) - a villager's tool, not a
 // player's: it is deliberately not in HAND_ITEMS (avatar.js), so no inventory slot offers it,
 // normalizeAvatar drops it and the sea's lookOf never has to know it; the butcher is handed it
@@ -250,7 +270,7 @@ function heldPartGeometry(spec, names) {
 // a dozen primitives) that nothing here is worth caching; the baked ones go through
 // heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
 // exported for the inventory's slot icons, which show the item on its own.
-const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry, pickaxe: pickaxeGeometry };
+const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry, pickaxe: pickaxeGeometry, rod: rodGeometry };
 export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD, torch: TORCH };
 
 export function heldItemGeometry(item, spec) {
@@ -604,6 +624,8 @@ export function createClassicAvatar(spec, material) {
     // Both hands on the handles of a barrow or the rim of a cart (web/js/goldrun.js): the
     // angle is the caller's, since a barrow's handles are lower than a cart's rim.
     if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
+    // One arm held out, the fisherman's with his rod over the water (web/js/fisher.js).
+    if (Number.isFinite(pose.reach)) targets.rightArm = pose.reach;
     // A glass being handed over: reached out for the first half second, through the same
     // damping as any held pose, and not in the hand at all until the settler has drunk it.
     for (const side of ['leftArm', 'rightArm']) {

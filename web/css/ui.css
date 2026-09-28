@@ -1299,3 +1299,15 @@ body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx
   body.standalone .walk-hud { bottom: calc(var(--sb) + 10px); }
   body.standalone .minimap { width: 120px; height: 120px; }
 }
+
+/* The director's caption (web/js/director.js, Plans/regisseur.md): what the camera went to look
+   at while nobody was touching the island. Low in the middle, above the timeline, and never in
+   the way of a click. */
+#director-caption {
+  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 999px;
+  background: rgba(16, 28, 32, 0.72); color: #f1e6c8;
+  font: 500 13px/1.3 system-ui, sans-serif; letter-spacing: 0.01em;
+  pointer-events: none; z-index: 5; white-space: nowrap;
+}
+#director-caption[hidden] { display: none; }

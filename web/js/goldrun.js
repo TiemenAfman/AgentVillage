@@ -480,6 +480,15 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
       return begin(Math.max(0, Math.min(truth, from)));
     },
     busy: () => !!run,
+    // Where the delivery is to be watched (the director, Plans/regisseur.md): the miner while he
+    // is still bringing the ore and the goldsmith is waiting for it, the goldsmith after that.
+    // World [x, z], or null with no delivery under way.
+    focus() {
+      if (!run) return null;
+      const waiting = smith.step && smith.step.until;
+      const f = waiting || (!smith.step && !smith.queue.length) ? miner : smith;
+      return f.placed && !f.inside ? [f.pos[0], f.pos[1]] : null;
+    },
     bars: () => shown,
     update(dt) {
       const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 0;
