@@ -538,6 +538,11 @@ export function createUI(handlers) {
         + `<span class="sea-what"><b title="${esc(o.url || '')}">${esc(name)}</b><small>${esc(from)} · ${said}</small></span>`
         + (here ? '<span class="tag here">You are here</span>'
           : `<button class="chip" data-sea="${esc(o.url)}"${o.up ? '' : ' disabled'}>Join</button>`)
+        // Only a saved address can go, as in the main menu (mainmenu.js droppable): one found
+        // on the network is back at its next announcement, and the sea we are in is left by
+        // joining another.
+        + ((o.from === 'known' || o.from === 'chosen') && !o.mine && !here
+          ? `<button class="x" data-forgetsea="${esc(o.url)}" title="Forget ${esc(o.url)}" aria-label="Forget ${esc(o.url)}">✕</button>` : '')
         + '</div>';
     }).join('') || '<p class="muted">No seas found yet.</p>';
     return '<h3 class="sec">The sea</h3>'
@@ -552,12 +557,12 @@ export function createUI(handlers) {
   // Which action is waiting for its new key, if any.
   let rebinding = null;
   function controlsSection() {
-    const row = ([a, , says]) => `<button class="chip${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
-      + `<kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd> ${esc(says)}</button>`;
-    return '<h3 class="sec">Controls</h3>'
+    const row = ([a, , says]) => `<button class="keyrow${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
+      + `<span>${esc(says)}</span><kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd></button>`;
+    return '<div><h3 class="sec">Controls</h3>'
       + `<p class="muted" style="margin:0 0 9px">On foot. Click one and press the key you want. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand.</p>`
-      + `<div class="chips wrap">${ACTIONS.map(row).join('')}</div>`
-      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div>`;
+      + `<div class="keylist">${ACTIONS.map(row).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div></div>`;
   }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
@@ -606,6 +611,10 @@ export function createUI(handlers) {
       .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
     el('settings-body').querySelectorAll('[data-sea]')
       .forEach((b) => b.addEventListener('click', () => handlers.onJoinSea(b.dataset.sea)));
+    el('settings-body').querySelectorAll('[data-forgetsea]').forEach((b) => b.addEventListener('click', () => {
+      b.disabled = true;
+      if (handlers.onForgetSea) handlers.onForgetSea(b.dataset.forgetsea);
+    }));
     const add = el('settings-body').querySelector('#sea-add');
     if (add) add.addEventListener('click', () => {
       const field = el('settings-body').querySelector('#sea-url');

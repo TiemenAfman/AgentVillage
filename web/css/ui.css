@@ -128,6 +128,8 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .field::placeholder, .ho-input::placeholder { color: #8d7f6c; }
 .sea-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 9px; align-items: center; margin: 6px 0;
   padding: 7px 9px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+/* A saved sea has a fourth column, its forget cross. */
+.sea-row:has([data-forgetsea]) { grid-template-columns: 8px 1fr auto auto; }
 .sea-row.here { border-color: rgba(232,180,92,.45); }
 .sea-row.down { opacity: .6; }
 .sea-dot { width: 8px; height: 8px; border-radius: 50%; background: #7fd08a; }

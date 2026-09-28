@@ -5931,6 +5931,20 @@ async function boot() {
     },
     onSeaMode: (mode) => changeSea({ mode }),
     onJoinSea: (url) => changeSea({ mode: 'join', url }),
+    // Off the saved list, the same route the main menu's cross uses.
+    onForgetSea: async (url) => {
+      const r = await mine('/api/sea/forget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      }).catch(() => null);
+      if (!r || !r.ok) {
+        state.ui.toast((r && (await r.json().catch(() => ({}))).error) || 'That address would not go.');
+        return;
+      }
+      const fresh = await mine('/api/seas').then((x) => x.json()).catch(() => null);
+      if (fresh) state.ui.setSeas(fresh);
+    },
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
     onWalkHere: (id) => walkToBuilding(id),
