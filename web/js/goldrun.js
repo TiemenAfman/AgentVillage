@@ -39,7 +39,9 @@ const TIP_S = 1.6;        // tipping it out at the goldsmith's door
 const SMELT_S = 9;        // the furnace roaring
 const CAST_S = 2.6;       // at the bench, the mould
 const UNLOAD_S = 4;       // the pit counting up
-const SWING_EVERY = { load: 0.8, smelt: 1.5, cast: 0.9, mine: 2.4, bench: 1.6 };
+const STACK_S = 5;        // laying the new bars out on the stack in front of the shop
+const RELOAD_S = 3.5;     // and taking them off it again into the barrow
+const SWING_EVERY = { load: 0.8, smelt: 1.5, cast: 0.9, mine: 2.4, bench: 1.6, stack: 0.7 };
 const DUSK = 0.55, DAWN = 0.45;
 // Arms out to a cart's rim, lower to a barrow's handles (settler-figures.js BARROW_ARM).
 const PUSH_CART = -1.15, PUSH_BARROW = -0.5;
@@ -61,6 +63,33 @@ const MINE_AT = {
 // before the heap, where the settlers park theirs (lib/crowd.mjs GOLD_LOAD_IN, with the
 // barrow's own reach in front of the feet).
 const PIT_AT = { mouth: [0, 1.45], unload: [0, 0.95], face: [0, -0.5] };
+// The stack the goldsmith lays his bars out on before they go (Plans/goudmijn.md): on the
+// ground in front of the shop, left of the door and out of the lot's middle column, which is
+// where the road comes in - so the barrow can be wheeled up beside it from the street side.
+// `pile` is its middle, `stand` where he stacks from (the porch's front edge, porch z1 0.515),
+// `load` where the barrow's feet stand to be filled from it, `across` the way over the porch.
+export const STACK_AT = { pile: [-0.85, 0.86], stand: [-0.85, 0.5], load: [-0.2, 1.02], across: [0.3, 0.36] };
+// How many bars the stack can show: six layers of four, crosswise like a real stack. A
+// delivery of any size is drawn as a stack between STACK_MIN and this, a bar for every four.
+export const STACK_MAX = 24;
+const STACK_MIN = 4;
+const STACK_BAR = { l: 0.1, h: 0.032, w: 0.05 };
+export function stackSlots() {
+  const { l, h, w } = STACK_BAR;
+  const out = [];
+  for (let layer = 0; out.length < STACK_MAX; layer++) {
+    // Four to a layer, two by two: along x on the even layers, turned a quarter on the odd,
+    // which is how a stack of ingots is laid so it does not slide.
+    const turned = layer % 2 === 1;
+    for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      if (out.length >= STACK_MAX) break;
+      const along = i * l * 0.53, side = j * w * 0.56;
+      out.push(turned ? [side, layer * h, along, Math.PI / 2] : [along, layer * h, side, 0]);
+    }
+  }
+  return out;
+}
+export const stackSize = (bars) => Math.max(STACK_MIN, Math.min(STACK_MAX, Math.round(bars / 4)));
 
 const nightOf = (material) => material?.userData?.uniforms?.uNight?.value ?? 0;
 const yawTo = (from, to) => Math.atan2(to[0] - from[0], to[1] - from[1]);
@@ -151,6 +180,21 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
   barrow.group.visible = false;
   scene.add(barrow.group);
 
+  // The stack in front of the shop: hung on the goldsmith's group when it has one (setSites),
+  // `count` is how many of STACK_MAX show.
+  const stackBar = goldBarGeometry(STACK_BAR);
+  const stack = new THREE.InstancedMesh(stackBar, material, STACK_MAX);
+  stack.castShadow = true;
+  stack.count = 0;
+  {
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    stackSlots().forEach(([x, y, z, turn], i) => {
+      stack.setMatrixAt(i, m.compose(new THREE.Vector3(STACK_AT.pile[0] + x, y, STACK_AT.pile[1] + z), q.setFromAxisAngle(up, turn), new THREE.Vector3(1, 1, 1)));
+    });
+    stack.instanceMatrix.needsUpdate = true;
+  }
+  let stackOf = 0;          // how many bars this delivery's stack is, when full
+
   // ---- where everybody is when nothing is to be carried --------------------------------------
   function idleSpots() {
     const out = {};
@@ -169,7 +213,19 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
     return out;
   }
   // Everybody back to their place at once: a new layout, a run given up, the first sites.
+  // On the goldsmith's group, and on the ground where it lies there - the group stands at the
+  // plot's middle, and the street side of a lot on a slope is not at that height. A shop that is
+  // built again (a stage, a reload of the buildings) is a new group with the same plot, so this
+  // runs on every setSites, not only when the sites change.
+  function hangStack() {
+    const g = sites.smith?.group;
+    if (!g) { stack.parent?.remove(stack); return; }
+    if (stack.parent !== g) g.add(stack);
+    const [x, z] = toWorld(sites.smith, STACK_AT.pile);
+    stack.position.y = groundAt(x, z) - g.position.y;
+  }
   function settle() {
+    stack.count = 0;
     const spots = idleSpots();
     const night = nightOf(material) > DUSK;
     for (const [f, spot] of [[miner, spots.miner], [smith, spots.smith]]) {
@@ -248,9 +304,20 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
       { go: [spots.smith.at] },
       { face: spots.smith.face },
       { wait: CAST_S, swing: 'cast' },
-      { go: [S([parkLocal[0] - 0.05, 0.5]), parkAt] },
-      { then: () => { barrow.by = smith; barrow.loaded = true; dress(smith, GOLDSMITH_PUSHING); } },
-      { go: [...shopOut, ...road2, P(PIT_AT.mouth), P(PIT_AT.unload)], push: PUSH_BARROW },
+      // The bars go on a stack in front of the shop first, and only then into the barrow: a
+      // cast that went straight from the mould to the road read as the goldsmith never
+      // having made anything.
+      { then: () => { stackOf = stackSize(truth - from); } },
+      { go: [S(STACK_AT.across), S(STACK_AT.stand)] },
+      { face: S(STACK_AT.pile) },
+      { wait: STACK_S, swing: 'stack', stack: 1 },
+      { go: [S(STACK_AT.across), S([parkLocal[0] - 0.05, 0.5]), parkAt] },
+      { then: () => { barrow.by = smith; dress(smith, GOLDSMITH_PUSHING); } },
+      { go: [S([parkLocal[0], 1.02]), S(STACK_AT.load)], push: PUSH_BARROW },
+      { face: S(STACK_AT.pile) },
+      { then: () => { barrow.loaded = true; } },
+      { wait: RELOAD_S, swing: 'stack', stack: -1 },
+      { go: [shopOut[1], ...road2, P(PIT_AT.mouth), P(PIT_AT.unload)], push: PUSH_BARROW },
       { face: P(PIT_AT.face) },
       { wait: UNLOAD_S, count: true },
       { then: () => { barrow.loaded = false; shown = truth; onBars(shown); } },
@@ -307,6 +374,10 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
       if (s.wait !== undefined) {
         s.t += dt;
         if (s.swing && clock >= f.swingAt) { f.avatar.attack('rightArm'); f.swingAt = clock + SWING_EVERY[s.swing]; }
+        if (s.stack) {
+          const k = Math.min(1, s.t / s.wait);
+          stack.count = Math.round(stackOf * (s.stack > 0 ? k : 1 - k));
+        }
         if (s.tip) cart.tip = Math.min(1, s.t / (TIP_S * 0.5)) * (s.t > TIP_S * 0.7 ? Math.max(0, 1 - (s.t - TIP_S * 0.7) / (TIP_S * 0.3)) : 1);
         if (s.count && run && truth != null) {
           const k = Math.min(1, s.t / UNLOAD_S);
@@ -381,6 +452,7 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
     setSites({ mine = null, smith: shop = null, pit = null, village = null, terrain = null } = {}) {
       const sig = JSON.stringify([mine?.spec?.plot, shop?.spec?.plot, pit?.spec?.plot, terrain?.size]);
       Object.assign(sites, { mine, smith: shop, pit, village, terrain });
+      hangStack();
       if (sig === sites.sig && miner.placed === !!mine && smith.placed === !!shop) return;
       sites.sig = sig;
       if (run) abandon();
@@ -436,7 +508,8 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
       for (const f of [miner, smith]) { scene.remove(f.group); f.avatar.dispose(); }
       scene.remove(cart.group);
       scene.remove(barrow.group);
-      for (const g of [cartGeo, loadGeo, trayGeo, wheelGeo, barsGeo]) g.dispose();
+      stack.parent?.remove(stack);
+      for (const g of [cartGeo, loadGeo, trayGeo, wheelGeo, barsGeo, stackBar]) g.dispose();
     },
   };
 }

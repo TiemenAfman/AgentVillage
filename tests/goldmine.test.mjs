@@ -35,7 +35,7 @@ import { village as spreadVillage } from './support/village.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const THREE = await import('three');
-const { createGoldRun, MIN_RISE } = await import('../web/js/goldrun.js');
+const { createGoldRun, MIN_RISE, STACK_MAX, stackSize, stackSlots } = await import('../web/js/goldrun.js');
 const { attachOrePile, ORE_RISE, ORE_FILL_S } = await import('../web/js/goldmine.js');
 delete globalThis.document;
 
@@ -254,9 +254,21 @@ test('a new window is brought from the mine, and the pit counts up only when the
   assert.equal(run.busy(), true, 'a rise with the mine, the goldsmith and the roads there is a delivery');
   assert.equal(run.bars(), 20, 'the pit waits for its gold');
   let t = 0;
+  // The stack in front of the shop: it has to fill before the barrow leaves, and be empty
+  // again - loaded into the barrow - before the pit counts a single bar up.
+  const stack = sites.smith.group.children.find((c) => c.isInstancedMesh);
+  assert.ok(stack, 'no stack hung on the goldsmith');
+  let tallest = 0, emptyBeforePit = null;
   // At most every leg's cap plus the work at each end: far less than ten minutes of frames.
-  while (run.busy() && t < 600) { run.update(0.1); t += 0.1; }
+  while (run.busy() && t < 600) {
+    run.update(0.1); t += 0.1;
+    tallest = Math.max(tallest, stack.count);
+    if (emptyBeforePit == null && run.bars() > 20) emptyBeforePit = stack.count === 0 && tallest > 0;
+  }
   assert.equal(run.busy(), false, 'the run never finished');
+  assert.equal(tallest, stackSize(GOLD_BARS - 20), 'the stack was not laid out whole');
+  assert.equal(emptyBeforePit, true, 'the pit counted up before the stack was laid out and loaded');
+  assert.equal(stack.count, 0, 'the stack is left standing after the run');
   assert.equal(run.bars(), GOLD_BARS);
   assert.equal(shown[shown.length - 1], GOLD_BARS);
   assert.ok(t > 10, `the whole run took ${t.toFixed(1)} s: nothing was walked`);
@@ -384,4 +396,18 @@ test('on an island founded small the mine waits for ground off the coast, and th
   const before = JSON.stringify(one.layout);
   placeAll(one.layout, one.m, { seed, size: 128 });
   assert.equal(JSON.stringify(one.layout), before, 'the scan after it moved something');
+});
+
+test('the stack is laid crosswise, four to a layer, and no two bars in one place', () => {
+  const slots = stackSlots();
+  assert.equal(slots.length, STACK_MAX);
+  const seen = new Set(slots.map(([x, y, z]) => `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`));
+  assert.equal(seen.size, STACK_MAX, 'two bars on the same spot');
+  for (let i = 0; i < slots.length; i += 4) {
+    const layer = slots.slice(i, i + 4);
+    assert.ok(layer.every((b) => b[1] === layer[0][1] && b[3] === layer[0][3]), 'a layer is one height and one way');
+    if (i) assert.notEqual(layer[0][3], slots[i - 4][3], 'each layer lies across the one below');
+  }
+  assert.equal(stackSize(0), 4, 'even a small delivery is a stack');
+  assert.equal(stackSize(1000), STACK_MAX);
 });

@@ -233,7 +233,7 @@ out of `p.dike` (so every reader - makeTerrain, heldOf, world.js, older seas - s
 shorter wall with no new field), keeping any dike cell within one of a plot or bridge (the
 poldermill's) and giving a dike back whole if levelling would let water in; `p.absorbed`
 (the step's index, provenance, off the bundle) makes `unpolder` refuse it. The planner's Grow button is the
-`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 32 island on a
+`grow` plan-op on the same `growStep`. New installs are founded with `FOUNDING` (a 40 island on a
 64 grid; both grow) - deliberately not the defaults, which also fill in old configs.
 **The grid is the layout's; `gridSize` is what a new island is founded on and
 `maxGridSize` (default 384, Settings → Island size, `/api/island-size`) the most it may
