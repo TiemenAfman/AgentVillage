@@ -355,6 +355,12 @@ export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)
 // set on the tavern's step (porchOverhang). The bakery and the butcher's are
 // shops too, but they have a fire and a shopkeeper and cases of their own.
 export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
+// The harbour's buildings (scripts/build-harbourhouses.py, Plans/havengebouwen.md): the warehouse,
+// the weigh house and the fisherman's hut, one baked asset `civic_<type>` each, with nothing that
+// moves. Drawn, walked round and stood on the tavern's step exactly as the shops are; they differ
+// in one thing, which is why they are not in SHOPS: three buildings come out of one .blend, so the
+// set's building_height is the warehouse's gable and each asks for its own rise instead.
+export const HARBOUR_HOUSES = new Set(['warehouse', 'weighhouse', 'fishery']);
 // And the bakery's fire (scripts/build-bakery.py, web/js/countryside.js).
 export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
 // The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
@@ -1108,6 +1114,12 @@ function civic(parts, spec, rng) {
     Object.assign(anchors, meshAnchors(name));
     return { anchors, animated, height: models.heightOf(name) };
   }
+  if (HARBOUR_HOUSES.has(spec.civicType)) {
+    const name = `civic_${spec.civicType}`;
+    parts.push(...meshAsset(name));
+    Object.assign(anchors, meshAnchors(name));
+    return { anchors, animated, height: assetRise(name) };
+  }
   switch (spec.civicType) {
     case 'townhall': {
       // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
@@ -1801,7 +1813,10 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed']);
 // the square that corner faces the fountain one cell away, diagonally, which with the
 // fountain's own solid left no way between them. Unmerged, a gap narrower than a body
 // still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
-const APART = new Set(['tables', ...SHOPS]);
+// The harbour's buildings for the shops' reason. Merged, the warehouse's crates and barrels closed
+// with its walls into one block reaching 1.22 out, past the door at 0.80, and the fisherman's boat,
+// rack and barrels made his whole yard one block to 0.97, with the hut's door at -0.22 inside it.
+const APART = new Set(['tables', ...SHOPS, ...HARBOUR_HOUSES]);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -1864,7 +1879,8 @@ function wantsPorch(spec) {
 // They were built out to the edge of their lot at first and took the chapel's rule then; at the
 // village's size that left them the only buildings on the square not standing on something.
 const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' ? [0, 0]
-  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) ? [0.06, 0.08] : [PORCH_OVER, PORCH_TREAD]);
+  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) || HARBOUR_HOUSES.has(spec.civicType) ? [0.06, 0.08]
+    : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line
 // that matters for walking into something, and a shed is knee high: all of it is down in
