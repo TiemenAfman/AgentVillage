@@ -1,6 +1,6 @@
 # De smidse
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Begonnen op 25 september 2026, na de zagerij (`Plans/zagerij.md`), met dezelfde opzet. Referentie:
 een klein vakwerkhuis (crème pleister, bruine balken, stenen voeten, donker leien dak met

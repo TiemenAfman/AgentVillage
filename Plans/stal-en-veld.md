@@ -1,6 +1,6 @@
 # Stal, dieren en de spullen van het veld
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Begonnen op 25 september 2026, na de zagerij en de smidse, met dezelfde opzet: eerst model en
 animatie op `/demo`, de plek op het eiland later. Uit de rondgang "wat ontbreekt er nog" (de rest

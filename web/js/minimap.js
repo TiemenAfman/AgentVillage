@@ -275,17 +275,88 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
     ctx.stroke();
   }
 
-  function boatIcon(x, y) {
+  function boatIcon(x, y, yaw = null) {
+    ctx.save();
+    ctx.translate(cx + x, cy + y);
+    if (yaw != null) ctx.rotate(Math.PI - yaw);
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(4, 4.5);
+    ctx.lineTo(0, 2.5);
+    ctx.lineTo(-4, 4.5);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(140,215,235,.95)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(18,32,44,.85)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function playerSailingRadar(x, y, yaw) {
+    ctx.save();
+    ctx.translate(cx + x, cy + y);
+    if (yaw != null) ctx.rotate(Math.PI - yaw);
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(5.5, 6);
+    ctx.lineTo(0, 3.2);
+    ctx.lineTo(-5.5, 6);
+    ctx.closePath();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(14,18,24,.92)';
+    ctx.stroke();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    ctx.fillStyle = '#ff7a00';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0.5, 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function playerFootRadar(x, y) {
+    const r = 5.5;
     ctx.save();
     ctx.translate(cx + x, cy + y);
     ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(3.5, 4);
-    ctx.lineTo(0, 2.2);
-    ctx.lineTo(-3.5, 4);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(127,199,217,.95)';
+    ctx.arc(0, 0, r + 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(14,18,24,.9)';
     ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff7a00';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function playerRadarLabel(x, y, name) {
+    const r = Math.hypot(x, y) || 1;
+    let tx, ty;
+    if (r > pixelRadius - 16) {
+      const inward = Math.max(0, r - 14);
+      tx = cx + (x / r) * inward;
+      ty = cy + (y / r) * inward;
+    } else {
+      tx = cx + x;
+      ty = cy + y - 8;
+    }
+    ctx.save();
+    ctx.font = 'bold 9.5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(14,18,24,.92)';
+    ctx.strokeText(name, tx, ty);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(name, tx, ty);
     ctx.restore();
   }
 
@@ -358,8 +429,15 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
     }
     for (const it of data.boats || []) {
       if (!it || it.x == null) continue;
+      if (it.pilot) continue;
       const p = projectToRadar(it.x - data.pos.x, it.z - data.pos.z, worldRadius, pixelRadius);
-      boatIcon(p.x, p.y);
+      boatIcon(p.x, p.y, it.yaw);
+    }
+    for (const pl of data.players || []) {
+      if (!pl || pl.x == null) continue;
+      const p = projectToRadar(pl.x - data.pos.x, pl.z - data.pos.z, worldRadius, pixelRadius);
+      if (pl.sailing) playerSailingRadar(p.x, p.y, pl.yaw);
+      else playerFootRadar(p.x, p.y);
     }
     for (const it of data.near || []) {
       const p = projectToRadar(it.x - data.pos.x, it.z - data.pos.z, worldRadius, pixelRadius);
@@ -397,6 +475,13 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
     ctx.restore();
 
     ctx.restore();   // drop the circular clip before the rim, which has to sit on top of it
+
+    // Other players' names, unclipped inside the rim
+    for (const pl of data.players || []) {
+      if (!pl || pl.x == null || !pl.name) continue;
+      const p = projectToRadar(pl.x - data.pos.x, pl.z - data.pos.z, worldRadius, pixelRadius);
+      playerRadarLabel(p.x, p.y, pl.name);
+    }
 
     // Where to go: the nearest islands by name and how far, the two closest of `named`
     // (the phone's radar - main.js minimapData). A bearing on the rim was all a wanderer
@@ -674,7 +759,7 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
   function pick(data, fit, marks) {
     if (!pointer) return null;
     const { x: mx, y: my } = pointer;
-    let best = null, bestD = 13;
+    let best = null, bestD = 16;
     for (const m of marks) {
       const dd = Math.hypot(m.px - mx, m.py - my);
       if (dd < bestD) { best = m; bestD = dd; }
@@ -826,17 +911,90 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     }
     for (const b of data.boats || []) {
       if (!b || b.x == null) continue;
+      if (b.pilot) continue;
       const [px, py] = fit.toPx(b.x, b.z);
       ctx.save();
       ctx.translate(px, py);
+      if (b.yaw != null) ctx.rotate(Math.PI - b.yaw);
       ctx.beginPath();
-      ctx.moveTo(0, -6); ctx.lineTo(4.5, 5); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 5);
+      ctx.moveTo(0, -6.5); ctx.lineTo(4.5, 5); ctx.lineTo(0, 2.8); ctx.lineTo(-4.5, 5);
       ctx.closePath();
-      ctx.fillStyle = 'rgb(44,74,98)';
+      ctx.fillStyle = 'rgb(58,96,122)';
       ctx.fill();
+      ctx.strokeStyle = 'rgba(28,48,64,.85)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
       ctx.restore();
-      marks.push({ px, py, title: 'A boat', sub: phone ? 'row up to it and press X' : 'walk up to it and press E' });
+      marks.push({ px, py, title: 'Moored boat', sub: phone ? 'row up to it and tap X' : 'walk up to it and press E', ring: 12 });
     }
+
+    // Other players: high-contrast markers on land and sea, with name labels and tooltips
+    for (const pl of data.players || []) {
+      if (!pl || pl.x == null) continue;
+      const [px, py] = fit.toPx(pl.x, pl.z);
+      if (pl.sailing) {
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(Math.PI - (pl.yaw || 0));
+        ctx.beginPath();
+        ctx.moveTo(0, -9.5);
+        ctx.lineTo(6.5, 7);
+        ctx.lineTo(0, 3.8);
+        ctx.lineTo(-6.5, 7);
+        ctx.closePath();
+        ctx.lineWidth = 3.2;
+        ctx.strokeStyle = 'rgba(40,24,12,.95)';
+        ctx.stroke();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = '#fffaf0';
+        ctx.stroke();
+        ctx.fillStyle = '#f26419';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0.5, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
+      } else {
+        const r = 5.5;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.beginPath();
+        ctx.arc(0, 0, r + 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(40,24,12,.92)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#fffaf0';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 1.4, 0, Math.PI * 2);
+        ctx.fillStyle = '#f26419';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (pl.name) {
+        ctx.save();
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(255,250,238,.95)';
+        ctx.strokeText(pl.name, px, py - 8);
+        ctx.fillStyle = '#5c220e';
+        ctx.fillText(pl.name, px, py - 8);
+        ctx.restore();
+      }
+
+      marks.push({
+        px, py,
+        title: pl.name || 'Another player',
+        sub: pl.sailing ? 'Sailing a boat' : (pl.room ? `In the ${pl.room}` : 'On foot'),
+        ring: 14,
+      });
+    }
+
     // The player, with the same `Math.PI - yaw` as the radar's arrow (see there for why).
     const [px, py] = fit.toPx(data.pos.x, data.pos.z);
     ctx.save();
@@ -851,7 +1009,18 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     ctx.fill();
     ctx.stroke();
     ctx.restore();
-    marks.push({ px, py, title: 'You', sub: null });
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(255,250,238,.95)';
+    ctx.strokeText('You', px, py - 10);
+    ctx.fillStyle = '#8e2f14';
+    ctx.fillText('You', px, py - 10);
+    ctx.restore();
+    const sailingSelf = (data.boats || []).some((b) => b.isSelf);
+    marks.push({ px, py, title: 'You', sub: sailingSelf ? 'Sailing a boat' : null, ring: 14 });
 
     const hit = pick(data, fit, marks);
     if (hit && hit.ring) {

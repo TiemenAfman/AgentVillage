@@ -1,6 +1,6 @@
 # Het inventory-scherm: een RPG-inventory in plaats van een kleurenformulier
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 ## Aanleiding
 

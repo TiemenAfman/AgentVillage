@@ -1,6 +1,6 @@
 # De zagerij
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Begonnen op 25 september 2026. Referentie: een lowpoly houtzagerij ("Lumber mill / Woodworks"):
 een roodbruine plankenschuur met een puntgevel, een bord boven de grote deur, een afdak vol

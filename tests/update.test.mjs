@@ -38,7 +38,8 @@ test('a patch apart says nothing: 0.4.x is one line and keeps its island and its
   const a = { version: '0.4.0' }, b = { version: '0.4.1' };
   assert.equal(updateNotice({ mine: a, sea: b }), null, 'a patch behind nagged');
   assert.equal(updateNotice({ mine: b, sea: a }), null, 'a sea a patch behind nagged');
-  assert.equal(updateGate({ mine: a, sea: b }), null, 'the app was sent to update for a patch');
+  // The phone is the exception: it cannot pull, so a patch reaches it only through the gate.
+  assert.equal(updateGate({ mine: a, sea: b }).blocking, false, 'a patch never reached the phone');
   assert.equal(updateNotice({ mine: { version: '0.4.3' }, sea: { version: '0.5.0' } }).kind, 'behind');
 });
 
@@ -72,7 +73,9 @@ test('the gate goes up for a newer release on GitHub, whether or not the sea has
   assert.doesNotMatch(released.body, /sea/, 'blamed the sea for a release it has nothing to do with');
   assert.equal(updateGate({ mine, latest: '0.6.0' }).blocking, false, 'needs no welcome to know');
 
-  assert.equal(updateGate({ mine, latest: '0.5.1' }), null, 'the app was sent to update for a patch');
+  assert.match(updateGate({ mine, latest: '0.5.1' }).title, /0\.5\.1/, 'a patch never reached the phone');
+  assert.equal(updateGate({ mine, latest: '0.5.1' }).blocking, false);
+  assert.equal(updateGate({ mine: { version: '0.5.2' }, latest: '0.5.1' }), null);
   assert.equal(updateGate({ mine, latest: '0.5.0' }), null);
   assert.equal(updateGate({ mine, latest: null }), null, 'GitHub unreachable is nothing to say');
 

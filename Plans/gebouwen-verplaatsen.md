@@ -1,6 +1,6 @@
 # Gebouwen rond het plein verplaatsen en draaien
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Begonnen op 25 september 2026, op verzoek van Tiemen: in plan mode het stadhuis of de herberg
 kunnen verplaatsen en draaien, en de grond van de stad kunnen uitbreiden om ruimte te maken.

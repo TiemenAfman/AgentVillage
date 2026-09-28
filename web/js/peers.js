@@ -17,6 +17,7 @@ import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
 import { danceStep, wallBeat } from './dance.js';
+import { createZzz, bobZzz } from './zzz.js';
 
 const FADE_S = 0.4;
 const BODY_R = 0.35;
@@ -40,6 +41,8 @@ const FLAG_SITTING = 1024;
 // comes out of their id (dance.js danceStep) and the beat is ours, whatever we hear, so they
 // dance in time with the music on this screen rather than on theirs.
 const FLAG_DANCING = 2048;
+// Nobody at their keys: net.js FLAG_ASLEEP (Plans/karakter-blijft-staan.md), a Zzz over them.
+const FLAG_ASLEEP = 4096;
 // A rider on the saddle, leaning over the bars as walk.js's own rider does (its RIDE_PITCH).
 const RIDE_PITCH = 0.28;
 // The rest of these poses are walk.js's numbers for our own figure, copied rather than
@@ -149,6 +152,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     sprite.scale.set(0.9, 0.225, 1);
     sprite.position.set(0, 0.66, 0);
     mesh.add(sprite);
+    const zzz = createZzz(0.86);
+    mesh.add(zzz);
 
     return {
       id: info.id,
@@ -156,6 +161,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       style: info.style,
       keeper: !!info.keeper,
       mesh,
+      zzz,
       avatar,
       look,
       lookKey: JSON.stringify(look),
@@ -360,6 +366,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const sitting = !!(f & FLAG_SITTING) && !swimming;
       const crouching = !!(f & FLAG_CROUCHING) && !lying && !swimming;
       const dancing = !!(f & FLAG_DANCING) && !moving && !airborne && !swimming && !lying && !sitting && !p.aboard;
+      p.zzz.visible = !!(f & FLAG_ASLEEP) && !moving;
+      if (p.zzz.visible) bobZzz(p.zzz, performance.now() / 1000);
 
       // Standing on our own ground rather than on the height we were sent. If a visitor
       // generated the island from a different seed the two terrains disagree, and this is
@@ -499,6 +507,32 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     nameOf: (id) => (peers.get(id) ? peers.get(id).name : 'Somebody'),
     setSelf: (id) => { selfId = id; if (peers.has(id)) drop(peers.get(id)); },
     count: () => peers.size,
+    list: () => {
+      if (!showing) return [];
+      const out = [];
+      for (const p of peers.values()) {
+        if (p.leaving || !p.to) continue;
+        if (p.room && p.room !== 'boat') continue;
+        const hasPos = p.mesh && p.mesh.visible;
+        const x = hasPos ? p.mesh.position.x : p.to.x;
+        const y = hasPos ? p.mesh.position.y : p.to.y;
+        const z = hasPos ? p.mesh.position.z : p.to.z;
+        const yaw = hasPos ? p.mesh.rotation.y : (p.to.yaw || 0);
+        out.push({
+          id: p.id,
+          name: p.name,
+          x,
+          y,
+          z,
+          yaw,
+          room: p.room,
+          sailing: p.aboard || !!p.deckTo,
+          swimming: !!(p.to.f & FLAG_SWIMMING),
+          riding: !!(p.to.f & FLAG_RIDING),
+        });
+      }
+      return out;
+    },
     dispose: () => { clear(); },
   };
 }

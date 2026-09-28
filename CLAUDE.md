@@ -403,6 +403,11 @@ outings grow with the crowd it walks (`outingsAtOnce`, 2 to 4) and sail round ev
 lies on water (`waterPlots`). A bundle with no
 harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
+The welcome carries **every** boat (`snapshot` in `lib/boats.mjs`), untouched ones at their
+mooring - leaving those out let two pages that had heard different things draw one ship in
+two places. The sea knows no galleon, so its mooring for `boat:<region>` is the Benchy's
+berth; `onBoatFromServer` in main.js reads a position on that berth as `shipBerth`.
+
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
@@ -767,7 +772,9 @@ two equal). The page knows its own release from `/api/hello` (`build`) or, in th
 what the pack baked in, and compares it with the welcome's on every connect: older is a
 banner with the release link, newer says the sea is behind - by `version`, never by commit,
 which differs between players on the same release all the time, and by the *line* only
-(`compareLines`, major.minor): a patch apart says nothing. **A patch release never breaks
+(`compareLines`, major.minor): a patch apart says nothing - except on the phone, whose
+`updateGate` compares whole versions, because a phone cannot pull and that card (with a
+Later) is the only way a patch ever reaches it. **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
 `TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
@@ -992,6 +999,15 @@ pint and the sway are this page's alone and live per house id in the crowd view,
 at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them per browser;
 walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
 key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
+
+**Leaving walk mode leaves the body standing** ([Plans/karakter-blijft-staan.md](Plans/karakter-blijft-staan.md)):
+`walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
+`ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
+parked walk in orbit without touching the camera. It walks only a route from above
+(`goTo`, fed by `walkBodyTo` in main.js: `findPath` over cells, blocked by the feet's own
+`blockedAt`), from a click on bare ground or the dossier's Walk here; `enterWalk` starts
+where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
+`afoot`. At a tiller or on a deck exitWalk still flies up the old way.
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
@@ -1282,7 +1298,11 @@ islander, so none of the desktop's reasons apply ([Plans/eiland-op-android.md](P
 APK is a zip anybody can read, so the open sea runs with no `SEA_KEY` (anybody may join;
 an island's claim token keeps its name) and the restart button has its own
 `SEA_ADMIN_KEY`; the pack only bakes a key given by name (`--key`), for a private sea.
-`release.yml`'s `android` job builds and signs it on every tag. `STANDALONE` in `web/js/api.js` makes
+`release.yml`'s `android` job builds and signs it on every tag. The launcher icon is the
+committed `gen/android/.../res/mipmap-*`, not `icons/` (which only the desktop reads) - it
+shipped as Tauri's default logo up to 0.6.3; regenerate it from the maskable island with
+`npx tauri icon ../web/icons/island-maskable-512.png -o <tmp>` in `src-android/` and copy
+`android/mipmap-*` over. `STANDALONE` in `web/js/api.js` makes
 `mine()` refuse without fetching (the app origin answers every path, and a 404 "from the
 islander" is the keeper's mode); the page then has no island at all: home is a free berth of water (`nextOrigin`, drawn on
 `makeTerrain(…, { open: true })`, which is sea edge to edge), the body joins as a wanderer

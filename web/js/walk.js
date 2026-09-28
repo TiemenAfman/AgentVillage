@@ -16,6 +16,7 @@ import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
 import { canon } from './keybinds.js';
+import { createZzz, bobZzz } from './zzz.js';
 
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
@@ -226,10 +227,19 @@ export function createWalkMode({
   lounge.receiveShadow = true;
   lounge.visible = false;
   scene.add(lounge);
+  // Over the head of the body left standing (park): in the scene, not on the avatar, so a
+  // swimmer's tilt or a nap on the towel does not lay it on its side.
+  const zzz = createZzz();
+  scene.add(zzz);
 
   const keys = new Set();
   const state = {
     active: false,
+    // The body left standing while the keeper is up in the sky (Plans/karakter-blijft-staan.md):
+    // drawn, on the sea, stepped by update() - but by nobody's keys and moving no camera. It
+    // walks only a `route` handed to it from above (goTo), and asleep otherwise.
+    parked: false,
+    route: null,
     pos: new THREE.Vector3(),
     yaw: 0,          // where the player faces
     camYaw: 0,       // where the camera looks from
@@ -994,6 +1004,9 @@ export function createWalkMode({
     // worth seeing is a coast on the horizon, which 0.44 puts above the top of the screen.
     state.camPitch = pitch ?? 0.44;
     state.active = true;
+    state.parked = false;
+    state.route = null;
+    zzz.visible = false;
     avatar.visible = true;
     keys.clear();
     lockKeys(true);
@@ -1017,7 +1030,43 @@ export function createWalkMode({
     keys.clear();
     stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false;
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
+    state.parked = false;
+    state.route = null;
+    zzz.visible = false;
   }
+
+  // Up into the sky, leaving the body where it stands: everything exit() lets go of (the
+  // keys, the lock, the camera, the bike, a lounge) goes, but the figure stays drawn and
+  // update() keeps stepping it - asleep, or walking a route given from above. `at` puts it
+  // somewhere first: the islander's start (main.js parkOnSquare) has never walked yet.
+  function park({ at = null, facing = null } = {}) {
+    exit();
+    state.dancing = false;
+    if (at) {
+      let [x, z] = at;
+      for (let i = 0; i < 40 && blocked(x, z, undefined, true); i++) { x += 0.4; z += 0.25; }
+      state.pos.set(x, groundAt(x, z), z);
+      state.floor = state.pos.y;
+      state.vy = 0;
+      state.grounded = true;
+      state.yaw = facing ? Math.atan2(facing[0] - x, facing[1] - z) : state.yaw;
+    }
+    state.parked = true;
+    avatar.visible = true;
+  }
+
+  // Walk the parked body along `points` ([[x, z], ...], local coordinates - findPath's own
+  // output). Null stops it where it is. Refused unless parked: on foot the feet are yours.
+  function goTo(points) {
+    if (!state.parked) return false;
+    state.route = points && points.length ? points.map(([x, z]) => [x, z]) : null;
+    state.routeBest = Infinity;
+    state.routeSince = 0;
+    return true;
+  }
+  // Where an A* over cells may not go, for main.js to hand findPath: the same test the feet
+  // make, asked at a cell's middle.
+  const blockedAt = (x, z) => blocked(x, z, undefined, true);
 
   function setBlockers(list) { takeBlockers(list); }
   function setPeerBlockers(list) { state.peerBlockers = list; }
@@ -1113,8 +1162,33 @@ export function createWalkMode({
     syncLock();
   }
 
+  // A parked body's input: towards the next point of its route, as the (ix, iz) the keys
+  // would give with the camera looking along +z (camYaw 0: forward is +z, right is -x).
+  // A point is reached at ROUTE_NEAR; a body that has not got nearer for ROUTE_GIVE_UP
+  // seconds (a wall the cell grid did not know about, another player) stops and sleeps.
+  const ROUTE_NEAR = 0.35, ROUTE_GIVE_UP = 2;
+  function routeInput(dt) {
+    const r = state.route;
+    while (r && r.length && Math.hypot(r[0][0] - state.pos.x, r[0][1] - state.pos.z) < (r.length > 1 ? ROUTE_NEAR : 0.15)) {
+      r.shift();
+      state.routeBest = Infinity;
+    }
+    if (!r || !r.length) { state.route = null; return [0, 0]; }
+    const dx = r[0][0] - state.pos.x, dz = r[0][1] - state.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < state.routeBest - 0.02) { state.routeBest = d; state.routeSince = 0; }
+    else if ((state.routeSince += dt) > ROUTE_GIVE_UP) { state.route = null; return [0, 0]; }
+    return [-dx / d, dz / d];
+  }
+
   function update(dt) {
-    if (!state.active) return null;
+    if (!state.active && !state.parked) return null;
+    if (state.parked) {
+      keys.clear();
+      stick.x = 0; stick.z = 0;
+      state.paused = false;
+      state.camYaw = 0;
+    }
     if (ownTipsy) stepTipsy(state.tipsy, dt);
     // Quicker on the move and quicker still at a run, going by last frame's gait. A phase
     // that is added to rather than a time that is multiplied, or every change of gait would
@@ -1139,6 +1213,7 @@ export function createWalkMode({
     if (keys.has('d') || keys.has('arrowright')) ix += 1;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
+    if (state.parked) [ix, iz] = routeInput(dt);
 
     if (state.deck && deckBoat) return stepOnDeck(dt, ix, iz, boost);
 
@@ -1402,6 +1477,20 @@ export function createWalkMode({
     // What the glass gave up this frame, if one is being drunk from.
     drinkIn(state.tipsy, classicAvatar.swallowed());
 
+    // Parked, the sky's camera is the keeper's: the body is drawn, the camera left alone.
+    zzz.visible = state.parked && !state.route;
+    if (zzz.visible) {
+      zzz.position.set(state.pos.x, 0, state.pos.z);
+      bobZzz(zzz, performance.now() / 1000);
+      zzz.position.y += state.pos.y;
+    }
+    if (state.active) placeCamera(fp);
+
+    // what is within reach?
+    return reach();
+  }
+
+  function placeCamera(fp) {
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
     const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
@@ -1434,8 +1523,9 @@ export function createWalkMode({
       if (clampCam) clampCam(camera.position);
       camera.lookAt(camera.position.x + fpLook.x, camera.position.y + fpLook.y, camera.position.z + fpLook.z);
     }
+  }
 
-    // what is within reach?
+  function reach() {
     let near = null, bestD = Infinity;
     for (const it of state.interactables) {
       const dx = it.x - state.pos.x, dz = it.z - state.pos.z;
@@ -1477,7 +1567,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, onDeck: () => (state.deck ? deckBoat : null),
+  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, onDeck: () => (state.deck ? deckBoat : null),
     mount, dismount, riding: () => state.bike,
     // What is underfoot here, decks included. The archipelago alone answers with water
     // over a quay, because planks are a level rather than ground - and "can I step out

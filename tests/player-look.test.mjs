@@ -49,15 +49,15 @@ test('a look is held to its shape: whatever else a socket hangs on it does not r
   });
 });
 
-test('lying, crouching, sitting and dancing go through the sea; nothing above them does', () => {
+test('lying, crouching, sitting, dancing and asleep go through the sea; nothing above them does', () => {
   const { join } = room();
   const ann = join('aaaaaaaaaaaa');
-  for (const bit of [POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING]) {
+  for (const bit of [POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING, POSE.ASLEEP]) {
     ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: bit | POSE.MOVING });
     assert.equal(ann.p.f, bit | POSE.MOVING);
   }
-  assert.deepEqual([POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING], [256, 512, 1024, 2048]);
-  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 4096 | POSE.SITTING });
+  assert.deepEqual([POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING, POSE.ASLEEP], [256, 512, 1024, 2048, 4096]);
+  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 8192 | POSE.SITTING });
   assert.equal(ann.p.f, POSE.SITTING);
 });
 

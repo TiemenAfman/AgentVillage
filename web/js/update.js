@@ -102,8 +102,11 @@ export function updateGate({ speaks = null, mine = null, sea = null, latest = nu
       body: 'This sea has moved on to a newer version and will not let this app in until it is updated.',
     };
   }
-  const seaAhead = compareLines(mine && mine.version, sea && sea.version) === -1;
-  const releaseAhead = compareLines(mine && mine.version, latest) === -1;
+  // By the whole version, patch included - unlike the banner above. A phone cannot pull; this
+  // card is the only way a client-side fix ever reaches it, and it has a Later. Comparing
+  // lines here left every 0.x.y release unannounced on the phones it was mostly for.
+  const seaAhead = compareVersions(mine && mine.version, sea && sea.version) === -1;
+  const releaseAhead = compareVersions(mine && mine.version, latest) === -1;
   if (seaAhead || releaseAhead) {
     // The newer of the two is the one to name; the sea can be ahead of what GitHub said when
     // that answer is older than the sea's last restart.

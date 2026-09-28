@@ -1,6 +1,6 @@
 # Wegen tekenen in de planner, met een brug op maat
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Gebouwd op 23 september 2026. De planner is dé manier van stadsonderhoud; de oude Build-modus
 (losse vormen met de hand neerzetten) staat standaard uit en is alleen nog een schakelaar

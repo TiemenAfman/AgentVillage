@@ -1,6 +1,8 @@
 # De ladder tot tweehonderd: de haven, het VOC-schip en de vloot
 
-Begonnen op 28 september 2026. **Status: gebouwd op de branch `mijlpalen-tot-tweehonderd` (28 september), nog niet op main en nog niet op het eiland.** Onderaan staat wat
+**🚧 NOG NIET KLAAR** — de ladder, de werf, de Batavia, de vloot en de vuurtoren staan sinds 28 september 2026 op main en op het eiland; over de Batavia lopen en haar laten varen komt later.
+
+Begonnen op 28 september 2026. Onderaan staat wat
 Tiemen nog moet beslissen.
 
 ## Wat Tiemen vroeg

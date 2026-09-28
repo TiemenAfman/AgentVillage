@@ -1,6 +1,6 @@
 # De vulkaan in het midden, stamina en turbo, en vrij zwemmen
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ DONE**
 
 Wens (Martijn, 2026-09-23): het Codex-eiland wordt **één groot, vijandig vulkaaneiland in het
 midden van de zee**. Hoe meer islanders er in de zee zijn, hoe meer vijandige Codex-agents er
