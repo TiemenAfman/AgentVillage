@@ -98,6 +98,13 @@ const CATALOGUE = [
     label: 'Quay house',
     spec: { id: 'h:harbour', kind: 'house', tier: 'cottage', style: 'sonnet', harbour: true, ornaments: [] },
   },
+  // The shipyard with its ship at each of its five stages (web/js/shipyard.js). Last, so the
+  // numbers the picker remembers for everything above do not move.
+  ...['empty stocks', 'keel', 'frames', 'planked', 'masts'].map((what, stage) => ({
+    group: 'Shipyard',
+    label: `Stage ${stage} · ${what}`,
+    spec: { ...civicSpec('shipyard'), id: `c:shipyard:${stage}`, stage },
+  })),
 ];
 
 // ---------------------------------------------------------------- numbers

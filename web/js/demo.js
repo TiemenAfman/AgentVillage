@@ -31,6 +31,7 @@ import { attachProp, updateProp, attachBakery, updateBakery } from './countrysid
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal } from './fauna.js';
 import { attachButcher, updateButcher } from './butcher.js';
+import { YARD_FLOOR, YARD_STAGES, YARD_W, YARD_D } from './shipyard.js';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -60,6 +61,8 @@ const CIVIC = [
   // The stone, not the crossing: the deck is drawn from the layout's own cells and there
   // is no river on the model sheet to stand it in.
   ['bridge', 'Bridge stone', '90'],
+  // The shipyard (95) is not in this list: it is sixteen long, and has a block of its own
+  // below the civic rows with all five stages of its ship.
   ['castle', 'Castle', '100'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
@@ -158,16 +161,18 @@ const ring = new THREE.BufferGeometry().setAttribute('position', new THREE.Float
   [-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5], 3,
 ));
 
-function drawHitbox(built, x, z) {
+// `y` is the ground the thing stands on, for the one that does not stand on the field: the
+// shipyard, on its bank of land over its strip of sea.
+function drawHitbox(built, x, z, y = 0) {
   for (const r of built.solids) {
     const solid = new THREE.LineSegments(cubeEdges, solidLine);
-    solid.position.set(x + r.x, WALK_CLEARANCE / 2, z + r.z);
+    solid.position.set(x + r.x, y + WALK_CLEARANCE / 2, z + r.z);
     // What walk mode is handed is the same rectangle, moved onto the field. Nothing on
     // the model sheet is rotated, so there is no quarter turn to undo.
     blockers.push({ x: x + r.x, z: z + r.z, hx: r.hx, hz: r.hz });
     solid.scale.set(Math.max(r.hx * 2, 0.004), WALK_CLEARANCE, Math.max(r.hz * 2, 0.004));
     const reach = new THREE.LineLoop(ring, reachLine);
-    reach.position.set(x + r.x, FIELD_Y + 0.03, z + r.z);
+    reach.position.set(x + r.x, (y || FIELD_Y) + 0.03, z + r.z);
     reach.scale.set((r.hx + WALK_BODY_R) * 2, 1, (r.hz + WALK_BODY_R) * 2);
     hitboxes.add(solid, reach);
   }
@@ -326,6 +331,47 @@ for (let i = 0; i < CIVIC.length; i += 8) {
   line(slice, ([type, name, note], x, z) => {
     place({ id: `c:${type}`, kind: 'civic', civicType: type, tier: 'civic', style: 'unknown', ornaments: [], cards: 6 }, x, z, name, note);
   }, i === 0 ? 'Civic' : '');
+}
+
+// The shipyard (Plans/scheepswerf.md), which the ladder will put at 95: five by sixteen, so it
+// has a block of its own rather than a place in the civic rows, and all five stages of the ship
+// on its slipway side by side - empty stocks, keel, frames, planked, masts. Each stands on a bank
+// of land over a strip of sea, as main.js stands it on the coast (shipyardGround): the yard's
+// ground YARD_FLOOR over the water, which is the lowest the island ever sets it. The sea end is
+// towards the camera. Walk mode here knows only the field, so on foot you walk through the bank.
+{
+  const bank = YARD_FLOOR;                 // the land over the sea
+  const z = row * ROW + YARD_D / 2 + 1;    // the lots' middle
+  heading('Shipyard', z);
+  const landMat = new THREE.MeshStandardMaterial({ color: 0x8fae5a, roughness: 1 });
+  const seaMat = new THREE.MeshStandardMaterial({ color: 0x3d6e8c, roughness: 0.35 });
+  const NAMES = ['Empty stocks', 'Keel and stems', 'Frames', 'Planked', 'Masts stepped'];
+  const LAND_D = 6;                        // the landward rows the site rule keeps on land
+  for (let stage = 0; stage < YARD_STAGES; stage++) {
+    // A little right of the middle, so the leftmost bank clears the row's heading.
+    const x = (stage - (YARD_STAGES - 1) / 2) * (YARD_W + 1.2) + 1.5;
+    const spec = { id: `c:shipyard:${stage}`, kind: 'civic', civicType: 'shipyard', tier: 'civic', style: 'unknown', ornaments: [], stage };
+    const built = buildBuilding(spec, {});
+    const mesh = new THREE.Mesh(built.geometry, material);
+    const y = FIELD_Y + bank;
+    mesh.position.set(x, y, z);
+    mesh.userData.id = spec.id;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    const land = new THREE.Mesh(new THREE.BoxGeometry(YARD_W + 1.2, bank, LAND_D), landMat);
+    land.position.set(x, FIELD_Y + bank / 2, z - YARD_D / 2 + LAND_D / 2);
+    land.receiveShadow = true;
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(YARD_W + 1.2, YARD_D - LAND_D + 1.5), seaMat);
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.set(x, FIELD_Y + 0.004, z + (LAND_D + 1.5) / 2);
+    sea.receiveShadow = true;
+    scene.add(land, sea);
+    drawHitbox(built, x, z, y);
+    tag(x, z + YARD_D / 2 + 0.8, NAMES[stage], `stage ${stage}`);
+    placed.set(spec.id, { x, z, built });
+  }
+  row += Math.ceil((YARD_D + 3) / ROW);
 }
 
 line(FURNITURE, ([type, name, note], x, z) => {
