@@ -4638,6 +4638,9 @@ function buildScene(village) {
     () => (state.world && state.world.workSites ? state.world.workSites().fields : null));
   syncBridges(village);
   state.particles = createParticles();
+  // Both are born at the boot pixel ratio's size, and a ?quality pin was applied in boot()
+  // before either existed - so its lighter ratio found nothing to scale.
+  scalePoints();
   state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
