@@ -1,6 +1,6 @@
 # Starter-eilanden: een zee die nooit leeg is
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**Status: ✅ DONE** (starters gebouwd 26 september 2026, de eilandjes begaanbaar op 29 september).
 
 Wens (Martijn, 2026-09-26): de zee legt zelf een paar **kleine starter-eilandjes** neer, zonder
 agents, alleen met een stadscentrum. Een nieuwe speler claimt er een, en dan wordt dat eilandje
@@ -15,8 +15,8 @@ burgemeester. Het is ook de ondergrond voor de klusjes en het logboek die daarna
 Stap 1 tot en met 6 gebouwd op 26 september 2026: `starterBundle(slot)` in
 `lib/islandbundle.mjs`, `fleet.raiseStarters()` en het claimen in `publish` (`lib/fleet.mjs`),
 `retireStarter()` / `topUpStarters()` in `lib/sea.mjs`, `reach` in de vlootregel voor de
-ligplaats van de telefoon, en `CLAUDE.md`; getest in `tests/starter.test.mjs`. De open vragen
-onderaan en de decoratie-eilandjes staan nog.
+ligplaats van de telefoon, en `CLAUDE.md`; getest in `tests/starter.test.mjs`. De decoratie-
+eilandjes (onderaan) zijn ook af; de open vragen staan nog.
 
 ## Hoe het nu zit (gemeten in de sessie van 26-09)
 
@@ -106,16 +106,49 @@ varen.
 | Wie legt ze neer? | **De pagina**, niet de zee. Deterministisch uit een vast wereldrooster met kandidaat-plekken, met per plek een hash voor variant, grootte en draaiing. Een plek telt alleen als hij vrij is van elk eiland in de vloot, gemeten op `reach` plus een marge. | Geen zee-wijziging, geen bericht, geen `SEA_V`. Elke pagina ziet dezelfde vloot, dus iedereen ziet dezelfde eilandjes op dezelfde plek. |
 | Mogen ze ligplaatsen blokkeren? | **Nee.** Ze gaan niet mee in `nextOrigin` en tellen niet voor `MAX_ISLANDS`. Komt er een eiland of starter op die plek, dan verdwijnt het eilandje. | `clearOf` houdt `SEA_GAP` (48) aan tot elk eiland. Telden ze mee, dan zou een zandplaat een hele ligplaats onbruikbaar maken. Verdwijnen gebeurt alleen als de vloot verandert, en dan wordt er toch al opnieuw getekend. |
 | Hoe groot? | Klein: 6 tot 20 cellen doorsnede, in drie soorten (zandplaat met één palm, rond met een groepje palmen, groter met struiken). | Zichtbaar vanaf zee, geen dorp erop mogelijk, en goedkoop genoeg om er een handvol van te tekenen. |
-| Wat staat erop? | **Palmbomen** (nieuw model, via de Blender-pipeline, zoals de andere gebakken props) en struiken. Geen gebouwen, geen bewaarders. | De bestaande `tree`-prop (`web/js/props.js`) is een loofboom en past niet bij een tropisch eilandje. Gebakken (2026-09-27): `flora_palm_a` (~1000 driehoeken) en `flora_palm_a_lo` (~250), uit de CC0-palm van Quaternius (`assets/flora/palm-quaternius.glb`) via `build-flora.py`, met een eigen budget van 1000 in `model-rules.mjs`. Nog nergens neergezet. |
+| Wat staat erop? | **Palmbomen** (nieuw model, via de Blender-pipeline, zoals de andere gebakken props) en struiken. Geen gebouwen, geen bewaarders. | De bestaande `tree`-prop (`web/js/props.js`) is een loofboom en past niet bij een tropisch eilandje. Gebakken (2026-09-27): `flora_palm_a` (~1000 driehoeken) en `flora_palm_a_lo` (~250), uit de CC0-palm van Quaternius (`assets/flora/palm-quaternius.glb`) via `build-flora.py`, met een eigen budget van 1000 in `model-rules.mjs`. Neergezet als de eilandjes hieronder. |
 | Tekenbudget | Mee in de ranking van `DETAILED`: dichtbij volledig, ver weg alleen het zand of niets. | Anders kosten tien zandplaten op de telefoon meer dan één echt eiland. |
 | Kun je erop lopen? | **Tweede stap.** Eerst alleen zien. Daarna het zand meenemen in de grondhoogte van walk mode, zodat je er vanuit je skiff op kunt stappen. | Lopen is aan de kant van de pagina. Omdat iedereen dezelfde eilandjes ziet, zien anderen je dan ook op het zand staan en niet in het water. |
 
 **Stap 1 gebouwd (2026-09-27):** `shared/islets.mjs` (rooster van 96, 25% van de vrije vakken,
 tot 800 van je berth, vrij van elk `reach` + 24 en van de berth van een telefoon) en
 `web/js/islets.js` (alle grond in één mesh, palmen en struiken geïnstancieerd, dichtbij de volle
-palm en verder de `_lo`), aangeroepen vanuit `doSyncFleet`. Nog niet: ondiep water rond het zand
-(de zee eronder weet niet dat ze er zijn), boten varen erdoorheen, en je kunt er niet op lopen -
-dat hoort bij stap 2, die `isletHeight` al klaar heeft liggen.
+palm en verder de `_lo`), aangeroepen vanuit `doSyncFleet`.
+
+**Stap 2 gebouwd (2026-09-29): er is water, een boot loopt vast en je kunt erop staan.** Alle drie
+komen uit één haak: `createIslets(...).seabed` (`{ height, squares }`) gaat als `setSeabed` naar
+het archipel, dat tussen de eilanden nu `isletBed` antwoordt in plaats van altijd `OPEN_SEA`.
+`isletBed` is `isletHeight` - de grond die je ziet - tot `ISLET_FADE` (1,3 straal, voorbij elke
+kust die de koepel kan hebben) en zakt dan tot `OPEN_SEA` op `ISLET_SPAN` (1,8), zodat de doos
+eindigt in de diepte van de zee zelf en niet in een stap (die zat er eerst: -1,3 op 1,7 straal).
+- **Lopen:** walk.js leest `heightUnder` = `ground.height`, dus het zand is grond en het water
+  eromheen zwemwater; uitstappen uit een boot naar het zand werkt via `shoreWithinReach`. Peers en
+  de geluidslaag lezen hetzelfde.
+- **Boten:** `boatGround` leest dezelfde hoogte. Een eilandje is een ondiepte (schuurt, `BEACH_MAX`)
+  en zand daarboven een muur; getest dat dezelfde vaart zonder bed dwars door het midden gaat.
+- **Ondiep water:** het archipel geeft `waterSquares()` (de grids plus de eilandjes) aan
+  `waterPatchPlan`. Een vierkant mag zijn eigen `reach` en `step` hebben: de eilandjes 6 en elke
+  tweede vertex (4 op `modest`). Op een eenheid per vertex kostten de 59 eilandjes uit de test
+  +274k triangles (10% van een volle pagina); zo is het +78k (2,8%). Dichte tegels die
+  aan elkaar grenzen nemen de fijnste stap, anders laat de grovere een T-naad langs de rand.
+  `onChange` van `createIslets` laat het water opnieuw uitrekenen als de set verandert.
+- **De camera:** zie hieronder. Los van de eilandjes, maar op hetzelfde moment gevonden.
+
+Wat er dus niet meer staat: geen 'ondiep water rond het zand', geen 'boten varen erdoorheen',
+geen 'je kunt er niet op lopen'. Getest in `tests/islet-seabed.test.mjs`; bekeken in de app op een
+kopie van het eiland op een eigen zee (turquoise rand met schuim, `groundAt` = zeebodem, staan op het
+zand onder de palmen).
+
+**De camera mocht onder water.** `placeCamera` klemde op `groundAt + 0.55`, en boven open zee is dat
+-1,95: een uitgezoomde camera die omhoog keek zat onder het wateroppervlak, met de onderkant van
+de zee voor zijn neus (screenshot van Martijn, onder een galjoen). Nu de vloer `cameraFloor`
+(`web/js/camera-floor.js`): boven water het oppervlak plus 0,5 (boven de deining van 0,09 en het
+nearvlak van 0,5), tenzij `state.diving` - de vlag van het duiken/onderwater-zwemmen-plan, dat
+de camera juist onder water wil.
+
+**Later:** palmen en struiken zijn nog niet solide (je loopt erdoorheen), en de uitjes van de
+settlers (`lib/boats.mjs`) weten van de eilandjes niets, want de zee rekent ze niet uit; ze varen
+alleen rond hun eigen eiland, waar geen eilandje mag liggen.
 
 Hangt niet van de starters af en kan ervoor of erna gebouwd worden. Samen met het logboek
 (eerder besproken: stempels voor bezochte eilanden) is een eilandje een goed doel voor een

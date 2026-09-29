@@ -4518,6 +4518,7 @@ function buildScene(village) {
   // archipelago a question gets the same answer it used to get from the terrain directly.
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
+  if (state.islets) state.sea.setSeabed(state.islets.seabed);
   // Home is at the scene origin, always - whatever berth the sea gave us. The ground, the
   // houses, the hamlets and the quay of this island all hang straight in `scene` on local
   // coordinates, and there is no offset group to move them by; so instead of moving home
@@ -6960,7 +6961,17 @@ async function boot() {
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two
   // units further out than the gap it was computing asked for.
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
-  state.islets = createIslets({ scene, modest });
+  // The islets are the sea bed between the islands: handed to the archipelago, which answers
+  // for feet, hulls and the water's depth, and the water is worked out again round them
+  // whenever the set changes (Plans/starter-eilanden.md, "erbij"). buildScene hands the bed
+  // to a sea it makes afresh.
+  state.islets = createIslets({
+    scene, modest,
+    onChange: () => {
+      if (state.sea) state.sea.setSeabed(state.islets.seabed);
+      if (state.world) state.world.reshapeWater();
+    },
+  });
   state.minimap = createMinimap();
   state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
   // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.

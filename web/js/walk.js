@@ -10,6 +10,7 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y } from './boat.js';
+import { cameraFloor } from './camera-floor.js';
 import { stepDeck, toWorld, dirToLocal, deckAt } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
@@ -1501,7 +1502,9 @@ export function createWalkMode({
     const up = camUp * Math.min(1, back / camBack);
     const eyeDrop = state.lying ? up * 0.55 : state.crouching || state.sitting ? up * 0.3 : 0;
     const cy = state.pos.y + up - eyeDrop + Math.sin(state.camPitch) * dist;
-    camera.position.set(cx, Math.max(cy, groundAt(cx, cz, cy) + 0.55), cz);
+    // Over water the floor is the surface, not the sea bed - see camera-floor.js. `diving` is
+    // the diving mode's own flag (unset, so false, until it exists).
+    camera.position.set(cx, Math.max(cy, cameraFloor({ ground: groundAt(cx, cz, cy), waterY: WATER_Y, diving: state.diving })), cz);
     if (clampCam) clampCam(camera.position);
     // The aim follows the eye down as the body folds: crouching and sitting shorten the
     // figure by exactly these factors, so reusing them keeps the camera on the face rather

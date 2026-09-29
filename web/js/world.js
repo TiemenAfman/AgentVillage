@@ -294,9 +294,16 @@ export const WATER_FADE_STEP = 8;
 
 export function waterPatchPlan(half, regions, modest = false) {
   const list = regions && regions.length ? regions : [{ origin: [0, 0], half }];
+  // `reach` is how far dense water lies round a square: an island's grid holds the whole
+  // WATER_REACH, an islet's few cells (shared/islets.mjs) a good deal less - forty islets at
+  // sixteen a side was a tile-field of their own. The swell fades over the same number, so
+  // the flat seam between a dense tile and a coarse one still lies beyond every wave.
   const squares = list.map((r) => ({
     minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
     minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half,
+    reach: r.reach ?? WATER_REACH,
+    // Units between vertices, for a square that asks for less than an island's grid does.
+    step: r.step ?? 0,
   }));
   // The same union shared/regions.mjs gridBounds() makes, so the outline is the old one.
   const gb = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
@@ -315,14 +322,45 @@ export function waterPatchPlan(half, regions, modest = false) {
     return out;
   };
   const xs = cuts(span.minX, span.maxX), zs = cuts(span.minZ, span.maxZ);
-  const near = (x0, x1, z0, z1) => squares.some((s) =>
-    x0 < s.maxX + WATER_REACH && x1 > s.minX - WATER_REACH
-    && z0 < s.maxZ + WATER_REACH && z1 > s.minZ - WATER_REACH);
+  const fine = modest ? 2 : 1;
+  // The vertex spacing a tile wants from the squares it is near: an island's grid asks for
+  // `fine`, an islet's for its own `step` (doubled on `modest`, like the grid's). Infinity when
+  // it is near none of them, and the finest of what it is near when it is near several.
+  const stepOf = (x0, x1, z0, z1) => {
+    let best = Infinity;
+    for (const s of squares) {
+      if (x0 < s.maxX + s.reach && x1 > s.minX - s.reach && z0 < s.maxZ + s.reach && z1 > s.minZ - s.reach) {
+        best = Math.min(best, s.step ? s.step * (modest ? 2 : 1) : fine);
+      }
+    }
+    return best;
+  };
+  const near = (x0, x1, z0, z1) => stepOf(x0, x1, z0, z1) !== Infinity;
   const inland = (x0, x1, z0, z1) =>
     x0 >= span.minX + WATER_FADE && x1 <= span.maxX - WATER_FADE
     && z0 >= span.minZ + WATER_FADE && z1 <= span.maxZ - WATER_FADE;
 
-  const fine = modest ? 2 : 1;
+  // Two dense tiles that share an edge share its vertices (`vertex`, below), so they have to
+  // want the same spacing or the coarser one leaves a T-junction along it: each dense tile
+  // takes the finest step among the dense tiles it touches, spread until nothing changes.
+  const stepGrid = [];
+  for (let j = 0; j + 1 < zs.length; j++) {
+    const row = [];
+    for (let i = 0; i + 1 < xs.length; i++) row.push(stepOf(xs[i], xs[i + 1], zs[j], zs[j + 1]));
+    stepGrid.push(row);
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let j = 0; j < stepGrid.length; j++) {
+      for (let i = 0; i < stepGrid[j].length; i++) {
+        if (stepGrid[j][i] === Infinity) continue;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = stepGrid[j + dj]?.[i + di];
+          if (n !== undefined && n < stepGrid[j][i]) { stepGrid[j][i] = n; changed = true; }
+        }
+      }
+    }
+  }
   const quads = [];
   let triangles = 0;
   const put = (x0, x1, z0, z1, step, dense = false) => {
@@ -336,10 +374,11 @@ export function waterPatchPlan(half, regions, modest = false) {
     let run = null;   // where a run of open sea along this row started
     for (let i = 0; i + 1 < xs.length; i++) {
       const x0 = xs[i], x1 = xs[i + 1];
-      const close = near(x0, x1, z0, z1);
+      const want = stepGrid[j][i];
+      const close = want !== Infinity;
       if (!close && inland(x0, x1, z0, z1)) { if (run === null) run = x0; continue; }
       if (run !== null) { put(run, x0, z0, z1, Infinity); run = null; }
-      put(x0, x1, z0, z1, close ? fine : WATER_FADE_STEP, close);
+      put(x0, x1, z0, z1, close ? want : WATER_FADE_STEP, close);
     }
     if (run !== null) put(run, span.maxX, z0, z1, Infinity);
   }
@@ -347,9 +386,12 @@ export function waterPatchPlan(half, regions, modest = false) {
   // How much of the swell a vertex carries: all of it up to half WATER_REACH past a grid,
   // none from WATER_REACH on (see above for why that is the seam's whole trick).
   const waveAt = (x, z) => {
-    let e = Infinity;
-    for (const s of squares) e = Math.min(e, Math.max(0, s.minX - x, x - s.maxX, s.minZ - z, z - s.maxZ));
-    return 1 - smoothstep(WATER_REACH / 2, WATER_REACH, e);
+    let w = 0;
+    for (const s of squares) {
+      const e = Math.max(0, s.minX - x, x - s.maxX, s.minZ - z, z - s.maxZ);
+      w = Math.max(w, 1 - smoothstep(s.reach / 2, s.reach, e));
+    }
+    return w;
   };
   // The fade into the ocean disc, over the last WATER_FADE of the outline - the formula the
   // single PlaneGeometry always used, now asked of wherever the vertices happen to be.
@@ -359,7 +401,7 @@ export function waterPatchPlan(half, regions, modest = false) {
   // in it, in no particular order. An island that joins inside the old outline needs its
   // dense tiles, which comparing the outline alone - as reshapeWater used to - would miss.
   const key = [modest ? 'm' : 'f', span.minX, span.maxX, span.minZ, span.maxZ,
-    ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}`).sort()].join('|');
+    ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}${s.reach === WATER_REACH && !s.step ? '' : ',' + s.reach + ',' + s.step}`).sort()].join('|');
   return { span, quads, triangles, waveAt, blendAt, key, dense: near, fine };
 }
 
@@ -1750,7 +1792,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
   // that holds a reference to the mesh has to know.
   let waterGeo = null, wp = null, wplan = null;
-  const seaRegions = () => (opts.sea ? opts.sea.regions() : null);
+  // The islands' grids and whatever the sea bed is raised round (the islets) - each a square
+  // the water is dense round. `regions()` for a sea that has no bed to speak of.
+  const seaRegions = () => (opts.sea ? (opts.sea.waterSquares ? opts.sea.waterSquares() : opts.sea.regions()) : null);
   function buildWaterGeometry() {
     wplan = waterPatchPlan(half, seaRegions(), opts.modest);
     let most = 0, cells = 0;

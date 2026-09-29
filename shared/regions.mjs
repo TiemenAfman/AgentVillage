@@ -391,9 +391,31 @@ export function createArchipelago() {
 
   const get = (id) => list.find((r) => r.id === id) || null;
   const regionAt = (x, z) => list.find((r) => r.contains(x, z)) || null;
+
+  // The sea bed between the islands: whatever is not an island's own grid but is not flat
+  // open water either - the islets (web/js/islets.js) today. Handed in rather than known
+  // here because it is worked out from the fleet by every page alike, and this module has
+  // no fleet. `height(x, z)` answers in the same frame as `height` below and says `null`
+  // where there is nothing, and `squares()` says where that is, as `{ origin, half, reach }`
+  // - `reach` being how much dense water the sea lays round the square (waterPatchPlan).
+  // OPEN_SEA stays the depth everything falls back to, so a bed may only raise it.
+  let seabed = null;
+  function setSeabed(next) { seabed = next || null; }
+
   const height = (x, z) => {
     const r = regionAt(x, z);
-    return r ? r.worldHeight(x, z) : OPEN_SEA;
+    if (r) return r.worldHeight(x, z);
+    if (seabed) {
+      const h = seabed.height(x, z);
+      if (h != null) return h > OPEN_SEA ? h : OPEN_SEA;
+    }
+    return OPEN_SEA;
+  };
+  // Every square the water is dense round: the islands' grids and the sea bed's own.
+  const waterSquares = () => {
+    const out = list.map((r) => ({ origin: r.origin, half: r.half }));
+    if (seabed) for (const s of seabed.squares()) out.push(s);
+    return out;
   };
   const isWaterAt = (x, z) => height(x, z) < 0;
 
@@ -491,7 +513,7 @@ export function createArchipelago() {
     // handed to anything that wanted a terrain for its heights, which is most things.
     worldHeight: height,
     add, remove, replace, get, regionAt, height, isWaterAt, levelKey, bounds, gridBounds, radius,
-    nearestCoast, shoreWithin,
+    nearestCoast, shoreWithin, setSeabed, waterSquares,
     regions: () => list.slice(),
     count: () => list.length,
   };

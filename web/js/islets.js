@@ -4,9 +4,11 @@
 // region is a whole terrain with its own heightfield, its own guest drawing path and a place
 // in the archipelago the water patch is sized from. So the islets are three meshes for all
 // of them together - the ground merged into one geometry, the palms and the bushes one
-// InstancedMesh each - and the price is that the sea under them does not know they are
-// there: it stays open-sea blue, with no shallows round the sand, and a boat sails through.
-// Both belong to the walk-on step, which has to put them in the ground height anyway.
+// InstancedMesh each. The sea under them knows they are there through `seabed`, which the
+// archipelago is handed (createArchipelago's setSeabed): it is what puts the shallows round
+// the sand (the water patch is dense round every square it lists), what a boat grounds on and
+// what you stand on when you step out of one - all of them ask the archipelago's `height`,
+// and that says isletHeight, the very function the ground below is drawn from.
 //
 // The palm is drawn whole near the viewer and as its `_lo` further out (two meshes, the
 // split re-made every couple of seconds as the viewer moves) - the plan's "mee in de ranking
@@ -15,8 +17,8 @@
 import * as THREE from 'three';
 import * as models from './models.js';
 import { plantMaterials } from './world.js';
-import { isletsNear, isletHeight } from 'shared/islets.mjs';
-import { worldToScene } from 'shared/regions.mjs';
+import { isletsNear, isletHeight, isletBed, ISLET_SPAN, ISLET_SHOAL_REACH, ISLET_WATER_STEP } from 'shared/islets.mjs';
+import { worldToScene, OPEN_SEA } from 'shared/regions.mjs';
 
 // A palm this near the viewer is drawn whole, in scene units.
 const NEAR_PALM = 160;
@@ -33,7 +35,9 @@ function nearestFirst(list, [x, z]) {
   return list.slice().sort((a, b) => d(a) - d(b) || (a.id < b.id ? -1 : 1));
 }
 
-export function createIslets({ scene, modest = false }) {
+// `onChange` is told whenever the set of islets standing changes, after the ground is laid:
+// the sea bed under them has moved, so the water round them has to be worked out again.
+export function createIslets({ scene, modest = false, onChange = null }) {
   const group = new THREE.Group();
   group.name = 'islets';
   scene.add(group);
@@ -186,6 +190,7 @@ export function createIslets({ scene, modest = false }) {
     buildGround();
     placeBushes();
     placePalms(focus);
+    if (onChange) onChange(islets.length);
     return islets.length;
   }
 
@@ -202,17 +207,31 @@ export function createIslets({ scene, modest = false }) {
     placeBushes();
   }
 
-  // The ground an islet puts under a point in scene coordinates, or null off every islet -
-  // for the walk-on step, and for a test to ask what is drawn.
+  // What an islet says the sea's depth is at a point in scene coordinates, or null off every
+  // islet - what the archipelago answers with between the islands, and for a test to ask.
+  // The ground itself where there is any, sinking into OPEN_SEA at ISLET_SPAN radii (`isletBed`).
   function heightAt(x, z) {
     for (const islet of islets) {
       const [ox, oz] = worldToScene([islet.x, islet.z], home);
-      const lx = x - ox, lz = z - oz;
-      if (Math.abs(lx) > islet.r * 1.4 || Math.abs(lz) > islet.r * 1.4) continue;
-      return isletHeight(islet, lx, lz);
+      const lx = x - ox, lz = z - oz, span = islet.r * ISLET_SPAN;
+      if (Math.abs(lx) > span || Math.abs(lz) > span) continue;
+      const h = isletBed(islet, lx, lz, OPEN_SEA);
+      if (h != null) return h;
     }
     return null;
   }
+
+  // The islets as a sea bed for createArchipelago: the ground, and the squares the water is
+  // dense round. Read live - `islets` is swapped whole by `apply`.
+  const seabed = {
+    height: heightAt,
+    squares: () => islets.map((islet) => ({
+      origin: worldToScene([islet.x, islet.z], home),
+      half: islet.r * ISLET_SPAN,
+      reach: ISLET_SHOAL_REACH,
+      step: ISLET_WATER_STEP,
+    })),
+  };
 
   function dispose() {
     scene.remove(group);
@@ -221,5 +240,5 @@ export function createIslets({ scene, modest = false }) {
     for (const m of [palmNear, palmFar, bushMesh]) if (m) m.dispose();
   }
 
-  return { apply, update, heightAt, list: () => islets, dispose, group };
+  return { apply, update, heightAt, seabed, list: () => islets, dispose, group };
 }
