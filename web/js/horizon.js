@@ -270,10 +270,23 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
     return arrived;
   }
 
-  function update(dt, night = 0) {
+  // `reach` and `eye` keep the lights inside the far plane. Lamps and beacons carry no fog - a
+  // lit window through the weather is the point of them - so nothing hides them on the way
+  // to the far plane, and once View Distance could bring that in to a few hundred they hit it:
+  // on and off at the line, and blinking while the camera only turned, since the plane cuts
+  // on depth and the corner of the frame is shallower. So they fade out over the last fifth
+  // of `reach` (main.js passes 0.9 of camera.far - a distance, never less than the depth).
+  function update(dt, night = 0, reach = Infinity, eye = null) {
     beat += dt || 0;
     for (const it of islands.values()) {
-      it.lamp.material.opacity = night * 0.9;
+      let near = 1;
+      if (eye && reach < Infinity) {
+        const e = it.group.matrixWorld.elements;
+        const d = Math.hypot(e[12] - eye.x, e[13] - eye.y, e[14] - eye.z);
+        near = Math.min(1, Math.max(0, (reach - d) / (reach * 0.2)));
+      }
+      it.lamp.material.opacity = night * 0.9 * near;
+      it.lamp.visible = it.lamp.material.opacity > 0.01;
       if (!it.beacons.length) continue;
       // A sweep seen end-on from far away is a flash, and this is the cheapest honest
       // shape for one: the cosine raised high enough that the lamp is bright for a short
@@ -283,7 +296,7 @@ export function createHorizon({ scene, pickables, half = OWN_HALF }) {
       // it is still there.
       const c = Math.cos(beat * SWEEP + it.phase);
       const flash = c > 0 ? Math.pow(c, 8) : 0;
-      const on = night * (0.22 + 0.78 * flash);
+      const on = night * (0.22 + 0.78 * flash) * near;
       for (const b of it.beacons) {
         b.material.opacity = on;
         // Nothing at all by day. An invisible mesh is skipped before it becomes a draw

@@ -8,7 +8,7 @@
 // in shared/shapes.mjs, and that is all. Anything the catalogue has no builder for
 // stands as a cairn, so a name nobody has drawn yet still puts something on the ground.
 import * as THREE from 'three';
-import { box, cylinder, cone, sphere, dome, prismRoof, meshAsset, buildPierGeometry, mergeParts as merge } from './buildings.js';
+import { box, cylinder, cone, sphere, dome, prismRoof, quad, meshAsset, buildPierGeometry, mergeParts as merge } from './buildings.js';
 import * as models from './models.js';
 
 const WOOD = 0x6b4a2f;
@@ -116,6 +116,120 @@ function bridge(p) {
   parts.push(box(0.16, 0.6, 0.16, WOOD, { x: 0.6, y: -0.68, z: half - 0.3 }));
   return merge(parts);
 }
+
+// A round-backed arch bridge that a boat can sail under. The plank bridge above
+// rides a hand over the water on a stringer at each end, which is a crossing for feet and
+// a wall for a hull: the Benchy stands 0.92 above the waterline (1.045 keel to funnel,
+// DRAUGHT 0.13 of it under) and is 0.67 across. So this one humps up, like a drum
+// bridge: the deck is one full curve from bank to bank, the timber arch under it leaves
+// an opening the boat just fits through, and it springs from a stone abutment on
+// each bank, so nothing stands in the channel at all.
+//
+// The plank bridge's materials - boarded deck, dark-wood kerb, a rail on posts with a
+// knob on each - so the two read as one carpenter's work. It runs along z like the
+// bridge and --rot turns it; --length stretches it, never shorter than ARCH_MIN_LEN, so
+// the opening never shrinks below what tests/archbridge.test.mjs measures.
+// Sized to the rivers terrain.mjs carves: water 2 * (RIVER_W + 0.37) across, so 1.93 at a
+// source and 2.63 at a mouth. The opening is ARCH_OPEN either side of the middle - a
+// river two wide with a hand to spare - and the crown clears the Benchy (0.92 air draft)
+// plus her swell and a small margin, no more: she just fits. The length is what keeps it
+// walkable: walk.js STEP_UP is 0.45 per cell, and at 10 the steepest cell rises 0.41.
+export const ARCH_MIN_LEN = 10;
+export const ARCH_RISE = 1.35;          // the crown of the deck over its two ends
+export const ARCH_OPEN = 1.3;           // half the opening, where the stone takes over
+const ARCH_FULL = 1.25;                 // (1 - u^2)^FULL: fuller than a raised cosine
+const ARCH_DEPTH = 0.2;                 // deck to the underside of the arch
+const ARCH_HALF_W = 0.65;               // half the deck width
+const ARCH_FOOT = 1.3;                  // how far down the abutments go into the bank
+const ARCH_RAIL = 0.45;                 // taller than the plank bridge's: it is a long way down
+
+const archLen = (p) => Math.max(ARCH_MIN_LEN, p.length || 10);
+
+// The deck height at z along the run, over its two ends, in the prop's own frame.
+export function archDeckY(p, z) {
+  const half = archLen(p) / 2;
+  const u = Math.min(1, Math.abs(z) / half);
+  return ARCH_RISE * Math.pow(1 - u * u, ARCH_FULL);
+}
+
+// The underside of the timber. Past archSpring() the stone carries it and there is no
+// opening under it; inside, everything below this is open water.
+export function archSoffitY(p, z) {
+  return archDeckY(p, z) - ARCH_DEPTH;
+}
+export function archSpring(p) {
+  return Math.min(ARCH_OPEN, archLen(p) / 2 - 1);
+}
+
+function archbridge(p) {
+  const len = archLen(p);
+  const half = len / 2;
+  const spring = archSpring(p);
+  const W = ARCH_HALF_W;
+  const foot = -ARCH_FOOT;
+  // Stops close enough that the curve reads as a curve, and one exactly at each springing
+  // so the stone and the timber meet on a line.
+  const zs = [];
+  const n = Math.ceil(len / 0.25);
+  for (let i = 0; i <= n; i++) zs.push(-half + (len * i) / n);
+  zs.push(-spring, spring);
+  zs.sort((a, b) => a - b);
+  const parts = [];
+  for (let i = 0; i < zs.length - 1; i++) {
+    const a = zs[i], b = zs[i + 1];
+    if (b - a < 1e-6) continue;
+    const ya = archDeckY(p, a), yb = archDeckY(p, b);
+    const sa = archSoffitY(p, a), sb = archSoffitY(p, b);
+    const open = Math.abs((a + b) / 2) < spring;
+    // the deck, boarded across the run like the plank bridge's
+    parts.push(quad([[-W, ya, a], [W, ya, a], [W, yb, b], [-W, yb, b]], PLANK, { sheet: 'plank' }));
+    for (const x of [-W, W]) {
+      // the kerb on the edge of the planking, and the timber face of the arch under it
+      parts.push(quad([[x, ya, a], [x, yb, b], [x, yb + 0.09, b], [x, ya + 0.09, a]], PLANK_DARK, { sheet: 'plank' }));
+      parts.push(quad([[x, sa, a], [x, sb, b], [x, yb, b], [x, ya, a]], PLANK_DARK, { sheet: 'plank' }));
+      // a laminated rib along the bottom of that face, which is what makes it an arch
+      // rather than a plank laid over a hump
+      const o = x * 1.04;
+      parts.push(quad([[o, sa, a], [o, sb, b], [o, sb + 0.12, b], [o, sa + 0.12, a]], WOOD));
+      // the handrail, following the deck
+      const r = x * 0.96;
+      parts.push(quad([[r, ya + ARCH_RAIL - 0.07, a], [r, yb + ARCH_RAIL - 0.07, b], [r, yb + ARCH_RAIL, b], [r, ya + ARCH_RAIL, a]], WOOD));
+      // and the abutment: stone under the timber from the springing out to the bank
+      if (!open) parts.push(quad([[x, foot, a], [x, foot, b], [x, sb, b], [x, sa, a]], STONE));
+    }
+    if (open) parts.push(quad([[-W, sa, a], [W, sa, a], [W, sb, b], [-W, sb, b]], PLANK_DARK, { sheet: 'plank' }));
+  }
+  for (const s of [-1, 1]) {
+    // the face of each abutment that looks into the channel, and its end under the road
+    const z = s * spring, zy = archSoffitY(p, z);
+    parts.push(quad([[-W, foot, z], [W, foot, z], [W, zy, z], [-W, zy, z]], STONE));
+    parts.push(quad([[-W, foot, s * half], [W, foot, s * half], [W, 0, s * half], [-W, 0, s * half]], STONE));
+    // a coping course where the arch springs, a hand proud of it, so it reads as masonry
+    parts.push(box(W * 2 + 0.16, 0.12, 0.4, 0x7a756d, { y: zy - 0.12, z: s * (spring + 0.2) }));
+  }
+  // posts on the rail, about one a metre, with the plank bridge's knob on each
+  const posts = Math.max(4, Math.round(len / 0.95));
+  for (let i = 0; i <= posts; i++) {
+    const z = -half + 0.12 + ((len - 0.24) * i) / posts;
+    const y = archDeckY(p, z);
+    for (const x of [-W + 0.04, W - 0.04]) {
+      parts.push(box(0.08, ARCH_RAIL, 0.08, WOOD, { x, y, z }));
+      parts.push(sphere(0.055, PLANK, { x, y: y + ARCH_RAIL + 0.02, z }));
+    }
+  }
+  return merge(parts);
+}
+
+// Where the arch bridge sits: both ends on the higher bank, and never under the sea, so
+// the opening measured up from y = 0 in its own frame is at least that far over the water.
+function archDeck(p, terrain) {
+  const half = archLen(p) / 2;
+  const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+  const a = terrain.worldHeight(p.x + s * half, p.z + c * half);
+  const b = terrain.worldHeight(p.x - s * half, p.z - c * half);
+  return Math.max(a, b, 0.1) + 0.02;
+}
+export const ARCH_LIFT_MIN = 0.12;      // the lowest archDeck() ever puts it over the sea
 
 // A dock: a ramp onto a run of decking with a wide head at the end of it, and the mooring
 // posts down both sides. It runs along z like the bridge and the fence, so --rot turns it
@@ -282,6 +396,7 @@ const SHAPES = {
   // the cart and the washing line arrived, which need a `run` to block along and have one
   // length each, being baked meshes.
   bridge: { build: bridge, r: 0, lift: bridgeDeck, run: 0.75, stretch: true },
+  archbridge: { build: archbridge, r: 0, lift: archDeck, run: ARCH_HALF_W, stretch: true },
   // A dock stands in the sea at one height whatever is under it, and that height is
   // already in the geometry: buildPierGeometry works in world y so that the quay's own
   // pier comes out level whatever the district's centre happens to sit at. So this one
@@ -485,11 +600,12 @@ export function createProps({ scene, terrain, material }) {
     const out = new Map();
     for (const rec of records.values()) {
       const p = rec.spec;
-      if (p.kind !== 'bridge') continue;
+      const arch = p.kind === 'archbridge';
+      if (p.kind !== 'bridge' && !arch) continue;
       const scale = p.scale || 1;
-      const len = Math.max(2, p.length || 6) * scale;
-      const wide = 0.75 * scale;                       // the deck is 1.5 across
-      const y = bridgeDeck(p, terrain);
+      const len = (arch ? archLen(p) : Math.max(2, p.length || 6)) * scale;
+      const wide = (arch ? ARCH_HALF_W : 0.75) * scale; // the plank deck is 1.5 across
+      const y0 = arch ? archDeck(p, terrain) : bridgeDeck(p, terrain);
       const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
       for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.4) {
         for (let w = -wide; w <= wide + 0.01; w += 0.4) {
@@ -500,7 +616,10 @@ export function createProps({ scene, terrain, material }) {
           const gx = Math.round(x + terrain.half - 0.5);
           const gz = Math.round(z + terrain.half - 0.5);
           if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
-          out.set(gx + gz * terrain.size, y);
+          // The arch climbs, so each cell takes the deck over it rather than one height.
+          const y = arch ? y0 + archDeckY(p, t / scale) * scale : y0;
+          const key = gx + gz * terrain.size;
+          out.set(key, Math.max(out.has(key) ? out.get(key) : -Infinity, y));
         }
       }
     }

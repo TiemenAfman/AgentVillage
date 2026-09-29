@@ -2,6 +2,7 @@ import { addScaffold as attachScaffold } from './scaffold.js';
 // Boot, camera, the live feed and the animation queue that turns a data diff into
 // something you can watch happen.
 import * as THREE from 'three';
+import { useRadialFog } from './radial-fog.js';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
@@ -15,7 +16,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
-import { allowImp, setImpNight } from './imp.js';
+import { allowImp, setImpNight, IMP_CAP, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
@@ -34,8 +35,11 @@ import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
-  QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX,
+  QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
+import { fogCeilingOf } from './fade.js';
+import { keepRecord, keepRegion } from './record-cull.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
@@ -117,6 +121,11 @@ import { captionCell } from './captions.js';
 
 // In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
 installDesktopGuards();
+
+// Before any material compiles: the haze by distance, not depth (radial-fog.js), so a house
+// cut at Object Distance is in full fog at every corner of the screen and not only in the
+// middle of it. Logged rather than thrown if three's chunk ever changes under us.
+if (!useRadialFog(THREE)) console.warn('island: three.js fog chunk changed; the haze is by depth again');
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -332,7 +341,9 @@ async function openBoardWithoutIsland() {
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
 const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
-renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
+// A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
+// third more pixels to fill than 1, and fill is what a phone's GPU runs out of first.
+renderer.setPixelRatio(Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -341,6 +352,16 @@ renderer.toneMappingExposure = 1.05;
 if (modest) console.info('island: integrated graphics detected, running lighter');
 
 const scene = new THREE.Scene();
+// The far plane is View Distance plus 150, and the 150 is not a rounding. setFogRange closes
+// the haze at `0.95 * camera.far`; whatever is past the far plane is cut off on a sphere
+// round the eye, and a haze that is still thin out there draws that cut as a hard curved edge
+// along the sea. The margin is what lets the fog finish the job the projection starts. It was
+// a flat 1400 for as long as there was no slider, which meant the fog - and nothing else -
+// decided what you could see, and nothing in the settings said so.
+const VIEW_MARGIN = 150;
+// How far inside the far plane the fog has closed, as a fraction of it (setFogRange). The
+// one copy: applyObjectDistances asks the same number whether a cut could ever be seen.
+const FOG_CAP = 0.95;
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
 // The field of view is vertical, so a phone held upright at 45 degrees saw about 23 across:
 // a boat and a strip of sea. On the phone it opens up in portrait until there is about 60
@@ -375,6 +396,12 @@ Object.assign(controls, {
 controls.target.set(0, 1, 0);
 
 const buildingMat = createBuildingMaterial();
+// The crowd's own instance of the same material, and the only reason there is a second one.
+// Object Distance and NPC Distance are two numbers and a shared material has one uniform
+// slot, so the people get their own set. Same onBeforeCompile, same customProgramCacheKey,
+// so three hands both the same compiled program - this is a second uniform set, not a second
+// shader, and the crowd still costs one draw call per body part exactly as it did.
+const crowdMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 
 const state = {
@@ -387,6 +414,12 @@ const state = {
   sea: createArchipelago(), region: null, guests: [], boats: [], docks: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   byId: new Map(), districts: new Map(), pickables: [],
+  // The four graphics distances, which are four different knobs on four different parts of
+  // the renderer and not one number wearing four names. As this browser last left them
+  // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
+  // onGraphicsSetting is the only thing that moves them. Plans/graphics-afstanden.md is why
+  // they are not collapsed into camera.far.
+  graphics: loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]),
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
@@ -2291,6 +2324,9 @@ function enterPlan() {
   hamletGroup.visible = false;
   for (const rec of state.byId.values()) if (rec.nameplate) rec.nameplate.group.visible = false;
   if (scene.fog) { planFog = [scene.fog.near, scene.fog.far]; scene.fog.near = 2000; scene.fog.far = 4000; }
+  // The fog went to 4000 to show the whole island, so the two cuts go with it. leftPlan puts
+  // both back.
+  applyObjectDistances();
   state.plan.enter();
   if (!state.plan.active()) leftPlan();     // it refused: an island with no lattice yet
 }
@@ -2307,6 +2343,9 @@ function leftPlan() {
   controls.enabled = true;
   controls.update();
   applyFogRange();
+  // The fog was pushed to 4000 so the planner could see the island whole, and Object and NPC
+  // Distance were switched off to match. Both come back here, in the order the fog settled in.
+  applyObjectDistances();
 }
 
 function askToSendAway(id) {
@@ -2465,6 +2504,111 @@ function applyCameraRange() {
   controls.maxDistance = Math.min(MAX_ORBIT, Math.max(200, state.sea.radius() * 2));
 }
 
+// ---------------------------------------------------------------- the four distances
+// View Distance is the only one that touches the projection, and the fog follows on its own:
+// setFogRange caps the haze at `FOG_CAP * camera.far`, so moving the far plane moves the
+// horizon without this file having to say anything about the archipelago or the weather -
+// and it deliberately does not know how big the world is: a world 4000 across is not a
+// reason to draw 4000 of it.
+function applyViewDistance() {
+  camera.far = state.graphics.viewDistance + VIEW_MARGIN;
+  camera.updateProjectionMatrix();
+  // The sun and moon are fog-free discs, so they are the one part of the sky that has to be
+  // told: they hang inside the far plane. The dome itself is drawn on it (world.js).
+  if (state.world) state.world.setFar(camera.far);
+  applyFogRange();
+}
+
+// The furthest the haze may close: inside the far plane (FOG_CAP of it), and never further out
+// than Object Distance. The second half is what makes a house come out of the mist rather than
+// appear: every record past Object Distance is taken out of the picture (keepRecord), and with
+// the fog closed by then it was already the colour of the fog - on every part of the screen,
+// since the fog is by distance (radial-fog.js), like the cut. It is also what keeps an older
+// machine playable without the island looking cut short: what is not drawn is behind a haze
+// that thickens towards it, not a line where the town stops. The planner draws everything.
+function fogCeiling() {
+  return fogCeilingOf(camera.far * FOG_CAP, state.graphics.objectDistance, state.mode === 'plan');
+}
+
+// Object and NPC Distance. The houses need nothing here: the fog closes at Object Distance at
+// the latest (fogCeiling), so keepRecord only ever cuts a record the haze has already covered,
+// and the building shader stays exactly what it always was - no dither, no depth twin, no
+// early depth test given up by every building on the island.
+//
+// The people are another matter: NPC Distance can lie well inside the haze, and there a
+// settler would vanish in clear air. So the crowd's own material dithers over the last fifth
+// (web/js/fade.js) while fadeNeeded says a cut could be seen - asked against fogCeiling(), the
+// furthest the fog can ever close, not the fog of the moment, which applyFogRange moves with
+// every zoom and every change of sky. So this runs when a slider, the window or the planner
+// changes, never per frame. The crowd's meshes carry the material's depth twin from the moment
+// they are made (settler-figures.js), so a faded settler takes their shadow with them.
+//
+// The planner draws everything - enterPlan pushes the fog to 4000 so the whole island is
+// legible - and a town seen from above with half of it stippled away is worse than no slider
+// at all. A range of 0 is how "off" is spelled everywhere in this file.
+function applyObjectDistances() {
+  const range = npcRange();
+  crowdMat.userData.fade(range, fogCeiling());
+  // The people are also cut on the CPU, and that one has to be told now: raising NPC Distance
+  // puts them back within a frame, not whenever the sea next says where they are.
+  const fading = crowdMat.userData.fadeOn;
+  if (state.settlers) state.settlers.setRange(range, fading);
+  for (const g of state.guests) if (g.crowd) g.crowd.setRange(range, fading);
+}
+const npcRange = () => (state.mode === 'plan' ? 0 : state.graphics.npcDistance);
+
+// What the settings panel calls. Four keys, four places, and the only way into all of them -
+// the numbers in state.graphics are not written anywhere else, so there is no second path
+// that could move one of these without the other three finding out. Remembered per browser,
+// the one that moved and not the other three (graphics-settings.js saveGraphic), so the rest
+// go on following this machine's defaults.
+function onGraphicsSetting(key, value) {
+  const v = clampGraphic(key, value);
+  if (v == null) return;
+  state.graphics[key] = v;
+  saveGraphic(key, v);
+  applyGraphics(key);
+}
+function applyGraphics(key = null) {
+  if (!key || key === 'viewDistance') applyViewDistance();
+  // Object Distance moves the haze (fogCeiling) before it decides anything about fading.
+  else if (key === 'objectDistance') applyFogRange();
+  if (!key || key === 'shadowDistance') { if (state.world) state.world.setShadowDistance(state.graphics.shadowDistance); }
+  if (key !== 'shadowDistance') applyObjectDistances();
+}
+// Settings → Graphics → "This machine's defaults": every choice forgotten, back to the tier.
+function onGraphicsReset() {
+  forgetGraphics();
+  Object.assign(state.graphics, GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]);
+  applyGraphics();
+}
+
+// Object Distance, on the CPU: a record past its range is taken out of the render list
+// (web/js/record-cull.js keepRecord), so it costs no vertices, no triangles and no shadow, and
+// its mill, clock and smoke stop - the frame loop skips animateExtras for it. Only CULL_PAD
+// past Object Distance, where the fog (fogCeiling) has already closed over all of it: nothing
+// pops on the way out, and on the way back the record is drawn again while it is still the
+// colour of the fog, and comes out of it. The eye both it and the crowd's shadow fade measure
+// from is the camera, copied once a frame.
+const cullEye = new THREE.Vector3();
+// Right before the render, once every branch of the frame has put the camera where it will be
+// drawn from: taken earlier in the frame it measured from where the camera *was*, and a jump
+// of more than the pad in one frame (a tween, a fast zoom) could draw a record a frame late
+// or cut one a frame early inside the fog band. The animations read `rec.cull` from the
+// frame before, which only ever decides whether a mill in full fog turns.
+function cullRecords() {
+  cullEye.copy(camera.position);
+  setFadeEye(camera.position);
+  const range = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
+  for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
+  for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
+  // And a whole neighbour once the fog has closed over all of it - its ground, wood and fields
+  // are not records, and were drawn in full fog however far off they lay. After the records,
+  // so each record's landmark answer (rec.seen) is fresh for keepRegion to read.
+  const ceiling = state.mode === 'plan' ? Infinity : fogCeiling();
+  for (const g of state.guests) keepRegion(g, ceiling, cullEye);
+}
+
 // Where the haze begins and where it closes, and the only place that decides either.
 // world.js makes the Fog object and tints it with the sky; these two distances were being
 // set there as well, and this one - a flat 235 chosen for a grid of 64 - overwrote it on
@@ -2538,8 +2682,8 @@ function setFogRange(half, out, far) {
   // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
-  const cap = camera.far * 0.95;
-  scene.fog.far = Math.min(h.far, cap);
+  // And never past Object Distance, so the houses come out of the mist (fogCeiling).
+  scene.fog.far = Math.min(h.far, fogCeiling());
   scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
 }
 
@@ -3065,7 +3209,10 @@ async function learnTheWorld() {
 // 1.6x budget, and that was with signs off, no forest and no settlers. Eight islands in
 // full does not render, and the honest way to have eight in the world is to draw the near
 // ones and suggest the rest.
-const DETAILED = modest ? 2 : 4;
+// A phone draws one: a whole guest island is its landscape as well as its houses, and on a
+// phone's GPU that is the difference that counts (measured: DETAILED was already the biggest
+// lever for guests on a modest page).
+const DETAILED = STANDALONE ? 1 : modest ? 2 : 4;
 
 // Near to *whom*. It used to be near to our own berth, which never moves - so a silhouette
 // stayed a silhouette however close you sailed, with no houses, no people and no ground to
@@ -3744,8 +3891,17 @@ function raiseGuestIslands() {
     // they got to - but they are drawn by exactly the same eleven meshes ours are, so a
     // village of three hundred over there costs what a village of three hundred costs.
     g.crowd = createCrowdView({
-      scene, material: buildingMat, region,
+      // crowdMat, like ours: these are people, and NPC Distance is the slider that says how
+      // far a person is still drawn. The houses on this island are buildingMat, so the two
+      // cuts stay two cuts.
+      scene, material: crowdMat, region,
       buildings: (region.village && region.village.buildings) || [],
+      range: npcRange(),
+      fading: crowdMat.userData.fadeOn,
+      // A lighter machine stands as few imps as a phone: each is a 25k-triangle skinned mesh
+      // with a shadow, and seven of them measured a quarter of a modest page's frame at the
+      // volcano.
+      impLimit: modest ? IMP_CAP.phone : IMP_LIMIT,
       // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
       // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
       // imps. Scene frame, the same one the crowd's positions are in.
@@ -4254,11 +4410,21 @@ function buildScene(village) {
   state.world = createWorld(scene, terrain, village, {
     month: worldNow().month,
     shadowSize: modest ? 1024 : 2048,
+    // The two graphics distances that are a property of the world rather than of this frame.
+    // View Distance never comes here - it is the camera's own far plane - and the two cuts
+    // are not here either: both are read every frame, not fixed when the world is built.
+    shadowDistance: state.graphics.shadowDistance,
     modest,
     // So the water is laid over everything there is, not over this island alone.
     sea: state.sea,
   });
 
+
+  // The far plane and the haze, once, before anything is drawn. createWorld made the Fog
+  // object with the island's own numbers; this is the call that puts View Distance's far
+  // plane (1250 + 150 by default) in front of it, and the fog closes itself inside that.
+  // Nothing after this moves camera.far except onGraphicsSetting, which is the point.
+  applyViewDistance();
 
   //roaddebug is a debug mesh that shows the road network, for development and testing.
   state.roadDebug = createRoadDebug({
@@ -4379,14 +4545,24 @@ function buildScene(village) {
   // which is the price of there being one answer instead of two.
   if (state.settlers) state.settlers.dispose();
   state.settlers = createCrowdView({
-    scene, material: buildingMat, region: state.region,
+    scene, material: crowdMat, region: state.region,
     buildings: village.buildings || [],
+    // The eye and the range, because NPC Distance is about people. crowdMat is the building
+    // shader with its own uniform, so the people can dither out at their own distance while
+    // the houses go on into the fog.
+    eye: () => camera.position,
+    range: npcRange(),
+    fading: crowdMat.userData.fadeOn,
   });
   // The last roster the sea sent, if it arrived before this scene existed - at boot it
   // always does, and after a reseed it is the scene that was rebuilt, not the island.
   // Without this nobody is drawn until the next time the village changes.
   if (state.homeRoster) state.settlers.roster(state.homeRoster);
   if (state.homeHeld) state.settlers.held(decodeHeld(state.homeHeld, state.region.half));
+  // Now that there is a crowd to cut and a fog to cut it inside of. At the defaults this
+  // decides the dither stays out of both shaders, which is the answer for a page that has
+  // never touched a slider.
+  applyObjectDistances();
   // And our own animals, the same way: drawn off the wire, never walked here.
   if (state.homeHerd) state.homeHerd.dispose();
   state.homeHerd = createAnimalView({
@@ -5199,8 +5375,9 @@ function applyVillage(next, { animate }) {
     for (const d of next.districts) if (!hadD.has(d.id)) events.push({ type: 'district', d });
   }
 
-  // Anyone no longer in the village has left: a visitor who finished, or someone sent
-  // away. Take their building out of the scene rather than leaving a ghost standing.
+  // Anyone no longer in the village has left: a visitor who finished, a tent nobody gave
+  // anything to do (lib/village.mjs), or someone sent away. Take their building out of the
+  // scene rather than leaving a ghost standing.
   for (const [id, rec] of [...state.byId]) {
     if (nextSpecs.has(id)) continue;
     if (animate && rec.group.visible) leaveAnimation(rec);
@@ -5689,7 +5866,7 @@ function frame(nowMs) {
   if (!state.youMarker) state.youMarker = createYouMarker(scene);
   const sky = state.mode === 'orbit' && state.walk.parked() && !state.inside;
   state.youMarker.update(sky ? state.walk.state.pos : null, state.walk.state.route,
-    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youArrowEnabled());
+    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youMarkerMode());
 
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
@@ -5813,7 +5990,7 @@ function frame(nowMs) {
   }
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
-  if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
+  if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0, camera.far * 0.9, camera.position);
   if (state.islets) state.islets.update(dt, focusPoint());
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -5854,7 +6031,10 @@ function frame(nowMs) {
 
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
-  for (const rec of state.byId.values()) animateExtras(rec, dt, hour, nightAmt, nowMs);
+  // Object Distance, and the reason the far houses are cheap rather than merely faint: a
+  // record the cut has taken out (cullRecords, just before the render) does none of its
+  // per-frame work.
+  for (const rec of state.byId.values()) if (!rec.cull) animateExtras(rec, dt, hour, nightAmt, nowMs);
   // The miner and the goldsmith, and the cart and the barrow between them (goldrun.js).
   if (state.goldRun) state.goldRun.update(dt);
   // The timber wagon from the sawmill to the yard, and the hands at the yard (timberrun.js),
@@ -5871,12 +6051,14 @@ function frame(nowMs) {
   // the price of walking a second list - it is a village over there too, and a village whose
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
-    for (const rec of g.records) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    for (const rec of g.records) if (!rec.cull) animateExtras(rec, dt, hour, nightAmt, nowMs);
     // And their ground: the season their wood is drawn in, and anything falling over on
     // it. Their island is built by the same createLandscape ours is, so it wants the same
     // one call a frame - without it a neighbour's forest would still be in the season it
     // was raised in while ours turned around it.
-    if (g.update) g.update(dt, month);
+    // Not while the whole island is behind the fog (keepRegion): its season is picked up on
+    // the first frame it is drawn again.
+    if (g.update && !g.farOut) g.update(dt, month);
     // Their people, drawn where the sea last said they were and interpolated between, at
     // the height their own island's decks and steps put them - which is what puts a body on
     // a quay's planks rather than in the water beside them.
@@ -5891,6 +6073,13 @@ function frame(nowMs) {
   // owns the horizon.
   const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
   if (state.world) state.world.recentre(eye.position.x, eye.position.y, eye.position.z);
+  // The fine, swelling water follows you: your body or your boat on foot, what the camera
+  // looks at from above (world.js nearWaterPlan). Without it the swell stopped sixteen units
+  // off every coast, and past the old outline a boat floated over the lower ocean disc.
+  if (state.world) {
+    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos : controls.target;
+    state.world.setWaterFocus(w.x, w.z);
+  }
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
@@ -5938,6 +6127,7 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
+  cullRecords();
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
     // Colour pass only: three.js resets renderer.info after the shadow pass, so the
@@ -6173,6 +6363,13 @@ function playerName() {
 async function boot() {
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
+    // The four graphics sliders in Settings. The only way into state.graphics, which is what
+    // makes "nothing else writes it" a fact rather than a hope - and it has to be here, on
+    // the panel's handlers: it was handed to createNet, which never calls it, and every
+    // slider moved its own label and nothing else.
+    onGraphicsSetting,
+    onGraphicsReset,
+    graphics: () => state.graphics,
     onSpeechTap: () => endParley(),
     onSay: () => state.islandchat && state.islandchat.toggle(),
     phonePrefs: () => phonePrefs(),
@@ -6217,6 +6414,20 @@ async function boot() {
     },
     onSeaMode: (mode) => changeSea({ mode }),
     onJoinSea: (url) => changeSea({ mode: 'join', url }),
+    // Off the saved list, the same route the main menu's cross uses.
+    onForgetSea: async (url) => {
+      const r = await mine('/api/sea/forget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      }).catch(() => null);
+      if (!r || !r.ok) {
+        state.ui.toast((r && (await r.json().catch(() => ({}))).error) || 'That address would not go.');
+        return;
+      }
+      const fresh = await mine('/api/seas').then((x) => x.json()).catch(() => null);
+      if (fresh) state.ui.setSeas(fresh);
+    },
     onSelect: (id) => { state.selected = id; },
     onFocus: (id) => focusOn(id),
     onWalkHere: (id) => walkToBuilding(id),

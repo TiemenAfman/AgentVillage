@@ -4,6 +4,7 @@ import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
 import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
+import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -58,18 +59,26 @@ const el = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
-  const state = { filters: { code: true, cowork: true, apprentices: true }, open: null };
-
+  const state = {
+    filters: {
+      code: true,
+      cowork: true,
+      apprentices: true
+    },
+    open: null,
+    // The four graphics distances, as main.js holds them (remembered per browser in
+    // graphics-settings.js). A copy for drawing the sliders, kept in step on every input so
+    // the panel opens where it was left rather than back at the defaults.
+    graphics: { ...GRAPHICS_DEFAULTS, ...(handlers.graphics ? handlers.graphics() : {}) },
+  };
   // --- filters, legend, overview ------------------------------------------
-  document.querySelectorAll('[data-filter]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const k = btn.dataset.filter;
-      state.filters[k] = !state.filters[k];
-      btn.classList.toggle('on', state.filters[k]);
-      btn.setAttribute('aria-pressed', String(state.filters[k]));
-      handlers.onFilters(state.filters);
-    });
-  });
+  // The Code/Cowork/Apprentices filters live under Settings → Show (renderSettings); they
+  // were chips under the menu, where they were rarely touched and always in the way.
+  const FILTERS = [
+    ['code', 'Code', 'Claude Code sessions: show or hide their houses'],
+    ['cowork', 'Cowork', 'Cowork tasks: show or hide the harbour houses'],
+    ['apprentices', 'Apprentices', 'Subagents: show or hide the sheds beside the houses'],
+  ];
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
   // Beside Legend rather than inside Settings, and it is the one chip that is not there
@@ -84,8 +93,8 @@ export function createUI(handlers) {
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
-  // Tucks the menu away - New settler through Overview - leaving the clock and the
-  // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
+  // Tucks the menu away - New settler through Overview - leaving the clock where it
+  // was. Remembered the same way the chat
   // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
   const NAV_KEY = 'promptholm.nav.collapsed';
   // With nothing remembered, a phone starts with it tucked away: at 390 wide the menu is
@@ -109,9 +118,28 @@ export function createUI(handlers) {
     if (e.key === 'Escape') SIDE.forEach(close);
     // Space belongs to the player on foot, where it jumps. Restarting the history from
     // under someone's feet is not what the key means down there.
-    if (e.key === ' ' && e.target === document.body && !walking) { e.preventDefault(); el('play-btn').click(); }
+    if (e.key === ' ' && e.target === document.body && !walking && timelineShown()) { e.preventDefault(); el('play-btn').click(); }
   });
 
+  document.addEventListener('input', e => {
+    const input = e.target.closest('input[data-setting]');
+    if (!input) return;
+
+    const key = input.dataset.setting;
+    const value = Number(input.value);
+    if (!(key in state.graphics)) return;
+    state.graphics[key] = value;
+
+    if (handlers.onGraphicsSetting) {
+      handlers.onGraphicsSetting(key, value);
+    }
+
+    const valueEl = document.getElementById(
+      key.replace(/[A-Z]/g, match => '-' + match.toLowerCase()) + '-value'
+    );
+
+    if (valueEl) valueEl.textContent = `${value}m`;
+  });
   // The side panels on the right, one open at a time. The last two are the animals'
   // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
   // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
@@ -142,7 +170,7 @@ export function createUI(handlers) {
     // The animals' "while you were away" card follows the same rule as the waiting list.
     const a = el('animal-summary');
     if (a) a.hidden = walking || planning || panelOpen || !a.querySelector('li');
-    el('chronicle').hidden = walking || planning;
+    el('chronicle').hidden = walking || planning || !timelineShown();
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
     el('settings-btn').classList.toggle('on', !el('settings').hidden);
     el('phone-btn').classList.toggle('on', !el('phone').hidden);
@@ -152,6 +180,14 @@ export function createUI(handlers) {
   let planning = false;
 
   // --- chronicle -----------------------------------------------------------
+  // The timeline bar can be switched off under Settings → Timeline, per browser: the island
+  // then stays live, and the bar only comes back for a replay somebody asked for (the
+  // chronicle building), so its Live button is there to end it.
+  const TIMELINE_KEY = 'promptholm.timeline';
+  let timelineOn = true;
+  try { timelineOn = localStorage.getItem(TIMELINE_KEY) !== '0'; } catch { /* private window: on */ }
+  let replaying = false;
+  const timelineShown = () => timelineOn || replaying;
   const range = el('chronicle-range');
   range.addEventListener('input', () => handlers.onScrub(Number(range.value) / 1000));
   el('play-btn').addEventListener('click', () => handlers.onPlay());
@@ -163,6 +199,7 @@ export function createUI(handlers) {
     el('chronicle-date').textContent = date;
     el('play-btn').textContent = playing ? '❚❚' : '▶';
     el('live-btn').classList.toggle('on', !!live);
+    if (replaying !== !live) { replaying = !live; if (!timelineOn) syncSidebar(); }
   }
 
   // --- header --------------------------------------------------------------
@@ -177,11 +214,17 @@ export function createUI(handlers) {
       [s.districts, s.districts === 1 ? 'district' : 'districts'],
     ];
     if (s.quayArrivals) bits.push([s.quayArrivals, 'at the quay']);
-    let html = bits.map(([n, l]) => `<span><b>${fmtInt(n)}</b> ${l}</span>`).join('');
+    // The ladder counts the most there have ever been at once (lib/village.mjs `reachedOf`),
+    // so once tents have packed up the count and the next milestone no longer add up without
+    // saying so.
+    const most = s.reached && s.reached.settlers > s.settlers ? s.reached.settlers : 0;
+    let html = bits.map(([n, l], i) => (i === 0 && most
+      ? `<span title="The most the village has had at once: ${fmtInt(most)}. Milestones count that, so the next one waits until the village is that big again."><b>${fmtInt(n)}</b> ${l}</span>`
+      : `<span><b>${fmtInt(n)}</b> ${l}</span>`)).join('');
     if (s.nextMilestone) html += `<span title="Population milestone">${esc(s.nextMilestone.label)} in <b>${s.nextMilestone.remaining}</b></span>`;
     el('counts').innerHTML = html;
     for (const id of ['titlecard', 'topright']) el(id).hidden = false;
-    el('chronicle').hidden = walking;
+    el('chronicle').hidden = walking || !timelineShown();
   }
 
   function setLive(mode) {
@@ -420,9 +463,16 @@ export function createUI(handlers) {
   // On unless switched off, per browser like Build mode, and for the same reason: it changes
   // what this page draws, not the island. Only the arrow - the dots and the ring of a route
   // given from above stay, because without them you cannot see where you sent yourself.
+  // Three choices: 'you' (the default, stored as nothing), 'arrow' and 'off' (stored as '0',
+  // which is what the old on/off switch wrote for off).
   const YOU_KEY = 'promptholm.youarrow';
-  let youOn = true;
-  try { youOn = localStorage.getItem(YOU_KEY) !== '0'; } catch { /* private window: on */ }
+  const YOU_MODES = [
+    ['you', 'You', 'You: when you go up into the sky, YOU hangs over where you left yourself standing, without the arrow.'],
+    ['arrow', 'You + arrow', 'You + arrow: when you go up into the sky, YOU and an arrow hang over where you left yourself standing.'],
+    ['off', 'Off', 'Off: you still stand where you left yourself, without YOU or the arrow. A route you give from above keeps its dots and ring.'],
+  ];
+  let youMode = 'you';
+  try { const v = localStorage.getItem(YOU_KEY); youMode = v === '0' ? 'off' : v === 'arrow' ? 'arrow' : 'you'; } catch { /* private window: you */ }
 
   // The director (web/js/director.js, Plans/regisseur.md): the camera wandering off by itself
   // to watch something happen when nobody has touched the island for a while. On unless
@@ -545,6 +595,11 @@ export function createUI(handlers) {
         + `<span class="sea-what"><b title="${esc(o.url || '')}">${esc(name)}</b><small>${esc(from)} · ${said}</small></span>`
         + (here ? '<span class="tag here">You are here</span>'
           : `<button class="chip" data-sea="${esc(o.url)}"${o.up ? '' : ' disabled'}>Join</button>`)
+        // Only a saved address can go, as in the main menu (mainmenu.js droppable): one found
+        // on the network is back at its next announcement, and the sea we are in is left by
+        // joining another.
+        + ((o.from === 'known' || o.from === 'chosen') && !o.mine && !here
+          ? `<button class="x" data-forgetsea="${esc(o.url)}" title="Forget ${esc(o.url)}" aria-label="Forget ${esc(o.url)}">✕</button>` : '')
         + '</div>';
     }).join('') || '<p class="muted">No seas found yet.</p>';
     return '<h3 class="sec">The sea</h3>'
@@ -559,28 +614,58 @@ export function createUI(handlers) {
   // Which action is waiting for its new key, if any.
   let rebinding = null;
   function controlsSection() {
-    const row = ([a, , says]) => `<button class="chip${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
-      + `<kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd> ${esc(says)}</button>`;
-    return '<h3 class="sec">Controls</h3>'
+    const row = ([a, , says]) => `<button class="keyrow${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
+      + `<span>${esc(says)}</span><kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd></button>`;
+    return '<div><h3 class="sec">Controls</h3>'
       + `<p class="muted" style="margin:0 0 9px">On foot. Click one and press the key you want. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand.</p>`
-      + `<div class="chips wrap">${ACTIONS.map(row).join('')}</div>`
-      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div>`;
+      + `<div class="keylist">${ACTIONS.map(row).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div></div>`;
+  }
+      
+  // Each slider from GRAPHICS_LIMITS (graphics-settings.js), the same table main.js clamps
+  // against, so the panel cannot offer a number the frame would refuse.
+  const GRAPHICS_ROWS = [
+    ['viewDistance', 'View distance'],
+    ['objectDistance', 'Object distance'],
+    ['npcDistance', 'NPC distance'],
+    ['shadowDistance', 'Shadow distance'],
+  ];
+  function graphicsSection() {
+    const row = ([key, label]) => {
+      const lim = GRAPHICS_LIMITS[key];
+      const v = state.graphics[key];
+      const id = key.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()) + '-value';
+      return `<div class="setting-row"><label>${label} <span class="muted" id="${id}">${v}m</span></label>`
+        + `<input type="range" min="${lim.min}" max="${lim.max}" step="${lim.step}" value="${v}" data-setting="${key}"></div>`;
+    };
+    return '<div><h3 class="sec">Graphics</h3>'
+      + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
+      + GRAPHICS_ROWS.map(row).join('')
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-graphics-reset="1">This machine's defaults</button></div>`
+      + `</div>`;
   }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
-    el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
+    el('settings-body').innerHTML = '<div class="settings-cols"><h3 class="sec" style="margin-top:0">House signs</h3>'
       + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
       + controlsSection()
+      + graphicsSection()
       + sizeSection()
       + seaSection()
+      + '<h3 class="sec">Show</h3>'
+      + `<div class="chips wrap">${FILTERS.map(([k, label, title]) => `<button class="chip${state.filters[k] ? ' on' : ''}" data-filter="${k}" aria-pressed="${state.filters[k]}" title="${title}">${label}</button>`).join('')}</div>`
+      + '<h3 class="sec">Timeline</h3>'
+      + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
+      + `<p class="muted" style="margin-top:9px">${timelineOn
+        ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
+        : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`
       + '<h3 class="sec">From the sky</h3>'
-      + `<div class="chips wrap"><button class="chip${youOn ? ' on' : ''}" data-youarrow="1" aria-pressed="${youOn}">YOU arrow</button></div>`
-      + `<p class="muted" style="margin-top:9px">${youOn
-        ? 'On: when you go up into the sky, YOU and an arrow hang over where you left yourself standing.'
-        : 'Off: you still stand where you left yourself, without the arrow. A route you give from above keeps its dots and ring.'}</p>`
+      + `<div class="chips wrap">${YOU_MODES
+        .map(([k, label]) => `<button class="chip${k === youMode ? ' on' : ''}" data-youarrow="${k}" aria-pressed="${k === youMode}">${label}</button>`).join('')}</div>`
+      + `<p class="muted" style="margin-top:9px">${esc(YOU_MODES.find(([k]) => k === youMode)[2])}</p>`
       + `<div class="chips wrap" style="margin-top:9px"><button class="chip${directorOn ? ' on' : ''}" data-director="1" aria-pressed="${directorOn}">Wander by itself</button></div>`
       + `<p class="muted" style="margin-top:9px">${directorOn
         ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
@@ -589,7 +674,7 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
-        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p></div>`;
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
@@ -600,9 +685,32 @@ export function createUI(handlers) {
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
     }));
+    el('settings-body').querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.filter;
+      state.filters[k] = !state.filters[k];
+      handlers.onFilters(state.filters);
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-timeline]').forEach((b) => b.addEventListener('click', () => {
+      timelineOn = !timelineOn;
+      try { if (timelineOn) localStorage.removeItem(TIMELINE_KEY); else localStorage.setItem(TIMELINE_KEY, '0'); } catch { /* kept for this page only */ }
+      if (!timelineOn && replaying) handlers.onLive();
+      syncSidebar();
+      renderSettings();
+    }));
     el('settings-body').querySelectorAll('[data-youarrow]').forEach((b) => b.addEventListener('click', () => {
-      youOn = !youOn;
-      try { if (youOn) localStorage.removeItem(YOU_KEY); else localStorage.setItem(YOU_KEY, '0'); } catch { /* kept for this page only */ }
+      youMode = b.dataset.youarrow;
+      try {
+        if (youMode === 'you') localStorage.removeItem(YOU_KEY);
+        else localStorage.setItem(YOU_KEY, youMode === 'off' ? '0' : youMode);
+      } catch { /* kept for this page only */ }
+      renderSettings();
+    }));
+    // Every slider back to what this kind of machine starts at (graphics-settings.js), and the
+    // panel drawn again from the numbers main.js now holds.
+    el('settings-body').querySelectorAll('[data-graphics-reset]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onGraphicsReset) handlers.onGraphicsReset();
+      if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {
@@ -622,6 +730,10 @@ export function createUI(handlers) {
       .forEach((b) => b.addEventListener('click', () => handlers.onSeaMode(b.dataset.seamode)));
     el('settings-body').querySelectorAll('[data-sea]')
       .forEach((b) => b.addEventListener('click', () => handlers.onJoinSea(b.dataset.sea)));
+    el('settings-body').querySelectorAll('[data-forgetsea]').forEach((b) => b.addEventListener('click', () => {
+      b.disabled = true;
+      if (handlers.onForgetSea) handlers.onForgetSea(b.dataset.forgetsea);
+    }));
     const add = el('settings-body').querySelector('#sea-add');
     if (add) add.addEventListener('click', () => {
       const field = el('settings-body').querySelector('#sea-url');
@@ -1084,7 +1196,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn, directorEnabled: () => directorOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close

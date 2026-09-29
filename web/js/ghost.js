@@ -24,7 +24,7 @@
 // put it down" work. That is also why walk mode is never paused while holding; only the
 // menu pauses it.
 import * as THREE from 'three';
-import { propGeometry, propLift, propFootprint, propReach, PANEL_WIDEST } from './props.js';
+import { propGeometry, propLift, propFootprint, propReach, PANEL_WIDEST, ARCH_MIN_LEN } from './props.js';
 import { wheelsFor } from 'shared/shapes.mjs';
 import { mine } from './api.js';
 
@@ -134,10 +134,10 @@ export function createGhost({
     const gx = Math.floor(p.x + terrain.half), gz = Math.floor(p.z + terrain.half);
     if (!terrain.inGrid(gx, gz)) return 'that is off the island';
 
-    if (p.kind === 'bridge') {
+    if (p.kind === 'bridge' || p.kind === 'archbridge') {
       // A bridge is the one thing that belongs over water - but it has to land somewhere.
       // The same two samples bridgeDeck() takes to decide how high the deck rides.
-      const len = Math.max(2, p.length || 6);
+      const len = p.kind === 'archbridge' ? Math.max(ARCH_MIN_LEN, p.length || 10) : Math.max(2, p.length || 6);
       const s = Math.sin(p.rot || 0) * (len / 2), c = Math.cos(p.rot || 0) * (len / 2);
       const a = terrain.worldHeight(p.x + s, p.z + c);
       const b = terrain.worldHeight(p.x - s, p.z - c);
