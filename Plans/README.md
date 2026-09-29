@@ -26,6 +26,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [verborgen-inwoners-tellen-niet.md](verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
+  NPC Distance, onder een imp of nog niet geplaatst was een instance op y = -999 binnen `count`, en
+  de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
+  getekend wordt aaneengesloten vooraan in elke batch (swap bij een wissel), met rokken en haar in
+  eigen batches: geparkeerd is 0, en op NPC 50 scheelt het 37% van de kleurpas.
 - ✅ [sneller-tekenen.md](sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
   bestond al of brak een regel. Wel gedaan: `?stats` telt de schaduwpas, een kwaliteitsregelaar
   die zonder shader-recompile lichter tekent onder ~28 fps, vier geheugenlekken bij het ophalen van

@@ -80,7 +80,9 @@ test('women are represented across roles with both skirts and trousers', () => {
   }
 });
 
-test('women clothing and hair follow their owner and are hidden on other residents', () => {
+// A skirt or a head of hair is its own batch with its own slots, like a hat: whoever does not
+// wear one has no instance in it - not one parked out of sight, which the GPU still drew.
+test('women clothing and hair follow their owner, and nobody else has an instance of them', () => {
   const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
   const view = createFigures(scene, material);
   const figures = new Map();
@@ -93,24 +95,31 @@ test('women clothing and hair follow their owner and are hidden on other residen
   const actual=new THREE.Matrix4(), expected=new THREE.Matrix4();
   for (const dt of [.1,.2]) {
     view.draw(figures,dt);
+    assert.equal(skirt.count, 1, 'one skirt among three residents');
+    assert.equal(hair.count, 2, 'two women');
     for (const f of figures.values()) {
-      skirt.getMatrixAt(f.slot,actual);
       if (f.look.outfit === 'skirt') {
+        skirt.getMatrixAt(f.skirtSlot,actual);
         scene.children[0].getMatrixAt(f.slot,expected);
         assert.deepEqual(actual.elements,expected.elements);
-      } else assert.equal(actual.elements[13],-999);
-      hair.getMatrixAt(f.slot,actual);
+      } else assert.equal(f.skirtSlot, -1);
       if (f.look.presentation === 'woman') {
+        hair.getMatrixAt(f.hairSlot,actual);
         scene.children[9].getMatrixAt(f.slot,expected);
         assert.deepEqual(actual.elements,expected.elements);
-      } else assert.equal(actual.elements[13],-999);
+      } else assert.equal(f.hairSlot, -1);
     }
   }
+  // Hidden, she is out of both batches at once: the skirt's only instance goes, and the hair
+  // keeps the other woman's.
   view.hide(figures.get('woman-skirt'));
-  for (const mesh of [skirt,hair]) {
-    mesh.getMatrixAt(0,actual);
-    assert.equal(actual.elements[13],-999);
-  }
+  assert.equal(skirt.count, 0);
+  assert.equal(skirt.visible, false, 'an empty batch still set up its draw');
+  assert.equal(hair.count, 1);
+  assert.ok(figures.get('woman-skirt').hairSlot >= hair.count);
+  hair.getMatrixAt(figures.get('woman-trousers').hairSlot, actual);
+  scene.children[9].getMatrixAt(figures.get('woman-trousers').slot, expected);
+  assert.deepEqual(actual.elements, expected.elements, 'the hair that stayed is not on its own head');
   view.dispose();
   assert.equal(scene.children.length,0);
   material.dispose();
@@ -153,13 +162,14 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   assert.deepEqual([...head.instanceMatrix.array], [...details.instanceMatrix.array]);
   assert.deepEqual(settlers.pickables(), [torso, head]);
   assert.equal(settlers.figureAt(head, 3).id, 'resident:3');
+  const gone = settlers.figures.get('resident:3');
   settlers.remove('resident:3');
-  assert.equal(settlers.figureAt(head, 3), null);
-  const matrix = new THREE.Matrix4();
-  for (const mesh of body) {
-    mesh.getMatrixAt(3, matrix);
-    assert.equal(matrix.elements[13], -999);
-  }
+  // Out of the drawn instances, not parked at y = -999 under them: the last one drawn took
+  // slot 3, and the one who left is past every batch's count.
+  for (const mesh of body) assert.equal(mesh.count, 99);
+  assert.ok(gone.slot >= head.count);
+  assert.equal(settlers.figureAt(head, gone.slot), null);
+  assert.equal(settlers.figureAt(head, 3).id, 'resident:99');
   for (const mesh of scene.children) mesh.geometry.dispose();
   material.dispose();
 });

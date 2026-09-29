@@ -341,12 +341,15 @@ function crowdWith(make, extra = {}, ids = ['guard:0', 'guard:1', LODGER]) {
   return crowd;
 }
 
-// Where the crowd put somebody's torso this frame; -999 is where a hidden body is parked.
+// Where the crowd put somebody's torso this frame, or null for a body it is not drawing: one
+// past the batch's `count`, which is where a hidden body goes (settler-figures.js) - not a
+// body parked at y = -999, which the GPU still drew.
 const m = new THREE.Matrix4();
 const pos = new THREE.Vector3();
 function torsoY(crowd, id) {
   const f = crowd.figure(id);
   const torso = crowd.pickables()[0];
+  if (!torso || f.slot >= torso.count) return null;
   torso.getMatrixAt(f.slot, m);
   return pos.setFromMatrixPosition(m).y;
 }
@@ -363,13 +366,13 @@ test('every guard is parked while an imp stands in for him, where he would have 
   assert.equal(u0.visible, true);
   assert.deepEqual(u0.player, { x: 41.5, z: -18 }, 'the walker never reached the imp');
   assert.deepEqual(u1.player, { x: 41.5, z: -18 }, 'only one imp can swing');
-  assert.equal(torsoY(crowd, 'guard:0'), -999, 'guard:0 is drawn under his imp');
-  assert.equal(torsoY(crowd, 'guard:1'), -999, 'guard:1 is drawn under his imp');
+  assert.equal(torsoY(crowd, 'guard:0'), null, 'guard:0 is drawn under his imp');
+  assert.equal(torsoY(crowd, 'guard:1'), null, 'guard:1 is drawn under his imp');
   assert.equal(torsoY(crowd, LODGER), 0.5, 'a Codex lodger became an imp');
   assert.equal(s.made.length, 2);
   // And again on the next frame, which is the one that writes visible back to true.
   crowd.draw(0.016, () => 0.5, 1016);
-  assert.equal(torsoY(crowd, 'guard:1'), -999);
+  assert.equal(torsoY(crowd, 'guard:1'), null);
   assert.equal(s.made.length, 2, 'an imp was made again for a guard who already had one');
 });
 
@@ -527,7 +530,7 @@ test('past the limit only the guards nearest the camera are imps, and the rest a
   crowd.draw(0.016, () => 0.5, 1000);
   assert.deepEqual([...crowd.imps().keys()].sort(), ['guard:2', 'guard:3']);
   assert.equal(torsoY(crowd, 'guard:0'), 0.5, 'a guard past the limit is not drawn at all');
-  assert.equal(torsoY(crowd, 'guard:3'), -999);
+  assert.equal(torsoY(crowd, 'guard:3'), null);
   // The camera goes to the other end: the imps move with it, and the ones left are disposed.
   eye = { x: 40, y: 0, z: -19 };
   crowd.draw(0.016, () => 0.5, 1016);

@@ -448,6 +448,16 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
   only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
   is never touched by the cut.
+- **A settler who is not drawn is not an instance** ([Plans/verborgen-inwoners-tellen-niet.md](Plans/verborgen-inwoners-tellen-niet.md)).
+  Every batch in `settler-figures.js` (the body, each hat shape, skirts, hair) keeps the figures
+  it draws packed in front of `count`; a figure changing side trades slots with the last drawn
+  (matrix and `instanceColor` in every mesh of the batch), `draw()` moves whoever it is handed
+  across by `f.visible`, and `enrol` puts a newcomer on the undrawn side. Parking a hidden body
+  at y = -999 inside `count`, as it was, still cost the GPU its vertices in both passes: 2
+  million triangles on Hoogezand at NPC Distance 50. Swords, torches and every tool are counted
+  per frame instead. So **a slot number moves whenever somebody else changes side**: read
+  `f.slot` when you use it, never keep one across a frame. Per-figure bookkeeping lives in a
+  `WeakMap` in `createFigures`, not on the caller's figure. `tests/settler-batches.test.mjs`.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,

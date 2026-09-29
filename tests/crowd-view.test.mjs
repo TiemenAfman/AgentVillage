@@ -123,9 +123,13 @@ test('stepping off Live takes the whole crowd out of sight, hulls and all', () =
 
 test('a ray can be turned back into a body', () => {
   const crowd = view();
+  // Nothing to aim at before anybody is drawn: an undrawn body is past every batch's count.
+  assert.equal(crowd.pickables().length, 0, 'a body nobody has placed can be hovered');
+  place(crowd);
+  crowd.draw(0.016, ground, 1000, true);
   const meshes = crowd.pickables();
   assert.ok(Array.isArray(meshes) && meshes.length, 'there is nothing to aim at');
-  // Instance 0 is the first body enrolled, which is the first house in the roster.
+  // Instance 0 is the first body drawn, which is the first house in the roster.
   const hit = crowd.figureAt(meshes[0], 0);
   assert.ok(hit, 'a hit on the first instance named nobody');
   assert.equal(hit.id, 'house:a');
@@ -314,12 +318,15 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
     const r = { ...region, village: { island: { hostile } } };
     const crowd = createCrowdView({ scene, material: new THREE.MeshBasicMaterial(), region: r, buildings });
     crowd.roster(buildings.map((b) => b.id));
+    place(crowd);
+    crowd.draw(0.016, ground, 1000, true);
     keep.inst = scene.children.filter((c) => c.isInstancedMesh);
     return keep.inst;
   };
   const friendly = meshes(false), hostile = meshes(true);
   assert.equal(hostile.length, friendly.length + 2);
-  // Every resident gets one of each: the two extra meshes count exactly as far as the torso.
+  // Every resident drawn with free hands gets one of each: the two extra meshes count exactly
+  // as far as the torso.
   // Clothing variants may add batches; the weapon identities do not depend on order.
   const extra = ['resident-swords', 'resident-torches'].map((name) => hostile.find((m) => m.name === name));
   const torso = hostile[0];
