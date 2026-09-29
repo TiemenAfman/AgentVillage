@@ -95,6 +95,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
     op de helling in de Hollandse volgorde (kiel, bodemhuid, spanten, romp; masten na de tewaterlating).
   - ✅ [havengebouwen.md](DONE/havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut
     (113). De visser bij de hut is er ook.
+    - ✅ [strandpaden.md](DONE/strandpaden.md) — een havengebouw krijgt alleen een kavel waar een weg bij
+      de deur komt (`coastSite` probeert `civicRoad` eerst). Lukt dat bij geen enkele haven, dan
+      mag de deur op één cel strand uitkomen. Het zand dat de weg oversteekt wordt bestraat en
+      elke scan teruggezet (`paths[].strand`). Op seeds 1–40 en op Hoogezand komen bewoners nu
+      bij elke civic-deur. Nieuw veld in layout.json, dus een minor.
   - ✅ [ambachten.md](DONE/ambachten.md) — de brouwerij (106), het oefenveld (134) en de steengroeve
     (142), met een tredmolenkraan die blokken op een karretje zet.
   - ✅ [kroniekhuis.md](DONE/kroniekhuis.md) — de laatste trede (200): een klik of E bij de deur speelt
