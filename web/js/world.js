@@ -211,17 +211,6 @@ export function plantMaterials() {
   return { bark, foliage };
 }
 
-// How big the detailed water patch is and where its middle sits. Exported and pure so the
-// budget can be asserted without a WebGL context - tests/water-span.test.mjs - because the
-// patch is by a wide margin the heaviest geometry on the island (135k triangles of the
-// 430k on a 64-grid) and it is now sized by something that can grow.
-//
-// `gridBounds` is the union of every island's own square, or null for one island at the
-// origin. The margin is what a lone island of this size always had - 130 out from a
-// 64-grid, 60 for the largest - so an island on its own gets exactly the patch it had, to
-// the vertex. A rectangle rather than a square over the longest side: two 64-grids a berth
-// apart come out 372x260 instead of 372x372, which is a third of the triangles saved on
-// water nobody can see.
 // The heightfield ends on a square, often while its seabed is still shallow.
 // Let the optical depth reach open sea before that boundary without moving the
 // actual seabed (which boats, terrain hashes and saved plots depend on).
@@ -232,6 +221,22 @@ export function waterColourDepth(height, x, z, half) {
   return height + (Math.min(height, -2.5) - height) * offshore;
 }
 
+// The outline of the water patch: where it stops and fades into the open-ocean disc.
+// Exported and pure so it can be asserted without a WebGL context -
+// tests/water-span.test.mjs.
+//
+// `gridBounds` is the union of every island's own square, or null for one island at the
+// origin. The margin is what a lone island of this size always had - 130 out from a
+// 64-grid, 60 for the largest - so an island on its own fades out exactly where it always
+// did. A rectangle rather than a square over the longest side: two 64-grids a berth apart
+// come out 372x260 instead of 372x372.
+//
+// `segX`/`segZ` are what this outline would cost at the patch's full density - a vertex per
+// unit, every other one on integrated graphics. The patch was once built exactly like that,
+// one PlaneGeometry over the whole outline, and with the volcano and the starters in the sea
+// that was 2.53M of the page's 2.75M triangles, nearly all of it open sea where the depth is
+// one number. It is no longer built from these (waterPatchPlan, below); they are kept as the
+// ceiling the plan is measured against.
 export function waterPatchSpan(half, gridBounds, modest = false) {
   const margin = Math.max(60, 130 - half);
   const gb = gridBounds || { minX: -half, maxX: half, minZ: -half, maxZ: half };
@@ -247,6 +252,115 @@ export function waterPatchSpan(half, gridBounds, modest = false) {
     segX: Math.max(1, Math.round(modest ? width / 2 : width)),
     segZ: Math.max(1, Math.round(modest ? depth / 2 : depth)),
   };
+}
+
+// What the patch inside that outline is made of: rectangles on one lattice, dense only near
+// an island and as coarse as the fade allows everywhere else. Pure, like the span, so
+// tests/water-patch.test.mjs can hold the triangle budget to the islands rather than to the
+// box around them.
+//
+// Why the open sea can be coarse without looking any different: past every island's grid
+// the depth the water shades by is one number (OPEN_SEA, which is also what the open-ocean
+// disc carries), so the colour, the surf (none) and the opacity (whole) are the same
+// whatever the vertex spacing - and the normal the light uses and the fog's distance are
+// both worked out per pixel from the world position, never from the mesh (the fog on
+// purpose: see the end of the water shader). What a vertex per unit does buy out there is
+// the swell's tenth of a unit of height, which nothing out there is close enough to show. So:
+//
+//   - within WATER_REACH of an island's own square: a vertex per unit (every other one on
+//     `modest`), exactly the density the patch always had there - the rivers, the quay
+//     basin and the shallows all lie inside the grid, and the swell runs on out past it;
+//   - in the last WATER_FADE of the outline: a vertex every WATER_FADE_STEP, enough to draw
+//     the fade into the ocean disc (a smoothstep over 40) to within 3% of what it was;
+//   - everything else: one quad per run of tiles along a row.
+//
+// Why one mesh of disjoint rectangles and not a patch per island: the patch is transparent
+// and writes no depth, so two patches overlapping in a channel would blend twice; and the
+// swell is `sin(position.x ...)`, so one mesh at the origin is one wave clock with no seam.
+// Tiles on one lattice cannot overlap by construction. Where a dense tile meets a coarse one
+// the edges do not share every vertex; the swell is faded out to nothing before that seam
+// (`waveAt`, 0 on every vertex WATER_REACH or more from any grid, which is every vertex of
+// a coarse tile and every vertex a dense tile shares with one), so both sides lie flat on
+// y = 0 there and the seam is a straight line in deep, opaque water over an ocean disc of the
+// same colour.
+//
+// Leaving the empty sea between islands to the ocean disc outright was the other way, and it
+// is not invisible: the disc sits at y = -0.2 so the patch's troughs never dip under it, and
+// a boat or an islet out there would suddenly stand 0.8 m proud of its waterline.
+export const WATER_TILE = 16;
+export const WATER_REACH = 16;
+export const WATER_FADE = 40;
+export const WATER_FADE_STEP = 8;
+
+export function waterPatchPlan(half, regions, modest = false) {
+  const list = regions && regions.length ? regions : [{ origin: [0, 0], half }];
+  const squares = list.map((r) => ({
+    minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
+    minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half,
+  }));
+  // The same union shared/regions.mjs gridBounds() makes, so the outline is the old one.
+  const gb = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (const s of squares) {
+    gb.minX = Math.min(gb.minX, s.minX); gb.maxX = Math.max(gb.maxX, s.maxX);
+    gb.minZ = Math.min(gb.minZ, s.minZ); gb.maxZ = Math.max(gb.maxZ, s.maxZ);
+  }
+  const span = waterPatchSpan(half, gb, modest);
+
+  // Tile edges on multiples of WATER_TILE in the page's frame, clipped to the outline, so
+  // the outline itself does not move by a unit.
+  const cuts = (lo, hi) => {
+    const out = [lo];
+    for (let v = Math.floor(lo / WATER_TILE) * WATER_TILE + WATER_TILE; v < hi; v += WATER_TILE) out.push(v);
+    out.push(hi);
+    return out;
+  };
+  const xs = cuts(span.minX, span.maxX), zs = cuts(span.minZ, span.maxZ);
+  const near = (x0, x1, z0, z1) => squares.some((s) =>
+    x0 < s.maxX + WATER_REACH && x1 > s.minX - WATER_REACH
+    && z0 < s.maxZ + WATER_REACH && z1 > s.minZ - WATER_REACH);
+  const inland = (x0, x1, z0, z1) =>
+    x0 >= span.minX + WATER_FADE && x1 <= span.maxX - WATER_FADE
+    && z0 >= span.minZ + WATER_FADE && z1 <= span.maxZ - WATER_FADE;
+
+  const fine = modest ? 2 : 1;
+  const quads = [];
+  let triangles = 0;
+  const put = (x0, x1, z0, z1, step, dense = false) => {
+    const segX = Math.max(1, Math.round((x1 - x0) / step));
+    const segZ = Math.max(1, Math.round((z1 - z0) / step));
+    quads.push({ minX: x0, maxX: x1, minZ: z0, maxZ: z1, segX, segZ, dense });
+    triangles += 2 * segX * segZ;
+  };
+  for (let j = 0; j + 1 < zs.length; j++) {
+    const z0 = zs[j], z1 = zs[j + 1];
+    let run = null;   // where a run of open sea along this row started
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const x0 = xs[i], x1 = xs[i + 1];
+      const close = near(x0, x1, z0, z1);
+      if (!close && inland(x0, x1, z0, z1)) { if (run === null) run = x0; continue; }
+      if (run !== null) { put(run, x0, z0, z1, Infinity); run = null; }
+      put(x0, x1, z0, z1, close ? fine : WATER_FADE_STEP, close);
+    }
+    if (run !== null) put(run, span.maxX, z0, z1, Infinity);
+  }
+
+  // How much of the swell a vertex carries: all of it up to half WATER_REACH past a grid,
+  // none from WATER_REACH on (see above for why that is the seam's whole trick).
+  const waveAt = (x, z) => {
+    let e = Infinity;
+    for (const s of squares) e = Math.min(e, Math.max(0, s.minX - x, x - s.maxX, s.minZ - z, z - s.maxZ));
+    return 1 - smoothstep(WATER_REACH / 2, WATER_REACH, e);
+  };
+  // The fade into the ocean disc, over the last WATER_FADE of the outline - the formula the
+  // single PlaneGeometry always used, now asked of wherever the vertices happen to be.
+  const blendAt = (x, z) => smoothstep(0, WATER_FADE,
+    Math.min(x - span.minX, span.maxX - x, z - span.minZ, span.maxZ - z));
+  // What decides whether a sea that changed needs a new patch: the outline and every square
+  // in it, in no particular order. An island that joins inside the old outline needs its
+  // dense tiles, which comparing the outline alone - as reshapeWater used to - would miss.
+  const key = [modest ? 'm' : 'f', span.minX, span.maxX, span.minZ, span.maxZ,
+    ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}`).sort()].join('|');
+  return { span, quads, triangles, waveAt, blendAt, key };
 }
 
 
@@ -1519,10 +1633,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
   //     one wave clock, which is the same reason the ocean disc shares these uniforms.
   //
   // A rectangle over the union of the grids rather than a square over its longest side: on
-  // two 64-grids side by side that is 372x260 instead of 372x372, which is a third of the
-  // triangles saved for water nobody can see. The margin is what it always was for an
-  // island of this size - 130 out from a 64-grid, 60 for the largest - so an island on its
-  // own gets exactly the patch it had.
+  // two 64-grids side by side that is 372x260 instead of 372x372. The margin is what it
+  // always was for an island of this size - 130 out from a 64-grid, 60 for the largest - so
+  // an island on its own fades out where it always did.
+  //
+  // One surface, but no longer one density. With the volcano and the starters in the sea the
+  // rectangle is over a thousand units across, and at a vertex per unit it was 2.53M of the
+  // page's 2.75M triangles - almost all of it open sea whose depth is one number. It is dense
+  // now only round each island's own grid and coarse everywhere else; waterPatchPlan has the
+  // tiles and the argument for why nothing drawn changes.
   //
   // This lives in `group`, which is the only createWorld that draws the decor and is always
   // the one at the origin; a region at a berth is drawn by a world that makes no water.
@@ -1550,25 +1669,65 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
   // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
   // that holds a reference to the mesh has to know.
-  let ws = null, waterGeo = null, wp = null;
+  let waterGeo = null, wp = null, wplan = null;
+  const seaRegions = () => (opts.sea ? opts.sea.regions() : null);
   function buildWaterGeometry() {
-    ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(ws.cx, 0, ws.cz);
-    const p = geo.attributes.position;
-    const d = new Float32Array(p.count);
-    const blend = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) {
+    wplan = waterPatchPlan(half, seaRegions(), opts.modest);
+    let most = 0, cells = 0;
+    for (const q of wplan.quads) { most += (q.segX + 1) * (q.segZ + 1); cells += q.segX * q.segZ; }
+    const pos = new Float32Array(most * 3);
+    const index = most > 65535 ? new Uint32Array(cells * 6) : new Uint16Array(cells * 6);
+    // Neighbouring dense tiles share their edge vertices rather than each carrying a copy:
+    // the same positions either way (and so the same depth and blend - no crack), a ninth
+    // fewer vertices through the shader. Keyed on an eighth of a unit, finer than any step.
+    const seen = new Map();
+    let count = 0, k = 0;
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      let n = seen.get(key);
+      if (n === undefined) {
+        n = count++;
+        pos[n * 3] = x; pos[n * 3 + 2] = z;
+        seen.set(key, n);
+      }
+      return n;
+    };
+    for (const q of wplan.quads) {
+      const w = q.maxX - q.minX, d = q.maxZ - q.minZ;
+      let prev = null;
+      for (let j = 0; j <= q.segZ; j++) {
+        const z = j === q.segZ ? q.maxZ : q.minZ + (j / q.segZ) * d;
+        const row = new Array(q.segX + 1);
+        for (let i = 0; i <= q.segX; i++) row[i] = vertex(i === q.segX ? q.maxX : q.minX + (i / q.segX) * w, z);
+        // Counter-clockwise seen from above, which is the side a FrontSide material draws:
+        // (x0,z0) (x0,z1) (x1,z0), then (x0,z1) (x1,z1) (x1,z0).
+        if (prev) {
+          for (let i = 0; i < q.segX; i++) {
+            index[k++] = prev[i]; index[k++] = row[i]; index[k++] = prev[i + 1];
+            index[k++] = row[i]; index[k++] = row[i + 1]; index[k++] = prev[i + 1];
+          }
+        }
+        prev = row;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    const p = new THREE.BufferAttribute(pos.slice(0, count * 3), 3);
+    geo.setAttribute('position', p);
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    const depth = new Float32Array(count);
+    const blend = new Float32Array(count);
+    const wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
       const x = p.getX(i), z = p.getZ(i);
-      d[i] = depthAt(x, z);
+      depth[i] = depthAt(x, z);
       // The patch always extends at least sixty units past every island grid.
       // Fade within that spare water, never across a beach or a river.
-      const edge = Math.min(x - ws.minX, ws.maxX - x, z - ws.minZ, ws.maxZ - z);
-      blend[i] = smoothstep(0, 40, edge);
+      blend[i] = wplan.blendAt(x, z);
+      wave[i] = wplan.waveAt(x, z);
     }
-    geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
     geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
     waterGeo = geo;
     wp = p;
     return geo;
@@ -1595,6 +1754,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
       #include <fog_pars_vertex>
       attribute float aDepth;
       attribute float aBlend;
+      // 1 wherever the swell is drawn, 0 on the coarse open sea and the seam into it
+      // (waterPatchPlan): a wave sampled every sixteen units is a tilting slab, not a wave.
+      attribute float aWave;
       uniform float uTime;
       varying float vDepth;
       varying vec3 vWorld;
@@ -1605,7 +1767,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
-        p.y += 0.05 * w1 + 0.04 * w2;
+        p.y += (0.05 * w1 + 0.04 * w2) * aWave;
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
         vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -1654,7 +1816,23 @@ export function createWorld(scene, terrain, village, opts = {}) {
         // boundary must disappear beneath the water, not tint an entire tile.
         float opacity = mix(1.0, 0.88, smoothstep(-1.8, -0.35, vDepth));
         gl_FragColor = vec4(col, opacity * vBlend);
-        #include <fog_fragment>
+        // three's fog_fragment, but with the distance taken here rather than handed down
+        // from the vertices. The fog is radial (radial-fog.js: vFogDepth is the length of
+        // mvPosition), and a length interpolated across a triangle is always longer than the
+        // real one in between - by nothing on the patch's dense vertices, and by a lot on the
+        // ocean disc, whose triangles run from under the camera to 1500 out: from 250 up with
+        // the fog closing at 550 (modest) the disc was fogged as if half as far again, and
+        // the patch showed through it as a darker rectangle inside the haze. vWorld is exact
+        // at every pixel, so the two agree now, and a coarse patch fogs like a dense one.
+        #ifdef USE_FOG
+          float fogDist = distance(vWorld, cameraPosition);
+          #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDist * fogDist);
+          #else
+            float fogFactor = smoothstep(fogNear, fogFar, fogDist);
+          #endif
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif
       }
     `,
   });
@@ -1688,6 +1866,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
   oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
   oceanGeo.setAttribute('aBlend', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  // The swell it always had, which on a vertex at the middle and 128 at the rim is nothing.
+  oceanGeo.setAttribute('aWave', new THREE.BufferAttribute(
     new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
   const oceanMat = waterMat.clone();
   oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
@@ -2143,13 +2324,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   // The whole patch, for when the archipelago itself has changed shape: an island joined, or
-  // left. Rebuilding is only worth it when the span actually moved, because the geometry is
-  // the heaviest thing on the island - 135k triangles for one island, 193k for two - so this
-  // compares first and usually does nothing.
+  // left, or grew its grid. Rebuilding is only worth it when the plan actually changed, so
+  // this compares first and usually does nothing. It compares the plan's key - the outline
+  // and every island's square - rather than the outline alone, because the dense water now
+  // follows the islands: one that joins inside the old outline still needs its shallows.
   function reshapeWater() {
-    const next = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    if (ws && next.minX === ws.minX && next.maxX === ws.maxX
-      && next.minZ === ws.minZ && next.maxZ === ws.maxZ) {
+    const next = waterPatchPlan(half, seaRegions(), opts.modest);
+    if (wplan && next.key === wplan.key) {
       resampleWater();
       return false;
     }
