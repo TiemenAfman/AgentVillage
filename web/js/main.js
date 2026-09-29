@@ -361,9 +361,18 @@ function applyQuality(rung) {
   renderer.shadowMap.autoUpdate = shadowEvery === 1;
   renderer.shadowMap.needsUpdate = true;
   setImpBudget(IMP_LIMIT * rung.imps);
+  scalePoints();
   if (statsReadout) console.info(`island: drawing at quality "${rung.name}"`);
 }
-if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));
+// gl_PointSize is in drawing-buffer pixels, so the smoke and the fireflies were sized for the
+// pixel ratio the page booted with; at the lightest rung's 0.6 of it they would stand 1.7
+// times bigger on the screen. Scaled by how far the ratio has come down, they stay the size
+// they always were. On a resize too: the fireflies used to keep the height they were born at.
+function scalePoints() {
+  const v = innerHeight * 0.5 * (renderer.getPixelRatio() / basePixelRatio);
+  if (state.particles) state.particles.mat.uniforms.uScale.value = v;
+  if (state.world && state.world.fireflies) state.world.fireflies.material.uniforms.uScale.value = v;
+}
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
@@ -6273,7 +6282,10 @@ async function boot() {
       if (rung) applyQuality(rung);
     },
   });
-  if (!params.has('quality') && !state.ui.qualityAutoEnabled()) quality.setAuto(false);
+  // Here rather than where the governor is made: applyQuality reaches `state`, which does not
+  // exist yet up there.
+  if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));
+  else if (!state.ui.qualityAutoEnabled()) quality.setAuto(false);
 
   // The story animals' dossier, the island's animal diary and the "while you were away" card
   // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
@@ -6977,7 +6989,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();
-  if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
+  scalePoints();
 });
 
 boot();
