@@ -13,7 +13,7 @@ import { SHAPES } from '../shared/shapes.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { propGeometry, propLift, archDeckY, archSoffitY, archSpring, ARCH_MIN_LEN, ARCH_LIFT_MIN } = await import('../web/js/props.js');
+const { propGeometry, propLift, archDeckY, archSoffitY, archSpring, ARCH_MIN_LEN, ARCH_LIFT_MIN, deckCellsOf, bridgeRoadCellsOf } = await import('../web/js/props.js');
 const { BENCHY } = await import('../web/js/benchy-mesh.js');
 delete globalThis.document;
 
@@ -89,4 +89,46 @@ test('the deck stands over the water, and meets the bank at both ends', () => {
   const flat = { worldHeight: () => -0.5 };                 // a channel with its banks drowned
   assert.ok(propLift(p, flat) >= ARCH_LIFT_MIN, 'an arch under the sea');
   assert.ok(Math.abs(archDeckY(p, 5)) < 1e-9 && Math.abs(archDeckY(p, -5)) < 1e-9);
+});
+
+// What walk mode is really given: a height per CELL, not the smooth curve. Taking the top of
+// each cell made the second tread of a ten-long bridge exactly STEP_UP (0.45) and a walker
+// stopped at its foot and fell in the river (the bridge at [172..182, 217], 29 September).
+// Along the grid only: laid on a diagonal a cell is a step of 1.4 along the deck, and no height
+// per cell can keep a ten-long arch under STEP_UP there.
+test('the cells the deck is handed to walk mode in climb less than a step, along either axis', () => {
+  const half = 20;
+  for (const length of [10, 12, 30]) {
+    for (const rot of [0, Math.PI / 2, Math.PI, 1.571]) {
+      const p = { kind: 'archbridge', x: 0.5, z: 0.5, rot, length };
+      // a river over the middle, banks 1.5 up: the deck rides on the higher end
+      const terrain = { half, size: 2 * half, worldHeight: (x, z) => (Math.hypot(x - 0.5, z - 0.5) < 1.3 ? -0.5 : 1.5) };
+      const cells = deckCellsOf([p], terrain);
+      const s = Math.sin(rot), c = Math.cos(rot);
+      // walked along the axis in tenths of a cell, as the walker steps it
+      const at = (t) => {
+        const gx = Math.floor(0.5 + s * t + half), gz = Math.floor(0.5 + c * t + half);
+        return cells.get(gx + gz * 2 * half);
+      };
+      const len = Math.max(ARCH_MIN_LEN, length);
+      let feet = terrain.worldHeight(0.5 + s * (len / 2 + 1), 0.5 + c * (len / 2 + 1)), worst = 0;
+      for (let t = -len / 2 - 0.5; t <= len / 2 + 0.5; t += 0.1) {
+        const y = at(t);
+        if (y === undefined) continue;
+        worst = Math.max(worst, y - feet);
+        feet = Math.max(feet, y);
+      }
+      assert.ok(worst < STEP_UP, `length ${length}, rot ${rot}: a tread of ${worst.toFixed(2)} against STEP_UP ${STEP_UP}`);
+    }
+  }
+});
+
+test('a bridge is a road for the entrances: its axis and three cells of bank at each end, no wider', () => {
+  const terrain = { half: 20, size: 40 };
+  const cells = bridgeRoadCellsOf([{ kind: 'archbridge', x: 0.5, z: 0.5, rot: Math.PI / 2, length: 10 }], terrain);
+  const xs = cells.map(([x]) => x), zs = new Set(cells.map(([, z]) => z));
+  assert.equal(zs.size, 1, 'one row: the axis');
+  const n = Math.max(...xs) - Math.min(...xs) + 1;
+  assert.ok(n >= 16 && n <= 18, `${n} cells: the span and three cells of bank each side`);
+  assert.deepEqual(bridgeRoadCellsOf([{ kind: 'fence', x: 0, z: 0 }], terrain), []);
 });

@@ -502,6 +502,78 @@ export function propReach(p) {
   return Math.max(shape.r * scale, wall, 0.4);
 }
 
+// Which ground cells a built bridge carries, and how high its deck rides over them -
+// the same map syncBridges() makes for the crossings the layout lays, in the same
+// shape, so walk mode and the settlers can read one and not care where it came from.
+//
+// Without this a bridge put up by hand is drawn and not stood on: blockers() leaves it
+// out because a bridge is walked over rather than around, and nothing was making the
+// first half of that true, so groundAt() read the river underneath and you went in.
+//
+// Sampled rather than reasoned about: the deck is a rectangle turned by its rot, and
+// stepping across it in strides of less than a cell is what catches every cell it
+// covers, whatever angle it lies at.
+//
+// A cell's height is the middle of what the deck does over it, not the top. The top made the
+// arch a staircase whose steepest tread was the whole rise of its cell plus the cell's own
+// share of the curve - 0.45 on a bridge of ten, exactly walk.js's STEP_UP, so the walker
+// stood at the foot of the second step and went into the river. The middle keeps every step
+// to the slope itself, the 0.41 the length was chosen for (tests/archbridge.test.mjs).
+export function deckCellsOf(specs, terrain) {
+  const out = new Map();
+  for (const p of specs) {
+    const arch = p.kind === 'archbridge';
+    if (p.kind !== 'bridge' && !arch) continue;
+    const seen = new Map();        // cell -> { lo, hi }: what this one deck does over it
+    const scale = p.scale || 1;
+    const len = (arch ? archLen(p) : Math.max(2, p.length || 6)) * scale;
+    const wide = (arch ? ARCH_HALF_W : 0.75) * scale; // the plank deck is 1.5 across
+    const y0 = arch ? archDeck(p, terrain) : bridgeDeck(p, terrain);
+    const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+    for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.4) {
+      for (let w = -wide; w <= wide + 0.01; w += 0.4) {
+        // The deck runs along the prop's own z and is `wide` across its x, both turned
+        // by rot - the same sum bridgeDeck() uses to find the banks.
+        const x = p.x + s * t + c * w;
+        const z = p.z + c * t - s * w;
+        const gx = Math.round(x + terrain.half - 0.5);
+        const gz = Math.round(z + terrain.half - 0.5);
+        if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
+        // The arch climbs, so each cell takes the deck over it rather than one height.
+        const y = arch ? y0 + archDeckY(p, t / scale) * scale : y0;
+        const key = gx + gz * terrain.size;
+        const have = seen.get(key);
+        if (!have) seen.set(key, { lo: y, hi: y });
+        else { have.lo = Math.min(have.lo, y); have.hi = Math.max(have.hi, y); }
+      }
+    }
+    // Two decks over one cell: the higher one.
+    for (const [key, { lo, hi }] of seen) out.set(key, Math.max(out.has(key) ? out.get(key) : -Infinity, (lo + hi) / 2));
+  }
+  return out;
+}
+
+// The road a built bridge is, for whoever asks where roads enter a hamlet (hamlet-sign-placement.js):
+// the cells along its axis, and three beyond each end on the bank. The bank cells are what lets a
+// crossing be found - a hand-built bridge lands on grass, with no paving for the road network to
+// meet it - and only the axis, never the deck's whole width, so the cells beside it stay free.
+export function bridgeRoadCellsOf(specs, terrain) {
+  const seen = new Map();
+  for (const p of specs) {
+    const arch = p.kind === 'archbridge';
+    if (p.kind !== 'bridge' && !arch) continue;
+    const len = (arch ? archLen(p) : Math.max(2, p.length || 6)) * (p.scale || 1);
+    const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+    for (let t = -len / 2 - 3.5; t <= len / 2 + 3.5; t += 0.25) {
+      const gx = Math.round(p.x + s * t + terrain.half - 0.5);
+      const gz = Math.round(p.z + c * t + terrain.half - 0.5);
+      if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
+      seen.set(gx + gz * terrain.size, [gx, gz]);
+    }
+  }
+  return [...seen.values()];
+}
+
 export function createProps({ scene, terrain, material }) {
   const group = new THREE.Group();
   group.name = 'props';
@@ -585,45 +657,8 @@ export function createProps({ scene, terrain, material }) {
     return out;
   }
 
-  // Which ground cells a built bridge carries, and how high its deck rides over them -
-  // the same map syncBridges() makes for the crossings the layout lays, in the same
-  // shape, so walk mode and the settlers can read one and not care where it came from.
-  //
-  // Without this a bridge put up by hand is drawn and not stood on: blockers() leaves it
-  // out because a bridge is walked over rather than around, and nothing was making the
-  // first half of that true, so groundAt() read the river underneath and you went in.
-  //
-  // Sampled rather than reasoned about: the deck is a rectangle turned by its rot, and
-  // stepping across it in strides of less than a cell is what catches every cell it
-  // covers, whatever angle it lies at.
   function deckCells(terrain) {
-    const out = new Map();
-    for (const rec of records.values()) {
-      const p = rec.spec;
-      const arch = p.kind === 'archbridge';
-      if (p.kind !== 'bridge' && !arch) continue;
-      const scale = p.scale || 1;
-      const len = (arch ? archLen(p) : Math.max(2, p.length || 6)) * scale;
-      const wide = (arch ? ARCH_HALF_W : 0.75) * scale; // the plank deck is 1.5 across
-      const y0 = arch ? archDeck(p, terrain) : bridgeDeck(p, terrain);
-      const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
-      for (let t = -len / 2; t <= len / 2 + 0.01; t += 0.4) {
-        for (let w = -wide; w <= wide + 0.01; w += 0.4) {
-          // The deck runs along the prop's own z and is `wide` across its x, both turned
-          // by rot - the same sum bridgeDeck() uses to find the banks.
-          const x = p.x + s * t + c * w;
-          const z = p.z + c * t - s * w;
-          const gx = Math.round(x + terrain.half - 0.5);
-          const gz = Math.round(z + terrain.half - 0.5);
-          if (gx < 0 || gz < 0 || gx >= terrain.size || gz >= terrain.size) continue;
-          // The arch climbs, so each cell takes the deck over it rather than one height.
-          const y = arch ? y0 + archDeckY(p, t / scale) * scale : y0;
-          const key = gx + gz * terrain.size;
-          out.set(key, Math.max(out.has(key) ? out.get(key) : -Infinity, y));
-        }
-      }
-    }
-    return out;
+    return deckCellsOf([...records.values()].map((rec) => rec.spec), terrain);
   }
 
   function nearest(x, z, within = 4) {
@@ -642,5 +677,9 @@ export function createProps({ scene, terrain, material }) {
     records.clear();
   }
 
-  return { group, apply, update, blockers, deckCells, nearest, count: () => records.size, dispose };
+  function roadCells(terrain) {
+    return bridgeRoadCellsOf([...records.values()].map((rec) => rec.spec), terrain);
+  }
+
+  return { group, apply, update, blockers, deckCells, roadCells, nearest, count: () => records.size, dispose };
 }

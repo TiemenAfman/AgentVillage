@@ -590,6 +590,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     // page to draw; the island bundle does not carry it, so a zone costs no publish and no
     // rebuild on anybody else's screen - it changes nothing a neighbour can see.
     zones: layout.zones || [],
+    // The ways in the keeper set, per hamlet and side (`gate` in lib/plan.mjs): for the page to stand a
+    // gateway on and the planner to draw. Like the zones it is not in the island bundle - nobody else
+    // draws a gateway over our roads.
+    gates: layout.gates || {},
     // Each polder carries the moment it was drained, the way a milestone carries
     // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +
     // k * POLDER_EVERY settlers, so the index is the date - but the viewer should not

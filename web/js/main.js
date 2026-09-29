@@ -45,7 +45,7 @@ import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
-import { hamletSignSites } from './hamlet-sign-placement.js';
+import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
@@ -797,20 +797,65 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   const cell = (px, pz) => [Math.floor(px + half), Math.floor(pz + half)];
   const from = cell(w.state.pos.x, w.state.pos.z), to = cell(x, z);
   const say = () => { state.ui.toast('There is no way to walk there.'); return false; };
-  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || !t.isLand(to[0], to[1])) return say();
+  // The decks of the bridges built by hand: over water, and steeper than one step from the
+  // banks in the crown, so neither `isLand` nor `blockedAt` (which reads a deck above your
+  // feet as the river under it) lets a route over them. Walking one is fine once you are on it.
+  const deck = state.props ? state.props.deckCells(t) : null;
+  const onDeck = (px, pz) => !!deck && deck.has(px + pz * t.size);
+  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || (!t.isLand(to[0], to[1]) && !onDeck(to[0], to[1]))) return say();
+const FENCE_STEPS = 12;
+const DECK_STEP = 0.44;          // just under walk.js's STEP_UP (0.45)
+// Every cell of road, as `gx + gz * size`, for a route to prefer: the layout's paths, the town's
+// paving, every hamlet's own and the bridges built by hand. Worked out again only when the
+// village or the set of bridges is another one.
+let roadKeysOf = { village: null, terrain: null, bridges: -1, keys: null };
+function roadKeys() {
+  const v = state.village, t = state.terrain;
+  if (!v || !t) return null;
+  const bridges = bridgeRoadCells();
+  if (roadKeysOf.village === v && roadKeysOf.terrain === t && roadKeysOf.bridges === bridges.length) return roadKeysOf.keys;
+  const keys = new Set();
+  const add = (cells) => { for (const [gx, gz] of cells || []) keys.add(gx + gz * t.size); };
+  for (const p of v.paths || []) add(p.cells);
+  add(v.island && v.island.town && v.island.town.paved);
+  for (const d of v.districts || []) { add(d.paved); add(d.deck); for (const l of d.lobes || []) add(l.paved); }
+  add(bridges);
+  roadKeysOf = { village: v, terrain: t, bridges: bridges.length, keys };
+  return keys;
+}
+
   // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
   // on a grown island, and A* looks at a few hundred.
   const memo = new Map();
   const blocked = { has(k) {
     let v = memo.get(k);
     if (v === undefined) {
-      const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
-      v = w.blockedAt(cx, cz);
+      if (deck && deck.has(k)) v = false;
+      else {
+        const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
+        v = w.blockedAt(cx, cz);
+      }
       memo.set(k, v);
     }
     return v;
   } };
-  const path = findPath(t, from, to, blocked);
+  // A fence between two owners is walked round to its gate, not through: crossing one costs as
+  // much as a dozen steps, and costs nothing where a road passes (which is where the gate is).
+  const roads = roadKeys();
+  const owner = state.world && state.world.ownership ? (state.world.ownership() || {}).owner : null;
+  const crossing = owner ? (a, b) => {
+    const oa = owner[a], ob = owner[b];
+    if (oa === ob || (oa < 0 && ob < 0)) return 0;      // the same land, or nobody's / the town's
+    return roads && roads.has(a) && roads.has(b) ? 0 : FENCE_STEPS;
+  } : null;
+  // A deck is a cell like any other to the search, and a step on to it from the bank beside it
+  // halfway across the arch is two metres of wall: the walker could not climb it and swam.
+  // Onto a deck (or from one) only where the two surfaces are within a step, so it is entered
+  // at its ends and walked along, never boarded from the side.
+  const surface = (k) => (deck && deck.has(k) ? deck.get(k)
+    : t.worldHeight(...t.cellWorld(k % t.size, (k - (k % t.size)) / t.size)));
+  const step = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  const path = findPath(t, from, to, blocked, { open: deck, prefer: roads, crossing, step });
   if (!path) return say();
   const pts = path.slice(1);
   if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
@@ -4778,7 +4823,11 @@ function buildScene(village) {
   // it is doing. Built here rather than at boot because it borrows world.js's clouds, dome
   // and lights instead of drawing a second set, and thrown away with the scene on a reseed.
   if (state.sky) state.sky.dispose();
-  state.sky = createWeather({ scene, world: state.world, camera, onHaze: applyFogRange });
+  state.sky = createWeather({
+    scene, world: state.world, camera, onHaze: applyFogRange,
+    // Planning looks straight down too: a box of rain from the planner's camera is a curtain.
+    fromSky: () => state.mode === 'orbit' || state.mode === 'plan',
+  });
   // The sea from underneath, for a camera that has gone below it (web/js/underwater.js). Built
   // with the world it dresses and thrown away with it; the sound is looked up per call because
   // state.sound is made later, at boot, and outlives every reseed.
@@ -4970,6 +5019,16 @@ function handOutDecks() {
     for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
   // Two consumers, two keyings, and they are not the same any more. The settlers walk this
+// The decks of this island - bridges, laid and built by hand, and the quay - by `gx + gz * size`, as
+// handOutDecks last made them. What the route's dots ride on: at terrain height they went under the
+// planks of a bridge and the way over it looked like the way through the river.
+let deckHeights = null;
+function routeHeight(x, z) {
+  const t = state.terrain;
+  const h = t.worldHeight(x, z);
+  const y = deckHeights && deckHeights.get(Math.floor(x + t.half) + Math.floor(z + t.half) * t.size);
+  return y !== undefined && y > h ? y : h;
+}
   // island and nothing else, so they keep the plain `gx + gz*size` cell the bridges and the
   // props are recorded under. Walk mode reads the whole archipelago, where that number is
   // ambiguous - two islands of one size give corresponding cells identical keys - so every
@@ -4993,6 +5052,10 @@ function handOutDecks() {
   // island's quay is its own storey and not a deck in the air over ours.
   for (const d of state.docks) {
     const r = d.region;
+  deckHeights = flat;
+  // A bridge going up or coming down opens or closes a way into a hamlet: its sign, and the
+  // gap in the fence.
+  if (state.village && state.terrain && hamletGroup.parent) syncHamlets(state.village);
     for (const [gx, gz] of d.cells) {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
     }
@@ -5024,32 +5087,6 @@ function titleCaseName(s) {
   return String(s || '').split(/[\s_]+/).filter(Boolean)
     .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)))
     .join(' ');
-}
-
-// Where a hamlet's road leaves its land - the entrance the welcome sign stands beside. Derived
-// rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
-// on the wire, and the parcel says which of them are still on the hamlet's own ground.
-// Deriving it also means the chronicle gets it for nothing, because it filters the roads
-// it hands down and the gate follows whatever road is there.
-function gateOf(village, d, li, lobe) {
-  const lat = village.island && village.island.lattice;
-  const road = (village.paths || []).find((r) => r.id === `road:${d.id}:${li}`);
-  if (!lat || !road || road.cells.length < 2 || !lobe.parcel) return null;
-  const own = new Set();
-  const p = lobe.parcel;
-  for (let r = 0; r < p.h; r++) {
-    for (let c = 0; c < p.w; c++) if ((p.rows[r] || '')[c] === '1') own.add(`${p.i0 + c},${p.j0 + r}`);
-  }
-  const mine = ([gx, gz]) => own.has(
-    `${Math.floor((gx - lat.anchor[0]) / lat.pitch)},${Math.floor((gz - lat.anchor[1]) / lat.pitch)}`);
-  // The road starts inside and walks out, so the gate is the step where that stops
-  // being true - and if it never was, the first cell is close enough to the edge.
-  for (let i = 0; i < road.cells.length - 1; i++) {
-    if (mine(road.cells[i]) && !mine(road.cells[i + 1])) {
-      return { at: road.cells[i], next: road.cells[i + 1] };
-    }
-  }
-  return { at: road.cells[0], next: road.cells[1] };
 }
 
 // ---- the middle of the square ----------------------------------------------
@@ -5117,7 +5154,9 @@ function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
   const live = new Set();
-  const signSite = hamletSignSites(village, terrain);
+  const bridges = bridgeRoadCells();
+  const opened = [];              // cells the boundary fence is open at besides where a road crosses it
+  const signSite = hamletSignSites(village, terrain, bridges);
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
@@ -5137,6 +5176,14 @@ function syncHamlets(village) {
       live.add(key);
       const sig = d.deck.map((c) => `${c[0]},${c[1]}`).join(';');
       const have = hamletSigns.get(key);
+// The cells of the bridges built by hand (props), which the layout knows nothing about: a road
+// that crosses a river on one still enters a hamlet, so they count as road for its entrances.
+function bridgeRoadCells() {
+  const t = state.terrain;
+  if (!state.props || !t) return [];
+  return state.props.roadCells(t);
+}
+
       if (have?.sig !== sig) {
         if (have) { hamletGroup.remove(have.group); have.dispose(); hamletSigns.delete(key); }
         const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
@@ -5151,35 +5198,38 @@ function syncHamlets(village) {
       }
     }
     if (!d.center || d.tier === 'farmstead') continue;
-    for (const [li, lobe] of (d.lobes || []).entries()) {
-      const key = `${d.id}#${li}`;
-      // Keep the entrance in sight, but put both posts on free ground beside it. One per
-      // lobe, deliberately: each annex has its own way in and you meet its arch there on
-      // foot - unlike the aerial caption, which goes up once per hamlet (captionCell in
-      // web/js/captions.js).
-      const gate = gateOf(village, d, li, lobe);
+    // One gateway per entrance: where a road crosses the edge of the hamlet's land, at most
+    // one per side of the compass (hamletEntrances says which, and how many a place this big
+    // has). The hamlet's aerial caption goes up once (captionCell in web/js/captions.js); on
+    // foot you meet the arch at each way in, and with more than one it says which.
+    for (const gate of hamletEntrances(village, d, bridges)) {
+      // A gate the keeper set opens the fence where it stands, road or no road yet.
+      if (gate.fixed) opened.push(gate.at, gate.next);
+      const key = `${d.id}#${gate.side}`;
       const site = signSite(gate);
       if (!site) continue;
       live.add(key);
       const { gx, gz, turn } = site;
-      const [x, z] = terrain.cellWorld(gx, gz);
-      const sx = x, sz = z;
+      // `fx`/`fz`: half a cell along the road, which is the fence's own line.
+      const [cx, cz] = terrain.cellWorld(gx, gz);
+      const sx = cx + (site.fx || 0), sz = cz + (site.fz || 0);
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name) {
+      if (have && have.text === d.name && have.label === gate.label) {
         have.group.rotation.y = turn;
         have.group.position.set(sx, groundAt(sx, sz), sz);
         continue;
       }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
-        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
+        width: 2.1, height: gate.label ? 0.8 : 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
+        sub: gate.label, subBack: gate.back,
       });
-      // Face approaching walkers, with the whole frame clear of the paving.
+      // Face whoever walks in, with both posts on the cells beside the road.
       sign.group.rotation.y = turn;
       sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, label: gate.label, popped: !have });
     }
   }
   for (const [key, rec] of [...hamletSigns]) {
@@ -5206,6 +5256,8 @@ function islandFrame() {
   // question with a different answer - see applyCameraRange, which measures everything.
   // The two used to be the same line, and that is exactly why a second island could not be
   // looked at: framing home also decided how far you were allowed to wander from it.
+  // The fence opens for a bridge built by hand and for a gate the keeper set, like for a road.
+  if (state.world && state.world.setBridgeRoads) state.world.setBridgeRoads([...bridges, ...opened]);
   // fit the wider of the two spans, then pull in a little so the island fills the frame
   const r = 0.5 * Math.max(maxX - minX, maxZ - minZ) + 2;
   const fov = camera.fov * Math.PI / 180;
@@ -6232,7 +6284,7 @@ function frame(nowMs) {
   if (!state.youMarker) state.youMarker = createYouMarker(scene);
   const sky = state.mode === 'orbit' && state.walk.parked() && !state.inside;
   state.youMarker.update(sky ? state.walk.state.pos : null, state.walk.state.route,
-    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youMarkerMode());
+    routeHeight, performance.now() / 1000, state.ui.youMarkerMode());
 
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
@@ -7343,7 +7395,7 @@ async function boot() {
   // the village are both replaced under it by later scans.
   state.plan = createPlanMode({
     dom: renderer.domElement,
-    terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
+    terrain: () => state.terrain, village: () => state.village, byId: () => state.byId, bridges: bridgeRoadCells,
     pickables: () => state.pickables, bounds: () => state.bounds, ghostPose,
     overlay: createPlanOverlay({
       scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,

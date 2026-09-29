@@ -1304,7 +1304,12 @@ close Settings.
 `ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
 parked walk in orbit without touching the camera. It walks only a route from above
 (`goTo`, fed by `walkBodyTo` in main.js: `findPath` over cells, blocked by the feet's own
-`blockedAt`), from a click on bare ground or the dossier's Walk here; `enterWalk` starts
+`blockedAt`), from a click on bare ground or the dossier's Walk here. The search is told what a settler's
+is not (`findPath` options in shared/settlerwalk.mjs): the decks of hand-built bridges are open over the
+water but entered only at their ends (`step`: a deck is a cell like its bank and two metres higher at
+the crown - boarded from the side halfway across, the walker swam), roads are cheaper (`prefer`, and the
+bridge's axis is a road), and a hamlet's boundary fence costs twelve steps except where a road passes
+(`crossing`); guards and settlers pass none of it; `enterWalk` starts
 where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
 `afoot`. At a tiller or on a deck exitWalk still flies up the old way.
 
@@ -1612,6 +1617,40 @@ web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of
 scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
 `outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
 which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
+**A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
+`entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
+`hamletEntrances` in `web/js/hamlet-sign-placement.js`) finds where the road network crosses the edge of
+the hamlet's land: two paved cells side by side, one on the land and one off it. Never two consecutive cells
+of one path - a path records only what it paved itself, so consecutive cells can lie a street apart (that is
+what once put a sign in the middle of AgentVillage). A road is a road: every road counts, whoever laid it and
+whatever it leads to (polder, harbour, keeper, the `path:civic:*` roads to the town's buildings), but not a
+house's front path - that touches the fence wherever a house stands and made entrances in the middle of
+nowhere. One per side (N/E/S/W - never two on a side; a second gate replaces the first), at most `maxEntrances(population)`
+(1 to 4, `ENTRANCE_STEPS`). A hand-built bridge lies where it happens to lie: it counts as road while it stands and
+is never stored as an entrance, and it lays no roads (to join one to a hamlet, put the hamlet's gate on its
+landing, or draw a road). On one side
+the keeper's gate wins, then the hamlet's own road, then a bridge built by hand, then the crossing nearest the
+middle. **The keeper sets them with the planner's Gate tool** (key 7): the `gate` op in `lib/plan.mjs`
+(`opGate`) writes `layout.gates[district][side]` = `{ at }`, `{ closed: true }` or nothing, judged like every
+op (on the edge of the hamlet's own land, dry, unbuilt, a road able to leave it for the square, and within
+the size's allowance - the keeper's gates count first). `placeAll` then lays `road:gate:<district>:<side>`
+from the gate to the square (sticky, like a polder's approach; the op takes it off the list when the gate
+moves or shuts, and a `move` carries a gate with its land), and `village.gates` reaches the page. A stored
+gate that is no longer on the land or its edge is ignored, not obeyed. With two or more entrances the board
+says which under the name, on the same board (`createNameplate({ sub, subBack })`): "North entrance" on the
+front, seen from outside, and "North exit" on the back, seen from within. `hamletSignSites` stands the arch
+*over* the road exactly on the boundary fence's line - half a cell out from the cell the road leaves the land at
+(`fx`/`fz` in the site, added to `cellWorld` in main.js), in the fence's own opening, posts on the cells either
+side (checked against every path, plot, deck and earlier sign; on the fence line a post may stand on the edge
+of a house's lot, never on paving; a keeper's gate needs no paving under it yet). Where that is impossible it
+falls back to a cell of the road one step out or up to three in, and with no straight stretch there is no sign:
+a gateway beside the road in the grass read as a mistake. The fence opens at a bridge's foot and at a
+keeper's gate too (`setBridgeRoads` in `world.js`, fed from `syncHamlets`). Planning hides the arches, so
+`plan-mode.js` draws the same entrances on the overlay (`setGates`: bar over the boundary, green arrow in,
+orange arrow out, the side's name), with the draft's gates patched over the island's.
+`tests/entrances.test.mjs`, `tests/hamlet-sign-placement.test.mjs`, `tests/plan-gate.test.mjs`
+([Plans/DONE/ingangen-en-bruggen.md](Plans/DONE/ingangen-en-bruggen.md), [Plans/DONE/ingangen-verplaatsen.md](Plans/DONE/ingangen-verplaatsen.md)).
+
 (`coastSite`), so their door's step is water and the road finds the lot from its sides.
 `coastSite` takes a lot only if `civicRoad`, tried with the lot stood on the grid, begins
 within `GATE_REACH` of the door (`atDoor`: `houseGate`'s box, where a settler finds a road -

@@ -19,7 +19,7 @@
 //
 // Keys are taken in the capture phase on window, the way ghost.js and buildmenu.js do,
 // and only while planning: Escape backs out one level at a time, Ctrl+Z/Y undo and redo,
-// 1-6 pick a tool, WASD and the arrows pan. Installed on enter, removed on exit.
+// 1-7 pick a tool, WASD and the arrows pan. Installed on enter, removed on exit.
 //
 // The Road tool draws in grid cells, not super-cells: a road is one cell wide and goes
 // where the keeper drags it. What the browser does for itself is keep the stroke a string
@@ -39,6 +39,8 @@ import { blockOf, superOf, superComplete } from 'shared/lattice.mjs';
 import { DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { mine } from './api.js';
 import { pickedId } from './record-batch.js';
+import { hamletEntrances } from './hamlet-sign-placement.js';
+import { landOf, outwardOf, SIDE_WORD } from 'shared/entrances.mjs';
 
 const DRAFT_KEY = 'promptholm.plan.draft';
 const VIEW_KEY = 'promptholm.plan.view';
@@ -51,7 +53,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 const key = (i, j) => `${i},${j}`;
 const lkey = (l) => `${l.district}#${l.lobe}`;
 
-export function createPlanMode({ dom, terrain, village, byId, pickables, bounds, ghostPose, overlay, panel, toast, onExit }) {
+export function createPlanMode({ dom, terrain, village, byId, bridges = () => [], pickables, bounds, ghostPose, overlay, panel, toast, onExit }) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1000);
   camera.up.set(0, 0, -1);
   const view = { cx: 0, cz: 0, hh: 60 };
@@ -355,6 +357,45 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     return { cells: out, ok, why };
   }
 
+  // ------------------------------------------------------------------ the ways in and out
+  // Every hamlet's entrances as the draft leaves them (hamletEntrances - the same ones main.js
+  // stands an arch over, and the server checks with the same sum), drawn on the overlay: the arches
+  // are hidden while planning. A gate the draft sets, shuts or gives back is patched over what the
+  // island has, so the marker moves as soon as the keeper clicks. Worked out once per village and
+  // draft, not per redraw, since a drag redraws on every step.
+  let gatesOf = { village: null, list: [] };
+  function draftGates() {
+    const out = {};
+    for (const o of ops) {
+      if (o.op !== 'gate') continue;
+      const d = out[o.district] || (out[o.district] = {});
+      d[o.side] = o.clear ? null : o.closed ? { closed: true } : { at: o.at };
+    }
+    return out;
+  }
+  function gates() {
+    const v = village(), t = terrain();
+    const extra = bridges();
+    const draft = draftGates();
+    const sig = JSON.stringify(draft);
+    if (gatesOf.village === v && gatesOf.terrain === t && gatesOf.bridges === extra.length && gatesOf.sig === sig) return gatesOf.list;
+    const list = [];
+    if (v && t) {
+      for (const d of v.districts || []) {
+        if (!d.center || d.tier === 'farmstead') continue;
+        const stored = { ...((v.gates && v.gates[d.id]) || {}) };
+        for (const [side, g] of Object.entries(draft[d.id] || {})) { if (g) stored[side] = g; else delete stored[side]; }
+        for (const e of hamletEntrances({ ...v, gates: { [d.id]: stored } }, d, extra)) {
+          const [ax, az] = t.cellWorld(e.at[0], e.at[1]);
+          const [bx, bz] = t.cellWorld(e.next[0], e.next[1]);
+          list.push({ x: (ax + bx) / 2, z: (az + bz) / 2, dx: bx - ax, dz: bz - az, name: d.name, word: SIDE_WORD[e.side], district: d.id, side: e.side, fixed: e.fixed });
+        }
+      }
+    }
+    gatesOf = { village: v, terrain: t, bridges: extra.length, sig, list };
+    return list;
+  }
+
   // ------------------------------------------------------------------ drawing
   function redraw() {
     project();
@@ -425,6 +466,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     for (const o of ops) if (o.op === 'road') roadMarks(o.cells, lines, rects);
     if (stroke) roadMarks(stroke.cells, lines, rects);
     overlay.setGhosts(ghosts);
+    overlay.setGates(gates());
     const outlines = [...sel].map((k) => ({ supers: supersOf(k), color: new THREE.Color(0xe8b45c) }));
     if (selTown) outlines.push({ supers: [...townAt, ...draftTown].map((k) => k.split(',').map(Number)), color: new THREE.Color(0xe8b45c) });
     overlay.setMarks({ rects, lines, outlines });
@@ -480,6 +522,13 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
       const b = specOf(o.id);
       const still = b && b.plot && b.plot.gx === o.gx && b.plot.gz === o.gz;
       return still ? `Turn ${civicName(o.id)} to face ${FACING[o.rot]}` : `Move ${civicName(o.id)} to [${o.gx}, ${o.gz}], facing ${FACING[o.rot]}`;
+    }
+    if (o.op === 'gate') {
+      const name = (apart.get(o.district) || [...lobes.values()].find((l) => l.district === o.district) || { name: o.district }).name;
+      const word = SIDE_WORD[o.side].toLowerCase();
+      return o.clear ? `${name}: the ${word} side goes back to the roads`
+        : o.closed ? `${name}: shut the ${word} entrance`
+          : `${name}: the ${word} entrance at [${o.at[0]}, ${o.at[1]}]`;
     }
     if (o.op === 'commons') return `Ground for the town: +${o.add.length} super-cell${o.add.length === 1 ? '' : 's'}`;
     if (o.op === 'merge') return `Merge ${(lobes.get(lkey(o)) || { name: o.district }).name}: every house onto one piece of land`;
@@ -543,6 +592,10 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         last.remove = [...remove].map((k) => k.split(',').map(Number));
         if (!last.add.length && !last.remove.length) ops.pop();
       } else ops.push(o);
+    } else if (o.op === 'gate') {
+      // A side has one gate in a draft: the later step replaces the earlier, whichever it says.
+      ops = ops.filter((x) => !(x.op === 'gate' && x.district === o.district && x.side === o.side));
+      ops.push(o);
     } else if (o.op === 'unpolder') {
       // One per plan (the server says so too: the list is indexed); asking again for the
       // same one is a no-op, for another one it replaces the first.
@@ -744,12 +797,46 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     const s = superAt(px, py);
     return s ? projAt.get(key(s[0], s[1])) || null : null;
   }
+  // The Gate tool: a click on the edge of a hamlet's land puts the way in there, on the side that cell
+  // lies on (the same `sideOf` the server judges by); a right-click or Alt-click on a gate shuts it, and
+  // a Shift-click gives its side back to the roads. Whether the cell may hold a gate, and whether a road
+  // can leave it for the square, is the server's answer, in the ledger.
+  function districtSupers(district) {
+    return [...lobes.values()].filter((l) => l.district === district).flatMap((l) => supersOf(lkey(l)));
+  }
+  function gateClick(e) {
+    const c = cellAt(e.clientX, e.clientY);
+    const t = terrain();
+    if (!c || !t) return;
+    if (e.button === 2 || e.altKey || e.shiftKey) {
+      const [wx, wz] = t.cellWorld(c[0], c[1]);
+      let near = null, best = 3.5;
+      for (const g of gates()) {
+        const d = Math.hypot(g.x - wx, g.z - wz);
+        if (d < best) { best = d; near = g; }
+      }
+      if (!near) { toast('Point at a gate: right-click shuts it, Shift-click gives its side back to the roads.'); return; }
+      pushOp(e.shiftKey && e.button === 0 && !e.altKey
+        ? { op: 'gate', district: near.district, side: near.side, clear: true }
+        : { op: 'gate', district: near.district, side: near.side, closed: true });
+      return;
+    }
+    const s = superOf(lat, c[0], c[1]);
+    const rec = projAt.get(key(s[0], s[1]));
+    if (!rec) { toast("A gate stands on the edge of a hamlet's land: click there."); return; }
+    const land = landOf(lat, districtSupers(rec.district));
+    const side = land && land.sideOf(c[0], c[1]);
+    if (!land || !outwardOf(land, c, side)) { toast(`That is inside ${rec.name}; its gate stands on the edge of its land.`); return; }
+    pushOp({ op: 'gate', district: rec.district, side, at: [c[0], c[1]] });
+  }
   function onDown(e) {
     if (!active) return;
     dom.setPointerCapture(e.pointerId);
     ptr = { x: e.clientX, y: e.clientY };
     const painting = tool === 'zone' || tool === 'polder' || tool === 'land';
-    if (e.button === 1 || (e.button === 2 && !painting)) { pan = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz }; return; }
+    const gating = tool === 'gate';
+    if (e.button === 1 || (e.button === 2 && !painting && !gating)) { pan = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz }; return; }
+    if (gating && (e.button === 0 || e.button === 2)) { gateClick(e); return; }
     if (tool === 'polder' && e.button === 0) {
       const s = superAt(e.clientX, e.clientY);
       if (s && polderAt.has(key(s[0], s[1]))) { press = { x: e.clientX, y: e.clientY, polder: polderAt.get(key(s[0], s[1])) }; return; }
@@ -1088,6 +1175,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     if (e.key === '4') { take(); setTool('polder'); return; }
     if (e.key === '5') { take(); setTool('land'); return; }
     if (e.key === '6') { take(); setTool('road'); return; }
+    if (e.key === '7') { take(); setTool('gate'); return; }
     if (PAN_KEYS[e.code]) { take(); keys.add(e.code); }
   }
   function setTool(t) { tool = t; panel.setTool(t); cancelGesture(); }
@@ -1115,6 +1203,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
         : tool === 'polder' ? 'paint shallow water to take off the sea; click a standing polder to pick it'
           : tool === 'land' ? (selectedDistricts().size === 1 ? 'paint land onto the edge of the selected hamlet; right-drag takes it away' : selTown ? 'paint more ground onto the edge of the town' : 'select one hamlet or the town first (1), then paint its land')
           : tool === 'road' ? 'drag a road out from one that reaches the square; over a river it is bridged to size'
+          : tool === 'gate' ? "click the edge of a hamlet's land to put its way in there; right-click a gate to shut it, Shift-click to give its side back to the roads"
           : 'paint ground nothing may be built on; right-drag releases it';
     let where = '';
     if (drag && drag.civic) where = `<span class="${drag.ok ? 'ok' : 'why'}">${esc(civicName(drag.civic))} at [${drag.gx}, ${drag.gz}], facing ${FACING[drag.rot]} · ${drag.ok ? 'fits' : esc(drag.why)}</span>`;

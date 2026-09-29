@@ -22,11 +22,12 @@ function painted(geo, colour, x, y, z) {
   return geo;
 }
 
+const SUNK = 0.2;
 const BOARD_W = 0.86;
 const BOARD_H = 0.34;
 const CANVAS_W = 512;
 
-function draw(text, boardW, boardH, canvasW, band) {
+function draw(text, boardW, boardH, canvasW, band, sub = null) {
   const CANVAS_H = Math.round(canvasW * boardH / boardW);     // keep the plaque's aspect ratio
   const c = document.createElement('canvas');
   c.width = canvasW;
@@ -59,15 +60,38 @@ function draw(text, boardW, boardH, canvasW, band) {
 
   // Fit in one or two lines, shrinking the type until it fits the board.
   const top = band != null ? Math.round(CANVAS_H * 0.12) : 0;
-  for (let size = Math.round(62 * (CANVAS_W / 512)); size >= 14; size -= 2) {
+  // A gateway with more than one entrance says which on the same board: the name above, in
+  // the space the band leaves, and one small line under it. The name is then fitted to the
+  // height it has left as well as to the width.
+  const subH = sub ? Math.round(CANVAS_H * 0.3) : 0;
+  const availH = CANVAS_H - top - subH - (sub ? 8 : 0);
+  const start = Math.round(62 * (CANVAS_W / 512));
+  for (let size = start; size >= 14; size -= 2) {
     g.font = `600 ${size}px "Iowan Old Style", "Palatino Linotype", Georgia, serif`;
     const lines = wrap(g, words, maxW);
-    if (lines.length <= 2 && lines.every((l) => g.measureText(l).width <= maxW)) {
+    if (lines.length <= 2 && lines.every((l) => g.measureText(l).width <= maxW)
+      && (!sub || lines.length * size * 1.12 <= availH)) {
       const lh = size * 1.12;
-      const y0 = (CANVAS_H + top) / 2 - (lines.length - 1) * lh / 2;
+      const y0 = (top + availH / 2) + (sub ? 0 : (CANVAS_H - top - availH) / 2) - (lines.length - 1) * lh / 2;
       lines.forEach((l, i) => g.fillText(l, CANVAS_W / 2, y0 + i * lh));
       break;
     }
+  }
+  if (sub) {
+    // Smaller, a shade lighter, ruled off from the name.
+    g.strokeStyle = '#b89f78';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(CANVAS_W * 0.2, CANVAS_H - 14 - subH * 1.05);
+    g.lineTo(CANVAS_W * 0.8, CANVAS_H - 14 - subH * 1.05);
+    g.stroke();
+    g.fillStyle = '#6b4a2f';
+    let size = Math.round(subH * 0.78);
+    for (; size > 12; size -= 2) {
+      g.font = `600 ${size}px "Iowan Old Style", "Palatino Linotype", Georgia, serif`;
+      if (g.measureText(sub).width <= maxW) break;
+    }
+    g.fillText(sub, CANVAS_W / 2, CANVAS_H - 14 - subH / 2);
   }
 
   const tex = new THREE.CanvasTexture(c);
@@ -104,8 +128,11 @@ function frameGeometry({ s, width, height, boardY, arch, n, boardAt }) {
   const pieces = [];
   for (let i = 0; i < n; i++) {
     const r = arch ? 0.045 : 0.022 * grow;
-    pieces.push(painted(new THREE.CylinderGeometry(r, r * 1.25, legH, 6), POST,
-      n === 1 ? 0 : (i === 0 ? -1 : 1) * span, legH / 2, 0));
+    // A gateway's posts are sunk a hand into the ground: the two stand on cells that may differ a
+    // little in height, and the shorter side must not hang in the air.
+    const sunk = arch ? SUNK : 0;
+    pieces.push(painted(new THREE.CylinderGeometry(r, r * 1.25, legH + sunk, 6), POST,
+      n === 1 ? 0 : (i === 0 ? -1 : 1) * span, (legH - sunk) / 2, 0));
   }
   if (arch) {
     // The beam overhangs its posts a little, the way a real one is pegged on top.
@@ -142,7 +169,7 @@ function batchable(geo) {
 // lettered face stays a mesh: its canvas is the sign's own (Plans/DONE/gebouwen-in-een-batch.md).
 export function createNameplate(text, {
   small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
-  height0 = 0.42, posts = 1, arch = 0, batch = null,
+  height0 = 0.42, posts = 1, arch = 0, batch = null, sub = null, subBack = sub,
 } = {}) {
   const s = small ? 0.7 : 1;
   const group = new THREE.Group();
@@ -162,11 +189,24 @@ export function createNameplate(text, {
   }
   group.add(frame);
 
-  const tex = draw(text, width, height, canvasW, band);
+  const tex = draw(text, width, height, canvasW, band, sub);
   const faceMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
   const face = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.94, bh * 0.86), faceMat);
   face.position.set(0, boardAt, 0.017);
   group.add(face);
+  // A gateway is walked through both ways, and a single-sided face left whoever was leaving
+  // the hamlet reading bare wood. Only the gateways: a yard sign is one of hundreds. With more
+  // than one entrance the two sides say different things under the name - "North entrance" to
+  // whoever comes in, "North exit" to whoever goes out - so the back has a canvas of its own.
+  let backTex = null;
+  if (arch) {
+    backTex = subBack === sub ? null : draw(text, width, height, canvasW, band, subBack);
+    const back = new THREE.Mesh(face.geometry, backTex ? new THREE.MeshBasicMaterial({ map: backTex, transparent: true }) : faceMat);
+    back.position.set(0, boardAt, -0.017);
+    back.rotation.y = Math.PI;
+    group.add(back);
+    if (backTex) group.userData.backMat = back.material;
+  }
 
   group.scale.setScalar(s < 1 ? 1 : 1);   // reserved: keep API stable
 
@@ -178,6 +218,7 @@ export function createNameplate(text, {
       face.geometry.dispose();
       faceMat.dispose();
       tex.dispose();
+      if (backTex) { group.userData.backMat.dispose(); backTex.dispose(); }
     },
   };
 }

@@ -233,5 +233,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - ✅ [slagerij.md](DONE/slagerij.md) — De slagerij
 - ✅ [smidse.md](DONE/smidse.md) — De smidse
 - ✅ [stal-en-veld.md](DONE/stal-en-veld.md) — Stal, dieren en de spullen van het veld
+- ✅ [ingangen-en-bruggen.md](DONE/ingangen-en-bruggen.md) — De naam op een poort boven elke weg die een dorp in- of uitgaat, en handgebouwde bruggen als weg
+- ✅ [ingangen-verplaatsen.md](DONE/ingangen-verplaatsen.md) — De keeper legt zelf vast waar de ingang van een dorp is: Gate-tool, `layout.gates`, één per kant
 - ✅ [vier-havens.md](DONE/vier-havens.md) — Vier havens, wegen naar het plein, meer boten per haven
 - ✅ [zagerij.md](DONE/zagerij.md) — De zagerij

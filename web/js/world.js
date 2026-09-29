@@ -1520,7 +1520,12 @@ export function createLandscape({
     // already walk on, so no extra data is needed to know where the gates are. The field
     // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
     // same merged geometry, for no extra draw call.
-    const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
+    dressed = v;
+    // The gates in a boundary are where a road crosses it, and a bridge the keeper built by hand
+    // (a prop, so not in the village's paths) is a road for that: without it the fence ran
+    // straight across the bridge's foot.
+    const gates = bridgeRoads.size ? new Set([...roads, ...bridgeRoads]) : roads;
+    const bg = buildBorders(v, terrain, own.owner, gates, fieldPlan);
     if (bg) {
       // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
       // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -1540,6 +1545,8 @@ export function createLandscape({
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
       // The fields are drawn here but dressed there: hamlets.js hands back bare geometry
       // and owns the ploughed-soil sheet, so it is the only place that knows the tiling
+  let dressed = village;               // the village the boundaries were last drawn for
+  let bridgeRoads = new Set();         // cells of hand-built bridges and their banks, as `gx + gz * size`
       // and the brightness the sheet has to be corrected for. It handles the wait itself -
       // a sheet that lands after this material was made still reaches it.
       dressFieldMaterial(mat);
@@ -1719,7 +1726,7 @@ export function createLandscape({
     // A fork of their own would be tidier and is not free: it is a visible change to a
     // sky nobody asked to have redrawn. If it is ever worth making, make it deliberately.
     rng,
-    buildPaths, squareCells, setOwnership, setHouseFrontages,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, setBridgeRoads,
     ownership: () => own, season: () => currentSeason,
   };
 }
@@ -1736,6 +1743,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
   // The island itself - ground, wood, fields, walls, paving, withies - in a group of its
   // own under this one. Ours and a neighbour's are built by the same call now; see the
+  // The bridges the keeper has built by hand, as cells: the fence opens for them like for any
+  // road. Only the boundaries are drawn again, and only when the set really changed.
+  function setBridgeRoads(cells) {
+    const next = new Set((cells || []).map(([gx, gz]) => gx + gz * size));
+    if (next.size === bridgeRoads.size && [...next].every((k) => bridgeRoads.has(k))) return;
+    bridgeRoads = next;
+    buildHamletDressing(dressed, currentSeason);
+  }
+
   // header of createLandscape for where the seam is and why it is there.
   const land = createLandscape({ parent: group, terrain, village, season, modest: opts.modest });
   const ground = land.ground;
@@ -2796,7 +2812,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
-    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
+    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages, setBridgeRoads: land.setBridgeRoads,
     ownership: land.ownership, season: land.season,
     followShadow, setShadowDistance, setFar, recentre, reshapeWater, setWaterFocus, state, reshape,
     // The sea's own uniforms - the clock, the sun, the night - by reference, for whatever else
@@ -2814,7 +2830,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 // Which cells of paving are a junction and which are a stretch of lane between two of
 // them. Pure, and exported, because the one hard requirement on the drawing is measurable
 // and tests/paths.test.mjs measures it: a settler walks from cell middle to cell middle
-// and `gateOf` in main.js looks a road cell up by its middle, so wherever the paving ends
+// and `hamletEntrances` (hamlet-sign-placement.js) looks a road cell up by its middle, so wherever the paving ends
 // up drawn it has to still be under those middles.
 //
 // A junction, a dead end and every cell of a plaza keep a tile of their own. The plaza is
