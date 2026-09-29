@@ -113,7 +113,7 @@ function labelTexture(text) {
 // hull. The hull is drawn on the same timeline as everybody's pose (timeline.js), so a pilot
 // put on it stays on it; their own pose, drawn separately, trails the hull by the lag.
 //
-// `hullOf(boatId)` is the same hull for somebody standing on its deck (Plans/lopen-op-de-boot.md):
+// `hullOf(boatId)` is the same hull for somebody standing on its deck (Plans/DONE/lopen-op-de-boot.md):
 // { x, y, z, yaw }, with y its deck. They are drawn as that hull plus where they are on it,
 // and never from their own world position, for the same reason a pilot is.
 export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null }) {
@@ -409,6 +409,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         p.mesh.rotation.set(blocking ? BRACE_LEAN : 0, yaw, moving ? Math.sin(p.bob) * 0.02 : 0);
         if (crouching) p.mesh.scale.set(1, CROUCH_FOLD, 1);
       }
+      // Standing on a hull: leaning with the plane she is on, as our own figure does.
+      if (seat && seat.tilt && !swimming && !riding) p.mesh.quaternion.premultiply(seat.tilt);
       // And the limbs, from the same pose our own figure is given by walk.js. The raised
       // shield is whichever hand holds one, as walk.js decides it for us.
       const eq = p.look.equip;
@@ -439,8 +441,15 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     const k = progress(a, b, render);
     const lx = a.x + (b.x - a.x) * k, lz = a.z + (b.z - a.z) * k;
     const ly = a.y + (b.y - a.y) * Math.min(1, k);
+    const yaw = hull.yaw + lerpAngle(a.yaw, b.yaw, Math.min(1, k));
+    // On the plane, as she is drawn this frame - tilt and all - when the page can say so: the
+    // same point of her frame our own walk mode stands us on (main.js hullOf).
+    if (hull.point) {
+      const at = hull.point(lx, ly, lz);
+      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt() };
+    }
     toWorld({ x: hull.x, z: hull.z, fx: Math.sin(hull.yaw), fz: Math.cos(hull.yaw) }, lx, lz, deckAt);
-    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw: hull.yaw + lerpAngle(a.yaw, b.yaw, Math.min(1, k)) };
+    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw };
   }
 
   // One frame of a peer on a bicycle. Everything the bike does is read off where the rider

@@ -401,9 +401,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.
     const [hx, hz] = homeAt();
-    // On a deck (Plans/lopen-op-de-boot.md): which boat, and where on it, in its own frame -
+    // On a deck (Plans/DONE/lopen-op-de-boot.md): which boat, and where on it, in its own frame -
     // shared/deck.mjs. The world position still goes out beside it, for a sea from before
-    // this. No walk mode sets `deck` yet: every boat is a Benchy with room for her pilot.
+    // this. Walk mode sets `deck` on a ship's planks only: a Benchy's whole deck is her helm.
     const deck = s.deck || null;
     const deckSig = deck ? `${deck.boat}:${deck.x.toFixed(3)},${deck.y.toFixed(3)},${deck.z.toFixed(3)},${deck.yaw.toFixed(3)}` : null;
     const still = deckSig === last.d
@@ -524,8 +524,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       hull.live = false;
       send({ t: 'boat', a: 'drop', id });
     },
-    // A crew, for a boat with room for more than her pilot (Plans/lopen-op-de-boot.md, fase
-    // 4 to 6; lib/boats.mjs has the rules). Nothing calls these yet. Letting go of the tiller
+    // A crew, for a boat with room for more than her pilot (Plans/DONE/lopen-op-de-boot.md, fase
+    // 4 to 6; lib/boats.mjs has the rules). main.js calls them at the top of a ship's rope
+    // ladder, at its foot or on a jump, and at the wheel of a ship. Letting go of the tiller
     // keeps the hull live: for a moment the sea still takes its position from us while it
     // runs out its way (COAST_MS there).
     boardBoat(id) { send({ t: 'boat', a: 'board', id }); },

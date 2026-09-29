@@ -9,11 +9,13 @@
 //
 //   npm run models                  bake and check every set
 //   npm run models -- props         only this one
+//   npm run models:walk             cut the ship's walking surface out of her bake again
 //   npm run models:preview          render a PNG of every asset
 //   npm run models:preview -- props prop_barrel
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { runBlender } from './blender.mjs';
 import { checkAll, describeSet } from './model-rules.mjs';
 
@@ -73,3 +75,9 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`${Object.keys(baked).length} set(s) within budget.`);
+
+// The ship is walked on her own model (shared/hullwalk.mjs): a map cut from her bake, which is stale the
+// moment the bake changes, so it is cut again whenever she was baked.
+if (!names.length || names.includes('pirateship')) {
+  execFileSync(process.execPath, [path.join(ROOT, 'scripts/build-shipwalk.mjs')], { stdio: 'inherit' });
+}

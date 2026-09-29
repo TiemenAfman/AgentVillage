@@ -642,7 +642,7 @@ is steering (`glideBoats` in main.js, a short track of samples rather than a pai
 the peers). A pilot is drawn standing on their hull (`seatOf`), never on their own pose: on
 two timelines they part by as far as the boat goes in the difference. `'boat'` in a pose is
 a room to the sea (`afoot` in lib/hostility.mjs) and a hull to peers.js (`BOAT_ROOM`), not a
-place - read as a place it hid every pilot. [Plans/lopen-op-de-boot.md](Plans/lopen-op-de-boot.md).
+place - read as a place it hid every pilot. [Plans/DONE/lopen-op-de-boot.md](Plans/DONE/lopen-op-de-boot.md).
 Standing on a deck is a position in the hull's own frame (`shared/deck.mjs`, trig-free: a
 hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boat holds is
 `shared/crafts.mjs`, the one copy (every boat is a Benchy, `crew: 1`). The sea takes a deck
@@ -650,9 +650,46 @@ pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works th
 position out itself, and sends decks as their own list `d` beside the rows - a row's slots
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
 crew). Walk mode sets `state.deck` on the galleon only (`CRAFTS.galleon`, the pirate ship,
-crew 5): E at its wheel is *leave the helm*, the hull coasts under `stepBoat` with the gas off
-while you walk it (`stepOnDeck` in walk.js), and `ownHull()` in main.js is the hull that is
-ours whether at the wheel or on the planks. `kindOf` makes every island's first boat
+crew 5): E at its wheel is *leave the helm* (`letGoBoat`, and E again is `takeBoat`), the hull
+coasts under `stepBoat` with the gas off while you walk it (`stepOnDeck` in walk.js), and
+`ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
+ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
+none from a dock): she is boarded by walking into the foot of one of her two rope ladders
+(`craft.ladders`, at z 1.85 because the gun ports stand out to 2.63 everywhere else along the
+waist; `ladderUp`, and `ladderDown` from the deck, in `shared/deck.mjs`), which you climb along a
+path in the hull's frame (`stepClimb`: pushing at the hull is up, away is down, no push hangs
+you where you are, a jump lets go) and which tells the sea at the top (`boardBoat`, so you are crew)
+and at the foot or on letting go (`leaveBoat`); and she is left by
+jumping - a rail with a `top` is a bulwark that a body with its feet above it goes over, a mast has
+none - after which you fall on from where you are with the hull's speed in `drift`, not into a
+teleport. **The ship is her own hitbox** (`shared/hullwalk.mjs`, Plans/DONE/lopen-op-de-boot.md). A deck
+made of rectangles and a list of rails, worked out by hand, was wrong somewhere new every time
+(a staircase walked as a step, then the round plinth at the wheel), so the page walks the model:
+`scripts/build-shipwalk.mjs` cuts the baked hull with a vertical line through every 5 cm square of
+her plan and writes where it meets a surface, at what height, and whether it is one to stand on
+(`web/js/shipwalk-map.js`, generated - `npm run models` cuts it again after baking her, and
+`tests/shipwalk.test.mjs` fails on a stale one). Floor is the highest surface within a step of the
+feet with a body's air above it, an obstacle is anything at all in a body's height above that,
+and a footprint has to be held up all round, so a bulwark's top is not walked along and a ledge is
+not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
+position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
+fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
+Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
+`nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
+**A hull is a reference plane** and whoever is on one stands on *that*: a point of her own frame
+read off the transform she is drawn with this frame (`hullPointOf` in boat.js; `poseHull` in main.js
+places and swells her at the frame's clock first, and the fleet loop repeats it, which is
+idempotent), not `toWorld` plus a height - a pitching hull moves her deck sideways as well as up,
+0.05 on a deck 1.16 over her pivot, which is feet sliding over the planks on a settler half a unit
+tall. The body leans with the plane (`hullTiltOf`: her rotation less her heading) and walk mode's
+camera stands in it (offset turned with the tilt, `camera.up` hers), so the deck holds still on the
+screen and it is the sea that rocks; `exit()` puts the camera upright again. Peers on a deck and a
+ship's pilot at her wheel are drawn the same way (`hullOf.point`/`tilt`, `seatOf`). The ladder is
+drawn from the same `craft.ladders` numbers and welded into the hull's
+geometry (`ladderBoxes`, boat.js), so it is no extra draw call and cannot drift from the one you
+climb. Whoever else moves the hull you stand on - another pilot, or one running her out after
+`letGo` - is followed, not stepped: `hullFollowed` in main.js, handed to walk mode as `following`,
+and `glideBoats` still glides that hull. Plans/DONE/lopen-op-de-boot.md. `kindOf` makes every island's first boat
 (`boat:<region>`, no suffix) the galleon, for the sea and every page alike, and `shipBerth` in
 main.js lays it in deep water off a berth cut for a Benchy - by arithmetic on the ground, so
 every page agrees. A sea from before this counts the ship's crew as one and holds nobody on

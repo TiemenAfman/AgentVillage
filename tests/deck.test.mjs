@@ -1,11 +1,11 @@
-// Standing on a moving boat (shared/deck.mjs, shared/crafts.mjs - Plans/lopen-op-de-boot.md,
+// Standing on a moving boat (shared/deck.mjs, shared/crafts.mjs - Plans/DONE/lopen-op-de-boot.md,
 // the groundwork for fase 2 and 3). Nothing draws or sails a deck yet: every boat is still a
 // Benchy with room for her pilot. What is held here is the arithmetic a bigger boat will
 // stand on, so it is right before anybody is on it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { toWorld, toLocal, dirToWorld, dirToLocal, hullVelocity, deckAt, clampToDeck, stepDeck, boardAt, leaveDeck } from '../shared/deck.mjs';
+import { toWorld, toLocal, dirToWorld, dirToLocal, hullVelocity, deckAt, clampToDeck, stepDeck, boardAt, leaveDeck, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from '../shared/deck.mjs';
 import { CRAFTS, craftOf, crewOf, kindOf } from '../shared/crafts.mjs';
 
 const frameOf = (x, z, yaw) => ({ x, z, fx: Math.sin(yaw), fz: Math.cos(yaw) });
@@ -109,6 +109,152 @@ test('an island\'s first boat is its galleon, every other boat a Benchy, and a B
   for (const [kind, c] of Object.entries(CRAFTS)) {
     assert.notEqual(deckAt(c, ...c.helm), null, `${kind}'s helm is off its deck`);
     assert.ok(c.crew >= 1, `${kind} has no room for a pilot`);
+  }
+});
+
+// walk.js's own numbers (WALK_SPEED, WALK_BODY_R, JUMP_V, GRAVITY), which tests/deck-walk.test.mjs
+// would read off the source if it came to that: they are the ones the ship is a cage or not by.
+const GO = { speed: 3.4, radius: 0.16, jumpV: 3.1, gravity: 12.5 };
+const DT = 1 / 60;
+const galleon = CRAFTS.galleon;
+
+test('a bulwark stops a walker and a jump goes over it, which is how you leave a ship', () => {
+  // Walking at the waist's starboard rail: stopped short of it, still aboard.
+  const w = { x: 0.6, z: 1.2, y: 1.108, vy: 0, grounded: true };
+  for (let i = 0; i < 120; i++) stepDeck(w, { x: 1, z: 0 }, galleon, DT, GO);
+  assert.ok(!w.off, 'walked through the bulwark');
+  assert.ok(w.x > 1.5 && w.x < 1.9, `stopped at ${w.x}`);
+  // The same, jumping as they arrive: over the side, and off the boat.
+  const j = { x: 0.6, z: 1.2, y: 1.108, vy: 0, grounded: true };
+  let off = false;
+  for (let i = 0; i < 240 && !off; i++) {
+    stepDeck(j, { x: 1, z: 0, jump: i > 45 && j.grounded }, galleon, DT, GO);
+    off = !!j.off;
+  }
+  assert.ok(off, 'jumped at the rail and stayed aboard');
+  assert.ok(j.y > galleon.rails[0].top - 0.05, `left the planks at ${j.y}, under the bulwark`);
+  // Standing against it and jumping is enough: no run-up is asked for.
+  const st = { x: 1.65, z: 1.2, y: 1.108, vy: 0, grounded: true };
+  let over = false;
+  for (let i = 0; i < 120 && !over; i++) {
+    stepDeck(st, { x: 1, z: 0, jump: st.grounded }, galleon, DT, GO);
+    over = !!st.off;
+  }
+  assert.ok(over, 'a standing jump at the rail did not clear it');
+});
+
+test('a mast is not gone over, however high you jump', () => {
+  const s = { x: 0.7, z: 0, y: 1.108, vy: 0, grounded: true };
+  for (let i = 0; i < 120; i++) stepDeck(s, { x: -1, z: 0, jump: s.grounded }, galleon, DT, GO);
+  assert.ok(!s.off && s.x > 0.15 + GO.radius - 1e-9, `through the mainmast to ${s.x}`);
+});
+
+test('every bulwark can be cleared by a jump from at least one side, or a corner of the ship is a cage', () => {
+  const apex = (GO.jumpV * GO.jumpV) / (2 * GO.gravity);
+  for (const r of galleon.rails) {
+    if (r.top === undefined) continue;
+    // The planking a body stands on beside it, on each of its four sides: the one it is a bulwark
+    // to is the one where it stands lowest against it - and a wall between two decks (the
+    // quarterdeck's front) is a bulwark from the upper one and a wall from the lower.
+    const floors = [[r.hx + 0.3, 0], [-(r.hx + 0.3), 0], [0, r.hz + 0.3], [0, -(r.hz + 0.3)]]
+      .map(([dx, dz]) => deckAt(galleon, r.x + dx, r.z + dz)).filter((f) => f !== null);
+    assert.ok(floors.length, `the rail at ${r.x},${r.z} has no planking beside it`);
+    const over = r.top - Math.max(...floors);
+    assert.ok(over < apex - 0.08, `the rail at ${r.x},${r.z} stands ${over.toFixed(2)} over the highest planking beside it, a jump is ${apex.toFixed(2)}`);
+  }
+});
+
+test('the aft stairs are walked up from their foot, and the wall beside them is not', () => {
+  const walk = (x, z, dir, steps = 240) => {
+    const s = { x, z, y: deckAt(galleon, x, z), vy: 0, grounded: true };
+    const ys = [];
+    for (let i = 0; i < steps && !s.off; i++) { stepDeck(s, dir, galleon, DT, GO); ys.push(s.y); }
+    return { s, ys };
+  };
+  for (const side of [1, -1]) {
+    // Aft up the flight: on the quarterdeck at the end, with the height never jumping by more than a
+    // stride's rise (0.97 a unit at 3.4 a second is 0.055 a frame at 60 - a step of 0.6 is a wall).
+    const up = walk(side * 1.5, -0.9, { x: 0, z: -1 }, 60);
+    assert.ok(!up.s.off, 'fell off the stairs');
+    assert.ok(up.s.z < -2.3 && Math.abs(up.s.y - 1.738) < 1e-9, `ended at z ${up.s.z.toFixed(2)}, y ${up.s.y.toFixed(3)}`);
+    for (let i = 1; i < up.ys.length; i++) assert.ok(Math.abs(up.ys[i] - up.ys[i - 1]) < 0.08, `a step of ${(up.ys[i] - up.ys[i - 1]).toFixed(2)}`);
+    // Straight at the bulkhead between the flights: stopped at its foot, on the waist, not on top of it.
+    const wall = walk(side * 0.3, -1.0, { x: 0, z: -1 });
+    assert.ok(wall.s.y === 1.108 && wall.s.z > -2.2, `climbed the wall to z ${wall.s.z.toFixed(2)}, y ${wall.s.y}`);
+    // Along the foot of the stringer at the flight's side: no way up from there either.
+    const side_ = walk(side * 1.0, -0.9, { x: 0, z: -1 });
+    assert.ok(side_.s.y === 1.108, `up the side of the flight at y ${side_.s.y}`);
+  }
+  // Jumping the balustrade from the quarterdeck lands in the waist, which is a way down and not a way up.
+  const j = { x: 0, z: -2.9, y: 1.738, vy: 0, grounded: true };
+  let over = false;
+  for (let i = 0; i < 240 && !over; i++) {
+    stepDeck(j, { x: 0, z: 1, jump: j.grounded && j.z > -2.75 }, galleon, DT, GO);
+    over = j.grounded && j.z > -2.2;
+  }
+  assert.ok(over && j.y === 1.108, `jumped the balustrade to z ${j.z.toFixed(2)}, y ${j.y}`);
+});
+
+test('the forecastle and the bow are climbed by ramps, and the whole ship is one connected deck', () => {
+  // Along the centreline from the stern to the tip of the bow the planking never breaks off and no
+  // step is bigger than a riser of the bake's (0.2 is the forecastle's, 0.21 the poop's).
+  let last = null;
+  for (let z = -6; z <= 5.8; z += 0.05) {
+    const y = deckAt(galleon, 0.1, z);
+    if (y === null) { assert.ok(z < -5.5 || z > 5.7, `a hole in the deck at z ${z.toFixed(2)}`); last = null; continue; }
+    if (last !== null && Math.abs(z + 2.3) > 0.06) assert.ok(Math.abs(y - last) < 0.25, `a step of ${(y - last).toFixed(2)} at z ${z.toFixed(2)}`);
+    last = y;
+  }
+  assert.ok(Math.abs(deckAt(galleon, 0.1, 5.5) - 1.9) < 0.05, 'the bow deck at 5.5');
+});
+
+test('a rope ladder is walked into at its foot and out onto at its head, on either side', () => {
+  assert.equal(galleon.ladders.length, 2, 'one over each side');
+  assert.deepEqual(galleon.ladders.map((l) => Math.sign(l.x)).sort(), [-1, 1]);
+  for (const l of galleon.ladders) {
+    const s = Math.sign(l.x);
+    // Treading water just outside the ropes, pushing at the hull.
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 0.2), l.z, -0.13, -s), l, 'at the foot, pushing in');
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 0.2), l.z, -0.13, 0), null, 'at the foot but not pushing');
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 0.2), l.z, -0.13, s), null, 'at the foot, pushing away');
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 0.2), l.z + 1.5, -0.13, -s), null, 'a swimmer further along the hull');
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 2), l.z, -0.13, -s), null, 'two units out is not the foot');
+    assert.equal(ladderUp(galleon, s * (Math.abs(l.x) + 0.2), l.z, 1.1, -s), null, 'not from the deck');
+    // On the deck at its head, pushing over the side - and only squarely so.
+    assert.equal(ladderDown(galleon, s * 1.5, l.z, s), l, 'at the head, pushing out');
+    assert.equal(ladderDown(galleon, s * 1.5, l.z, s * 0.6), null, 'sliding along the rail with a little push');
+    assert.equal(ladderDown(galleon, s * 0.5, l.z, s), null, 'in the middle of the deck');
+    assert.equal(ladderDown(galleon, s * 1.5, l.z + 1.5, s), null, 'further along the rail');
+  }
+  // The Benchy has none, so none of it ever fires there.
+  assert.equal(ladderUp(CRAFTS.benchy, 0.5, 0, -0.1, -1), null);
+  assert.equal(ladderDown(CRAFTS.benchy, 0.05, 0, 1), null);
+});
+
+test('a ladder runs from the water over the bulwark to somewhere you can stand', () => {
+  for (const l of galleon.ladders) {
+    const path = ladderPath(galleon, l, -0.13);
+    const first = path[0], last = path[path.length - 1];
+    assert.equal(first.y, -0.13, 'starts where the swimmer is');
+    assert.ok(Math.abs(first.x) > Math.abs(l.x), 'on the outside of the ropes');
+    assert.equal(last.y, deckAt(galleon, last.x, last.z), 'ends on the planks');
+    // Clear of every rail, or the first step after it is refused whole.
+    for (const r of galleon.rails) {
+      assert.ok(Math.abs(last.x - r.x) >= r.hx + GO.radius || Math.abs(last.z - r.z) >= r.hz + GO.radius,
+        `the landing is inside the rail at ${r.x},${r.z}`);
+    }
+    // Over the bulwark, never through it: the path is above the wall the ladder hangs over
+    // (`top` is the bake's, not the rail's - the rail is what a jump has to clear) wherever it
+    // is over it, from the outside of the hull to the rail's inner face.
+    const total = pathLength(path);
+    for (let d = 0; d <= total; d += 0.02) {
+      const p = pathAt(path, d);
+      if (Math.abs(p.x) > 1.9 && Math.abs(p.x) < Math.abs(l.x)) assert.ok(p.y >= l.top - 0.001, `${p.y} through the bulwark at x ${p.x}`);
+    }
+    // Endpoints exactly, and clamped beyond.
+    assert.deepEqual([pathAt(path, 0).x, pathAt(path, 0).y], [first.x, first.y]);
+    assert.deepEqual([pathAt(path, total + 5).x, pathAt(path, total + 5).y], [last.x, last.y]);
+    assert.ok(total > 2 && total < 4, `a climb of ${total.toFixed(2)}`);
   }
 });
 
