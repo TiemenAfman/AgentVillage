@@ -102,11 +102,10 @@ export function createUI(handlers) {
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
-  // Beside Legend rather than inside Settings, and it is the one chip that is not there
-  // twice by accident: the Settings panel writes config.json on the machine the island
-  // runs on and is hidden from everybody but the keeper (see setKeeper below), while how
-  // loud somebody's own speakers are is theirs alone. So this is a chip, and what it
-  // remembers lives in that browser's localStorage next to the avatar and the chat mode.
+  // On the menu's This screen tab, not the keeper's Island tab: that one writes config.json
+  // on the machine the island runs on (see setKeeper below), while how loud somebody's own
+  // speakers are is theirs alone. What it remembers lives in that browser's localStorage next
+  // to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());

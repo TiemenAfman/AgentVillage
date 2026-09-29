@@ -63,8 +63,10 @@ The **menu** holds everything you set once and leave, and it is where the settin
 it with the ☰ at the far right, with Esc from the sky, or with Start on a controller. It has
 four tabs:
 
-- **This screen**: sound, the **Show** toggles for Code, Cowork and apprentices, the YOU arrow,
-  *Wander by itself*, and *Lighter when slow*.
+- **This screen**: sound, the **Show** toggles for Code, Cowork and apprentices, what hangs over
+  you from the sky (*You*, *You + arrow* or *Off*), *Wander by itself*, the **Timeline** bar, and
+  **Graphics**: how far the view, the buildings, the people and the shadows reach, each on its
+  own slider (*This machine's defaults* puts all four back), with *Lighter when slow* under them.
 - **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
 - **Island**: the house signs, how big the island may grow, and which sea it is in. Only the
   keeper sees this tab, because it writes the island's own config.json.

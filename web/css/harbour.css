@@ -75,7 +75,9 @@
   margin-bottom: 12px;
 }
 
+/* 12.5px is what the label inherited from .panel-body; the menu's body sets no size of its own. */
 .sysmenu .setting-row label {
+  font-size: 12.5px;
   display: flex;
   justify-content: space-between;
   gap: 10px;
