@@ -397,6 +397,10 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
     },
     // What the sea last said, for the console and for anyone adding a line to the HUD.
     sky: () => name,
+    // The rain box. It is shown or hidden by `fall` every frame, so under the sea
+    // (web/js/underwater.js) it is hidden after this has had its say - the drops that hang
+    // between the eye and the surface would otherwise fall through the water column.
+    precipitation: () => drops,
     dispose() {
       scene.remove(drops);
       geo.dispose();

@@ -103,7 +103,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
+  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
   quietMs = QUIET_MS } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
@@ -317,6 +317,19 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // flinch is on every screen and not only the swinger's. Passed through: the ids are
         // the sea's crowd ids and main.js knows which crowd view holds them.
         case 'agent': onAgent(m); break;
+        // Our air, privately (lib/breath.mjs): said only when going under or coming up, and
+        // after being sent home, because the page does the sum itself in between
+        // (shared/breath.mjs stepAir, fed our own depth). Handed over as it arrived, checked
+        // - a bar at NaN is a bar that never fades, as with the health above - and never kept
+        // here: unlike the health there is no `at` to age it by, main.js owns the number and
+        // this only corrects it.
+        case 'breath': {
+          if (![m.air, m.max].every(Number.isFinite) || m.max <= 0) break;
+          onBreath({ air: Math.min(m.max, Math.max(0, m.air)), max: m.max, rate: Number.isFinite(m.rate) ? m.rate : 0 });
+          break;
+        }
+        // `why` (only 'drown' so far) rides along in `m` through the spread below: a sea from
+        // before it does not send one, and a page from before it never reads one.
         case 'evicted': {
           if (![m.x, m.y, m.z].every(Number.isFinite)) break;
           const [ox, oz] = frame();

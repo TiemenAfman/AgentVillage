@@ -52,7 +52,10 @@ imports `three` fails.
 Tests exercise browser modules under Node: they `register('./support/shared-loader.mjs')`
 to resolve the `shared/` import-map prefix, and stub `globalThis.document` before importing
 anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at import time).
-Copy that preamble when adding a test that touches `web/js/`.
+Copy that preamble when adding a test that touches `web/js/`. A whole walk mode can be driven under
+Node as well: `tests/diving-walk.test.mjs` has the stubs (a 2D context that accepts every call, the
+global `addEventListener` collecting the key handlers) and steps `createWalkMode` frame by frame
+against a fake sea.
 
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747. Pitfall: the preview
@@ -634,7 +637,7 @@ its deck: the open sea has to be redeployed before others see you walk it.
 gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
 connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
 `identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
-`CROUCHING`, `SITTING`, `DANCING` are 256/512/1024/2048 (`POSE_MASK` 4095) - and by events for
+`CROUCHING`, `SITTING`, `DANCING` are 256/512/1024/2048 (`POSE_MASK` is 8191 now, with `ASLEEP` 4096 above them) - and by events for
 the arms: `{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}`
 as `drank`. Events, not bits: a swing is over in less than two pose beats. A dance is a bit
 because it lasts (R, [Plans/dansen.md](Plans/dansen.md)), and only the bit crosses: every page
@@ -1052,6 +1055,27 @@ the page fills the bar on its own clock; it is sent only when the page's number 
 wrong without it: after every hit that leaves you standing, and "whole" after an evict the
 page was told less than.
 
+**Air is the sea's too, and the page keeps the same sum** ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)).
+`shared/breath.mjs` is the one copy - `AIR_S` 30 seconds of lung, `REFILL_S` 3 to fill it at the
+surface, `DROWN_PER_S` 12, `HEAD` 0.5 (the same number as diving.js `DIVE_HEAD`, a test holds them
+equal), `submerged(f, y)` = the SWIMMING bit and `y + HEAD < SEA_LEVEL`, and `stepAir`. The sea
+reads only what the pose already carries - `lib/breath.mjs`, ticked after `lava.tick()` and before
+`health.tick()`, filters with `afoot` like lava - so it needs no water data of its own, which it
+does not have between islands. An empty lung calls `health.hurt(p, DROWN_PER_S * dt, { kind:
+'drown' })`, and the eviction that follows carries an optional `why: 'drown'` (so the toast says
+"out of breath", and every other `evicted` is byte for byte what it was). The private `{ t:
+'breath', air, max, rate }` is sent only when the page's own prediction would be wrong: going under,
+coming up (rate-limited to one a second, or a diver bobbing at head depth sends one a beat), and
+"full" after an evict. `rate` is -1 draining, `max / REFILL_S` refilling, 0 full; there are no
+timestamps because the sea's clock is not the page's. The page steps `stepAir` itself every frame
+(`stepBreath` in main.js, on real elapsed time capped at 0.5 s like the sea) and the message only
+corrects it, so a sea from before it gives a bar that moves and a diver who never drowns.
+`y` and `SWIMMING` are client claims, like every pose: a page that lies about its height does not
+drown. No new pose bit and no `SEA_V`, so it is a patch - but drowning happens only on a sea that
+runs this code, and the open sea is redeployed by hand. A guard still chases a diver inside its reach
+strip but cannot hit one further than 1.2 under the surface (the vertical window in
+`lib/hostility.mjs` and `lib/combat.mjs`): a deliberate loose end, not a rule.
+
 **The islets are the page's, worked out from the fleet, and never regions**
 ([Plans/starter-eilanden.md](Plans/starter-eilanden.md)). `shared/islets.mjs isletsNear(fleet, at)`
 is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet's square is
@@ -1217,12 +1241,111 @@ the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scal
 the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand. The villagers' own rigs (smith, butcher, baker) set it back to 1: their tools were placed
 against the unmirrored rig, and `tests/butcher.test.mjs` fails on the cleaver if one is not.
 
-**The follow camera never hangs under the sea.** `placeCamera` in walk.js floors the camera with
-`cameraFloor` (web/js/camera-floor.js): over ground it is the ground plus a hand, over water the
-*surface* plus `WATER_CAM_MIN` (0.5, over the swell and the near plane) - the ground under open
-sea is `OPEN_SEA`, so the old ground-plus-a-hand let a wheeled-out camera look up at a boat through
-the underside of the water. Not while `state.diving` (the diving mode's flag, set by walk.js when
-the head is under the surface; unset until then): there the camera belongs under the water.
+**The follow camera never hangs under the sea - until its body is under it, and then never over.**
+`placeCamera` in walk.js floors the camera with `cameraFloor` (web/js/camera-floor.js): over ground
+it is the ground plus a hand, over water the *surface* plus `WATER_CAM_MIN` (0.5, over the swell and
+the near plane) - the ground under open sea is `OPEN_SEA`, so the old ground-plus-a-hand let a
+wheeled-out camera look up at a boat through the underside of the water. While `state.diving`
+(below) the camera belongs under the water: its floor is the bed, and `applyCeiling` holds it
+`WATER_CAM_MAX` under the surface - a camera left above a diver would look down through a sea that
+is opaque at depth. Both go over on `blend`, a smoothstep of a 0.8 s timer (`camDive`), never on
+the flag: the surface swimmer's camera hangs 2.3 up, and an exponential ease moved it 0.16 in one
+frame (`tests/diving-walk.test.mjs` holds the step small).
+
+**Diving is the walker's third way in the water, and a diver is still a swimmer**
+([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
+swimming in water deep enough (`canDive`: a body's height of sea) sinks the body; Space (pad A)
+swims it up; letting go hangs it (neutral buoyancy). `web/js/diving.js` is pure like `stepBike`:
+`stepDive` takes `{ y, vy }` and the world (`bed`, `lid`, `surface`) and says where the feet end
+up and whether the body has `surfaced` - at exactly `WATER_Y - SWIM_SINK`, the height walk.js
+floats a swimmer at, so leaving dive mode is no step. **Three flags on walk state, and they mean
+different things:** `dive` (the feet are free of the surface), `diving` (the *head* is under:
+`y + DIVE_HEAD < WATER_Y`, which is what the camera, the mist, the sound and the sea's air key
+on) and `onBed` (standing on the sand, where a diver walks slower). `swimming` stays true
+throughout: every reader of it (no fight, no dance, no drink, the sea's SWIMMING bit) keeps
+working, and `state.grounded` stays true too, so a diver is never AIRBORNE. `crouching` is exactly
+"C is held" (set on the press, dropped on the release), which is why keyboard, pad and a rebound key
+all come through it - and why the rig and the camera use `stoop = crouching && !dive`, since C is
+not a crouch down there. What a diver stands on is `bedUnder` (`sea.bedAt`, the *drawn* bed, then
+the quay's basin), never `groundAt`, whose meaning ("the surface or deck under the feet", also
+main.js's "can I step out here") does not change. Under a deck `ceilingAt` stops the rise; in the
+shallows (`SHALLOW`) the water lifts a body that is not pushed down, so a diver reaching a beach
+rises out of it instead of being snapped up when the bed comes dry. `reach()` offers nothing
+to a body that is `dive`-ing: the distances are flat, and E would board the dock's boat from two
+units down. The phone shows B in the water through `walk.inWater()` (`touchpad.js setHands`).
+`?dive` starts walk mode in open water off the home island's east side. Others see a diver
+through the `y` that was always sent (`peers.js`: a swimmer sent below `SURFACE_Y - DIVE_BELOW`
+is drawn there, clamped to the surface above and the bed below, tipped by `divePitch` off the
+vertical speed of their last two samples): no pose bit, no new message, and a page from before
+diving sends -0.07 and is drawn afloat.
+
+**The sea has a floor, and it is a layer beside the terrain, never in it**
+([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). Writing a bed into any terrain `H` -
+even a corner far out at sea - changes `layout.terrainHash`, moves every house and makes every
+neighbour refuse the island, so the relief between and past the islands is `shared/seabed.mjs`
+(trig-free, from `makeSimplex2D('seabed')`, in the world's frame): `bedDelta` in [-1, 1.5] on top of
+`OPEN_SEA`, banks up to `BED_TOP` -1.0 (boats scrape only from 0.35, so none ever touches one),
+trenches down to `BED_DEEPEST` -3.5 (inside the sea's pose clamp of -4), slopes about 0.25, faded in
+over `BED_BAND` 12 to `BED_FADE` 40 units off any island grid or islet square, so between two
+islands it reaches only a third of its height. **`archipelago.bedAt(x, z)` is the bed a diver meets;
+`height()` is still the logical water** (boats, guards, colour, `water-patch.test.mjs`'s "the coarse
+water is only valid over flat OPEN_SEA") and has not changed. Inside a region `bedAt` is the
+*unramped* `r.terrain.worldHeight` - what the island's mesh really draws, since `placeIsland`
+ramps the outer `BLEND_CELLS` to `OPEN_SEA` and a diver must touch the drawn floor - then blends
+the island's rim into the field over `BED_BAND`, and islets come in through `seabed.height`
+(`max`). The field lives in the world's frame and the archipelago in the page's (home at the
+origin), so **`setBedHome(state.homeOrigin)` must be called wherever the berth changes** or two
+pages berthed apart put a bank in different places; main.js `seaFloorChanged()` does it, and asks
+the bed and its life to plan again, on a rehome, a guest island, and the islets' `onChange`.
+`web/js/seabed.js` draws it: one mesh following the body in three rings (step 1 out to 24, 2 to
+64, 4 to 128: ~17.8k triangles, ONE draw; `modest` 1/4/8) on a lattice anchored to the world so
+nothing swims, rebuilt when the focus has drifted 8 units, heights from `bedAt`, colour from the
+truth (depth, slope, caustics off the water's own uniforms - `world.waterUniforms`, shared not
+cloned). **It sits `SEABED_LIFT` over the terrain with a polygonOffset that pulls it forward, and
+draws over an island's own underwater ground as well**: an island's shore colours (teal `bandColour`,
+the grass sheet, the sea's light) are a dark slab against the sand of the open sea, and with the
+bed lowered under the island's mesh - as it first was - a diver saw that slab's straight edge at the
+grid's rim. Land cells (all corners at the waterline or above) are left out. It is switched off
+from the sky and at the surface, and the opaque ocean disc hides it from above anyway.
+
+**Under the surface the lens decides** (`web/js/underwater.js`). It keys on the *camera* being under
+`world.surfaceAt` over water (`state.sea.height < 0`), with hysteresis, not on the body: a diver's
+camera is on its way down for 0.8 s after the head goes under. It runs in the frame after weather
+and `applyFogRange` and before `seaFloorFrame` and `cullRecords`, in the way weather.js multiplies
+what world.js wrote: fog near 0.5, far 60 falling to 25 by 3.5 down (never past the fog above, so
+"what `record-cull` cuts is already fogged" stays a property of the function), teal darker with depth
+and at night; `exp(-0.18 d)` on the key, hemisphere and ambient light; `scene.background` at the fog
+colour; dome, clouds, sun, moon, rain and the three front water meshes hidden; near/far stashed and
+put back exactly (a range `applyFogRange` wrote since counts as the ordinary one, and only for
+the same Fog object: a reseed makes a new one). **The surface from underneath is one full-screen
+quad, not three BackSide meshes**: with the near plane at 0.5 a ceiling closer than that is cut
+away, exactly where a diver spends the first seconds, and the swell (+-0.09) tears holes in a
+one-sided ceiling. Each pixel intersects its ray with the plane at the surface height, shows the
+Snell window (sky colour and the sun's glint inside about 49 degrees, the dimmed mist outside,
+ripples only on `WAVE_RATES` so there is no seam at the 20*pi fold) and writes that point's depth
+to `gl_FragDepth`, so everything above it lies behind and everything below in front; it draws
+first, opaque, and is `visible=false` above water. The overlay is `#underwater` (never a `filter`
+on `#stage`, which the beer's blur owns), the sound is a low-pass 20 kHz to 600 Hz on the master
+(`sound.setUnderwater`), and `enterPlan` calls `underwater.reset()` first so the planner does not
+stash the sea's mist as the ordinary one.
+
+**What lives on the floor is planned from the bed alone, and is the page's**
+(`web/js/sea-life-plan.js`, pure and tested, and `sea-life.js`). The sea is cut into 16-unit
+chunks and each is planned from its own coordinates - `hash32('sea:<cx>:<cz>...')` for the
+choices, world-frame noise for the clusters - so nothing is stored or sent and two pages that look at
+the same water see the same reef: kelp in forests where the bed is -1.2 or deeper (shortened to
+keep its top 0.35 under the surface, at 0.4 to 0.75 of its baked 1.5 or a forest hid its own
+diver), coral on banks (-2.3 up to -0.9), rocks on steep ground, shells and starfish on sand,
+and nothing shallower than -0.9 (the island's own things live there, and polders and the fairway
+floor are that shallow). The shapes are the baked set `sea` (`web/js/sea-mesh.js`, `scripts/build-sea.py`,
+605 triangles for eleven assets): one InstancedMesh per shape, no shadows (a caster counts twice in
+`?stats`), matrices written once per chunk crossing; kelp sways from a vertex shader off its height
+in the bake. **Ask for `flora_rock_sea_a`/`_b` by name and never through `models.variants('flora_rock')`**,
+which now also returns them. Schools of 6 to 14 (`fauna_fish_a`/`_b`, two more meshes) swim a slow
+figure of eight over their chunk between the bed and just under the surface, and part for anybody
+diving within 4 units; bubbles are one `Points` pool fed by every diver's mouth (`peers.divers()`,
+and the walker's own). Caps by tier (`CAPS`: full / modest / phone) bound reach and instances, and
+the reach never goes past the mist. Cosmetic: no fish is on the wire.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -1454,7 +1577,12 @@ geometry; the bake still only allows 0 or 1.
 
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
-drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it). (`?sail` is gone with the
+drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it), `?dive`
+(walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and
+`__camera` on `window`, which is how a test browser reads the walker and the camera - hold a key with
+`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }))`, since a tapped key is up before a
+frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you).
+(`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 

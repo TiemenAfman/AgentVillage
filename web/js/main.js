@@ -25,6 +25,7 @@ import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
+import { AIR_S, SWIMMING, submerged, stepAir } from 'shared/breath.mjs';
 import { createWorld } from './world.js';
 import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
@@ -110,6 +111,9 @@ import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
+import { createUnderwater } from './underwater.js';
+import { createSeabed } from './seabed.js';
+import { createSeaLife } from './sea-life.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
 import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
@@ -1908,7 +1912,7 @@ function touchHud(near, walk) {
       : near.kind === 'board' || near.kind === 'issues' ? 'Read'
         : near.kind === 'bed' ? '' : 'Talk';
   state.touch.caption(word);
-  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null);
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater());
 }
 
 // A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
@@ -2316,6 +2320,14 @@ function enterWalk(spot = null) {
     const x = WORLD_HALF - 12 - state.homeOrigin[0], z = -state.homeOrigin[1];
     spot = { at: [x, z], facing: [x + 10, z] };
   }
+  // `?dive`: in open water a few strokes off the home island's east side, to try diving
+  // without walking to a beach first (Plans/onderwater-zwemmen.md). C sinks, Space rises.
+  if (params.has('dive') && !reboard && state.terrain) {
+    window.__state = state;   // for the console and the test browser: `__state.walk.state.pos.y`
+    window.__camera = camera;
+    const x = state.terrain.half + 6;
+    spot = { at: [x, 0], facing: [x + 10, 0], pitch: 0.3 };
+  }
   if (spot && spot.at) {
     at = spot.at;
     facing = spot.facing || null;
@@ -2406,6 +2418,9 @@ function enterPlan() {
   if (STANDALONE) return;
   if (state.mode === 'plan' || !state.plan) return;
   if (keeperOnly('plan the island')) return;
+  // Not stashed as the ordinary haze, and not restored over the planner's: whatever the sea
+  // has put in the fog and hidden (the clouds) is put back first.
+  if (state.underwater) state.underwater.reset();
   if (state.mode === 'walk') exitWalk();
   if (state.chronicle.t != null) setLiveMode();
   state.intro = null;
@@ -3994,6 +4009,7 @@ function rehome(origin) {
     if (region === state.region || region.id.startsWith('debug-')) continue;
     dropRegion(region.id);
   }
+  seaFloorChanged();
   if (state.peers) state.peers.clear();
   // A hull somebody is sailing is on the same footing: the next message puts it back.
   for (const b of state.boats) b.track = null;
@@ -4031,11 +4047,23 @@ function syncBoards() {
   state.panels.apply(list);
 }
 
+// Whatever the sea floor is made of has changed - the berth moved, an island joined or left,
+// the islets were worked out again: the bed is asked for again, and so is what stands on it.
+// The field itself is fixed to the world's frame (shared/seabed.mjs), so what moves is which
+// part of it lies where, and how far each island's rim blends into it.
+function seaFloorChanged() {
+  if (!state.sea) return;
+  state.sea.setBedHome(state.homeOrigin || [0, 0]);
+  if (state.seabed) state.seabed.reshape();
+  if (state.seaLife) state.seaLife.reshape();
+}
+
 function raiseGuestIslands() {
   // The water first, so a coast rises out of its own shallows rather than out of the flat
   // open sea. At boot this does nothing - the region was already in the sea when the world
   // was built - and it earns its keep the moment an island joins a page that is running.
   if (state.world) state.world.reshapeWater();
+  seaFloorChanged();
   const standing = new Set(state.guests.map((g) => g.region.id));
   for (const region of state.sea.regions()) {
     if (region === state.region || standing.has(region.id)) continue;
@@ -4532,6 +4560,10 @@ function buildScene(village) {
   // Rebuilt rather than mutated because buildScene runs again on a reseed.
   state.sea = createArchipelago();
   if (state.islets) state.sea.setSeabed(state.islets.seabed);
+  // The relief of the sea floor is one field in the world's frame, and this archipelago speaks
+  // the page's own (home at the origin): told where home is, so two pages berthed apart put a
+  // bank in the same place. The default, [0, 0], is a host at the sea's origin.
+  state.sea.setBedHome(state.homeOrigin || [0, 0]);
   // Home is at the scene origin, always - whatever berth the sea gave us. The ground, the
   // houses, the hamlets and the quay of this island all hang straight in `scene` on local
   // coordinates, and there is no offset group to move them by; so instead of moving home
@@ -4677,6 +4709,29 @@ function buildScene(village) {
   // and lights instead of drawing a second set, and thrown away with the scene on a reseed.
   if (state.sky) state.sky.dispose();
   state.sky = createWeather({ scene, world: state.world, camera, onHaze: applyFogRange });
+  // The sea from underneath, for a camera that has gone below it (web/js/underwater.js). Built
+  // with the world it dresses and thrown away with it; the sound is looked up per call because
+  // state.sound is made later, at boot, and outlives every reseed.
+  if (state.underwater) state.underwater.dispose();
+  state.underwater = createUnderwater({
+    scene, camera, world: state.world, weather: state.sky,
+    overlay: document.getElementById('underwater'),
+    sound: { setUnderwater: (amount) => { if (state.sound) state.sound.setUnderwater(amount); } },
+    onExit: applyFogRange,
+  });
+  // The floor of the sea and what lives on it, for the eye that is under it (Plans/onderwater-
+  // zwemmen.md): a bed that runs on between and past the islands - the ones' own meshes stop at
+  // their grid's rim, and outside every grid there was none - and kelp, coral, fish and bubbles
+  // on it. Both are switched off from the sky and at the surface (see the frame), so they cost
+  // a page above the water nothing. Built with the sea they read and thrown away with it.
+  if (state.seabed) state.seabed.dispose();
+  if (state.seaLife) state.seaLife.dispose();
+  state.seabed = createSeabed({ scene, sea: state.sea, uniforms: state.world.waterUniforms, modest });
+  state.seaLife = createSeaLife({
+    scene, tier: STANDALONE ? 'phone' : modest ? 'modest' : 'full',
+    // The bed as a diver meets it, quay basin and all - walk.js's own, once there is a walk mode.
+    bedAt: (x, z) => (state.walk ? state.walk.bedAt(x, z) : state.sea.bedAt(x, z)),
+  });
   // The fog object arrives with the world; the distances are ours, and they are set here
   // rather than on the first neighbour sync so that no frame is ever drawn without them.
   applyFogRange();
@@ -6011,6 +6066,64 @@ function tick(nowMs) {
   requestAnimationFrame(tick);
 }
 
+// Our air, in seconds (shared/breath.mjs). The sea keeps the real count and drowns us with
+// it (lib/breath.mjs); this is the page's own sum of the same thing, run every frame from
+// our own depth so the bar drains and fills smoothly with no message in between, and
+// corrected by the sea's `breath` (onBreath below) at the moments the two could disagree.
+// Its own clock and not frame()'s `dt`, which is clamped to 0.05 for the sake of the
+// physics: at ten frames a second that would run the bar at half speed, where the sea's
+// beat counts real time (capped at 0.5 like its own).
+let air = AIR_S;
+let airAt = null;
+function stepBreath(nowMs) {
+  const dt = airAt == null ? 0 : Math.min(0.5, Math.max(0, (nowMs - airAt) / 1000));
+  airAt = nowMs;
+  const w = state.walk && state.walk.state;
+  // The same test the sea makes of the pose we send it (`afoot`, then `submerged`): on foot
+  // outdoors and not at a tiller, with the swimming bit set and the head under the surface.
+  // Today walk mode keeps a swimmer at the surface, so this stays false and the bar full.
+  const under = !!w && state.mode === 'walk' && !state.inside && !state.walk.aboard()
+    && submerged(w.swimming ? SWIMMING : 0, w.pos.y);
+  air = stepAir(air, under, dt);
+  state.vitals.setAir(air / AIR_S);
+}
+
+// What underwater.js asks of the frame, as thunks made once - it evaluates them only for a
+// camera that is low enough to be under the water, so a frame in the air costs neither the
+// swell's sines nor a lookup through the archipelago. `overWater` is the ground being below
+// the sea (the archipelago speaks the page's own frame, home at the origin, like the orbit
+// floor does), and is false in the planner and in a room, whose camera is not on the sea.
+const underwaterSeen = {
+  surfaceY: () => (state.world ? state.world.surfaceAt(camera.position.x, camera.position.z) : 0),
+  overWater: () => state.mode !== 'plan' && !state.inside
+    && state.sea.height(camera.position.x, camera.position.z) < 0,
+};
+
+// The floor of the sea and its life, for as long as anything can see them: on foot, and either
+// diving or with the lens under the surface (a diver's camera is on its way down for 0.8 s
+// after the head goes under, and comes up as slowly). From the sky, in a room and at the
+// surface neither is drawn and neither costs a thing - `active` false hides the meshes and
+// returns. The focus is the body, not the camera: the camera trails it by a few units, and
+// the sea bed is drawn a hundred and twenty-eight round it.
+function seaFloorFrame(dt, nowMs) {
+  if (!state.seabed || !state.seaLife) return;
+  const ws = state.walk && state.mode === 'walk' && !state.inside ? state.walk.state : null;
+  const active = !!ws && ws.active && (ws.dive || !!(state.underwater && state.underwater.active));
+  const pos = ws ? ws.pos : camera.position;
+  state.seabed.update({ x: pos.x, z: pos.z, active });
+  if (!active && !state.seaLife.group.visible) return;
+  // The bodies the fish keep clear of and the bubbles come off: ours while the head is under,
+  // and everybody else's who is (peers.js divers, drawn positions).
+  const divers = state.peers ? state.peers.divers() : [];
+  if (ws && ws.diving) divers.push({ id: 'me', x: ws.pos.x, y: ws.pos.y, z: ws.pos.z, moving: ws.moving });
+  state.seaLife.update({
+    x: pos.x, z: pos.z, active, dt, t: nowMs / 1000, surface: 0,
+    // No further than the mist lets anyone see: what is drawn past it is fog colour anyway.
+    reach: scene.fog ? scene.fog.far * 1.05 : Infinity,
+    divers, emitters: divers,
+  });
+}
+
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
@@ -6086,6 +6199,8 @@ function frame(nowMs) {
   // walk mode has the feet - and in orbit too, where the strip is hidden and this costs one
   // string compare.
   state.vitals.setHealth(state.net ? state.net.health() : 1);
+  // And the air: the page's own sum, the sea's word correcting it (stepBreath above).
+  stepBreath(nowMs);
   // The beer wears off wherever you are, but only blurs the view from your own eyes: the sky
   // is not the settler's.
   stepTipsy(state.tipsy, dt);
@@ -6313,6 +6428,12 @@ function frame(nowMs) {
   // matrix is only rebuilt when the map is, so what stands still stays exactly where its
   // shadow is between two redraws; only what moves has a shadow a frame or two behind.
   if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
+  // The last word on the picture: after the weather and after applyFogRange, which set the
+  // lights, the haze and the sky it multiplies and overrides, and after every branch above has
+  // put the camera where it is drawn from - this is decided on the lens, not the body. Before
+  // cullRecords, which is unaffected either way: the sea's haze closes nearer than the air's.
+  if (state.underwater) state.underwater.update(dt, underwaterSeen);
+  seaFloorFrame(dt, nowMs);
   cullRecords();
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (renderStats) {
@@ -6991,6 +7112,7 @@ async function boot() {
     onChange: () => {
       if (state.sea) state.sea.setSeabed(state.islets.seabed);
       if (state.world) state.world.reshapeWater();
+      seaFloorChanged();
       if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
     },
   });
@@ -7014,6 +7136,12 @@ async function boot() {
     // every connect and again from the studio's Apply.
     look: loadAvatar(),
     onEvicted: (m) => {
+      // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
+      // drowning says so in `breath` too, but a guard's capture says nothing about air).
+      air = AIR_S;
+      // `why` (lib/players.mjs evict) is only ever 'drown' so far; a sea from before it sends
+      // none and gets the generic words, which name a place we were not sent home from.
+      const drowned = m.why === 'drown';
       exitWalk({ force: true });
       state.walk.setPaused(false);
       // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
@@ -7022,12 +7150,20 @@ async function boot() {
       if (skiff) {
         enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
         takeBoat(skiff);
-        state.ui.toast(`The people of ${m.island || 'that island'} put you back in your boat.`);
+        state.ui.toast(drowned
+          ? 'You ran out of breath, and were hauled back into your boat.'
+          : `The people of ${m.island || 'that island'} put you back in your boat.`);
         return;
       }
       enterWalk({ at: [m.x, m.z] });
-      state.ui.toast(`The people of ${m.island || 'that island'} sent you home.`);
+      state.ui.toast(drowned
+        ? 'You ran out of breath, and were pulled out of the water and taken home.'
+        : `The people of ${m.island || 'that island'} sent you home.`);
     },
+    // The sea's word on our air (lib/breath.mjs): where it stands as we go under or come up,
+    // which is what the frame's own sum starts again from. A fraction of the lung the sea
+    // meant, so a sea with another idea of a full one would still fill our bar to the top.
+    onBreath: (m) => { air = Math.min(AIR_S, Math.max(0, (m.air / m.max) * AIR_S)); },
     onBoat: onBoatFromServer,
     // Only a phone owns a skiff; anybody else's page has nothing here to put back.
     onWelcome: (self, build) => {

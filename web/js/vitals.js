@@ -1,5 +1,7 @@
-// The three bars over the walking strip: red for health, yellow for stamina, purple for beer,
-// each behind its emoji - and, because it is what the purple one does to you, the blur.
+// The four bars over the walking strip: red for health, yellow for stamina, blue for air,
+// purple for beer, each behind its emoji - and, because it is what the purple one does to you,
+// the blur. The air is the sea's to keep and the page's to predict (shared/breath.mjs,
+// stepBreath in main.js), and drains only while your head is under water.
 //
 // A bar with nothing to say is not worth a pixel, so it fades away - slowly, a second and a
 // half after it got there, so the moment it tops up (or, for the beer, runs out) is still
@@ -27,6 +29,7 @@ const HURT_STEP = 0.02;
 export function createVitals(root, { haze = [] } = {}) {
   const health = root.querySelector('.vital.health');
   const stamina = root.querySelector('.vital.stamina');
+  const air = root.querySelector('.vital.air');
   const tipsy = root.querySelector('.vital.tipsy');
 
   let hurtFlip = false;
@@ -70,6 +73,9 @@ export function createVitals(root, { haze = [] } = {}) {
   return {
     setHealth: (fraction) => write(health, fraction, { flash: true }),
     setStamina: (pool) => write(stamina, pool ? pool.level : 1, { spent: pool && pool.spent }),
+    // The blue bar, a fraction of a full lung: invisible while whole - which is all of the
+    // time on the surface - and back on screen the frame it starts to drain.
+    setAir: (fraction) => write(air, fraction),
     setTipsy: (level) => write(tipsy, level || 0, { rest: 0 }),
     setHaze,
   };

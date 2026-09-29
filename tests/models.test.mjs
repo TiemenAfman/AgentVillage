@@ -38,6 +38,7 @@ import { DOCKS } from '../web/js/docks-mesh.js';
 import { BOARDWALK } from '../web/js/boardwalk-mesh.js';
 import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
 import { BUOYS } from '../web/js/buoys-mesh.js';
+import { SEA } from '../web/js/sea-mesh.js';
 import { BENCHY } from '../web/js/benchy-mesh.js';
 import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
 import { BATAVIA } from '../web/js/batavia-mesh.js';
@@ -66,7 +67,7 @@ import { SHIPYARD } from '../web/js/shipyard-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -286,7 +287,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The Batavia, a hero like the galleon: the ship the village earns, modelled whole in
@@ -338,9 +339,18 @@ test('the register spans every set and answers by part name alone', () => {
     'civic_windmill', 'civic_windmill_sails',
     'clocktower',
     // The animals, each in moving parts (scripts/build-fauna.py, web/js/fauna.js).
-    'fauna_chicken', 'fauna_cow', 'fauna_duck', 'fauna_goat', 'fauna_gull', 'fauna_horse', 'fauna_pig', 'fauna_sheep', 'fauna_sparrow', 'fauna_sparrow_flying',
-    'flora_bush_a', 'flora_grass_a', 'flora_oak_a', 'flora_oak_a_lo', 'flora_palm_a', 'flora_palm_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
-    'flora_rock_a', 'flora_rock_b',
+    'fauna_chicken', 'fauna_cow', 'fauna_duck',
+    // The reef fish, two species that are instanced by the hundred on the sea floor
+    // (scripts/build-sea.py, Plans/onderwater-zwemmen.md): a fauna_ name for the class, a prop's
+    // weight for the budget it is aimed at.
+    'fauna_fish_a', 'fauna_fish_b',
+    'fauna_goat', 'fauna_gull', 'fauna_horse', 'fauna_pig', 'fauna_sheep', 'fauna_sparrow', 'fauna_sparrow_flying',
+    'flora_bush_a',
+    // The sea floor's plants and rocks (scripts/build-sea.py): kelp, three corals, and two rocks that
+    // are flora_rock in name so that they get a rock's forty triangles.
+    'flora_coral_branch', 'flora_coral_dome', 'flora_coral_fan',
+    'flora_grass_a', 'flora_kelp_a', 'flora_kelp_b', 'flora_oak_a', 'flora_oak_a_lo', 'flora_palm_a', 'flora_palm_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
+    'flora_rock_a', 'flora_rock_b', 'flora_rock_sea_a', 'flora_rock_sea_b',
     // The castle on its seven by seven, built at that size rather than the castle drawn at 7/3
     // (scripts/build-greatcastle.py, Plans/groot-kasteel.md).
     'greatcastle',
@@ -359,7 +369,9 @@ test('the register spans every set and answers by part name alone', () => {
       'prop_trace_cache', 'prop_trace_feeder', 'prop_trace_find', 'prop_trace_lookout', 'prop_trace_nest',
       'prop_trace_perch', 'prop_trace_print',
       // The sawmill's wagon and its load of timber (scripts/build-wagon.py, Plans/houtkar.md).
-      'prop_wagon', 'prop_timber'].sort(),
+      'prop_wagon', 'prop_timber',
+      // A shell and a starfish for the sand under the sea (scripts/build-sea.py).
+      'prop_shell', 'prop_starfish'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school',
     // The shipyard, a hero: one building on a five by sixteen lot whose ship is part of it, each
     // stage a set of parts rather than an asset (scripts/build-shipyard.py, Plans/scheepswerf.md).
@@ -384,7 +396,9 @@ test('the register spans every set and answers by part name alone', () => {
   // The forest is asked for by name rather than by prefix, and this is why: variants()
   // would offer the modest GPU's cheap copy of a pine as a third kind of pine to plant.
   assert.deepEqual(models.variants('flora_pine'), ['flora_pine_a', 'flora_pine_a_lo']);
-  assert.deepEqual(models.variants('flora_rock'), ['flora_rock_a', 'flora_rock_b']);
+  // The sea's two rocks (build-sea.py) share the prefix so that they get a rock's budget, which is
+  // why the land's rocks are asked for by name in world.js and never by this prefix.
+  assert.deepEqual(models.variants('flora_rock'), ['flora_rock_a', 'flora_rock_b', 'flora_rock_sea_a', 'flora_rock_sea_b']);
   // Nothing in the register is unknown to the rules, which is what keeps `npm run models`
   // and this file from disagreeing about what a legal model is.
   assert.deepEqual(checkAll(Object.fromEntries(models.setNames().map((s) => [s, BAKED[s]]))), []);
@@ -625,4 +639,42 @@ test('the Blender mound carries ground textures and a continuous shoulder colour
   const colours = new Set();
   for (let i = 0; i < slope.colors.length; i += 3) colours.add(slope.colors.slice(i, i+3).join(','));
   assert.ok(colours.size >= 2, 'the shoulder must blend turf into earth');
+});
+
+// The sea floor's things (scripts/build-sea.py, Plans/onderwater-zwemmen.md). checkAll() already
+// holds them to a budget and to y = 0; what it cannot know is what the page will ask of them.
+test('the sea set is one flat slot each, kelp is tall and finely cut, and a fish swims nose to +z', () => {
+  const sea = ['flora_kelp_a', 'flora_kelp_b', 'flora_coral_fan', 'flora_coral_branch', 'flora_coral_dome',
+    'flora_rock_sea_a', 'flora_rock_sea_b', 'prop_shell', 'prop_starfish', 'fauna_fish_a', 'fauna_fish_b'];
+  const vertices = (name) => models.assetParts(name).flatMap((n) => {
+    const p = models.part(n);
+    const out = [];
+    for (let i = 0; i < p.positions.length; i += 3) out.push([p.positions[i] + p.at[0], p.positions[i + 1] + p.at[1], p.positions[i + 2] + p.at[2]]);
+    return out;
+  });
+  for (const name of sea) {
+    assert.equal(models.assetSet(name), 'sea', `${name} is baked in the sea set`);
+    // Kelp, corals, shells and fish are `plain`, the rocks `stone`: one slot each, so that the
+    // page draws every one of them off a single group with its own vertex colours.
+    const slot = name.startsWith('flora_rock') ? 'stone' : 'plain';
+    const g = models.grouped(name, [slot]);
+    assert.equal(g.groups.length, 1, `${name} draws in one group`);
+    assert.equal(g.groups[0].count, g.attributes.position.count, `${name} has every vertex on the ${slot} slot`);
+    g.dispose();
+  }
+  // Kelp has to read against a body 0.54 tall, and its sway shader weighs a vertex by its height, so
+  // it needs a base at y = 0 and a good few rings above it.
+  for (const name of ['flora_kelp_a', 'flora_kelp_b']) {
+    const ys = vertices(name).map((v) => v[1]);
+    assert.ok(Math.max(...ys) >= 1.0, `${name} is only ${Math.max(...ys)} tall`);
+    assert.ok(new Set(ys.map((y) => y.toFixed(3))).size >= 5, `${name} has too few rings to sway`);
+  }
+  // A fish's tail is a flat fin at -z and its head is the body: nothing off the middle plane out
+  // past the peduncle, something off it in front.
+  for (const name of ['fauna_fish_a', 'fauna_fish_b']) {
+    const vs = vertices(name);
+    assert.ok(vs.some((v) => v[2] > 0.09 && Math.abs(v[0]) > 0.01), `${name} has no body up front`);
+    assert.ok(vs.every((v) => v[2] > -0.11 || Math.abs(v[0]) < 1e-6), `${name} has a body where its tail should be`);
+    assert.ok(Math.max(...vs.map((v) => v[2])) - Math.min(...vs.map((v) => v[2])) < 0.35, `${name} is longer than a fish`);
+  }
 });

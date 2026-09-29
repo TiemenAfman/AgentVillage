@@ -18,9 +18,16 @@ import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
 import { danceStep, wallBeat } from './dance.js';
 import { createZzz, bobZzz } from './zzz.js';
+import { divePitch, SWIM_PITCH } from './diving.js';
 
 const FADE_S = 0.4;
 const BODY_R = 0.35;
+// Where a floating swimmer is drawn, and how far below that a sent height has to be before
+// the swimmer is a diver (walk.js: WATER_Y - SWIM_SINK, and a hand's width of margin so the
+// swell and a rounded `y` never read as a dive). Nothing about diving is on the wire but the
+// `y` that was always sent: a page from before diving sends -0.07 and is drawn afloat.
+const SURFACE_Y = -0.07;
+const DIVE_BELOW = 0.12;
 
 const FLAG_MOVING = 1;
 const FLAG_SWIMMING = 2;
@@ -169,6 +176,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       from: null,          // the two samples we interpolate between
       to: null,
       bob: Math.random() * 6.28,
+      dive: false,        // under the surface: drawn at the height they sent (see update)
+      vy: 0,              // and their vertical speed, smoothed, for the pitch of the body
+      moving: false,
       room: null,
       want: null,
       aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
@@ -386,7 +396,27 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       // holds you above the floor, and the floor is all this page's ground knows of. So is a
       // dancer: indoors the stage is walk levels this page's flat floor knows nothing of, and
       // somebody dancing up on it was drawn knee-deep in the boards.
+      // A diver is the one swimmer whose sent height is the truth. Drawn between the surface
+      // and the bed - never above the one, which the 200 ms of extrapolation past the newest
+      // sample would otherwise do to somebody coming up, and never below the other, which is
+      // this page's ground and not the one they saw (the archipelago's `bedAt` where it has
+      // one: an island's rim is not where `height` says).
+      const sentY = a.y + (b.y - a.y) * k;
+      const diving = swimming && !seat && !p.aboard && !p.deckTo && !p.room && b.y < SURFACE_Y - DIVE_BELOW && !airborne;
+      let dived = 0;
+      if (diving) {
+        const bed = floor && floor.bedAt ? floor.bedAt(x, z) : ground;
+        dived = Math.min(SURFACE_Y, Math.max(sentY, bed + 0.05));
+        // Their vertical speed off the two samples we hold, smoothed: the body tips head-down
+        // on the way to the bottom and head-up on the way to the top, from this alone (walk.js
+        // draws the same body from the same number, diving.js divePitch).
+        const span = Math.max(0.05, (b.at - a.at) / 1000);
+        p.vy += ((a === b ? 0 : (b.y - a.y) / span) - p.vy) * Math.min(1, dt * 8);
+      } else p.vy = 0;
+      p.dive = diving;
+      p.moving = moving;
       const base = seat ? seat.y
+        : diving ? dived
         : p.aboard || airborne || sitting || dancing ? (a.y + (b.y - a.y) * k)
           : (ground < 0 ? -0.07 : ground);
 
@@ -396,7 +426,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         ride(p, x, base, z, yaw, dt);
       } else if (swimming) {
         p.mesh.position.set(x, base + Math.sin(p.bob) * 0.03, z);
-        p.mesh.rotation.set(1.32 + Math.sin(p.bob) * 0.1, yaw, Math.sin(p.bob * 0.5) * 0.16);
+        p.mesh.rotation.set((diving ? divePitch(p.vy) : SWIM_PITCH) + Math.sin(p.bob) * 0.1, yaw, Math.sin(p.bob * 0.5) * 0.16);
       } else if (lying) {
         p.mesh.position.set(x, base, z);
         p.mesh.rotation.set(LIE_PITCH, yaw, 0);
@@ -528,8 +558,21 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
           room: p.room,
           sailing: p.aboard || !!p.deckTo,
           swimming: !!(p.to.f & FLAG_SWIMMING),
+          diving: !!p.dive,
           riding: !!(p.to.f & FLAG_RIDING),
         });
+      }
+      return out;
+    },
+    // The peers who are under the water, for the things that react to a diver: the bubbles
+    // that come off them and the fish that keep clear (sea-life.js). Drawn positions, scene
+    // coordinates - `y` is the feet, the same as everybody's.
+    divers: () => {
+      const out = [];
+      if (!showing) return out;
+      for (const p of peers.values()) {
+        if (!p.dive || p.leaving || !p.mesh || !p.mesh.visible) continue;
+        out.push({ id: p.id, x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z, moving: p.moving });
       }
       return out;
     },
