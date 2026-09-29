@@ -111,7 +111,9 @@ button on a phone) in water deep enough to hold you and you dive; **Space** (**A
 you back up, and letting go of both leaves you hanging in the water, which is the way to
 look at something. Or steer with the mouse: swim on with W and look down to sink, look up
 to climb (the right stick does the same); the ordinary view along the top does not dive by
-itself, and swimming backwards turns it round. Down there you swim a little slower than at the surface, and on the
+itself, and swimming backwards turns it round. In the water the mouse looks much further up
+than on land, so you can see where you are heading, and the camera stays above the surface
+while it does. Down there you swim a little slower than at the surface, and on the
 bottom you walk. The sea floor has banks, trenches and stones, and the water has kelp,
 coral, shells and schools of fish that part as you come. You can only dive where there is
 a body's height of water; in the shallows the sea lifts you back out. A deck over your
