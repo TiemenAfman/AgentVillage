@@ -67,17 +67,17 @@ import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mj
 import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
-import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
-import { attachBatavia, updateBatavia, disposeBatavia, floatingPose } from './batavia.js';
-import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
+import { attachSawmill, updateSawmill } from './sawmill.js';
+import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
+import { attachSmithy, updateSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
-import { attachStable, updateStable, disposeStable } from './stable.js';
+import { attachStable, updateStable } from './stable.js';
 // The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
 import { clockBeat, wallBeat } from './dance.js';
-import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
-import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
-import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
-import { attachQuarry, updateQuarry, disposeQuarry } from './quarry.js';
+import { attachBakery, updateBakery } from './countryside.js';
+import { attachBaker, updateBaker } from './bakery-keeper.js';
+import { attachButcher, updateButcher } from './butcher.js';
+import { attachQuarry, updateQuarry } from './quarry.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -88,7 +88,8 @@ import { attachFurnace } from './goldsmith.js';
 import { createGoldRun } from './goldrun.js';
 import { createTimberRun } from './timberrun.js';
 import { createDirector } from './director.js';
-import { attachFisher, updateFisher, disposeFisher, fisherAt } from './fisher.js';
+import { attachFisher, updateFisher, fisherAt } from './fisher.js';
+import { disposeExtras } from './record-extras.js';
 import { GOLD_BARS, GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID, MINE_ORE } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
@@ -4159,23 +4160,8 @@ function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fi
 
 function disposeRecord(rec) {
   rec.mesh.geometry.dispose();
-  if (rec.fountain) {
-    rec.fountain.surface.geometry.dispose();
-    rec.fountain.jets.geometry.dispose();
-  }
-  if (rec.nameplate) rec.nameplate.dispose();
-  if (rec.goldPile) rec.goldPile.dispose();
-  if (rec.orePile) rec.orePile.dispose();
-  if (rec.furnace) rec.furnace.dispose();
-  if (rec.sawmill) disposeSawmill(rec.sawmill);
-  if (rec.smithy) disposeSmithy(rec.smithy);
-  if (rec.stable) disposeStable(rec.stable);
-  if (rec.bakery) disposeBakery(rec.bakery);
-  if (rec.baker) disposeBaker(rec.baker);
-  if (rec.butcher) disposeButcher(rec.butcher);
-  if (rec.fisher) disposeFisher(rec.fisher);
-  if (rec.quarry) disposeQuarry(rec.quarry);
-  if (rec.ship) disposeBatavia(rec.ship);
+  // Everything attachExtras hung on it, from the one list guest-island.js also lowers by.
+  disposeExtras(rec);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);

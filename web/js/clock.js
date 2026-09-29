@@ -101,6 +101,13 @@ export function attachClock(group, at, material, { face = false, radius = FACE_R
   return { root, hourHand, minuteHand, at: null };
 }
 
+// The dial and both hands are built per clock (their geometry is not cached anywhere), so a
+// clock taken down gives all three back; the material is the building's and stays.
+export function disposeClock(clock) {
+  clock.root.parent?.remove(clock.root);
+  clock.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+}
+
 // Called every frame. The hands only move when the minute does, so scrubbing a year past
 // the tower costs two rotation writes per minute rather than two per frame.
 export function updateClock(clock, hour) {
