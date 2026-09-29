@@ -80,3 +80,33 @@ test('the sliders are wired to the panel that has them', () => {
   // And the sliders are drawn from the same limits the frame clamps to.
   assert.match(ui, /GRAPHICS_LIMITS\[key\]/);
 });
+
+test('the defaults are the old look, and leave the building shader as it was', async () => {
+  const { fadeNeeded, cornerCos } = await import('../web/js/fade.js');
+  // A far plane of 1400, which is what the island had before there were sliders (main.js adds
+  // VIEW_MARGIN, 150, to View Distance).
+  assert.equal(GRAPHICS_DEFAULTS.viewDistance + 150, 1400);
+  // Object Distance at the default is past where the fog can ever close, even at the corner of
+  // a wide frame, so the dither stays out of the shader every building shares.
+  const cap = (GRAPHICS_DEFAULTS.viewDistance + 150) * 0.95;
+  assert.equal(fadeNeeded(GRAPHICS_DEFAULTS.objectDistance, cap, cornerCos(45, 21 / 9)), false);
+  // And the shadow box may grow to the widest world.js allows (SHADOW_SPAN[1] = 190, a half-width).
+  const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
+  const span = world.match(/const SHADOW_SPAN = \[(\d+), (\d+)\]/);
+  assert.ok(span, 'SHADOW_SPAN moved');
+  assert.equal(GRAPHICS_LIMITS.shadowDistance.max, 2 * Number(span[2]));
+  assert.equal(GRAPHICS_DEFAULTS.shadowDistance, 2 * Number(span[2]));
+});
+
+test('the sky is drawn on the far plane, so a short view never shows the clear colour', () => {
+  // A sphere of r1340 inside a far plane that View Distance can bring in to 250 was a black
+  // void where the sky should be. z = w puts the dome at depth 1 whatever the far plane is.
+  const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
+  const sky = world.slice(world.indexOf('const skyMat'), world.indexOf('const sky = new THREE.Mesh'));
+  assert.match(sky, /gl_Position = p\.xyww/);
+  // The sun and moon carry no fog, so they are pulled inside the far plane instead.
+  assert.match(world, /celestial = Math\.min\(CELESTIAL, far \* 0\.8\)/);
+  const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  const view = main.slice(main.indexOf('function applyViewDistance()'), main.indexOf('function applyViewDistance()') + 600);
+  assert.match(view, /state\.world\.setFar\(camera\.far\)/);
+});

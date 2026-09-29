@@ -353,7 +353,7 @@ const VIEW_MARGIN = 150;
 // How far inside the far plane the fog has closed, as a fraction of it (setFogRange). The
 // one copy: applyObjectDistances asks the same number whether a cut could ever be seen.
 const FOG_CAP = 0.95;
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 550);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
 // The field of view is vertical, so a phone held upright at 45 degrees saw about 23 across:
 // a boat and a strip of sea. On the phone it opens up in portrait until there is about 60
 // across, and no further than 75 up and down, where the edges start to stretch.
@@ -2478,6 +2478,9 @@ function applyCameraRange() {
 function applyViewDistance() {
   camera.far = state.graphics.viewDistance + VIEW_MARGIN;
   camera.updateProjectionMatrix();
+  // The sun and moon are fog-free discs, so they are the one part of the sky that has to be
+  // told: they hang inside the far plane. The dome itself is drawn on it (world.js).
+  if (state.world) state.world.setFar(camera.far);
   applyFogRange();
 }
 
@@ -4394,9 +4397,9 @@ function buildScene(village) {
 
 
   // The far plane and the haze, once, before anything is drawn. createWorld made the Fog
-  // object with the island's own numbers; this is the call that puts View Distance's
-  // 400 + 150 in front of it, and the fog closes itself inside that. Nothing after this
-  // moves camera.far except onGraphicsSetting, which is the point.
+  // object with the island's own numbers; this is the call that puts View Distance's far
+  // plane (1250 + 150 by default) in front of it, and the fog closes itself inside that.
+  // Nothing after this moves camera.far except onGraphicsSetting, which is the point.
   applyViewDistance();
 
   //roaddebug is a debug mesh that shows the road network, for development and testing.

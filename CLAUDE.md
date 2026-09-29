@@ -348,12 +348,16 @@ mask. Giving a building a material array turns 300 houses into thousands of draw
 
 **Four graphics distances, and they are not one number with four names.** View Distance
 is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes the haze at
-`FOG_CAP` = 0.95 of it, and never tied to the world's size); Object Distance is how far a
+`FOG_CAP` = 0.95 of it, and never tied to the world's size; the sky dome is drawn *on* the
+far plane, `p.xyww` in world.js, so a near far plane never shows the black clear colour, and
+`world.setFar` keeps the fog-free sun and moon inside it); Object Distance is how far a
 house, prop or boat is still drawn; NPC Distance is how far a *person* is still drawn;
 Shadow Distance is the ceiling on how wide the sun's shadow box may grow (`setShadowDistance`
 in world.js - not `shadow.camera.far`, which `followShadow` rewrites on every zoom). The
 sliders are in Settings → Graphics, per browser (`web/js/graphics-settings.js`: defaults,
-limits, localStorage), and `state.graphics` is written from exactly one place,
+limits, localStorage). The defaults are high on purpose - view 1250 (a far plane of 1400, the
+old look), object 2000 (so the dither is not compiled in at all), NPC 1000, shadow 380 - and
+the sliders are for turning it down. And `state.graphics` is written from exactly one place,
 `onGraphicsSetting` - which has to be on **createUI**'s handlers; it was handed to
 `createNet` once and every slider moved its label and nothing else
 (`tests/graphics-settings.test.mjs` reads the source for it). The plan is

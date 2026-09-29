@@ -95,9 +95,15 @@ De eerste versie vroeg `range < scene.fog.far` en dat was op drie punten fout:
 3. **Hercompileren is niet gratis**, dus het besluit valt bij een schuifregelaar, een resize of de
    planner (`applyObjectDistances`), nooit per frame.
 
-Gevolg: bij de standaardinstellingen (view 400, object 300) staat de dither aan. Dat is de prijs
-van geen pop-in; hij gaat er pas uit als het object-bereik zo ver ligt dat zelfs de hoek van het
-beeld al in volle mist zit.
+**Standaardwaarden: hoog** (29 september, op verzoek). View 1250 (dus `camera.far` 1400, het
+oude uitzicht), Object 2000, NPC 1000, Shadow 380 (de breedste doos die `SHADOW_SPAN[1]` toelaat).
+Object staat op zijn maximum en niet gelijk aan View, omdat 2000 in de hoek van het beeld nog
+dieper ligt dan de mist onder een far plane van 1400 ooit sluit: de dither zit bij de
+standaard dus niet in de gebouwshader en alles rendert precies als vroeger. Voor bewoners staat
+hij wel aan (1000 · 0.76 < 1330), maar dat raakt alleen de pixels van mensen. De schuifregelaars
+zijn om het omlaag te zetten op een machine die dat nodig heeft. De opslagsleutel werd
+`promptholm.graphics.v2`: de eerste versie bewaarde bij elke wijziging alle vier, dus wie alleen
+de schaduw had verschoven zat vast aan een View van 400 die hij nooit koos.
 
 De oude bewering dat de dither bij de standaard niets kostte klopte alleen omdat er toen ook
 geen CPU-knip was: voorbij Object Distance werd niets weggehaald, alleen de molens stonden
@@ -114,6 +120,17 @@ zon). `adoptFadeDepth` zet hem als `customDepthMaterial` op elke mesh met dat ma
 seconde over de scene zolang er een fade gecompileerd is (`sweepFadeDepth`). Zonder fade is de
 tweeling ongepatcht en precies het material dat three zelf gebruikt (`RGBADepthPacking`;
 `getDepthMaterial` kopieert side, map en clipping ook naar een custom material).
+
+## De lucht wordt nooit een zwart vlak
+
+De hemelkoepel was een bol met straal 1340 rond het oog, "binnen de far plane van 1400". Met View
+Distance 400 lag de far plane op 550 en viel de hele koepel erachter: de lucht was de clear
+colour, zwart. Nu tekent de vertex shader hem óp de far plane (`gl_Position = p.xyww`, dezelfde
+truc als three's eigen background cube), wat de far plane ook is; de kleur hing al alleen van de
+richting af. Onder ooghoogte is hij de horizonkleur, die van de mist, dus waar de far plane de
+zee afsnijdt loopt die over in lucht in plaats van in zwart. Zon en maan zijn schijven zonder
+mist en moeten wél binnen de far plane hangen: `world.setFar()` legt ze op
+`min(430, 0.8 · far)`, verkleind zodat ze op het scherm even groot blijven.
 
 ## Shadow Distance: de breedte van de doos, niet `camera.far`
 
@@ -165,9 +182,6 @@ weggestippeld is erger dan geen schuifregelaar. `leftPlan()` zet ze terug.
 
 ## Open vragen
 
-- **Standaardwaarden.** Met object 300 onder view 400 zijn de gebouwen van buureilanden (ring 1
-  op ~432) standaard weg terwijl hun land nog zichtbaar is. Graceful door de dither, maar het is
-  een verschil met vroeger. Object ≥ View als standaard is het overwegen waard.
 - **Orbit van ver.** De afstand is tot de camera, zoals gevraagd. Van boven met Object Distance
   onder de orbit-afstand verdwijnt het dorp waar je naar kijkt. Een ondergrens op "afstand tot
   het doel + marge" zou dat opvangen, maar verandert de betekenis van de knop.

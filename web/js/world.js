@@ -1712,7 +1712,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uSunColor: { value: new THREE.Color(0xffffff) },
       uStars: { value: 0 },
     },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    // On the far plane, whatever the far plane is: z = w puts every vertex at depth 1, the
+    // same trick three's own background cube uses. The dome used to be a sphere of r1340
+    // sitting inside a far plane fixed at 1400; once View Distance could bring the far plane
+    // in to 250, the whole dome was past it and the sky was the clear colour - a black void
+    // over a sea that the fog had already closed. The colour only ever read the direction
+    // (vDir), so where the geometry is drawn is free to be wherever depth says is furthest.
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
     fragmentShader: `
       uniform vec3 uTop, uHor, uSunColor; uniform vec3 uSunDir; uniform float uStars;
       varying vec3 vDir;
@@ -1731,7 +1737,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
     `,
   });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea, inside the camera's far plane
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea; drawn on the far plane (see the vertex shader)
   sky.frustumCulled = false;
   group.add(sky);
 
@@ -1794,9 +1800,22 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // The sky rides the eye's height as well, and the ocean does not. Parked at sea level, the
   // sky's underside is R + h from an eye at height h, and with the leash an archipelago
   // allows (hundreds up) that went past the far plane: the clear colour showed through as a
-  // black polygon in the sphere's own low-poly shape. Centred on the eye every part of it is
-  // r1340 away, always inside 1400, and below eye level it is the horizon colour - the fog's.
+  // black polygon in the sphere's own low-poly shape. Centred on the eye it is the same in
+  // every direction, drawn on the far plane whatever that is (the vertex shader), and below
+  // eye level it is the horizon colour - the fog's.
   // The sun and moon hang off the same centre so the disc stays inside its own halo.
+  // How far out the sun and moon hang. 430 for as long as the far plane was 1400; they are
+  // fog-free discs, so a far plane nearer than that would cut them off and leave the halo in
+  // the sky with nothing in it. View Distance hands the far plane in (setFar) and they are
+  // drawn inside it, scaled down with the distance so the disc is the same size on screen.
+  const CELESTIAL = 430;
+  let celestial = CELESTIAL;
+  const setFar = (far) => {
+    celestial = Math.min(CELESTIAL, far * 0.8);
+    const k = celestial / CELESTIAL;
+    sunDisc.scale.setScalar(k);
+    moonDisc.scale.setScalar(k);
+  };
   const recentre = (x, y, z) => {
     horizonAt.set(x, y, z);
     sky.position.set(x, y, z);
@@ -2055,7 +2074,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
-    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430).add(horizonAt);
+    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(celestial).add(horizonAt);
 
     placeClouds(seaSeconds);
     moonAt(dir, moon);
@@ -2125,7 +2144,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
-    followShadow, setShadowDistance, recentre, reshapeWater, state, reshape,
+    followShadow, setShadowDistance, setFar, recentre, reshapeWater, state, reshape,
   };
 }
 
