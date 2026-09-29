@@ -64,6 +64,16 @@ checkout's code on the live island in `~/.promptholm` — its own `layout.json`,
 `import.meta.url`, and a linked worktree keeps its island in itself (see HOME below), so
 that process uses the worktree's own `data/` and `config.json`.
 
+To try a branch on the keeper's **real** island without touching it, run it on a copy: copy
+`~/.promptholm` (leave out `*.lock`, which names the live islander's pid, and `*.log`) to a
+scratch folder, and in the copy's `config.json` set `multiplayer.sea` to `{ mode: 'single',
+url: null, key: null, port: <free> }` and `network.public` to false - the live island joins the
+open sea under its claim token, and a copy left on `join` would publish under that same token.
+Then start the worktree's `serve.mjs --port <free> --no-rescan --no-open` with `PROMPTHOLM_HOME`
+on the copy, set *before* `lib/paths.mjs` is imported (a two-line launcher that sets it and
+`import()`s serve.mjs works as a `launch.json` entry). From a worktree, not the main checkout:
+`WORKTREE` is what keeps `ensureStatusLine` from repointing the machine's status line.
+
 A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
 process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
 tabs to refetch `web/js/`, it does not touch the server process. `npm run watch` is
