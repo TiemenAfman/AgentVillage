@@ -19,6 +19,15 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [sneller-tekenen.md](sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
+  bestond al of brak een regel. Wel gedaan: `?stats` telt de schaduwpas, een kwaliteitsregelaar
+  die zonder shader-recompile lichter tekent onder ~28 fps, vier geheugenlekken bij het ophalen van
+  een gasteiland dicht (met test), en 64% minder driehoeken (het water, naamborden, schaduwen van
+  settlers). Nog niet: een lage settler voor ver weg.
+- 🚧 [esc-menu-en-knoppenbalk.md](esc-menu-en-knoppenbalk.md) — de knoppen rechtsboven in twee
+  groepen met iconen, en een Esc-menu dat de instellingen ís: vier tabbladen, waarvan alleen
+  *Island* van de keeper is (de rest stond achter de keeper-knop en was van de browser).
+  Wacht op Tiemens oordeel.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
