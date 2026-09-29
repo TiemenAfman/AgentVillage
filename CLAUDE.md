@@ -54,6 +54,16 @@ to resolve the `shared/` import-map prefix, and stub `globalThis.document` befor
 anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at import time).
 Copy that preamble when adding a test that touches `web/js/`.
 
+`tests/layout-measure.test.mjs` measures whatever `DATA` holds. To measure the live island,
+point `PROMPTHOLM_HOME` at a copy of `~/.promptholm` that has its `config.json` (and
+`data/arrivals.jsonl`), not only `layout.json` + `cache.json` in a worktree's `data/`: with
+no `config.json` there, `loadConfig` founds one with `foundedAt` = now, the village model is
+empty, every hamlet but the quay is taken up, and three tests fail for that reason alone.
+Without `arrivals.jsonl` the settlers' `lastAt` is older and tents leave that the island keeps.
+A scan reads the machine's live transcripts, so two runs minutes apart are not comparable byte
+for byte (a new session is a new settler): to compare old code against new, run both in one
+process, off / on / off, where the two "off" runs agreeing proves the model held still.
+
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747. Pitfall: the preview
 tool reads `launch.json` from the directory the session was *launched* in and starts the
