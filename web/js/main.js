@@ -4,6 +4,8 @@ import { addScaffold as attachScaffold } from './scaffold.js';
 import * as THREE from 'three';
 import { useRadialFog } from './radial-fog.js';
 import { createRecovery } from './graphics-health.js';
+import { createRenderStats, statsLine } from './render-stats.js';
+import { createQualityGovernor, MIN_PIXEL_RATIO } from './quality.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
@@ -16,7 +18,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
-import { allowImp, setImpNight, IMP_CAP, IMP_LIMIT } from './imp.js';
+import { allowImp, setImpNight, setImpBudget, impBudget, IMP_CAP, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
@@ -71,17 +73,17 @@ import { scopePanel as scopeBoard, ourPanel as ourBoard } from 'shared/panels.mj
 import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
-import { attachSawmill, updateSawmill, disposeSawmill } from './sawmill.js';
-import { attachBatavia, updateBatavia, disposeBatavia, floatingPose } from './batavia.js';
-import { attachSmithy, updateSmithy, disposeSmithy } from './smithy.js';
+import { attachSawmill, updateSawmill } from './sawmill.js';
+import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
+import { attachSmithy, updateSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
-import { attachStable, updateStable, disposeStable } from './stable.js';
+import { attachStable, updateStable } from './stable.js';
 // The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
 import { clockBeat, wallBeat } from './dance.js';
-import { attachBakery, updateBakery, disposeBakery } from './countryside.js';
-import { attachBaker, updateBaker, disposeBaker } from './bakery-keeper.js';
-import { attachButcher, updateButcher, disposeButcher } from './butcher.js';
-import { attachQuarry, updateQuarry, disposeQuarry } from './quarry.js';
+import { attachBakery, updateBakery } from './countryside.js';
+import { attachBaker, updateBaker } from './bakery-keeper.js';
+import { attachButcher, updateButcher } from './butcher.js';
+import { attachQuarry, updateQuarry } from './quarry.js';
 import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
@@ -92,7 +94,8 @@ import { attachFurnace } from './goldsmith.js';
 import { createGoldRun } from './goldrun.js';
 import { createTimberRun } from './timberrun.js';
 import { createDirector } from './director.js';
-import { attachFisher, updateFisher, disposeFisher, fisherAt } from './fisher.js';
+import { attachFisher, updateFisher, fisherAt } from './fisher.js';
+import { disposeExtras } from './record-extras.js';
 import { GOLD_BARS, GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID, MINE_ORE } from 'shared/gold.mjs';
 import { createBorrelTables, tableSetsFor } from './borrel.js';
 import { createBuildMenu } from './buildmenu.js';
@@ -341,15 +344,47 @@ async function openBoardWithoutIsland() {
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
 const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
-// A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
+// The best this screen is drawn at; the quality governor below only ever takes from it. A
+// phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
 // third more pixels to fill than 1, and fill is what a phone's GPU runs out of first.
-renderer.setPixelRatio(Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5));
+const basePixelRatio = Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5);
+renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 if (modest) console.info('island: integrated graphics detected, running lighter');
+// ?stats counts the shadow pass too, and the frame time (render-stats.js).
+const renderStats = statsReadout ? createRenderStats(renderer) : null;
+
+// Drawing less while this machine cannot keep up (web/js/quality.js, Plans/sneller-tekenen.md):
+// fed every frame from tick(), and what it answers is applied here and nowhere else. `modest`
+// above is the boot-time guess off the GPU's name; this is the correction from what the frames
+// actually do. ?quality=n pins rung n (0 full .. 4 lightest), to look at one.
+const quality = createQualityGovernor();
+let shadowEvery = 1, shadowFrame = 0;
+function applyQuality(rung) {
+  renderer.setPixelRatio(Math.min(basePixelRatio, Math.max(MIN_PIXEL_RATIO, basePixelRatio * rung.pixel)));
+  renderer.setSize(innerWidth, innerHeight, false);
+  // Every frame is three.js's own autoUpdate; any slower and frame() asks for the map by hand.
+  shadowEvery = rung.shadowEvery;
+  shadowFrame = 0;
+  renderer.shadowMap.autoUpdate = shadowEvery === 1;
+  renderer.shadowMap.needsUpdate = true;
+  setImpBudget(IMP_LIMIT * rung.imps);
+  scalePoints();
+  if (statsReadout) console.info(`island: drawing at quality "${rung.name}"`);
+}
+// gl_PointSize is in drawing-buffer pixels, so the smoke and the fireflies were sized for the
+// pixel ratio the page booted with; at the lightest rung's 0.6 of it they would stand 1.7
+// times bigger on the screen. Scaled by how far the ratio has come down, they stay the size
+// they always were. On a resize too: the fireflies used to keep the height they were born at.
+function scalePoints() {
+  const v = innerHeight * 0.5 * (renderer.getPixelRatio() / basePixelRatio);
+  if (state.particles) state.particles.mat.uniforms.uScale.value = v;
+  if (state.world && state.world.fireflies) state.world.fireflies.material.uniforms.uScale.value = v;
+}
 
 const scene = new THREE.Scene();
 // The far plane is View Distance plus 150, and the 150 is not a rounding. setFogRange closes
@@ -1478,6 +1513,7 @@ function directorMay() {
   if (state.mode !== 'orbit' || state.intro || state.tween || document.hidden) return false;
   if (state.chronicle && state.chronicle.t != null) return false;
   if (state.ui && state.ui.directorEnabled && !state.ui.directorEnabled()) return false;
+  if (state.sysmenu && state.sysmenu.isOpen()) return false;
   return !document.querySelector('aside.panel:not([hidden])');
 }
 function stepDirector(dt) {
@@ -1548,7 +1584,7 @@ async function fetchGold() {
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
 const PANELS = () => [state.board, state.chat, state.market, state.mailbox,
-  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu];
+  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
@@ -3020,6 +3056,41 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
+  // The chips' own letters, from the sky only (Plans/esc-menu-en-knoppenbalk.md) - on foot I
+  // and M are walk.js's, and W A S D E are the feet. Not over another overlay, where a letter
+  // may be somebody typing into a board's filter without an input having the focus. A chip
+  // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
+  else if (ORBIT_KEYS[k] && !openPanel()) {
+    const b = document.getElementById(ORBIT_KEYS[k]);
+    if (b && !b.hidden) { e.preventDefault(); b.click(); }
+  }
+});
+const ORBIT_KEYS = { i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn' };
+
+// Esc, from the sky, with nothing else to close: the menu (web/js/sysmenu.js). Every other
+// Escape handler on the page closes its own thing and many of them do not stop the key, so
+// "was anything open" is asked in the capture phase, before any of them has run - asked
+// afterwards, the Escape that closed the legend would find nothing open and open the menu
+// on top of the island it had just handed back. On foot the key keeps the job CLAUDE.md
+// gives it (the mouse first, then up into the sky), and the planner steps back through its
+// own levels; neither opens a menu.
+let escHadWork = false;
+function escapeHasWork() {
+  return overlayOpen() || skyMap || state.mode !== 'orbit' || !!state.intro
+    || !document.getElementById('mainmenu').hidden
+    || !!document.querySelector('.popover:not([hidden])')
+    || !!(state.ghost && state.ghost.holding());
+}
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') escHadWork = escapeHasWork();
+}, true);
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.repeat || !state.sysmenu) return;
+  if (state.sysmenu.isOpen()) { e.preventDefault(); state.sysmenu.close(); return; }
+  if (escHadWork || e.defaultPrevented) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  state.sysmenu.open();
 });
 
 // Every islet in the world, for the chart - in the scene frame, like everything it draws.
@@ -3900,8 +3971,9 @@ function raiseGuestIslands() {
       fading: crowdMat.userData.fadeOn,
       // A lighter machine stands as few imps as a phone: each is a 25k-triangle skinned mesh
       // with a shadow, and seven of them measured a quarter of a modest page's frame at the
-      // volcano.
-      impLimit: modest ? IMP_CAP.phone : IMP_LIMIT,
+      // volcano. Asked every frame, so the quality governor's budget (setImpBudget) still
+      // takes from either.
+      impLimit: modest ? () => Math.min(IMP_CAP.phone, impBudget()) : impBudget,
       // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
       // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
       // imps. Scene frame, the same one the crowd's positions are in.
@@ -4341,23 +4413,8 @@ function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fi
 
 function disposeRecord(rec) {
   rec.mesh.geometry.dispose();
-  if (rec.fountain) {
-    rec.fountain.surface.geometry.dispose();
-    rec.fountain.jets.geometry.dispose();
-  }
-  if (rec.nameplate) rec.nameplate.dispose();
-  if (rec.goldPile) rec.goldPile.dispose();
-  if (rec.orePile) rec.orePile.dispose();
-  if (rec.furnace) rec.furnace.dispose();
-  if (rec.sawmill) disposeSawmill(rec.sawmill);
-  if (rec.smithy) disposeSmithy(rec.smithy);
-  if (rec.stable) disposeStable(rec.stable);
-  if (rec.bakery) disposeBakery(rec.bakery);
-  if (rec.baker) disposeBaker(rec.baker);
-  if (rec.butcher) disposeButcher(rec.butcher);
-  if (rec.fisher) disposeFisher(rec.fisher);
-  if (rec.quarry) disposeQuarry(rec.quarry);
-  if (rec.ship) disposeBatavia(rec.ship);
+  // Everything attachExtras hung on it, from the one list guest-island.js also lowers by.
+  disposeExtras(rec);
   scene.remove(rec.group);
   const i = state.pickables.indexOf(rec.mesh);
   if (i >= 0) state.pickables.splice(i, 1);
@@ -5795,7 +5852,9 @@ let frameErrors = 0;
 // A drops you onto the island, B clears whatever panel is hanging over it.
 function orbitPad(a, dt) {
   if (state.mode !== 'orbit') return;
-  if (a.hit('walk') || a.hit('walkAlt')) { enterWalk(); return; }
+  if (a.hit('walk')) { enterWalk(); return; }
+  // Start is the menu on a console; it used to be a second way to walk beside A.
+  if (a.hit('menu')) { state.sysmenu.toggle(); return; }
   if (a.hit('back')) state.ui.closeOverlays();
   const look = a.look, move = a.move;
   if (!(look.x || look.y || move.x || move.y || a.lt > 0.1 || a.rt > 0.1)) return;
@@ -5825,6 +5884,8 @@ function tick(nowMs) {
     try {
       frame(nowMs);
       recovery.frame(nowMs, document.visibilityState === 'visible');
+      const rung = quality.frame(nowMs, document.visibilityState === 'visible');
+      if (rung) applyQuality(rung);
     } catch (e) {
       recovery.failed();
       if (frameErrors++ < 3) console.error('frame failed', e);
@@ -5836,6 +5897,7 @@ function tick(nowMs) {
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
+  if (renderStats) renderStats.begin(nowMs);
 
   if (state.chronicle.playing) advanceChronicle(dt);
 
@@ -6127,14 +6189,17 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
+  // The shadow map every n-th frame when the quality governor asks (applyQuality). Its light
+  // matrix is only rebuilt when the map is, so what stands still stays exactly where its
+  // shadow is between two redraws; only what moves has a shadow a frame or two behind.
+  if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
   cullRecords();
   renderer.render(state.inside ? state.inside.scene : scene, eye);
-  if (statsReadout) {
-    // Colour pass only: three.js resets renderer.info after the shadow pass, so the
-    // shadow map's own calls and triangles are not in these numbers. Comparing two runs
-    // is what they are for, and for that they are honest.
-    const info = renderer.info.render;
-    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${info.calls} calls · ${info.triangles.toLocaleString()} tris · ${state.particles?.count() ?? 0} particles`;
+  if (renderStats) {
+    // Both passes now, the shadow map's apart (render-stats.js). Comparing two runs is what
+    // they are for; the frame times are this machine's and nobody else's.
+    const s = renderStats.end(performance.now());
+    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${quality.rung().name}${quality.auto() ? '' : ' (fixed)'} · ${statsLine(s)} · ${state.particles?.count() ?? 0} particles`;
   }
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
@@ -6471,7 +6536,27 @@ async function boot() {
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    // Which code this is, for the foot of the menu: the islander's release (or checkout) from
+    // /api/hello; on a phone, what the pack baked in, if anything.
+    buildLabel: () => {
+      const b = state.build;
+      const said = b ? [b.version, b.commit].filter(Boolean).join(' · ') : '';
+      return said ? `Promptholm ${said}` : '';
+    },
+    // Settings -> Drawing -> Lighter when slow. A ?quality pin outranks it: that is somebody
+    // looking at one rung on purpose.
+    onQualityAuto: (on) => {
+      if (params.has('quality')) return;
+      const rung = quality.setAuto(on);
+      if (rung) applyQuality(rung);
+    },
   });
+  // The menu behind Esc is the settings, and ui.js owns the settings (sysmenu.js).
+  state.sysmenu = state.ui.sysmenu;
+  // Here rather than where the governor is made: applyQuality reaches `state`, which does not
+  // exist yet up there.
+  if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));
+  else if (!state.ui.qualityAutoEnabled()) quality.setAuto(false);
 
   // The story animals' dossier, the island's animal diary and the "while you were away" card
   // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
@@ -7165,7 +7250,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange, enterPlan, exitPlan,
+  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange, enterPlan, exitPlan, quality,
 };
 
 addEventListener('resize', () => {
@@ -7175,7 +7260,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();
-  if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
+  scalePoints();
 });
 
 boot();

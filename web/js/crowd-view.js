@@ -39,7 +39,7 @@ import { kindOf, styleOf, residentLook } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
-import { impsOn, wantsImp, createImp, pickImps, IMP_LIMIT, IMP_SCALE } from './imp.js';
+import { impsOn, wantsImp, createImp, pickImps, impBudget, IMP_SCALE } from './imp.js';
 
 // How high over its feet an agent's health bar floats (agent-bars.js): over an imp's horns
 // (1.08 m of model at IMP_SCALE), or over a settler's hat - RESIDENT_HEIGHT 0.43 units times
@@ -107,16 +107,24 @@ export const NPC_PAD = 1;
 // null when nobody is on foot, and `eye` where the camera is - only the volcano's imps use
 // either. `imp` makes the stand-in for one guard, (id) => actor or null while there is none
 // to be had; web/js/imp.js by default, a stub in the tests. `impLimit` is how many stand at
-// once. See syncImps below.
+// once - a number, or a function asked every frame (imp.js's `impBudget` by default, which the
+// quality governor turns). See syncImps below.
 export function createCrowdView({
-  scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = IMP_LIMIT,
+  scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = impBudget,
   range = 0, fading = false,
 } = {}) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
   // this is only what makes it look like they mean it). Read off the bundle the region
   // was raised from, the same flag the sea reads - there is no second copy of it.
   const armed = region.village?.island?.hostile === true;
-  const view = createFigures(scene, material, { armed });
+  // Culled on the island they belong to (createFigures' `bounds`): its grid's corners, and
+  // a margin past them for an outing's circle (planVoyage keeps under 13 from its berth)
+  // and a guard swimming off the coast.
+  const view = createFigures(scene, material, {
+    armed,
+    bounds: Number.isFinite(region.half)
+      ? { x: region.origin[0], z: region.origin[1], r: region.half * Math.SQRT2 + 32 } : null,
+  });
   // index -> the figure the renderer draws, plus where it is coming from and going to.
   const figures = new Map();
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
@@ -475,7 +483,7 @@ export function createCrowdView({
     for (const f of figures.values()) {
       if (wantsImp(f.id) && f.to && !inBand(f)) cands.push({ id: f.id, x: f.pos[0], y: f.y, z: f.pos[1], has: imps.has(f.id) });
     }
-    const chosen = pickImps(cands, eye ? eye() : null, impLimit);
+    const chosen = pickImps(cands, eye ? eye() : null, typeof impLimit === 'function' ? impLimit() : impLimit);
     for (const id of [...imps.keys()]) if (!chosen.has(id)) dropImp(id);
     const walker = showing && player ? player() : null;
     for (const id of chosen) {

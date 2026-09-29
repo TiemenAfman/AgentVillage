@@ -1007,6 +1007,60 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 }
 .mainmenu.gone { opacity: 0; pointer-events: none; }
 
+/* The menu behind Esc and the ☰, which is the settings too (web/js/sysmenu.js,
+   Plans/esc-menu-en-knoppenbalk.md). A window rather than the side panel it replaced: the
+   settings were a 316px column, scrolled past the house signs to reach the keys. Tabs on the
+   left, the open tab's sections on the right, `data-tab` on the root saying which. Over every
+   side panel, under the main menu. */
+.sysmenu {
+  position: fixed; inset: 0; z-index: 30;
+  display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(13, 20, 32, .22), rgba(13, 20, 32, .66));
+}
+.sysmenu[hidden] { display: none; }
+.sysmenu-card {
+  width: min(780px, 100%); height: min(600px, 100%);
+  display: grid; grid-template-columns: 214px 1fr; padding: 0; overflow: hidden;
+  animation: slidein .18s ease;
+}
+.sysmenu-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 12px 12px; border-right: 1px solid var(--edge); background: rgba(0, 0, 0, .12); }
+.sysmenu-nav h2 { font-family: var(--font); font-size: 21px; margin: 0 6px 12px; letter-spacing: .015em; }
+.sysmenu-tabs { display: flex; flex-direction: column; gap: 3px; }
+.sysmenu-tab {
+  font: inherit; font-size: 13px; text-align: left; color: var(--ink-dim); cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 8px 11px;
+}
+.sysmenu-tab:hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
+.sysmenu-tab.on { color: #1c1814; background: var(--accent); font-weight: 600; }
+.sysmenu-tab[hidden] { display: none; }
+.sysmenu-back { margin-top: auto; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 11px; font-size: 12.5px; }
+.sysmenu-build { margin: 8px 6px 0; font-size: 10.5px; min-height: 1em; }
+.sysmenu-body { overflow: auto; padding: 16px 22px 20px; }
+.sysmenu-body section { display: none; }
+.sysmenu-body section > h3.sec:first-child { margin-top: 0; }
+.sysmenu-body #settings-body section > h3.sec:first-child { margin-top: 15px; }
+.sysmenu[data-tab="screen"] .sysmenu-body section[data-tab="screen"]:not([hidden]),
+.sysmenu[data-tab="controls"] .sysmenu-body section[data-tab="controls"]:not([hidden]),
+.sysmenu[data-tab="island"] .sysmenu-body section[data-tab="island"]:not([hidden]),
+.sysmenu[data-tab="help"] .sysmenu-body section[data-tab="help"]:not([hidden]) { display: block; }
+/* The first section of a tab starts at the top whichever of the two containers it is in. */
+.sysmenu[data-tab="controls"] #touch-controls[hidden] + #settings-body section[data-tab="controls"] > h3.sec:first-child,
+.sysmenu[data-tab="island"] #settings-body section[data-tab="island"] > h3.sec:first-child { margin-top: 0; }
+.sysmenu kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.sysmenu-keys { font-size: 11.5px; line-height: 1.9; }
+/* A phone, or any window too narrow for two columns: the tabs become a row along the top. */
+@media (max-width: 620px) {
+  .sysmenu { padding: 10px; }
+  .sysmenu-card { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: 100%; }
+  .sysmenu-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 12px; border-right: 0; border-bottom: 1px solid var(--edge); }
+  .sysmenu-nav h2 { display: none; }
+  .sysmenu-tabs { flex-direction: row; flex-wrap: wrap; flex: 1; }
+  .sysmenu-tab { padding: 7px 10px; font-size: 12.5px; }
+  .sysmenu-back { margin-top: 0; }
+  .sysmenu-back kbd, .sysmenu-build { display: none; }
+  .sysmenu-body { padding: 14px 16px 18px; }
+}
+
 .menu-card { width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 22px 24px 18px; }
 .menu-head { text-align: center; }
 .menu-kicker {
