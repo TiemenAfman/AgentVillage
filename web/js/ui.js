@@ -4,6 +4,7 @@ import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
 import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
+import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -65,11 +66,10 @@ export function createUI(handlers) {
       apprentices: true
     },
     open: null,
-
-    viewDistance: 400,
-    objectDistance: 300,
-    npcDistance: 250,
-    shadowDistance: 150
+    // The four graphics distances, as main.js holds them (remembered per browser in
+    // graphics-settings.js). A copy for drawing the sliders, kept in step on every input so
+    // the panel opens where it was left rather than back at the defaults.
+    graphics: { ...GRAPHICS_DEFAULTS, ...(handlers.graphics ? handlers.graphics() : {}) },
   };
   // --- filters, legend, overview ------------------------------------------
   // The Code/Cowork/Apprentices filters live under Settings → Show (renderSettings); they
@@ -127,6 +127,8 @@ export function createUI(handlers) {
 
     const key = input.dataset.setting;
     const value = Number(input.value);
+    if (!(key in state.graphics)) return;
+    state.graphics[key] = value;
 
     if (handlers.onGraphicsSetting) {
       handlers.onGraphicsSetting(key, value);
@@ -620,17 +622,25 @@ export function createUI(handlers) {
       + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div></div>`;
   }
       
+  // Each slider from GRAPHICS_LIMITS (graphics-settings.js), the same table main.js clamps
+  // against, so the panel cannot offer a number the frame would refuse.
+  const GRAPHICS_ROWS = [
+    ['viewDistance', 'View distance'],
+    ['objectDistance', 'Object distance'],
+    ['npcDistance', 'NPC distance'],
+    ['shadowDistance', 'Shadow distance'],
+  ];
   function graphicsSection() {
+    const row = ([key, label]) => {
+      const lim = GRAPHICS_LIMITS[key];
+      const v = state.graphics[key];
+      const id = key.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()) + '-value';
+      return `<div class="setting-row"><label>${label} <span class="muted" id="${id}">${v}m</span></label>`
+        + `<input type="range" min="${lim.min}" max="${lim.max}" step="${lim.step}" value="${v}" data-setting="${key}"></div>`;
+    };
     return '<div><h3 class="sec">Graphics</h3>'
       + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
-      + `<div class="setting-row"><label>View distance <span class="muted" id="view-distance-value">${state.viewDistance}m</span></label>`
-      + `<input type="range" min="100" max="600" step="10" value="${state.viewDistance}" data-setting="viewDistance"></div>`
-      + `<div class="setting-row"><label>Object distance <span class="muted" id="object-distance-value">${state.objectDistance}m</span></label>`
-      + `<input type="range" min="50" max="500" step="10" value="${state.objectDistance}" data-setting="objectDistance"></div>`
-      + `<div class="setting-row"><label>NPC distance <span class="muted" id="npc-distance-value">${state.npcDistance}m</span></label>`
-      + `<input type="range" min="50" max="400" step="10" value="${state.npcDistance}" data-setting="npcDistance"></div>`
-      + `<div class="setting-row"><label>Shadow distance <span class="muted" id="shadow-distance-value">${state.shadowDistance}m</span></label>`
-      + `<input type="range" min="25" max="300" step="5" value="${state.shadowDistance}" data-setting="shadowDistance"></div>`
+      + GRAPHICS_ROWS.map(row).join('')
       + `</div>`;
   }
   function renderSettings() {

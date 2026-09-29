@@ -348,26 +348,46 @@ mask. Giving a building a material array turns 300 houses into thousands of draw
 
 **Four graphics distances, and they are not one number with four names.** View Distance
 is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes the haze at
-`0.95 * camera.far`); Object Distance is how far a house, prop or boat is still drawn;
-NPC Distance is how far a *person* is still drawn; Shadow Distance is the ceiling on how
-wide the sun's shadow box may grow. `state.graphics` is written from exactly one place,
-`onGraphicsSetting`, and the plan is `Plans/graphics-afstanden.md`. Two things to know
-before touching any of them:
+`FOG_CAP` = 0.95 of it, and never tied to the world's size); Object Distance is how far a
+house, prop or boat is still drawn; NPC Distance is how far a *person* is still drawn;
+Shadow Distance is the ceiling on how wide the sun's shadow box may grow (`setShadowDistance`
+in world.js - not `shadow.camera.far`, which `followShadow` rewrites on every zoom). The
+sliders are in Settings → Graphics, per browser (`web/js/graphics-settings.js`: defaults,
+limits, localStorage), and `state.graphics` is written from exactly one place,
+`onGraphicsSetting` - which has to be on **createUI**'s handlers; it was handed to
+`createNet` once and every slider moved its label and nothing else
+(`tests/graphics-settings.test.mjs` reads the source for it). The plan is
+`Plans/graphics-afstanden.md`. Before touching any of them:
 
-- **A cut past the fog needs no fade, and that is why the fade is compiled in
-  conditionally.** A cut inside the fog is out in clear air and pops, so the dither in
-  `web/js/fade.js` (spliced into `createBuildingMaterial`'s `onBeforeCompile`, a screen
-  hash and a `discard`, so it stays in the opaque pass) is only in the shader when
-  `fadeNeeded(range, scene.fog.far)` says the cut would be visible. A `discard` costs the
-  early depth test for *every* building, prop, boat and person on the island, so at the
-  defaults — where the range is past the fog — the shader is character for character what
-  it was. `customProgramCacheKey` carries the `-fade`; two materials, one program.
+- **Solid, then a dither, then a cut - and the cut only once the dither is done.** The last
+  fifth of each range is a screen-hash `discard` (`web/js/fade.js`, spliced into
+  `createBuildingMaterial`, so it stays in the opaque pass) on the straight-line distance
+  `length(mvPosition.xyz)`; past the range plus `CULL_PAD` a record is taken out of the render
+  list (`keepRecord` in main.js) and a person out of the crowd (`beyond` in crowd-view.js,
+  `NPC_PAD`). A *distance*, not the fog's depth, because the CPU cut is a distance and at the
+  corner of the frame a thing is only ~0.76 as deep as it is far.
+- **The dither is compiled in only while a cut could be seen.** A `discard` costs the early
+  depth test for every building, prop, boat and person, so `fadeNeeded(range, fogCap, cos)`
+  asks whether even the corner of the frame (`cornerCos`) at the range is deeper than the fog
+  can *ever* close (`FOG_CAP * camera.far`) - not `scene.fog.far`, which applyFogRange moves
+  with the zoom and the sky every frame. It is decided in `applyObjectDistances` (sliders,
+  resize, the planner), never per frame; `customProgramCacheKey` carries the `-fade`.
+- **Shadows fade too.** Each building material has a depth twin (`mat.userData.fadeDepth`,
+  the same band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed
+  to meshes as `customDepthMaterial` by `adoptFadeDepth` - once a second over the scene while a
+  fade is compiled in (`sweepFadeDepth`). Without it a village stippled away left its shadows.
+  The same sweep runs `followFadeUnder` over every record: its *other* built-in materials (the
+  gold, the ore, a flag, a flame, a yard sign) follow the building material's fade with their
+  own cache key kept plus `|fade`, or they stood solid to the cut and went at once.
 - **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is
   state: `applyVisibility()` owns it (filtered, alive in the chronicle, arrived),
-  `popIn()` and a build clear it. The Object Distance cut therefore lands on the shader and
-  on `withinObjectDistance()` skipping `animateExtras` — never on that flag. In
-  `crowd-view.js` `f.visible` *is* only "drawn this frame" and `view.hide(f)` is free to
-  use, which is why the people can be cut on the CPU and the houses cannot.
+  `popIn()` and a build clear it. The Object Distance cut is `layers.mask = 0` on the record's
+  objects instead (kept and restored through `userData.cullMask`), a mask nothing else in
+  the project uses; it takes the record out of the colour pass, the shadow pass and the
+  raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
+  only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
+  is never touched by the cut. An imp is not given to a guard in the band (`inBand`), since
+  its skinned material knows nothing of the dither.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,

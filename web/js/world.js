@@ -1984,9 +1984,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
     cam.near = 10; cam.far = 2 * f + 90;
     cam.updateProjectionMatrix();
   };
+  let followDist = 0;
   const followShadow = (x, z, dist) => {
     shadowFocus.set(x, 0, z);
     if (!(dist > 0)) return;
+    followDist = dist;
     // Zoom still decides, and still tightens as you come in - the box follows the camera
     // exactly as it always has. Shadow Distance is only a ceiling on how far it follows.
     const wanted = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
@@ -1995,12 +1997,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
     applyShadowSpan(f);
   };
   // Shadow Distance, live. Rebuilt here rather than left for the next followShadow so that
-  // the shadows change under the slider instead of on the next camera move, and so that
-  // raising it while zoomed out does nothing at all (the box is already at SHADOW_SPAN[1])
-  // while lowering it pulls the box in immediately.
+  // the shadows change under the slider instead of on the next camera move. Zoomed in, where
+  // the box is narrower than the limit anyway, moving the slider changes nothing, and that is
+  // what a ceiling means.
+  //
+  // Both ways from the zoom it was last given, not from the box as it stands: taking the
+  // smaller of the box and the new limit only ever pulled it in, so raising the slider left
+  // the shadows short until the camera next moved.
   const setShadowDistance = (range) => {
     shadowLimit = Math.max(0, range) / 2;
-    applyShadowSpan(Math.min(shadowSpan, Math.max(SHADOW_SPAN[0], shadowLimit)));
+    const wanted = followDist > 0 ? clamp(followDist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]) : shadowSpan;
+    applyShadowSpan(Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit)));
   };
 
   // `sea` is the sea's own clock, `{ t, moon }`: t in epoch milliseconds as the sea has it

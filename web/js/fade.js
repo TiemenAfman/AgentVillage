@@ -40,24 +40,64 @@ export function fadeAmount(dist, range) {
 // ---------------------------------------------------------------------------------
 // When the fade is worth compiling at all
 // ---------------------------------------------------------------------------------
-// This is the load-bearing observation of the whole feature, and it is why the shader
-// patch below is switched on and off instead of always being there.
-//
-// world.js closes the fog at `0.95 * camera.far`, because a cut at the far plane is visible
-// and a cut just inside the fog is not. So a thing cut at a range *beyond* where the fog
-// closed was already invisible: the fog ate it a moment earlier, and the cut nobody sees.
-// No fade needed, and - more to the point - no reason to pay for one.
-//
-// Cut inside the fog, though, and the cut is out in clear air where the eye can follow it.
-// That is the only case that needs the dither, so that is the only case that compiles it.
+// This is why the shader patch below is switched on and off instead of always being there.
 // A `discard` in the fragment shader costs the early depth test for the *whole material*,
-// and one material here is every building, prop, boat, animal and person on the island. At
-// the default settings the range is past the fog, the patch stays out, and the shader is
-// character for character what it was before any of this.
+// and one material here is every building, prop, boat, animal and person on the island - so
+// the dither is compiled in only where a cut could be seen without it.
 //
-// `fogFar` is where the fog closed, in the same units as `range`.
-export function fadeNeeded(range, fogFar) {
-  return range > 0 && range < fogFar;
+// A cut is invisible when everything cut is already in full fog. Three things make that
+// question harder than "is the range past fog.far", and the first version of this function
+// asked exactly that and was wrong on all three:
+//
+// - The fog is linear in *depth* (`-mvPosition.z`, three's fog_vertex), and a cut is on a
+//   *distance*. Out at the edge of the picture a thing is further away than it is deep: at
+//   the corner of a 16:9 frame at 45 degrees its depth is about 0.76 of its distance, so a
+//   house cut at 300 there sits at a depth of 229 - in clear air under a fog that closes at
+//   260. `cos` is that ratio at the corner of the frame (cornerCos), the worst case on
+//   screen.
+// - fog.far is not a constant. applyFogRange moves it with the zoom, the neighbours, the
+//   world's edge and the weather, and it can do so every frame. Deciding against a moment's
+//   fog.far meant a clearing sky left the dither out while the cut came out of the haze.
+//   `fogCap` is therefore the ceiling fog.far can never pass - `0.95 * camera.far`, which
+//   only View Distance moves - so the answer holds whatever the haze does next.
+// - Recompiling is not free, so a decision that flipped with the haze would stutter; one
+//   against the ceiling flips only when a slider is dragged.
+//
+// So: the dither is compiled in unless even the nearest point a cut can happen at (`range`,
+// seen at the corner of the frame) is deeper than the fog could ever reach.
+export function fadeNeeded(range, fogCap, cos = 1) {
+  return range > 0 && range * cos < fogCap;
+}
+
+// The cosine of the angle between the view axis and the corner of the frame: how deep a
+// thing at distance 1 in the corner is. Vertical field of view in degrees, as three keeps it.
+export function cornerCos(fovDeg, aspect) {
+  const tv = Math.tan((fovDeg * Math.PI) / 360);
+  const th = tv * aspect;
+  return 1 / Math.sqrt(1 + tv * tv + th * th);
+}
+
+// ---------------------------------------------------------------------------------
+// The cut behind the fade
+// ---------------------------------------------------------------------------------
+// The dither only throws pixels away; the vertices are still transformed and the triangles
+// still rasterised, and the mill still turns. A record past its range is therefore also
+// taken out of the render list on the CPU (main.js cullRecords) - but only once it is gone
+// in the shader as well, or the cut is a pop after all. A record is judged by its origin, and
+// a building reaches out from its origin: CULL_PAD is more than the reach of the biggest
+// thing on the island (a ship's lot is 4 x 16, and the Batavia's masts stand above it), so a
+// record whose origin is CULL_PAD past the range has nothing left nearer than the range.
+// CULL_HYST keeps a record on the line from going in and out every frame; it is inside the
+// pad, so either side of it is invisible anyway.
+export const CULL_PAD = 16;
+export const CULL_HYST = 2;
+
+// Whether a record at `dist` (straight-line, from the eye) should be out of the render list,
+// given whether it is out now. A range of 0 is off, as everywhere in this file.
+export function cullNext(dist, range, culled) {
+  if (!(range > 0)) return false;
+  const edge = range + CULL_PAD;
+  return culled ? dist >= edge - CULL_HYST : dist >= edge;
 }
 
 // ---------------------------------------------------------------------------------
@@ -69,36 +109,35 @@ export function fadeNeeded(range, fogFar) {
 // as vertex attributes (aEmissive, aSheet), and this follows that road rather than inventing
 // a second one.
 //
-// Two things make it cheap. There is no uniform for the camera: `mvPosition` is in view space,
-// so `-mvPosition.z` *is* the distance, and the eye is the origin of view space by
-// definition. And it is correct for the instanced crowd without knowing anything about
-// instancing, because project_vertex applies the instanceMatrix before the modelViewMatrix.
+// Two things make it cheap. There is no uniform for the camera in the colour pass:
+// `mvPosition` is in view space, where the eye is the origin by definition, so
+// `length(mvPosition.xyz)` *is* the distance. (Not `-mvPosition.z`, the depth the fog uses:
+// see fadeNeeded for why the cut and the band are on a distance and not a depth, and the
+// CPU cut behind them has to agree with the shader about which one.) And it is correct for
+// the instanced crowd without knowing anything about instancing, because project_vertex
+// applies the instanceMatrix before the modelViewMatrix.
 //
 // The discard happens where it is cheapest - after the emissive, before any of the lighting
 // is done - and it is a hash rather than an alpha, so a fading house stays in the opaque
 // pass. No transparency, nothing to sort, depth writes untouched, one draw call per building.
-// The stipple is what the fog then finishes off; the dither is what stops the cut from
-// being a line in the air.
 //
 // The numbers are interpolated from the constants above, not typed out twice, because a
 // band that starts at 80% on the CPU and 79% on the screen is a bug nobody finds by staring.
 const F = (n) => n.toFixed(4);
+const band = (dist) => `uFadeRange > 0.0 ? clamp((${dist} - uFadeRange * ${F(FADE_START)})`
+  + ` / (uFadeRange * ${F(FADE_BAND)}), 0.0, 1.0) : 0.0`;
 
 export const FADE_VERTEX_DECL = [
   'uniform float uFadeRange;',
   'varying float vFade;',
 ].join('\n');
 
-export const FADE_VERTEX_BODY = [
-  `vFade = uFadeRange > 0.0 ? clamp((-mvPosition.z - uFadeRange * ${F(FADE_START)})`
-    + ` / (uFadeRange * ${F(FADE_BAND)}), 0.0, 1.0) : 0.0;`,
-].join('\n');
+export const FADE_VERTEX_BODY = `vFade = ${band('length(mvPosition.xyz)')};`;
 
-export const FADE_FRAGMENT_DECL = [
-  'varying float vFade;',
-  // A sine-free hash: the no-sin rule is about shared/ agreeing with itself in Node and in
-  // the browser, and this is never evaluated in Node - but there is no reason to reach for
-  // the one function that is expensive and precision-varies when this one is not.
+// A sine-free hash: the no-sin rule is about shared/ agreeing with itself in Node and in the
+// browser, and this is never evaluated in Node - but there is no reason to reach for the one
+// function that is expensive and precision-varies when this one is not.
+const HASH = [
   'float fadeHash(vec2 p) {',
   '  vec3 q = fract(vec3(p.xyx) * 0.1031);',
   '  q += dot(q, q.yzx + 33.33);',
@@ -106,13 +145,44 @@ export const FADE_FRAGMENT_DECL = [
   '}',
 ].join('\n');
 
+export const FADE_FRAGMENT_DECL = ['varying float vFade;', HASH].join('\n');
+
 // Guarded on vFade so that every solid pixel in the island - which, at any sane range, is
 // nearly all of them - costs one varying and a compare and never reaches the hash.
-export const FADE_FRAGMENT_BODY = [
-  'if (vFade > 0.0 && vFade > fadeHash(gl_FragCoord.xy)) discard;',
+export const FADE_FRAGMENT_BODY = 'if (vFade > 0.0 && vFade > fadeHash(gl_FragCoord.xy)) discard;';
+
+// ---------------------------------------------------------------------------------
+// The shadow pass
+// ---------------------------------------------------------------------------------
+// The sun draws the island a second time, from its own side, with three's MeshDepthMaterial -
+// which knows nothing of the patch above. So a house stippled away in the colour pass still
+// laid its whole shadow on the grass: with Object Distance under the orbit distance, the
+// village you were looking down at was a field of shadows with nothing standing in them.
+// Each building material therefore has a depth twin (createBuildingMaterial's `fadeDepth`),
+// patched with the same band and the same hash, handed to every mesh drawn with it as
+// `customDepthMaterial`.
+//
+// In that pass the view is the sun's, so the distance has to be to the *player's* eye, in
+// the world: `uFadeEye`, one Vector3 shared by every twin and copied from the camera once a
+// frame. The world position is worked out here the way worldpos_vertex would - that chunk
+// is compiled out of a depth material.
+export const FADE_DEPTH_VERTEX_DECL = [
+  'uniform float uFadeRange;',
+  'uniform vec3 uFadeEye;',
+  'varying float vFade;',
 ].join('\n');
 
-// The uniform the patched shader reads. It is set on `mat.userData.uniforms` whether or not
+export const FADE_DEPTH_VERTEX_BODY = [
+  'vec4 fadeWorld = vec4(transformed, 1.0);',
+  '#ifdef USE_INSTANCING',
+  'fadeWorld = instanceMatrix * fadeWorld;',
+  '#endif',
+  'fadeWorld = modelMatrix * fadeWorld;',
+  `vFade = ${band('distance(fadeWorld.xyz, uFadeEye)')};`,
+].join('\n');
+
+// The uniforms the patched shaders read. They are set on the uniform objects whether or not
 // the patch is compiled; an unused uniform in a program three never heard of is ignored, so
 // the value is free to be there either way and the code does not have to remember which.
 export const FADE_RANGE_UNIFORM = 'uFadeRange';
+export const FADE_EYE_UNIFORM = 'uFadeEye';

@@ -49,6 +49,7 @@ const BAR_OVER_SETTLER = 0.43;
 const BAR_CLEAR = 0.14;
 import { MOVING } from 'shared/settlerwire.mjs';
 import { GOLDPIT_ID } from 'shared/gold.mjs';
+import { FADE_START } from './fade.js';
 
 // What a body does standing still that is not merely standing: the hammer and the chores
 // (Plans/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
@@ -98,6 +99,9 @@ const WADE_Y = -0.22;
 // How briskly somebody held by a conversation turns to the talker: the walk's own number
 // for it, in the `attend` branch of shared/settlerwalk.mjs, where it is a literal.
 const HELD_TURN = 0.12;
+// How far past NPC Distance a body is still placed, in units: more than a settler reaches out
+// from their feet. See `beyond` in createCrowdView.
+export const NPC_PAD = 1;
 
 // `player` is where this page's own walker is (scene frame, like every position here), or
 // null when nobody is on foot, and `eye` where the camera is - only the volcano's imps use
@@ -139,12 +143,32 @@ export function createCrowdView({
   // would empty the village. `f.pos` is already scene-absolute (the rides branch adds the
   // region's own origin to the sea's numbers), and so is the eye, so there is nothing to
   // translate. No eye means nobody is asking - which is the volcano's imps and nothing else.
+  //
+  // Cut a metre past the range, not at it. The shader fades a body over the last fifth of
+  // the range by its straight-line distance (web/js/fade.js), which is never less than this
+  // flat one, so at `far` the feet are already gone - but a body reaches out from `f.pos`,
+  // and the pad is what makes sure the shoulders went too before the body is handed back.
+  // With the dither compiled out the same pad holds for the fog (fadeNeeded), so either way
+  // nobody vanishes while they can still be seen.
   const beyond = (f) => {
     if (far === Infinity) return false;
     if (!eye) return false;
     const e = eye();
     const dx = f.pos[0] - e.x, dz = f.pos[1] - e.z;
-    return dx * dx + dz * dz >= far * far;
+    const cut = far + NPC_PAD;
+    return dx * dx + dz * dz >= cut * cut;
+  };
+  // Where the fade starts: past this a guard is no longer given an imp. An imp is a skinned
+  // mesh with a material of its own that knows nothing of the dither, so an imp carried into
+  // the band would stand solid and then vanish at the cut. Handed back to the instanced
+  // figure here instead, it fades like everybody else - the same swap pickImps already makes
+  // for the guards beyond the nearest `impLimit`.
+  const inBand = (f) => {
+    if (far === Infinity || !eye) return false;
+    const e = eye();
+    const dx = f.pos[0] - e.x, dz = f.pos[1] - e.z;
+    const start = far * FADE_START;
+    return dx * dx + dz * dz >= start * start;
   };
 
   // The afternoon boats. index -> what the last message said about that outing, and
@@ -442,7 +466,7 @@ export function createCrowdView({
     for (const [id, s] of imps) if (byIdx.get(id) !== s.f) dropImp(id);
     const cands = [];
     for (const f of figures.values()) {
-      if (wantsImp(f.id) && f.to) cands.push({ id: f.id, x: f.pos[0], y: f.y, z: f.pos[1], has: imps.has(f.id) });
+      if (wantsImp(f.id) && f.to && !inBand(f)) cands.push({ id: f.id, x: f.pos[0], y: f.y, z: f.pos[1], has: imps.has(f.id) });
     }
     const chosen = pickImps(cands, eye ? eye() : null, impLimit);
     for (const id of [...imps.keys()]) if (!chosen.has(id)) dropImp(id);

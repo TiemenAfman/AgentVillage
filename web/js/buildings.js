@@ -14,8 +14,8 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
-import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
-  FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY } from './fade.js';
+import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
+  FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_DECL, FADE_DEPTH_VERTEX_BODY } from './fade.js';
 import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
@@ -121,6 +121,76 @@ const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5, ground: 6 };
 const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
 
 // ---------------------------------------------------------------- material
+// Where the player's eye is, in the world, for the shadow pass's fade (fade.js). One object
+// shared by every building material's depth twin; main.js copies the camera into it once a
+// frame (setFadeEye) rather than every twin keeping a camera of its own.
+const FADE_EYE = { value: new THREE.Vector3() };
+export function setFadeEye(v) { FADE_EYE.value.copy(v); }
+
+// Give every mesh under `root` drawn with a fading building material that material's depth
+// twin, so its shadow fades with it. Only where nothing else has claimed the slot - a mesh
+// with a depth material of its own knows better. Cheap to call again - a walk and an
+// equality test per mesh - which is why main.js can sweep the scene with it once a second
+// while a fade is compiled in (sweepFadeDepth) rather than chase every place a mesh is made.
+export function adoptFadeDepth(root) {
+  root.traverse((o) => {
+    const d = o.material && o.material.userData && o.material.userData.fadeDepth;
+    if (d && o.customDepthMaterial === undefined) o.customDepthMaterial = d;
+  });
+}
+
+// The other materials a building carries - the gold on the pit, the ore in the mine, a flag,
+// a flame - are not the building material and knew nothing of the fade, so at Object
+// Distance's cut they were the last things standing and went at once (measured: a step of
+// ~27 pixels on the gold pit and the mine as the rest of the town faded smoothly out).
+// followFade makes such a material fade with `owner`, a building material: the same band,
+// the same range uniform, compiled in and out with it. Its own onBeforeCompile and cache key
+// run first and are kept, and the fade adds a suffix to the key. Only three's built-in
+// materials: a ShaderMaterial has no chunks to splice into, and is left as it is.
+const FOLLOWABLE = new Set(['MeshBasicMaterial', 'MeshLambertMaterial', 'MeshPhongMaterial',
+  'MeshStandardMaterial', 'MeshPhysicalMaterial', 'MeshToonMaterial', 'MeshMatcapMaterial']);
+export function followFade(m, owner) {
+  if (!m || m.userData.fadeOwner || m.userData.fadeDepth || !FOLLOWABLE.has(m.type)) return false;
+  const compile = m.onBeforeCompile;
+  // The default cache key is onBeforeCompile's source text, which the wrapper below would
+  // replace with its own - one key for every followed material whatever it compiled to. So
+  // the key the material had is worked out now, from the function it had.
+  const key = m.customProgramCacheKey === THREE.Material.prototype.customProgramCacheKey
+    ? (() => { const src = compile.toString(); return () => src; })()
+    : m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    if (!owner.userData.fadeOn) return;
+    shader.uniforms[FADE_RANGE_UNIFORM] = owner.userData.uniforms[FADE_RANGE_UNIFORM];
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${FADE_VERTEX_DECL}`)
+      .replace('#include <fog_vertex>', `#include <fog_vertex>\n${FADE_VERTEX_BODY}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${FADE_FRAGMENT_DECL}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${FADE_FRAGMENT_BODY}`);
+  };
+  m.customProgramCacheKey = () => key() + (owner.userData.fadeOn ? '|fade' : '');
+  m.userData.fadeOwner = owner;
+  owner.userData.followers.add(m);
+  if (owner.userData.fadeOn) m.needsUpdate = true;
+  return true;
+}
+
+// Everything under `root` that is drawn with some other built-in material follows `owner`'s
+// fade, and takes its depth twin for the shadow - unless it cuts its shadow out of a texture
+// (alphaTest), which the twin would draw as a solid block.
+export function followFadeUnder(root, owner) {
+  root.traverse((o) => {
+    if (!o.isMesh || Array.isArray(o.material)) return;
+    const m = o.material;
+    if (m.userData.fadeDepth) return;
+    if (m.userData.fadeOwner !== owner) followFade(m, owner);
+    if (m.userData.fadeOwner === owner && o.customDepthMaterial === undefined && !(m.alphaTest > 0)) {
+      o.customDepthMaterial = owner.userData.fadeDepth;
+    }
+  });
+}
+
 export function createBuildingMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0.0 });
   mat.userData.uniforms = {
@@ -241,15 +311,40 @@ export function createBuildingMaterial() {
   mat.customProgramCacheKey = () => (mat.userData.fadeOn
     ? 'settlers-emissive-ground-v1-fade'
     : 'settlers-emissive-ground-v1');
-  // Ask for a range, get the right shader. `fogFar` is where the fog closed, and it is the
-  // whole argument: a cut out past the fog is a cut nobody can see, and a shader that
+  // The shadow pass's twin (fade.js, "The shadow pass"): three's own depth material with the
+  // same band spliced in, so a house stippled out of the picture takes its shadow with it.
+  // Unpatched while the fade is off, and then it is the material three would have used
+  // anyway - RGBADepthPacking, and getDepthMaterial copies side, map and clipping onto a
+  // custom one exactly as onto its own. Handed to meshes by adoptFadeDepth.
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  depth.onBeforeCompile = (shader) => {
+    if (!mat.userData.fadeOn) return;
+    shader.uniforms[FADE_RANGE_UNIFORM] = mat.userData.uniforms[FADE_RANGE_UNIFORM];
+    shader.uniforms[FADE_EYE_UNIFORM] = FADE_EYE;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${FADE_DEPTH_VERTEX_DECL}`)
+      .replace('#include <project_vertex>', `#include <project_vertex>\n${FADE_DEPTH_VERTEX_BODY}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${FADE_FRAGMENT_DECL}`)
+      .replace('#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>\n${FADE_FRAGMENT_BODY}`);
+  };
+  depth.customProgramCacheKey = () => (mat.userData.fadeOn ? 'settlers-depth-v1-fade' : 'settlers-depth-v1');
+  mat.userData.fadeDepth = depth;
+  // The materials that fade with this one (followFade), told when it compiles in or out.
+  mat.userData.followers = new Set();
+  // Ask for a range, get the right shader. `fogCap` is the furthest the fog can ever close
+  // (0.95 * camera.far) and `cos` how much shallower than far the corner of the frame is -
+  // see fadeNeeded for why it is those two and not the fog of the moment. A shader that
   // costs every building on the island its early depth test to hide a cut nobody can see is
-  // a bad trade at any default.
-  mat.userData.fade = (range, fogFar) => {
-    const on = fadeNeeded(range, fogFar);
+  // a bad trade at any default, so the patch is only in while somebody could see the cut.
+  mat.userData.fade = (range, fogCap, cos = 1) => {
+    const on = fadeNeeded(range, fogCap, cos);
     if (on !== mat.userData.fadeOn) {
       mat.userData.fadeOn = on;
       mat.needsUpdate = true;
+      depth.needsUpdate = true;
+      for (const f of mat.userData.followers) f.needsUpdate = true;
     }
     // Out of range as well as off: a range of 0 has to read as "no fade", never as
     // "distance divided by zero, so everything within an inch is gone".
