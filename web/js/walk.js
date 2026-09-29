@@ -21,6 +21,9 @@ import { canon } from './keybinds.js';
 import { createZzz, bobZzz } from './zzz.js';
 
 const PLANE_UP = new THREE.Vector3(0, 1, 0);
+// How much of a hull's tilt the third-person camera takes on (placeCamera): 0 is a level camera
+// over a deck that rocks under it, 1 is the deck held still on the screen and the whole sea rocking.
+const CAM_TILT = 0.25;
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
@@ -819,6 +822,31 @@ export function createWalkMode({
   const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
   const specOf = (b) => (b && b.craft && b.craft.spec) || null;
   function offDeck() { state.deck = null; deckBoat = null; deckJump = false; climb = null; }
+  // A ship left running. Off her deck - over the rail, or off her ladder - a heavy hull has way on
+  // her still, and nothing steps a boat that nobody is aboard: she froze where you jumped, which
+  // is no run-out at all. So the page that was sailing her carries on doing it (`loose`; main.js
+  // calls runOut(dt) every frame, in every mode) and says where she gets to on the same beat as
+  // before - the sea takes the position of whoever let go of the wheel for her `runOut`
+  // (lib/boats.mjs letGo). It steps her only while nothing else does: on her deck, at her wheel or
+  // on her ladder update() is already at it. Escape is not this - exitWalk stops her on purpose.
+  const RUNNING = 0.05;
+  let loose = null;
+  const heavy = (b) => { const s = specOf(b); return !!(s && s.sail && s.sail.runOut); };
+  function letRun(b) { loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
+  const onHull = (b) => b === deckBoat || b === state.vehicle || !!(climb && climb.boat === b);
+  // The hull we are running out, or null: she is not once she has stopped, once somebody else has
+  // the wheel, or while we are on her again.
+  function runningOut() {
+    const b = loose;
+    if (!b) return null;
+    if (Math.abs(b.v || 0) <= RUNNING || isFollowing(b)) { loose = null; return null; }
+    return onHull(b) ? null : b;
+  }
+  function runOut(dt) {
+    const b = runningOut();
+    if (b) stepBoat(b, {}, dt, boatGround);
+    return b;
+  }
   // A hull is a reference plane (boat.js hullPointOf): where you stand on it is a point of its own
   // frame, and where that is in the world - height, and x and z too, because a hull that pitches
   // and rolls moves its deck sideways as well as up - is read off the transform it is drawn with
@@ -826,6 +854,7 @@ export function createWalkMode({
   // the body to lean with it and the camera to ride it; it is null on the ground and in the water.
   const swellAt = new THREE.Vector3();
   const planeQ = new THREE.Quaternion();
+  const camTilt = new THREE.Quaternion();
   const camOff = new THREE.Vector3();
   const planeUp = new THREE.Vector3();
   let plane = null;
@@ -983,6 +1012,7 @@ export function createWalkMode({
       state.floor = groundAt(x, z, WATER_Y);
       drift = away.vx || away.vz ? { x: away.vx, z: away.vz } : null;
       place(camBack);
+      if (c.crew) letRun(b);
       if (c.crew && state.onLeftDeck) state.onLeftDeck(b);
     } else if (wish < 0 && c.d <= 0) {
       // Off the bottom: in the water beside her, or on the quay if that is what she lies at.
@@ -995,6 +1025,7 @@ export function createWalkMode({
       state.swimming = g < 0;
       state.moving = false;
       place(camBack);
+      if (c.crew) letRun(b);
       if (c.crew && state.onLeftDeck) state.onLeftDeck(b);
     }
     return afterMove(dt);
@@ -1062,6 +1093,7 @@ export function createWalkMode({
       state.floor = groundAt(x, z, WATER_Y);
       drift = away.vx || away.vz ? { x: away.vx, z: away.vz } : null;
       place(camBack);
+      letRun(b);
       if (state.onLeftDeck) state.onLeftDeck(b);
     }
     return afterMove(dt);
@@ -1729,10 +1761,16 @@ export function createWalkMode({
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
     // swings everything about you, and you stand still in the middle of it.
+    //
+    // Only CAM_TILT of her tilt, though. All of it put the camera on a lever as long as its distance
+    // (27 units behind a ship's wheel: her 0.04 of pitch is a metre of camera, ten times a second)
+    // and rolled the horizon with every swell - the sea rocking on the screen was far more than a
+    // ship's own 2 degrees. The body still leans with her all the way (avatar, below).
     if (plane) {
-      camOff.copy(camera.position).sub(state.pos).applyQuaternion(plane);
+      camTilt.identity().slerp(plane, CAM_TILT);
+      camOff.copy(camera.position).sub(state.pos).applyQuaternion(camTilt);
       camera.position.copy(state.pos).add(camOff);
-      planeUp.copy(PLANE_UP).applyQuaternion(plane);
+      planeUp.copy(PLANE_UP).applyQuaternion(camTilt);
       camera.up.copy(planeUp);
     } else camera.up.copy(PLANE_UP);
     if (clampCam) clampCam(camera.position);
@@ -1802,7 +1840,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

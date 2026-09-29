@@ -626,8 +626,19 @@ position out itself, and sends decks as their own list `d` beside the rows - a r
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
 crew). Walk mode sets `state.deck` on the galleon only (`CRAFTS.galleon`, the pirate ship,
 crew 5): E at its wheel is *leave the helm* (`letGoBoat`, and E again is `takeBoat`), the hull
-coasts under `stepBoat` with the gas off while you walk it (`stepOnDeck` in walk.js), and
-`ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
+coasts under `stepBoat` with the gas off while you walk it (`stepOnDeck` in walk.js) - and a
+ship is heavy: `CRAFTS.galleon.sail` carries her own `drag`, `creep`, `bite`, `astern`, `yawLag`
+(a yaw rate `b.w` eased towards the rudder, only on a hull whose craft sets it) and `accel`, so she
+takes 6 s to top speed and runs out ~45 s / ~130 units, and `runOut` (60 s) is how long the sea takes
+her position from whoever let go (`coastOf` in lib/boats.mjs, else `COAST_MS`): keep it above the
+run-out from full turbo or she freezes for everybody else while her own page still sails her
+(`tests/boat-inertia.test.mjs`). Nothing steps a hull nobody is aboard, so a ship you jump or
+climb off (`letRun` in walk.js, the three `onLeftDeck` sites) is kept in `loose` and stepped by
+`walk.runOut(dt)`, which main.js calls every frame in every mode until she stops, somebody else has
+the wheel or you are on her again; she is `runningHull()` there, whose position is sent like
+`ownHull()`'s and whose echo from the sea is not taken back. Escape from the deck is not that:
+`exitWalk` stops her on purpose (`tests/ship-runout.test.mjs` drives the real walk mode headless).
+And `ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
 ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
 none from a dock): she is boarded by walking into the foot of one of her two rope ladders
 (`craft.ladders`, at z 1.85 because the gun ports stand out to 2.63 everywhere else along the
@@ -657,8 +668,9 @@ places and swells her at the frame's clock first, and the fleet loop repeats it,
 idempotent), not `toWorld` plus a height - a pitching hull moves her deck sideways as well as up,
 0.05 on a deck 1.16 over her pivot, which is feet sliding over the planks on a settler half a unit
 tall. The body leans with the plane (`hullTiltOf`: her rotation less her heading) and walk mode's
-camera stands in it (offset turned with the tilt, `camera.up` hers), so the deck holds still on the
-screen and it is the sea that rocks; `exit()` puts the camera upright again. Peers on a deck and a
+camera stands in a share of it (`CAM_TILT` 0.25: offset turned and `camera.up` tilted by that much
+of the plane; all of it put the camera on a lever as long as its 27 units behind a ship's wheel and
+rolled the horizon with every swell); `exit()` puts the camera upright again. Peers on a deck and a
 ship's pilot at her wheel are drawn the same way (`hullOf.point`/`tilt`, `seatOf`). The ladder is
 drawn from the same `craft.ladders` numbers and welded into the hull's
 geometry (`ladderBoxes`, boat.js), so it is no extra draw call and cannot drift from the one you

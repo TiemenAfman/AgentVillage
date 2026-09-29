@@ -208,6 +208,13 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   const sail = (b.craft && b.craft.spec && b.craft.spec.sail) || null;
   const TOP = sail ? sail.top : BOAT_TOP;
   const top = boost ? TOP * BOAT_TURBO : TOP;
+  // What only a heavy hull changes: how hard the water takes the way off, the speed under which
+  // it is drift, how much a hard turn costs, the strength of the astern brake. Each falls back to
+  // the Benchy's own number, which is what keeps her bit-for-bit what tests/boat.test.mjs sails.
+  const DRAG = sail && typeof sail.drag === 'number' ? sail.drag : BOAT_DRAG;
+  const creep = sail && typeof sail.creep === 'number' ? sail.creep : CREEP;
+  const BITE = sail && typeof sail.bite === 'number' ? sail.bite : BOAT_TURN_BITE;
+  const ASTERN = sail && typeof sail.astern === 'number' ? sail.astern : ASTERN_ACCEL;
 
   // ---- the tiller ---------------------------------------------------------------
   // The rudder works on water flowing past it, so the turn tightens with the way on. From
@@ -215,7 +222,14 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   // this size is actually steering at rather than being shoved around at.
   const TURN = sail ? sail.turn : BOAT_TURN, TURN_MIN = sail ? sail.turnMin : BOAT_TURN_MIN;
   const rate = TURN_MIN + (TURN - TURN_MIN) * Math.min(1, Math.abs(b.v) / TURN_FULL);
-  b.yaw -= r * rate * step;
+  if (sail && sail.yawLag > 0) {
+    // A ship does not start turning when the rudder does, and does not stop when it is amidships:
+    // the turn rate `b.w` (rad/s, positive is to port like the yaw) is eased towards what the
+    // rudder asks for over `yawLag`. Kept on the hull record, which is this page's own.
+    const w = b.w || 0;
+    b.w = w + (-r * rate - w) * Math.min(1, step / sail.yawLag);
+    b.yaw += b.w * step;
+  } else b.yaw -= r * rate * step;
   // Kept inside one turn so a long session cannot walk the yaw out to a number
   // lib/players.mjs clamps (it caps a pose's yaw at 1e4) instead of relaying. One step
   // cannot cover a whole turn, so a pair of ifs is the whole of it - and unlike a modulo
@@ -226,7 +240,7 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   // A hard turn spends way. This is the thing that makes momentum readable: you cannot
   // take the mouth of a bay at nine and a half, and finding that out costs you a second
   // and not a ricochet.
-  b.v *= 1 - BOAT_TURN_BITE * Math.abs(r) * step;
+  b.v *= 1 - BITE * Math.abs(r) * step;
 
   // ---- thrust and drag ----------------------------------------------------------
   // What the throttle is asking for, less what the helm is spending. The second half is an
@@ -234,12 +248,12 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
   // times over in the same frame (5.0 u/s² against about 0.04 a frame at top speed), so
   // without a ceiling the tightest turn in the game would cost a boat under power exactly
   // nothing and the hull would corner on rails.
-  const want = (t >= 0 ? t * top : t * BOAT_REVERSE) * (1 - BOAT_TURN_BITE * Math.abs(r));
-  const accel = want >= 0 ? (sail ? sail.accel : BOAT_ACCEL) * (top / TOP) : ASTERN_ACCEL;
+  const want = (t >= 0 ? t * top : t * BOAT_REVERSE) * (1 - BITE * Math.abs(r));
+  const accel = want >= 0 ? (sail ? sail.accel : BOAT_ACCEL) * (top / TOP) : ASTERN;
   const sameWay = want !== 0 && (b.v === 0 || Math.sign(b.v) === Math.sign(want));
   if (want === 0) {
     // Hands off: the water takes it off, and only the water.
-    b.v -= b.v * BOAT_DRAG * step;
+    b.v -= b.v * DRAG * step;
   } else if (sameWay) {
     if (Math.abs(b.v) < Math.abs(want)) {
       b.v += Math.sign(want) * accel * step;
@@ -248,20 +262,20 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
       // Eased off, but not let go: the water brings you down to the speed being asked for
       // and no further. Running the drag alongside the thrust instead would put the real
       // top speed at BOAT_ACCEL / BOAT_DRAG = 5.6, under a run, and nothing would say so.
-      b.v -= b.v * BOAT_DRAG * step;
+      b.v -= b.v * DRAG * step;
       if (Math.abs(b.v) < Math.abs(want)) b.v = want;
     }
   } else {
     // Astern with way still on, or ahead while still falling back. The blade and the water
     // pull the same way here, which is why a full stop is a stop and not a long argument.
-    b.v -= b.v * BOAT_DRAG * step;
+    b.v -= b.v * DRAG * step;
     b.v += Math.sign(want) * accel * step;
   }
   // The turbo ceiling whether or not the turbo is on this frame: the frame it runs out, the
   // hull is still doing fifteen, and clamping to BOAT_TOP here would stop it dead at 9.5 in
   // one step instead of letting the drag above ease it down.
   b.v = clamp(b.v, -BOAT_REVERSE, TOP * BOAT_TURBO);
-  if (!t && Math.abs(b.v) < CREEP) b.v = 0;
+  if (!t && Math.abs(b.v) < creep) b.v = 0;
 
   // ---- the crossing -------------------------------------------------------------
   if (b.v === 0) return b;   // aground stays as it was: a beached hull is still beached
@@ -306,7 +320,7 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
     // grinding along it, which is what makes "back off and come round again" the quick way
     // out of both.
     b.v -= b.v * SCRAPE_DRAG * step;
-    if (Math.abs(b.v) < CREEP) b.v = 0;
+    if (Math.abs(b.v) < creep) b.v = 0;
     b.aground = b.v === 0;
     b.scraping = true;
   } else {

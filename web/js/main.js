@@ -858,6 +858,11 @@ const OFFER_BELOW = 0.6;
 // The boat that is ours this frame: the one at whose helm we stand, or whose deck we walk (or
 // whose ladder we are on).
 const ownHull = () => (state.walk && (state.walk.aboard() || state.walk.onDeck())) || null;
+// A ship we have jumped from or climbed down from, still running out under our last word: not
+// ownHull() - nobody is aboard, so none of what ownHull() gates (the offers, exitWalk's flight up)
+// applies - but hers is the position this page sends and does not take back from the sea.
+const runningHull = () => (state.walk && state.walk.runningOut()) || null;
+
 // The clock the swell runs on this frame (frame() below sets it), so that a hull can be posed early -
 // by walk mode, for somebody standing on her, and by the peers - to exactly the transform the fleet
 // loop draws her with at the end of the frame. Placing and swelling are pure functions of the hull's
@@ -904,6 +909,13 @@ function interactables() {
     }
     return out;
   }
+  // A ship's helm is left under way: a ship runs out for most of a minute, and leaving the wheel
+  // is how you let her, so the offer does not wait for her to stop like a boat's shore does.
+  const helmSpec = aboard && aboard.craft && aboard.craft.spec;
+  if (helmSpec && helmSpec.crew > 1) {
+    out.push({ id: aboard.id, kind: 'leavehelm', x: aboard.x, z: aboard.z, r: 99, label: 'the deck', prompt: 'leave the helm' });
+    return out;
+  }
   // Only once she has nearly stopped: under way the prompt sat on screen the whole voyage,
   // and nobody steps off a boat doing nine knots anyway.
   if (aboard && Math.abs(aboard.v || 0) > OFFER_BELOW) return out;
@@ -915,11 +927,6 @@ function interactables() {
     // Asked of walk mode, not of the archipelago: a quay is planks over water, so the sea
     // says -0.4 where your own dock is and stepping out onto your own dock would be refused.
     const under = (x, z) => state.walk.groundAt(x, z);
-    const spec = aboard.craft && aboard.craft.spec;
-    if (spec && spec.crew > 1) {
-      out.push({ id: aboard.id, kind: 'leavehelm', x: aboard.x, z: aboard.z, r: 99, label: 'the deck', prompt: 'leave the helm' });
-      return out;
-    }
     const landAhead = under(bx, bz) >= 0.06;
     const landBeside = !landAhead && LAND_PROBE.some(([dx, dz]) =>
       under(aboard.x + dx * 1.6, aboard.z + dz * 1.6) >= 0.06);
@@ -3328,8 +3335,9 @@ function onBoatFromServer(m) {
   }
   // Ours: we have the tiller, or we have just let go of it and are running her out ourselves (nobody
   // has taken it, and she still has way on her on our own screen) - our echo must not drag her back.
+  // Off her deck too: a ship we jumped from is still running out on our screen (walk.js runOut).
   const mine = (state.net && craft.pilot && craft.pilot === state.net.id())
-    || (!craft.pilot && craft === ownHull() && Math.abs(craft.v || 0) > 0.05);
+    || (!craft.pilot && (craft === ownHull() || craft === runningHull()) && Math.abs(craft.v || 0) > 0.05);
   // Somebody else has the tiller: their word is where it is. Our own boat we are steering
   // ourselves, and taking the server's echo of our own message would jitter it back a
   // fifth of a second on every reply.
@@ -6082,6 +6090,9 @@ function frame(nowMs) {
   // condition rather than a second drawing path: `state.chronicle.t` is exactly "not on
   // Live", and it is the same test timeNow() already makes.
   const live = state.chronicle.t == null;
+  // Before the peers and the fleet loop, which read where she is: a ship nobody is aboard is stepped
+  // here and nowhere else (walk.js runOut), in every mode.
+  if (state.walk) state.walk.runOut(dt);
   glideBoats();
   if (state.peers) {
     state.peers.setVisible(live);
@@ -6236,13 +6247,15 @@ function frame(nowMs) {
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.
   const mine = ownHull();
+  const running = runningHull();
   for (const b of state.boats) {
-    // Only the hull under our own hands is reported; everybody else's arrives as a message.
+    // Only the hull under our own hands is reported - or the one we are running out after
+    // jumping from her; everybody else's arrives as a message.
     // Every frame, and not only the ones that moved far enough: net.js coalesces this onto
     // the pose beat, so what is handed over here is the hull's position and not a message.
     // Deciding here whether it was worth sending is what made this sixty messages a second
     // and took the socket down under the pilot - see `hull` in net.js.
-    if (b === mine && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
+    if ((b === mine || b === running) && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
     b.craft.place(b.x, b.z, b.yaw);
     b.craft.bob(nowMs / 1000);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
