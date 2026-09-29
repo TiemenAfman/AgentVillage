@@ -5,7 +5,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
-- ✅ [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
+- ✅ [graphics-afstanden.md](DONE/graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
   en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
   tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en
   een huis wordt pas daarachter uit de render list gehaald. Standaard hoog op een gewone machine,
@@ -23,45 +23,64 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Plannen
 
-✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
-*Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
+Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is (🚧). Een sectie
+*Later* of *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
+
+### Open
 
 - 🚧 [onderwater-zwemmen.md](onderwater-zwemmen.md) — de zee wordt een plek: duiken vanaf het
   oppervlak (`diving.js`), een zeebodem als teken- en botslaag naast het terrein (geulen tot -3.5,
   banken tot -1.0, nooit `H`), een onderwaterlook met het oppervlak van onderen, verdrinken door de
   zee (`breath`), anderen die je op diepte zien, en leven (kelp, koraal, vissen, bellen).
-- 🚧 [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
-  frame van elk naambord) is een instance in één `BatchedMesh` (`record-batch.js`); het record houdt
-  een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,
-  tijdlijn, popIn, de mist-cut en de planner werken ongewijzigd. Hoogezand van boven: 1.945 / 1.460
-  calls → 727 / 258, 28,5 → 15 ms. Open: de beletterde gezichten in een atlas, en de telefoon.
 - 🚧 [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md) — plan, nog niet gebouwd: het
   beletterde gezicht van een naambordje alleen tekenen waar het groot genoeg is om te lezen (in
   pixels op het scherm, met een fade), met een crème vlakje in de batch voor van veraf. Van boven
   ~4 ms (gemeten plafond), zonder atlas, zonder verlies aan scherpte.
-- ✅ [verborgen-inwoners-tellen-niet.md](verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
+- 🚧 [uitrusting-en-vasthouden.md](uitrusting-en-vasthouden.md) — settlers die iets vasthouden en
+  een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
+  (`settler-figures.js`). Voor de speler is het grotendeels gebouwd (rugzak, handitems, pantser);
+  open: de rugzak en het `equip`-veld voor de instanced settlers, en `/equip`.
+- 🚧 [eiland-op-android.md](eiland-op-android.md) — Het eiland op Android. Open: een zee kiezen in de
+  app, borden met touch, een bewaarder op andermans eiland aanspreken, en een test op een toestel.
+- 🚧 [werkhoudingen-per-tool.md](werkhoudingen-per-tool.md) — plan van 29 september 2026, nog niet
+  gebouwd: een settler doet wat zijn sessie doet, in plaats van altijd te hameren.
+- 🚧 [schatkaarten.md](schatkaarten.md) — plan van 29 september 2026, nog niet gebouwd: iets te
+  vinden op de eilandjes.
+- 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
+  niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
+  het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
+  dezelfde bestanden werkt.
+
+### Klaar
+
+- ✅ [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
+  frame van elk naambord) is een instance in één `BatchedMesh` (`record-batch.js`); het record houdt
+  een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,
+  tijdlijn, popIn, de mist-cut en de planner werken ongewijzigd. Hoogezand van boven: 1.945 / 1.460
+  calls → 727 / 258, 28,5 → 15 ms. De atlas is vervangen door naambord-gezichten-op-afstand; open: de telefoon.
+- ✅ [verborgen-inwoners-tellen-niet.md](DONE/verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
   NPC Distance, onder een imp of nog niet geplaatst was een instance op y = -999 binnen `count`, en
   de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
   getekend wordt aaneengesloten vooraan in elke batch (swap bij een wissel), met rokken en haar in
   eigen batches: geparkeerd is 0, en op NPC 50 scheelt het 37% van de kleurpas.
-- 🚧 [website.md](website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
+- ✅ [website.md](DONE/website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
   nieuwe screenshots uit de game en downloadknoppen die altijd naar de nieuwste release wijzen.
   Gebouwd op 29 september 2026; nog niet online (Pages en DNS aanzetten).
-- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
+- ✅ [tenten-vertrekken.md](DONE/tenten-vertrekken.md) — een inwoner met alleen een tent die een week
   (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
   mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
   een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
   genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
-- ✅ [sneller-tekenen.md](sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
+- ✅ [sneller-tekenen.md](DONE/sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
   bestond al of brak een regel. Wel gedaan: `?stats` telt de schaduwpas, een kwaliteitsregelaar
   die zonder shader-recompile lichter tekent onder ~28 fps, vier geheugenlekken bij het ophalen van
   een gasteiland dicht (met test), en 64% minder driehoeken (het water, naamborden, schaduwen van
   settlers). Nog niet: een lage settler voor ver weg.
-- 🚧 [esc-menu-en-knoppenbalk.md](esc-menu-en-knoppenbalk.md) — de knoppen rechtsboven in twee
+- ✅ [esc-menu-en-knoppenbalk.md](DONE/esc-menu-en-knoppenbalk.md) — de knoppen rechtsboven in twee
   groepen met iconen, en een Esc-menu dat de instellingen ís: vier tabbladen, waarvan alleen
   *Island* van de keeper is (de rest stond achter de keeper-knop en was van de browser).
-  Wacht op Tiemens oordeel.
-- 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
+  Gebouwd op 29 september 2026.
+- ✅ [mijlpalen-tot-tweehonderd.md](DONE/mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
   bouwt vanaf 95 in stadia aan de Batavia, die op 120 op de rede voor anker gaat (en een tweede
@@ -69,31 +88,31 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   vuurtoren is op zijn echte maat herbouwd; de kraan staat nu ook zonder kade-wijk. Geen
   bestaande trede verschuift. Gebouwd en op het eiland gezet op 28 september
   2026; nog niet: over de Batavia lopen, haar laten varen. De gebouwen hebben elk een eigen plan:
-  - 🚧 [batavia.md](batavia.md) — het spiegelretourschip: 12 op de waterlijn, 15 over alles, de
+  - ✅ [batavia.md](DONE/batavia.md) — het spiegelretourschip: 12 op de waterlijn, 15 over alles, de
     grote mast 11,5 boven het water; drie kleuren uit één bake, deinend, met waaiende vlaggen en een
     zij waar zwemmers en boten tegenaan komen. Nog niet te belopen.
-  - 🚧 [scheepswerf.md](scheepswerf.md) — de werf op 5 bij 16 cellen, met de romp in vijf stadia
+  - ✅ [scheepswerf.md](DONE/scheepswerf.md) — de werf op 5 bij 16 cellen, met de romp in vijf stadia
     op de helling in de Hollandse volgorde (kiel, bodemhuid, spanten, romp; masten na de tewaterlating).
-  - 🚧 [havengebouwen.md](havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut
-    (113). Een visser bij de hut staat onder Later.
-  - 🚧 [ambachten.md](ambachten.md) — de brouwerij (106), het oefenveld (134) en de steengroeve
+  - ✅ [havengebouwen.md](DONE/havengebouwen.md) — het pakhuis (127), de waag (184) en de vissershut
+    (113). De visser bij de hut is er ook.
+  - ✅ [ambachten.md](DONE/ambachten.md) — de brouwerij (106), het oefenveld (134) en de steengroeve
     (142), met een tredmolenkraan die blokken op een karretje zet.
-  - 🚧 [kroniekhuis.md](kroniekhuis.md) — de laatste trede (200): een klik of E bij de deur speelt
+  - ✅ [kroniekhuis.md](DONE/kroniekhuis.md) — de laatste trede (200): een klik of E bij de deur speelt
     de kroniek af.
-- ✅ [knus-dorpscentrum.md](knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
+- ✅ [knus-dorpscentrum.md](DONE/knus-dorpscentrum.md) — het centrum als Hogsmeade: een ring van
   gebouwen om het plein en vier winkelstraten eruit, met de ambachten erbuiten; negen nieuwe
   winkels (kruidenier, apotheek, kledingwinkel, bibliotheek, theehuis, toverstokkenwinkel,
   snoepwinkel, uilenpost, ketelmaker), plus de bakkerij en de slagerij. `TOWN_VERSION` deelt een
   bestaand centrum één keer opnieuw in; geen huis beweegt. Gebouwd op 26 september 2026.
-- ✅ [dierenverhalen.md](dierenverhalen.md) — een kip, een geit en een mus (tot zes per eiland) met
+- ✅ [dierenverhalen.md](DONE/dierenverhalen.md) — een kip, een geit en een mus (tot zes per eiland) met
   een naam, karakter en een geheugen: de islander onthoudt (`data/animal-events.jsonl`,
   onvervangbaar), de zee laat ze lopen, een ontmoeting telt pas als de zee zegt dat hij gebeurd
   is. Relaties in vier woorden, sporen op het eiland (nest, uitkijkpost, vogelhuisje, de
   Feathered Corner) en één mysterie bij de vuurtoren. Gebouwd op 26 september 2026.
-- ✅ [kroegbaas-en-burgemeester.md](kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
+- ✅ [kroegbaas-en-burgemeester.md](DONE/kroegbaas-en-burgemeester.md) — de bewaarders van een gebouw:
   kroegbaas, burgemeester, goudklerk, schooldirecteur en pastoor, onder het id van hun gebouw en
   gelopen door de zee (`KEEPERS` in `shared/palette.mjs`). Gebouwd op 25 september 2026.
-- ✅ [andere-spelers-zoals-jij.md](andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
+- ✅ [andere-spelers-zoals-jij.md](DONE/andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
   als jij, in hun eigen uiterlijk en uitrusting (`{t:'look'}`), met liggen, hurken en zitten als
   pose-bits en slaan en drinken als gebeurtenissen. Gebouwd op 25 september 2026.
 - ✅ [lopen-op-de-boot.md](DONE/lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
@@ -112,99 +131,93 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande
   eiland verhuist bij de eerste start vanzelf, gekopieerd vanaf het eiland waar de
   session-hook naartoe wijst. Gebouwd op 24 september 2026.
-- ✅ [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
-  hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
-  desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande
-  eiland verhuist bij de eerste start vanzelf, gekopieerd vanaf het eiland waar de
-  session-hook naartoe wijst. Gebouwd op 24 september 2026.
-- ✅ [aangesproken-settler-draait-zich-om.md](aangesproken-settler-draait-zich-om.md) — een
+- ✅ [aangesproken-settler-draait-zich-om.md](DONE/aangesproken-settler-draait-zich-om.md) — een
   settler die je aanspreekt draait zich op elk scherm naar je toe: de zee stuurt wie er
   vastgehouden wordt en waar de spreker staat als eigen bericht (`fh`, alleen bij verandering),
   geen richting in elke rij; en `faceUp` noemt de settler bij zijn naam op de zee (`seaIdOf`).
   Gebouwd op 24 september 2026.
-- ✅ [vulkaan-in-het-midden.md](vulkaan-in-het-midden.md) — het Codex-eiland wordt één vijandige
+- ✅ [vulkaan-in-het-midden.md](DONE/vulkaan-in-het-midden.md) — het Codex-eiland wordt één vijandige
   vulkaan in het midden van de zee, van de zee zelf; meer islanders betekent meer bewakers, wie
   Codex-data heeft bouwt er huisjes op, lavastromen zoals de rivier. Daarbij: `hurt()` en health
   op de zee, stamina en Shift-turbo (rennen/zwemmen samen, boot apart) met rode en gele balken,
   en vrij zwemmen in open zee. Helemaal gebouwd op 23 september 2026: de vulkaan in het midden met een wachthuis, lava-imps als bewakers die meeschalen met de islanders, de Codex-huisjes van alle islanders op de helling, en health die echt telt met terugslaan en blokken.
-- ✅ [klok-en-hemel-van-de-zee.md](klok-en-hemel-van-de-zee.md) — de zee als enige klok: één
+- ✅ [klok-en-hemel-van-de-zee.md](DONE/klok-en-hemel-van-de-zee.md) — de zee als enige klok: één
   `shared/worldclock.mjs` voor uur, maand, weekdag en maanfase, `SEA_TZ` zodat de zee in Docker
   niet op UTC draait, de borrel weer echt (de zee zet `setGather`, dat sinds de crowd naar de
   zee ging nergens meer werd aangeroepen) en wolken als functie van wereldtijd. Fase 1 (de
   wereldklok en `SEA_TZ`) gebouwd op 23 september 2026.
-- ✅ [wegen-tekenen.md](wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
+- ✅ [wegen-tekenen.md](DONE/wegen-tekenen.md) — tool 6 in de planner: een weg met de hand tekenen, met
   een brug precies zo lang als het gat over de rivier; de oude Build-modus staat voortaan uit
   (Settings → Debug). Gebouwd op 23 september 2026.
-- ✅ [groot-kasteel.md](groot-kasteel.md) — het kasteel op twee bij twee super-cellen: een kavel van
+- ✅ [groot-kasteel.md](DONE/groot-kasteel.md) — het kasteel op twee bij twee super-cellen: een kavel van
   7 bij 7 en het model 7/3 zo groot. Een nieuw kasteel neemt het dichtstbijzijnde vrije, vlakke
   blok van de stad; een bestaand kasteel groeit op zijn plek met de voorkant waar hij was, of
   blijft zoals het was. Gebouwd en op het eiland toegepast op 25 september 2026.
-- ✅ [goudkuil.md](goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
+- ✅ [goudkuil.md](DONE/goudkuil.md) — een sleufsilo met honderd goudstaven naast het plein: het
   5-uurs usage limit, één staaf per procent, dat slinkt terwijl je werkt. Het getal komt uit
   de statusLine van Claude Code (de enige plek waar het staat) en verlaat de machine niet;
   settlers die aan het werk gaan halen eerst een staaf en dragen die naar huis, en die ronde
   overleeft het herbouwen van de crowd. Gebouwd op 24 september 2026.
-- ✅ [regisseur.md](regisseur.md) — laat je het eiland een poos met rust, dan gaat de camera zelf
+- ✅ [regisseur.md](DONE/regisseur.md) — laat je het eiland een poos met rust, dan gaat de camera zelf
   kijken waar wat gebeurt: een net aangekomen inwoner, de goudvracht, de houtkar, de werf, een
   werkende inwoner, een verhaaldier, en de nieuwe visser bij de vissershut. Elke aanraking stopt hem.
   Gebouwd op 28 september 2026.
-- ✅ [houtkar.md](houtkar.md) — de zagerij levert hout aan de werf met paard en wagen, op de klok
+- ✅ [houtkar.md](DONE/houtkar.md) — de zagerij levert hout aan de werf met paard en wagen, op de klok
   van de zee zodat elk scherm dezelfde rit ziet, en drie werknemers op de werf: een
   scheepstimmerman langs de romp, een teerkoker bij de ketel en een drager die planken sjouwt en
   de wagen lost. Gebouwd op 28 september 2026.
-- ✅ [goudmijn.md](goudmijn.md) — een goudmijn met het weeklimiet als erts (één klomp per procent)
+- ✅ [goudmijn.md](DONE/goudmijn.md) — een goudmijn met het weeklimiet als erts (één klomp per procent)
   en een goudsmid bij de kuil: als het vijfuursvenster omslaat duwt de mijnwerker een kar over
   de weg naar de goudsmid, die smelt en de staven met de kruiwagen naar de kuil brengt. Gebouwd
   op 28 september 2026, op main; het eiland draait het pas na een herstart.
-- ✅ [huis-naar-eigen-wijkje.md](huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
+- ✅ [huis-naar-eigen-wijkje.md](DONE/huis-naar-eigen-wijkje.md) — de planner-op `rehome`: één huis naar
   een wijkje met een eigen naam (Lovely Meteor → Crypto), bewaard in `layout.rehomed` naast het plot.
   Gebouwd en op het eiland toegepast op 23 september 2026.
-- ✅ [inwoners-aan-het-werk.md](inwoners-aan-het-werk.md) — ledige inwoners schoffelen op de akkers,
+- ✅ [inwoners-aan-het-werk.md](DONE/inwoners-aan-het-werk.md) — ledige inwoners schoffelen op de akkers,
   wieden in de moestuin, hakken en sprokkelen hout en vissen; waarom de pagina de werkplekken meldt
   (zoals de huisposities) en de zee alleen de visplekken zelf uitrekent. Gebouwd op 23 september 2026.
-- ✅ [wie-joint-ziet-de-host-als-mist.md](wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
+- ✅ [wie-joint-ziet-de-host-als-mist.md](DONE/wie-joint-ziet-de-host-als-mist.md) — waarom een joiner het
   eiland van de host alleen als silhouet ziet, en de keuze om de pagina de wereld te laten
   vertalen in plaats van haar eigen eiland te verplaatsen. Gebouwd en lokaal nagekeken op 21 september 2026.
-- ✅ [aanvallen-en-blokkeren.md](aanvallen-en-blokkeren.md) — linkermuisknop slaat, rechter blokkeert;
+- ✅ [aanvallen-en-blokkeren.md](DONE/aanvallen-en-blokkeren.md) — linkermuisknop slaat, rechter blokkeert;
   waarom dat zonder first person kan (pointer-lock), en hoe ver een pagina de Ctrl-sneltoetsen van de
   browser kan tegenhouden (Keyboard Lock, alleen in fullscreen). Gebouwd op 22 september 2026.
-- ✅ [inventory-scherm.md](inventory-scherm.md) — het avatar-paneel omgebouwd tot een RPG-inventory:
+- ✅ [inventory-scherm.md](DONE/inventory-scherm.md) — het avatar-paneel omgebouwd tot een RPG-inventory:
   renders van de echte meshes in de slots, een popover voor keuzes en kleuren, huid en leer als
   flesjes onder het podium. Gebouwd op 22 september 2026.
-- 🚧 [uitrusting-en-vasthouden.md](uitrusting-en-vasthouden.md) — settlers die iets vasthouden en
-  een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
-  (`settler-figures.js`). Nog niet gebouwd: eerste stap is de rugzak losmaken van de
-  speler-merge, dan hetzelfde patroon als de hoed-buckets voor de settlers.
-- ✅ [wijkjes-verplaatsen.md](wijkjes-verplaatsen.md) — een planner van bovenaf: hele wijkjes
+- ✅ [wijkjes-verplaatsen.md](DONE/wijkjes-verplaatsen.md) — een planner van bovenaf: hele wijkjes
   (lobes) selecteren en verplaatsen, grond zoneren als niet-bebouwen, en land bijwinnen met een
   handmatige polder. De scanner verhuist nooit iets uit zichzelf; de keeper wel, via één deur
   (`POST /api/plan`), en de scan erna is weer byte-identiek. Bijlage: de gemeten verkenning van
   22 september 2026. Fase 1 t/m 3 gebouwd op 22 september 2026: zones, wijkjes verplaatsen,
   polderen en ont-polderen, land bijverven, en geen reload meer na Apply.
-- ✅ [eiland-als-desktop-app.md](eiland-als-desktop-app.md) — het eiland als eigen venster (Tauri,
+- ✅ [wijkjes-samenvoegen.md](DONE/wijkjes-samenvoegen.md) — een project houdt één stuk land: de scan
+  sticht geen annex meer, een ingesloten wijkje groeit breder (`growLobe`) en wat al in stukken
+  stond haalt de planner met `merge` weer bij elkaar. Gebouwd op 28 september 2026; één
+  ontwerpkeuze is nog open (het eerste project bij het plein wordt ingesloten).
+- ✅ [eiland-als-desktop-app.md](DONE/eiland-als-desktop-app.md) — het eiland als eigen venster (Tauri,
   `npm run app`): waarom de viewer geladen wordt van `localhost:4747` en níet gebundeld met Vite
   (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de
   service starten als die er niet is en hem laten draaien als het venster dichtgaat. Gebouwd op
   22 september 2026.
-- ✅ [starter-eilanden.md](starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
+- ✅ [starter-eilanden.md](DONE/starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
   alleen een plein, een kroeg en een stadhuis (en dus een kroegbaas en een burgemeester), zodat
   een telefoonspeler altijd iets heeft om naartoe te varen. Een nieuw eiland neemt de ligplaats
   van de eerste vrije starter over. Plan van 26 september 2026; gebouwd. Erbij de onclaimbare
   decoratie-eilandjes (zandplaten met palmen, door elke pagina zelf uitgerekend): sinds 29
   september met ondiep water rond het zand, een boot die erop vastloopt en grond om op te staan,
   allemaal via één zeebodem-haak in het archipel.
-- ✅ [bier-en-dronken.md](bier-en-dronken.md) — Bier in de hand, drinken met de muis, en wat het met je doet
-- ✅ [dansen.md](dansen.md) — Zelf dansen
-- 🚧 [eiland-laten-groeien.md](eiland-laten-groeien.md) — Het eiland laten groeien
-- 🚧 [eiland-op-android.md](eiland-op-android.md) — Het eiland op Android
-- ✅ [fiets.md](fiets.md) — Een fiets om op te rijden
-- ✅ [gebouwen-verplaatsen.md](gebouwen-verplaatsen.md) — Gebouwen rond het plein verplaatsen en draaien
-- ✅ [ik-wil-graag-mutliplayer-splendid-nest.md](ik-wil-graag-mutliplayer-splendid-nest.md) — Een open zee, een tick, en eilanden die joinen
-- ✅ [islander-als-eigen-exe.md](islander-als-eigen-exe.md) — De islander als eigen exe, het venster als interface
-- ✅ [rave-in-het-kasteel.md](rave-in-het-kasteel.md) — Een rave in het kasteel
-- ✅ [ronde-wereld.md](ronde-wereld.md) — Een ronde wereld: een kaart met maat, een rand die je rondvaart
-- ✅ [slagerij.md](slagerij.md) — De slagerij
-- ✅ [smidse.md](smidse.md) — De smidse
-- ✅ [stal-en-veld.md](stal-en-veld.md) — Stal, dieren en de spullen van het veld
-- ✅ [vier-havens.md](vier-havens.md) — Vier havens, wegen naar het plein, meer boten per haven
-- ✅ [zagerij.md](zagerij.md) — De zagerij
+- ✅ [bier-en-dronken.md](DONE/bier-en-dronken.md) — Bier in de hand, drinken met de muis, en wat het met je doet
+- ✅ [dansen.md](DONE/dansen.md) — Zelf dansen
+- ✅ [eiland-laten-groeien.md](DONE/eiland-laten-groeien.md) — Het eiland laten groeien
+- ✅ [fiets.md](DONE/fiets.md) — Een fiets om op te rijden
+- ✅ [gebouwen-verplaatsen.md](DONE/gebouwen-verplaatsen.md) — Gebouwen rond het plein verplaatsen en draaien
+- ✅ [ik-wil-graag-mutliplayer-splendid-nest.md](DONE/ik-wil-graag-mutliplayer-splendid-nest.md) — Een open zee, een tick, en eilanden die joinen
+- ✅ [islander-als-eigen-exe.md](DONE/islander-als-eigen-exe.md) — De islander als eigen exe, het venster als interface
+- ✅ [rave-in-het-kasteel.md](DONE/rave-in-het-kasteel.md) — Een rave in het kasteel
+- ✅ [ronde-wereld.md](DONE/ronde-wereld.md) — Een ronde wereld: een kaart met maat, een rand die je rondvaart
+- ✅ [slagerij.md](DONE/slagerij.md) — De slagerij
+- ✅ [smidse.md](DONE/smidse.md) — De smidse
+- ✅ [stal-en-veld.md](DONE/stal-en-veld.md) — Stal, dieren en de spullen van het veld
+- ✅ [vier-havens.md](DONE/vier-havens.md) — Vier havens, wegen naar het plein, meer boten per haven
+- ✅ [zagerij.md](DONE/zagerij.md) — De zagerij

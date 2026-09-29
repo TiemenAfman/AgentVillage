@@ -1,4 +1,4 @@
-// The town's plan (Plans/knus-dorpscentrum.md): a ring of buildings round the square, four
+// The town's plan (Plans/DONE/knus-dorpscentrum.md): a ring of buildings round the square, four
 // shopping streets leaving it, the workshops and a new castle out beyond them, and the gold
 // pit behind the library.
 //

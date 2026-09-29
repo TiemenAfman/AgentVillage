@@ -1,4 +1,4 @@
-// The Batavia (Plans/batavia.md, scripts/build-batavia.py): the ship the village earns, lying
+// The Batavia (Plans/DONE/batavia.md, scripts/build-batavia.py): the ship the village earns, lying
 // at anchor on the roads.
 //
 // What is held here:
@@ -267,8 +267,9 @@ test('her side is a wall to a swimmer and a bank to a boat', () => {
   assert.equal(galleon.aground, true);
   assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
 
-  // And walk.js hands every one of its hulls - at the helm, walking a deck and climbing her ladder
-  // - this ground, not the bare terrain: a source check, since walk.js cannot load under Node.
-  assert.equal((WALK_SOURCE.match(/stepBoat\([^;]*boatGround\)/g) || []).length, 3);
+  // And walk.js hands every one of its hulls - at the helm, walking a deck, climbing her ladder
+  // and running her out after you have jumped - this ground, not the bare terrain: a source
+  // check, since walk.js cannot load under Node.
+  assert.equal((WALK_SOURCE.match(/stepBoat\([^;]*boatGround\)/g) || []).length, 4);
   assert.match(WALK_SOURCE, /hullOver\(hulls, x, z, groundAt\(x, z, Infinity\)\)/);
 });

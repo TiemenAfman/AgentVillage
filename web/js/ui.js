@@ -86,7 +86,7 @@ export function createUI(handlers) {
   // --- filters, legend, overview ------------------------------------------
   // Each toggle is there twice: in the menu (always) and in the Show row under the chips, which
   // only stands there while something is switched off - an island with its houses hidden has
-  // to say so without anybody opening a menu (Plans/esc-menu-en-knoppenbalk.md).
+  // to say so without anybody opening a menu (Plans/DONE/esc-menu-en-knoppenbalk.md).
   function syncFilters() {
     document.querySelectorAll('[data-filter]').forEach((b) => {
       const on = state.filters[b.dataset.filter];
@@ -505,14 +505,14 @@ export function createUI(handlers) {
   let youMode = 'you';
   try { const v = localStorage.getItem(YOU_KEY); youMode = v === '0' ? 'off' : v === 'arrow' ? 'arrow' : 'you'; } catch { /* private window: you */ }
 
-  // The director (web/js/director.js, Plans/regisseur.md): the camera wandering off by itself
+  // The director (web/js/director.js, Plans/DONE/regisseur.md): the camera wandering off by itself
   // to watch something happen when nobody has touched the island for a while. On unless
   // switched off, per browser like the arrow.
   const DIRECTOR_KEY = 'promptholm.director';
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
 
-  // The quality governor (web/js/quality.js, Plans/sneller-tekenen.md): drawing less while
+  // The quality governor (web/js/quality.js, Plans/DONE/sneller-tekenen.md): drawing less while
   // this machine cannot keep up. On unless switched off, per browser - it is about this
   // screen's graphics, not the island.
   const QUALITY_KEY = 'promptholm.quality.auto';
@@ -521,7 +521,7 @@ export function createUI(handlers) {
 
   // The words on the chips at the top right: off unless switched on, per browser. The icons
   // carry the bar - every chip keeps its name and key in its tooltip and aria-label - and the
-  // words took half the width of a laptop screen (Plans/esc-menu-en-knoppenbalk.md). A class
+  // words took half the width of a laptop screen (Plans/DONE/esc-menu-en-knoppenbalk.md). A class
   // on body; harbour.css shows them only where the window is wide enough even when on.
   const NAMES_KEY = 'promptholm.chipnames';
   let namesOn = false;
@@ -621,7 +621,7 @@ export function createUI(handlers) {
 
   function setSeas(data) { seas = data; renderSettings(); }
 
-  // How big the island may grow (Plans/eiland-laten-groeien.md): `maxGridSize`, asked of the
+  // How big the island may grow (Plans/DONE/eiland-laten-groeien.md): `maxGridSize`, asked of the
   // islander when Settings opens. The island grows by itself when its village needs room and
   // never shrinks, so a size below the one it already has is offered but cannot be chosen.
   let islandSize = null;
@@ -1065,7 +1065,7 @@ export function createUI(handlers) {
   // to send off the island from a bar stool - so the row says what there is instead.
   let indoors = false;
   // What each mouse button does now - one button per hand (walk.js): 'attack', 'block' for a
-  // shield, 'drink' for a beer, 'relay' for a beer in each hand (Plans/bier-en-dronken.md).
+  // shield, 'drink' for a beer, 'relay' for a beer in each hand (Plans/DONE/bier-en-dronken.md).
   // main.js asks the walk every frame, so only a change - something else picked up in the
   // inventory, a room entered - redraws the row.
   let lmbDoes = 'attack', rmbDoes = 'attack';

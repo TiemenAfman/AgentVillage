@@ -1,6 +1,6 @@
 // The animals, the stable and the countryside (scripts/build-fauna.py, build-stable.py,
 // build-farmyard.py, build-bakery.py; web/js/fauna.js, stable.js, countryside.js;
-// Plans/stal-en-veld.md).
+// Plans/DONE/stal-en-veld.md).
 //
 // The promises: every animal is baked in the parts that move, each on its joint; an animal
 // keeps to its patch - a horse to its sand, a duck to its pond - and stands on its ground; the

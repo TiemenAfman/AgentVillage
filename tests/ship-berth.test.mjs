@@ -1,7 +1,7 @@
 // Where the galleon lies, now that two machines have to agree about it.
 //
 // `shipBerth` moved out of web/js/main.js into shared/quay.mjs because lib/layout.mjs keeps
-// the rede - the VOC ships' anchorage, Plans/mijlpalen-tot-tweehonderd.md - clear of her and
+// the rede - the VOC ships' anchorage, Plans/DONE/mijlpalen-tot-tweehonderd.md - clear of her and
 // of the room she turns in. The move promised the page no change at all, and that is what is
 // held here: the function as it stood in main.js is copied below, word for word but for its
 // `state.sea.height` becoming an argument, and the two are asked about every mooring several

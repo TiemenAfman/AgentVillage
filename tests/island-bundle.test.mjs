@@ -404,7 +404,7 @@ test('a harbour deck survives publication and carries the sea crowd without brow
   assert.equal(resident.y, .44, 'the sea keeps the resident on the deck');
 });
 
-// The harbours (Plans/vier-havens.md): what every other island draws the docks from and
+// The harbours (Plans/DONE/vier-havens.md): what every other island draws the docks from and
 // moors the boats at, so they travel - and the boat count is capped by the host, because a
 // stranger's bundle asking for a hundred boats is a hundred hulls in everybody's water.
 test('the harbours travel, boat counts included, and survive the round trip', () => {

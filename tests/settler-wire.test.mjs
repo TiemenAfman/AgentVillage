@@ -257,7 +257,7 @@ test('what an outing costs, as a number rather than a feeling', () => {
 // ---- being spoken to ------------------------------------------------------------------
 //
 // A held settler is 'still', so no row says it has turned; this list is the only thing that
-// does. Plans/aangesproken-settler-draait-zich-om.md has the reasoning for a separate list.
+// does. Plans/DONE/aangesproken-settler-draait-zich-om.md has the reasoning for a separate list.
 
 test('who is held travels with where the talker stands, and nobody else does', () => {
   const c = crowd(12);

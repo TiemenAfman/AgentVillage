@@ -1,5 +1,5 @@
 // The countryside's small motions (scripts/build-farmyard.py, scripts/build-bakery.py,
-// Plans/stal-en-veld.md): a scarecrow and a clump of reeds leaning with the wind, a water lily
+// Plans/DONE/stal-en-veld.md): a scarecrow and a clump of reeds leaning with the wind, a water lily
 // riding the ripples, bees about their skeps, and the bakery's oven breathing.
 //
 // The props have no moving parts: each is drawn whole and moved whole, about its own foot, so

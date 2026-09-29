@@ -7,7 +7,7 @@ owl with its wings spread over the door. Against the tower, lower and plastered 
 half-timbered, a wing with the shop window on its right and a narrower parcel room on its left,
 a heap of parcels tied with string in front of each, and a round sign with an envelope on it
 hung out on a bracket from the tower's corner. Not yet placed on the island
-(Plans/knus-dorpscentrum.md); it is one of the shops of the new streets.
+(Plans/DONE/knus-dorpscentrum.md); it is one of the shops of the new streets.
 
 One civic asset, `civic_owlpost` (budget 1500), all of it merged - nothing on it moves.
 `anchor.smoke` is on the shop's chimney, `anchor.door` at the foot of the door. Written in

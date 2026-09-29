@@ -439,7 +439,7 @@ function buildTavern() {
   };
 }
 
-// The castle's great hall on a Saturday night (Plans/rave-in-het-kasteel.md). It gets the
+// The castle's great hall on a Saturday night (Plans/DONE/rave-in-het-kasteel.md). It gets the
 // floor and the blocker shape handed in rather than importing them, so the two files do not
 // import each other.
 const ROOMS = { tavern: buildTavern, rave: () => buildRave({ FLOOR, rect }) };
@@ -628,7 +628,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // back at a point 0.9 off the ground, and all three of those are taller than this room.
   // `tipsy` is the island's own pool (main.js), so what is drunk at the bar goes out of the
   // door with you.
-  // A dancer in here (R, Plans/dansen.md) keeps the room's own time when it has one - the
+  // A dancer in here (R, Plans/DONE/dansen.md) keeps the room's own time when it has one - the
   // rave's lights and floor run on it, music or not - and otherwise whatever we were handed.
   const hallBeat = () => (show && show.beat ? show.beat() : null);
   const danceHere = () => {

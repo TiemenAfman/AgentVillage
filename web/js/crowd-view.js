@@ -20,7 +20,7 @@
 // a step forward and a shuffle back five times a second, with the head snapping round each
 // time. tests/crowd-view.test.mjs walks a straight line through it now.
 //
-// Plans/ik-wil-graag-mutliplayer-splendid-nest.md asked for web/js/peers.js's rule here -
+// Plans/DONE/ik-wil-graag-mutliplayer-splendid-nest.md asked for web/js/peers.js's rule here -
 // draw LAG_MS behind and interpolate between the last two words - and this is that rule
 // with one change: the near end is where the body is drawn, not the word before. A player's
 // words come ten a second at one rate; a settler's come at two, five a second while walking
@@ -52,9 +52,9 @@ import { GOLDPIT_ID } from 'shared/gold.mjs';
 import { FADE_START } from './fade.js';
 
 // What a body does standing still that is not merely standing: the hammer and the chores
-// (Plans/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
+// (Plans/DONE/inwoners-aan-het-werk.md). Taken at the sea's word whenever the body is not
 // moving on this screen, exactly as the hammer always was.
-// 'load' is bent over a wheelbarrow at the gold pit (Plans/goudkuil.md).
+// 'load' is bent over a wheelbarrow at the gold pit (Plans/DONE/goudkuil.md).
 const AT_WORK = new Set(['hammer', 'hoe', 'weed', 'chop', 'gather', 'fish', 'load']);
 // Walks with something in hand, each kept to its own last stride rather than turned back
 // into a plain walk: a bundle of sticks, and a wheelbarrow to or from the gold pit.
@@ -133,7 +133,7 @@ export function createCrowdView({
   // The last roster, so a change of buildings can dress again whoever it touched without
   // waiting for the sea to say who the numbers mean once more - see setBuildings.
   let lastIds = [];
-  // On an island with a gold pit every house keeps a wheelbarrow (Plans/goudkuil.md): it goes
+  // On an island with a gold pit every house keeps a wheelbarrow (Plans/DONE/goudkuil.md): it goes
   // along on a trip for gold and stands beside its settler while they hammer. Worked out here
   // from the buildings rather than sent - the page already knows who is hammering and whether
   // there is a pit, so every screen draws the same barrows, after a reload too.
@@ -217,7 +217,7 @@ export function createCrowdView({
   // runs on every mouse move.
   const byIdx = new Map();
 
-  // The beer the player has handed round (Plans/bier-en-dronken.md), by building id rather
+  // The beer the player has handed round (Plans/DONE/bier-en-dronken.md), by building id rather
   // than on the figure: a roster or a change of buildings enrols a fresh body for the same
   // person, and a settler four beers down should not be sobered by a re-dress. This page's
   // alone - the sea walks them and knows nothing of it - so what it changes is only how they

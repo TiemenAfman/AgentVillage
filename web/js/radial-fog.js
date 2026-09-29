@@ -6,7 +6,7 @@
 // Measured on a 16:9 frame at 45 degrees, the corner is only ~0.76 as deep as it is far.
 //
 // That used to be a curiosity. It stopped being one when Object Distance started taking
-// houses out of the picture (Plans/graphics-afstanden.md): the rule is that a house is only
+// houses out of the picture (Plans/DONE/graphics-afstanden.md): the rule is that a house is only
 // ever cut where the fog has already closed over it, so it comes *out of the mist* on the way
 // in rather than appearing, and on a depth fog "already closed" was true in the middle of the
 // screen and false at its corners. On a distance fog it is true everywhere, and the cut and

@@ -1,4 +1,4 @@
-// The quarry at work (Plans/ambachten.md): the treadwheel crane lifts a cut block off the lowest
+// The quarry at work (Plans/DONE/ambachten.md): the treadwheel crane lifts a cut block off the lowest
 // bench, slews round and lets it down onto the tub, the tub runs it down the rail to the stack by
 // the lane and comes back empty, and the jib swings back for the next. The treadwheel turns
 // forward to lift and back to lower, by exactly as much rope as it winds.

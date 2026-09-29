@@ -1,4 +1,4 @@
-// web/js/you-marker.js - "You are here", seen from the sky (Plans/karakter-blijft-staan.md): the body left standing is
+// web/js/you-marker.js - "You are here", seen from the sky (Plans/DONE/karakter-blijft-staan.md): the body left standing is
 // a figure half a metre tall, which from the height the camera orbits at is a speck among
 // three hundred houses. So an arrow hangs over it at a fixed size on screen (a sprite with
 // sizeAttenuation off: the same pixels zoomed in or out), and where it is walking to gets a

@@ -1,7 +1,7 @@
 // The animals at their own business (scripts/build-fauna.py). Nobody's agent and nobody's
 // errand: a horse grazes its paddock, sheep drift over a field, a hen scratches about, a duck
 // paddles, a gull circles the harbour. Passive life, the kind a village has whatever its
-// settlers are doing - and, since Plans/dierenverhalen.md, the joints of the island's story
+// settlers are doing - and, since Plans/DONE/dierenverhalen.md, the joints of the island's story
 // animals too, which are somebody and are walked by the sea.
 //
 // Every animal is baked in parts with their origins on their joints, so each part hangs on
@@ -420,7 +420,7 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
 }
 
 // ---- dancing --------------------------------------------------------------------------------
-// The stable's horse and hens on a Saturday night (web/js/rave.js, Plans/rave-in-het-kasteel.md):
+// The stable's horse and hens on a Saturday night (web/js/rave.js, Plans/DONE/rave-in-het-kasteel.md):
 // a pose on somebody else's beat. `beat` is where the music is, counted in beats - rave.js hands
 // it the same count its settlers dance to, so a hoof comes down on the kick you hear - and `up`
 // is whether the animal goes up now (1) or not (0): the drop and the build's last bar, when every

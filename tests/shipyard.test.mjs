@@ -1,5 +1,5 @@
 // The shipyard and the ship on its stocks (scripts/build-shipyard.py, web/js/shipyard.js,
-// Plans/scheepswerf.md).
+// Plans/DONE/scheepswerf.md).
 //
 // What is held here:
 //   the order   the Dutch one of her century (schaalbouw): the keel and stems, then the bottom

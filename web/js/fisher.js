@@ -1,4 +1,4 @@
-// The fisherman at the fisherman's hut (Plans/regisseur.md): the hut stood with nobody in it,
+// The fisherman at the fisherman's hut (Plans/DONE/regisseur.md): the hut stood with nobody in it,
 // and a place with nobody in it is nothing for the camera to go and look at. A villager - the
 // player's rig in fisherman's clothes, the smith's pattern (smithy.js), nobody's agent and not on
 // the wire - who comes out of the door in the morning, walks down to the water in front of the

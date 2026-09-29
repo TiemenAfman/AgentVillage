@@ -148,7 +148,7 @@ async function runScan(o) {
   const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   let size = layout.size;
   // `layout.ladder` is the other: the most settlers the village has ever had at once, which
-  // the model counts its milestones in (Plans/tenten-vertrekken.md). Read on every survey
+  // the model counts its milestones in (Plans/DONE/tenten-vertrekken.md). Read on every survey
   // rather than captured once, so a plan's re-survey sees the one written back below.
   const survey = (rehomed) => buildVillage({
     sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed,
@@ -334,7 +334,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     });
   }
 
-  // The gold pit (Plans/goudkuil.md). The spec says where it stands and nothing more: how
+  // The gold pit (Plans/DONE/goudkuil.md). The spec says where it stands and nothing more: how
   // much gold is in it is the keeper's usage window, which is read live by their own page
   // (/api/gold) and is never written in here - village.json is a file a visitor may be
   // shown, and the bundle made from it goes to the sea.
@@ -351,7 +351,7 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     });
   }
 
-  // The goldsmith and the gold mine (Plans/goudmijn.md), on the pit's terms: where they
+  // The goldsmith and the gold mine (Plans/DONE/goudmijn.md), on the pit's terms: where they
   // stand and nothing more. How much ore is in the mine is the keeper's week, read live by
   // their own page with the pit's count, and the cart that runs between the three when the
   // five-hour window turns over is the page's alone.

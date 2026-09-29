@@ -1,4 +1,4 @@
-// The gold in the gold pit, and the bar a settler carries home from it (Plans/goudkuil.md).
+// The gold in the gold pit, and the bar a settler carries home from it (Plans/DONE/goudkuil.md).
 //
 // The pit itself - a concrete trench silo, open towards the town - is an ordinary civic
 // building in buildings.js, one merged geometry like every other. The gold cannot be part of

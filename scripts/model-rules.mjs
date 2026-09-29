@@ -58,7 +58,7 @@ export const BUDGETS = [
   // a moment at the edge of a wood, and there are thousands of it. Forty is what a rock
   // gets for the same reason.
   ['flora_bush', 40],
-  // A palm is not forest: it stands on the unclaimable islets (Plans/starter-eilanden.md),
+  // A palm is not forest: it stands on the unclaimable islets (Plans/DONE/starter-eilanden.md),
   // one to a sandbank and a handful to a round one, never twenty thousand to a canopy. A
   // crown of fronds is also a shape sixty triangles cannot draw - five fronds at a dozen
   // each is the whole budget with no trunk. At 250 the fronds lost their serrated edges and

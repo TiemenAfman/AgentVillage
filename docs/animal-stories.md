@@ -1,7 +1,7 @@
 # Animal stories and island mysteries
 
 Status: built, on 2026-09-26 (branches `codex/dierenverhalen`, then `claude/dierenverhalen`).
-This page stays as the design; [Plans/dierenverhalen.md](../Plans/dierenverhalen.md) has the
+This page stays as the design; [Plans/DONE/dierenverhalen.md](../Plans/DONE/dierenverhalen.md) has the
 decisions taken while building it, [animals-wire.md](animals-wire.md) the wire and
 [animal-story-storage.md](animal-story-storage.md) the disk.
 

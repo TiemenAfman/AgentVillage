@@ -44,4 +44,4 @@ vasthoudt - niet één rechtopstaand figuurtje zonder armen in de kleur van een 
 ## Nog niet
 
 - De ligmat onder iemand die ligt (walk.js' `lounge`) tekenen we niet voor anderen.
-- Het biertje dat je aan een settler geeft blijft van jouw pagina (Plans/bier-en-dronken.md).
+- Het biertje dat je aan een settler geeft blijft van jouw pagina (Plans/DONE/bier-en-dronken.md).

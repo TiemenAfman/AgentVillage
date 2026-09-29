@@ -1020,7 +1020,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .mainmenu.gone { opacity: 0; pointer-events: none; }
 
 /* The menu behind Esc and the ☰, which is the settings too (web/js/sysmenu.js,
-   Plans/esc-menu-en-knoppenbalk.md). A window rather than the side panel it replaced: the
+   Plans/DONE/esc-menu-en-knoppenbalk.md). A window rather than the side panel it replaced: the
    settings were a 316px column, scrolled past the house signs to reach the keys. Tabs on the
    left, the open tab's sections on the right, `data-tab` on the root saying which. Over every
    side panel, under the main menu. */
@@ -1366,7 +1366,7 @@ body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx
   body.standalone .minimap { width: 120px; height: 120px; }
 }
 
-/* The director's caption (web/js/director.js, Plans/regisseur.md): what the camera went to look
+/* The director's caption (web/js/director.js, Plans/DONE/regisseur.md): what the camera went to look
    at while nobody was touching the island. Low in the middle, above the timeline, and never in
    the way of a click. */
 #director-caption {

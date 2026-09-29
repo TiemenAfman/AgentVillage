@@ -1,4 +1,4 @@
-// The timber run and the yard's crew (Plans/houtkar.md): the sawmill's draught horse takes a
+// The timber run and the yard's crew (Plans/DONE/houtkar.md): the sawmill's draught horse takes a
 // wagon of squared timber down the road to the shipyard every TIMBER_EVERY seconds and comes
 // back empty, and three hands work the yard - a shipwright hammering along the hull, a tar
 // boiler at his kettle, and a carrier bringing planks from the stack, who goes out to the gate
@@ -547,7 +547,7 @@ export function createTimberRun({ scene, material, groundAt }) {
       const trip = drawTrip(now, step, night);
       drawCrew(now, step, night, trip);
     },
-    // One of the yard's hands in world [x, z], for the director (Plans/regisseur.md); null when
+    // One of the yard's hands in world [x, z], for the director (Plans/DONE/regisseur.md); null when
     // there is no yard or they are in the shed. Which one turns with the minute, so the camera
     // does not always look at the same man.
     handAt(now) {

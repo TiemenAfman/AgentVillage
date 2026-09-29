@@ -1,4 +1,4 @@
-// The islets as ground (Plans/starter-eilanden.md, "erbij", the second step): the archipelago
+// The islets as ground (Plans/DONE/starter-eilanden.md, "erbij", the second step): the archipelago
 // answers for them between the islands, so feet, hulls and the water's depth all read the
 // dome the page draws - and the camera keeps out from under the sea it is looking at.
 //

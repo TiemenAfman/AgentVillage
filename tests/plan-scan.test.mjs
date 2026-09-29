@@ -112,7 +112,7 @@ test('a hamlet moved on the real island: rigid, roaded, and the next scan is a n
   if (!SETTLED) { t.diagnostic('an island too small to have hamlets to move'); return; }
   const layout = readJson(files.layout);
   // The smallest hamlet with a road, since the belt refuses most destinations of a large
-  // one on a settled island - see Plans/wijkjes-verplaatsen.md, "Wat echt moeilijk is" #2.
+  // one on a settled island - see Plans/DONE/wijkjes-verplaatsen.md, "Wat echt moeilijk is" #2.
   const cands = Object.entries(layout.districts)
     .filter(([, d]) => d.lobes && d.lobes.length === 1 && d.lobes[0].road && d.lobes[0].cells.length >= 1)
     .sort((a, b) => a[1].lobes[0].cells.length - b[1].lobes[0].cells.length);

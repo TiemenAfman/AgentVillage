@@ -1,6 +1,6 @@
 """The butcher's. Rebuild with scripts/blender.mjs --background --python scripts/build-butcher.py.
 
-The smithy's sister (scripts/build-smithy.py, Plans/slagerij.md): the same small half-timbered
+The smithy's sister (scripts/build-smithy.py, Plans/DONE/slagerij.md): the same small half-timbered
 house - cream plaster between brown timbers, stone feet at the corners, a dark slate roof with a
 dormer and a stone chimney - but a shop: a wide window over a marble counter laid with meat,
 a red-and-white awning over it, an ox-blood door, and a hanging sign with a pig on it at the

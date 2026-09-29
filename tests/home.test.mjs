@@ -1,4 +1,4 @@
-// Where the island lives, and how it gets there (Plans/een-thuis-voor-het-eiland.md).
+// Where the island lives, and how it gets there (Plans/DONE/een-thuis-voor-het-eiland.md).
 //
 // HOME is decided while lib/paths.mjs is being imported, and deciding it can copy a whole
 // island, so it cannot be tested by importing the module here: that would be the island of

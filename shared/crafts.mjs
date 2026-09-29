@@ -137,8 +137,18 @@ export const CRAFTS = Object.freeze({
     ladders: Object.freeze([1, -1].map((s) => Object.freeze({
       x: s * 2.42, z: 1.85, hw: 0.24, top: 1.27, foot: -0.65, land: Object.freeze([s * 1.35, 1.85]),
     }))),
+    // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
+    // falls back to the Benchy's when it is missing): she takes 6 s to reach her top speed, and
+    // let go of the helm - or of W - she runs out for most of a minute instead of four seconds
+    // (drag 0.1: 13 u/s is under 1 after 26 s and at `creep` after 45, some 130 units on). The rudder
+    // is felt a second late and a swing carries on after it is centred (`yawLag`), a hard turn
+    // costs her little way (`bite`) and S is a brake you feel for seconds (`astern`), not a kick.
+    // `runOut` is how long the sea keeps taking her position from whoever let go of the wheel
+    // (lib/boats.mjs letGo): longer than the run-out from full turbo, or she would freeze for
+    // everybody else halfway through it (tests/boat-inertia.test.mjs holds the two together).
     sail: Object.freeze({
-      top: 13, accel: 3.2, turn: 0.7, turnMin: 0.12,
+      top: 13, accel: 2.2, turn: 0.7, turnMin: 0.12,
+      drag: 0.1, creep: 0.15, bite: 0.1, astern: 1.2, yawLag: 1.0, runOut: 60,
       probes: Object.freeze([[0, 6.3], [1.9, 4.2], [-1.9, 4.2], [2.2, 1.5], [-2.2, 1.5]].map(Object.freeze)),
     }),
   }),

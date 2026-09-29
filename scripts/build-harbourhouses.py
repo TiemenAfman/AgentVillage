@@ -2,7 +2,7 @@
 scripts/blender.mjs --background --python scripts/build-harbourhouses.py.
 
 Three civic assets for the second centre the village grows once the castle stands and it turns to
-the sea (Plans/mijlpalen-tot-tweehonderd.md, Plans/havengebouwen.md), each one building on a
+the sea (Plans/DONE/mijlpalen-tot-tweehonderd.md, Plans/DONE/havengebouwen.md), each one building on a
 three by three lot whose front, +z, faces the water:
 
     civic_warehouse    het pakhuis (127): a tall, narrow canal warehouse in brick

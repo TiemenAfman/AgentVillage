@@ -4,7 +4,7 @@
 
 ## Het probleem
 
-NPC Distance (Plans/graphics-afstanden.md) haalt een inwoner voorbij het bereik uit de loop in
+NPC Distance (Plans/DONE/graphics-afstanden.md) haalt een inwoner voorbij het bereik uit de loop in
 `crowd-view.js`: niet glijden, geen gang, geen grond onder de voeten. Dat is de CPU-helft en die
 werkt. De GPU-helft werkt niet: `hide(f)` in `web/js/settler-figures.js` zet de instance op
 y = -999 met schaal 0.0001, maar `m.count` blijft het hoogste slotnummer. De vertex shader draait
@@ -79,7 +79,7 @@ gasteiland voorbij NPC Distance kost dan ook geen program-setup meer per mesh pe
   flinch van slot wisselt houdt hem en krijgt zijn eigen kleur terug.
 - **Raycast/hover** (`pickables`, `figureAt`): `InstancedMesh.raycast` loopt tot `count`, dus
   een verborgen figuur is niet meer te raken. `figureAt` controleert daarnaast `i < count`.
-  De bounding sphere voor de raycast is sinds `bounds` (Plans/sneller-tekenen.md) die van het
+  De bounding sphere voor de raycast is sinds `bounds` (Plans/DONE/sneller-tekenen.md) die van het
   eiland; zonder `bounds` (tests, de rave) rekent three hem één keer uit en bewaart hem, dus daar
   zetten we hem na elke `draw()` op null.
 - **Imps**: een bewaker onder een imp krijgt elk frame `f.visible = false` + `hide()` vóór
@@ -158,7 +158,7 @@ dichtstbijzijnde getekende inwoner komt via `figureAt` terug als diezelfde inwon
   per menigte — ook voor een gasteiland waar niemand getekend wordt). Met `count = live` kan dat
   `addUpdateRange(0, live * 16)` worden. Dat is bandbreedte CPU→GPU, niet vertexwerk, en hoort
   bij een meting van de frametijd, niet van driehoeken.
-- Een lage settler voor ver weg (Plans/sneller-tekenen.md) blijft de volgende stap voor wie
+- Een lage settler voor ver weg (Plans/DONE/sneller-tekenen.md) blijft de volgende stap voor wie
   wél getekend wordt.
 
 ## Versie

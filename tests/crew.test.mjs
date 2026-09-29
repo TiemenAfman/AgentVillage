@@ -1,5 +1,5 @@
 // A crew on a boat, on the sea's side (lib/boats.mjs, lib/players.mjs - the groundwork for
-// fase 4 to 6 of Plans/lopen-op-de-boot.md). No page sends any of this yet, and every boat is
+// fase 4 to 6 of Plans/DONE/lopen-op-de-boot.md). No page sends any of this yet, and every boat is
 // a Benchy with room for her pilot alone, so the first test holds that nothing a Benchy does
 // has changed. The rest put a crew on a boat with room for five, handed in as `craftOf`
 // because no island has one.

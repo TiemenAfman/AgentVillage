@@ -1,7 +1,7 @@
 // How long you can keep Shift down, and how long it takes to get it back.
 //
 // Shift is one key with three meanings - a run on foot, a faster stroke in the water, the
-// boat's turbo - but only two pools behind them (Plans/vulkaan-in-het-midden.md): the body,
+// boat's turbo - but only two pools behind them (Plans/DONE/vulkaan-in-het-midden.md): the body,
 // which running and swimming share because both are your own legs and lungs, and the boat.
 // Both fill up in the background whichever one you are spending, so stepping off a hull you
 // have just raced across the channel leaves you a full sprint, and the other way round.

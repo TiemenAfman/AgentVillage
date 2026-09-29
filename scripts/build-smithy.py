@@ -4,7 +4,7 @@ After the reference: a small half-timbered house - cream plaster between brown t
 feet at the corners, a dark slate roof with a dormer and a stone chimney, a plank door with iron
 straps and a shuttered window - and against its right gable an open lean-to on posts, where the
 work is: the forge hearth with its bellows, an anvil on a stump, a quench bucket, a crate of
-tools, and a lantern hanging from the front beam. Not yet placed on the island (Plans/smidse.md)
+tools, and a lantern hanging from the front beam. Not yet placed on the island (Plans/DONE/smidse.md)
 - it stands on /demo, like the sawmill.
 
 Two civic assets, each under the civic budget of 1500:

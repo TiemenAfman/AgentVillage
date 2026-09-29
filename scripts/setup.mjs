@@ -22,7 +22,7 @@ const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.c
 const SETTINGS = path.join(CLAUDE_HOME, 'settings.json');
 const HOOK = path.join(ROOT, 'hooks', 'on-session.mjs');
 // The gold pit's reading: Claude Code gives the five-hour usage window to a status line and
-// to nothing else (Plans/goudkuil.md).
+// to nothing else (Plans/DONE/goudkuil.md).
 const STATUS_LINE = path.join(ROOT, 'hooks', 'statusline.mjs');
 
 const argv = process.argv.slice(2);

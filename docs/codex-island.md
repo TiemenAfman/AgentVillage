@@ -4,7 +4,7 @@ Codex sessions on this machine are settlers too, but they do not get an island o
 own. Every islander with Codex data sends the sea a short list of its Codex settlers, and
 the sea houses the settlers of everybody in the world together on its own island: the
 volcano in the middle (`shared/volcano.mjs`). The houses of all islanders stand mixed
-together on its flank. Until step 6 of `Plans/vulkaan-in-het-midden.md` each islander
+together on its flank. Until step 6 of `Plans/DONE/vulkaan-in-het-midden.md` each islander
 published a separate, hostile Codex island next to its own; that island is gone.
 
 `codexIsland` in `config.json` switches it on or off:

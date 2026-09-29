@@ -1,4 +1,4 @@
-// The island's story animals, drawn from what the sea says (Plans/dierenverhalen.md,
+// The island's story animals, drawn from what the sea says (Plans/DONE/dierenverhalen.md,
 // docs/animals-wire.md).
 //
 // Nothing here decides where a hen goes. The sea walks every island's animals off

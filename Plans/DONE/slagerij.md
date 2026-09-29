@@ -2,8 +2,8 @@
 
 **✅ DONE**
 
-Begonnen op 25 september 2026, na de zagerij en de smidse (`Plans/zagerij.md`,
-`Plans/smidse.md`), met dezelfde opzet en in dezelfde stijl als de smidse: een klein vakwerkhuis
+Begonnen op 25 september 2026, na de zagerij en de smidse (`Plans/DONE/zagerij.md`,
+`Plans/DONE/smidse.md`), met dezelfde opzet en in dezelfde stijl als de smidse: een klein vakwerkhuis
 (crème pleister, bruine balken, stenen voeten, donker leien dak met dakkapel en stenen
 schoorsteen), met daarnaast de plek waar gewerkt wordt. Gevraagd als "naast de smid en de bakker"
 - een bakkerij bestaat nog niet; de zagerij is de andere.

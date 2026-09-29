@@ -5,7 +5,7 @@
 It writes assets/shipyard/shipyard.blend and bakes it to web/js/shipyard-mesh.js. Running it
 again replaces both, so edits made by hand in the .blend are lost: this script is the source.
 
-A VOC yard in the manner of the Oostenburg one in Amsterdam (Plans/scheepswerf.md): a timber
+A VOC yard in the manner of the Oostenburg one in Amsterdam (Plans/DONE/scheepswerf.md): a timber
 slipway (helling) running down into the water on piles, keel blocks along it, a tarred shed
 (loods) and a pair of sheerlegs (bok) at the landward end, timber and planks stacked beside
 them and a tar kettle on its hearth. On the slipway the yard builds the Batavia in stages, in
@@ -478,7 +478,7 @@ spares.build()
 
 
 # ================================================================ the ship
-# She is the Batavia (scripts/build-batavia.py, Plans/batavia.md), and she is built the Dutch
+# She is the Batavia (scripts/build-batavia.py, Plans/DONE/batavia.md), and she is built the Dutch
 # way of her century - the bottom first, as Witsen describes it (schaalbouw): the keel and the
 # stems, then a shell of bottom planks held by cleats, then the frames set into that shell and
 # rising to the height of her sides, then the upper planking, the decks and the high stern. The

@@ -7,7 +7,7 @@
 // behind again on the next, and on a page somebody keeps open all day it adds up. There are
 // a couple of hundred `.dispose()` calls in web/js already; what they could not say is
 // whether a raise/lower cycle gives *all* of it back, and adding more of them by eye is
-// how the gaps below were left in the first place (see Plans/sneller-tekenen.md, step 4).
+// how the gaps below were left in the first place (see Plans/DONE/sneller-tekenen.md, step 4).
 //
 // So this measures instead of sweeping. It raises a guest region the way main.js's
 // raiseGuestIslands does - createGuestIsland, the extras attachExtras hangs on each record,

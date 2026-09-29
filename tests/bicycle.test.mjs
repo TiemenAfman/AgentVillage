@@ -1,4 +1,4 @@
-// The bicycle (web/js/bicycle.js, Plans/fiets.md), and what it has to be to be worth riding.
+// The bicycle (web/js/bicycle.js, Plans/DONE/fiets.md), and what it has to be to be worth riding.
 //
 // Three promises. It is a way to get somewhere: faster than a run, slower than a boat, and it
 // brakes and freewheels like a bicycle rather than stopping like feet. It keeps to the feet's

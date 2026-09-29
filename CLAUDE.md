@@ -14,7 +14,10 @@ no runtime dependency other than three.js.
 Grotere ontwerpen, vóór ze code worden, gaan in `Plans/` — write down the why and the
 decisions there before touching code on anything bigger than a small fix, and keep it there
 rather than in a throwaway chat. It is shared with Tiemen, so it is also how he sees what is
-still in progress; `Plans/ik-wil-graag-mutliplayer-splendid-nest.md` is the current one.
+still in progress: `Plans/` holds only the plans that are open (🚧), `Plans/README.md` lists them.
+A finished plan (✅ at the top) is moved to `Plans/DONE/` with `git mv`, and every reference to it
+- `Plans/<name>.md` in code comments, tests and docs, and the relative links between plans - is
+rewritten to `Plans/DONE/<name>.md` in the same change.
 
 ## Commands
 
@@ -160,7 +163,7 @@ by cell, onto the town's ground only, never half on a free lot - `takeCivicLot` 
 and a nudge takes its lot along; the hall takes its postbox) and gives the town ground
 (`commons`, only more). Where each may stand is `civicSites`, baked into the survey and every
 dry run that moves one, a hex digit per corner with a bit per door direction, so the planner
-never judges a drag itself (`Plans/gebouwen-verplaatsen.md`). A plan is tried on a
+never judges a drag itself (`Plans/DONE/gebouwen-verplaatsen.md`). A plan is tried on a
 copy first, all or nothing; `diff.plots.otherMoved` must be empty and no house may be newly
 left without a way to the square (`stranded` in `lib/plan.mjs` — `placeAll` roads a hamlet
 as far as the router gets and says nothing) or nothing is written; `layout.before-plan-
@@ -168,8 +171,8 @@ as far as the router gets and says nothing) or nothing is written; `layout.befor
 after an apply is byte-identical again. `placeAll` refuses nothing handed to it — measured,
 two houses on a slope of 2.1 were accepted — so the validation in `lib/plan.mjs`
 (`Super.eligible` on every destination super-cell, `freeBlock` on a `replayGrid`) is the
-feature, not a nicety. Design and measurements: `Plans/wijkjes-verplaatsen.md`.
-**A project keeps to one piece of land** ([Plans/wijkjes-samenvoegen.md](Plans/wijkjes-samenvoegen.md)).
+feature, not a nicety. Design and measurements: `Plans/DONE/wijkjes-verplaatsen.md`.
+**A project keeps to one piece of land** ([Plans/DONE/wijkjes-samenvoegen.md](Plans/DONE/wijkjes-samenvoegen.md)).
 The scan founds no annex for a project any more (only the quay, `annexes(rec)`): a boxed-in
 hamlet grows wider through `growLobe`'s rungs - past `RCAP`, then belt 0 up against its
 neighbours (never onto their land), then onto beach - and a house that finds its land roaded
@@ -184,7 +187,7 @@ the land, and its later houses lodge on the commons.
 The keeper may also draw a road (`road` op, `opRoad`): the gaps it crosses become bridges
 exactly as long as the gap, and the whole road is kept in `layout.roads` besides what it
 paved, because `clearRoads` throws every path away and no door re-routes a road nobody's
-house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/wegen-tekenen.md`).
+house asked for - `replayKeeperRoads` in `placeAll` paves it again (`Plans/DONE/wegen-tekenen.md`).
 Building by hand (the Build chip, `B`, `buildmenu.js`/`ghost.js`) is off unless switched on
 under Settings → Debug (per browser, `promptholm.debug.build`): the planner keeps the town.
 Roads, unlike plots, the scan does take up by itself: every scan runs the planner's
@@ -203,7 +206,7 @@ for the smallest one that does the job. [docs/branches.md](docs/branches.md) lis
 assert after a layout change, and the trap: **stop the server before measuring**
 (tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
 
-**A tent may leave; what the village earned never does** ([Plans/tenten-vertrekken.md](Plans/tenten-vertrekken.md)).
+**A tent may leave; what the village earned never does** ([Plans/DONE/tenten-vertrekken.md](Plans/DONE/tenten-vertrekken.md)).
 A resident drawn as a tent (`tier === 'tent'`: fewer than three human turns, not a harbour
 house, not a hotel), not running, not a founder, not rehomed and quiet for `tentGraceMs` (a
 week) packs up in `buildVillage`: house and sheds into `dropped`, front path lifted in
@@ -270,7 +273,7 @@ Everything that builds ground has to be handed it — `lib/layout.mjs`, `lib/gar
 deliberately is not is `horizon.js`, which ignores the polders too because a silhouette at
 that range is every other cell.
 
-**An island founded small grows, by accretion** ([Plans/eiland-laten-groeien.md](Plans/eiland-laten-groeien.md)).
+**An island founded small grows, by accretion** ([Plans/DONE/eiland-laten-groeien.md](Plans/DONE/eiland-laten-groeien.md)).
 `layout.grow = { base, steps }` (null on an island founded on its whole grid, which never
 grows) is makeTerrain's `grow` and travels wherever ground is built, exactly like the
 polders - bundle (`growth`, strict, radii whole numbers), `village.grow`, every page and
@@ -321,7 +324,7 @@ place: `relief` (`RELIEF_VERSION` in `shared/terrain.mjs`, written by `growStep`
 step into `growRelief`'s hills and rivers, and a step without it draws the flat ring it always
 did. New shapes mean a new version beside the old, never an edit to it. The river rule there -
 cut only in corners this step makes, never below their height before it - is what keeps
-"accretion never lowers anything" true ([Plans/eiland-laten-groeien.md](Plans/eiland-laten-groeien.md)).
+"accretion never lowers anything" true ([Plans/DONE/eiland-laten-groeien.md](Plans/DONE/eiland-laten-groeien.md)).
 
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
@@ -382,7 +385,7 @@ flag and no path list that can spend any of them, and an `inviteCode` is back to
 look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
 `parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
 
-**One material, one batch per island** ([Plans/gebouwen-in-een-batch.md](Plans/gebouwen-in-een-batch.md)).
+**One material, one batch per island** ([Plans/DONE/gebouwen-in-een-batch.md](Plans/DONE/gebouwen-in-een-batch.md)).
 Which texture sheet a face uses is a number carried on the vertex, not a material of its own,
 and night glow is a per-vertex emissive mask - and every building body on an island is one
 instance in that island's `BatchedMesh` (`web/js/record-batch.js`: `homeBatch` in main.js in
@@ -423,7 +426,7 @@ of 1400, the old look), `modest` (main.js's `modest`: integrated graphics or `?m
 written from exactly one place, `onGraphicsSetting` - which has to be on **createUI**'s
 handlers; it was handed to `createNet` once and every slider moved its label and nothing else
 (`tests/graphics-settings.test.mjs` reads the source for it). The plan is
-`Plans/graphics-afstanden.md`. Before touching any of them:
+`Plans/DONE/graphics-afstanden.md`. Before touching any of them:
 
 - **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js
   (`fogCeilingOf` in fade.js) caps the haze at the nearer of the far plane and Object
@@ -500,7 +503,7 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
   only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
   is never touched by the cut.
-- **A settler who is not drawn is not an instance** ([Plans/verborgen-inwoners-tellen-niet.md](Plans/verborgen-inwoners-tellen-niet.md)).
+- **A settler who is not drawn is not an instance** ([Plans/DONE/verborgen-inwoners-tellen-niet.md](Plans/DONE/verborgen-inwoners-tellen-niet.md)).
   Every batch in `settler-figures.js` (the body, each hat shape, skirts, hair) keeps the figures
   it draws packed in front of `count`; a figure changing side trades slots with the last drawn
   (matrix and `instanceColor` in every mesh of the batch), `draw()` moves whoever it is handed
@@ -569,7 +572,7 @@ somebody who is *walking* — an islander's own socket presence is its join
 quiet closed those sockets too: forced republish, three rev bumps a minute, and every
 settler walking back to their own door, on every screen, every sixty seconds.
 
-**Four harbours, and boats counted rather than listed** ([Plans/vier-havens.md](Plans/vier-havens.md)).
+**Four harbours, and boats counted rather than listed** ([Plans/DONE/vier-havens.md](Plans/DONE/vier-havens.md)).
 `layout.harbours` is one slot per side (`HARBOUR_SIDES`, n/e/s/w from the town centre),
 `null` like the fairway until planned, a `null` slot for a side with no open-water coast.
 `planHarbours` picks each with `pickPier` narrowed to its side, but the quay the island
@@ -654,8 +657,19 @@ position out itself, and sends decks as their own list `d` beside the rows - a r
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
 crew). Walk mode sets `state.deck` on the galleon only (`CRAFTS.galleon`, the pirate ship,
 crew 5): E at its wheel is *leave the helm* (`letGoBoat`, and E again is `takeBoat`), the hull
-coasts under `stepBoat` with the gas off while you walk it (`stepOnDeck` in walk.js), and
-`ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
+coasts under `stepBoat` with the gas off while you walk it (`stepOnDeck` in walk.js) - and a
+ship is heavy: `CRAFTS.galleon.sail` carries her own `drag`, `creep`, `bite`, `astern`, `yawLag`
+(a yaw rate `b.w` eased towards the rudder, only on a hull whose craft sets it) and `accel`, so she
+takes 6 s to top speed and runs out ~45 s / ~130 units, and `runOut` (60 s) is how long the sea takes
+her position from whoever let go (`coastOf` in lib/boats.mjs, else `COAST_MS`): keep it above the
+run-out from full turbo or she freezes for everybody else while her own page still sails her
+(`tests/boat-inertia.test.mjs`). Nothing steps a hull nobody is aboard, so a ship you jump or
+climb off (`letRun` in walk.js, the three `onLeftDeck` sites) is kept in `loose` and stepped by
+`walk.runOut(dt)`, which main.js calls every frame in every mode until she stops, somebody else has
+the wheel or you are on her again; she is `runningHull()` there, whose position is sent like
+`ownHull()`'s and whose echo from the sea is not taken back. Escape from the deck is not that:
+`exitWalk` stops her on purpose (`tests/ship-runout.test.mjs` drives the real walk mode headless).
+And `ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
 ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
 none from a dock): she is boarded by walking into the foot of one of her two rope ladders
 (`craft.ladders`, at z 1.85 because the gun ports stand out to 2.63 everywhere else along the
@@ -685,8 +699,9 @@ places and swells her at the frame's clock first, and the fleet loop repeats it,
 idempotent), not `toWorld` plus a height - a pitching hull moves her deck sideways as well as up,
 0.05 on a deck 1.16 over her pivot, which is feet sliding over the planks on a settler half a unit
 tall. The body leans with the plane (`hullTiltOf`: her rotation less her heading) and walk mode's
-camera stands in it (offset turned with the tilt, `camera.up` hers), so the deck holds still on the
-screen and it is the sea that rocks; `exit()` puts the camera upright again. Peers on a deck and a
+camera stands in a share of it (`CAM_TILT` 0.25: offset turned and `camera.up` tilted by that much
+of the plane; all of it put the camera on a lever as long as its 27 units behind a ship's wheel and
+rolled the horizon with every swell); `exit()` puts the camera upright again. Peers on a deck and a
 ship's pilot at her wheel are drawn the same way (`hullOf.point`/`tilt`, `seatOf`). The ladder is
 drawn from the same `craft.ladders` numbers and welded into the hull's
 geometry (`ladderBoxes`, boat.js), so it is no extra draw call and cannot drift from the one you
@@ -698,14 +713,14 @@ main.js lays it in deep water off a berth cut for a Benchy - by arithmetic on th
 every page agrees. A sea from before this counts the ship's crew as one and holds nobody on
 its deck: the open sea has to be redeployed before others see you walk it.
 
-**Other players are drawn with your own rig** (Plans/andere-spelers-zoals-jij.md): peers.js
+**Other players are drawn with your own rig** (Plans/DONE/andere-spelers-zoals-jij.md): peers.js
 gives each one a `createClassicAvatar` in the look their page sends (`{t:'look'}`, on every
 connect and from the studio's Apply; the sea checks its shape in `lookOf` and hands it on in
 `identity`, the page runs it through `normalizeAvatar`), driven by the pose bits - `LYING`,
 `CROUCHING`, `SITTING`, `DANCING` are 256/512/1024/2048 (`POSE_MASK` is 8191 now, with `ASLEEP` 4096 above them) - and by events for
 the arms: `{t:'swing', side}` goes to combat and on to the others as `swung`, `{t:'drink', side}`
 as `drank`. Events, not bits: a swing is over in less than two pose beats. A dance is a bit
-because it lasts (R, [Plans/dansen.md](Plans/dansen.md)), and only the bit crosses: every page
+because it lasts (R, [Plans/DONE/dansen.md](Plans/DONE/dansen.md)), and only the bit crosses: every page
 picks the move from the dancer's id (`danceStep` in `web/js/dance.js`, the one copy of the
 moves the rave's settlers dance too) and dances them to the beat *it* plays (`danceBeat` in
 main.js: the hall, else the music, else the wall clock at the song's tempo).
@@ -780,7 +795,7 @@ lowered so the surface is at 0.50 m of it, instead of the settlers' `WADE_Y`), `
 SkeletonUtils is a new vendored file: a checkout that has not run `npm install` (or
 `node scripts/vendor.mjs`) since then gets the logged failure, not imps.
 
-**The bicycle is `state.bike`, never `state.vehicle`** ([Plans/fiets.md](Plans/fiets.md)).
+**The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
 boat's stamina pool), so a second kind of vehicle in it would make them all lie. F (pad Y)
 mounts and dismounts in any walk mode created with `bikes: true` (the island and `/demo`, not
@@ -862,7 +877,7 @@ feature a few cells across is gone - and world.js paints its bands off `crater.t
 units. A* on it is ~5-10x dearer than on the 128 cone (30-65 ms beach-to-rim, `findPath`'s
 `open.sort`), which the hostility tick's 3 searches per 650 ms pay for.
 
-**Beside it, the starters: the sea's too, but made to be taken** ([Plans/starter-eilanden.md](Plans/starter-eilanden.md)).
+**Beside it, the starters: the sea's too, but made to be taken** ([Plans/DONE/starter-eilanden.md](Plans/DONE/starter-eilanden.md)).
 `starterBundle(slot)` (`lib/islandbundle.mjs`) is a 64-island with a square, well, tables,
 tavern and town hall - so an innkeeper and a mayor, no settlers - from the slot number alone;
 `fleet.raiseStarters()` keeps `STARTER.free` (3) unclaimed, berthed with `nextOrigin` after
@@ -939,7 +954,7 @@ go, guards and the volcano stay. `settler-figures.js` now reuses freed slots (`f
 the volcano's crowd churns for as long as the page is open.
 
 **The story animals are the islander's to remember and the sea's to walk**
-([Plans/dierenverhalen.md](Plans/dierenverhalen.md); the wire is
+([Plans/DONE/dierenverhalen.md](Plans/DONE/dierenverhalen.md); the wire is
 [docs/animals-wire.md](docs/animals-wire.md), the disk [docs/animal-story-storage.md](docs/animal-story-storage.md)).
 At most six named animals per island (`shared/animals.mjs`, the one copy of species, traits,
 acts - wire order, append only - and trace kinds): a hen first, then a goat and a sparrow.
@@ -1142,7 +1157,7 @@ strip but cannot hit one further than 1.2 under the surface (the vertical window
 `lib/hostility.mjs` and `lib/combat.mjs`): a deliberate loose end, not a rule.
 
 **The islets are the page's, worked out from the fleet, and never regions**
-([Plans/starter-eilanden.md](Plans/starter-eilanden.md)). `shared/islets.mjs isletsNear(fleet, at)`
+([Plans/DONE/starter-eilanden.md](Plans/DONE/starter-eilanden.md)). `shared/islets.mjs isletsNear(fleet, at)`
 is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet's square is
 `clearOf` every row's `reach` plus `ISLET_MARGIN` (and a phone's own berth, handed in as
 `extra`) - so every page sees the same islets, the sea gains nothing, and they never go into
@@ -1165,7 +1180,7 @@ mesh. Bushes are not solid.
 The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
 line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
-fleet and berth). **The world is round by a jump** ([Plans/ronde-wereld.md](Plans/ronde-wereld.md)):
+fleet and berth). **The world is round by a jump** ([Plans/DONE/ronde-wereld.md](Plans/DONE/ronde-wereld.md)):
 past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back
 (`wrapShift`) before walk mode steps, `pushSample` (timeline.js) starts a track again on a
 jump of over half the world instead of gliding it, `nextOrigin` keeps every island's room
@@ -1212,7 +1227,7 @@ spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea sec
 `WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
 must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
 chronicle) marks the clock chip `· local`.
-[Plans/klok-en-hemel-van-de-zee.md](Plans/klok-en-hemel-van-de-zee.md) has the rest.
+[Plans/DONE/klok-en-hemel-van-de-zee.md](Plans/DONE/klok-en-hemel-van-de-zee.md) has the rest.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
@@ -1250,7 +1265,7 @@ click that did not become a drag. `classic-avatar.js` takes `attack(side)` and a
 `{ leftArm, rightArm }` (a bare `true` still means the default hand). A hand holding a beer
 drinks instead (`act` in walk.js, `drink(side)` in classic-avatar.js) - and a glass is never a
 shield, so it must never reach `guardUp`/`state.blocking`, or the sea sees a raised guard
-([Plans/bier-en-dronken.md](Plans/bier-en-dronken.md)). The key row says per button what its
+([Plans/DONE/bier-en-dronken.md](Plans/DONE/bier-en-dronken.md)). The key row says per button what its
 hand does (`handAction` -> `ui.setMouse`). The purple bar is the page's, like stamina: **one**
 pool (`web/js/tipsy.js`) made in `main.js`, handed to the island's walk mode *and* every room's
 (or you walk out of the tavern sober) and stepped once in `frame()`; its blur is a CSS filter
@@ -1265,7 +1280,7 @@ at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them 
 walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
 key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
 
-**Leaving walk mode leaves the body standing** ([Plans/karakter-blijft-staan.md](Plans/karakter-blijft-staan.md)):
+**Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
 `ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
 parked walk in orbit without touching the camera. It walks only a route from above
@@ -1416,7 +1431,7 @@ the reach never goes past the mist. Cosmetic: no fish is on the wire.
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
 **The gold pit's count is the keeper's, and it comes from two places on this machine**
-([Plans/goudkuil.md](Plans/goudkuil.md)). Claude Code hands the five-hour usage window
+([Plans/DONE/goudkuil.md](Plans/DONE/goudkuil.md)). Claude Code hands the five-hour usage window
 (`rate_limits.five_hour`) to a `statusLine` command and to nothing else - not a hook, not a
 transcript - so `hooks/statusline.mjs` is the one writer of `data/usage.json`
 (`lib/usage.mjs`, only when the number moved). The desktop app runs no status line at all,
@@ -1456,7 +1471,7 @@ the crowd before it (`walk.adopt`, only when their doorstep did not move): a wor
 republishes every scan (`lastAt`), and without that a settler living over a minute from the
 pit would be stood back at their door before ever reaching it.
 
-**The pit's gold comes from a mine, by way of a goldsmith** ([Plans/goudmijn.md](Plans/goudmijn.md)).
+**The pit's gold comes from a mine, by way of a goldsmith** ([Plans/DONE/goudmijn.md](Plans/DONE/goudmijn.md)).
 The mine holds the keeper's seven-day window as ore (`shared/gold.mjs mineOf`, one lump a
 percent, the pit's bargain: no reading is a full mine), riding along as `mine` on `/api/gold`
 and `event: gold` - never the bundle. The desktop app's `sd` has no reset, so `weekResetOf` in
@@ -1481,7 +1496,7 @@ the miner pushes a cart by road (`roadBetween` in shared/roads.mjs) to the golds
 smelts and barrows the bars to the pit; no buildings or no road between them fills it at once.
 `?goldrun` plays one from 20 bars. `tests/goldmine.test.mjs`.
 
-**The sawmill's horse takes timber to the yard, on the sea's clock** ([Plans/houtkar.md](Plans/houtkar.md)).
+**The sawmill's horse takes timber to the yard, on the sea's clock** ([Plans/DONE/houtkar.md](Plans/DONE/houtkar.md)).
 `web/js/timberrun.js` is the gold run's pattern with no state: where the horse, the wagon, the
 carter and the yard's three hands are is `tripAt` / `crewAt` of the sea's time (`timeNow()` in
 main.js), so every screen - visitors' too, since nothing in it is the keeper's - has the wagon at
@@ -1498,7 +1513,7 @@ and the carrier leaves his round `CARRIER_LEAD` before the wagon arrives to unlo
 wraps every call into it: a fault there once stopped the boot. `?timber` starts a trip now.
 `tests/timberrun.test.mjs`.
 
-**Left alone, the camera goes to watch something happen** ([Plans/regisseur.md](Plans/regisseur.md)).
+**Left alone, the camera goes to watch something happen** ([Plans/DONE/regisseur.md](Plans/DONE/regisseur.md)).
 `web/js/director.js` has no DOM and no camera (`createDirector`, `pickShot`, tested): after
 `IDLE_S` of no pointer, wheel, touch or key, from above only (`directorMay` in main.js: orbit,
 no intro, no tween, no open `aside.panel`, not the chronicle, Settings' *Wander by itself* on),
@@ -1519,7 +1534,7 @@ pattern, our own island only because he measures the water's edge off `groundAt`
 villager's `rod` in classic-avatar.js whose line is modelled for `FISH_ARM`, and a `reach` pose
 for one arm.
 
-**The town centre has a plan, and a shop has a lot in it** ([Plans/knus-dorpscentrum.md](Plans/knus-dorpscentrum.md)):
+**The town centre has a plan, and a shop has a lot in it** ([Plans/DONE/knus-dorpscentrum.md](Plans/DONE/knus-dorpscentrum.md)):
 `TOWN_PLAN` in `lib/layout.mjs` - the eight lots of the ring round the square (`RING`, the old
 `CIVIC_LOTS`, each building of the square on its own via `RING_OF`), four two-cell streets
 leaving it with the clock (`STREETS`) and sixteen three by three street lots filled from the
@@ -1537,7 +1552,7 @@ for the one reader that must leave it out: the Friday gathering (`gatherCells` i
 terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
 round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
-**The castle is the one square civic lot that is not three by three** ([Plans/groot-kasteel.md](Plans/groot-kasteel.md)):
+**The castle is the one square civic lot that is not three by three** ([Plans/DONE/groot-kasteel.md](Plans/DONE/groot-kasteel.md)):
 `CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
 `web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
 `scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
@@ -1553,7 +1568,7 @@ cells never recorded them - and otherwise leaves it the old size. No version gat
 the gate.
 
 **Past a hundred the ladder goes to the sea, on the first lots that are not square**
-([Plans/mijlpalen-tot-tweehonderd.md](Plans/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
+([Plans/DONE/mijlpalen-tot-tweehonderd.md](Plans/DONE/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
 to 200; three share civicType `ship`, so a rung may name its building (`civicId`, and
 `civicIdOf` in lib/village.mjs is the one copy - the model, scan.mjs and the placing loop all
 ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd rot: a ship is
@@ -1627,7 +1642,7 @@ for it would fail the on-the-ground rule; the windmill's sails dodge that with a
 The smithy adds the other half of that pattern: a still part baked only to be *measured* (the
 anvil, whose `at` is where the smith strikes) and `anchor.door`, and a passive settler - the
 player rig (`createClassicAvatar`) with a hammer, nobody's agent - driven by `web/js/smithy.js`
-off `uNight` (Plans/smidse.md). A glow that dims at runtime sets `aEmissive` below 1 on its
+off `uNight` (Plans/DONE/smidse.md). A glow that dims at runtime sets `aEmissive` below 1 on its
 geometry; the bake still only allows 0 or 1.
 
 ## The two workbench pages
@@ -1646,13 +1661,12 @@ geometry; the bake still only allows 0 or 1.
   in a helper two models share (`noticeBoard`) changes both.
 
 Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
-Saturday-night rave open at any hour, Plans/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
+Saturday-night rave open at any hour, Plans/DONE/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
 drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it), `?dive`
 (walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and
 `__camera` on `window`, which is how a test browser reads the walker and the camera - hold a key with
 `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }))`, since a tapped key is up before a
-frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you).
-(`?sail` is gone with the
+frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you). (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 
@@ -1663,13 +1677,13 @@ WebView2 pointed at `http://localhost:4747/`, exactly what Chrome's `--app` wind
 `http://tauri.localhost`) was removed because it broke three invariants at once: `api.js`
 would work `mine()` out from the wrong origin, `lib/access.mjs` refuses an Origin that is not
 the Host on every route, and the import map for `three`/`shared/` is the no-build-step
-contract. [Plans/eiland-als-desktop-app.md](Plans/eiland-als-desktop-app.md) has the full
+contract. [Plans/DONE/eiland-als-desktop-app.md](Plans/DONE/eiland-als-desktop-app.md) has the full
 argument. Which means a `web/js/` change (like a minimap.js/classic-avatar.js edit) or a
 server-side one (`lib/`, `serve.mjs`) never needs `npm run app:build` — the window only ever
 fetches the running islander live, the same page a browser tab would get, and a reload of
 the window (or the same server restart a server-side change already needs) is all it takes.
 Only a change under `src-tauri/` itself - the splash, the port probing, window behaviour,
-the icon - needs a rebuild. **Two exes from one crate** ([Plans/islander-als-eigen-exe.md](Plans/islander-als-eigen-exe.md)):
+the icon - needs a rebuild. **Two exes from one crate** ([Plans/DONE/islander-als-eigen-exe.md](Plans/DONE/islander-als-eigen-exe.md)):
 `promptholm.exe` is the interface, `promptholm-island.exe` (`src/bin/promptholm-island.rs`,
 tray-icon + tao directly, no Tauri, no WebView) *is* the islander — it starts
 `node serve.mjs --no-open --supervised` as its child, output appended to `data/server.log`,
@@ -1692,7 +1706,7 @@ old one keeps the old islander on top), and the islander finds its root as its o
 *before* `CARGO_MANIFEST_DIR`. The island is copied *by
 name* like `Dockerfile.sea` (a runtime import from a new top-level folder must be added to
 its list). `app/release.json` is its marker. **The island's own files live in one home
-for a release and a checkout alike** ([Plans/een-thuis-voor-het-eiland.md](Plans/een-thuis-voor-het-eiland.md)):
+for a release and a checkout alike** ([Plans/DONE/een-thuis-voor-het-eiland.md](Plans/DONE/een-thuis-voor-het-eiland.md)):
 `HOME` in `lib/paths.mjs` (config.json, data/, .env) is `PROMPTHOLM_HOME`, else the checkout
 itself for a *linked worktree* (a `.git` file - a sandbox, or a preview server in one works on
 the real island and publishes under its sea token), else `~/.promptholm` - so a new release
@@ -1817,7 +1831,7 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
-| `site/` | promptholm.com, the landing page: static, no build step, light only, published by `.github/workflows/site.yml`; its download buttons use `releases/latest/download/<asset>`, so keep the asset names `release.yml` makes ([Plans/website.md](Plans/website.md)) |
+| `site/` | promptholm.com, the landing page: static, no build step, light only, published by `.github/workflows/site.yml`; its download buttons use `releases/latest/download/<asset>`, so keep the asset names `release.yml` makes ([Plans/DONE/website.md](Plans/DONE/website.md)) |
 
 `data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
 window above) - and a checkout's own `data/` is only the backup an island moved out of

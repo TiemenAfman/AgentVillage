@@ -1,4 +1,4 @@
-// The island's ambient animals (web/js/herds.js; Plans/stal-en-veld.md, "Later").
+// The island's ambient animals (web/js/herds.js; Plans/DONE/stal-en-veld.md, "Later").
 //
 // The promises: the same island keeps the same animals in the same places on every page, and
 // a hut built somewhere else moves nobody; every animal keeps to its patch - a sheep to its

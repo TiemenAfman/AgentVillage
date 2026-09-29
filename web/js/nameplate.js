@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // two woods carried as vertex colours; only the lettered face is per-house. It used to be
 // a mesh per piece in two materials, which on a 150-house island was 302 of the 900 calls
 // in the colour pass and 302 of the 715 in the shadow pass, for 5,700 triangles
-// (Plans/sneller-tekenen.md). `new THREE.Color(hex)` is the same linear colour a
+// (Plans/DONE/sneller-tekenen.md). `new THREE.Color(hex)` is the same linear colour a
 // material's `color` would have been given, so the wood looks exactly as it did.
 const frameMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
 const WOOD = new THREE.Color(0x6b4a2f);
@@ -139,7 +139,7 @@ function batchable(geo) {
 // a mesh of its own. The yard signs were 395 frames on Hoogezand, a call each in both passes -
 // as many as half the buildings. There are only as many frame shapes as there are option sets
 // (a house's and a camp's), so every sign of one shape is an instance of one geometry. The
-// lettered face stays a mesh: its canvas is the sign's own (Plans/gebouwen-in-een-batch.md).
+// lettered face stays a mesh: its canvas is the sign's own (Plans/DONE/gebouwen-in-een-batch.md).
 export function createNameplate(text, {
   small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
   height0 = 0.42, posts = 1, arch = 0, batch = null,

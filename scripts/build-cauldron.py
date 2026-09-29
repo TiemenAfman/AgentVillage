@@ -1,6 +1,6 @@
 """The cauldron maker. Rebuild with scripts/blender.mjs --background --python scripts/build-cauldron.py.
 
-A shop for one of the village centre's streets (Plans/knus-dorpscentrum.md), in the village's
+A shop for one of the village centre's streets (Plans/DONE/knus-dorpscentrum.md), in the village's
 own style: a rubble ground floor on a stone footing, a cream plastered upper floor jettied a
 hand over it with warm oak framing, and a terracotta roof at the tavern's pitch - but turned
 the other way from its neighbours. The other shops keep their ridge along the street; this one

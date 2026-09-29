@@ -1,4 +1,4 @@
-// The lighthouse at its real size (Plans/mijlpalen-tot-tweehonderd.md, "De vuurtoren";
+// The lighthouse at its real size (Plans/DONE/mijlpalen-tot-tweehonderd.md, "De vuurtoren";
 // scripts/build-lighthouse.py).
 //
 // What is held here:
@@ -50,7 +50,7 @@ test('it stands about seven high: over everything else on land, under a masthead
     const h = civic(type, plot).height;
     assert.ok(tower.height > h + 1, `the ${type} stands ${h.toFixed(2)} high, the lighthouse ${tower.height.toFixed(2)}`);
   }
-  // The pirate galleon's masthead is 10.8 over the water (Plans/mijlpalen-tot-tweehonderd.md);
+  // The pirate galleon's masthead is 10.8 over the water (Plans/DONE/mijlpalen-tot-tweehonderd.md);
   // a tower on a coast cell is a quarter of a unit up to start with.
   assert.ok(tower.height + 0.5 < 10.8, 'the lighthouse is as tall as a ship\'s mast');
 });

@@ -3,7 +3,7 @@
 **✅ DONE**
 
 Begonnen op 27 september 2026, na het paard op de rave. Gevraagd: "Hebben we ook een dans-knop?"
-en daarna "Bouw voor iedereen zichtbaar". In `Plans/rave-in-het-kasteel.md` stonden allebei onder
+en daarna "Bouw voor iedereen zichtbaar". In `Plans/DONE/rave-in-het-kasteel.md` stonden allebei onder
 "Nog niet": geen dansknop voor jezelf, en andere spelers in de rave zien elkaar niet dansen.
 
 ## Wat er gebeurt

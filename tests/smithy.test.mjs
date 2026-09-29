@@ -1,4 +1,4 @@
-// The smithy (scripts/build-smithy.py, web/js/smithy.js, Plans/smidse.md).
+// The smithy (scripts/build-smithy.py, web/js/smithy.js, Plans/DONE/smidse.md).
 //
 // The promises: the building never draws a moving part twice; the smith works by day and goes
 // in at night by the door, never through a wall, and comes back out in the morning; sparks fly

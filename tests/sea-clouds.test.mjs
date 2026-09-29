@@ -1,5 +1,5 @@
 // The cloud layer is the sea's, not the page's: a cloud is where the sea's clock and its
-// own place in the world say, whoever looks (Plans/klok-en-hemel-van-de-zee.md, fase 3).
+// own place in the world say, whoever looks (Plans/DONE/klok-en-hemel-van-de-zee.md, fase 3).
 //
 // Two pages on the same sea draw their own island at the scene origin and translate the
 // world by their berth, so the thing to hold is that the WORLD position is the same for

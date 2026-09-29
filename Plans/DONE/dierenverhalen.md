@@ -4,7 +4,7 @@
 
 Begonnen op 26 september 2026, op de branch `codex/dierenverhalen` (Codex legde de eerste steen:
 een journaal en een reducer zonder klok), verder gebouwd in `claude/dierenverhalen`. Het uitgewerkte
-Engelse plan staat in [docs/animal-stories.md](../docs/animal-stories.md); dit is het
+Engelse plan staat in [docs/animal-stories.md](../../docs/animal-stories.md); dit is het
 "waarom" en de beslissingen die bij het bouwen vielen. Het vervangt de regel "dieren op het eiland
 zelf" onder *Later* in [stal-en-veld.md](stal-en-veld.md): de dieren die daar op `/demo` staan
 lopen nu op het eiland, maar als *personen* met een naam en een geheugen, niet als decor.
@@ -94,7 +94,7 @@ een vogelhuisje). Uit die sporen komt één eilandmysterie.
 5. Het mysterie.
 
 Alle vijf gebouwd op 26 september 2026, met vier agents naast elkaar (zee, tekenen, dossier,
-Blender-sporen) op één draadcontract ([docs/animals-wire.md](../docs/animals-wire.md)).
+Blender-sporen) op één draadcontract ([docs/animals-wire.md](../../docs/animals-wire.md)).
 
 ## Wat er bij het bouwen nog bij kwam
 
@@ -136,7 +136,7 @@ van de islander weigeren, en de herinnering van die regel kwam er nooit meer, om
 had geantwoord en niemand het haar opnieuw vroeg. Nu heropent `recover()` de opslag bij de
 volgende scan en laat de islander zijn dieren geforceerd opnieuw posten; de zee antwoordt uit
 wat ze onthouden heeft. Wat nog met de hand moet staat in
-[docs/animal-stories.md](../docs/animal-stories.md), "Where each acceptance point stands".
+[docs/animal-stories.md](../../docs/animal-stories.md), "Where each acceptance point stands".
 
 ## Metingen
 

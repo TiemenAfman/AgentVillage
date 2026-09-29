@@ -106,7 +106,7 @@ test('somebody who has just joined is handed the whole village at once', async (
 });
 
 // A held settler is 'still' and a row has no heading, so without the held list nobody but the
-// sea knew they had turned - the talker included. Plans/aangesproken-settler-draait-zich-om.md.
+// sea knew they had turned - the talker included. Plans/DONE/aangesproken-settler-draait-zich-om.md.
 test('everybody watching is told who is held and where the talker stands, and when it ends', async () => {
   await afloat(async ({ sea, base, wsUrl }) => {
     const a = island({ port: 4747, name: 'Promptholm' });

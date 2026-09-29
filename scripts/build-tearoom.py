@@ -1,6 +1,6 @@
 """The tea room. Rebuild with scripts/blender.mjs --background --python scripts/build-tearoom.py.
 
-A tea room on a corner of the square (Plans/knus-dorpscentrum.md): a pale cream stone ground floor
+A tea room on a corner of the square (Plans/DONE/knus-dorpscentrum.md): a pale cream stone ground floor
 wrapped in round-topped windows - three either side of the door and two round each corner -
 framed in sage green; a sage door under an arched fanlight; above it a jettied upper floor of
 cream plaster in oak timber, window boxes of flowers under its three windows, and a terracotta

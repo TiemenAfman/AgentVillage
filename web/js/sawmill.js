@@ -1,4 +1,4 @@
-// The sawmill at work (Plans/zagerij.md): the blade turns, a log is fed along the bench and
+// The sawmill at work (Plans/DONE/zagerij.md): the blade turns, a log is fed along the bench and
 // through it, the conveyor's rollers turn and carry split logs up into the barn, and sawdust
 // flies off the blade for as long as there is wood under it.
 //

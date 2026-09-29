@@ -286,7 +286,7 @@ export function mooringsFor(regionId, terrain, village, origin = [0, 0]) {
   return out;
 }
 
-// ---- the fleet the village earns (Plans/mijlpalen-tot-tweehonderd.md, "De vloot") ------
+// ---- the fleet the village earns (Plans/DONE/mijlpalen-tot-tweehonderd.md, "De vloot") ------
 //
 // From FLEET_AT settlers the harbours fill up by themselves: one boat at FLEET_AT and one
 // more every FLEET_EVERY after it, dealt round the harbours until each moors
@@ -331,7 +331,7 @@ export function fleetOf(terrain, village) {
 // Dealt one at a time in FLEET_SIDES order, starting at `from` - the kadehaven, which scan.mjs
 // passes. It defaults to `first`, the harbour whose first boat is the galleon, and the two part
 // only on an island whose galleon lies at a quay that is none of its four harbours (the live
-// island's case, Plans/mijlpalen-tot-tweehonderd.md) - and skipping every side with no harbour - `null` in layout.harbours,
+// island's case, Plans/DONE/mijlpalen-tot-tweehonderd.md) - and skipping every side with no harbour - `null` in layout.harbours,
 // or simply absent. Round and round rather than filling one harbour before the next, so the
 // fleet grows along the whole coast and not in one basin; an island with fewer harbours
 // runs out of berths sooner, and the count stops where the berths do.
@@ -381,7 +381,7 @@ export function mooringFor(regionId, terrain, landing, origin = [0, 0], planks =
 // from the sea.
 //
 // It lived in web/js/main.js until the layout had to know it too: lib/layout.mjs keeps the
-// rede - the anchorage of the ships the village earns, Plans/mijlpalen-tot-tweehonderd.md -
+// rede - the anchorage of the ships the village earns, Plans/DONE/mijlpalen-tot-tweehonderd.md -
 // clear of where the galleon lies and of the room she turns in, and a second copy of this
 // sum in the scanner is a ship anchored on top of her the first time the two disagree. So
 // this is the one copy, and each caller hands it the ground it sees.

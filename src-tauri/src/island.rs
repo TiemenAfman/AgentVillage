@@ -117,7 +117,7 @@ pub fn find_root() -> Option<PathBuf> {
 
 /// %USERPROFILE%\.promptholm - the one home a release and a checkout share, and where the
 /// islander leaves a note of which folder it ran from. Not AppData: from the Claude desktop
-/// app, every AppData write lands in its MSIX package's own copy (Plans/een-thuis-voor-het-eiland.md).
+/// app, every AppData write lands in its MSIX package's own copy (Plans/DONE/een-thuis-voor-het-eiland.md).
 fn shared_home() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
@@ -235,7 +235,7 @@ pub fn wait(port: u16, timeout: Duration) -> Option<Duration> {
 const SPAWN_FLAG: &str = "--spawn-island";
 
 /// The islander's own executable: one crate, one build, two binaries
-/// (Plans/islander-als-eigen-exe.md). In a build folder it stands next to the window's; in
+/// (Plans/DONE/islander-als-eigen-exe.md). In a build folder it stands next to the window's; in
 /// an unpacked release it is in app\, so the one exe on top is the one to start.
 pub const ISLANDER_EXE: &str = "promptholm-island.exe";
 

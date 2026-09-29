@@ -1,4 +1,4 @@
-// The rede: where the ships the village earns lie at anchor (Plans/mijlpalen-tot-tweehonderd.md).
+// The rede: where the ships the village earns lie at anchor (Plans/DONE/mijlpalen-tot-tweehonderd.md).
 //
 // A ship is a plot four by sixteen on the water off the kadehaven, and what is asserted is the
 // plan's six rules for every cell of it, worked out again here from the ground and the harbours

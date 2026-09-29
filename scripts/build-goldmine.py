@@ -1,6 +1,6 @@
 """The gold mine. Rebuild with scripts/blender.mjs --background --python scripts/build-goldmine.py.
 
-Plans/goudmijn.md: the mine holds the keeper's week - the seven-day usage window as a hundred
+Plans/DONE/goudmijn.md: the mine holds the keeper's week - the seven-day usage window as a hundred
 lumps of ore in a bin by the mouth, one a percent - and every five hours a cartload of it is
 pushed down the road to the goldsmith, whose bars refill the gold pit. So it is a hillock with
 a timbered adit in its face, rails running out of the dark onto a trampled apron, the ore bin

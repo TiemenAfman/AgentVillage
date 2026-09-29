@@ -1,4 +1,4 @@
-// The director (Plans/regisseur.md): when nobody has touched the island for IDLE_S, the camera
+// The director (Plans/DONE/regisseur.md): when nobody has touched the island for IDLE_S, the camera
 // goes to look at something happening - a settler just arrived, the gold on its way, the timber
 // wagon, the yard at work, somebody at work, one of the story animals, the fisherman - follows
 // it while it circles it slowly, and after HOLD_S goes back up to the whole island before the

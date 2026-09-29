@@ -1,4 +1,4 @@
-// The stable at home (scripts/build-stable.py, Plans/stal-en-veld.md): the horse loose in its
+// The stable at home (scripts/build-stable.py, Plans/DONE/stal-en-veld.md): the horse loose in its
 // paddock and two hens scratching in front of the stall doors, each on its own time
 // (web/js/fauna.js) - except on Saturday night, when all three are at the rave. The paddock is
 // the baked sand, `civic_stable_yard paddock`: where the horse may go is measured off it, less
@@ -43,7 +43,7 @@ export function attachStable(group, at, material, yaw = 0) {
   return { root, area, animals };
 }
 
-// `away` is Saturday night (Plans/rave-in-het-kasteel.md): the horse and the hens are at the
+// `away` is Saturday night (Plans/DONE/rave-in-het-kasteel.md): the horse and the hens are at the
 // castle, dancing in the great hall (web/js/rave.js), and the paddock stands empty until three.
 // Nobody is stepped while they are out, so they are back where they left off in the morning -
 // and every island's stable empties at once, because it is the world's Saturday night.

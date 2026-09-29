@@ -1,5 +1,5 @@
 // Bringing a project that stands in pieces home onto one piece of land, and not letting it
-// fall apart again (Plans/wijkjes-samenvoegen.md).
+// fall apart again (Plans/DONE/wijkjes-samenvoegen.md).
 //
 // What a merge has to be: every house of the project ends up on the one piece that stays,
 // with its sheds; the other pieces are countryside again; nothing else moves and nobody is
@@ -234,7 +234,7 @@ test('a house goes to the commons only when its project is walled in', () => {
   // The seed where it does not all fit: the first two projects, founded beside the square
   // while the island was small, are walled in by the town and by neighbours that grew up
   // against them (`growLobe`'s belt-0 rung) before they needed the land themselves - 31 of
-  // 240 houses on the commons, one to eight super-cells from home (Plans/wijkjes-samenvoegen.md,
+  // 240 houses on the commons, one to eight super-cells from home (Plans/DONE/wijkjes-samenvoegen.md,
   // still open). What must hold is that none of them had anywhere of its own to go: no free
   // 3x3 on its project's land, and none on the free ground beside it, when it was placed.
   const seed = 3;

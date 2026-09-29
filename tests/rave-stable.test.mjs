@@ -1,4 +1,4 @@
-// The stable on a Saturday night (Plans/rave-in-het-kasteel.md): the paddock stands empty while
+// The stable on a Saturday night (Plans/DONE/rave-in-het-kasteel.md): the paddock stands empty while
 // the castle raves, because its horse and hens are on the dance floor (web/js/stable.js `away`,
 // web/js/rave.js, fauna.js stepDance).
 //

@@ -1,6 +1,6 @@
 """The sweet shop. Rebuild with scripts/blender.mjs --background --python scripts/build-sweetshop.py.
 
-A shop for one of the village centre's streets (Plans/knus-dorpscentrum.md), in the village's
+A shop for one of the village centre's streets (Plans/DONE/knus-dorpscentrum.md), in the village's
 own style: a stone footing, cream plaster between warm oak timbers, a terracotta roof at the
 tavern's pitch with its ridge along the street, and a crooked stone chimney astride it. Its
 front is a painted wooden shopfront in cherry red with cream trim and turquoise accents, and

@@ -1,5 +1,5 @@
 // The whole recovery chain of a story animal's errand, end to end (docs/animals-wire.md,
-// "Completion"; Plans/dierenverhalen.md): the islander's real lib/animal-life.mjs and
+// "Completion"; Plans/DONE/dierenverhalen.md): the islander's real lib/animal-life.mjs and
 // lib/animal-store.mjs on a scratch journal, its real lib/seaclient.mjs, and a real lib/sea.mjs
 // on a loopback port - with a TCP proxy between the two that can cut the line, hold it down, or
 // swallow what the sea says, and a sea clock the test turns up and down.

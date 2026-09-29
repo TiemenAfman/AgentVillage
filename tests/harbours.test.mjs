@@ -1,4 +1,4 @@
-// Four harbours instead of one quay, each with a road to the square (Plans/vier-havens.md).
+// Four harbours instead of one quay, each with a road to the square (Plans/DONE/vier-havens.md).
 //
 // As in quay-district.test.mjs, nothing here asserts a coordinate - every seed puts its
 // coast somewhere else. What has to hold: one harbour per side at most, on that side of the

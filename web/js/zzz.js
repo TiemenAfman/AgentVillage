@@ -1,4 +1,4 @@
-// The "Zzz" over a body nobody is steering (Plans/karakter-blijft-staan.md): our own, parked
+// The "Zzz" over a body nobody is steering (Plans/DONE/karakter-blijft-staan.md): our own, parked
 // while the keeper looks down from the sky (walk.js), and anybody else's whose pose carries
 // FLAG_ASLEEP (peers.js). One canvas texture for all of them - it never changes - so a
 // harbour full of sleepers costs one texture and one material.

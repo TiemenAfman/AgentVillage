@@ -297,39 +297,39 @@ test('the register spans every set and answers by part name alone', () => {
     // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
     'benchy',
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
-    // (scripts/build-bicycle.py, Plans/fiets.md).
+    // (scripts/build-bicycle.py, Plans/DONE/fiets.md).
     'bicycle', 'castle',
     // The shops of the town's plan, one asset each (scripts/build-<shop>.py,
-    // Plans/knus-dorpscentrum.md).
+    // Plans/DONE/knus-dorpscentrum.md).
     'civic_apothecary',
     // The butcher's, the smithy's sister: the shop and its yard, with the awning, the sign, the
     // hanging meat, the joint, a slice and the smokehouse fire inside the yard's asset
-    // (scripts/build-butcher.py, Plans/slagerij.md).
+    // (scripts/build-butcher.py, Plans/DONE/slagerij.md).
     'civic_bakery',
     // The trades past the castle, one set between them and each a building and a yard
-    // (scripts/build-workshops.py, Plans/ambachten.md): the brewery's copper is an asset of its
+    // (scripts/build-workshops.py, Plans/DONE/ambachten.md): the brewery's copper is an asset of its
     // own for its steam's anchor, and the quarry's crane and tub move inside its yard.
     'civic_brewery', 'civic_brewery_copper', 'civic_brewery_yard',
     'civic_butcher', 'civic_butcher_yard', 'civic_cauldron',
     'civic_chapel',
     // The chronicle house, the ladder's last rung, one asset with nothing that moves
-    // (scripts/build-chronicle.py, Plans/kroniekhuis.md).
+    // (scripts/build-chronicle.py, Plans/DONE/kroniekhuis.md).
     'civic_chronicle',
     // The harbour's buildings, three assets out of one set (scripts/build-harbourhouses.py,
-    // Plans/havengebouwen.md).
+    // Plans/DONE/havengebouwen.md).
     'civic_fishery',
     'civic_fountain',
     // The gold mine and the goldsmith (scripts/build-goldmine.py, build-goldsmith.py,
-    // Plans/goudmijn.md): the mine's hill is an asset of its own because it is lowered by its
+    // Plans/DONE/goudmijn.md): the mine's hill is an asset of its own because it is lowered by its
     // datum (buildings.js MINE_DATUM) to bury its rim, and its cart and its ore are props.
     'civic_goldmine', 'civic_goldmine_hill', 'civic_goldpit', 'civic_goldsmith', 'civic_grocer', 'civic_library', 'civic_owlpost',
     'civic_quarry', 'civic_quarry_yard', 'civic_quay_platform',
     // The sawmill is two, the barn and its yard; what turns is parts inside the yard
-    // (scripts/build-sawmill.py, Plans/zagerij.md).
+    // (scripts/build-sawmill.py, Plans/DONE/zagerij.md).
     'civic_sawmill', 'civic_sawmill_yard',
     'civic_seed_stall',
     // The smithy too: the house and the lean-to, with its bellows, fire and lantern inside the
-    // lean-to's asset (scripts/build-smithy.py, Plans/smidse.md).
+    // lean-to's asset (scripts/build-smithy.py, Plans/DONE/smidse.md).
     'civic_smithy', 'civic_smithy_yard',
     // The stable and its paddock (scripts/build-stable.py); the horse is fauna_horse.
     'civic_stable', 'civic_stable_yard', 'civic_sweetshop',
@@ -352,7 +352,7 @@ test('the register spans every set and answers by part name alone', () => {
     'flora_grass_a', 'flora_kelp_a', 'flora_kelp_b', 'flora_oak_a', 'flora_oak_a_lo', 'flora_palm_a', 'flora_palm_a_lo', 'flora_pine_a', 'flora_pine_a_lo',
     'flora_rock_a', 'flora_rock_b', 'flora_rock_sea_a', 'flora_rock_sea_b',
     // The castle on its seven by seven, built at that size rather than the castle drawn at 7/3
-    // (scripts/build-greatcastle.py, Plans/groot-kasteel.md).
+    // (scripts/build-greatcastle.py, Plans/DONE/groot-kasteel.md).
     'greatcastle',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     'lighthouse',
@@ -368,13 +368,13 @@ test('the register spans every set and answers by part name alone', () => {
       // web/js/traces.js; tests/traces.test.mjs holds the one-per-kind).
       'prop_trace_cache', 'prop_trace_feeder', 'prop_trace_find', 'prop_trace_lookout', 'prop_trace_nest',
       'prop_trace_perch', 'prop_trace_print',
-      // The sawmill's wagon and its load of timber (scripts/build-wagon.py, Plans/houtkar.md).
+      // The sawmill's wagon and its load of timber (scripts/build-wagon.py, Plans/DONE/houtkar.md).
       'prop_wagon', 'prop_timber',
       // A shell and a starfish for the sand under the sea (scripts/build-sea.py).
       'prop_shell', 'prop_starfish'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school',
     // The shipyard, a hero: one building on a five by sixteen lot whose ship is part of it, each
-    // stage a set of parts rather than an asset (scripts/build-shipyard.py, Plans/scheepswerf.md).
+    // stage a set of parts rather than an asset (scripts/build-shipyard.py, Plans/DONE/scheepswerf.md).
     'shipyard',
     'statue', 'tavern', 'townhall',
   ]);

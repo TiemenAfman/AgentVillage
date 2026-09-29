@@ -78,7 +78,7 @@ export function strikeArm(u, rest) {
   if (u < STRIKE_HIT) return STRIKE_UP + (STRIKE_DOWN - STRIKE_UP) * smooth((u - STRIKE_TOP) / (STRIKE_HIT - STRIKE_TOP));
   return STRIKE_DOWN + (rest - STRIKE_DOWN) * smooth((u - STRIKE_HIT) / (1 - STRIKE_HIT));
 }
-// A beer the player has handed over (crowd-view.js giveBeer; Plans/bier-en-dronken.md): the
+// A beer the player has handed over (crowd-view.js giveBeer; Plans/DONE/bier-en-dronken.md): the
 // right arm brings a pint to the mouth, holds it tipped while they gulp, and puts it down.
 // The player's own drink (classic-avatar.js drinkPose) at a settler's size: up to about -2 on
 // the stride's rotation.x, turned a little inward so the glass ends up in front of the face
@@ -108,12 +108,12 @@ const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
 // a beat.
 const STAGGER_SIDE = 0.2, STAGGER_YAW = 0.45, STUMBLE_PITCH = 0.3, STUMBLE_SIDE = 0.12;
 
-// Dancing (Plans/rave-in-het-kasteel.md). `'dance'` is written by the castle's rave
+// Dancing (Plans/DONE/rave-in-het-kasteel.md). `'dance'` is written by the castle's rave
 // (web/js/rave.js) onto figures it made itself, together with `f.beat` - how many beats of the
 // music have gone by, off the music's own clock - `f.move`, which of the moves, and `f.hype`,
 // 0..1, how hard the drop has hit. The beat and not this file's clock, or seventy people bounce
 // out of time with the kick. The moves themselves are web/js/dance.js's, the one copy, because
-// a player dances them too (classic-avatar.js, Plans/dansen.md); they are exported from here
+// a player dances them too (classic-avatar.js, Plans/DONE/dansen.md); they are exported from here
 // as well for whoever already reached for them here.
 export { DANCE_MOVES, dancePose };
 const HEAD_Y = RESIDENT_HEAD_Y;
@@ -222,7 +222,7 @@ function pintGeometry() {
 // How many settlers can be seen drinking at once: one instanced mesh for all of them, like
 // the hammers. A beer is handed over one at a time, so this is only ever a handful.
 const PINTS = 32;
-// The wheelbarrow the gold is fetched with (Plans/goudkuil.md): wheeled out empty ('barrow'),
+// The wheelbarrow the gold is fetched with (Plans/DONE/goudkuil.md): wheeled out empty ('barrow'),
 // parked in front of the pile while it is loaded ('load'), wheeled home full ('carry').
 //
 // Built in the settler's own frame - feet at the origin, facing +z - at a resident's size, and
@@ -329,7 +329,7 @@ function paintGeo(g, hex) {
   return flat;
 }
 
-// How a body stands at a chore, for the word the walk wrote (Plans/inwoners-aan-het-werk.md).
+// How a body stands at a chore, for the word the walk wrote (Plans/DONE/inwoners-aan-het-werk.md).
 // Null for anything that is not a chore, which leaves the walk, the wander and the hammer
 // exactly as they were. Angles are rotation.x, as the stride's are: negative is an arm
 // raised forwards, and `lean` tips the whole body forwards about the feet. `t` is this
@@ -423,7 +423,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   };
 
   // A batch: meshes that draw one instance per figure in it, and which figure is in which slot.
-  // Kept packed (Plans/verborgen-inwoners-tellen-niet.md): the figures drawn this frame in
+  // Kept packed (Plans/DONE/verborgen-inwoners-tellen-niet.md): the figures drawn this frame in
   // [0, live), the ones enrolled but not drawn in [live, n), nobody past n, and `count` is
   // `live`. It used to be the highest slot ever taken, with a hidden figure parked at y = -999
   // under a scale of 0.0001 - and the GPU ran the vertex shader for every one of those, in
@@ -577,7 +577,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   hammers.count = 0;
   hammers.name = 'resident-hammers';
 
-  // The chores' tools (Plans/inwoners-aan-het-werk.md): one InstancedMesh each for the
+  // The chores' tools (Plans/DONE/inwoners-aan-het-werk.md): one InstancedMesh each for the
   // whole crowd, like the hammer, and hidden outright while nobody holds one so that a
   // village with nobody at work costs the draw calls it always did. Built the way the
   // hammer is - a handle pointing forward out of the resting fist - and then tipped so

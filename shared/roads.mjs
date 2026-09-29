@@ -46,7 +46,7 @@ export function squareCells(village) {
 }
 
 // The paving the Friday gathering aims for: every square cell but the town's shopping
-// streets (Plans/knus-dorpscentrum.md). The streets are paved into `town.paved` so that
+// streets (Plans/DONE/knus-dorpscentrum.md). The streets are paved into `town.paved` so that
 // everything that walks or draws the square has them for free, and `town.streets` names
 // them again for this one reader - a borrel belongs on the square, and with the streets in
 // the draw half the village would stand about in the high street instead. A village from

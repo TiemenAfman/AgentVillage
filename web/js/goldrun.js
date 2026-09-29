@@ -1,5 +1,5 @@
 // The gold run: every five hours, a cartload from the mine by way of the goldsmith into the
-// gold pit (Plans/goudmijn.md).
+// gold pit (Plans/DONE/goudmijn.md).
 //
 // The pit holds the keeper's five-hour usage window (goldpit.js) and fills again when the
 // window turns over. This is what makes that refill a thing that happens on the island rather
@@ -9,7 +9,7 @@
 // to the pit in a barrow; the pit counts up to its new number while he unloads.
 //
 // All of it is this page's own, and on purpose. When a window turns over says something about
-// how somebody works, and the sea never hears the count in the first place (Plans/goudkuil.md),
+// how somebody works, and the sea never hears the count in the first place (Plans/DONE/goudkuil.md),
 // so the run is played from the moment `event: gold` told this page, by the keeper's pages
 // only; a visitor's pit is always full and nothing is ever delivered to it. The two figures are
 // the player's rig in villagers' clothes (smithy.js's smith is the pattern), nobody's agent, not
@@ -63,7 +63,7 @@ const MINE_AT = {
 // before the heap, where the settlers park theirs (lib/crowd.mjs GOLD_LOAD_IN, with the
 // barrow's own reach in front of the feet).
 const PIT_AT = { mouth: [0, 1.45], unload: [0, 0.95], face: [0, -0.5] };
-// The stack the goldsmith lays his bars out on before they go (Plans/goudmijn.md): on the
+// The stack the goldsmith lays his bars out on before they go (Plans/DONE/goudmijn.md): on the
 // ground in front of the shop, left of the door and out of the lot's middle column, which is
 // where the road comes in - so the barrow can be wheeled up beside it from the street side.
 // `pile` is its middle, `stand` where he stacks from (the porch's front edge, porch z1 0.515),
@@ -487,7 +487,7 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
       return begin(Math.max(0, Math.min(truth, from)));
     },
     busy: () => !!run,
-    // Where the delivery is to be watched (the director, Plans/regisseur.md): the miner while he
+    // Where the delivery is to be watched (the director, Plans/DONE/regisseur.md): the miner while he
     // is still bringing the ore and the goldsmith is waiting for it, the goldsmith after that.
     // World [x, z], or null with no delivery under way.
     focus() {

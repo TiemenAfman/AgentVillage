@@ -5,7 +5,7 @@
 // node's life: node's stdin is a pipe this process holds, and `serve.mjs --supervised` shuts
 // down cleanly when that pipe closes, so Stop is polite, Quit takes the island with it, and
 // this process being killed outright does not leave a node behind with nothing to stop it
-// from. Plans/islander-als-eigen-exe.md has the reasoning.
+// from. Plans/DONE/islander-als-eigen-exe.md has the reasoning.
 //
 // The sea needs nothing here: it runs inside node (createSea, for single and host; closed
 // again on a join), so it comes and goes with the island.

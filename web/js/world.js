@@ -1680,7 +1680,7 @@ export function createLandscape({
     });
   }
 
-  // Where the work is, for the sea (Plans/inwoners-aan-het-werk.md). The settlers walk in
+  // Where the work is, for the sea (Plans/DONE/inwoners-aan-het-werk.md). The settlers walk in
   // Node off the island's bundle, and nothing in a bundle says where a field was laid or a
   // tree was planted - both are this file's own survey. So the keeper's page writes it down
   // the way it writes down where the houses really stand (reportPlacements in main.js).

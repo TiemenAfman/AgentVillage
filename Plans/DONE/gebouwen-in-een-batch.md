@@ -1,8 +1,9 @@
 # Gebouwen in één batch per eiland
 
-**🚧 Status: stap 1 en 2 gebouwd op 29 september 2026** (gebouwlichamen en de frames van de
-naambordjes in één batch per eiland). Open: stap 3, de beletterde gezichten in een atlas, en een
-controle op de telefoon (zie *Na*).
+**✅ Status: stap 1 en 2 gebouwd op 29 september 2026** (gebouwlichamen en de frames van de
+naambordjes in één batch per eiland). De atlas voor de beletterde gezichten (stap 3, *Later*) is
+vervangen door `Plans/naambord-gezichten-op-afstand.md`. Open blijft een controle op de telefoon
+(zie *Na*).
 
 ## Waar dit vandaan komt
 
@@ -190,7 +191,7 @@ hier). De telefoon heeft geen eigen eiland, dus daar gaat het om de gasteilanden
    afweging tussen scherpte van dichtbij en geheugen. Nu houden 395 canvas-texturen samen ~217 MB
    vast (met mipmaps). Het eenvoudiger alternatief - het gezicht niet tekenen waar het onleesbaar
    klein is, met een crème vlakje in de batch als wat je van veraf ziet - staat in
-   [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md).
+   [naambord-gezichten-op-afstand.md](../naambord-gezichten-op-afstand.md).
 
    **Gemeten** (29 september, na stap 1 en 2, de 399 gezichten in dezelfde pagina om de beurt aan
    en uit, zeven keer per standpunt, gepaard verschil): van boven **~4,2 ms** per frame (full 20,9 → 15,8

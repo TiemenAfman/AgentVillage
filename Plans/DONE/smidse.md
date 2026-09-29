@@ -2,7 +2,7 @@
 
 **✅ DONE**
 
-Begonnen op 25 september 2026, na de zagerij (`Plans/zagerij.md`), met dezelfde opzet. Referentie:
+Begonnen op 25 september 2026, na de zagerij (`Plans/DONE/zagerij.md`), met dezelfde opzet. Referentie:
 een klein vakwerkhuis (crème pleister, bruine balken, stenen voeten, donker leien dak met
 dakkapel en stenen schoorsteen) met tegen de rechtergevel een open afdak waar gewerkt wordt.
 
@@ -10,7 +10,7 @@ dakkapel en stenen schoorsteen) met tegen de rechtergevel een open afdak waar ge
 
 Model en animatie staan op `/demo` (rij "Civic", "Smithy"); gebruik het Night-schuifje. **Sinds 25
 september op het eiland: een trede op 60 settlers**, na de zagerij (55), op een 3x3-blok vlak
-buiten de kavels rond het plein - de afwegingen staan in `Plans/zagerij.md`. Het vuur heeft zijn
+buiten de kavels rond het plein - de afwegingen staan in `Plans/DONE/zagerij.md`. Het vuur heeft zijn
 eigen licht, dus een eiland met een smidse (ook dat van een buur) kost één licht meer: één keer
 opnieuw compileren als hij verschijnt, geen prijs per frame.
 

@@ -6,7 +6,7 @@ big cross-braced double door, a hay loft in the gable, a hanging sign and a lant
 a paddock of post-and-rail fence with a gate, a trough, a hay rack, bales, a saddle on its rack
 and a trodden-sand floor. The horse is not baked here: it is `fauna_horse`
 (scripts/build-fauna.py), and web/js/stable.js lets it loose on the sand. Not yet placed on
-the island (Plans/stal-en-veld.md); it stands on /demo.
+the island (Plans/DONE/stal-en-veld.md); it stands on /demo.
 
     civic_stable        the stable building
     civic_stable_yard   the paddock and its furniture; `civic_stable_yard paddock` is the sand,

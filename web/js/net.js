@@ -23,7 +23,7 @@ const FLAG_MOVING = 1;
 const FLAG_SWIMMING = 2;
 const FLAG_RUNNING = 4;
 const FLAG_AIRBORNE = 8;
-// A mouse button held on a hand that carries a shield (walk.js; Plans/aanvallen-en-blokkeren.md). The sea's copy is POSE in
+// A mouse button held on a hand that carries a shield (walk.js; Plans/DONE/aanvallen-en-blokkeren.md). The sea's copy is POSE in
 // lib/players.mjs and web/js/peers.js mirrors it; lib/hostility.mjs is what reads it - a
 // guard's blow that lands on a shield raised towards it costs less. Only ever set on foot:
 // a swimmer's arms are busy and a pilot's are on the tiller, and the sea refuses a block
@@ -36,19 +36,19 @@ export const FLAG_SHIELD_RIGHT = 64;
 // In the saddle (web/js/bicycle.js). The sea only relays it, and peers.js draws a bicycle
 // under whoever carries it; lib/players.mjs's POSE.RIDING is the sea's copy.
 export const FLAG_RIDING = 128;
-// How the body is to be drawn by everybody else (Plans/andere-spelers-zoals-jij.md): on its
+// How the body is to be drawn by everybody else (Plans/DONE/andere-spelers-zoals-jij.md): on its
 // back, crouched, on a seat. Relayed only, for peers.js; lib/players.mjs's POSE is the sea's
 // copy, and a sea from before these masks them away and draws nobody wrong.
 export const FLAG_LYING = 256;
 export const FLAG_CROUCHING = 512;
 export const FLAG_SITTING = 1024;
-// Dancing (R, Plans/dansen.md). Only *that* somebody dances: which move comes out of their id
+// Dancing (R, Plans/DONE/dansen.md). Only *that* somebody dances: which move comes out of their id
 // and the bar, and the bar out of the beat whoever is watching hears (web/js/dance.js), so
 // there is nothing else to send and nothing to keep in step. Same kind of word as the three
 // above, and a sea from before it masks it away the same way.
 export const FLAG_DANCING = 2048;
 // Nobody at the keys: the body the keeper left standing when they went up into the sky
-// (walk.js park, Plans/karakter-blijft-staan.md). peers.js puts a Zzz over it and the sea
+// (walk.js park, Plans/DONE/karakter-blijft-staan.md). peers.js puts a Zzz over it and the sea
 // neither sweeps it as idle nor lets a guard at it. A sea on 0.6.x masks it off.
 export const FLAG_ASLEEP = 4096;
 
@@ -247,7 +247,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           onWelcome(m.id, m.build || null);
           break;
         case 'join': peers.join(m.p); break;
-        // Somebody else's arm, on everybody else's screen (Plans/andere-spelers-zoals-jij.md):
+        // Somebody else's arm, on everybody else's screen (Plans/DONE/andere-spelers-zoals-jij.md):
         // a swing coming down, a glass going up. Events, like the agents' own `swing`.
         case 'swung': peers.act(m.id, 'attack', m.side); break;
         case 'drank': peers.act(m.id, 'drink', m.side); break;

@@ -1,4 +1,4 @@
-// The Batavia riding at anchor (Plans/batavia.md): her hull heaves, pitches and rolls a little
+// The Batavia riding at anchor (Plans/DONE/batavia.md): her hull heaves, pitches and rolls a little
 // and her flags fly. Cosmetic, on this page's own clock, with a phase from her id - nothing
 // here is on the wire, and two screens need not agree on which way she is leaning, any more
 // than they agree on a chimney's smoke.

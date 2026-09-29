@@ -1,4 +1,4 @@
-// The gold mine and the goldsmith (Plans/goudmijn.md): the keeper's seven-day window as ore
+// The gold mine and the goldsmith (Plans/DONE/goudmijn.md): the keeper's seven-day window as ore
 // in the mine, and every five hours a cartload from there, by way of the goldsmith, into the
 // gold pit.
 //

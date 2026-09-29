@@ -60,7 +60,7 @@ const CIVIC = [
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
   // The trades, out beyond the shopping streets. The smith goes in at night: move the night
-  // slider (Plans/zagerij.md, Plans/smidse.md, Plans/stal-en-veld.md).
+  // slider (Plans/DONE/zagerij.md, Plans/DONE/smidse.md, Plans/DONE/stal-en-veld.md).
   ['sawmill', 'Sawmill', '55'],
   ['smithy', 'Smithy', '60'],
   ['statue', 'Statue', '70'],
@@ -72,10 +72,10 @@ const CIVIC = [
   // below the civic rows with all five stages of its ship.
   ['castle', 'Castle', '100'],
   // The harbour's own buildings, which stand at the harbours and not in town
-  // (Plans/havengebouwen.md): the fisherman's hut smokes all day.
+  // (Plans/DONE/havengebouwen.md): the fisherman's hut smokes all day.
   ['fishery', "Fisherman's hut", '113'],
   ['warehouse', 'Warehouse', '127'],
-  // The trades past the castle (Plans/ambachten.md, Plans/mijlpalen-tot-tweehonderd.md): the
+  // The trades past the castle (Plans/DONE/ambachten.md, Plans/DONE/mijlpalen-tot-tweehonderd.md): the
   // copper steams on the island, not here - this page has no particles - and the quarry's crane
   // swings a block round onto the tub, which runs it down to the stack.
   ['brewery', 'Brewery', '106'],
@@ -83,13 +83,13 @@ const CIVIC = [
   ['quarry', 'Quarry', '142'],
   ['poldermill', 'Polder mill', '150'],
   ['crane', 'Harbour crane', '165'],
-  // The ladder's last rung (Plans/kroniekhuis.md): on the island it opens the chronicle, which
+  // The ladder's last rung (Plans/DONE/kroniekhuis.md): on the island it opens the chronicle, which
   // the model sheet has no village to replay, so here it only stands.
   ['chronicle', 'Chronicle house', '200'],
   ['weighhouse', 'Weigh house', '184'],
-  // The shops of the town's plan (Plans/knus-dorpscentrum.md): the bakery with its oven and its
+  // The shops of the town's plan (Plans/DONE/knus-dorpscentrum.md): the bakery with its oven and its
   // baker (who goes in at night too) on a corner of the square, the butcher's (whose awning rolls in when he goes home,
-  // Plans/slagerij.md) and the rest along the four streets.
+  // Plans/DONE/slagerij.md) and the rest along the four streets.
   ['bakery', 'Bakery', '12'],
   ['grocer', 'Grocer', '18'],
   ['apothecary', 'Apothecary', '22'],
@@ -267,7 +267,7 @@ function place(spec, x, z, name, note) {
   }
   // The gold mine's week, a full bin for the same reason, and the goldsmith's furnace melting a
   // load every other twelve seconds so its flare can be looked at without a window turning
-  // over (Plans/goudmijn.md; on the island goldrun.js lights it).
+  // over (Plans/DONE/goudmijn.md; on the island goldrun.js lights it).
   if (built.animated && built.animated.orepile) {
     const at = built.animated.orepile.at;
     attachOrePile(scene, [x + at[0], at[1], z + at[2]]);
@@ -372,7 +372,7 @@ for (let i = 0; i < CIVIC.length; i += 8) {
   }, i === 0 ? 'Civic' : '');
 }
 
-// The shipyard (Plans/scheepswerf.md), which the ladder will put at 95: five by sixteen, so it
+// The shipyard (Plans/DONE/scheepswerf.md), which the ladder will put at 95: five by sixteen, so it
 // has a block of its own rather than a place in the civic rows, and all five stages of the ship
 // on its slipway side by side, in the Dutch order: empty stocks, keel and stems, bottom planking,
 // frames, and her hull - the Batavia's own bake, unmasted, as she is launched. Each stands on a bank
@@ -420,7 +420,7 @@ line(FURNITURE, ([type, name, note], x, z) => {
 // The animals and the small things of the fields, each at its own business (web/js/fauna.js,
 // web/js/countryside.js): cows and a flock on a patch of grass, hens, a pond with ducks and
 // lilies and reeds, a scarecrow, a haystack, a pair of skeps with their bees, and gulls
-// circling. Nothing on the island places any of it yet (Plans/stal-en-veld.md).
+// circling. Nothing on the island places any of it yet (Plans/DONE/stal-en-veld.md).
 {
   const z = row * ROW;
   heading('Country life', z);
@@ -901,7 +901,7 @@ function shorePatch(originX, originZ, cells, { inlet }) {
 }
 
 // ---- the ships on the roads ------------------------------------------------------
-// The Batavia (Plans/batavia.md) in the three liveries an island's three ships wear, afloat
+// The Batavia (Plans/DONE/batavia.md) in the three liveries an island's three ships wear, afloat
 // on a sheet of sea, with the galleon every island already has beside them at the same
 // waterline - she has to read as the bigger and nobler of the two, and this is where to see
 // whether she does. A row of its own rather than a place in CIVIC: the civic rows are a pitch
@@ -1189,7 +1189,7 @@ function setPrompt(near) {
 }
 
 // The doors on the field: the tavern, and the castle, whose great hall is a rave here at any
-// hour - the island opens it on Saturday nights only (Plans/rave-in-het-kasteel.md).
+// hour - the island opens it on Saturday nights only (Plans/DONE/rave-in-het-kasteel.md).
 function doors() {
   const out = [];
   for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern'], ['c:castle', 'rave', 'the castle']]) {

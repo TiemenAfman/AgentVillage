@@ -94,5 +94,5 @@ Gevraagd: "Tijdens de rave moet de stable leeg zijn. Je mag raden waar het paard
 ## Nog niet
 
 - ~~Andere spelers in de rave zien elkaar wel (`peers.place`), maar niet dansen: een dans is geen pose.~~
-- ~~Geen dansknop voor jezelf.~~ Allebei klaar op 27 september: **R** (Plans/dansen.md). Een dans
+- ~~Geen dansknop voor jezelf.~~ Allebei klaar op 27 september: **R** (Plans/DONE/dansen.md). Een dans
   is nu wel een pose-bit, en de ravers doen dezelfde dans als de settlers op de vloer.

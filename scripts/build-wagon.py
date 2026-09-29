@@ -1,6 +1,6 @@
 """The timber wagon. Rebuild with scripts/blender.mjs --background --python scripts/build-wagon.py.
 
-Plans/houtkar.md: the sawmill's draught horse takes a load of squared timber down the road to
+Plans/DONE/houtkar.md: the sawmill's draught horse takes a load of squared timber down the road to
 the shipyard every few minutes and comes back empty. So a one-horse cart - a boarded bed on two
 big wheels, and two shafts out of the front that the horse walks between - and the load on its
 own, because it is there going and not coming back.

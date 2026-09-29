@@ -1,5 +1,5 @@
 // The marks the story animals leave (scripts/build-traces.py, web/js/traces.js,
-// Plans/dierenverhalen.md, docs/animals-wire.md `traces`).
+// Plans/DONE/dierenverhalen.md, docs/animals-wire.md `traces`).
 //
 // The promises: every kind in TRACE_KINDS is baked, within a prop's budget and standing on its
 // own middle; a list applied twice stands nothing twice, and a region's list never clears

@@ -1,6 +1,6 @@
 """The apothecary. Rebuild with scripts/blender.mjs --background --python scripts/build-apothecary.py.
 
-A small shop on the square (Plans/knus-dorpscentrum.md), in the house style of the tavern and the
+A small shop on the square (Plans/DONE/knus-dorpscentrum.md), in the house style of the tavern and the
 bakery: a rough stone ground floor with a violet-painted wooden shopfront - two round windows of
 dark teal bottle glass either side of a plum door, a gold line under the fascia - a jettied upper
 floor of cream plaster in warm oak timber, and a terracotta roof at the tavern's pitch with one

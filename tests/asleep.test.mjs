@@ -1,4 +1,4 @@
-// A body left standing while its keeper is up in the sky (Plans/karakter-blijft-staan.md):
+// A body left standing while its keeper is up in the sky (Plans/DONE/karakter-blijft-staan.md):
 // the page and the sea agree on its bit, and no guard or lava counts it as afoot.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

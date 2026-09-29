@@ -7,7 +7,7 @@
 // screen draws is this machine's graphics card talking, not the island. Nothing here goes
 // to the islander's config.json, which is the keeper's and shared by every page.
 //
-// What each one *does* is Plans/graphics-afstanden.md; this file only knows they are four.
+// What each one *does* is Plans/DONE/graphics-afstanden.md; this file only knows they are four.
 
 // What each kind of machine starts at. The sliders are for turning it further down, or up;
 // these are what a page gets before anybody has touched them, and a machine keeps following

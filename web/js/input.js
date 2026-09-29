@@ -27,7 +27,7 @@ export const MAPS = {
     exit:      { hit: BTN.BACK, label: 'BACK' },
     exitAlt:   { hit: BTN.START },
     bike:      { hit: BTN.Y, label: 'Y' },                    // on and off the bicycle, like F
-    dance:     { hit: BTN.UP, label: '↑' },                   // like R (Plans/dansen.md)
+    dance:     { hit: BTN.UP, label: '↑' },                   // like R (Plans/DONE/dansen.md)
   },
   // Indoors. There is nothing to sow in a tavern and nobody to send off the island from
   // a bar stool, so those actions are left out and the buttons go quiet on their own.

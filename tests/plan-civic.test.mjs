@@ -1,5 +1,5 @@
 // The keeper moving and turning the town's own buildings, and giving the town more ground to
-// do it on (Plans/gebouwen-verplaatsen.md): the `civic` and `commons` ops in lib/plan.mjs.
+// do it on (Plans/DONE/gebouwen-verplaatsen.md): the `civic` and `commons` ops in lib/plan.mjs.
 //
 // What is asserted is the planner's usual bargain for these two: only the building named
 // moves (the postbox of a town hall goes with it), the roads follow its door, the scan after
@@ -38,7 +38,7 @@ function village(settlers) {
   };
 }
 
-// Forty settlers: the ring round the square full (Plans/knus-dorpscentrum.md - the hall, the
+// Forty settlers: the ring round the square full (Plans/DONE/knus-dorpscentrum.md - the hall, the
 // tavern, the clock tower, the chapel and the four corners), the first shops on the streets
 // and the gold pit behind the library.
 const MODEL = village(40);

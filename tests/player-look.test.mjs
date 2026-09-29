@@ -1,4 +1,4 @@
-// Seeing other players the way they see themselves (Plans/andere-spelers-zoals-jij.md): their
+// Seeing other players the way they see themselves (Plans/DONE/andere-spelers-zoals-jij.md): their
 // look, their pose - lying, crouching, sitting, dancing - and their arms, a swing and a sip. Held
 // here: what the sea lets through (lib/players.mjs) and what a page says (web/js/net.js). How
 // peers.js draws a dancer is tests/dance.test.mjs's, which loads it with a canvas stub.
@@ -107,7 +107,7 @@ test('a page says what it looks like on connect, how its body is, and which hand
     await wait(150);
     assert.equal(sock.sent.filter((m) => m.t === 'p').at(-1).f & (FLAG_LYING | FLAG_CROUCHING | FLAG_SITTING), FLAG_SITTING);
     walk.state.sitting = null;
-    // Dancing (Plans/dansen.md): the bit and nothing else - no move, no beat.
+    // Dancing (Plans/DONE/dansen.md): the bit and nothing else - no move, no beat.
     walk.state.dancing = true;
     await wait(150);
     const danced = sock.sent.filter((m) => m.t === 'p').at(-1);

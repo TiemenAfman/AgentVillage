@@ -1,4 +1,4 @@
-// How much beer is in you, and how long it takes to walk it off (Plans/bier-en-dronken.md).
+// How much beer is in you, and how long it takes to walk it off (Plans/DONE/bier-en-dronken.md).
 //
 // The purple bar under the red and the yellow one. It is stamina.js turned upside down: it
 // starts empty, a drink fills it, and after a while of not drinking it drains again - and

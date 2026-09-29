@@ -66,7 +66,7 @@ export function gatheringAt(day, hour) {
   return null;
 }
 
-// When the castle's great hall is a rave (Plans/rave-in-het-kasteel.md): Saturday night,
+// When the castle's great hall is a rave (Plans/DONE/rave-in-het-kasteel.md): Saturday night,
 // from nine until three - which is Sunday by the calendar, and that wrap past midnight is
 // the whole reason this is a table and not an `if` somebody writes again where it is needed.
 // `day` is the night it belongs to, and `until` runs into the next morning. Hours with their

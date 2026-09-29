@@ -1,4 +1,4 @@
-// Plans/verborgen-inwoners-tellen-niet.md: a settler who is not drawn costs the GPU nothing.
+// Plans/DONE/verborgen-inwoners-tellen-niet.md: a settler who is not drawn costs the GPU nothing.
 //
 // Every batch the crowd is drawn with keeps the figures it draws packed in front of `count`,
 // so a body past NPC Distance, under an imp, filtered or not yet placed by the sea is not an

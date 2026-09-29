@@ -1,4 +1,4 @@
-// Sending one house to a hamlet of its own (Plans/huis-naar-eigen-wijkje.md).
+// Sending one house to a hamlet of its own (Plans/DONE/huis-naar-eigen-wijkje.md).
 //
 // The one op that moves a single house. What it has to be: the house and its sheds end up
 // on the new hamlet's land and nowhere near their old neighbours; nothing else moves; the

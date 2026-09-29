@@ -2,7 +2,7 @@
 // once the fog has closed over it, and putting it back. No DOM and no three.js import - it
 // works on whatever has `traverse`, `layers`, `children` and `matrixWorld` - so
 // tests/record-cull.test.mjs can drive it with plain objects. What it is for, and why the cut
-// can never be seen, is Plans/graphics-afstanden.md; the arithmetic is cullNext in fade.js.
+// can never be seen, is Plans/DONE/graphics-afstanden.md; the arithmetic is cullNext in fade.js.
 //
 // The cut is `layers.mask = 0` on the record's objects, not `rec.group.visible`: that flag is
 // state (applyVisibility owns it - filtered, alive in the chronicle, arrived - and popIn and a

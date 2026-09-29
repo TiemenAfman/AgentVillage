@@ -83,7 +83,7 @@ Six numbers in `lib/layout.mjs`, in descending order of violence:
 |---|---|
 | `LAYOUT_VERSION` | Everything, the town and the terrain included. Almost never right. |
 | `PARCEL_VERSION` | Houses, sheds, parcels and paths - re-planned at once. The town keeps every stone. |
-| `TOWN_VERSION` | The centre's own three by three buildings, the postbox and every road and path - laid out again on the town's plan (Plans/knus-dorpscentrum.md). No house or shed moves; the square, the castle and everything on the square stay. |
+| `TOWN_VERSION` | The centre's own three by three buildings, the postbox and every road and path - laid out again on the town's plan (Plans/DONE/knus-dorpscentrum.md). No house or shed moves; the square, the castle and everything on the square stay. |
 | `ROAD_VERSION` | The hamlet roads and `cleared`, and nothing else. |
 | `SQUARE_VERSION` | One plot on the town square, and only if it stands inside another one. |
 | `QUAY_VERSION` | The quay: its planks and its parcel, if those planks are not over open sea. |

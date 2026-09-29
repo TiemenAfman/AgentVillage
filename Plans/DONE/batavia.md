@@ -1,9 +1,11 @@
 # De Batavia
 
-**🚧 NOG NIET KLAAR** — het schip is te tekenen en te raken, maar nog niet te belopen, en de
-ladder en de rede die hem op het eiland zetten zijn een ander werkpakket.
+**✅ Status: gebouwd en op main** (nagekeken tegen de code op 29 september 2026): het model, het deinen en drijven, een romp waar
+boten en zwemmers tegenaan komen, en de trede 120 met de rede die haar op het eiland zetten. Niet
+gebouwd, onder *Later*: aan boord lopen (`CRAFTS.batavia`; `lopen-op-de-boot` is alleen voor het
+galjoen gebouwd), varen, echt licht uit de lantaarns en een sloep.
 
-Begonnen op 28 september 2026, als het schip uit `Plans/mijlpalen-tot-tweehonderd.md` ("Het
+Begonnen op 28 september 2026, als het schip uit `Plans/DONE/mijlpalen-tot-tweehonderd.md` ("Het
 VOC-schip"). Referentie: de Batavia van 1628, de replica in Lelystad. Een spiegelretourschip met
 een hoog achterschip, de platte beschilderde spiegel met een galerij, zijgalerijen op de hoeken en
 drie lantaarns op de kroon, drie masten, een boegspriet met de blinde en de bovenblinde, en een

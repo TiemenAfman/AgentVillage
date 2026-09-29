@@ -1,7 +1,8 @@
 # Promptholm.com: een landingspagina
 
-**🚧 Status: pagina gebouwd op 29 september 2026 (`site/`); nog niet online - Pages en DNS
-moeten nog aangezet worden.**
+**✅ Status: pagina gebouwd op 29 september 2026 (`site/`); nog niet online - Pages en DNS
+moeten nog aangezet worden** (handmatig: Settings → Pages → Source "GitHub Actions" met het custom
+domain, en DNS voor promptholm.com).
 
 ## Wat Tiemen vroeg
 

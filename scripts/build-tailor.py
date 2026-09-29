@@ -1,6 +1,6 @@
 """The clothes shop. Rebuild with scripts/blender.mjs --background --python scripts/build-tailor.py.
 
-A tailor's in a shopping street (Plans/knus-dorpscentrum.md), at the tavern's size and under
+A tailor's in a shopping street (Plans/DONE/knus-dorpscentrum.md), at the tavern's size and under
 the tavern's terracotta: rough stone below, cream plaster between warm oak timbers above, a
 tiled roof with a cross gable over the door, and a crooked stone chimney. The shopfront colour
 is wine red with gold: an arched hood over the door holding a round gold medallion - a spool of

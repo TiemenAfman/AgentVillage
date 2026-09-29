@@ -1,6 +1,6 @@
 // A tent nobody has asked anything of for a long time packs up and leaves, and the village
 // shrinks with it - but whatever the village had already earned stays standing, and the next
-// rung waits until the village is that big again (Plans/tenten-vertrekken.md).
+// rung waits until the village is that big again (Plans/DONE/tenten-vertrekken.md).
 //
 // Built on a synthetic session list rather than transcripts on disk: what is under test is
 // what buildVillage makes of a session's turns and dates, and the dates are the whole point.

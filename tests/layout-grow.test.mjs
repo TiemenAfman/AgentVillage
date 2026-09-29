@@ -1,4 +1,4 @@
-// An island founded small grows when its village no longer fits (Plans/eiland-laten-groeien.md,
+// An island founded small grows when its village no longer fits (Plans/DONE/eiland-laten-groeien.md,
 // fase 2). The promises: everybody who fits in the end gets a house, nothing that stood
 // moves, the ground under what stood does not shift, the hash on record is the ground as
 // grown, and the scan after the growing is byte-identical.
