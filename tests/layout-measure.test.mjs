@@ -92,10 +92,11 @@ const L = layout2;
 const key = (c) => `${c[0]},${c[1]}`;
 const plots = Object.entries(L.plots);
 const houses = plots.filter(([id]) => id.startsWith('house:'));
-// Every civic building with a door, asked of `plotDoor`, the one reading of a door. This was
-// `p.w >= 3` - three by three, or the castle's seven - which stopped being the same question
-// when the ladder went to sea: a ship is four wide and has no door and no road by design, and
-// on the live island the three of them read as three roads missing.
+// Every civic building with a door, asked of `plotDoor` - the one reading of whether a lot
+// has one. `p.w >= 3` was that reading while every door was on a square lot, and stopped
+// being it when the ladder went past a hundred: a ship is 4 wide and has no door and no
+// road by design, so counted as a lot it read as three roads missing. The shipyard, 5 by
+// 16, still is one: its gate is at the landward end, and its road goes there.
 const civicLots = plots.filter(([id, p]) => id.startsWith('civic:') && plotDoor(id, p));
 
 // Everything a door may open onto: road, the paving of the square and its frontage, and
@@ -284,13 +285,16 @@ test('every civic lot keeps its road', () => {
   // lib/layout.mjs), and the stone at its head is a single cell rather than a lot with a
   // door - so counted against the lots it read as one road too many from the day the bridge
   // was built, 10 against 9. It still has to lead to something that stands.
+  //
+  // The lot by lot check goes first: a count alone said "31 !== 36" and left somebody to
+  // work out which five buildings those were.
   const roads = L.paths.filter((p) => String(p.id).startsWith('path:civic:'));
   for (const p of roads) assert.ok(L.plots[p.id.slice('path:'.length)], `${p.id} leads to a civic building that is not there`);
-  const lotRoads = roads.filter((p) => { const id = p.id.slice('path:'.length); return plotDoor(id, L.plots[id]); });
-  assert.equal(lotRoads.length, civicLots.length, 'a civic lot has no road, or has two');
   for (const [id] of civicLots) {
     assert.ok(L.paths.some((p) => p.id === `path:${id}`), `${id} has no road`);
   }
+  const lotRoads = roads.filter((p) => { const id = p.id.slice('path:'.length); return plotDoor(id, L.plots[id]); });
+  assert.equal(lotRoads.length, civicLots.length, 'a civic lot has no road, or has two');
 });
 
 test('the village is spread over the island, and nobody is a guest', () => {
