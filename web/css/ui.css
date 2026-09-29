@@ -1006,6 +1006,25 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 }
 .mainmenu.gone { opacity: 0; pointer-events: none; }
 
+/* The menu behind Esc and the ☰ (web/js/sysmenu.js, Plans/esc-menu-en-knoppenbalk.md). Over
+   the island like the main menu, under it in z (the main menu can be asked for from here),
+   over every side panel. The scrim is thinner still: nothing is chosen here that needs the
+   island out of the way. */
+.sysmenu {
+  position: fixed; inset: 0; z-index: 30;
+  display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(13, 20, 32, .18), rgba(13, 20, 32, .6));
+}
+.sysmenu[hidden] { display: none; }
+.sysmenu-card { width: min(380px, 100%); max-height: 100%; overflow: auto; padding: 18px 20px 14px; animation: slidein .18s ease; }
+.sysmenu-card h2 { font-family: var(--font); font-size: 22px; margin: 0 0 12px; text-align: center; letter-spacing: .015em; }
+.sysmenu-back { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 9px 13px; font-size: 13px; }
+.sysmenu-list { display: grid; gap: 5px; margin-top: 8px; }
+.sysmenu-list .chip { width: 100%; text-align: left; padding: 9px 13px; font-size: 12.5px; border-radius: 9px; }
+.sysmenu-list .chip[hidden] { display: none; }
+.sysmenu kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.sysmenu-keys { margin: 14px 0 0; font-size: 11px; line-height: 1.9; }
+
 .menu-card { width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 22px 24px 18px; }
 .menu-head { text-align: center; }
 .menu-kicker {

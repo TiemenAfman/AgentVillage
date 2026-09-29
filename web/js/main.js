@@ -20,6 +20,7 @@ import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight, setImpBudget, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
+import { createSysMenu } from './sysmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
@@ -1453,6 +1454,7 @@ function directorMay() {
   if (state.mode !== 'orbit' || state.intro || state.tween || document.hidden) return false;
   if (state.chronicle && state.chronicle.t != null) return false;
   if (state.ui && state.ui.directorEnabled && !state.ui.directorEnabled()) return false;
+  if (state.sysmenu && state.sysmenu.isOpen()) return false;
   return !document.querySelector('aside.panel:not([hidden])');
 }
 function stepDirector(dt) {
@@ -1523,7 +1525,7 @@ async function fetchGold() {
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
 const PANELS = () => [state.board, state.chat, state.market, state.mailbox,
-  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu];
+  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
@@ -2884,6 +2886,41 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
+  // The chips' own letters, from the sky only (Plans/esc-menu-en-knoppenbalk.md) - on foot I
+  // and M are walk.js's, and W A S D E are the feet. Not over another overlay, where a letter
+  // may be somebody typing into a board's filter without an input having the focus. A chip
+  // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
+  else if (ORBIT_KEYS[k] && !openPanel()) {
+    const b = document.getElementById(ORBIT_KEYS[k]);
+    if (b && !b.hidden) { e.preventDefault(); b.click(); }
+  }
+});
+const ORBIT_KEYS = { i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn' };
+
+// Esc, from the sky, with nothing else to close: the menu (web/js/sysmenu.js). Every other
+// Escape handler on the page closes its own thing and many of them do not stop the key, so
+// "was anything open" is asked in the capture phase, before any of them has run - asked
+// afterwards, the Escape that closed the legend would find nothing open and open the menu
+// on top of the island it had just handed back. On foot the key keeps the job CLAUDE.md
+// gives it (the mouse first, then up into the sky), and the planner steps back through its
+// own levels; neither opens a menu.
+let escHadWork = false;
+function escapeHasWork() {
+  return overlayOpen() || skyMap || state.mode !== 'orbit' || !!state.intro
+    || !document.getElementById('mainmenu').hidden
+    || !!document.querySelector('.popover:not([hidden])')
+    || !!(state.ghost && state.ghost.holding());
+}
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') escHadWork = escapeHasWork();
+}, true);
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.repeat || !state.sysmenu) return;
+  if (state.sysmenu.isOpen()) { e.preventDefault(); state.sysmenu.close(); return; }
+  if (escHadWork || e.defaultPrevented) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  state.sysmenu.open();
 });
 
 // Every islet in the world, for the chart - in the scene frame, like everything it draws.
@@ -4785,7 +4822,7 @@ function frameIsland() {
 // /api/seas probes every candidate's /health, and POST /api/sea writes config.json and then
 // actually closes the sea it was in and joins the new one - so this is a menu over working
 // plumbing rather than a picture of one.
-function openMainMenu() {
+function openMainMenu({ reopened = false } = {}) {
   const menu = createMainMenu({
     islandName: (state.village && state.village.island && state.village.island.name) || 'this island',
     hasIslander: islanderHere() && !state.guest,
@@ -4820,8 +4857,9 @@ function openMainMenu() {
       await followSea();
       return { ok: true };
     },
-    // Whatever was chosen, the opening sweep happens afterwards rather than under it.
-    onDone: () => startIntro(),
+    // Whatever was chosen, the opening sweep happens afterwards rather than under it - at
+    // boot. Asked again from the menu ("Which sea…"), the camera stays where the keeper had it.
+    onDone: () => { if (!reopened) startIntro(); },
   });
   menu.open();
 }
@@ -5626,7 +5664,9 @@ let frameErrors = 0;
 // A drops you onto the island, B clears whatever panel is hanging over it.
 function orbitPad(a, dt) {
   if (state.mode !== 'orbit') return;
-  if (a.hit('walk') || a.hit('walkAlt')) { enterWalk(); return; }
+  if (a.hit('walk')) { enterWalk(); return; }
+  // Start is the menu on a console; it used to be a second way to walk beside A.
+  if (a.hit('menu')) { state.sysmenu.toggle(); return; }
   if (a.hit('back')) state.ui.closeOverlays();
   const look = a.look, move = a.move;
   if (!(look.x || look.y || move.x || move.y || a.lt > 0.1 || a.rt > 0.1)) return;
@@ -6185,6 +6225,7 @@ function playerName() {
 }
 
 async function boot() {
+  state.sysmenu = createSysMenu();
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
     onSpeechTap: () => endParley(),
@@ -6274,6 +6315,7 @@ async function boot() {
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    onWhichSea: () => openMainMenu({ reopened: true }),
     // Settings -> Drawing -> Lighter when slow. A ?quality pin outranks it: that is somebody
     // looking at one rung on purpose.
     onQualityAuto: (on) => {

@@ -55,18 +55,36 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 const el = (id) => document.getElementById(id);
+// The chips in the bar carry an icon and a word (index.html); writing textContent would take
+// the icon with it. The word is the aria-label too, because below 1100px it is not shown.
+function setLabel(id, text) {
+  const b = el(id);
+  const lbl = b.querySelector('.lbl');
+  if (lbl) lbl.textContent = text; else b.textContent = text;
+  b.setAttribute('aria-label', text);
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
   const state = { filters: { code: true, cowork: true, apprentices: true }, open: null };
 
   // --- filters, legend, overview ------------------------------------------
+  // Each toggle is there twice: in the menu (always) and in the Show row under the chips, which
+  // only stands there while something is switched off - an island with its houses hidden has
+  // to say so without anybody opening a menu (Plans/esc-menu-en-knoppenbalk.md).
+  function syncFilters() {
+    document.querySelectorAll('[data-filter]').forEach((b) => {
+      const on = state.filters[b.dataset.filter];
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    el('filter-row').hidden = Object.values(state.filters).every(Boolean);
+  }
   document.querySelectorAll('[data-filter]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const k = btn.dataset.filter;
       state.filters[k] = !state.filters[k];
-      btn.classList.toggle('on', state.filters[k]);
-      btn.setAttribute('aria-pressed', String(state.filters[k]));
+      syncFilters();
       handlers.onFilters(state.filters);
     });
   });
@@ -80,12 +98,13 @@ export function createUI(handlers) {
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
+  el('sea-btn').addEventListener('click', () => handlers.onWhichSea && handlers.onWhichSea());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
-  // Tucks the menu away - New settler through Overview - leaving the clock and the
-  // Code/Cowork/Apprentices filters where they were. Remembered the same way the chat
+  // Tucks the chips away - New settler through Overview - leaving the clock and the menu
+  // (☰) where they were. Remembered the same way the chat
   // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
   const NAV_KEY = 'promptholm.nav.collapsed';
   // With nothing remembered, a phone starts with it tucked away: at 390 wide the menu is
@@ -439,7 +458,12 @@ export function createUI(handlers) {
   try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
 
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
-  function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
+  function setKeeper(keeper) {
+    el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper;
+    el('sysmenu-plan-key').hidden = !keeper;
+    // Only the keeper's islander can be moved to another sea (POST /api/sea).
+    el('sea-btn').hidden = !keeper;
+  }
 
   // The app on a phone: on foot for good, so the ways up to the sky and into the planner
   // go, and so does building. A class on body rather than `hidden`, because other setters
@@ -962,7 +986,7 @@ export function createUI(handlers) {
     // read from high up and so are always on when you leave the sky.
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
-    el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
+    setLabel('walk-btn', on ? 'Fly up' : 'Walk');
     if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
@@ -973,7 +997,7 @@ export function createUI(handlers) {
     el('labels').hidden = planning || walking;
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
-    el('plan-btn').textContent = planning ? 'Done' : 'Plan';
+    setLabel('plan-btn', planning ? 'Done' : 'Plan');
     if (planning) hideSide();
     syncSidebar();
   }

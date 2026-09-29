@@ -49,6 +49,14 @@
 .chip:hover, .topright .chips .chip:hover { background: #ffffff12; color: var(--ink); border-color: var(--edge); }
 .topright .chips .chip.on:hover { background: #f4d79d; color: #203530; }
 #walk-btn { color: var(--accent); font-weight: 650; }
+/* Icon and word; the word goes below 1100px (media block below) and the icon carries the chip
+   there, the word staying its title and aria-label. The line between the two groups is what
+   says which is which: doing on the left, looking on the right. */
+.chip.nav { display: inline-flex; align-items: center; gap: 6px; }
+.chip .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.chips-sep { align-self: stretch; width: 1px; margin: 5px 4px; background: var(--edge); }
+#sysmenu-btn { display: inline-flex; align-items: center; padding: 7px 9px; border-radius: 8px; }
+#sysmenu-btn .ico { width: 16px; height: 16px; }
 #walk-btn.on { color: #203530; }
 .right-column, .building-now, .panel { top: 160px; }
 /* The planner's tools sit on the left, under the title card - which runs to about 192px
@@ -96,6 +104,8 @@ select option { color: var(--ink); background: var(--panel-solid); }
 #boot-text { color: #e5d8b7; letter-spacing: .07em; line-height: 1.8; }
 @media (max-width: 1100px) {
   #toasts { bottom: 80px; max-width: calc(100vw - 80px); }
+  .chip.nav .lbl { display: none; }
+  .topright .chips .chip.nav { padding: 7px 8px; }
 }
 @media (max-width: 780px) {
   .titlecard { min-width: 0; padding: 12px; max-width: 190px; }

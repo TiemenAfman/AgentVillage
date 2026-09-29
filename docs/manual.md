@@ -6,7 +6,7 @@ you are looking at. This is the rest.
 
 | | |
 |---|---|
-| Living in it | [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) · [Sound](#what-the-island-sounds-like) |
+| Living in it | [The chips and the menu](#the-chips-and-the-menu) · [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) · [Sound](#what-the-island-sounds-like) |
 | Putting it to work | [The sprint board](#the-sprint-board) · [The island's own board](#the-islands-own-board) · [The office](#the-office) · [Telling an agent how your team works](#telling-an-agent-how-your-team-works) |
 | Who is on it | [Starting a session](#starting-a-new-session-from-the-island) · [Inviting one](#inviting-a-session-that-already-exists) · [Sending one away](#sending-a-settler-away) · [Visitors and neighbours](#visitors-and-neighbours) |
 | How it is built | [How the village grows](#how-the-village-grows) · [Where the data comes from](#where-the-data-comes-from) · [The model sheet](#the-model-sheet) · [The workbench](#the-workbench) · [Layout](#layout) |
@@ -51,6 +51,25 @@ The server listens on 127.0.0.1 only and refuses requests whose Origin is not th
  itself, because it can start unattended agents in any folder on this machine. Opening it
 to other people is possible and deliberate; [Visitors and neighbours](#visitors-and-neighbours)
 says what that does and does not give away.
+
+## The chips and the menu
+
+The chips at the top right are in two groups. On the left is what you do: **New settler**,
+**Walk**, **Plan** (the keeper's) and **Say**. After the line is what you look at: **Map**,
+**Inventory**, **Animals** (once the island has one) and **Overview**, which frames the whole
+island. On a narrow screen only their icons show; hover for the name.
+
+Everything you set once and leave is in the **menu**. Open it with the ☰ at the far right,
+with Esc from the sky, or with Start on a controller. It holds **Settings** (the keeper's),
+the **Legend**, **Sound**, **Controls** on a phone, the **Show** toggles for Code, Cowork and
+apprentices, and **Which sea…**, the choice you are offered when the island starts. Esc always
+closes whatever is open first: a panel, the chart, the inventory. The menu opens only when there
+is nothing left to close. On foot the first Esc frees the mouse and the second takes you up into
+the sky; the third opens the menu there. When one of the Show toggles is off, a Show row stays
+under the chips, so a village with its houses hidden says so.
+
+From the sky the chips have letters: **M** map, **I** inventory, **O** overview, **N** new
+settler, **L** legend and, for the keeper, **P** planner.
 
 ## Walking the island
 
@@ -373,7 +392,7 @@ they restart a server they do not think of as holding your data.
 
 **The house signs.** The board in a settler's front yard is the one label that spells a
 title out in the world itself rather than in a panel you have to open, so it has a setting
-of its own, under **Settings** in the top right:
+of its own, under **Settings** in the menu (the ☰ at the top right, or Esc from the sky):
 
 | | |
 |---|---|
@@ -1021,7 +1040,7 @@ them all without waiting out somebody else's afternoon.
 
 ## What the island sounds like
 
-**Sound** in the row of chips at the top right, beside Legend. It starts off, and whichever
+**Sound** in the menu (the ☰ at the top right, or Esc from the sky), beside Legend. It starts off, and whichever
 way you leave it is how that browser finds it next time — it is a setting of your speakers
 rather than of the island, so it is not in Settings and a visitor gets it too. Nothing makes
 a noise before you click something: browsers will not start audio on their own, and neither

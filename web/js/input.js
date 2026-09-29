@@ -63,7 +63,7 @@ export const MAPS = {
   // From up in the sky. The sticks fly the camera; see `orbitPad` in main.js.
   orbit: {
     walk:    { hit: BTN.A, label: 'A' },
-    walkAlt: { hit: BTN.START },
+    menu:    { hit: BTN.START, label: 'START' },   // the menu behind Esc (sysmenu.js)
     back:    { hit: BTN.B, label: 'B' },
   },
   // Reserved. Build mode is being built elsewhere; when it lands it only has to call
