@@ -23,4 +23,11 @@ export function installPageKeys(target = globalThis) {
   target.addEventListener('keydown', (e) => {
     if (isSelectAll(e) && !typingInto(e.target)) e.preventDefault();
   });
+  // The page menu (Copy / Select All) over the HUD, a card or the toolbar is as unwanted as the
+  // selection it offers - text selection is off outside fields (ui.css), so the menu had nothing
+  // to copy anyway. main.js already cancels it on the canvas; this is every other place. A field
+  // keeps it: paste is what somebody in one is after.
+  target.addEventListener('contextmenu', (e) => {
+    if (!typingInto(e.target)) e.preventDefault();
+  });
 }
