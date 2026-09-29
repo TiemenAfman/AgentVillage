@@ -1037,8 +1037,21 @@ is a lattice (`ISLET_PITCH`) with one hash per square, kept only where an islet'
 `clearOf` every row's `reach` plus `ISLET_MARGIN` (and a phone's own berth, handed in as
 `extra`) - so every page sees the same islets, the sea gains nothing, and they never go into
 `nextOrigin`. `web/js/islets.js` draws them relative to `state.homeOrigin` from `syncIslets()` in
-`doSyncFleet`, and draws nothing until the berth is known. Not being regions is why the sea under
-them is open-sea blue and boats sail through; `isletHeight` is the one ground for the walk-on step.
+`doSyncFleet`, and draws nothing until the berth is known. They are ground without being regions:
+`createIslets`' `seabed` (`{ height, squares }`) is handed to the archipelago (`setSeabed`, from
+`onChange` and again in `buildScene`, which makes a new sea), and between the islands `height()`
+says `isletBed` - `isletHeight`, the ground that is drawn, up to `ISLET_FADE` radii and sinking into
+`OPEN_SEA` by `ISLET_SPAN`, so the box ends in the sea's own depth and never in a step. That one
+hook is why feet (`heightUnder`), hulls (`boatGround`: an islet is a shoal to a boat, sand above
+`BEACH_MAX` a wall), peers and the sound bed all see them. The water is dense round them through
+`waterSquares()` -> `waterPatchPlan` (a square may carry its own `reach` and `step`: an islet's
+`ISLET_SHOAL_REACH` 6 and every second vertex, or 59 of them cost a tenth of a page instead of
+2.8%; dense tiles that touch take the finest step, or the coarser leaves a T-junction). The bed is
+a general hook (`seabed`, not islets): anything else that raises the sea floor goes through it.
+A palm is solid at its trunk: `islets.blockers()` (round `{ x, z, r }`, into `walkableBlockers`, and
+re-handed to walk mode on `onChange`) - and the trunk is *not* at the model's origin: the baked
+Quaternius palm stands 0.39 to one side, turned by `rot`, so `PALM_FOOT` is rotated and scaled like the
+mesh. Bushes are not solid.
 The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
 line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
@@ -1177,6 +1190,13 @@ held items higher and tilted (`FP_HOLD_X`, `FP_TILT`), following `camPitch` - no
 the wire, so nobody else sees that pose. The whole rig is mirrored (`object.scale.x = -1`):
 the bake's "Right hand" sits at +x, which on a figure facing +z is its left hand. The villagers' own rigs (smith, butcher, baker) set it back to 1: their tools were placed
 against the unmirrored rig, and `tests/butcher.test.mjs` fails on the cleaver if one is not.
+
+**The follow camera never hangs under the sea.** `placeCamera` in walk.js floors the camera with
+`cameraFloor` (web/js/camera-floor.js): over ground it is the ground plus a hand, over water the
+*surface* plus `WATER_CAM_MIN` (0.5, over the swell and the near plane) - the ground under open
+sea is `OPEN_SEA`, so the old ground-plus-a-hand let a wheeled-out camera look up at a boat through
+the underside of the water. Not while `state.diving` (the diving mode's flag, set by walk.js when
+the head is under the surface; unset until then): there the camera belongs under the water.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.

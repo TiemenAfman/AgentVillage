@@ -16,7 +16,7 @@
 // both come from `isletHeight`. That puts all of this under shared/'s rule: integer maths,
 // + - * /, floor, abs, min, max and sqrt; no sin, cos or pow (see shared/rng.mjs). An angle
 // here is only ever handed out, for the page to turn a palm by.
-import { hash32, makeRng, makeSimplex2D } from './rng.mjs';
+import { hash32, makeRng, makeSimplex2D, smoothstep } from './rng.mjs';
 import { clearOf } from './regions.mjs';
 
 // One candidate per square this wide, in world units. The square is the islet's own: an
@@ -64,6 +64,20 @@ function noise(islet) {
   return n;
 }
 
+// How far out from an islet's middle, in radii, its bed is still its own to answer for, where
+// it starts to give way to open water, and how much dense water the sea lays round that
+// square. `isletHeight` is the ground you stand on and see; `isletBed` is what the sea says
+// about the same place, and it is the same number up to ISLET_FADE - past every coast the
+// dome can have (1.25 at the worst wobble) - and then sinks to OPEN_SEA by ISLET_SPAN, so
+// the box the sea asks the islet about ends in the sea's own depth and not in a step.
+export const ISLET_FADE = 1.3;
+export const ISLET_SPAN = 1.8;
+export const ISLET_SHOAL_REACH = 6;
+// The vertex spacing of the water round an islet, in units: an island's grid holds one
+// every unit, but forty islets at that cost a tenth of the page (measured), and a shoal a
+// dozen cells across shades as smoothly on every second vertex.
+export const ISLET_WATER_STEP = 2;
+
 // The ground of one islet at a point in its own frame (cells from its middle): a dome with
 // a knocked-about coast, above the sea only inside it and falling away under the water past
 // it, so the sea closes over the edge. The noise is on the *distance*, not the height, which
@@ -74,6 +88,18 @@ export function isletHeight(islet, lx, lz) {
   const rr = d * wobble;
   if (rr < 1) return islet.peak * (1 - rr * rr);
   return Math.max(-2, -(rr - 1) * 3);
+}
+
+// What the sea's depth is at a point in an islet's own frame: the ground where there is any,
+// sinking to `floor` (the sea's OPEN_SEA, handed in because this file does not know it) over
+// the band from ISLET_FADE to ISLET_SPAN radii. Null past the span - there is nothing there.
+export function isletBed(islet, lx, lz, floor) {
+  const d = Math.sqrt(lx * lx + lz * lz) / islet.r;
+  if (d >= ISLET_SPAN) return null;
+  const h = isletHeight(islet, lx, lz);
+  if (d <= ISLET_FADE) return h;
+  const t = smoothstep(ISLET_FADE, ISLET_SPAN, d);
+  return h + (floor - h) * t;
 }
 
 // Every islet within `range` of `at` (world coordinates), clear of every row in `fleet`

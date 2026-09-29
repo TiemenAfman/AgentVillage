@@ -165,10 +165,13 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   (api.js, access.mjs en de import map zouden alle drie breken), en wat de schil wél doet: de
   service starten als die er niet is en hem laten draaien als het venster dichtgaat. Gebouwd op
   22 september 2026.
-- 🚧 [starter-eilanden.md](starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
+- ✅ [starter-eilanden.md](starter-eilanden.md) — de zee legt zelf drie kleine eilandjes neer met
   alleen een plein, een kroeg en een stadhuis (en dus een kroegbaas en een burgemeester), zodat
   een telefoonspeler altijd iets heeft om naartoe te varen. Een nieuw eiland neemt de ligplaats
-  van de eerste vrije starter over. Plan van 26 september 2026; gebouwd (stap 1–6); de decoratie-eilandjes nog niet.
+  van de eerste vrije starter over. Plan van 26 september 2026; gebouwd. Erbij de onclaimbare
+  decoratie-eilandjes (zandplaten met palmen, door elke pagina zelf uitgerekend): sinds 29
+  september met ondiep water rond het zand, een boot die erop vastloopt en grond om op te staan,
+  allemaal via één zeebodem-haak in het archipel.
 - ✅ [bier-en-dronken.md](bier-en-dronken.md) — Bier in de hand, drinken met de muis, en wat het met je doet
 - ✅ [dansen.md](dansen.md) — Zelf dansen
 - 🚧 [eiland-laten-groeien.md](eiland-laten-groeien.md) — Het eiland laten groeien
