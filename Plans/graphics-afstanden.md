@@ -244,6 +244,17 @@ een meting per soort toestel. Uit de review, gerepareerd:
   gastcrowd die tijdens de planner binnenkomt krijgt bereik 0; Shadow Distance begint op 85
   (daaronder deed de schuif niets); `clampGraphic(true)` weigert.
 
+Uit de deterministische pop-in-meting (frameloop stilgezet, per stap vier renders: met knip,
+nog eens met knip als ruisvloer, zonder knip, zonder huizen; verschil zonder drempel): **wat de
+knip weghaalt is 0 bij elke stap** om 12:00 en 07:00, ook bij elke stap waarin een record geknipt
+wordt, met een ruisvloer van 0. De controle (mist niet naar binnen getrokken, wel op 60 geknipt)
+laat een duidelijke pop zien (7097 bij de eerste knip, oplopend tot 44k), dus de meting vangt er
+een als die er is. Om 17:30 en 22:00 bleef 1-9 pixels over: de **vuurvliegjes**, `fog: false`,
+die een volledig mistig huis afdekte en die bij de knip weer tevoorschijn kwamen. Die gaan nu uit
+in de nevel (hun alpha, niet hun kleur: additief licht naar de mistkleur zou grijs gloeien). En
+de knip wordt nu genomen vlak voor de render (`cullRecords`), waar elke tak van de frame de camera
+al heeft neergezet; eerder in de frame mat hij van waar de camera wás.
+
 Niet gedaan, bewust: de zon kan bij View 100 vóór heuvels op 200 hangen (de prijs van een
 mistvrije schijf binnen de far plane); vlaggen van geknipte huizen blijven in de gedeelde
 InstancedMesh staan, bevroren en in volle mist.

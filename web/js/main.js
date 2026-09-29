@@ -2563,6 +2563,18 @@ function onGraphicsReset() {
 // colour of the fog, and comes out of it. The eye both it and the crowd's shadow fade measure
 // from is the camera, copied once a frame.
 const cullEye = new THREE.Vector3();
+// Right before the render, once every branch of the frame has put the camera where it will be
+// drawn from: taken earlier in the frame it measured from where the camera *was*, and a jump
+// of more than the pad in one frame (a tween, a fast zoom) could draw a record a frame late
+// or cut one a frame early inside the fog band. The animations read `rec.cull` from the
+// frame before, which only ever decides whether a mill in full fog turns.
+function cullRecords() {
+  cullEye.copy(camera.position);
+  setFadeEye(camera.position);
+  const range = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
+  for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
+  for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
+}
 
 // Where the haze begins and where it closes, and the only place that decides either.
 // world.js makes the Fog object and tints it with the sky; these two distances were being
@@ -5979,12 +5991,10 @@ function frame(nowMs) {
 
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
-  // Object Distance, and the reason the far houses are cheap rather than merely faint.
-  // The eye both the CPU cut and the crowd's shadow fade measure from, once for the frame.
-  cullEye.copy(camera.position);
-  setFadeEye(camera.position);
-  const objectRange = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
-  for (const rec of state.byId.values()) if (keepRecord(rec, objectRange, cullEye)) animateExtras(rec, dt, hour, nightAmt, nowMs);
+  // Object Distance, and the reason the far houses are cheap rather than merely faint: a
+  // record the cut has taken out (cullRecords, just before the render) does none of its
+  // per-frame work.
+  for (const rec of state.byId.values()) if (!rec.cull) animateExtras(rec, dt, hour, nightAmt, nowMs);
   // The miner and the goldsmith, and the cart and the barrow between them (goldrun.js).
   if (state.goldRun) state.goldRun.update(dt);
   // The timber wagon from the sawmill to the yard, and the hands at the yard (timberrun.js),
@@ -6001,7 +6011,7 @@ function frame(nowMs) {
   // the price of walking a second list - it is a village over there too, and a village whose
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
-    for (const rec of g.records) if (keepRecord(rec, objectRange, cullEye)) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    for (const rec of g.records) if (!rec.cull) animateExtras(rec, dt, hour, nightAmt, nowMs);
     // And their ground: the season their wood is drawn in, and anything falling over on
     // it. Their island is built by the same createLandscape ours is, so it wants the same
     // one call a frame - without it a neighbour's forest would still be in the season it
@@ -6068,6 +6078,7 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
+  cullRecords();
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (statsReadout) {
     // Colour pass only: three.js resets renderer.info after the shadow pass, so the

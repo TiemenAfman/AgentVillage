@@ -1971,17 +1971,36 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const ffGeo = new THREE.BufferGeometry();
   ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
   ffGeo.setAttribute('color', new THREE.BufferAttribute(ffCol, 3));
+  // They go out in the haze rather than being hazed over: additive light blended towards the
+  // fog colour would *add* fog colour and glow grey, so the fog here scales their alpha down
+  // to nothing instead. Before this they were fog: false and shone at full strength through
+  // any haze - and since Object Distance takes houses out behind a closed fog, cutting a
+  // fully fogged house showed the fireflies it had been hiding, a few pixels at dusk and
+  // night that were the one measurable break of "a house is cut in full fog". vFogDepth is
+  // the distance, like everything else's (radial-fog.js).
   const fireflies = new THREE.Points(ffGeo, new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
     vertexColors: true,
-    uniforms: { uScale: { value: window.innerHeight * 0.5 } },
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uScale: { value: window.innerHeight * 0.5 } }]),
     vertexShader: `varying vec3 vC; uniform float uScale;
-      void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 0.13 * uScale / max(0.001, -mv.z); gl_Position = projectionMatrix * mv; }`,
+      #include <fog_pars_vertex>
+      void main(){ vC = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = 0.13 * uScale / max(0.001, -mvPosition.z); gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
     fragmentShader: `varying vec3 vC;
+      #include <fog_pars_fragment>
       void main(){ float d = length(gl_PointCoord - 0.5);
         float m = smoothstep(0.5, 0.0, d); if (m <= 0.01) discard;
-        gl_FragColor = vec4(vC, m * m); }`,
+        float a = m * m;
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            a *= exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+          #else
+            a *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);
+          #endif
+        #endif
+        gl_FragColor = vec4(vC, a); }`,
   }));
   fireflies.frustumCulled = false;
   fireflies.renderOrder = 2;

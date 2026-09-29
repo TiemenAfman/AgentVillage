@@ -374,6 +374,10 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   never masked: lights (turned down to 0 instead - the light count is in every lit program's
   key, and a masked campfire recompiled every material on screen) and records with a
   `fog: false` part (a lighthouse beam, a campfire flame: landmarks, never cut).
+  The cut is taken in `cullRecords()`, right before the render, once every branch of the
+  frame has put the camera where it is drawn from. Anything `fog: false` that a fogged house
+  could hide breaks the rule when the house goes: the fireflies were the one measured case,
+  and now fade their alpha with the fog.
   That is what makes an older machine playable without the island looking cut short: the
   `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
   people are past the haze and not drawn at all.

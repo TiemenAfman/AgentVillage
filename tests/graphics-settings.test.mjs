@@ -157,3 +157,16 @@ test('the sky is drawn on the far plane, so a short view never shows the clear c
   const view = main.slice(main.indexOf('function applyViewDistance()'), main.indexOf('function applyViewDistance()') + 600);
   assert.match(view, /state\.world\.setFar\(camera\.far\)/);
 });
+
+test('the fireflies go out in the haze, and the cut is taken where the camera is drawn from', () => {
+  // A fully fogged house cut at Object Distance showed the fireflies it had been hiding: they
+  // were fog: false. Measured as the one break of "cut in full fog", at dusk and at night.
+  const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
+  const ff = world.slice(world.indexOf('const fireflies = new THREE.Points'), world.indexOf('fireflies.frustumCulled'));
+  assert.match(ff, /fog: true/);
+  assert.match(ff, /#include <fog_vertex>/);
+  assert.match(ff, /a \*= 1\.0 - smoothstep\(fogNear, fogFar, vFogDepth\)/);
+  // The cut runs right before the render, after every branch has moved the camera.
+  const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /cullRecords\(\);\n\s*renderer\.render\(state\.inside \? state\.inside\.scene : scene, eye\);/);
+});
