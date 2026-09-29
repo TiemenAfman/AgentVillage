@@ -450,3 +450,23 @@ test('a held list that lands before the body is kept for it', () => {
   assert.ok(turnedBy(f.yaw, Math.PI) < 0.01, `faces ${f.yaw.toFixed(3)} rather than the talker to the south`);
   crowd.dispose();
 });
+
+// Every batch a crowd puts in the scene is culled on its own island: three would otherwise
+// cull an InstancedMesh on a sphere worked out once from wherever the instances stood, so
+// the batches were left unculled and every guest crowd was drawn into a shadow map hundreds
+// of units away from it. The sphere must hold the whole grid, corners included, or a
+// settler walking there would blink out.
+test('a crowd is culled on a sphere that holds its whole island', () => {
+  const keep = {};
+  view(keep);
+  const batches = keep.scene.children.filter((o) => o.isInstancedMesh);
+  assert.ok(batches.length > 10, 'the body parts, the hats and the tools');
+  const [ox, oz] = region.origin;
+  for (const m of batches) {
+    assert.equal(m.frustumCulled, true, `${m.name || 'a batch'} is not culled`);
+    for (const [cx, cz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+      const corner = new THREE.Vector3(ox + cx * region.half, 0, oz + cz * region.half);
+      assert.ok(m.boundingSphere.containsPoint(corner), `${m.name || 'a batch'} leaves out a corner of its grid`);
+    }
+  }
+});

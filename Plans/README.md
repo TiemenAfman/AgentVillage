@@ -26,6 +26,15 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [sneller-tekenen.md](sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
+  bestond al of brak een regel. Wel gedaan: `?stats` telt de schaduwpas, een kwaliteitsregelaar
+  die zonder shader-recompile lichter tekent onder ~28 fps, vier geheugenlekken bij het ophalen van
+  een gasteiland dicht (met test), en 64% minder driehoeken (het water, naamborden, schaduwen van
+  settlers). Nog niet: een lage settler voor ver weg.
+- 🚧 [esc-menu-en-knoppenbalk.md](esc-menu-en-knoppenbalk.md) — de knoppen rechtsboven in twee
+  groepen met iconen, en een Esc-menu dat de instellingen ís: vier tabbladen, waarvan alleen
+  *Island* van de keeper is (de rest stond achter de keeper-knop en was van de browser).
+  Wacht op Tiemens oordeel.
 - ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
   (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
   mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus

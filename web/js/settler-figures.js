@@ -385,7 +385,20 @@ function hipLift(lean, look) {
 // three.js recompiles every material whenever that number changes. The flame glows after
 // dark through the same per-vertex night mask the player's does, which is what reads from
 // across the water anyway.
-export function createFigures(scene, material, { armed = false } = {}) {
+//
+// `bounds` ({ x, z, r }, scene frame) is where this crowd can be: its island's grid. Every
+// batch is culled on that one sphere. Without it they are never culled, because three
+// culls an InstancedMesh on a sphere worked out once from wherever the instances stood
+// then, and a crowd walks. Measured on a 150-settler island with the volcano and three
+// starters in the sea: the four guest crowds' 36 shadow-pass calls were drawn into a shadow
+// map a few hundred units away from every one of them. The same sphere is what a ray tests
+// first when a figure is hovered (InstancedMesh.raycast), and it is right for that too.
+export function createFigures(scene, material, { armed = false, bounds = null } = {}) {
+  const sphere = bounds ? new THREE.Sphere(new THREE.Vector3(bounds.x, 0, bounds.z), bounds.r) : null;
+  const cull = (m) => {
+    if (sphere) { m.boundingSphere = sphere; m.frustumCulled = true; } else m.frustumCulled = false;
+    return m;
+  };
   // Every mesh the crowd is drawn with. The one place they are made, so the one place each is
   // handed the material's depth twin (buildings.js `fadeDepth`, when the material has one):
   // with NPC Distance inside the haze a settler dithers out, and without the twin their
@@ -394,17 +407,16 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const instanced = (geo, n) => {
     const m = new THREE.InstancedMesh(geo, material, n);
     if (material.userData && material.userData.fadeDepth) m.customDepthMaterial = material.userData.fadeDepth;
-    return m;
+    return cull(m);
   };
-  function makeMesh(geo) {
+  function makeMesh(geo, { shadow = true } = {}) {
     const m = instanced(geo, CAPACITY);
-    m.castShadow = true;
+    m.castShadow = shadow;
     m.count = 0;
-    m.frustumCulled = false;
     scene.add(m);
     return m;
   }
-  const tint = (mesh, i, hex) => {
+  const tint =(mesh, i, hex) => {
     mesh.setColorAt(i, tmpColor.setHex(hex));
     mesh.instanceColor.needsUpdate = true;
   };
@@ -420,16 +432,22 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // CAPACITY in an evening and leave the next arrival undrawn.
   const spare = [];
   const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
-  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]));
+  // No shadow from what lies on the body's own surface: the waistcoat, apron and buttons on
+  // the shirt, the neck between head and collar, and the face's eyes, brows, sideburns and
+  // hair cap on the head. Each is inside the silhouette of a batch that does cast, a figure
+  // is some ten texels tall in the shadow map at its sharpest, and figures receive no
+  // shadow, so none of it ever showed - but it was 142k of the 852k triangles the shadow
+  // pass drew on a 150-settler island (the buttons alone are 300 a figure).
+  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]), { shadow: false });
   const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
   const rightLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)]));
   const leftArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)]));
   const rightArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)]));
   const leftHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)]));
   const rightHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)]));
-  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
+  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]), { shadow: false });
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false });
   // Optional clothing and hair remain two population-wide batches, never a mesh
   // per woman. They share the resident slot and follow its body/head respectively.
   const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
@@ -496,7 +514,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
   hammerGeo.computeVertexNormals();
   const hammers = instanced(hammerGeo, CAPACITY);
   hammers.count = 0;
-  hammers.frustumCulled = false;
   hammers.name = 'resident-hammers';
 
   // The chores' tools (Plans/inwoners-aan-het-werk.md): one InstancedMesh each for the
@@ -511,7 +528,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
     g.computeVertexNormals();
     const m = instanced(g, CAPACITY);
     m.count = 0;
-    m.frustumCulled = false;
     m.visible = false;
     scene.add(m);
     return m;
@@ -551,7 +567,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
   bundleGeo.computeVertexNormals();
   const bundles = instanced(bundleGeo, CAPACITY);
   bundles.count = 0;
-  bundles.frustumCulled = false;
   bundles.visible = false;
   scene.add(bundles);
   // Everybody's wheelbarrow on the way to and from the gold pit, its wheel, and the gold in
@@ -562,7 +577,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
     const m = instanced(geo, n);
     m.count = 0;
     m.castShadow = true;
-    m.frustumCulled = false;
     m.visible = false;
     scene.add(m);
     return m;
@@ -595,7 +609,6 @@ export function createFigures(scene, material, { armed = false } = {}) {
   const pints = instanced(pintGeometry(), PINTS);
   pints.count = 0;
   pints.castShadow = true;
-  pints.frustumCulled = false;
   scene.add(pints);
 
   let time = 0;
@@ -898,6 +911,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();
+      // And the mesh itself: every one of these is an InstancedMesh of CAPACITY, and its
+      // instanceMatrix and instanceColor buffers are freed by the renderer on the mesh's
+      // dispose() alone - the geometry's leaves them. Some 21 of them a crowd, raised again
+      // with every guest region.
+      m.dispose();
     }
     roster.length = 0;
     slots = 0;

@@ -6,7 +6,7 @@ you are looking at. This is the rest.
 
 | | |
 |---|---|
-| Living in it | [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) · [Sound](#what-the-island-sounds-like) |
+| Living in it | [The chips and the menu](#the-chips-and-the-menu) · [Walking](#walking-the-island) · [Market gardening](#market-gardening) · [Talking to a settler](#talking-to-a-settler) · [Sound](#what-the-island-sounds-like) |
 | Putting it to work | [The sprint board](#the-sprint-board) · [The island's own board](#the-islands-own-board) · [The office](#the-office) · [Telling an agent how your team works](#telling-an-agent-how-your-team-works) |
 | Who is on it | [Starting a session](#starting-a-new-session-from-the-island) · [Inviting one](#inviting-a-session-that-already-exists) · [Sending one away](#sending-a-settler-away) · [Visitors and neighbours](#visitors-and-neighbours) |
 | How it is built | [How the village grows](#how-the-village-grows) · [Where the data comes from](#where-the-data-comes-from) · [The model sheet](#the-model-sheet) · [The workbench](#the-workbench) · [Layout](#layout) |
@@ -51,6 +51,36 @@ The server listens on 127.0.0.1 only and refuses requests whose Origin is not th
  itself, because it can start unattended agents in any folder on this machine. Opening it
 to other people is possible and deliberate; [Visitors and neighbours](#visitors-and-neighbours)
 says what that does and does not give away.
+
+## The chips and the menu
+
+The chips at the top right are in two groups. On the left is what you do: **New settler**,
+**Walk**, **Plan** (the keeper's) and **Say**. After the line is what you look at: **Map**,
+**Inventory**, **Animals** (once the island has one) and **Overview**, which frames the whole
+island. On a narrow screen only their icons show; hover for the name.
+
+The **menu** holds everything you set once and leave, and it is where the settings live. Open
+it with the ☰ at the far right, with Esc from the sky, or with Start on a controller. It has
+four tabs:
+
+- **This screen**: sound, the **Show** toggles for Code, Cowork and apprentices, what hangs over
+  you from the sky (*You*, *You + arrow* or *Off*), *Wander by itself*, the **Timeline** bar, and
+  **Graphics**: how far the view, the buildings, the people and the shadows reach, each on its
+  own slider (*This machine's defaults* puts all four back), with *Lighter when slow* under them.
+- **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
+- **Island**: the house signs, how big the island may grow, and which sea it is in. Only the
+  keeper sees this tab, because it writes the island's own config.json.
+- **Help**: the legend, the keys, and which build this is.
+
+Everything on the first two tabs is kept by your browser, so a visitor can change it too.
+
+Esc always closes whatever is open first: a panel, the chart, the inventory. The menu opens only
+when there is nothing left to close. On foot the first Esc frees the mouse and the second takes
+you up into the sky; the third opens the menu there. When one of the Show toggles is off, a Show
+row stays under the chips, so a village with its houses hidden says so.
+
+From the sky the chips have letters: **M** map, **I** inventory, **O** overview, **N** new
+settler, **L** legend and, for the keeper, **P** planner.
 
 ## Walking the island
 
@@ -373,7 +403,7 @@ they restart a server they do not think of as holding your data.
 
 **The house signs.** The board in a settler's front yard is the one label that spells a
 title out in the world itself rather than in a panel you have to open, so it has a setting
-of its own, under **Settings** in the top right:
+of its own, on the menu's **Island** tab (the ☰ at the top right, or Esc from the sky):
 
 | | |
 |---|---|
@@ -1047,9 +1077,9 @@ them all without waiting out somebody else's afternoon.
 
 ## What the island sounds like
 
-**Sound** in the row of chips at the top right, beside Legend. It starts off, and whichever
+**Sound** on the menu's **This screen** tab (the ☰ at the top right, or Esc from the sky). It starts off, and whichever
 way you leave it is how that browser finds it next time — it is a setting of your speakers
-rather than of the island, so it is not in Settings and a visitor gets it too. Nothing makes
+rather than of the island, so it is not on the Island tab and a visitor gets it too. Nothing makes
 a noise before you click something: browsers will not start audio on their own, and neither
 will this.
 

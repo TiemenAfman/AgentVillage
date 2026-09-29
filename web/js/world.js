@@ -462,6 +462,23 @@ export function createLandscape({
   const group = new THREE.Group();
   parent.add(group);
 
+  // The textures that are this landscape's alone: the wear, plaza, bank and quay masks it
+  // paints, and the sheets it asks for. `sheet()` loads a new Texture on every call, so the
+  // grass under a neighbour is not the grass under us - and Material.dispose() does not
+  // touch a map, let alone a texture handed to a shader through onBeforeCompile. Kept here
+  // so dispose() can give them back. Before this every raise and lowering of a region left
+  // nine behind (tests/guest-leak.test.mjs): four sheets, and five masks, three of them
+  // min(2048, size * 8) squared - 2.25 MB apiece for the volcano, whose every raise in the
+  // browser left about 7 MB of textures on the GPU. A sheet that lands after the region has
+  // gone is given back on arrival.
+  const ownTextures = [];
+  let disposed = false;
+  const ownSheet = (name, onLoad) => sheet(name, (tex) => {
+    if (disposed) { tex.dispose(); return; }
+    ownTextures.push(tex);
+    onLoad(tex);
+  });
+
   // ---- ground -------------------------------------------------------------
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * N * 3);
@@ -678,10 +695,11 @@ export function createLandscape({
   bankTexture.needsUpdate = true;
   const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   blankRiverSheet.needsUpdate = true;
+  ownTextures.push(wearTexture, plazaTexture, quayWaterTexture, bankTexture, blankRiverSheet);
   const riverSheet = { value: blankRiverSheet };
   dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture,
     { texture: bankTexture, sheet: riverSheet }, quayWaterTexture);
-  sheet('river-shingle', (tex) => { riverSheet.value = tex; });
+  ownSheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
   ground.name = groundName;
   // So the existing raycast finds it and hovering says whose island this is.
@@ -710,7 +728,7 @@ export function createLandscape({
   // The bands, the season, the district tint and the meadow noise are all already in the
   // vertex colours. The sheet is brightness only, so it grains the ground without having
   // an opinion about any of them.
-  sheet('grass', (tex) => {
+  ownSheet('grass', (tex) => {
     ground.material.map = tex; ground.material.needsUpdate = true;
     const bankMaterial = basinMesh?.children[0]?.material;
     if (bankMaterial) { bankMaterial.map = tex; bankMaterial.needsUpdate = true; }
@@ -870,8 +888,8 @@ export function createLandscape({
   // same foliage sheet from both sides without making every closed tree canopy double-sided.
   const grassMat = treeMat.clone();
   grassMat.side = THREE.DoubleSide;
-  sheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
-  sheet('foliage', (tex) => {
+  ownSheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
+  ownSheet('foliage', (tex) => {
     tex.repeat.set(2, 2);
     foliageMat.map = tex; foliageMat.needsUpdate = true;
     grassMat.map = tex; grassMat.needsUpdate = true;
@@ -1595,9 +1613,16 @@ export function createLandscape({
   // and a region that came and went four times leaving its woods behind is four forests
   // of buffers nobody can reach.
   function dispose() {
+    disposed = true;
+    for (const t of ownTextures) t.dispose();
+    ownTextures.length = 0;
     parent.remove(group);
     group.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
+      // The wood, the rocks, the grass and the hedges are InstancedMeshes, and their
+      // instanceMatrix and instanceColor buffers are the mesh's own, not the geometry's: the
+      // renderer frees them on the mesh's dispose() and on nothing else.
+      if (o.isInstancedMesh) o.dispose();
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) m.dispose();
     });
   }
@@ -1795,7 +1820,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
     geo.setAttribute('aCoarse', new THREE.BufferAttribute(Float32Array.from(coarse.subarray(0, count)), 1));
     waterGeo = geo;
-    wp = p;
+    wp = geo.attributes.position;
     return geo;
   }
   buildWaterGeometry();

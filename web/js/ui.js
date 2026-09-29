@@ -4,6 +4,7 @@ import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
 import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
+import { createSysMenu } from './sysmenu.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
@@ -56,6 +57,14 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 const el = (id) => document.getElementById(id);
+// The chips in the bar carry an icon and a word (index.html); writing textContent would take
+// the icon with it. The word is the aria-label too, because below 1100px it is not shown.
+function setLabel(id, text) {
+  const b = el(id);
+  const lbl = b.querySelector('.lbl');
+  if (lbl) lbl.textContent = text; else b.textContent = text;
+  b.setAttribute('aria-label', text);
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
@@ -72,29 +81,39 @@ export function createUI(handlers) {
     graphics: { ...GRAPHICS_DEFAULTS, ...(handlers.graphics ? handlers.graphics() : {}) },
   };
   // --- filters, legend, overview ------------------------------------------
-  // The Code/Cowork/Apprentices filters live under Settings → Show (renderSettings); they
-  // were chips under the menu, where they were rarely touched and always in the way.
-  const FILTERS = [
-    ['code', 'Code', 'Claude Code sessions: show or hide their houses'],
-    ['cowork', 'Cowork', 'Cowork tasks: show or hide the harbour houses'],
-    ['apprentices', 'Apprentices', 'Subagents: show or hide the sheds beside the houses'],
-  ];
+  // Each toggle is there twice: in the menu (always) and in the Show row under the chips, which
+  // only stands there while something is switched off - an island with its houses hidden has
+  // to say so without anybody opening a menu (Plans/esc-menu-en-knoppenbalk.md).
+  function syncFilters() {
+    document.querySelectorAll('[data-filter]').forEach((b) => {
+      const on = state.filters[b.dataset.filter];
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    el('filter-row').hidden = Object.values(state.filters).every(Boolean);
+  }
+  document.querySelectorAll('[data-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.filter;
+      state.filters[k] = !state.filters[k];
+      syncFilters();
+      handlers.onFilters(state.filters);
+    });
+  });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
-  // Beside Legend rather than inside Settings, and it is the one chip that is not there
-  // twice by accident: the Settings panel writes config.json on the machine the island
-  // runs on and is hidden from everybody but the keeper (see setKeeper below), while how
-  // loud somebody's own speakers are is theirs alone. So this is a chip, and what it
-  // remembers lives in that browser's localStorage next to the avatar and the chat mode.
+  // On the menu's This screen tab, not the keeper's Island tab: that one writes config.json
+  // on the machine the island runs on (see setKeeper below), while how loud somebody's own
+  // speakers are is theirs alone. What it remembers lives in that browser's localStorage next
+  // to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
-  el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
-  // Tucks the menu away - New settler through Overview - leaving the clock where it
-  // was. Remembered the same way the chat
+  // Tucks the chips away - New settler through Overview - leaving the clock and the menu
+  // (☰) where they were. Remembered the same way the chat
   // mode and the avatar are: this browser's own localStorage, nothing sent anywhere.
   const NAV_KEY = 'promptholm.nav.collapsed';
   // With nothing remembered, a phone starts with it tucked away: at 390 wide the menu is
@@ -143,7 +162,18 @@ export function createUI(handlers) {
   // The side panels on the right, one open at a time. The last two are the animals'
   // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
   // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
-  const SIDE = ['dossier', 'legend', 'settings', 'phone', 'animal-dossier', 'animal-journal'];
+  const SIDE = ['dossier', 'legend', 'phone', 'animal-dossier', 'animal-journal'];
+  // The menu behind Esc and the ☰, which is the settings too (sysmenu.js). Drawn afresh each
+  // time it opens, and the keeper's islander asked who is out on the sea and how big the
+  // island may grow - the Island tab's two lists - before it is.
+  const menu = createSysMenu({
+    closers: ['legend-btn', 'phone-btn'],
+    onOpen: () => {
+      if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
+      renderSettings();
+      el('sysmenu-build').textContent = handlers.buildLabel ? handlers.buildLabel() : '';
+    },
+  });
   const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
     if (!el(which)) return;
@@ -160,7 +190,6 @@ export function createUI(handlers) {
     syncSidebar();
   }
   function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
-  function openSettings() { hideSide('settings'); el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
     const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
@@ -172,7 +201,6 @@ export function createUI(handlers) {
     if (a) a.hidden = walking || planning || panelOpen || !a.querySelector('li');
     el('chronicle').hidden = walking || planning || !timelineShown();
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
-    el('settings-btn').classList.toggle('on', !el('settings').hidden);
     el('phone-btn').classList.toggle('on', !el('phone').hidden);
   }
   let hasBuilders = false;
@@ -481,18 +509,39 @@ export function createUI(handlers) {
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
 
-  // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
-  function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
+  // The quality governor (web/js/quality.js, Plans/sneller-tekenen.md): drawing less while
+  // this machine cannot keep up. On unless switched off, per browser - it is about this
+  // screen's graphics, not the island.
+  const QUALITY_KEY = 'promptholm.quality.auto';
+  let qualityAuto = true;
+  try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
+
+  // The planner moves hamlets on this machine's layout, and the menu's Island tab writes its
+  // config.json (the signs, the size, the sea), so both are the keeper's. The rest of the
+  // settings are this browser's and everybody's - they used to be behind the keeper's
+  // Settings chip too, and a visitor could not so much as rebind a key.
+  let keeper = false;
+  function setKeeper(k) {
+    keeper = !!k;
+    el('plan-btn').hidden = !keeper;
+    el('sysmenu-plan-key').hidden = !keeper;
+    el('tab-island').hidden = !keeper;
+    menu.refresh();
+  }
 
   // The app on a phone: on foot for good, so the ways up to the sky and into the planner
   // go, and so does building. A class on body rather than `hidden`, because other setters
   // (setWalking among them) hand some of these chips their `hidden` back later.
   // The app on a phone. It also gets the two chips a phone needs and a keyboard does not:
   // Say, for the island chat that otherwise only T opens, and Controls (phoneprefs.js).
+  let standalone = false;
   function setStandalone() {
+    standalone = true;
     document.body.classList.add('standalone');
     el('say-btn').hidden = false;
     el('phone-btn').hidden = false;
+    el('touch-controls').hidden = false;
+    renderSettings();
   }
   el('say-btn').addEventListener('click', () => handlers.onSay && handlers.onSay());
   el('phone-btn').addEventListener('click', () => (el('phone').hidden ? openPhone() : close('phone')));
@@ -646,23 +695,16 @@ export function createUI(handlers) {
   }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
-    el('settings-body').innerHTML = '<div class="settings-cols"><h3 class="sec" style="margin-top:0">House signs</h3>'
+    // One section per tab of the menu (sysmenu.js); the Island one only for the keeper, whose
+    // config.json it writes, and the keys only where there is a keyboard. The Show toggles are
+    // not drawn here: they stand in index.html's own section of This screen, and in the Show
+    // row under the chips while one of them is off.
+    const signs = '<h3 class="sec" style="margin-top:0">House signs</h3>'
       + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
-      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
-      + controlsSection()
-      + graphicsSection()
-      + sizeSection()
-      + seaSection()
-      + '<h3 class="sec">Show</h3>'
-      + `<div class="chips wrap">${FILTERS.map(([k, label, title]) => `<button class="chip${state.filters[k] ? ' on' : ''}" data-filter="${k}" aria-pressed="${state.filters[k]}" title="${title}">${label}</button>`).join('')}</div>`
-      + '<h3 class="sec">Timeline</h3>'
-      + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
-      + `<p class="muted" style="margin-top:9px">${timelineOn
-        ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
-        : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`
-      + '<h3 class="sec">From the sky</h3>'
+      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+    const sky = '<h3 class="sec">From the sky</h3>'
       + `<div class="chips wrap">${YOU_MODES
         .map(([k, label]) => `<button class="chip${k === youMode ? ' on' : ''}" data-youarrow="${k}" aria-pressed="${k === youMode}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(YOU_MODES.find(([k]) => k === youMode)[2])}</p>`
@@ -670,11 +712,26 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${directorOn
         ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
         : 'Off: the camera stays where you leave it.'}</p>`
-      + '<h3 class="sec">Debug</h3>'
+      + '<h3 class="sec">Timeline</h3>'
+      + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
+      + `<p class="muted" style="margin-top:9px">${timelineOn
+        ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
+        : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`
+      // The four distances and the governor are one subject - how much this screen draws - so
+      // the governor's switch sits under the sliders rather than under a heading of its own.
+      + graphicsSection()
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
+      + `<p class="muted" style="margin-top:9px">${qualityAuto
+        ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
+        : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
+    const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
-        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p></div>`;
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
+    el('settings-body').innerHTML = `<section data-tab="screen">${sky}</section>`
+      + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
+      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
@@ -684,12 +741,6 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
-    }));
-    el('settings-body').querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => {
-      const k = b.dataset.filter;
-      state.filters[k] = !state.filters[k];
-      handlers.onFilters(state.filters);
-      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-timeline]').forEach((b) => b.addEventListener('click', () => {
       timelineOn = !timelineOn;
@@ -712,6 +763,12 @@ export function createUI(handlers) {
       if (handlers.onGraphicsReset) handlers.onGraphicsReset();
       if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());
       renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-qualityauto]').forEach((b) => b.addEventListener('click', () => {
+      qualityAuto = !qualityAuto;
+      try { if (qualityAuto) localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, '0'); } catch { /* kept for this page only */ }
+      renderSettings();
+      if (handlers.onQualityAuto) handlers.onQualityAuto(qualityAuto);
     }));
     el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {
       directorOn = !directorOn;
@@ -1056,7 +1113,7 @@ export function createUI(handlers) {
     // read from high up and so are always on when you leave the sky.
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
-    el('walk-btn').textContent = on ? 'Fly up' : 'Walk';
+    setLabel('walk-btn', on ? 'Fly up' : 'Walk');
     if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
@@ -1067,7 +1124,7 @@ export function createUI(handlers) {
     el('labels').hidden = planning || walking;
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
-    el('plan-btn').textContent = planning ? 'Done' : 'Plan';
+    setLabel('plan-btn', planning ? 'Done' : 'Plan');
     if (planning) hideSide();
     syncSidebar();
   }
@@ -1196,7 +1253,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
@@ -1205,6 +1262,7 @@ export function createUI(handlers) {
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas, setIslandSize,
     closeOverlays: () => SIDE.forEach(close),
+    sysmenu: menu,
   };
 }
 
