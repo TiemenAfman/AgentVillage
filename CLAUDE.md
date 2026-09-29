@@ -71,6 +71,13 @@ A scan reads the machine's live transcripts, so two runs minutes apart are not c
 for byte (a new session is a new settler): to compare old code against new, run both in one
 process, off / on / off, where the two "off" runs agreeing proves the model held still.
 
+A test that goes through `scan()` must date its transcripts relative to now, never on a
+fixed day: `scan()` builds the village on `Date.now()` with the config from HOME (its `now`
+option reaches only the planner's snapshot name), so a fixture's tent packs up a week after
+its date and nothing the test hands `scan()` stops it. Tests that call `buildVillage`
+directly pass their own `now` and `config: { tentGraceMs: 0 }` instead
+(`tests/tents-leave.test.mjs`).
+
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747. Pitfall: the preview
 tool reads `launch.json` from the directory the session was *launched* in and starts the

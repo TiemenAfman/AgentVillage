@@ -10,13 +10,18 @@ import { buildBundle, parseBundle } from '../lib/islandbundle.mjs';
 import { loadConfig } from '../lib/paths.mjs';
 
 const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const row = (type, payload) => JSON.stringify({ timestamp: '2026-09-22T10:00:00Z', type, payload }) + '\n';
+// Dated an hour ago, never on a fixed day: the fixture's one settler is a tent, and scan()
+// builds the village on Date.now() with the config from HOME, so nothing a test can hand it
+// keeps a tent quiet for `tentGraceMs` from packing up (lib/village.mjs). Dated 22 September
+// 2026, the island below had nobody on it from the 29th on.
+const WHEN = new Date(Date.now() - 60 * 60 * 1000).toISOString().slice(0, 19);
+const row = (type, payload) => JSON.stringify({ timestamp: `${WHEN}Z`, type, payload }) + '\n';
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-island-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const dir = path.join(root, 'sessions', '2026', '09', '22');
+  const dir = path.join(root, 'sessions', ...WHEN.slice(0, 10).split('-'));
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `rollout-2026-09-22T10-00-00-${id}.jsonl`);
+  const file = path.join(dir, `rollout-${WHEN.replace(/:/g, '-')}-${id}.jsonl`);
   fs.writeFileSync(file, row('session_meta', { id, cwd: 'C:/CodexIslandFixture' })
     + row('turn_context', { model: 'gpt-5', cwd: 'C:/CodexIslandFixture' })
     + row('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>private context</environment_context>' }] })
