@@ -57,6 +57,41 @@
 body:not(.chip-names) .chip.nav .lbl { display: none; }
 body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
 .chip .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* The chip's key, in the corner: `data-key` in index.html (ui.js empties it while the key does
+   not work, e.g. Walk on foot). The icon sits a little high to leave the corner free. Not on a
+   touch screen, where there is no keyboard to press it on. */
+.topright .chips .chip[data-key]:not([data-key=""]) { position: relative; padding-bottom: 10px; }
+.chip[data-key]:not([data-key=""])::after {
+  content: attr(data-key);
+  position: absolute; right: 3px; bottom: 1px;
+  font-size: 8px; font-weight: 700; line-height: 1; letter-spacing: 0;
+  opacity: .65; pointer-events: none;
+}
+.chip[data-key]:hover::after, .chip[data-key]:focus-visible::after { opacity: 1; }
+body.standalone .chip[data-key]::after { display: none; }
+@media (pointer: coarse) { .chip[data-key]::after { display: none; } }
+/* The two boxes (what you do | the clock and the menu) are one system: same border, radius and
+   padding, and the handle that folds the buttons away lives in the first, so a folded bar is
+   the handle alone in its box rather than a loose pill. */
+.topright .chips-row { align-items: stretch; }
+#nav-box, #sys-chips { align-items: center; }
+.nav-group { display: flex; align-items: center; gap: 3px; align-self: stretch; }
+#nav-collapse-btn { display: inline-flex; align-items: center; padding: 7px 5px; }
+#nav-collapse-btn .ico { width: 14px; height: 14px; }
+/* Walk and Plan change into the thing they turn into (Fly up, Done) - the icon says so too,
+   not only the tooltip. */
+.chip.nav .ico-on { display: none; }
+.chip.nav.on .ico-on { display: inline-block; }
+.chip.nav.on .ico-off { display: none; }
+/* Icons at rest were --ink-dim on the panel: barely there next to the gold one. */
+.topright .chips .chip.nav:not(.on):not(:hover), .topright .chips #sysmenu-btn:not(:hover) { color: #e2e9dc; }
+/* The clock is a button that previews an hour on this screen. A sun or moon says it is about the
+   time of day; the lens (a preview, the sea keeps its own clock) is tinted, not just a word. */
+#clock-chip { display: inline-flex; align-items: center; gap: 7px; padding-right: 22px; }
+#clock-chip .ico { width: 14px; height: 14px; }
+#clock-chip[data-key]::after { top: 50%; bottom: auto; transform: translateY(-50%); right: 8px; font-size: 9px; }
+#clock-chip.lens { background: rgba(127, 199, 217, .12); }
+#clock-chip.lens:hover { background: rgba(127, 199, 217, .2); }
 .chips-sep { align-self: stretch; width: 1px; margin: 5px 4px; background: var(--edge); }
 #sysmenu-btn { display: inline-flex; align-items: center; padding: 7px 9px; border-radius: 8px; }
 #sysmenu-btn .ico { width: 16px; height: 16px; }
@@ -111,7 +146,7 @@ body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
 .bind.off, .bindrow.head span.off, .chip.off { opacity: .38; }
 .bind.off, .chip.off { pointer-events: none; cursor: default; }
 @media (max-width: 480px) { .bindtable { font-size: 12px; grid-template-columns: minmax(64px, 1.2fr) repeat(3, minmax(44px, 1fr)); } }
-#clock-chip { border-radius: 8px; padding: 7px 12px; letter-spacing: .05em; }
+#clock-chip { border-radius: 8px; padding-top: 7px; padding-bottom: 7px; letter-spacing: .05em; }
 .btn, .fab { box-shadow: inset 0 1px #ffffff08; }
 .btn:hover { border-color: #e8c17c70; }
 button:focus-visible, select:focus-visible, input:focus-visible {

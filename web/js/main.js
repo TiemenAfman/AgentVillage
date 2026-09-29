@@ -3216,11 +3216,21 @@ addEventListener('keydown', (e) => {
   // may be somebody typing into a board's filter without an input having the focus. A chip
   // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
   else if (ORBIT_KEYS[k] && !openPanel()) {
+    // Enter is also how a focused button is pressed: leave that to the browser, or the chip
+    // would be clicked twice. Nor while the main menu (which has its own buttons) is up.
+    if (k === 'enter' && (/^(BUTTON|A|SUMMARY)$/.test(t && t.tagName) || !document.getElementById('mainmenu').hidden)) return;
     const b = document.getElementById(ORBIT_KEYS[k]);
     if (b && !b.hidden) { e.preventDefault(); b.click(); }
   }
 });
-const ORBIT_KEYS = { i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn' };
+// Walk is Enter and not W: a W that is still held when the feet take over would walk on at once
+// (and W A S D E are the feet's, see Plans/DONE/esc-menu-en-knoppenbalk.md). T (say) is
+// islandchat.js's own, from either mode; the chip's badge is its `data-key` in index.html.
+// H is the clock's hour preview (a lens on this screen, the sea's clock is not touched).
+const ORBIT_KEYS = {
+  i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
+  b: 'build-btn', j: 'animals-btn', enter: 'walk-btn', h: 'clock-chip',
+};
 
 // Esc, from the sky, with nothing else to close: the menu (web/js/sysmenu.js). Every other
 // Escape handler on the page closes its own thing and many of them do not stop the key, so

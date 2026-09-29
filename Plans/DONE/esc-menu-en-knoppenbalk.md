@@ -30,7 +30,7 @@ voorstel van Gemini, dat Tiemen doorgaf met "zelf bijschaven mag":
 | De *Show*-rij | Gaat het menu in, en verschijnt alleen onder de balk zolang er iets uit staat. | Drie schakelaars die bijna altijd aan staan, hoeven niet altijd in beeld. Maar een eiland waar huizen verborgen zijn, moet dat wel laten zien. |
 | Acties naar linksonder | **Niet.** De balk blijft rechtsboven, maar in twee groepen met een scheidingslijn: *doen* (New settler, Walk, Plan, Build, Say) en *kijken* (Map, Inventory, Animals, Overview), met het menu (☰) helemaal rechts. | Onderin staan al de tijdlijn, de toetsenrij, de toasts, het onderschrift van de regisseur en de knop voor volledig scherm, en op de telefoon de stick en de knoppen. Rechtsboven is de plek die mensen al kennen. |
 | Iconen | **Alleen iconen**, en de woorden terug via *This screen → Names on the buttons* (per browser, en ook dan alleen boven 1100 px breed). De naam en de toets blijven de tooltip en het `aria-label`; Walk/Fly up en Plan/Done werken hun tooltip mee bij. | Eerst stond het woord er standaard bij, met als argument dat alleen iconen trager lezen voor een nieuwe speler. Martijn na het zien ervan: "alleen icoontjes lijkt me voldoende" - de woorden namen op een laptopscherm de halve breedte. Omlijnde SVG's in de stijl van touchpad.js. |
-| Sneltoetsen | Van boven: **Esc** menu, **M** kaart (bestond), **I** inventaris (bestond te voet), **O** overzicht, **N** nieuwe settler, **P** planner (keeper), **L** legenda. De tooltip noemt de toets. Op de controller: **Start** opent het menu van boven. | Zelfde letters als te voet waar die bestaan. W, A, S, D en E blijven vrij, want dat zijn de toetsen te voet. Start was van boven een tweede "lopen" naast A; op een console is Start het menu. |
+| Sneltoetsen | Van boven: **Esc** menu, **M** kaart (bestond), **I** inventaris (bestond te voet), **O** overzicht, **N** nieuwe settler, **P** planner (keeper), **L** legenda. De tooltip noemt de toets. Op de controller: **Start** opent het menu van boven. | Zelfde letters als te voet waar die bestaan. W, A, S, D en E blijven vrij, want dat zijn de toetsen te voet. Start was van boven een tweede "lopen" naast A; op een console is Start het menu. Later erbij: **Enter** loopt (niet W: een nog ingedrukte W zou meteen doorlopen), **J** dieren, **B** bouwen (als Build aan staat), **T** zeggen (bestond, van beide standen), **H** de klok-preview. Elke chip toont zijn toets als hoekbadge (`data-key`, ui.js leegt hem als de toets niet werkt: Walk te voet, Plan in de planner). |
 | Animals en Inventory als tabbladen van Overview | **Niet.** | Overview is geen scherm maar de camera die het hele eiland in beeld brengt. Inventory is je eigen uitrusting, Animals het dagboek van de dieren van de keeper. Drie verschillende dingen in één scherm stoppen is minder knoppen, maar niet duidelijker. |
 | Visuele hiërarchie | Walk houdt zijn accentkleur (die had het al). | Het is de knop waar alles mee begint. |
 
@@ -74,6 +74,16 @@ Het zijpaneel *Settings* en de knop *Which sea…* verdwijnen: de zee staat nu o
 *Island*, met de lijst en *Add*, en dat is meer dan het hoofdmenu bood. De legenda blijft een
 zijpaneel. Het is naslag die je naast het eiland wilt houden, niet iets om in een venster ervoor
 te lezen.
+
+## Derde ronde: de balk nagelopen (29 september 2026)
+
+Toetsbadges op elke chip, en verder: de balk is een `role="toolbar"` met één Tab-stop en pijltjes
+(roving tabindex in ui.js, die hidden chips overslaat); het klok-chipje en het menu zitten in één
+kader, en het ‹-handvat zit in het kader van de acties (ingeklapt is dat het handvat alleen, met
+een tooltip die zegt dat de toetsen blijven werken); Walk en Plan wisselen ook van *icoon* bij
+Fly up / Done (`.ico-off`/`.ico-on`); Plan is een vierrichtingspijl, Inventory een rugzak, Overview
+het kader om een eilandje. De klok toont een zon of maan en heet in de preview `· preview` (was
+`· local`), blijft een lens op dit scherm alleen en heeft **H**.
 
 ## Versie
 
