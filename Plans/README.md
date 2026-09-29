@@ -51,6 +51,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
   dezelfde bestanden werkt.
 
+- 🚧 [lokale-coop.md](lokale-coop.md) — plan van 29 september 2026, nog niet gebouwd: twee spelers achter
+  één scherm (toetsenbord en pad), in één pagina met één camera die het midden volgt; splitscreen is
+  fase 2 (te veel single-eye-state in `main.js`). Ernaast: de chips rechtsboven tonen hun toets of
+  padknop naar het laatst gebruikte apparaat.
+
 ### Klaar
 
 - ✅ [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
