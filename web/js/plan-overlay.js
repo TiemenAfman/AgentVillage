@@ -60,7 +60,7 @@ function ghostMaterial(hex) {
   });
 }
 
-export function createPlanOverlay({ scene, terrain, village, byId }) {
+export function createPlanOverlay({ scene, terrain, village, byId, shapeOf = null }) {
   const group = new THREE.Group();
   group.name = 'plan-overlay';
   group.visible = false;
@@ -288,24 +288,50 @@ export function createPlanOverlay({ scene, terrain, village, byId }) {
   }
 
   // ---------------------------------------------------------------- the ghosts
-  // A building being carried: the real mesh's own geometry, shared, under the translucent
-  // green or red, at where it would stand. The real group never moves - see the top of
-  // plan-mode.js for why - so this is the only picture of the move until Apply.
+  // A building being carried: the real building's own shape under the translucent green or
+  // red, at where it would stand. The real group never moves - see the top of plan-mode.js
+  // for why - so this is the only picture of the move until Apply.
   // `list` is [{ id, dx, dz, ok }] in world units - a hamlet only ever translates - or
   // [{ id, at: { x, y, z, yaw }, ok }] for one of the town's buildings, which may also turn:
   // `at` is where it would stand, worked out by main.js's own `poseOnPlot`.
+  //
+  // The shape is asked of `shapeOf` (main.js: a copy of its positions out of the island's
+  // batch, record-batch.js), since a record's body is an instance in that batch and has no
+  // geometry of its own to share. Copied once per record while the planner is open - a drag
+  // sets the ghosts again on every step - and given back when it closes, or when the record
+  // it was copied from is gone (rebuilt by an Apply, or left).
+  const shapes = new Map();   // rec -> geometry
+  function shape(rec) {
+    let g = shapes.get(rec);
+    if (!g) {
+      g = shapeOf ? shapeOf(rec) : (rec.mesh && rec.mesh.geometry) || null;
+      if (!g) return null;
+      shapes.set(rec, g);
+    }
+    return g;
+  }
+  function dropShapes(keep = null) {
+    for (const [rec, g] of shapes) {
+      if (keep && keep.get(rec.id) === rec) continue;
+      if (shapeOf) g.dispose();
+      shapes.delete(rec);
+    }
+  }
   const Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
   function setGhosts(list) {
-    for (const g of ghosts.children) g.geometry = null;   // shared with the real building
+    for (const g of ghosts.children) g.geometry = null;   // the shape is kept in `shapes`
     ghosts.clear();
     const t = terrain();
     const recs = byId();
-    if (!t || !recs) return;
+    if (!t || !recs) { dropShapes(); return; }
+    dropShapes(recs);
     for (const { id, dx, dz, at, ok } of list) {
       const rec = recs.get(id);
       if (!rec || !rec.mesh) continue;
+      const geo = shape(rec);
+      if (!geo) continue;
       rec.group.updateMatrixWorld(true);
-      const m = new THREE.Mesh(rec.mesh.geometry, ok ? OK : BAD);
+      const m = new THREE.Mesh(geo, ok ? OK : BAD);
       m.matrixAutoUpdate = false;
       if (at) {
         m.matrix.compose(new THREE.Vector3(at.x, at.y, at.z), new THREE.Quaternion().setFromAxisAngle(Y, at.yaw), ONE);
@@ -342,12 +368,13 @@ export function createPlanOverlay({ scene, terrain, village, byId }) {
 
   function setVisible(on) {
     group.visible = !!on;
-    if (!on) { setGhosts([]); setHover(null); }
+    if (!on) { setGhosts([]); setHover(null); dropShapes(); }
   }
 
   function destroy() {
     dispose(grid); dispose(gridWater); dispose(fills); dispose(marks); dispose(tethers); dispose(hover);
     setGhosts([]);
+    dropShapes();
     scene.remove(group);
     OK.dispose(); BAD.dispose();
   }

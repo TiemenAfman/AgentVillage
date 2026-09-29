@@ -96,24 +96,12 @@ function wrap(g, words, maxW) {
   return lines;
 }
 
-// A staked yard sign carrying `text`, its face toward local +z (the door/street side).
-// `arch` turns the sign into a gateway: the posts stand a road's width apart and carry a
-// beam, and the board hangs beneath it, so you read the name as you walk under it rather
-// than passing a placard in a field. Signs are not blockers, so walking through needs no
-// collision work - the arch only has to be tall enough to look walkable.
-export function createNameplate(text, {
-  small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
-  height0 = 0.42, posts = 1, arch = 0,
-} = {}) {
-  const s = small ? 0.7 : 1;
-  const group = new THREE.Group();
-  const boardY = height0 * s;
-
+// The legs, the beam and the board, as one geometry in the sign's own frame.
+function frameGeometry({ s, width, height, boardY, arch, n, boardAt }) {
   const grow = Math.sqrt(width / BOARD_W);
   const span = arch ? arch / 2 : width * s * 0.42;
   const legH = arch ? boardY + height * s + 0.12 : boardY + 0.04;
   const pieces = [];
-  const n = arch ? 2 : posts;
   for (let i = 0; i < n; i++) {
     const r = arch ? 0.045 : 0.022 * grow;
     pieces.push(painted(new THREE.CylinderGeometry(r, r * 1.25, legH, 6), POST,
@@ -123,14 +111,55 @@ export function createNameplate(text, {
     // The beam overhangs its posts a little, the way a real one is pegged on top.
     pieces.push(painted(new THREE.BoxGeometry(arch + 0.22, 0.1, 0.13), POST, 0, legH + 0.05, 0));
   }
+  pieces.push(painted(new THREE.BoxGeometry(width * s, height * s, 0.03), WOOD, 0, boardAt, 0));
+  const geo = mergeGeometries(pieces, false);
+  pieces.forEach((g) => g.dispose());
+  return geo;
+}
 
+// The same frame in the shape an island's batch of buildings takes (web/js/record-batch.js):
+// non-indexed and with the building material's attributes. With nothing on a sheet and
+// nothing lit, the building material draws it exactly as frameMat does - both flat-shaded
+// vertex colour at roughness 0.85 - so a sign in the batch looks as it always did.
+function batchable(geo) {
+  const flat = geo.toNonIndexed();
+  geo.dispose();
+  flat.deleteAttribute('uv');
+  flat.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(flat.attributes.position.count), 1));
+  return flat;
+}
+
+// A staked yard sign carrying `text`, its face toward local +z (the door/street side).
+// `arch` turns the sign into a gateway: the posts stand a road's width apart and carry a
+// beam, and the board hangs beneath it, so you read the name as you walk under it rather
+// than passing a placard in a field. Signs are not blockers, so walking through needs no
+// collision work - the arch only has to be tall enough to look walkable.
+//
+// `batch` (a record batch, web/js/record-batch.js) puts the frame into it instead of giving it
+// a mesh of its own. The yard signs were 395 frames on Hoogezand, a call each in both passes -
+// as many as half the buildings. There are only as many frame shapes as there are option sets
+// (a house's and a camp's), so every sign of one shape is an instance of one geometry. The
+// lettered face stays a mesh: its canvas is the sign's own (Plans/gebouwen-in-een-batch.md).
+export function createNameplate(text, {
+  small = false, width = BOARD_W, height = BOARD_H, canvasW = CANVAS_W, band = null,
+  height0 = 0.42, posts = 1, arch = 0, batch = null,
+} = {}) {
+  const s = small ? 0.7 : 1;
+  const group = new THREE.Group();
+  const boardY = height0 * s;
+  const n = arch ? 2 : posts;
   const bw = width * s, bh = height * s;
   const boardAt = boardY + bh / 2 - 0.02;
-  pieces.push(painted(new THREE.BoxGeometry(bw, bh, 0.03), WOOD, 0, boardAt, 0));
-  const frameGeo = mergeGeometries(pieces, false);
-  pieces.forEach((g) => g.dispose());
-  const frame = new THREE.Mesh(frameGeo, frameMat);
-  frame.castShadow = true;
+  const shape = { s, width, height, boardY, arch, n, boardAt };
+
+  let frameGeo = null, frame;
+  if (batch) {
+    frame = batch.addShared(`nameplate:${s}:${width}:${height}:${height0}:${n}:${arch}`, () => batchable(frameGeometry(shape)));
+  } else {
+    frameGeo = frameGeometry(shape);
+    frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.castShadow = true;
+  }
   group.add(frame);
 
   const tex = draw(text, width, height, canvasW, band);
@@ -144,7 +173,8 @@ export function createNameplate(text, {
   return {
     group,
     dispose() {
-      frameGeo.dispose();
+      if (batch) batch.remove(frame);
+      else frameGeo.dispose();
       face.geometry.dispose();
       faceMat.dispose();
       tex.dispose();

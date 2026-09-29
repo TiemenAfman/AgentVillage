@@ -26,6 +26,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- 🚧 [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
+  frame van elk naambord) is een instance in één `BatchedMesh` (`record-batch.js`); het record houdt
+  een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,
+  tijdlijn, popIn, de mist-cut en de planner werken ongewijzigd. Hoogezand van boven: 1.945 / 1.460
+  calls → 727 / 258, 28,5 → 15 ms. Open: de beletterde gezichten in een atlas, en de telefoon.
 - ✅ [verborgen-inwoners-tellen-niet.md](verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
   NPC Distance, onder een imp of nog niet geplaatst was een instance op y = -999 binnen `count`, en
   de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
