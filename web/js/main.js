@@ -111,6 +111,7 @@ import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
+import { installPageKeys } from './page-keys.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
 import { createSeaLife } from './sea-life.js';
@@ -618,6 +619,8 @@ function endParley({ camera = true } = {}) {
   if (!camera || !faceToFace.end(walkOn)) walkOn();
   return true;
 }
+// ctrl+A selects nothing on this page, in any mode (page-keys.js).
+installPageKeys();
 // Captured on the window, and stopped dead, for the same reason the chat and the town hall
 // stop theirs: walk.js listens on this window too, and the key that ends a conversation must
 // not also be read as "back to the sky" or as E at whatever is nearest.

@@ -97,7 +97,10 @@ puts up a parasol. Moving puts that clock back to zero, so a crouch-walk does no
 a nap. Lying down outlasts the key - let go of C and they stay there. Walk, or press
 C again, to get back up. (It was Ctrl until crouching and walking turned out to be
 ctrl+W, which closes the tab: Chrome keeps that one for itself and a page cannot refuse
-it.) **R** dances, where you stand - the dance the settlers do on the castle's floor on a
+it. Ctrl can be bound again under Settings > Controls; in the desktop window there is no tab
+to lose, in a Chrome tab ctrl+W still closes it unless you are fullscreen.) On foot every
+ctrl+letter and ctrl+digit of the browser is switched off - select all, save, print, find
+and the rest - and ctrl+A does nothing anywhere, from the sky as well. **R** dances, where you stand - the dance the settlers do on the castle's floor on a
 Saturday night, two moves of your own and on the beat of whatever you hear - until you walk,
 jump, crouch, swing, raise a shield or press R again; everybody else on the sea sees you
 dance (up on the D-pad on a controller). You can walk into
@@ -106,7 +109,11 @@ like, even to another island, but slowly: the boat is five times faster. You can
 out of the water - but you can go under it. Hold **C** (**B** on the pad, the down arrow
 button on a phone) in water deep enough to hold you and you dive; **Space** (**A**) swims
 you back up, and letting go of both leaves you hanging in the water, which is the way to
-look at something. Down there you swim a little slower than at the surface, and on the
+look at something. Or steer with the mouse: swim on with W and look down to sink, look up
+to climb (the right stick does the same); the ordinary view along the top does not dive by
+itself, and swimming backwards turns it round. In the water the mouse looks much further up
+than on land, so you can see where you are heading, and the camera stays above the surface
+while it does. Down there you swim a little slower than at the surface, and on the
 bottom you walk. The sea floor has banks, trenches and stones, and the water has kelp,
 coral, shells and schools of fish that part as you come. You can only dive where there is
 a body's height of water; in the shallows the sea lifts you back out. A deck over your

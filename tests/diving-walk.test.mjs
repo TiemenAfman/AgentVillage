@@ -5,6 +5,7 @@
 // diver is never airborne, and that the camera goes under the surface with them and comes back.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import * as THREE from 'three';
 register('./support/shared-loader.mjs', import.meta.url);
@@ -176,4 +177,143 @@ test('a diver at the foot of a shallow shelf keeps a camera under the water, and
   assert.ok(camera.position.x < 10, `the camera should trail over the shelf: x = ${camera.position.x}`);
   assert.ok(camera.position.y < 0, `the camera is over the water, at ${camera.position.y}, and the diver behind the surface`);
   assert.ok(camera.position.y >= shelf(camera.position.x) - 1e-9, 'the camera is in the sand');
+});
+
+// ---- steering by the mouse ------------------------------------------------------------------
+
+test('looking down and swimming on takes the body under, with neither C nor Space', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  walk.state.camPitch = 0.9;
+  press('w');
+  run(walk, 2);
+  const s = walk.state;
+  assert.equal(s.dive, true, 'the view did not start a dive');
+  assert.ok(s.pos.y < -0.8, `only at ${s.pos.y}`);
+  assert.equal(s.crouching, false);
+  globalThis.dispatchKey('w', false);
+});
+
+test('looking up while diving and swimming on climbs back to the surface', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  press('c');
+  run(walk, 3);
+  globalThis.dispatchKey('c', false);
+  const s = walk.state;
+  assert.equal(s.onBed, true);
+  walk.state.camPitch = -0.2;
+  press('w');
+  run(walk, 4);
+  assert.equal(s.dive, false, 'still diving after looking up for four seconds');
+  assert.ok(Math.abs(s.pos.y - -0.07) < 1e-9, `surfaced at ${s.pos.y}`);
+  globalThis.dispatchKey('w', false);
+});
+
+test('the normal view along the top does not dive, and a body hanging still is not steered', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  press('w');
+  run(walk, 2);
+  assert.equal(walk.state.dive, false, 'a plain stroke along the surface dived by itself');
+  globalThis.dispatchKey('w', false);
+  // Looking straight down with no key pressed: nothing to steer with.
+  walk.state.camPitch = 0.95;
+  run(walk, 2);
+  assert.equal(walk.state.dive, false, 'the view alone must not dive a body that is not swimming on');
+});
+
+test('a stroke backwards goes the other way, and a stroke sideways goes neither', () => {
+  const a = fresh();
+  a.walk.state.camPitch = 0.9;
+  run(a.walk, 0.3);
+  press('c'); run(a.walk, 1); globalThis.dispatchKey('c', false);   // under first
+  const y0 = a.walk.state.pos.y;
+  press('s'); run(a.walk, 1);
+  assert.ok(a.walk.state.pos.y > y0, `backwards while looking down should climb: ${y0} -> ${a.walk.state.pos.y}`);
+  globalThis.dispatchKey('s', false);
+  const b = fresh();
+  b.walk.state.camPitch = 0.9;
+  run(b.walk, 0.3);
+  press('c'); run(b.walk, 1); globalThis.dispatchKey('c', false);
+  b.walk.state.vy = 0;
+  const y1 = b.walk.state.pos.y;
+  press('d'); run(b.walk, 1);
+  assert.ok(Math.abs(b.walk.state.pos.y - y1) < 0.15, `sideways moved the depth: ${y1} -> ${b.walk.state.pos.y}`);
+  globalThis.dispatchKey('d', false);
+});
+
+// ---- looking up in the water --------------------------------------------------------------------
+
+// A pad's look stick pushed up or down for `seconds`: the mouse and a finger clamp to the same range.
+const stick = (walk, y, seconds) => {
+  const p = { move: { x: 0, y: 0 }, look: { x: 0, y }, lt: 0, rt: 0, hit: () => false, down: () => false, raw: {} };
+  for (let i = 0; i < Math.round(seconds / FRAME); i++) { walk.pad(p, FRAME); walk.update(FRAME); }
+};
+const lookY = (camera) => { const d = new THREE.Vector3(); camera.getWorldDirection(d); return d.y; };
+
+test('a swimmer may look a long way up, and the camera stays out of the sea while it does', () => {
+  const { walk, camera } = fresh();
+  run(walk, 0.5);
+  const level = lookY(camera);
+  stick(walk, -1, 2);
+  const s = walk.state;
+  assert.ok(s.camPitch < -0.9, `the swimmer can only look up to ${s.camPitch}`);
+  assert.ok(s.camPitch >= -1.1 - 1e-9, `and no further than ${s.camPitch}`);
+  assert.ok(camera.position.y >= 0.5 - 1e-9, `the lens is half under the sea at ${camera.position.y}`);
+  assert.ok(lookY(camera) > level + 0.4, `looking up looks along ${lookY(camera)}, from ${level}: the view is flat`);
+  assert.ok(lookY(camera) > 0.4, `only ${lookY(camera)} up`);
+});
+
+test('the view is continuous as the mouse goes up: the floor bends the aim, it does not jump it', () => {
+  const { walk, camera } = fresh();
+  run(walk, 0.5);
+  let prev = lookY(camera), worst = 0;
+  for (let i = 0; i < 240; i++) {
+    stick(walk, -0.4, FRAME);
+    const y = lookY(camera);
+    worst = Math.max(worst, Math.abs(y - prev));
+    prev = y;
+  }
+  assert.ok(walk.state.camPitch < -0.5);
+  assert.ok(worst < 0.03, `the view moved ${worst} in one frame`);
+});
+
+test('a diver looks up too, and the mouse climbs them', () => {
+  const { walk, camera } = fresh();
+  run(walk, 0.3);
+  press('c');
+  run(walk, 2);
+  globalThis.dispatchKey('c', false);
+  stick(walk, -1, 1.5);
+  assert.ok(walk.state.camPitch < -0.9, `a diver can only look up to ${walk.state.camPitch}`);
+  assert.ok(lookY(camera) > 0.2, `a diver looking up looks along ${lookY(camera)}`);
+  const y0 = walk.state.pos.y;
+  press('w');
+  run(walk, 2);
+  globalThis.dispatchKey('w', false);
+  assert.ok(walk.state.dive === false || walk.state.pos.y > y0 + 0.5, 'looking up and swimming on did not climb');
+});
+
+test('out of the water the range narrows again and the extra is eased away, never snapped', () => {
+  const { walk } = fresh();
+  run(walk, 0.5);
+  stick(walk, -1, 2);
+  const deep = walk.state.camPitch;
+  assert.ok(deep < -0.9);
+  walk.state.pos.set(30, 0.6, 0);            // the beach: dry, so no longer swimming
+  walk.update(FRAME);
+  assert.equal(walk.state.swimming, false);
+  assert.ok(walk.state.camPitch > deep && walk.state.camPitch < deep + 0.2, `it snapped from ${deep} to ${walk.state.camPitch}`);
+  run(walk, 1.5);
+  assert.ok(walk.state.camPitch >= -0.25 - 1e-6, `still ${walk.state.camPitch} on land`);
+  stick(walk, -1, 2);
+  assert.ok(walk.state.camPitch >= -0.25 - 1e-9, `on land the mouse looked up to ${walk.state.camPitch}`);
+});
+
+test('walk.js lifts the aim only for a swimmer, only upwards, and never in first person', () => {
+  const src = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
+  assert.match(src, /const lift = state\.swimming && !fp \? Math\.max\(0, camY - cy\) : 0;/);
+  assert.match(src, /camera\.lookAt\(state\.pos\.x, state\.pos\.y \+ aim \+ lift, state\.pos\.z\)/);
+  assert.match(src, /const SWIM_PITCH_MIN = -1\.1;/);
 });

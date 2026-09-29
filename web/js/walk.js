@@ -12,19 +12,25 @@ import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
-import { stepDive, canDive, headUnder, divePitch, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
+import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
-import { canon } from './keybinds.js';
+import { canon, ctrlIsKey } from './keybinds.js';
+// A field on a board takes its letters, so the feet keep out of it entirely - which is the whole of
+// "type quit and you plant a tree".
+import { typingInto } from './page-keys.js';
 import { createZzz, bobZzz } from './zzz.js';
 
 const PLANE_UP = new THREE.Vector3(0, 1, 0);
 // How much of a hull's tilt the third-person camera takes on (placeCamera): 0 is a level camera
 // over a deck that rocks under it, 1 is the deck held still on the screen and the whole sea rocking.
 const CAM_TILT = 0.25;
+// How far up a swimmer may look (camPitch, radians; negative is the camera below the head). About 63
+// degrees: enough to see the surface from the bed and the sky from the top of a stroke.
+const SWIM_PITCH_MIN = -1.1;
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
@@ -107,17 +113,13 @@ const HEAD = WALK_CLEARANCE;
 // The keys the feet use. Lifted out of onKeyDown because a board being worked hands
 // every other key to the page and keeps only these.
 const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
-// The letters and digits the browser pairs with ctrl (save, print, find, bookmark, view
-// source, open, history, downloads, address bar, reload, bold; new tab/window, close, tab
-// <n>). Cancelled on foot - see onKeyDown - and locked in fullscreen - see lockKeys().
-const BROWSER_KEYS = new Set([...'sptfduohjklegrbwn123456789', 'tab']);
+// Every letter and digit, with ctrl: select all, save, print, find, bookmark, view source, open,
+// history, downloads, address bar, reload, bold; new tab/window, close, tab <n>. On foot none
+// of them is wanted (ctrl+A selected the whole page under the walker, ctrl+S sits beside the
+// walking keys), so all are cancelled - see onKeyDown - and locked in fullscreen - see
+// lockKeys(). A list of the ones that happened to hurt grew a letter at a time.
+const BROWSER_KEYS = new Set([...'abcdefghijklmnopqrstuvwxyz0123456789', 'tab']);
 
-// A field on a board takes its letters. In here w is a w, not a step, so the feet keep
-// out of it entirely - which is the whole of "type quit and you plant a tree".
-function typingInto(el) {
-  if (!el || !el.tagName) return false;
-  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
-}
 
 const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
@@ -422,10 +424,14 @@ export function createWalkMode({
     // ones a page is allowed to cancel are cancelled here, unless somebody is typing into
     // a field. Chrome reserves ctrl+W, ctrl+T, ctrl+N and ctrl+<digit> and ignores
     // preventDefault on them: those only come to the page under the keyboard lock that
-    // lockKeys() asks for, and only in fullscreen.
+    // lockKeys() asks for, and only in fullscreen (the desktop window has no tab to lose).
+    //
+    // Unless Ctrl is bound (keybinds.js): then it is somebody's crouch or swim-down, held
+    // while the walking keys are pressed, and the press is a game key like any other. The
+    // shortcut above is cancelled all the same - that is the price of using it.
     if (e.ctrlKey || e.metaKey || e.altKey) {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !typingInto(e.target) && BROWSER_KEYS.has(typed)) e.preventDefault();
-      return;
+      if (!(e.ctrlKey && !e.metaKey && !e.altKey && ctrlIsKey())) return;
     }
     // A board being worked has the keyboard. Escape hands it back wherever the focus is,
     // and the feet keep their own keys so that walking away is still a way out - except
@@ -646,7 +652,15 @@ export function createWalkMode({
   };
   // From behind the eyes the camera may look nearly straight up and down; from behind the
   // back it may not, or it swings under the ground or over the head.
-  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [-0.25, 0.95]);
+  // In the water the mouse may look much further up (SWIM_PITCH_MIN): it is how a swimmer sees where
+  // they are heading, and how a diver climbs (diving.js lookRise). On land a camera that low would
+  // be under the ground, so the range narrows again as soon as the feet are out of the water and
+  // `relaxPitch` eases whatever was left over back into it.
+  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [state.swimming ? SWIM_PITCH_MIN : -0.25, 0.95]);
+  function relaxPitch(dt) {
+    const lo = pitchRange()[0];
+    if (state.camPitch < lo) state.camPitch = Math.min(lo, state.camPitch + (lo - state.camPitch) * (1 - Math.exp(-8 * dt)) + 1e-4);
+  }
   // The island's camera keeps its near plane half a cell out, which in first person would
   // cut away the hands and everything in them. Pulled in only while we are looking out of
   // the head, since a near plane that close costs depth precision at the horizon.
@@ -677,7 +691,7 @@ export function createWalkMode({
   // for on entering walk mode and given back on leaving it; the browser applies it whenever
   // the page is fullscreen in between. Escape is deliberately not in the list: locking it
   // turns leaving fullscreen into press-and-hold, and Escape already has a job here.
-  const LOCKED_CODES = [...'WTNRSPFDUOHJKLEGB'].map((c) => 'Key' + c)
+  const LOCKED_CODES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((c) => 'Key' + c)
     .concat('Tab', ...Array.from({ length: 9 }, (_, i) => 'Digit' + (i + 1)));
   function lockKeys(on) {
     const kb = navigator.keyboard;
@@ -1653,7 +1667,7 @@ export function createWalkMode({
         else {
           state.pos.x = dx; state.pos.z = dz;
           if (state.swimming) {
-            const k = Math.exp(-3 * dt);
+            const k = Math.exp(-(state.dive ? DIVE_DRIFT : 3) * dt);
             drift.x *= k; drift.z *= k;
             if (Math.abs(drift.x) + Math.abs(drift.z) < 0.05) drift = null;
           }
@@ -1675,7 +1689,11 @@ export function createWalkMode({
     // body. Space (the pad's A) swims a diver back up. `crouching` is exactly "the key is
     // held" here - it is set on the press and dropped on the release - so both keyboard and pad
     // come through the one flag, and a rebound key follows for free.
-    const rise = (spaceHeld || padJump ? 1 : 0) - (state.crouching ? 1 : 0);
+    // And the view steers too (diving.js lookRise): stroking on while looking down sinks, looking
+    // up climbs, by how far forward the stroke is - `iz` is a unit vector by now - so the keys
+    // and the mouse add up and a stroke sideways or a body hanging still is not moved by it.
+    const steer = state.moving && (state.dive || state.swimming) ? lookRise(state.camPitch, state.firstPerson) * iz : 0;
+    const rise = clamp((spaceHeld || padJump ? 1 : 0) - (state.crouching ? 1 : 0) + steer, -1, 1);
     if (!state.dive && state.swimming && rise < 0 && !state.sitting && !state.lying
         && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y)) {
       state.dive = true;
@@ -1707,7 +1725,15 @@ export function createWalkMode({
         const lid = ceilingAt(state.pos.x, state.pos.z, state.floor);
         if (state.pos.y + HEAD > lid) { state.pos.y = lid - HEAD; state.vy = 0; }
       }
-      if (state.pos.y <= underfoot) { state.pos.y = underfoot; state.vy = 0; state.grounded = true; }
+      if (state.pos.y <= underfoot) {
+        // Came down in deep water hard enough (off a rail, a rock, a ledge): the speed goes
+        // under with you instead of being thrown away at the surface. The height is left where
+        // the fall put it, a hair below the resting one, and stepDive takes it from the next frame.
+        const plunge = inWater ? plungeSpeed(state.vy, bedUnder(state.pos.x, state.pos.z), WATER_Y) : 0;
+        if (plunge) { state.dive = true; state.vy = plunge; }
+        else { state.pos.y = underfoot; state.vy = 0; }
+        state.grounded = true;
+      }
     }
     state.swimming = state.dive || (state.grounded && inWater && !state.sitting);
     state.diving = state.dive && headUnder(state.pos.y, WATER_Y);
@@ -1827,6 +1853,7 @@ export function createWalkMode({
     // The camera goes over to a diver's rules (under the surface, floor at the sea bed) and back
     // over about 0.4 s, or the head going under would throw it two units.
     camDive = clamp(camDive + (state.diving ? dt : -dt) / CAM_DIVE_S, 0, 1);
+    relaxPitch(dt);
     if (state.active) placeCamera(fp);
 
     // what is within reach?
@@ -1858,7 +1885,14 @@ export function createWalkMode({
     // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
     const blend = camDive * camDive * (3 - 2 * camDive);
     const floor = cameraFloor({ ground: under, waterY: WATER_Y, blend });
-    camera.position.set(cx, applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor }), cz);
+    const camY = applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor });
+    camera.position.set(cx, camY, cz);
+    // The floor above the water is what keeps the lens from sitting half under the sea (a swimmer
+    // looking up used to put the camera below the surface, its top cutting the view in two). It must
+    // not also flatten the view: a camera pushed up by it aims as far above the body as it was pushed,
+    // so the direction the mouse asked for survives and looking up still looks up. Only upwards, and
+    // only for a swimmer - the diver's ceiling pulling the camera down keeps its old view of the diver.
+    const lift = state.swimming && !fp ? Math.max(0, camY - cy) : 0;
     // On a plane the camera stands in the plane's own frame: its offset from you turned with her tilt
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
@@ -1885,7 +1919,7 @@ export function createWalkMode({
       : stoop ? camAim * CROUCH_SCALE
         : state.sitting ? camAim * SIT_SCALE : camAim;
     if (plane) camera.lookAt(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
-    else camera.lookAt(state.pos.x, state.pos.y + aim, state.pos.z);
+    else camera.lookAt(state.pos.x, state.pos.y + aim + lift, state.pos.z);
     if (fp) {
       // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
       // saddle's lean), and a little behind it so the hands are in front of the lens.
