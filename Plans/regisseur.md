@@ -57,6 +57,15 @@ daarom een kant noemen (`az`): de camera vliegt naar die kant en draait er een h
 met die kant in het midden. Voor de smid en de bakker is dat de kant van het gebouw waar ze staan,
 gemeten vanaf het midden van het gebouw.
 
+## Vierde ronde: de slager en de goudsmid
+
+> neem ook de slager en de goudsmid mee als shot
+
+De slager gaat zoals de smid en de bakker (`TRADESMEN`, `rec.butcher`). De goudsmid hoort bij de
+cast van de goudvracht (`goldrun.js`), dus die wordt gevraagd aan `goldRun.smithAt()`: waar hij
+tussen twee vrachten bij zijn mal staat, en null binnen, onderweg of tijdens een vracht (dan
+volgt het goud-shot hem al). Beide van de kant van hun gebouw waar ze staan.
+
 ## Later
 
 - Een aankomende inwoner per boot (`sailIn`) wordt gevolgd zodra zijn figuur er is; de boot zelf nog niet.

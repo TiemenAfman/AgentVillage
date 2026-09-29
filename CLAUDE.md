@@ -1271,8 +1271,8 @@ no intro, no tween, no open `aside.panel`, not the chronicle, Settings' *Wander 
 it picks a shot from `directorShots()` - an arrival first (`state.arrivals`, fed by the `arrive`
 event), then by weight the gold run (`goldRun.focus()`), the timber wagon (`timberRun.where`),
 a yard hand (`timberRun.handAt`), a working settler (a visible figure whose `anim` is in
-`WORK_WORDS`), a story animal (the goat weighted up), the fisherman, the smith and the baker
-(`TRADESMEN`, while at work, watched from the side of their building they stand on - a shot's
+`WORK_WORDS`), a story animal (the goat weighted up), the fisherman, the smith, the baker, the butcher
+(`TRADESMEN`) and the goldsmith between runs (`goldRun.smithAt()`), while at work, watched from the side of their building they stand on - a shot's
 `az`) and, at most once per
 `CENTRE_EVERY`, the town centre - never the same key
 twice running, flies to it over `FLY_S`, follows and circles it for `HOLD_S` from the shot's

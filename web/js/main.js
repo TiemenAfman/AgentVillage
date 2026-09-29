@@ -1441,6 +1441,7 @@ const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the spar
 const TRADESMEN = [
   ['civic:smithy', 'smithy', 'smith', 'The smith at the anvil'],
   ['civic:bakery', 'baker', 'baker', 'The baker at the oven'],
+  ['civic:butcher', 'butcher', 'butcher', 'The butcher at the counter'],
 ];
 const atWork = (v) => !!(v && v.mode === 'work' && v.figure && v.figure.visible);
 const figureSpot = new THREE.Vector3();
@@ -1509,6 +1510,14 @@ function directorShots() {
       const az = Math.atan2(fx - rec.group.position.x, fz - rec.group.position.z);
       out.push({ key, weight: 2, dist: CLOSE, az, label, where: () => (atWork(rec[part]) ? figureAt(rec[part].figure) : null) });
     }
+  }
+  // The goldsmith between two gold runs, at the mould outside the shop - part of the gold run's
+  // own cast (goldrun.js), so asked of it rather than of a record.
+  const goldsmith = gold && gold.smithAt && gold.smithAt();
+  if (goldsmith) {
+    const az = Math.atan2(goldsmith.at[0] - goldsmith.shop[0], goldsmith.at[2] - goldsmith.shop[1]);
+    out.push({ key: 'goldsmith', weight: 2, dist: CLOSE, az, label: 'The goldsmith at work',
+      where: () => { const g = gold.smithAt(); return g ? g.at : null; } });
   }
   // Now and then the town centre, from high enough to take in the square and the ring round
   // it. Always there, so held back for CENTRE_EVERY after each showing - otherwise a quiet island

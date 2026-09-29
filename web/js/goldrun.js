@@ -447,6 +447,13 @@ export function createGoldRun({ scene, material, groundAt, onBars }) {
   }
 
   return {
+    // Where the goldsmith stands at work outside a run, and his shop's middle, for the director
+    // (main.js): null indoors, walking, with no shop, or while a run has him (that is `focus`).
+    smithAt() {
+      if (run || !sites.smith || !smith.placed || smith.inside || smith.moving || !smith.group.visible) return null;
+      const p = smith.group.position, shop = sites.smith.group.position;
+      return { at: [p.x, p.y + 0.35, p.z], shop: [shop.x, shop.z] };
+    },
     // The three buildings, as main.js has them standing, and what the roads between them are
     // read from. A layout that moved any of them gives the run up: its route was the old one.
     setSites({ mine = null, smith: shop = null, pit = null, village = null, terrain = null } = {}) {
