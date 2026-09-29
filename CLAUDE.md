@@ -47,7 +47,11 @@ node --test tests/models.test.mjs
 
 `node --test tests/` does **not** work — Node treats the directory as a module and fails
 with MODULE_NOT_FOUND. A fresh worktree needs `npm install` first, or every test that
-imports `three` fails.
+imports `three` fails. It also has no `data/layout.json` or `cache.json` of its own (its
+island is itself, see HOME below), so `tests/layout-measure.test.mjs` founds the island
+three times over every transcript on the machine with a cold cache, and
+`tests/plan-scan.test.mjs`, waiting on the same `data/scan.lock`, gives up after ~20 s -
+a failure of the sandbox, not of the planner; alone it passes.
 
 `tests/layout-measure.test.mjs` (and `plan-scan.test.mjs`) scan a copy of whatever island
 `DATA` holds, so they fail or pass on the keeper's island as it stands, not on the last
