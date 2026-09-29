@@ -179,8 +179,7 @@ test('page-keys: ctrl+A and cmd+A are select all, AltGr+A and a bare A are not',
 test('page-keys: from the sky, with no walk mode at all, ctrl+A is cancelled - except in a field', () => {
   const seen = [];
   installPageKeys({ addEventListener: (t, fn) => seen.push([t, fn]) });
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0][0], 'keydown');
+  assert.deepEqual(seen.map(([t]) => t), ['keydown', 'contextmenu']);
   const press = (over) => { let p = false; seen[0][1]({ key: 'a', ctrlKey: true, altKey: false, target: {}, preventDefault: () => { p = true; }, ...over }); return p; };
   assert.equal(press({}), true);
   assert.equal(press({ target: { tagName: 'INPUT' } }), false);
@@ -188,6 +187,15 @@ test('page-keys: from the sky, with no walk mode at all, ctrl+A is cancelled - e
   assert.equal(press({ target: { isContentEditable: true, tagName: 'DIV' } }), false);
   assert.equal(press({ key: 's' }), false, 'only select all is a page-wide business; the rest is the walker\'s');
   assert.equal(typingInto(null), false);
+});
+
+test('page-keys: the page menu is cancelled everywhere except in a field', () => {
+  const seen = [];
+  installPageKeys({ addEventListener: (t, fn) => seen.push([t, fn]) });
+  const menu = (target) => { let p = false; seen.find(([t]) => t === 'contextmenu')[1]({ target, preventDefault: () => { p = true; } }); return p; };
+  assert.equal(menu({}), true);
+  assert.equal(menu({ tagName: 'INPUT' }), false);
+  assert.equal(menu({ tagName: 'TEXTAREA' }), false);
 });
 
 test('main.js installs it', () => {
