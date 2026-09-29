@@ -58,12 +58,15 @@ function fmtDate(iso) {
 }
 const el = (id) => document.getElementById(id);
 // The chips in the bar carry an icon and a word (index.html); writing textContent would take
-// the icon with it. The word is the aria-label too, because below 1100px it is not shown.
-function setLabel(id, text) {
+// the icon with it. The word is the aria-label too, because it is shown only when Names on
+// the buttons is on and the window is wide enough. `title` for a chip whose meaning turns
+// with its word (Walk / Fly up): with icons only, the tooltip is the one place the name is.
+function setLabel(id, text, title) {
   const b = el(id);
   const lbl = b.querySelector('.lbl');
   if (lbl) lbl.textContent = text; else b.textContent = text;
   b.setAttribute('aria-label', text);
+  if (title) b.title = title;
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -516,6 +519,16 @@ export function createUI(handlers) {
   let qualityAuto = true;
   try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
 
+  // The words on the chips at the top right: off unless switched on, per browser. The icons
+  // carry the bar - every chip keeps its name and key in its tooltip and aria-label - and the
+  // words took half the width of a laptop screen (Plans/esc-menu-en-knoppenbalk.md). A class
+  // on body; harbour.css shows them only where the window is wide enough even when on.
+  const NAMES_KEY = 'promptholm.chipnames';
+  let namesOn = false;
+  try { namesOn = localStorage.getItem(NAMES_KEY) === '1'; } catch { /* private window: off */ }
+  const applyNames = () => document.body.classList.toggle('chip-names', namesOn);
+  applyNames();
+
   // The planner moves hamlets on this machine's layout, and the menu's Island tab writes its
   // config.json (the signs, the size, the sea), so both are the keeper's. The rest of the
   // settings are this browser's and everybody's - they used to be behind the keeper's
@@ -717,6 +730,11 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${timelineOn
         ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
         : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`
+      + '<h3 class="sec">Buttons</h3>'
+      + `<div class="chips wrap"><button class="chip${namesOn ? ' on' : ''}" data-chipnames="1" aria-pressed="${namesOn}">Names on the buttons</button></div>`
+      + `<p class="muted" style="margin-top:9px">${namesOn
+        ? 'On: the buttons at the top right carry their name beside the icon, wherever the window is wide enough for it.'
+        : 'Off: icons only. Hover one for its name and its key.'}</p>`
       // The four distances and the governor are one subject - how much this screen draws - so
       // the governor's switch sits under the sliders rather than under a heading of its own.
       + graphicsSection()
@@ -741,6 +759,12 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
+    el('settings-body').querySelectorAll('[data-chipnames]').forEach((b) => b.addEventListener('click', () => {
+      namesOn = !namesOn;
+      try { if (namesOn) localStorage.setItem(NAMES_KEY, '1'); else localStorage.removeItem(NAMES_KEY); } catch { /* kept for this page only */ }
+      applyNames();
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-timeline]').forEach((b) => b.addEventListener('click', () => {
       timelineOn = !timelineOn;
@@ -1113,7 +1137,7 @@ export function createUI(handlers) {
     // read from high up and so are always on when you leave the sky.
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
-    setLabel('walk-btn', on ? 'Fly up' : 'Walk');
+    setLabel('walk-btn', on ? 'Fly up' : 'Walk', on ? 'Fly up into the sky' : 'Walk the island on foot');
     if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
@@ -1124,7 +1148,9 @@ export function createUI(handlers) {
     el('labels').hidden = planning || walking;
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
-    setLabel('plan-btn', planning ? 'Done' : 'Plan');
+    // P is a letter from the sky only (main.js ORBIT_KEYS), so Done names none.
+    setLabel('plan-btn', planning ? 'Done' : 'Plan',
+      planning ? 'Done: leave the planner' : 'The island from above: move hamlets, zone ground (P)');
     if (planning) hideSide();
     syncSidebar();
   }

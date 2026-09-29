@@ -49,10 +49,13 @@
 .chip:hover, .topright .chips .chip:hover { background: #ffffff12; color: var(--ink); border-color: var(--edge); }
 .topright .chips .chip.on:hover { background: #f4d79d; color: #203530; }
 #walk-btn { color: var(--accent); font-weight: 650; }
-/* Icon and word; the word goes below 1100px (media block below) and the icon carries the chip
-   there, the word staying its title and aria-label. The line between the two groups is what
-   says which is which: doing on the left, looking on the right. */
+/* Icons only, unless This screen -> Names on the buttons is on (body.chip-names, ui.js), and even
+   then the word goes below 1100px (media block below). The word is always the chip's title and
+   aria-label. The line between the two groups is what says which is which: doing on the left,
+   looking on the right. */
 .chip.nav { display: inline-flex; align-items: center; gap: 6px; }
+body:not(.chip-names) .chip.nav .lbl { display: none; }
+body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
 .chip .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .chips-sep { align-self: stretch; width: 1px; margin: 5px 4px; background: var(--edge); }
 #sysmenu-btn { display: inline-flex; align-items: center; padding: 7px 9px; border-radius: 8px; }
