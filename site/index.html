@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Promptholm</title>
+<meta name="description" content="Promptholm turns your Claude Code sessions into a living 3D island. Every session is a settler with a house that grows as the work does. Free for Windows.">
+<link rel="canonical" href="https://promptholm.com/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://promptholm.com/">
+<meta property="og:title" content="Promptholm: every Claude session builds a house">
+<meta property="og:description" content="A living 3D island where your Claude Code sessions settle, build and grow a town. Free for Windows.">
+<meta property="og:image" content="https://promptholm.com/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#f2f7f7">
+<link rel="icon" type="image/png" href="img/icon-192.png">
+<link rel="apple-touch-icon" href="img/icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="top">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Promptholm, back to top">
+      <img src="img/icon-192.png" alt="" width="34" height="34">
+      <span>Promptholm</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#town">The town</a>
+      <a href="#sea">The sea</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-small" href="#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap hero-head">
+      <div class="hero-copy">
+        <p class="eyebrow">A living island for Claude Code</p>
+        <h1>Every Claude session builds a house.</h1>
+      </div>
+      <div class="hero-side">
+        <p class="lede">Promptholm turns the Claude sessions on your computer into a living 3D island. A settler arrives for every session, their house grows as the work does, and a whole town rises around the square. Taverns, a castle, a harbour full of tall ships.</p>
+        <div class="cta-row">
+          <a class="btn" href="https://github.com/TiemenAfman/AgentVillage/releases/latest/download/promptholm-windows-x64.zip" data-asset="promptholm-windows-x64.zip">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 5.5 10 4.5v7H3zm8-1.1L21 3v8.5H11zM3 12.5h7v7l-7-1zm8 0h10V21l-10-1.4z"/></svg>
+            Download for Windows
+          </a>
+          <a class="btn btn-ghost" href="#download">Android &amp; source</a>
+        </div>
+        <p class="fineprint"><span data-release="version">v0.6.4</span> · <span data-size="promptholm-windows-x64.zip">16 MB</span> · Free. No account, no API key, no telemetry.</p>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <figure class="hero-shot">
+        <picture>
+          <source media="(max-width: 700px)" srcset="img/town-800.webp">
+          <img src="img/town.webp" width="1600" height="900" alt="An aerial view of a Promptholm town in the afternoon: a red-roofed castle in front, the market square behind it, hamlets of houses stretching to the coast, a lighthouse and two tall ships at anchor." fetchpriority="high">
+        </picture>
+        <div class="titlecard" aria-hidden="true">
+          <p class="tc-kicker">The living island</p>
+          <p class="tc-name">Promptholm <span class="tc-live">Live</span></p>
+          <p class="tc-founded">Founded 1 January 2026</p>
+          <p class="tc-stats"><span><b>175</b> settlers</span><span><b>202</b> apprentices</span><span><b>11</b> districts</span></p>
+        </div>
+        <figcaption>An island of 175 sessions across eleven repositories, at four in the afternoon.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ FACTS ============ -->
+  <section class="facts" aria-label="At a glance">
+    <div class="wrap facts-row">
+      <p><b>Reads what is already there.</b> The island is built from the session records Claude Code keeps on your disk.</p>
+      <p><b>Your work stays yours.</b> No API keys, no telemetry, no account. Visitors only ever see a redacted town.</p>
+      <p><b>Live while you work.</b> A new session walks ashore within a minute. A running one has scaffolding up.</p>
+      <p><b>A house never moves.</b> Your town is yours. It keeps its streets, update after update.</p>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS / LEGEND ============ -->
+  <section class="section" id="how">
+    <div class="wrap legend-grid">
+      <div class="legend-intro">
+        <p class="eyebrow">How it works</p>
+        <h2>Your work, drawn as a&nbsp;town.</h2>
+        <p>Nothing on the island is invented. Every building stands for something real in your work with Claude, and the island redraws itself as that work changes. Read it like a map.</p>
+        <figure class="shot shot-tilt">
+          <img src="img/signs-800.webp" width="800" height="450" loading="lazy" alt="Two timber-framed houses in front of the castle, each with a wooden sign in the yard carrying its session's title, such as Review the payment module.">
+          <figcaption>Every house carries its session's title on a sign in the yard.</figcaption>
+        </figure>
+      </div>
+
+      <dl class="legend" aria-label="Map legend">
+        <div class="legend-row">
+          <dt>A house</dt>
+          <dd>One Claude Code session, with its title on a sign in the yard.</dd>
+        </div>
+        <div class="legend-row legend-tiers">
+          <dt>Tent, hut, cottage, house, manor, keep</dt>
+          <dd>
+            How far the session has come. Each step is earned in turns you took together.
+            <ol class="tiers" aria-label="House tiers by number of your turns">
+              <li style="--s:1"><span class="bar"></span><b>Tent</b><small>1</small></li>
+              <li style="--s:2"><span class="bar"></span><b>Hut</b><small>3</small></li>
+              <li style="--s:3"><span class="bar"></span><b>Cottage</b><small>9</small></li>
+              <li style="--s:4"><span class="bar"></span><b>House</b><small>21</small></li>
+              <li style="--s:5"><span class="bar"></span><b>Manor</b><small>51</small></li>
+              <li style="--s:6"><span class="bar"></span><b>Keep</b><small>121</small></li>
+            </ol>
+          </dd>
+        </div>
+        <div class="legend-row">
+          <dt>Scaffolding and hammering</dt>
+          <dd>That session is running right now.</dd>
+        </div>
+        <div class="legend-row">
+          <dt>A shed in the yard</dt>
+          <dd>A subagent, the settler's apprentice. A lookout tent for Explore, a drafting hut for Plan, a workshop for general work.</dd>
+        </div>
+        <div class="legend-row">
+          <dt>A hamlet with a fence and a road</dt>
+          <dd>One git repository. The office on its square shows the branch, the working tree and the history.</dd>
+        </div>
+        <div class="legend-row">
+          <dt>Stone and slate, timber and green, thatch</dt>
+          <dd>The model at work: Opus builds in stone, Sonnet in timber under a green roof, Haiku under thatch.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ============ THE TOWN / MILESTONES ============ -->
+  <section class="section section-sand" id="town">
+    <div class="wrap">
+      <div class="split">
+        <div class="split-copy">
+          <p class="eyebrow">The town</p>
+          <h2>A town that grows up with&nbsp;you.</h2>
+          <p>Every few settlers the village earns a building of its own. The well comes at five. The tavern opens at fifteen. At ninety the village bridges the river, at a hundred the castle goes up, and past that the town turns to the sea: a shipyard, a Dutch East Indiaman at anchor, a crane on the quay.</p>
+          <p>When the land runs out, the island grows. New coast rises from the shallows and old coves are drained into polders.</p>
+        </div>
+        <figure class="shot split-media">
+          <img src="img/castle.webp" width="1600" height="900" loading="lazy" alt="The great castle of Promptholm with four red-capped towers, rows of houses behind it, a river running to the sea and three ships on the horizon under an orange evening sky.">
+          <figcaption>The castle, earned at a hundred settlers.</figcaption>
+        </figure>
+      </div>
+
+      <div class="ladder-wrap">
+        <p class="ladder-label" id="ladder-label">Settlers on your island, and what the town builds for them</p>
+        <ol class="ladder" aria-labelledby="ladder-label" tabindex="0">
+          <li><b>5</b><span>The village well</span></li>
+          <li><b>10</b><span>Market stalls</span></li>
+          <li><b>15</b><span>The tavern</span></li>
+          <li><b>20</b><span>The clock tower</span></li>
+          <li><b>30</b><span>The windmill</span></li>
+          <li><b>40</b><span>The chapel</span></li>
+          <li><b>50</b><span>The lighthouse</span></li>
+          <li><b>55</b><span>The sawmill</span></li>
+          <li><b>60</b><span>The smithy</span></li>
+          <li><b>75</b><span>The stable</span></li>
+          <li><b>90</b><span>The plank bridge</span></li>
+          <li><b>95</b><span>The shipyard</span></li>
+          <li class="ladder-big"><b>100</b><span>The castle</span></li>
+          <li><b>120</b><span>The Batavia</span></li>
+          <li><b>150</b><span>The polder mill</span></li>
+          <li><b>165</b><span>The harbour crane</span></li>
+          <li><b>192</b><span>The third ship</span></li>
+          <li class="ladder-big"><b>200</b><span>The chronicle house</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WALK ============ -->
+  <section class="section" id="walk">
+    <div class="wrap split split-flip">
+      <div class="split-copy">
+        <p class="eyebrow">On foot</p>
+        <h2>Walk in and pull up a&nbsp;chair.</h2>
+        <p>Come down from the sky and walk the island yourself, with keyboard and mouse or a controller. Walk up to any house and press <kbd>E</kbd>: that session opens as a conversation, with what you asked, what Claude answered and every tool it reached for.</p>
+        <p>Type, and you carry on in that same session. Its house grows while you talk.</p>
+        <ul class="ticks">
+          <li>Start a brand new settler at the town hall, in any folder</li>
+          <li>Ride a bicycle, sail a boat, take the wheel of a galleon</li>
+          <li>Have a pint at the tavern and hand one to a settler</li>
+        </ul>
+      </div>
+      <figure class="shot split-media">
+        <img src="img/walking.webp" width="1600" height="900" loading="lazy" alt="A small blocky settler in a straw hat and backpack standing on the cobbled town square, with the town hall, a fountain, the well and a timber-framed tavern with market awnings around it.">
+        <figcaption>On the square, between the town hall and the tavern.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ DAY / NIGHT ============ -->
+  <section class="section section-tint" id="hours">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Day and night</p>
+        <h2>Coffee at ten, lights on at&nbsp;dusk.</h2>
+        <p>The island keeps real time. Windows glow after dark and the lighthouse sweeps the bay. At ten the whole village walks to the square for coffee. Lunch is at half past twelve, tea at three, and on Friday afternoon everybody stays for drinks.</p>
+      </div>
+      <figure class="daynight" id="daynight">
+        <img class="dn-day" draggable="false" src="img/town.webp" width="1600" height="900" loading="lazy" alt="The town at four in the afternoon.">
+        <img class="dn-night" draggable="false" src="img/night.webp" width="1600" height="900" loading="lazy" alt="The same view at nine in the evening: lit windows, lamps on the square and the lighthouse beam over the sea.">
+        <span class="dn-label dn-l" aria-hidden="true">16:00</span>
+        <span class="dn-label dn-r" aria-hidden="true">21:00</span>
+        <div class="dn-handle" aria-hidden="true"><span></span></div>
+        <label class="dn-control" for="dn-range">
+          <span class="dn-hint">Drag to change the hour</span>
+          <input type="range" id="dn-range" min="0" max="100" value="50" aria-label="Move the line between four in the afternoon and nine in the evening">
+        </label>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ THE SEA ============ -->
+  <section class="section" id="sea">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Together</p>
+        <h2>Your island is never the only one.</h2>
+        <p>Join a sea with friends or colleagues and every island in it floats in the same water. Sail across, walk their streets and watch their settlers at work. In the middle of the world smokes the volcano, with lava in its ravines, plank bridges across its flows and guards who do not like visitors.</p>
+      </div>
+      <div class="sea-grid">
+        <figure class="shot sea-big">
+          <img src="img/volcano.webp" width="1600" height="900" loading="lazy" alt="The volcano island rising from a dark blue sea, glowing lava running down its ravines and a plume of smoke above the crater, under an apricot evening sky.">
+          <figcaption>The volcano, in the middle of every sea.</figcaption>
+        </figure>
+        <figure class="shot sea-small">
+          <img src="img/ships-800.webp" width="800" height="450" loading="lazy" alt="The harbour: a galleon with black sails at anchor, a ship's hull on the slipway of the shipyard and the Batavia under Dutch flags.">
+          <figcaption>The harbour: a galleon, the Batavia and the yard.</figcaption>
+        </figure>
+        <div class="sea-notes">
+          <h3>Visitors see houses, not your work</h3>
+          <p>A visiting island is redacted before it leaves yours. Others see the town, the settlers and the ships. Your prompts, file paths, tickets and code stay on your machine.</p>
+          <h3>A sky everyone shares</h3>
+          <p>The sea keeps the clock and the weather, so rain, fog and the evening light fall on every island in it at once.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ KEEPER TOOLS ============ -->
+  <section class="section section-sand" id="keeper">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">The keeper's tools</p>
+        <h2>Plan the town. Hand out the&nbsp;work.</h2>
+        <p>You are the island's keeper. The town lays itself out, but it listens when you want a say.</p>
+      </div>
+      <div class="tools">
+        <article>
+          <h3>The planner</h3>
+          <p>Look down on the island like a chart. Move whole hamlets with their houses and land, draw roads, give the town room and drain a polder from the sea.</p>
+        </article>
+        <article>
+          <h3>The noticeboards</h3>
+          <p>Your Jira sprint on a cork board and your GitHub issues under a copper roof, pinned on the square. Hand a card to a settler and a new Claude session sets off to do it.</p>
+        </article>
+        <article>
+          <h3>The office</h3>
+          <p>Every repository's hamlet has one. The branch, what is waiting in the working tree, the recent history and every diff, without leaving the island.</p>
+        </article>
+        <article>
+          <h3>The gold pit</h3>
+          <p>Your five-hour usage window, counted in bars of gold. A miner digs the week's ore and a goldsmith keeps the pit stocked.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ GALLERY ============ -->
+  <section class="section" id="gallery">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Gallery</p>
+        <h2>Straight from the game.</h2>
+        <p>Every picture here is a screenshot of Promptholm running, most with the interface hidden for the view. Click one to see it large.</p>
+      </div>
+      <ul class="gallery">
+        <li class="g-wide"><button type="button" data-full="img/aerial.webp"><img src="img/aerial-800.webp" width="800" height="450" loading="lazy" alt="The whole island from high above: a green island ringed by turquoise shallows, hundreds of red-roofed houses in walled hamlets, a river, a lighthouse and ships at anchor."></button><p>The whole island, 175 houses in eleven hamlets.</p></li>
+        <li><button type="button" data-full="img/square.webp"><img src="img/square-800.webp" width="800" height="450" loading="lazy" alt="The town square close up: timber-framed shops, a clock tower, lamp posts and settlers walking the cobbles."></button><p>The square, where the village meets for coffee.</p></li>
+        <li><button type="button" data-full="img/ships.webp"><img src="img/ships-800.webp" width="800" height="450" loading="lazy" alt="The harbour close up: a black-sailed galleon, the Batavia flying Dutch flags and a hull on the slipway."></button><p>The galleon and the Batavia.</p></li>
+        <li><button type="button" data-full="img/lighthouse.webp"><img src="img/lighthouse-800.webp" width="800" height="450" loading="lazy" alt="A red and white striped lighthouse on a sandy point, houses and fields behind it."></button><p>The lighthouse on the northern point.</p></li>
+        <li><button type="button" data-full="img/night-square.webp"><img src="img/night-square-800.webp" width="800" height="450" loading="lazy" alt="The shops round the square at night, their windows lit warm yellow, with the lighthouse beam sweeping the sky behind."></button><p>The square after dark.</p></li>
+        <li><button type="button" data-full="img/hamlet.webp"><img src="img/hamlet-800.webp" width="800" height="450" loading="lazy" alt="A hamlet on the western coast: rows of houses inside a low wall, fields and a jetty on the beach."></button><p>A hamlet on the western shore, with its own jetty.</p></li>
+        <li class="g-wide g-right"><button type="button" data-full="img/harbour.webp"><img src="img/harbour-800.webp" width="800" height="450" loading="lazy" alt="The east coast from above: houses down to the beach, the shipyard with a hull on its slipway and ships at anchor off shore."></button><p>The east coast, with the shipyard at work.</p></li>
+        <li><button type="button" data-full="img/village.webp"><img src="img/village-800.webp" width="800" height="450" loading="lazy" alt="A younger island: a small town square with a water tower, fields and orchards and a handful of houses by a river."></button><p>An island earlier on, before its hamlets filled in.</p></li>
+        <li><button type="button" data-full="img/interface.webp"><img src="img/interface-800.webp" width="800" height="450" loading="lazy" alt="The Promptholm window with its interface: the island's title card with settler counts, hamlet names over the land, a menu bar and a timeline to replay the island's history."></button><p>With the interface on: hamlet names, counts and a timeline to replay how the town grew.</p></li>
+      </ul>
+    </div>
+    <dialog class="lightbox" id="lightbox" aria-label="Screenshot">
+      <form method="dialog"><button class="lb-close" aria-label="Close">×</button></form>
+      <img id="lightbox-img" src="" alt="">
+    </dialog>
+  </section>
+
+  <!-- ============ PRIVACY ============ -->
+  <section class="section section-tint" id="private">
+    <div class="wrap private">
+      <blockquote>
+        <p>Nothing is invented. Your work never leaves the computer.</p>
+      </blockquote>
+      <div class="private-points">
+        <p><b>Read only, from your own disk.</b> Promptholm reads the transcripts Claude Code already writes. It needs no API key and sends no telemetry.</p>
+        <p><b>Visitors look, never touch.</b> Whoever visits sees a redacted town. Everything that can change something answers only to your own computer.</p>
+        <p><b>Never in your way.</b> The session hook writes nothing into your sessions and always steps aside. Claude never notices the island is there.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DOWNLOAD ============ -->
+  <section class="section" id="download">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Download <span class="release-tag" data-release="version">v0.6.4</span> <span class="release-date" data-release="date"></span></p>
+        <h2>Found your island today.</h2>
+        <p>Promptholm is free. Your island starts empty the day you found it, and the first settler walks ashore with your next Claude session.</p>
+      </div>
+
+      <div class="downloads">
+        <article class="dl dl-main">
+          <div class="dl-head">
+            <h3>Windows</h3>
+            <p class="dl-meta">promptholm-windows-x64.zip · <span data-size="promptholm-windows-x64.zip">16 MB</span></p>
+          </div>
+          <ol class="steps">
+            <li>Right-click the zip, choose <i>Properties</i> and tick <i>Unblock</i>. Unpack it into any folder.</li>
+            <li>Start <code>promptholm.exe</code>. If SmartScreen asks, choose <i>More info</i>, then <i>Run anyway</i>.</li>
+            <li>Work with Claude as you always do. The island fills itself in.</li>
+          </ol>
+          <a class="btn btn-wide" href="https://github.com/TiemenAfman/AgentVillage/releases/latest/download/promptholm-windows-x64.zip" data-asset="promptholm-windows-x64.zip">Download for Windows</a>
+          <p class="dl-req">Needs Windows 10 or 11, <a href="https://nodejs.org/">Node.js 22</a> or newer and Claude Code. A new version unpacks over the old one; your island lives in <code>%USERPROFILE%\.promptholm</code> and stays where it is.</p>
+        </article>
+
+        <article class="dl">
+          <div class="dl-head">
+            <h3>Android</h3>
+            <p class="dl-meta">promptholm-android.apk · <span data-size="promptholm-android.apk">13 MB</span></p>
+          </div>
+          <p>No island of your own on a phone. Instead you launch a skiff on the shared sea and sail out to visit everybody else's, with touch controls made for it.</p>
+          <a class="btn btn-ghost btn-wide" href="https://github.com/TiemenAfman/AgentVillage/releases/latest/download/promptholm-android.apk" data-asset="promptholm-android.apk">Download the APK</a>
+        </article>
+
+        <article class="dl">
+          <div class="dl-head">
+            <h3>From source</h3>
+            <p class="dl-meta">Node 22 or newer</p>
+          </div>
+          <pre class="code" tabindex="0"><code>git clone https://github.com/TiemenAfman/AgentVillage.git
+cd AgentVillage
+npm install
+npm run setup
+npm run dev</code></pre>
+          <a class="btn btn-ghost btn-wide" href="https://github.com/TiemenAfman/AgentVillage">View on GitHub</a>
+        </article>
+      </div>
+      <p class="all-releases"><a href="https://github.com/TiemenAfman/AgentVillage/releases">Every release and its checksums on GitHub</a></p>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section class="section section-sand" id="faq">
+    <div class="wrap faq-grid">
+      <div>
+        <p class="eyebrow">FAQ</p>
+        <h2>Before you set&nbsp;sail.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Does the island use up my Claude usage?</summary>
+          <p>Watching costs nothing: the island is drawn from transcripts that are already on your disk. Talking to a settler or handing out a ticket runs a real Claude session, exactly as it would from a terminal.</p>
+        </details>
+        <details>
+          <summary>Which sessions show up?</summary>
+          <p>Claude Code sessions from the terminal, VS Code or the desktop app, starting from the day you found your island. A session hook tells the island the moment one starts, and it rescans every minute besides. Cowork tasks that ran on this machine come ashore by boat at the quay.</p>
+        </details>
+        <details>
+          <summary>Does my code or my prompts go anywhere?</summary>
+          <p>No. The island runs on your own computer. Anyone who visits, on your network or on a shared sea, sees a redacted copy of the town: buildings and settlers under anonymous names, never a prompt, a path or a line of code.</p>
+        </details>
+        <details>
+          <summary>Does it run on a Mac or on Linux?</summary>
+          <p>The desktop version is made for Windows today. On Android you can join the shared sea and visit other islands from your phone.</p>
+        </details>
+        <details>
+          <summary>What happens to my town when I update?</summary>
+          <p>Nothing moves. Your island lives in <code>%USERPROFILE%\.promptholm</code>, apart from the program, and a house never moves by itself. Unpack the new version over the old one and walk on.</p>
+        </details>
+        <details>
+          <summary>How do friends visit?</summary>
+          <p>Join the same sea from the main menu. Every island in a sea floats in one world: sail over, or watch from the sky while their settlers go about their day.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <a class="brand" href="#top"><img src="img/icon-192.png" alt="" width="30" height="30"><span>Promptholm</span></a>
+      <p>A living island for your Claude sessions.</p>
+    </div>
+    <nav class="footer-links" aria-label="More">
+      <a href="https://github.com/TiemenAfman/AgentVillage">GitHub</a>
+      <a href="https://github.com/TiemenAfman/AgentVillage/releases">Releases</a>
+      <a href="https://github.com/TiemenAfman/AgentVillage/blob/main/docs/manual.md">Manual</a>
+      <a href="https://github.com/TiemenAfman/AgentVillage/blob/main/docs/getting-started.md">Getting started</a>
+    </nav>
+    <p class="footer-note">Promptholm is an independent project and is not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.</p>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>

@@ -19,6 +19,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- 🚧 [website.md](website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
+  nieuwe screenshots uit de game en downloadknoppen die altijd naar de nieuwste release wijzen.
+  Gebouwd op 29 september 2026; nog niet online (Pages en DNS aanzetten).
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
