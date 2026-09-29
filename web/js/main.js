@@ -18,7 +18,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
-import { allowImp, setImpNight, setImpBudget, impBudget, IMP_CAP, IMP_LIMIT } from './imp.js';
+import { allowImp, setImpNight, setImpBudget, IMP_CAP, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
@@ -39,7 +39,7 @@ import {
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
-import { fogCeilingOf } from './fade.js';
+import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
@@ -344,11 +344,16 @@ async function openBoardWithoutIsland() {
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
 const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
-// The best this screen is drawn at; the quality governor below only ever takes from it. A
-// phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
+// The best this screen is drawn at; the quality governor below only ever takes from it.
+// A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
 // third more pixels to fill than 1, and fill is what a phone's GPU runs out of first.
 const basePixelRatio = Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5);
 renderer.setPixelRatio(basePixelRatio);
+// The most imps this screen stands at once (imp.js), and again the governor only takes from it.
+// A lighter machine stands as few as a phone: each is a 25k-triangle skinned mesh with a
+// shadow, and seven of them measured a quarter of a modest page's frame at the volcano.
+const baseImps = modest ? IMP_CAP.phone : IMP_LIMIT;
+setImpBudget(baseImps);
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -372,7 +377,7 @@ function applyQuality(rung) {
   shadowFrame = 0;
   renderer.shadowMap.autoUpdate = shadowEvery === 1;
   renderer.shadowMap.needsUpdate = true;
-  setImpBudget(IMP_LIMIT * rung.imps);
+  setImpBudget(baseImps * rung.imps);
   scalePoints();
   if (statsReadout) console.info(`island: drawing at quality "${rung.name}"`);
 }
@@ -2558,7 +2563,19 @@ function applyViewDistance() {
 // machine playable without the island looking cut short: what is not drawn is behind a haze
 // that thickens towards it, not a line where the town stops. The planner draws everything.
 function fogCeiling() {
-  return fogCeilingOf(camera.far * FOG_CAP, state.graphics.objectDistance, state.mode === 'plan');
+  return fogCeilingOf(camera.far * FOG_CAP, objectReach(), state.mode === 'plan');
+}
+// Object Distance as this frame uses it: the setting, floored from above by the orbit target's
+// distance (fade.js objectReachOf), so pulling back never takes away the town being looked at.
+// A parked walk is still orbit; only walking is on foot.
+function objectReach() {
+  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target) : null;
+  return objectReachOf(state.graphics.objectDistance, orbit);
+}
+// And the furthest fogCeiling can go before the next slider, for what may not be decided per
+// frame (the crowd's dither): the floor at the end of the leash, whatever the mode is now.
+function widestFogCeiling() {
+  return fogCeilingOf(camera.far * FOG_CAP, objectReachOf(state.graphics.objectDistance, controls.maxDistance), state.mode === 'plan');
 }
 
 // Object and NPC Distance. The houses need nothing here: the fog closes at Object Distance at
@@ -2579,7 +2596,9 @@ function fogCeiling() {
 // at all. A range of 0 is how "off" is spelled everywhere in this file.
 function applyObjectDistances() {
   const range = npcRange();
-  crowdMat.userData.fade(range, fogCeiling());
+  // Against the widest the haze can close, not the fog of this zoom: the orbit floor moves the
+  // ceiling out as the camera pulls back, and a dither decided close in would be missing then.
+  crowdMat.userData.fade(range, widestFogCeiling());
   // The people are also cut on the CPU, and that one has to be told now: raising NPC Distance
   // puts them back within a frame, not whenever the sea next says where they are.
   const fading = crowdMat.userData.fadeOn;
@@ -2630,7 +2649,11 @@ const cullEye = new THREE.Vector3();
 function cullRecords() {
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
-  const range = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
+  // Never tighter than the haze actually standing: the frame loop sets it before
+  // controls.update moves the camera, so on a fast zoom in the floor has already come in and
+  // the fog is still where it was - cut to the new floor, a house between the two would pop.
+  const reach = objectReach();
+  const range = state.mode === 'plan' || !(reach > 0) ? 0 : Math.max(reach, fogAt || 0);
   for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
   for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
   // And a whole neighbour once the fog has closed over all of it - its ground, wood and fields
@@ -2714,9 +2737,14 @@ function setFogRange(half, out, far) {
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
   // And never past Object Distance, so the houses come out of the mist (fogCeiling).
-  scene.fog.far = Math.min(h.far, fogCeiling());
+  fogAt = fogCeiling();
+  scene.fog.far = Math.min(h.far, fogAt);
   scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
 }
+// The ceiling setFogRange last closed the haze under. From above it moves with the zoom (the
+// orbit floor), so the frame loop asks again whenever it differs - on one island too, which
+// otherwise sets the haze only when something changes.
+let fogAt = null;
 
 // How far the eye may see before something across the world's edge would come into view:
 // its way to the nearest edge, plus the open water between the edge and the fleet on the
@@ -3489,6 +3517,8 @@ async function doSyncFleet() {
   launchBoats();
   applyFogRange();
   applyCameraRange();
+  // A longer leash moves the widest the haze can close (widestFogCeiling).
+  applyObjectDistances();
   // The quay's planks are a deck, and they are built here rather than with the village -
   // so the report that goes out with applyVillage has not seen them yet. Sent again from
   // here, and it costs nothing when nothing changed: reportPlacements compares first.
@@ -3964,11 +3994,8 @@ function raiseGuestIslands() {
       buildings: (region.village && region.village.buildings) || [],
       range: npcRange(),
       fading: crowdMat.userData.fadeOn,
-      // A lighter machine stands as few imps as a phone: each is a 25k-triangle skinned mesh
-      // with a shadow, and seven of them measured a quarter of a modest page's frame at the
-      // volcano. Asked every frame, so the quality governor's budget (setImpBudget) still
-      // takes from either.
-      impLimit: modest ? () => Math.min(IMP_CAP.phone, impBudget()) : impBudget,
+      // How many imps: crowd-view's default, imp.js's budget, asked every frame - `baseImps`
+      // above, less whatever the quality governor has taken off it.
       // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
       // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
       // imps. Scene frame, the same one the crowd's positions are in.
@@ -4461,7 +4488,9 @@ function buildScene(village) {
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: worldNow().month,
-    shadowSize: modest ? 1024 : 2048,
+    // A phone's GPU runs out of fill before anything else, and its screen is small enough
+    // that 512 texels over the shadow box still reads as a shadow.
+    shadowSize: STANDALONE && modest ? 512 : modest ? 1024 : 2048,
     // The two graphics distances that are a property of the world rather than of this frame.
     // View Distance never comes here - it is the camera's own far plane - and the two cuts
     // are not here either: both are read every frame, not fixed when the world is built.
@@ -4630,6 +4659,9 @@ function buildScene(village) {
     () => (state.world && state.world.workSites ? state.world.workSites().fields : null));
   syncBridges(village);
   state.particles = createParticles();
+  // Both are born at the boot pixel ratio's size, and a ?quality pin was applied in boot()
+  // before either existed - so its lighter ratio found nothing to scale.
+  scalePoints();
   state.waitingFlags = createWaitingFlags(scene);
   state.flags = createFlagMesh(200);
   scene.add(state.flags);
@@ -4994,16 +5026,26 @@ function islandFrame() {
   const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, Math.max(175, t.half * 1.7));
   return { cx, cz, dist, el: 0.72 };
 }
-function frameIsland() {
+// `glide`: fly there over OVERVIEW_S through the same tween focusOn uses, instead of cutting.
+// The Overview chip (and O) glides; the boot and the intro's fallbacks still cut, because
+// they are setting a camera nobody has seen yet.
+const OVERVIEW_S = 1.2;
+function frameIsland({ glide = false } = {}) {
   const { cx, cz, dist } = islandFrame();
   const az = 0.6, el = 0.72;
-  controls.target.set(cx, 1, cz);
-  camera.position.set(
+  const target = new THREE.Vector3(cx, 1, cz);
+  const pos = new THREE.Vector3(
     cx + Math.cos(el) * Math.sin(az) * dist,
     1 + Math.sin(el) * dist,
     cz + Math.cos(el) * Math.cos(az) * dist,
   );
-  controls.update();
+  if (glide) {
+    state.tween = { t: 0, dur: OVERVIEW_S, from: controls.target.clone(), to: target, fromPos: camera.position.clone(), toPos: pos };
+  } else {
+    controls.target.copy(target);
+    camera.position.copy(pos);
+    controls.update();
+  }
   return { cx, cz, dist, az, el };
 }
 
@@ -6054,7 +6096,10 @@ function frame(nowMs) {
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0, camera.far * 0.9, camera.position);
-  if (state.islets) state.islets.update(dt, focusPoint());
+  // The pad is three CULL_PADs rather than one: the islets are only re-laid every two seconds,
+  // and a camera flying in may cover a pad's width in that time - so a palm must still be past
+  // full fog when it comes back into the buffers.
+  if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: fogCeiling() + 3 * CULL_PAD });
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -6146,7 +6191,7 @@ function frame(nowMs) {
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
-  if (state.sea.count() > 1) applyFogRange();
+  if (state.sea.count() > 1 || (state.mode !== 'plan' && fogCeiling() !== fogAt)) applyFogRange();
 
   if (!state.intro && state.mode === 'orbit') {
     stepDirector(dt);
@@ -6500,7 +6545,7 @@ async function boot() {
     canWalkHere: () => !!(state.walk && state.walk.parked()),
     onOverview: () => {
       if (state.mode === 'plan') { state.plan.frameIsland(); return; }
-      state.intro = null; state.tween = null; controls.enabled = true; frameIsland();
+      state.intro = null; controls.enabled = true; frameIsland({ glide: true });
     },
     onScrub: (frac) => {
       const { start, end } = chronicleBounds();

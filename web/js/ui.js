@@ -58,12 +58,15 @@ function fmtDate(iso) {
 }
 const el = (id) => document.getElementById(id);
 // The chips in the bar carry an icon and a word (index.html); writing textContent would take
-// the icon with it. The word is the aria-label too, because below 1100px it is not shown.
-function setLabel(id, text) {
+// the icon with it. The word is the aria-label too, because it is shown only when Names on
+// the buttons is on and the window is wide enough. `title` for a chip whose meaning turns
+// with its word (Walk / Fly up): with icons only, the tooltip is the one place the name is.
+function setLabel(id, text, title) {
   const b = el(id);
   const lbl = b.querySelector('.lbl');
   if (lbl) lbl.textContent = text; else b.textContent = text;
   b.setAttribute('aria-label', text);
+  if (title) b.title = title;
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -102,11 +105,10 @@ export function createUI(handlers) {
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
   el('legend-btn').addEventListener('click', () => (el('legend').hidden ? openLegend() : close('legend')));
-  // Beside Legend rather than inside Settings, and it is the one chip that is not there
-  // twice by accident: the Settings panel writes config.json on the machine the island
-  // runs on and is hidden from everybody but the keeper (see setKeeper below), while how
-  // loud somebody's own speakers are is theirs alone. So this is a chip, and what it
-  // remembers lives in that browser's localStorage next to the avatar and the chat mode.
+  // On the menu's This screen tab, not the keeper's Island tab: that one writes config.json
+  // on the machine the island runs on (see setKeeper below), while how loud somebody's own
+  // speakers are is theirs alone. What it remembers lives in that browser's localStorage next
+  // to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
@@ -517,6 +519,16 @@ export function createUI(handlers) {
   let qualityAuto = true;
   try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
 
+  // The words on the chips at the top right: off unless switched on, per browser. The icons
+  // carry the bar - every chip keeps its name and key in its tooltip and aria-label - and the
+  // words took half the width of a laptop screen (Plans/esc-menu-en-knoppenbalk.md). A class
+  // on body; harbour.css shows them only where the window is wide enough even when on.
+  const NAMES_KEY = 'promptholm.chipnames';
+  let namesOn = false;
+  try { namesOn = localStorage.getItem(NAMES_KEY) === '1'; } catch { /* private window: off */ }
+  const applyNames = () => document.body.classList.toggle('chip-names', namesOn);
+  applyNames();
+
   // The planner moves hamlets on this machine's layout, and the menu's Island tab writes its
   // config.json (the signs, the size, the sea), so both are the keeper's. The rest of the
   // settings are this browser's and everybody's - they used to be behind the keeper's
@@ -697,12 +709,21 @@ export function createUI(handlers) {
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     // One section per tab of the menu (sysmenu.js); the Island one only for the keeper, whose
-    // config.json it writes, and the keys only where there is a keyboard.
+    // config.json it writes, and the keys only where there is a keyboard. The Show toggles are
+    // not drawn here: they stand in index.html's own section of This screen, and in the Show
+    // row under the chips while one of them is off.
     const signs = '<h3 class="sec" style="margin-top:0">House signs</h3>'
       + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+    // The words on the chips at the top right (namesOn, above): its own heading, after the
+    // timeline, because it is about the bar at the top rather than about the sky.
+    const buttons = '<h3 class="sec">Buttons</h3>'
+      + `<div class="chips wrap"><button class="chip${namesOn ? ' on' : ''}" data-chipnames="1" aria-pressed="${namesOn}">Names on the buttons</button></div>`
+      + `<p class="muted" style="margin-top:9px">${namesOn
+        ? 'On: the buttons at the top right carry their name beside the icon, wherever the window is wide enough for it.'
+        : 'Off: icons only. Hover one for its name and its key.'}</p>`;
     const timeline = '<h3 class="sec">Timeline</h3>'
       + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
       + `<p class="muted" style="margin-top:9px">${timelineOn
@@ -726,7 +747,7 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
         : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
-    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${graphicsSection()}${timeline}</section>`
+    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${graphicsSection()}${timeline}${buttons}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
@@ -738,6 +759,12 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
+    el('settings-body').querySelectorAll('[data-chipnames]').forEach((b) => b.addEventListener('click', () => {
+      namesOn = !namesOn;
+      try { if (namesOn) localStorage.setItem(NAMES_KEY, '1'); else localStorage.removeItem(NAMES_KEY); } catch { /* kept for this page only */ }
+      applyNames();
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-timeline]').forEach((b) => b.addEventListener('click', () => {
       timelineOn = !timelineOn;
@@ -1110,7 +1137,7 @@ export function createUI(handlers) {
     // read from high up and so are always on when you leave the sky.
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
-    setLabel('walk-btn', on ? 'Fly up' : 'Walk');
+    setLabel('walk-btn', on ? 'Fly up' : 'Walk', on ? 'Fly up into the sky' : 'Walk the island on foot');
     if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
@@ -1121,7 +1148,9 @@ export function createUI(handlers) {
     el('labels').hidden = planning || walking;
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
-    setLabel('plan-btn', planning ? 'Done' : 'Plan');
+    // P is a letter from the sky only (main.js ORBIT_KEYS), so Done names none.
+    setLabel('plan-btn', planning ? 'Done' : 'Plan',
+      planning ? 'Done: leave the planner' : 'The island from above: move hamlets, zone ground (P)');
     if (planning) hideSide();
     syncSidebar();
   }

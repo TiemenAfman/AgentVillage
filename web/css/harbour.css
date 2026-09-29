@@ -49,10 +49,13 @@
 .chip:hover, .topright .chips .chip:hover { background: #ffffff12; color: var(--ink); border-color: var(--edge); }
 .topright .chips .chip.on:hover { background: #f4d79d; color: #203530; }
 #walk-btn { color: var(--accent); font-weight: 650; }
-/* Icon and word; the word goes below 1100px (media block below) and the icon carries the chip
-   there, the word staying its title and aria-label. The line between the two groups is what
-   says which is which: doing on the left, looking on the right. */
+/* Icons only, unless This screen -> Names on the buttons is on (body.chip-names, ui.js), and even
+   then the word goes below 1100px (media block below). The word is always the chip's title and
+   aria-label. The line between the two groups is what says which is which: doing on the left,
+   looking on the right. */
 .chip.nav { display: inline-flex; align-items: center; gap: 6px; }
+body:not(.chip-names) .chip.nav .lbl { display: none; }
+body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
 .chip .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .chips-sep { align-self: stretch; width: 1px; margin: 5px 4px; background: var(--edge); }
 #sysmenu-btn { display: inline-flex; align-items: center; padding: 7px 9px; border-radius: 8px; }
@@ -64,9 +67,10 @@
    draft grows with what is in it instead of standing screen-tall around one line. */
 .panel.left { top: 206px; }
 .panel.plan-ledger { bottom: auto; max-height: calc(100vh - 256px); }
-/* The graphics sliders in the menu (#sysmenu, web/js/sysmenu.js): a label and its value on
-   the left, the slider filling the rest. */
-#settings-body .setting-row {
+/* The graphics distances in the menu (web/js/sysmenu.js): a label and its slider a line. The
+   settings used to be a 316px side panel, then a screen-wide one; they are the menu now, whose
+   card holds the tabs on the left and this on the right. */
+.sysmenu .setting-row {
   display: grid;
   grid-template-columns: 180px 1fr;
   align-items: center;
@@ -74,19 +78,19 @@
   margin-bottom: 12px;
 }
 
-#settings-body .setting-row label {
+/* 12.5px is what the label inherited from .panel-body; the menu's body sets no size of its own. */
+.sysmenu .setting-row label {
+  font-size: 12.5px;
   display: flex;
   justify-content: space-between;
   gap: 10px;
   white-space: nowrap;
 }
 
-#settings-body .setting-row input[type="range"] {
+.sysmenu .setting-row input[type="range"] {
   width: 100%;
   min-width: 0;
 }
-
-
 
 /* The controls: one action a line, its key on the right. */
 .keylist { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
@@ -167,6 +171,8 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .chips-label { display: none; }
   .right-column { top: 215px; }
   .panel { top: auto; height: min(62vh, calc(100vh - 190px)); bottom: 80px; }
+  /* A slider under its label: 180px of label beside it leaves the slider a thumb's width. */
+  .sysmenu .setting-row { grid-template-columns: 1fr; row-gap: 4px; }
   /* The animals' panels are .panel and so bottom sheets already. The return card stays in
      the right column, but short: three lines, not a third of the island. */
   .animal-summary { max-height: 32vh; padding: 9px 11px; }

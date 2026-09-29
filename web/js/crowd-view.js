@@ -200,8 +200,8 @@ export function createCrowdView({
   // The volcano's guards, drawn as lava imps instead of as members of the crowd.
   //
   // Each figure stays in the crowd - enrolled, interpolated, found by its id - and only its
-  // drawing is swapped: every frame its instanced body is parked out of sight and its imp is
-  // put where the body would have been drawn. That keeps every rule above (the snap, the
+  // drawing is swapped: every frame its instanced body is kept out of the drawn instances
+  // (hide: a no-op after the first) and its imp is put where the body would have been drawn. That keeps every rule above (the snap, the
   // guess, the wade, the ride) in one place, and it means an imp that never arrives - still
   // loading, failed, a page that has not finished booting, or a guard past the nearest
   // `impLimit` - leaves the guard exactly the figure it always was. Codex residents lodging
@@ -398,7 +398,7 @@ export function createCrowdView({
   // which is exactly the id the roster enrolled the body under (`guard:<n>`,
   // `codex:<island>:<id>`), so this is one lookup. An imp standing in for the body flinches
   // (imp.js hit); an ordinary figure flinches in settler-figures.js off `f.flinch`. Only one
-  // of the two: a body under an imp is parked out of sight, and a flinch left on it would play
+  // of the two: a body under an imp is not drawn, and a flinch left on it would play
   // the moment the imp was handed to a nearer guard. What is left (`hp`, `max`) is kept on
   // the figure for its health bar (`bars`, agent-bars.js), and a fall needs nothing from
   // here: the roster's null hole retires the body and its imp together, and whoever comes back
@@ -587,8 +587,9 @@ export function createCrowdView({
       //
       // f.pos keeps the last place they were drawn, so stepping back into range puts them
       // where they were rather than a message behind, and hide() is the same one the rest of
-      // this file uses for a body it may not show, so the instanced slots are handed back
-      // the way every other exit from this loop hands them back.
+      // this file uses for a body it may not show: it takes them past every batch's `count`
+      // (settler-figures.js), so the GPU draws nothing for them either - in the colour pass
+      // or the shadow pass - and not merely a body parked out of sight.
       if (beyond(f)) { if (f.visible) { f.visible = false; view.hide(f); } continue; }
       if (!f.visible) f.visible = true;
       // Where along the glide we are: 0 is where the body was drawn when the word landed,

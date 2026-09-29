@@ -1,6 +1,6 @@
 # Grafische afstanden — vier losse schuifregelaars
 
-**Status: 🚧** (start 28 september 2026, herzien 29 september)
+**Status: ✅ DONE** (start 28 september 2026, af 29 september)
 
 Vier instellingen in Instellingen → Graphics: **View Distance**, **Object Distance**, **NPC
 Distance** en **Shadow Distance**. Ze bestonden als schuifregelaar (`web/js/ui.js`) en als
@@ -287,19 +287,29 @@ eiland. Wat domineerde en buiten de afstanden viel, en wat eraan gedaan is:
   geeft (na `colorspace_fragment`) en de koepel zijn kleuren rauw schrijft: 171,206,243 tegen
   214,232,249. De band krijgt de mistkleur nu omgezet zoals three dat doet (`sky.onBeforeRender`);
   gemeten naadloos van hoog en van laag, met het blauwe verloop erboven intact.
-- Niet gedaan: de eilandjes (~52k driehoeken, één InstancedMesh over de hele zee, per eilandje
-  maskeren vraagt de buffers elke frame opnieuw) en een schaduwkaart van 512 op de telefoon.
+- **De eilandjes** (~52k driehoeken, één InstancedMesh over de hele zee): per eilandje maskeren
+  kan niet, maar de palmen werden al elke 2 s opnieuw gelegd; in die ronde gaan palmen en
+  struiken voorbij de mistgrens + 3 × `CULL_PAD` (van de camera gemeten) nu niet meer in de
+  buffers. Drie pads omdat een invliegende camera in 2 s een pad kan overbruggen. De zandgrond
+  (één samengevoegde mesh) blijft staan.
+- **Telefoon**: een schaduwkaart van 512 (`STANDALONE && modest`), 1024 op `modest`.
 
 Niet gedaan, bewust: de zon kan bij View 100 vóór heuvels op 200 hangen (de prijs van een
 mistvrije schijf binnen de far plane); vlaggen van geknipte huizen blijven in de gedeelde
 InstancedMesh staan, bevroren en in volle mist.
 
-## Open vragen
+## Besloten (29 september)
 
-- **Orbit van ver.** De afstand is tot de camera, zoals gevraagd. Van boven met Object Distance
-  onder de orbit-afstand verdwijnt het dorp waar je naar kijkt. Een ondergrens op "afstand tot
-  het doel + marge" zou dat opvangen, maar verandert de betekenis van de knop.
-- **Het bos** (`treeMat`, instanced per eiland) valt onder het landschap en dus onder View
-  Distance, niet onder Object Distance: een instanced mesh voor het hele eiland kan niet per boom
-  op de CPU geknipt worden, en een dither zonder schaduw-tweeling zou zwevende boomschaduwen
-  geven.
+- **Orbit van ver: een ondergrens op het doel.** Van boven met Object Distance onder de
+  orbit-afstand verdween het dorp waar je naar kijkt (gemeten: op 50 en uitgezoomd was het hele
+  eiland mist). In orbit telt Object Distance nu minstens `afstand tot controls.target × 1.5 + 32`
+  (`objectReachOf` in `fade.js`, `objectReach()` in main.js); op de grond betekent de knop wat
+  hij zegt. De factor 1.5 houdt het doel zelf buiten de nevel (die opent op 0.8 van waar hij
+  sluit), de 32 is de buurt eromheen als je dichtbij zit. Omdat het plafond nu met de zoom
+  beweegt: de frame vraagt `applyFogRange` opnieuw zodra `fogCeiling()` verschilt (ook op één
+  eiland), de knip is nooit krapper dan de mist die er staat (`fogAt`, want de mist wordt vóór
+  `controls.update` gezet), en de dither van de bewoners wordt besloten tegen het plafond aan
+  het eind van de leash (`widestFogCeiling`), niet per zoom.
+- **Het bos blijft onder View Distance.** Een instanced mesh voor het hele eiland kan niet per
+  boom op de CPU geknipt worden, en een dither zonder schaduw-tweeling zou zwevende
+  boomschaduwen geven; stukken bos of een tweeling zijn het niet waard.

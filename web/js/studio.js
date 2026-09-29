@@ -9,6 +9,7 @@ import { SWATCHES, DEFAULT_AVATAR, loadAvatar, saveAvatar, normalizeAvatar } fro
 import { createClassicAvatar } from './classic-avatar.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, iconKey, iconGeometry } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
+import { keyOf } from './keybinds.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 // What a slot's dye button says it paints; the two flasks carry their own labels.
@@ -26,9 +27,19 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   let icons = null;      // the slot thumbnails' renderer, likewise
   let pop = null;        // whichever picker or palette is up, if any
 
+  // The key that opened us closes us again, as it does in every game with a bag: I from the
+  // sky (main.js ORBIT_KEYS), or wherever it is bound on foot. Not a repeat, not with a
+  // modifier, and not the very press that opened us - from the sky main.js's listener runs
+  // before this one and opens the panel in the middle of that same keydown.
+  let openedAt = 0;
+  const isToggle = (e) => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.timeStamp <= openedAt) return false;
+    const k = e.key.toLowerCase();
+    return k === 'i' || k === keyOf('inventory');
+  };
   function onKey(e) {
     if (el.hidden) return;
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || isToggle(e)) {
       // Stopped dead, not just from bubbling on: walk.js listens on this same window, and
       // close() has just let its feet go - so it would read this very Escape as "back to the
       // sky". stopPropagation cannot help with a listener on the same element; only
@@ -43,7 +54,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   }
   // Escape has to work whether focus is on the Avatar chip that opened us (caught on the
   // window) or on a slot inside the panel (caught here, before it bubbles away).
-  el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } e.stopPropagation(); });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape' || isToggle(e)) { e.preventDefault(); cancel(); } e.stopPropagation(); });
   addEventListener('keydown', onKey);
 
   // One delegated listener for the panel's lifetime: the markup below is rebuilt on every
@@ -80,6 +91,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const column = (side) => INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
 
   function open() {
+    openedAt = performance.now();
     spec = loadAvatar();
     snapshot = { ...spec };
     el.hidden = false;

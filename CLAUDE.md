@@ -64,6 +64,16 @@ checkout's code on the live island in `~/.promptholm` — its own `layout.json`,
 `import.meta.url`, and a linked worktree keeps its island in itself (see HOME below), so
 that process uses the worktree's own `data/` and `config.json`.
 
+To try a branch on the keeper's **real** island without touching it, run it on a copy: copy
+`~/.promptholm` (leave out `*.lock`, which names the live islander's pid, and `*.log`) to a
+scratch folder, and in the copy's `config.json` set `multiplayer.sea` to `{ mode: 'single',
+url: null, key: null, port: <free> }` and `network.public` to false - the live island joins the
+open sea under its claim token, and a copy left on `join` would publish under that same token.
+Then start the worktree's `serve.mjs --port <free> --no-rescan --no-open` with `PROMPTHOLM_HOME`
+on the copy, set *before* `lib/paths.mjs` is imported (a two-line launcher that sets it and
+`import()`s serve.mjs works as a `launch.json` entry). From a worktree, not the main checkout:
+`WORKTREE` is what keeps `ensureStatusLine` from repointing the machine's status line.
+
 A change to server-side code (`lib/`, `serve.mjs`, `scan.mjs`, `sea.mjs`) needs the Node
 process on 4747 restarted before it takes effect - `/api/reload` only tells open browser
 tabs to refetch `web/js/`, it does not touch the server process. `npm run watch` is
@@ -385,6 +395,12 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   frame has put the camera where it is drawn from. Anything `fog: false` that a fogged house
   could hide breaks the rule when the house goes: the fireflies were the one measured case,
   and now fade their alpha with the fog.
+  From above, Object Distance is floored at the orbit target's distance × 1.5 + 32
+  (`objectReachOf` in fade.js, `objectReach()` in main.js - every reader goes through it), so
+  zooming out never fogs away the town being looked at; on foot it is the setting. Since that
+  moves the ceiling with the zoom, the crowd's dither is decided against `widestFogCeiling()`
+  (the floor at the end of the leash), and the cut is never tighter than `fogAt`, the haze
+  actually standing (set before `controls.update`).
   That is what makes an older machine playable without the island looking cut short: the
   `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
   people are past the haze and not drawn at all.
@@ -432,6 +448,16 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
   only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
   is never touched by the cut.
+- **A settler who is not drawn is not an instance** ([Plans/verborgen-inwoners-tellen-niet.md](Plans/verborgen-inwoners-tellen-niet.md)).
+  Every batch in `settler-figures.js` (the body, each hat shape, skirts, hair) keeps the figures
+  it draws packed in front of `count`; a figure changing side trades slots with the last drawn
+  (matrix and `instanceColor` in every mesh of the batch), `draw()` moves whoever it is handed
+  across by `f.visible`, and `enrol` puts a newcomer on the undrawn side. Parking a hidden body
+  at y = -999 inside `count`, as it was, still cost the GPU its vertices in both passes: 2
+  million triangles on Hoogezand at NPC Distance 50. Swords, torches and every tool are counted
+  per frame instead. So **a slot number moves whenever somebody else changes side**: read
+  `f.slot` when you use it, never keep one across a frame. Per-figure bookkeeping lives in a
+  `WeakMap` in `createFigures`, not on the caller's figure. `tests/settler-batches.test.mjs`.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
@@ -1135,7 +1161,12 @@ the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look 
 where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
 pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
-and a `setTimeout` loop polling the page sees time stand still.
+and a `setTimeout` loop polling the page sees time stand still. For anything that needs real
+frames - an fps number, a soak - use the Chrome DevTools MCP's own Chrome, and bring its window
+to the front (`select_page` with `bringToFront`) first: behind another window every GL call
+blocks on the present, and the island runs at 1 fps with 1.5 s of `?stats` "work" a frame,
+which reads exactly like a regression and is not one (measured: the 61-settler island went from
+1 to 100 fps on that one call).
 
 **First person is the wheel's last notch (or V), and it is a view model, not a body.**
 `state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the

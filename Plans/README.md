@@ -5,7 +5,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
-- 🚧 [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
+- ✅ [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
   en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
   tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en
   een huis wordt pas daarachter uit de render list gehaald. Standaard hoog op een gewone machine,
@@ -26,6 +26,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- ✅ [verborgen-inwoners-tellen-niet.md](verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
+  NPC Distance, onder een imp of nog niet geplaatst was een instance op y = -999 binnen `count`, en
+  de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
+  getekend wordt aaneengesloten vooraan in elke batch (swap bij een wissel), met rokken en haar in
+  eigen batches: geparkeerd is 0, en op NPC 50 scheelt het 37% van de kleurpas.
 - 🚧 [website.md](website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
   nieuwe screenshots uit de game en downloadknoppen die altijd naar de nieuwste release wijzen.
   Gebouwd op 29 september 2026; nog niet online (Pages en DNS aanzetten).
