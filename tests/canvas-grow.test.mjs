@@ -1,4 +1,4 @@
-// The grid itself grows (Plans/eiland-laten-groeien.md, fase 4): every grid index in the
+// The grid itself grows (Plans/DONE/eiland-laten-groeien.md, fase 4): every grid index in the
 // layout goes up by k, nothing moves in the world, the ground under everything is the ground
 // it was, and an island founded on its whole grid can grow once the setting leaves it room.
 import test from 'node:test';

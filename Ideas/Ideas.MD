@@ -459,8 +459,8 @@ Daarmee krijg je iets dat veel meer voelt als een **kleine multiplayer open-worl
 # Wat er nog ontbreekt op het eiland (25 september 2026)
 
 Een rondgang langs wat het eiland kan tekenen. Gemaakt en op `/demo` te zien, nog niet
-geplaatst: de zagerij en de smidse (`Plans/zagerij.md`, `Plans/smidse.md`), en de stal met
-paard, de dieren en de veld- en dorpsspullen (`Plans/stal-en-veld.md`). Wat hieronder staat is
+geplaatst: de zagerij en de smidse (`Plans/DONE/zagerij.md`, `Plans/DONE/smidse.md`), en de stal met
+paard, de dieren en de veld- en dorpsspullen (`Plans/DONE/stal-en-veld.md`). Wat hieronder staat is
 nog alleen een idee.
 
 ### 15. Werkplekken voor de gereedschapseconomie

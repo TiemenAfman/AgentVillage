@@ -1,4 +1,4 @@
-// Settlers with nothing to do go and do something (Plans/inwoners-aan-het-werk.md).
+// Settlers with nothing to do go and do something (Plans/DONE/inwoners-aan-het-werk.md).
 //
 // Like settler-walk.test.mjs this registers no loader and stubs no document: the chores are
 // part of the walk, and the walk is what the sea steps.

@@ -3,7 +3,7 @@
 Run: node scripts/blender.mjs --background --python scripts/build-lighthouse.py
 Hand edits: none - this script is the source; run it again rather than saving the .blend.
 
-It is built to its real size, not scaled to it (Plans/mijlpalen-tot-tweehonderd.md, "De
+It is built to its real size, not scaled to it (Plans/DONE/mijlpalen-tot-tweehonderd.md, "De
 vuurtoren"). The first bake was 3.0 tall: barely over the town hall, and beside the pirate
 galleon's masthead at 10.8 a shed. Stretching that bake would have given a two-storey door
 and windows a settler could walk through, so everything a person measures against keeps the

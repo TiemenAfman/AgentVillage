@@ -120,7 +120,7 @@ export function updateClock(clock, hour) {
 }
 
 // ---- the gold pit's clock ---------------------------------------------------------------
-// Not the time: the time the pit is full again (Plans/goudkuil.md). It hangs in the gable of
+// Not the time: the time the pit is full again (Plans/DONE/goudkuil.md). It hangs in the gable of
 // the pit's office, over the door, and its hands stand at the hour the five-hour window
 // turns over - so from across the square the pit says both how much is left (the heap) and
 // when the rest comes back (this), without anybody opening anything.

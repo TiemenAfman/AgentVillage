@@ -30,7 +30,7 @@
 //
 // The town's own buildings - the hall, the tavern and the rest of the three by three lots -
 // move one at a time and cell by cell, and turn (R) where they stand (`civic`,
-// Plans/gebouwen-verplaatsen.md). Which ones may, and every corner each may be set down on,
+// Plans/DONE/gebouwen-verplaatsen.md). Which ones may, and every corner each may be set down on,
 // comes baked from the server like the rest: the survey's `civics` for the island as it
 // stands, a dry run's for the island as the draft leaves it. With the town picked, the Land
 // tool paints ground for the town (`commons`) instead of for a hamlet.
@@ -172,7 +172,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     }
     // The projects that stand in more than one place - several pieces of land, or a house of
     // theirs on the commons or on somebody else's land - and the piece a `merge` keeps: the
-    // one with the most of their houses (Plans/wijkjes-samenvoegen.md). Not the quay, which
+    // one with the most of their houses (Plans/DONE/wijkjes-samenvoegen.md). Not the quay, which
     // follows its shore in as many stretches as it needs.
     apart = new Map();
     for (const d of v.districts) {
@@ -729,7 +729,7 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
   }
   // A hamlet is picked whole, every piece of land its project has: picking one piece let a
   // drag carry it off and leave the rest behind, which is how two projects on the live island
-  // came to stand in pieces two and fifteen super-cells apart (Plans/wijkjes-samenvoegen.md).
+  // came to stand in pieces two and fifteen super-cells apart (Plans/DONE/wijkjes-samenvoegen.md).
   // The piece clicked goes in first, for the Land tool to paint onto.
   function pickHamlet(rec) {
     sel.add(lkey(rec));

@@ -1,6 +1,6 @@
 // What makes the volcano a volcano once the ground is drawn: the lava in its gullies, the
 // pool on the crater floor, the smoke out of the top and the steam where a flow meets the
-// sea. Plans/vulkaan-in-het-midden.md, step 5.
+// sea. Plans/DONE/vulkaan-in-het-midden.md, step 5.
 //
 // Keyed on nothing but the terrain. `terrain.lavaFlows` and `terrain.crater` come out of
 // shared/terrain.mjs, the same numbers the sea hurts people by, so a flow is drawn exactly

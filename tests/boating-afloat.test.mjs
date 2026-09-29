@@ -1,5 +1,5 @@
 // A busier bay for a bigger village, and outings that sail round whatever stands on the water
-// (Plans/mijlpalen-tot-tweehonderd.md: "De vloot" item 3, and "Botsen" under the VOC ship).
+// (Plans/DONE/mijlpalen-tot-tweehonderd.md: "De vloot" item 3, and "Botsen" under the VOC ship).
 //
 // The ship at anchor on the rede is a plot like any civic's - four cells wide and thirteen to
 // fifteen long, lying in the water - and an outing is moved along its route rather than

@@ -47,7 +47,7 @@ const RIVER_MOUTH_REACH = 2;       // how near the sea has to be for the beach t
 
 // ---- the volcano --------------------------------------------------------------
 // One island that is not a hill with a village on it but a mountain with a hole in the top
-// (Plans/vulkaan-in-het-midden.md). It is asked for by name - `volcano: true` - and never
+// (Plans/DONE/vulkaan-in-het-midden.md). It is asked for by name - `volcano: true` - and never
 // derived from a seed, so every island that exists hashes exactly as it did.
 //
 // Every length is a share of `half`, so the same mountain comes out at 64 as at 192 and
@@ -724,7 +724,7 @@ export function hashHeights(H) {
 // An island grows by accretion, never by being worked out again at a bigger size: every
 // corner that was land stays exactly the height it was, and what is added is sea that has
 // become ground - the way a polder is, except shaped like a bigger island of the same seed
-// rather than walled and flat. Plans/eiland-laten-groeien.md has the argument.
+// rather than walled and flat. Plans/DONE/eiland-laten-groeien.md has the argument.
 //
 // A step is three things:
 //   r     where the coast of the bigger island lies, in cells - exactly what `coastScale` is
@@ -842,7 +842,7 @@ function accrete(H, size, seed, { r, grid, hold, relief, prev }, g) {
   // the low lip of the meadow behind it - rises with the new ground; holding all of it was
   // the first version, and it left every old coastline behind as a ring of sand in the
   // meadow, growth rings. The terrain cannot know what stands where, so the layout says so
-  // when it takes the step and the step keeps the list (Plans/eiland-laten-groeien.md).
+  // when it takes the step and the step keeps the list (Plans/DONE/eiland-laten-groeien.md).
   const half = size / 2;
   const land = new Uint8Array(N * N);
   for (let k = 0; k < H.length; k++) if (H[k] >= BEACH_MAX) land[k] = 1;
@@ -1222,7 +1222,7 @@ function growRelief(H, before, size, seed, r, prev, sea, keep, dist, rivers) {
 // never grown is the whole of it. Split out of makeTerrain so a grown island can still be
 // built on the grid it was founded on and set down in the middle of a bigger one: the
 // coast here is measured off `half`, so the same seed on a bigger grid is a different
-// island (Plans/eiland-laten-groeien.md).
+// island (Plans/DONE/eiland-laten-groeien.md).
 function groundOf(seed, size, volcano) {
   const N = size + 1, half = size / 2;
   let H = new Float64Array(N * N);
@@ -1360,11 +1360,11 @@ export function makeTerrain(seed, opts) {
   // exactly the sea around it. Absent for every real island, which therefore hashes as
   // it always did.
   const open = !!(opts && opts.open);
-  // The volcano in the middle of the sea (Plans/vulkaan-in-het-midden.md): a mountain with a
+  // The volcano in the middle of the sea (Plans/DONE/vulkaan-in-het-midden.md): a mountain with a
   // crater and lava instead of a hill, a lake and rivers. Absent for every other island, and
   // everything below that it touches is behind it, so those still hash as they always did.
   const volcano = !!(opts && opts.volcano) && !open;
-  // An island that has grown (Plans/eiland-laten-groeien.md): founded on a grid of
+  // An island that has grown (Plans/DONE/eiland-laten-groeien.md): founded on a grid of
   // `grow.base`, set down in the middle of this one, and every ring of ground it has gained
   // since laid round it by `accrete`. Absent - or a base the size of the grid and no steps -
   // is the island as it always was, bit for bit. The volcano does not grow.

@@ -112,7 +112,7 @@ test('the borrel keeps the time of the sea, summer and winter', () => {
   assert.equal(seaTime(Date.UTC(2026, 8, 25, 22, 30)).weekday, 6);
 });
 
-// Saturday night from nine until three (Plans/rave-in-het-kasteel.md). The three is on
+// Saturday night from nine until three (Plans/DONE/rave-in-het-kasteel.md). The three is on
 // Sunday by the calendar, which is the one thing about this that goes wrong in a hurry.
 test('the castle raves from nine on Saturday until three on Sunday morning', () => {
   assert.equal(raveAt(6, at(20, 59)), false, 'not yet at 20:59');

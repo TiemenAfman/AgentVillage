@@ -1,4 +1,4 @@
-// Dancing yourself (Plans/dansen.md): R, or the D-pad up, and the player's rig dances the dance
+// Dancing yourself (Plans/DONE/dansen.md): R, or the D-pad up, and the player's rig dances the dance
 // the settlers on the castle's floor dance, to the beat of whatever this screen plays; the sea
 // relays one bit (tests/player-look.test.mjs holds that half) and every page works the move out
 // for itself from the dancer's id.

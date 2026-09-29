@@ -1,4 +1,4 @@
-// The story animals' memory (lib/animal-stories.mjs, lib/animal-store.mjs; Plans/dierenverhalen.md).
+// The story animals' memory (lib/animal-stories.mjs, lib/animal-store.mjs; Plans/DONE/dierenverhalen.md).
 //
 // The promises: activity is an opportunity and never counted twice - a rescan, a lower counter
 // or a re-import buys nothing; a committed memory survives a crash, a torn write and a reopen

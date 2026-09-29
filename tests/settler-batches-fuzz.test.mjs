@@ -1,4 +1,4 @@
-// settler-batches.test.mjs holds the packed batches (Plans/verborgen-inwoners-tellen-niet.md) to a
+// settler-batches.test.mjs holds the packed batches (Plans/DONE/verborgen-inwoners-tellen-niet.md) to a
 // handful of hand-written orders. This walks them through thousands of random ones instead: a
 // crowd that shows and hides people, loses them, takes new ones in, puts them to work, hits
 // them and hands them beers, in whatever order a seeded stream deals out - because a slot that

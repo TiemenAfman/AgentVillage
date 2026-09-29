@@ -1,9 +1,11 @@
 # Het kroniekhuis
 
-**🚧 NOG NIET KLAAR** — er staan nog losse eindjes in dit plan.
+**✅ Status: gebouwd en op main** (nagekeken tegen de code op 29 september 2026): trede 200, het huis op het eiland en de
+kroniek die een klik of E bij de deur afspeelt. Onder *Later* staat een archivaris als bewaarder,
+een draaiende armillairsfeer en te voet lezen.
 
 Begonnen op 28 september 2026. De laatste trede van de ladder (trede 200 in
-`Plans/mijlpalen-tot-tweehonderd.md`): het dorp gaat zijn eigen geschiedenis opschrijven.
+`Plans/DONE/mijlpalen-tot-tweehonderd.md`): het dorp gaat zijn eigen geschiedenis opschrijven.
 Referentie: een archief of museum in Hollands classicisme, zoals een zeventiende-eeuwse waag of het
 Mauritshuis. Een bakstenen zaal op een zandstenen plint, lichte hoekpilasters en een licht
 hoofdgestel rondom, een portiek van vier zuilen onder een fronton, hoge rondboogramen aan elke

@@ -185,7 +185,7 @@ export function createWalkMode({
   // Whether F puts you on a bicycle here (web/js/bicycle.js). The island and the workbench
   // say yes; a room does not - there is no riding a bike round the tavern.
   bikes = false,
-  // Who is dancing and to what, when R is pressed (Plans/dansen.md): `{ id, beat }`, the id the
+  // Who is dancing and to what, when R is pressed (Plans/DONE/dansen.md): `{ id, beat }`, the id the
   // sea knows us by - so our own screen picks the move everybody else's does - and the beat of
   // whatever we hear (main.js danceBeat). Without one (the workbench) it is nobody in
   // particular on the wall clock.
@@ -246,7 +246,7 @@ export function createWalkMode({
   const keys = new Set();
   const state = {
     active: false,
-    // The body left standing while the keeper is up in the sky (Plans/karakter-blijft-staan.md):
+    // The body left standing while the keeper is up in the sky (Plans/DONE/karakter-blijft-staan.md):
     // drawn, on the sea, stepped by update() - but by nobody's keys and moving no camera. It
     // walks only a `route` handed to it from above (goTo), and asleep otherwise.
     parked: false,
@@ -274,7 +274,7 @@ export function createWalkMode({
     sitting: null,
     // The bicycle under you, or null: bicycle.js's { x, y, z, yaw, v, steer, lean, wheel,
     // crank }. Deliberately not `vehicle`, which means the boat everywhere main.js and net.js
-    // look at it (the hull sync, the berth, the boat's own stamina) - Plans/fiets.md.
+    // look at it (the hull sync, the berth, the boat's own stamina) - Plans/DONE/fiets.md.
     bike: null,
     crouchSince: 0,
     blockers: [],
@@ -311,7 +311,7 @@ export function createWalkMode({
     // What the beer has done so far, and the clock the stagger runs on.
     tipsy: tipsy || createTipsy(),
     sway: 0,
-    dancing: false,  // R (Plans/dansen.md): on the spot, until the feet do anything else
+    dancing: false,  // R (Plans/DONE/dansen.md): on the spot, until the feet do anything else
     blocking: false, // a shield is up in either hand - what net.js puts in the pose
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
@@ -345,7 +345,7 @@ export function createWalkMode({
     if (state.lying) standUp();                 // pressing it again is how you get up
     else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); state.dancing = false; }
   }
-  // Dancing, where you stand (Plans/dansen.md). A pose like sitting, held until you do anything
+  // Dancing, where you stand (Plans/DONE/dansen.md). A pose like sitting, held until you do anything
   // else: walk, jump, crouch, get on something, fight, or press R again. Only with both feet on
   // dry ground and nothing else going on - not on the bike, at a tiller, in the water, on a
   // stool or lying down. A crouch is stood up out of, the way a jump stands you off a stool.
@@ -469,7 +469,7 @@ export function createWalkMode({
   //
   // Where a lock is refused outright (an embedded webview, a page without the permission)
   // the old drag-to-look is still there, which is also what a press does while the lock is
-  // on its way. The buttons themselves fight (Plans/aanvallen-en-blokkeren.md), one button per
+  // on its way. The buttons themselves fight (Plans/DONE/aanvallen-en-blokkeren.md), one button per
   // hand: the left button is the left hand and the right button the right. A hand holding a
   // shield blocks for as long as its button is held; any other hand - a sword, a hammer, a
   // bare fist - attacks. It used to be the left button attacks and the right one blocks,
@@ -494,7 +494,7 @@ export function createWalkMode({
   // the button hit something on the sea rather than only move an arm - and of none it
   // refused, so a mashed button is not a volley the sea sees and nobody else does. A shield
   // up in the other hand is no reason not to: the sea takes a swing from a blocker.
-  // `side` goes with it, so everybody else sees that arm come down (Plans/andere-spelers-zoals-jij.md).
+  // `side` goes with it, so everybody else sees that arm come down (Plans/DONE/andere-spelers-zoals-jij.md).
   // A swing ends a dance: fighting is doing something else with your arms.
   const fight = (side) => {
     if (!canFight() || !classicAvatar.attack(side)) return;
@@ -509,7 +509,7 @@ export function createWalkMode({
     state.blocking = state.guard.leftArm || state.guard.rightArm;
   }
   function lowerShields() { guardUp('leftArm', false); guardUp('rightArm', false); }
-  // A beer's button drinks instead (Plans/bier-en-dronken.md) - its own hand's button, like
+  // A beer's button drinks instead (Plans/DONE/bier-en-dronken.md) - its own hand's button, like
   // every hand's here. Everything that stops a fight stops a drink too, except a stool:
   // sitting at the bar is what a beer is for. A glass is no shield, so a drink never goes
   // near `guardUp` and never into `blocking`, which the sea would take for a raised guard.
@@ -1101,7 +1101,7 @@ export function createWalkMode({
 
   // On the bike. It appears under you facing the way you face - it comes out of the satchel
   // rather than standing anywhere, so nothing about it has to be remembered by anybody
-  // (Plans/fiets.md) - and only from where a bike could stand: feet on dry ground, nothing
+  // (Plans/DONE/fiets.md) - and only from where a bike could stand: feet on dry ground, nothing
   // else in your hands' way. The camera pulls back a little; a bicycle is longer than a
   // settler and you steer it rather than walk it.
   let bikeMesh = null;

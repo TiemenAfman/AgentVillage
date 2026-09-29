@@ -3,7 +3,7 @@
 // without any bookkeeping. The figure is the one you are drawn as yourself - classic-avatar.js,
 // in their own look (web/js/avatar.js, sent by their page) and driven by the pose their page
 // sends - so a body lies, crouches, sits, swings and drinks here as it does on its own screen
-// (Plans/andere-spelers-zoals-jij.md). A handful of meshes each rather than one, which sixteen
+// (Plans/DONE/andere-spelers-zoals-jij.md). A handful of meshes each rather than one, which sixteen
 // people can afford and three hundred settlers could not: those stay instanced.
 //
 // Positions arrive about ten times a second and are drawn an eighth of a second in the
@@ -31,17 +31,17 @@ const FLAG_AIRBORNE = 8;
 const FLAG_BLOCKING = 16;
 // In the saddle: net.js's FLAG_RIDING. The bicycle is drawn here from the pose alone - its
 // wheels turn with how fast the peer is actually going, its bars and lean with how fast they
-// are turning - because the sea only ever relays the one bit (Plans/fiets.md).
+// are turning - because the sea only ever relays the one bit (Plans/DONE/fiets.md).
 const FLAG_RIDING = 128;
 // On their back, crouched, on a seat: net.js's FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING.
 const FLAG_LYING = 256;
 const FLAG_CROUCHING = 512;
 const FLAG_SITTING = 1024;
-// Dancing: net.js's FLAG_DANCING (Plans/dansen.md). The one bit is all there is - which move
+// Dancing: net.js's FLAG_DANCING (Plans/DONE/dansen.md). The one bit is all there is - which move
 // comes out of their id (dance.js danceStep) and the beat is ours, whatever we hear, so they
 // dance in time with the music on this screen rather than on theirs.
 const FLAG_DANCING = 2048;
-// Nobody at their keys: net.js FLAG_ASLEEP (Plans/karakter-blijft-staan.md), a Zzz over them.
+// Nobody at their keys: net.js FLAG_ASLEEP (Plans/DONE/karakter-blijft-staan.md), a Zzz over them.
 const FLAG_ASLEEP = 4096;
 // A rider on the saddle, leaning over the bars as walk.js's own rider does (its RIDE_PITCH).
 const RIDE_PITCH = 0.28;

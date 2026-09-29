@@ -3,7 +3,7 @@
 A small half-timbered shop under a red tiled roof: a door, a shop window under a striped awning
 with loaves on the sill, a pretzel hung out on an arm, flour sacks by the door; and against its
 right side a domed stone bread oven with a glowing mouth, its own flue, and the wood to feed it.
-Not yet placed on the island (Plans/stal-en-veld.md); it stands on /demo.
+Not yet placed on the island (Plans/DONE/stal-en-veld.md); it stands on /demo.
 
 One civic asset, `civic_bakery` (budget 1500), with one part that is not merged:
 `civic_bakery glow`, the fire in the oven's mouth, origin on the mouth - web/js/countryside.js

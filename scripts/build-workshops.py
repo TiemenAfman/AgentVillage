@@ -1,5 +1,5 @@
-"""The three trades of the ladder past the castle (Plans/ambachten.md,
-Plans/mijlpalen-tot-tweehonderd.md). Rebuild with
+"""The three trades of the ladder past the castle (Plans/DONE/ambachten.md,
+Plans/DONE/mijlpalen-tot-tweehonderd.md). Rebuild with
 scripts/blender.mjs --background --python scripts/build-workshops.py.
 
 One set, three buildings, each split into a building and a yard like the sawmill so that no

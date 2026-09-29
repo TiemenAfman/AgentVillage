@@ -155,7 +155,7 @@ export function styleOf(spec) {
 // ---- those who keep a building rather than a house --------------------------------
 // The innkeeper stands at the tavern, the mayor at the town hall, the gold clerk at the
 // gold pit, the headmistress at the school and the priest at the chapel
-// (Plans/kroegbaas-en-burgemeester.md). They go by the building's own id - `civic:tavern`,
+// (Plans/DONE/kroegbaas-en-burgemeester.md). They go by the building's own id - `civic:tavern`,
 // `civic:townhall` - which is never redacted, so the roster, /api/crowd-ids and the page
 // all know them already. This table is the one list of which buildings have somebody.
 //

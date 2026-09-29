@@ -1,4 +1,4 @@
-// Where the story animals can be (lib/animal-places.mjs, Plans/dierenverhalen.md).
+// Where the story animals can be (lib/animal-places.mjs, Plans/DONE/dierenverhalen.md).
 //
 // The promises: every spot an animal is sent to is land and outside every building; a doorstep
 // is just outside the door and not on the settler's own spot; a mark only goes on ground a

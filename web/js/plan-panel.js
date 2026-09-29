@@ -32,13 +32,13 @@ export function createPlanPanel(handlers) {
     // already are, and three buttons for one way out read as three different things.
     + '<button class="btn tiny" id="plan-overview" title="Frame the whole island">Overview</button>'
     // The island's next ring of coast, now rather than when the village runs out of room
-    // (Plans/eiland-laten-groeien.md). Hidden on an island founded on its whole grid,
+    // (Plans/DONE/eiland-laten-groeien.md). Hidden on an island founded on its whole grid,
     // which has nowhere to grow to until its grid can (setGrowable).
     + '<button class="btn tiny" id="plan-grow" hidden title="Grow the island by one ring of new coast. The quay and the harbours move out with it.">Grow</button>'
     // A quarter turn for the picked town building. R does the same, but a key nobody told
     // you about is a key nobody presses.
     + '<button class="btn tiny" id="plan-turn" hidden title="Turn the picked building a quarter to the right (R; Shift+R to the left)">Turn</button>'
-    // Every house of a project home onto one piece of its land (Plans/wijkjes-samenvoegen.md).
+    // Every house of a project home onto one piece of its land (Plans/DONE/wijkjes-samenvoegen.md).
     // Shown only while there is a project standing apart, so its label can say how many.
     + '<button class="btn tiny" id="plan-merge" hidden>Merge</button>'
     + '</div>';

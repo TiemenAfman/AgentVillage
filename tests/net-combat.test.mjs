@@ -1,4 +1,4 @@
-// The page's half of a fight (Plans/vulkaan-in-het-midden.md, step 7): the red bar that
+// The page's half of a fight (Plans/DONE/vulkaan-in-het-midden.md, step 7): the red bar that
 // counts, the swing that goes to the sea, and the shield that rides in the pose.
 //
 // The sea decides everything that matters - who is hit, for how much, and what is left - so

@@ -138,7 +138,7 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   const terrain = { half: 32, size: 64, worldHeight: () => 0 };
   const settlers = createSettlers(scene, material, terrain);
   // Four chore batches (hoe, axe, rod, a bundle of sticks) and the gold pit's wheelbarrow, its
-  // wheel and the gold in its tray (Plans/goudkuil.md) sit between the hats and the hammer,
+  // wheel and the gold in its tray (Plans/DONE/goudkuil.md) sit between the hats and the hammer,
   // hidden outright while nobody holds one - see createFigures.
   assert.equal(scene.children.length, 28, 'eleven articulated body, two appearance layers, six hats, four chore tools, three barrow batches, one hammer batch, one pint batch');
   for (let i = 0; i < 100; i++) settlers.add(`resident:${i}`, { style: 'sonnet', kind: 'hut' }, [i,0,0]);
@@ -174,7 +174,7 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
   material.dispose();
 });
 
-// Plans/bier-en-dronken.md: a settler with a few beers in them zigzags round the route the sea
+// Plans/DONE/bier-en-dronken.md: a settler with a few beers in them zigzags round the route the sea
 // walks them along - drawn, never moved: `f.pos` stays the sea's - and stands nearly still
 // again when they stop, without jumping back onto the route.
 test('a drunk settler zigzags round their route on the move and not off it standing', () => {

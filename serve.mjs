@@ -398,7 +398,7 @@ async function rescan(reason, opts = {}) {
   }
   const r = await run;
   // The story animals look at what the scan found - who is working, who has gone quiet - and
-  // may answer it (Plans/dierenverhalen.md). Before the publish, so an errand decided now goes
+  // may answer it (Plans/DONE/dierenverhalen.md). Before the publish, so an errand decided now goes
   // out on the same round trip.
   animalsLook();
   // And tell the world, if the island actually changed. publish() compares what it last
@@ -538,7 +538,7 @@ async function handle(req, res) {
   }
 
   // How much gold is left in the pit by the square: the keeper's five-hour usage window,
-  // as the status line last wrote it down (hooks/statusline.mjs, Plans/goudkuil.md). Not a
+  // as the status line last wrote it down (hooks/statusline.mjs, Plans/DONE/goudkuil.md). Not a
   // public path, so only the keeper's own page gets it - how much of somebody's
   // subscription is spent is theirs, the way their mail is, and a visitor's page draws a
   // full pit. The same answer rides `event: gold` whenever it changes; see watchGold. The
@@ -564,7 +564,7 @@ async function handle(req, res) {
     return json(res, 200, { ok: true, display });
   }
 
-  // How big the island may grow (Plans/eiland-laten-groeien.md), for Settings. Keeper-only
+  // How big the island may grow (Plans/DONE/eiland-laten-groeien.md), for Settings. Keeper-only
   // like /api/display: the answer names nothing private, but the change is the keeper's.
   if (p === '/api/island-size') {
     const village = readJson(VILLAGE_FILE, null);
@@ -893,7 +893,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // diff and writes nothing at all; an apply goes through the scan queue like any scan,
   // snapshots layout.json first and publishes once. No reload: the scan rewrites
   // village.json, `watchData` tells every open page, and `applyVillage` follows a moved
-  // plot, new roads and new ground on its own (Plans/wijkjes-verplaatsen.md, fase 3).
+  // plot, new roads and new ground on its own (Plans/DONE/wijkjes-verplaatsen.md, fase 3).
   if (p === '/api/plan' && req.method === 'GET') {
     const files = filesFor({ all: ALL });
     const layout = readJson(files.layout, null);
@@ -977,7 +977,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
     return json(res, 200, { ids: crowdIds });
   }
 
-  // ---- the story animals (Plans/dierenverhalen.md, docs/animals-wire.md) -------------------
+  // ---- the story animals (Plans/DONE/dierenverhalen.md, docs/animals-wire.md) -------------------
   // All three for the keeper only - not on PUBLIC_API: they name settlers by their real house
   // ids and carry the whole diary. A visitor sees an animal's public card, which comes from
   // the sea (`herd`), never from here.
@@ -1372,7 +1372,7 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // ---- the boatyard ------------------------------------------------------------------
   // Another boat at one of the harbours: the keeper's, and so not on PUBLIC_API - a visitor
   // may sail an island's boats but not add to them. Free, three a harbour (lib/boatyard.mjs,
-  // Plans/vier-havens.md). The count lives in its own file; the rescan after it puts the
+  // Plans/DONE/vier-havens.md). The count lives in its own file; the rescan after it puts the
   // count into village.json, every page of ours moors the new hull from that, and the
   // publish the rescan ends with is how the sea and everybody else's page learn of it.
   //
@@ -1513,7 +1513,7 @@ function watchData() {
 // rewrites its file every quarter of an hour, and 75 kB parsed every five seconds is still
 // nothing beside a scan.
 //
-// The gold mine's week rides along as `mine` (shared/gold.mjs purseOf, Plans/goudmijn.md):
+// The gold mine's week rides along as `mine` (shared/gold.mjs purseOf, Plans/DONE/goudmijn.md):
 // the same reading, the same keeper, the same door - one place decides who sees any of it.
 // And the pit's count is already held to what the mine can give, so no page has to know.
 const goldNow = () => purseOf(currentUsage(), Date.now());
@@ -1633,7 +1633,7 @@ function shownIdOf(real) {
   return null;
 }
 
-// The story animals (Plans/dierenverhalen.md). This islander is the only writer of their
+// The story animals (Plans/DONE/dierenverhalen.md). This islander is the only writer of their
 // journal (data/animal-events.jsonl, irreplaceable like layout.json); the sea only walks them.
 // What they do is told to the keeper's own page as it happens (the localOnly `animals` event,
 // with the toasts in it) and to the sea through its own door.

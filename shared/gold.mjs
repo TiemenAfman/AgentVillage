@@ -1,5 +1,5 @@
 // The gold pit: the current five-hour usage window drawn as a pile of bars by the square
-// (Plans/goudkuil.md). This is the one copy of what the pile means - the islander works
+// (Plans/DONE/goudkuil.md). This is the one copy of what the pile means - the islander works
 // the count out with it, the page draws that many bars, and the sea finds the pit by its
 // id - so none of the three can disagree about how much gold one percent is.
 //
@@ -45,7 +45,7 @@ export function goldOf(reading, now) {
   };
 }
 
-// ---- the gold mine and the goldsmith (Plans/goudmijn.md) ------------------------------
+// ---- the gold mine and the goldsmith (Plans/DONE/goudmijn.md) ------------------------------
 // The mine holds the week: the seven-day window as ore in its bin, one lump a percent, as
 // the pit holds the five hours. When the five-hour window turns over and the pit may be
 // full again, the page has that gold brought from the mine, by way of the goldsmith, rather
@@ -90,7 +90,7 @@ export function mineOf(reading, now) {
 // The pit is what can be spent now, and that is the five-hour window *and* what is left of the
 // week, whichever is less: with the week used up the five hours are no use to anybody, and a
 // pit refilled to a hundred bars beside an empty mine told the keeper they could work when
-// they could not. So the pit never holds more than the mine could give it (Plans/goudmijn.md,
+// they could not. So the pit never holds more than the mine could give it (Plans/DONE/goudmijn.md,
 // "Een lege week"), and the gold run can only ever bring what the mine has. `window` is the
 // five-hour window's own count, `capped` whether the week is what held the pit down, and
 // `mine` rides along so /api/gold and `event: gold` stay one answer. A week nobody has

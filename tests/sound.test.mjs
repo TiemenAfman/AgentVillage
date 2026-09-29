@@ -283,7 +283,7 @@ test('the tavern hums when there is somebody at the tables, and not otherwise', 
   assert.equal(humming(), 1, 'and starts one when there is something to hear');
 });
 
-// The castle on a Saturday night (Plans/rave-in-het-kasteel.md). 2.6 MB of music is not
+// The castle on a Saturday night (Plans/DONE/rave-in-het-kasteel.md). 2.6 MB of music is not
 // made for an island that never goes near its castle, and one source carries it from the
 // square into the hall, so the beat does not start again at the door.
 test('the rave is made the first time it is within earshot, and is one source in and out', () => {

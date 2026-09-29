@@ -3,7 +3,7 @@ scripts/blender.mjs --background --python scripts/build-traces.py.
 
 Seven props, one per kind in TRACE_KINDS (shared/animals.mjs), each under the prop budget of
 120 triangles and centred on its own middle, because the island puts a trace down by its
-middle (scripts/model-rules.mjs) and Plans/dierenverhalen.md puts it down through the same
+middle (scripts/model-rules.mjs) and Plans/DONE/dierenverhalen.md puts it down through the same
 check a garden bed gets:
 
     prop_trace_nest       a hen's straw nest by a door, three eggs in a dark hollow

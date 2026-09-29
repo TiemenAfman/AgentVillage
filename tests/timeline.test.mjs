@@ -1,5 +1,5 @@
 // The one timeline everything another machine moves is drawn on (web/js/timeline.js), and
-// the two things it is for (Plans/lopen-op-de-boot.md, fase 0 and 1): a boat somebody else
+// the two things it is for (Plans/DONE/lopen-op-de-boot.md, fase 0 and 1): a boat somebody else
 // is steering sails instead of jumping, and its pilot is drawn standing on it.
 //
 // peers.js and main.js cannot be loaded here - both reach walk.js, which pulls in three's

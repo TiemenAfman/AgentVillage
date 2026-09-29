@@ -1,10 +1,13 @@
 # De ambachten: de brouwerij, het oefenveld en de steengroeve
 
-**🚧 NOG NIET KLAAR** — de modellen zijn af, de treden en de plek op het eiland nog niet.
+**✅ Status: gebouwd en op main** (nagekeken tegen de code op 29 september 2026): de modellen, de treden 106, 134 en 142, hun plek
+op het eiland en het gedrag (de tredmolenkraan, de ketelstoom, de vlag). Wat onder *Later* staat is
+niet gebouwd: brouwer, steenhouwer en rekruten als settlers, een begaanbaar oefenveld en stoom op
+`/demo`.
 
-Begonnen op 28 september 2026, als stap 4 van `Plans/mijlpalen-tot-tweehonderd.md`: de drie
+Begonnen op 28 september 2026, als stap 4 van `Plans/DONE/mijlpalen-tot-tweehonderd.md`: de drie
 gebouwen uit de tabel "De nieuwe ladder, 90-200" die geen haven nodig hebben. De brouwerij (106)
-omdat de kroeg sinds `Plans/bier-en-dronken.md` bier tapt, het oefenveld (134) naar
+omdat de kroeg sinds `Plans/DONE/bier-en-dronken.md` bier tapt, het oefenveld (134) naar
 `Ideas/Images to Render/trainingarea.png` en `Ideas/Ideas.MD` §16, de steengroeve (142) naar §15:
 de steen voor de eerste dijk op 150.
 

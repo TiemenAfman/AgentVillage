@@ -1,4 +1,4 @@
-// Where the island's story animals are (Plans/dierenverhalen.md, docs/animals-wire.md).
+// Where the island's story animals are (Plans/DONE/dierenverhalen.md, docs/animals-wire.md).
 //
 // The sea's half of a hen: it steps her, lib/animal-crowd.mjs puts her on the wire, and the
 // page (web/js/animal-view.js) draws whatever this says, with fauna.js's joints on top. Who

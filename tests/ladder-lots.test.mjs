@@ -1,4 +1,4 @@
-// The ladder past a hundred (Plans/mijlpalen-tot-tweehonderd.md), as numbers and shapes: the
+// The ladder past a hundred (Plans/DONE/mijlpalen-tot-tweehonderd.md), as numbers and shapes: the
 // eleven rungs, the id each stands as, what is on the yard's slipway at every settler count,
 // the first two civic lots that are not square, and the two things about them that have to
 // cross the wire - a lot sixteen long, and the slipway's stage.

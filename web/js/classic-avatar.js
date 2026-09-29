@@ -193,7 +193,7 @@ function hammerGeometry() {
   ], false));
 }
 
-// The miner's pick (web/js/goldmine.js, Plans/goudmijn.md): the cleaver's terms - a villager's
+// The miner's pick (web/js/goldmine.js, Plans/DONE/goudmijn.md): the cleaver's terms - a villager's
 // tool, not in HAND_ITEMS, handed to him after normalising. The hammer's handle, longer, with a
 // head that comes to a point either way across the top of it, so it swings like the hammer.
 const PICK_HANDLE = 0x8b5e3c, PICK_HEAD = 0x4a4c52;
@@ -206,7 +206,7 @@ function pickaxeGeometry() {
   ], false));
 }
 
-// The fisherman's rod (web/js/fisher.js, Plans/regisseur.md): a villager's tool like the pick,
+// The fisherman's rod (web/js/fisher.js, Plans/DONE/regisseur.md): a villager's tool like the pick,
 // not in HAND_ITEMS. A pole pointing +y out of the fist, and the line off its tip modelled for
 // the one angle he fishes at (fisher.js FISH_ARM): with the arm turned by FISH_ARM about x, a
 // line along ROD_LINE in the hand's frame hangs straight down into the water. Swung with the
@@ -226,7 +226,7 @@ function rodGeometry() {
   ], false));
 }
 
-// The butcher's cleaver (web/js/butcher.js, Plans/slagerij.md) - a villager's tool, not a
+// The butcher's cleaver (web/js/butcher.js, Plans/DONE/slagerij.md) - a villager's tool, not a
 // player's: it is deliberately not in HAND_ITEMS (avatar.js), so no inventory slot offers it,
 // normalizeAvatar drops it and the sea's lookOf never has to know it; the butcher is handed it
 // after normalising. Pointing +y out of the fist like every item, with the blade standing
@@ -241,7 +241,7 @@ function cleaverGeometry() {
   ], false));
 }
 
-// The first held item its hand's button drinks from rather than fights with (Plans/
+// The first held item its hand's button drinks from rather than fights with (Plans/DONE/
 // bier-en-dronken.md). The pint the barman pulls in the tavern (interior.js pintGeometry),
 // in the same two colours, a little bigger because it is carried rather than stood on a
 // counter. The ear is in the fist and the glass stands inboard of it (-x, mirrored for the
@@ -362,7 +362,7 @@ export function createClassicAvatar(spec, material) {
   setHeldItem('leftArm', spec.equip?.leftHandItem || null, spec);
   setHeldItem('rightArm', spec.equip?.rightHandItem || null, spec);
 
-  // Attacking and blocking (Plans/aanvallen-en-blokkeren.md). A swing is a short, timed
+  // Attacking and blocking (Plans/DONE/aanvallen-en-blokkeren.md). A swing is a short, timed
   // profile on the weapon arm - wind up behind the shoulder, strike forward and down,
   // recover to whatever the arm was doing - driven directly rather than through damp(),
   // which at 15/s would smear a 0.45 s swing into a wave. The held item stops standing
@@ -418,7 +418,7 @@ export function createClassicAvatar(spec, material) {
     return { x, wrist: lerp(STRIKE_WRIST, -x, r) };
   }
 
-  // Drinking (Plans/bier-en-dronken.md). A beer's hand drinks where any other hand would swing
+  // Drinking (Plans/DONE/bier-en-dronken.md). A beer's hand drinks where any other hand would swing
   // - walk.js gives each hand its own mouse button - and lifts the glass instead: up to the
   // face and a little inward, a swallow with the glass tipped towards the mouth, and back
   // down. Timed
@@ -598,7 +598,7 @@ export function createClassicAvatar(spec, material) {
         if (holding[side]) targets[side] = (FP_HOLD_X[holding[side]] ?? FP_HOLD_X.default) + look + stride * 0.08;
       }
     }
-    // Dancing (Plans/dansen.md): `pose.dancing` is { move, beat, hype } - danceStep's move for
+    // Dancing (Plans/DONE/dansen.md): `pose.dancing` is { move, beat, hype } - danceStep's move for
     // this dancer and the beat whoever is watching hears (web/js/dance.js) - and the angles are
     // the same dancePose the settlers on the castle's floor are drawn from. Whatever is in the
     // hands is danced with. The limbs take it here; the bob, lean, twist and roll are the whole

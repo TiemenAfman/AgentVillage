@@ -191,7 +191,7 @@ test('the manifest is small enough to ride a socket message', () => {
   assert.ok(bytes < 2048, `a four-island manifest is ${bytes} bytes; lib/ws.mjs caps a frame at 2048`);
 });
 
-// An island that may grow keeps room for it round its berth (Plans/eiland-laten-groeien.md):
+// An island that may grow keeps room for it round its berth (Plans/DONE/eiland-laten-groeien.md):
 // the berths are laid out on `island.room`, so the island growing into that room never
 // reaches a neighbour and keeps its berth - an island never moves, also while it grows.
 test('an island that may grow is given room for it, and keeps its berth while it grows', () => {

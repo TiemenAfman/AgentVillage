@@ -1,4 +1,4 @@
-// The baker at the bakery's oven (web/js/bakery-keeper.js, Plans/stal-en-veld.md).
+// The baker at the bakery's oven (web/js/bakery-keeper.js, Plans/DONE/stal-en-veld.md).
 //
 // The promises: the peel goes into the oven's mouth - not under it, not through the lip - and
 // comes clear of it again; dough goes in and bread comes out, by day; at night he goes in by the

@@ -166,7 +166,7 @@ test('a swing takes the weapon arm up behind the shoulder and back, a block turn
   rig.dispose();
 });
 
-// Plans/bier-en-dronken.md: a beer's hand drinks where any other would swing - each hand has
+// Plans/DONE/bier-en-dronken.md: a beer's hand drinks where any other would swing - each hand has
 // its own mouse button (walk.js) - lifting the glass to the face and handing the swallow out
 // a frame at a time: exactly one drink's worth, however the frames fall.
 test('a beer is drunk from by its own hand, one swallow per drink', () => {

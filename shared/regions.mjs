@@ -66,7 +66,7 @@ export const SEA_GAP = 48;
 // 4 m, so some 16 km a side). 4032 is 14 cloud tiles (world.js CLOUD_TILE) and 42 islet
 // squares (shared/islets.mjs ISLET_PITCH), so the sky seams up where the edge wraps round.
 //
-// The edge wraps by a jump, not by arithmetic (Plans/ronde-wereld.md): sail past it and the
+// The edge wraps by a jump, not by arithmetic (Plans/DONE/ronde-wereld.md): sail past it and the
 // page moves you, your boat or your bicycle 2 * WORLD_HALF back across (`wrapShift`), and
 // nothing else in the world knows the world is round. That is only invisible because
 // nothing stands near the edge: `nextOrigin` keeps every island's room SEA_BAND clear of it,
@@ -382,7 +382,7 @@ export function createArchipelago() {
     }
     const resized = strideOf(region) !== strideOf(list[i]);
     list[i] = region;
-    // A grid that grew (Plans/eiland-laten-groeien.md) needs a wider stride, and keeping the
+    // A grid that grew (Plans/DONE/eiland-laten-groeien.md) needs a wider stride, and keeping the
     // old base would run its level keys into the next region's. The deck-under-foot worry
     // above is moot then: every cell index on the island moved with the grid anyway.
     if (resized) reissueStrides();

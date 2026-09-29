@@ -1,4 +1,4 @@
-// The starters: small islands the sea puts out itself (Plans/starter-eilanden.md, step 1).
+// The starters: small islands the sea puts out itself (Plans/DONE/starter-eilanden.md, step 1).
 //
 // What has to hold before the sea can raise one: the same slot gives the same island on
 // every start (the sea writes nothing down), it is a bundle parseBundle takes like anybody

@@ -1,12 +1,12 @@
 # Naambordjes: het gezicht alleen waar je het kunt lezen
 
 **🚧 Status: plan, 29 september 2026 — nog niet gebouwd.** Eerst de keuzes onder *Te besluiten*.
-Dit is het eenvoudige alternatief voor stap 3 van [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md)
+Dit is het eenvoudige alternatief voor stap 3 van [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md)
 (de gezichten in een atlas).
 
 ## Waar dit vandaan komt
 
-Na [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) zitten paal en bord van elk naambordje in
+Na [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) zitten paal en bord van elk naambordje in
 de batch van het eiland, maar het beletterde gezicht is nog een eigen mesh: een vlak met een
 `MeshBasicMaterial` en een eigen canvas-textuur van 512x202 (`nameplate.js`). Op Hoogezand zijn dat
 399 gezichten, 399 calls in de kleurpas (geen schaduw), en nu de grootste groep calls.

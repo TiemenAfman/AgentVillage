@@ -1,4 +1,4 @@
-// The story animals as the islander runs them (lib/animal-life.mjs, Plans/dierenverhalen.md).
+// The story animals as the islander runs them (lib/animal-life.mjs, Plans/DONE/dierenverhalen.md).
 //
 // The promises: the first hen turns up only while the keeper is watching a working island, and
 // by a house; an errand counts once, and only when the sea says it happened on the line it was

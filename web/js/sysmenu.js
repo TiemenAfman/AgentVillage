@@ -1,5 +1,5 @@
 // The menu behind Esc and the ☰ at the end of the chips, and the island's settings with it
-// (Plans/esc-menu-en-knoppenbalk.md).
+// (Plans/DONE/esc-menu-en-knoppenbalk.md).
 //
 // The first version was a card of five buttons whose Settings opened the same narrow side
 // panel as before: a way to two clicks where there had been one, and still a settings panel

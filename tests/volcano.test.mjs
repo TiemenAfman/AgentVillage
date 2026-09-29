@@ -1,4 +1,4 @@
-// The volcano in the middle of the sea (Plans/vulkaan-in-het-midden.md, step 3): its ground
+// The volcano in the middle of the sea (Plans/DONE/vulkaan-in-het-midden.md, step 3): its ground
 // in shared/terrain.mjs and its drawing in web/js/world.js + web/js/lava.js.
 //
 // Two kinds of promise, and the first is the one that would hurt to break. `volcano: true`

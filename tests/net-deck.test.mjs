@@ -1,4 +1,4 @@
-// What a page says about somebody standing on a deck (web/js/net.js - Plans/lopen-op-de-boot.md,
+// What a page says about somebody standing on a deck (web/js/net.js - Plans/DONE/lopen-op-de-boot.md,
 // fase 4). No walk mode stands anybody on one yet; this holds the wire for the day one does,
 // and holds that adding it changed nothing for everybody else: a walker standing still is
 // still quiet, and a pose with no deck is the pose it always was.

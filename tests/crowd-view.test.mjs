@@ -338,7 +338,7 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
   assert.ok(!extra[0].geometry.attributes.aEmissive.array.some((v) => v > 0), 'the sword is glowing');
 });
 
-// Plans/bier-en-dronken.md: a beer handed over by the player. The settler turns to whoever
+// Plans/DONE/bier-en-dronken.md: a beer handed over by the player. The settler turns to whoever
 // gave it, drinks it, lets go of their face once it is down, and from the third glass sways -
 // all of it on this page, keyed by the house they live in so a re-dress keeps it.
 test('a settler handed beers turns to the giver, drinks one at a time and sways from the third', async () => {
@@ -374,7 +374,7 @@ test('a settler handed beers turns to the giver, drinks one at a time and sways 
 // The sea stops a settler somebody is talking to and turns them round, and a row can say
 // the first but not the second: they are 'still', and a heading is not on the wire. The
 // held list (`fh`, crowd.held) is where the talker stands; this is what the view makes of it.
-// Plans/aangesproken-settler-draait-zich-om.md.
+// Plans/DONE/aangesproken-settler-draait-zich-om.md.
 
 const yawTowards = (f, x, z) => Math.atan2(x - f.pos[0], z - f.pos[1]);
 const turnedBy = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return Math.abs(d); };

@@ -1,4 +1,4 @@
-// The baker at the bakery's oven (Plans/stal-en-veld.md). By day a baker - a passive settler,
+// The baker at the bakery's oven (Plans/DONE/stal-en-veld.md). By day a baker - a passive settler,
 // nobody's agent, the smith's kind (web/js/smithy.js) - stands before the oven's mouth and works
 // it with a peel: a loaf of dough slid in, a moment, a baked one drawn out and set aside, and a
 // breath before the next. At nightfall he walks round to the shop door and goes in, and in the

@@ -1,4 +1,4 @@
-// The director (Plans/regisseur.md): the camera that goes to watch something happen when nobody
+// The director (Plans/DONE/regisseur.md): the camera that goes to watch something happen when nobody
 // has touched the island for a while, and the fisherman who gave the fisherman's hut something to
 // be watched for.
 //

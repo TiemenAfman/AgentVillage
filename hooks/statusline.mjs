@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Claude Code statusLine command. The one place the five-hour usage window is available:
 // Claude Code pipes it here as `rate_limits` on every new message, and nowhere else - not
-// to a hook, not into a transcript (Plans/goudkuil.md). So this writes it down for the gold
+// to a hook, not into a transcript (Plans/DONE/goudkuil.md). So this writes it down for the gold
 // pit by the square (data/usage.json, lib/usage.mjs) and prints a status line.
 //
 //   node hooks/statusline.mjs            record, and print the island's own line

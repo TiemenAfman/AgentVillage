@@ -1,4 +1,4 @@
-// The timber wagon and the yard's crew (Plans/houtkar.md): the sawmill's horse takes timber to
+// The timber wagon and the yard's crew (Plans/DONE/houtkar.md): the sawmill's horse takes timber to
 // the shipyard on the sea's clock, and three hands work the yard.
 //
 // Held here, each for the way it would fail without anybody noticing:

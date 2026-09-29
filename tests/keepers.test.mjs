@@ -1,4 +1,4 @@
-// The innkeeper and the mayor (Plans/kroegbaas-en-burgemeester.md).
+// The innkeeper and the mayor (Plans/DONE/kroegbaas-en-burgemeester.md).
 //
 // Two figures who keep a building rather than live in a house: they go by the building's
 // id, stand at its door, never stroll off, do chores or take a boat, and each has a round -

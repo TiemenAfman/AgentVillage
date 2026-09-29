@@ -8,7 +8,7 @@ geen overzicht vanuit de lucht.
 
 ## Waarom web/ hier wél gebundeld wordt
 
-De desktop-window bundelt niets (`Plans/eiland-als-desktop-app.md`): zijn pagina hoort bij
+De desktop-window bundelt niets (`Plans/DONE/eiland-als-desktop-app.md`): zijn pagina hoort bij
 de islander op 4747, en bundelen brak `mine()`, `lib/access.mjs` en de import map tegelijk.
 Op een telefoon is er geen islander en komt er nooit een, dus alle drie de redenen vallen
 weg. `scripts/pack-android.mjs` kopieert `web/` + `shared/` naar `src-android/dist/` en

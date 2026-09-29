@@ -51,7 +51,7 @@ delete globalThis.document;
 // one answer into another fails here rather than on somebody's island.
 const BUILDS = [{ seed: 314, size: 128 }, { seed: 8888, size: 192 }, { seed: 1337, size: 256 }, { seed: 90210, size: 256 }];
 // 7 at 128 adopted a crossing that Demo's annex road had thrown over the river. A project
-// founds no annex any more (Plans/wijkjes-samenvoegen.md), so Demo stands in one piece, the
+// founds no annex any more (Plans/DONE/wijkjes-samenvoegen.md), so Demo stands in one piece, the
 // same deck is the quay's road, and a crossing at the quay is never adopted: that island now
 // goes without, which is right. 2 at 256 took its place off the same kind of sweep.
 const ADOPTS = [{ seed: 2, size: 256 }, { seed: 7, size: 256 }];
@@ -71,7 +71,7 @@ const key = (c) => `${c[0]},${c[1]}`;
 // one so there are hamlets, roads and houses for a crossing to be measured against. Every
 // milestone it has earned is unlocked, because the bridge is laid after the roads and what
 // matters is where it lands once the rest of the island is standing - and only those, since
-// the ladder went on to two hundred (Plans/mijlpalen-tot-tweehonderd.md): with every rung
+// the ladder went on to two hundred (Plans/DONE/mijlpalen-tot-tweehonderd.md): with every rung
 // standing at once, the quarry at 142 stood in the way of the quay's road on seed 314, which
 // went round and over the very reach the bridge would have taken - the quay's crossing, which
 // the rung may not adopt. No island that grows a scan at a time meets that: its bridge is

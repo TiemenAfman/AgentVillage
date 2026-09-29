@@ -75,7 +75,7 @@ const WAIT_MAX = 210;
 // A town of two hundred with the bay of a hamlet looks deserted, though - and by then its
 // harbours have filled with boats by themselves (shared/quay.mjs earnedBoats). So past
 // OUT_FROM settlers the cap rises by one for every OUT_EVERY more, to OUT_MOST at most:
-// three at 140, four at 180 (Plans/mijlpalen-tot-tweehonderd.md, "De vloot"). Counted off
+// three at 140, four at 180 (Plans/DONE/mijlpalen-tot-tweehonderd.md, "De vloot"). Counted off
 // the crowd the sea walks, which is the only thing that plans an outing; a sea from before
 // this keeps MAX_OUT, which is a quieter bay and nothing worse. Still well short of a
 // regatta: the timer above offers one outing at a time, so four at once is a busy afternoon
@@ -126,7 +126,7 @@ export function openWater(terrain, x, z, blocked = null) {
 }
 
 // The cells of the water that a building stands on: the ship at anchor on the rede, a
-// shipyard's slipway, whatever a harbour puts out over the sea (Plans/mijlpalen-tot-
+// shipyard's slipway, whatever a harbour puts out over the sea (Plans/DONE/mijlpalen-tot-
 // tweehonderd.md). An outing is moved along its route rather than sailed - see the top of
 // this file - so nothing would stop it going straight through a ship's hull; the route has
 // to be planned round them instead, and this is what it is planned round.

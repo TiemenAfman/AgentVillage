@@ -1,6 +1,6 @@
-// The trades: the sawmill at 55 settlers, the smithy at 60 and the stable at 75 (Plans/zagerij.md,
-// Plans/smidse.md, Plans/stal-en-veld.md). The bakery was one for a morning and is a shop of the
-// square in the town's plan now (Plans/knus-dorpscentrum.md, tests/town-plan.test.mjs).
+// The trades: the sawmill at 55 settlers, the smithy at 60 and the stable at 75 (Plans/DONE/zagerij.md,
+// Plans/DONE/smidse.md, Plans/DONE/stal-en-veld.md). The bakery was one for a morning and is a shop of the
+// square in the town's plan now (Plans/DONE/knus-dorpscentrum.md, tests/town-plan.test.mjs).
 //
 // What is asserted is the one rule that is theirs and nobody else's: they are square civics
 // with a door, and they never take one of the lots round the square. Those lots are the
@@ -14,7 +14,7 @@
 // hands it. Read off the plot's own `w`, so a trade that one day needs a bigger lot fails
 // here rather than standing half on its neighbour's road.
 //
-// The ladder past a hundred (Plans/mijlpalen-tot-tweehonderd.md) adds three: the brewery at
+// The ladder past a hundred (Plans/DONE/mijlpalen-tot-tweehonderd.md) adds three: the brewery at
 // 106, the training field at 134 and the chronicle house at 200. They are held to the same two
 // rules - a rung of their own, and none of the lots round the square - on a village that has
 // earned them; their bakes are measured by their own sets' tests, which is where they live.

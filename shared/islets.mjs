@@ -1,6 +1,6 @@
 // The islets: little unclaimable islands - a sandbank with one palm, a round one with a
 // clump of them, a greener one with bushes as well - scattered over the open sea to give it
-// something to sail to (Plans/starter-eilanden.md, "onclaimbare eilandjes als decoratie").
+// something to sail to (Plans/DONE/starter-eilanden.md, "onclaimbare eilandjes als decoratie").
 //
 // Nobody lays them down and nothing sends them: every page works the same islets out of
 // the same two things, a fixed lattice over the world and the fleet it is shown. So the

@@ -1,6 +1,8 @@
 # Wijkjes samenvoegen, en niet meer uit elkaar laten vallen
 
-**Status:** in uitvoering (28 september 2026).
+**✅ Status: gebouwd op 28 september 2026, en op main** (`tests/plan-merge.test.mjs`); op het live
+eiland staat geen project meer in meer dan één stuk. Open blijft één ontwerpkeuze voor Tiemen: het
+eerste project bij het plein wordt ingesloten (zie *Nog open*).
 
 ## Aanleiding
 

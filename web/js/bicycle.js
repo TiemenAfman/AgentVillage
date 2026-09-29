@@ -3,7 +3,7 @@
 // Laid out like boat.js, and for the same reason: `stepBike` is a pure function of the bike,
 // the pedals and the ground - no THREE, no document, no clock - so tests/bicycle.test.mjs can
 // ride it under plain Node and check that it really stops at the water; `createBicycle` is
-// the mesh, and knows nothing about how it moves. Plans/fiets.md has the decisions.
+// the mesh, and knows nothing about how it moves. Plans/DONE/fiets.md has the decisions.
 //
 // The feet's world, not the hull's: land is where it goes, the water's edge is its wall, and
 // whatever walk.js's `blocked` calls solid (a wall, a stall, a person) is solid to it too.

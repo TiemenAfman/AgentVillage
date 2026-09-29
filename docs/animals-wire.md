@@ -1,7 +1,7 @@
 # Story animals on the wire
 
 The contract between the three processes for the island's story animals
-([Plans/dierenverhalen.md](../Plans/dierenverhalen.md)). The islander owns who the animals are
+([Plans/DONE/dierenverhalen.md](../Plans/DONE/dierenverhalen.md)). The islander owns who the animals are
 and what happened to them (`lib/animal-stories.mjs`, `lib/animal-store.mjs`, `lib/animal-life.mjs`);
 the sea owns where they are (`shared/animalwalk.mjs`, `lib/animal-crowd.mjs`); the page draws
 (`web/js/animal-view.js`) and explains (`web/js/animal-dossier.js`). Vocabulary - species,

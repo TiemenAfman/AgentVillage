@@ -1,4 +1,4 @@
-// The volcano's guardhouse and the guards who live in it (Plans/vulkaan-in-het-midden.md,
+// The volcano's guardhouse and the guards who live in it (Plans/DONE/vulkaan-in-het-midden.md,
 // section 7): where it stands, how many guards there are, and what happens to that number
 // as islanders come and go. No loader and no document: all of this is the sea's.
 import test from 'node:test';

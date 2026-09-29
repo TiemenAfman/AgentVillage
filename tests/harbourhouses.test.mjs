@@ -1,4 +1,4 @@
-// The harbour's buildings (Plans/havengebouwen.md, scripts/build-harbourhouses.py): the warehouse,
+// The harbour's buildings (Plans/DONE/havengebouwen.md, scripts/build-harbourhouses.py): the warehouse,
 // the weigh house and the fisherman's hut, three civic assets out of one set.
 //
 // Where they stand is lib/layout.mjs's business; what is asserted here is what that placement
@@ -95,7 +95,7 @@ for (const type of TYPES) {
 test('the warehouse is tall and narrow, the hut low, the weigh house between', () => {
   const rise = (t) => bakedBox(`civic_${t}`).hi[1];
   const width = (t) => { const { lo, hi } = bakedBox(`civic_${t}`); return hi[0] - lo[0]; };
-  // Four storeys of a little over 0.6 and a spout gable: Plans/mijlpalen-tot-tweehonderd.md
+  // Four storeys of a little over 0.6 and a spout gable: Plans/DONE/mijlpalen-tot-tweehonderd.md
   // asks for 3.5 to 4.
   assert.ok(rise('warehouse') >= 3.5 && rise('warehouse') <= 4, `the warehouse rises ${rise('warehouse')}`);
   assert.ok(rise('warehouse') > 2.4 * width('warehouse'), 'the warehouse is not narrow');

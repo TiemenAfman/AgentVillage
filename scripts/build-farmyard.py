@@ -12,7 +12,7 @@ the island puts a prop down by its middle (scripts/model-rules.mjs):
 
 What moves (the scarecrow and the reeds in the wind, the bees round the skeps, the lily on the
 ripples) is web/js/countryside.js, which moves whole props: none of these has a part that turns.
-Written in island coordinates (x right, y up, z to the front) through xyz(). Plans/stal-en-veld.md.
+Written in island coordinates (x right, y up, z to the front) through xyz(). Plans/DONE/stal-en-veld.md.
 """
 import bpy
 import math

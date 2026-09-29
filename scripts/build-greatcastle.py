@@ -4,7 +4,7 @@ Run: node scripts/blender.mjs --background --python scripts/build-greatcastle.py
 Hand edits are lost: this script writes assets/greatcastle/greatcastle.blend from scratch.
 
 The castle was baked for a three by three (scripts/build-castle.py) and, when it got two
-super-cells square (Plans/groot-kasteel.md), was drawn at 7/3 of that bake every way. The
+super-cells square (Plans/DONE/groot-kasteel.md), was drawn at 7/3 of that bake every way. The
 walls came out right and everything a settler measures a building by came out wrong: the
 gate stood 1.5 tall and a whole cell wide against the town hall's 0.72 by 0.48, the windows
 were the size of that door, and the crest over the gate was bigger than a house's front.

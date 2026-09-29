@@ -1,4 +1,4 @@
-// The chronicle house, the ladder's last rung (Plans/kroniekhuis.md): where the island's
+// The chronicle house, the ladder's last rung (Plans/DONE/kroniekhuis.md): where the island's
 // history is asked for.
 //
 // What it opens is not a view of its own. The chronicle already is one: the bar along the

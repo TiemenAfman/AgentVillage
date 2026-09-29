@@ -9,8 +9,8 @@ sea at the waterline and settler-sized stand-ins on the decks. Back faces are cu
 island's material culls them, so a face wound the wrong way shows as a hole. `galleon` puts
 Martijn's pirate ship (assets/pirateship) astern of her at the same waterline and `pair`
 abeam, which is the comparison this ship has to win; `fleet` puts the second and third
-ships beside her in their liveries. Plans/batavia.md has the why and the numbers;
-Plans/mijlpalen-tot-tweehonderd.md the decisions she comes from.
+ships beside her in their liveries. Plans/DONE/batavia.md has the why and the numbers;
+Plans/DONE/mijlpalen-tot-tweehonderd.md the decisions she comes from.
 
 The reference is the Batavia of 1628 as rebuilt at Lelystad: a long hull with a strong
 tumblehome, a forecastle and a stern castle in two steps (the quarterdeck and the poop),
@@ -752,7 +752,7 @@ tube(FITTINGS, [(0, 2.95, 3.34), (0, 2.8, 3.34)], [0.02, 0.07], GILT, sides=8)
 # ---- the accommodation ladder ----------------------------------------------------------
 # Down the starboard side from the entry port to a float at the waterline, which is how you
 # would come aboard from a boat. A platform through the port, open treads with two strings
-# and a man-rope, and the float - drawn now, walked later (Plans/batavia.md).
+# and a man-rope, and the float - drawn now, walked later (Plans/DONE/batavia.md).
 LX0, LX1 = -1.74, -1.46
 FLOAT_Y = W + 0.1
 box(FITTINGS, ((LX0 - side(sum(GAP) / 2, 2.1) + 0.04) / 2 - 0.0, 2.075, sum(GAP) / 2),

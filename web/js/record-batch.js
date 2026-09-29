@@ -1,5 +1,5 @@
 // Every building on an island in one draw call per pass: a three.js BatchedMesh, with each
-// record's body as one instance in it (Plans/gebouwen-in-een-batch.md).
+// record's body as one instance in it (Plans/DONE/gebouwen-in-een-batch.md).
 //
 // Measured on Hoogezand (806 records): from above, the bodies were 806 calls in the colour
 // pass and 806 in the shadow pass, and they cost ~7 ms of a 32 ms frame - on the CPU, in

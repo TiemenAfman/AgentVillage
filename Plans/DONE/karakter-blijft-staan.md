@@ -1,6 +1,8 @@
 # Je karakter blijft staan, en loopt waar je klikt
 
-**🚧 NOG NIET KLAAR**
+**✅ Status: gebouwd op 28 september 2026, en op main.** Nog niet met twee spelers op zee bekeken, en
+de open zee draait 0.6.4 en kent `ASLEEP` nog niet: tot die geredeployd is (na de volgende
+release) staat een slapend lijf er wel, maar zonder ZZZ en zonder dat bewakers hem laten staan.
 
 Issue [#73](https://github.com/TiemenAfman/AgentVillage/issues/73), 28 september 2026. Gevraagd:
 ga je terug naar de lucht, dan blijft je karakter staan waar je was (met ZZZ boven zijn hoofd)

@@ -482,13 +482,13 @@ export function partAt(asset, name) {
 // How far the gold mine's hill is modelled too high (DATUM in scripts/build-goldmine.py): its
 // rim goes that far under the grass, and a bake stands on its lowest point.
 export const MINE_DATUM = 0.34;
-// The static shops of the town's plan (Plans/knus-dorpscentrum.md), each one baked asset
+// The static shops of the town's plan (Plans/DONE/knus-dorpscentrum.md), each one baked asset
 // `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
 // part by part (APART) so the door can be reached between the crates on the pavement, and
 // set on the tavern's step (porchOverhang). The bakery and the butcher's are
 // shops too, but they have a fire and a shopkeeper and cases of their own.
 export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
-// The harbour's buildings (scripts/build-harbourhouses.py, Plans/havengebouwen.md): the warehouse,
+// The harbour's buildings (scripts/build-harbourhouses.py, Plans/DONE/havengebouwen.md): the warehouse,
 // the weigh house and the fisherman's hut, one baked asset `civic_<type>` each, with nothing that
 // moves. Drawn, walked round and stood on the tavern's step exactly as the shops are; they differ
 // in one thing, which is why they are not in SHOPS: three buildings come out of one .blend, so the
@@ -507,7 +507,7 @@ export const isQuarryMoving = (n) => /^civic_quarry_yard (wheel|jib|rope|hook|bl
 export const isBataviaMoving = (n) => /^batavia (flag|pennant) /.test(n);
 
 // ---------------------------------------------------------------- the ship
-// The Batavia on the roads (Plans/batavia.md): one bake, and the three ships an island can
+// The Batavia on the roads (Plans/DONE/batavia.md): one bake, and the three ships an island can
 // earn drawn from it. `civic:ship` is her as she was modelled; `civic:ship:2` and `:3` are the
 // same hull in other paint, chosen from the id alone so every page and every visitor paints
 // them alike. Only the three livery parts change - scripts/build-batavia.py gathers every
@@ -1321,7 +1321,7 @@ function noticeBoard(parts, spec, { panel, frame, roof, sign, note, pins }) {
 function civic(parts, spec, rng) {
   const anchors = {};
   const animated = {};
-  // The shops of the town's plan (Plans/knus-dorpscentrum.md): one baked asset each, in the set
+  // The shops of the town's plan (Plans/DONE/knus-dorpscentrum.md): one baked asset each, in the set
   // named after the shop (scripts/build-<shop>.py), at the tavern's size and under the same
   // terracotta, standing towards the street on its lot, and with nothing that moves.
   if (SHOPS.has(spec.civicType)) {
@@ -1730,7 +1730,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('civic_butcher') };
     }
     // The three trades past the castle, one Blender set between them (scripts/build-workshops.py,
-    // Plans/ambachten.md). Their heights are each asset's own (topOf): the set's building_height
+    // Plans/DONE/ambachten.md). Their heights are each asset's own (topOf): the set's building_height
     // is the brewery's chimney, and that is no height for a field.
     case 'brewery': {
       // The brewhouse, the copper under its lean-to, and the casks, the dray and the hops. The
@@ -1770,7 +1770,7 @@ function civic(parts, spec, rng) {
     }
     case 'castle': {
       // Two bakes, picked by the lot. On seven by seven (CASTLE_LOT in lib/layout.mjs,
-      // Plans/groot-kasteel.md) the great castle, built at that size: it used to be the three
+      // Plans/DONE/groot-kasteel.md) the great castle, built at that size: it used to be the three
       // by three's bake drawn at 7/3, and a gate a whole cell wide and a storey and a half
       // tall is not a door a settler walks through - a building that is bigger has more
       // windows, not bigger ones. Anything narrower is the castle it always was: one that
@@ -1782,7 +1782,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf(name) };
     }
     case 'chronicle': {
-      // The chronicle house, the ladder's last rung (Plans/kroniekhuis.md): a brick hall with a
+      // The chronicle house, the ladder's last rung (Plans/DONE/kroniekhuis.md): a brick hall with a
       // portico and a lantern, baked whole in scripts/build-chronicle.py, nothing in it moving.
       // It stands on the ordinary civic step rather than the shops' narrower one: it is not a
       // shop on a street but a public building on its own lot, like the town hall. What it
@@ -1912,7 +1912,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: HEAD + 0.12 };
     }
     case 'ship': {
-      // The Batavia at anchor (scripts/build-batavia.py, Plans/batavia.md), on a plot of 4 by
+      // The Batavia at anchor (scripts/build-batavia.py, Plans/DONE/batavia.md), on a plot of 4 by
       // 16 with her length along its long side - which housePlacement's turn gives her, since
       // she is modelled bow to +z like every front on the island. Lowered by her draught, so
       // her origin is her waterline and `floats` tells main.js to set that on the sea rather
@@ -1926,7 +1926,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: models.heightOf('batavia') - draught, solids: shipSolids(draught), floats: true };
     }
     case 'goldmine': {
-      // The gold mine (Plans/goudmijn.md): the hill lowered by its datum so its rim is under the
+      // The gold mine (Plans/DONE/goudmijn.md): the hill lowered by its datum so its rim is under the
       // grass on any slope a lot may have, and the adit, the rails and the bin on the ground.
       // The ore in the bin is instanced like the pit's bars (web/js/goldmine.js), and the cart
       // is a mesh of its own because it leaves - web/js/goldrun.js pushes it down the road.
@@ -1957,7 +1957,7 @@ function civic(parts, spec, rng) {
       return { anchors, animated, height: 1.22 };
     }
     case 'shipyard': {
-      // The yard and the ship on its stocks (scripts/build-shipyard.py, Plans/scheepswerf.md):
+      // The yard and the ship on its stocks (scripts/build-shipyard.py, Plans/DONE/scheepswerf.md):
       // one baked asset on a five by sixteen lot, the sea end on +z. What of the ship stands on
       // the slipway is `spec.stage`, and the part names say which parts a stage draws - see
       // shownAtStage in shipyard.js. Lowered by its datum, so y = 0 here is the land at the
@@ -2287,7 +2287,7 @@ function wantsPorch(spec) {
 // off the length it may be, and on a three cell lot that is the difference between a
 // church and a chapel of ease. So it takes the step at exactly its own footprint: the
 // skirt that holds the ground, and not a hand's width more.
-// The shops are the tavern's size and stand on the tavern's step (Plans/knus-dorpscentrum.md).
+// The shops are the tavern's size and stand on the tavern's step (Plans/DONE/knus-dorpscentrum.md).
 // They were built out to the edge of their lot at first and took the chapel's rule then; at the
 // village's size that left them the only buildings on the square not standing on something.
 // The lighthouse takes the chapel's rule, for the shed's reason: it has one cell and no more,

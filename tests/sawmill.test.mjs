@@ -1,4 +1,4 @@
-// The sawmill (scripts/build-sawmill.py, web/js/sawmill.js, Plans/zagerij.md).
+// The sawmill (scripts/build-sawmill.py, web/js/sawmill.js, Plans/DONE/zagerij.md).
 //
 // What moves is baked inside the yard asset with its origin on its own axis, left out of the
 // merged building and hung on its own pivot. So the promises worth a net are: the building

@@ -1,4 +1,4 @@
-// Every islander's Codex settlers, housed on the volcano (Plans/vulkaan-in-het-midden.md,
+// Every islander's Codex settlers, housed on the volcano (Plans/DONE/vulkaan-in-het-midden.md,
 // section 8): what an islander may send, where the sea puts each house, who lives in the
 // guardhouse when the plots run out, and - the part with teeth - that one islander's list
 // changing touches nobody else's settlers and none of the guards. No loader and no document:

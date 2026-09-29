@@ -1,4 +1,4 @@
-// The castle's great hall on a Saturday night (Plans/rave-in-het-kasteel.md): a dark stone
+// The castle's great hall on a Saturday night (Plans/DONE/rave-in-het-kasteel.md): a dark stone
 // hall twice the height of the tavern, a stage with the DJ at the north end, a truss of
 // lasers and moving heads over the floor, a mirror ball, a bar along the west wall, and the
 // island's own settlers dancing - and, on an island with a stable, the stable's horse under the
@@ -705,7 +705,7 @@ function createRaveShow({ scene, material, layout }) {
     enter: ({ dancers: guests, stable = false } = {}) => { own = 0; dress(guests, stable); },
     // Asked by interior.js after enter, for the walk's list of what is in the way.
     blockers: () => (stableHere ? layout.herdBlockers : []),
-    // How many beats in the hall is, for a player dancing on the floor (Plans/dansen.md): the
+    // How many beats in the hall is, for a player dancing on the floor (Plans/DONE/dansen.md): the
     // same count the settlers dance to, so a player keeps time with the crowd music or not.
     beat: () => S.beats,
     update, dispose,

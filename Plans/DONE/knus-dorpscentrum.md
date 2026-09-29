@@ -23,7 +23,7 @@ grond die te steil of nat is, en op de westkavel van de ring staan twee verweesd
 klokkentoren en de bibliotheek staan daarom in een straat, een paar winkels op het
 dichtstbijzijnde vrije blok ernaast, en de zagerij en de smidse staan nu ver in het westen.
 
-**Waar het de dierentak raakt.** `codex/dierenverhalen` (Plans/stal-en-veld.md) maakte de
+**Waar het de dierentak raakt.** `codex/dierenverhalen` (Plans/DONE/stal-en-veld.md) maakte de
 bakkerij (65) en de stal (75) tot ambachten via `TRADES`, en het live eiland heeft ze al zo
 staan. Bij het samenvoegen: de bakkerij houdt trede 12 op de hoek van het plein (dat vroeg de
 keeper: meer in het centrum), dus de trede op 65 en `bakery` in hun `TRADES` vervallen; de stal
@@ -42,7 +42,7 @@ bakkerij, waar die ook staat. `TOWN_LAID` tilt beide mee, zodat de migratie ze o
   naast hun kavel (door de keeper verplaatst), de goudkuil staat waar toevallig plek was.
 - **Bakkerij**: model bestaat (`civic_bakery`, 900 driehoeken, oven met gloed), alleen op
   `/demo`, geen trede. **Slager**: alleen ongecommit werk in de worktree `slagerij` (model,
-  animatie, tests; `Plans/slagerij.md` daar). **Kruidenier**: alleen de zaadkraam van de markt.
+  animatie, tests; `Plans/DONE/slagerij.md` daar). **Kruidenier**: alleen de zaadkraam van de markt.
 - **In de kern staat geen enkel huis** op het live eiland (107 settlers): opnieuw indelen kan
   zonder dat er een huis beweegt. Er liggen wel vier verweesde schuurtjes (twee in de kern);
   die blijven staan als obstakel, zoals alles wat een settler toebehoort.
@@ -91,7 +91,7 @@ alle kanten dicht op de openingen na: het plein is een ruimte met gevels eromhee
   en watertoren pakken juist de buitenste vrije kavel: geen toren midden in een winkelrij.
 - **De twee andere openingen per zijde** blijven steegjes waar de wegen van de wijkjes binnen
   kunnen komen. De straten zijn gewoon plein voor de router: een weg die een straat bereikt, is er.
-- **De goudkuil** staat achter de bibliotheek, naast het plein zoals `Plans/goudkuil.md` wil,
+- **De goudkuil** staat achter de bibliotheek, naast het plein zoals `Plans/DONE/goudkuil.md` wil,
   en niet op een straatkavel.
 - **Ambachten** (zagerij, smidse; later stal en de werkplaats van de slager) staan buiten de
   straten: het dichtstbijzijnde vrije blok van het rooster op minstens vier super-cellen van
@@ -176,4 +176,4 @@ het plein, de tweede scan byte-identiek, en de indeling zoals het schema.
   zijn oven, de apotheker in de deur.
 - Een naambord met echte letters boven de deur (`anchor.sign` + `createNameplate`): kost een
   canvas en drie meshes per winkel, en niets op de eilanden van buren.
-- De stal, het veld en de dieren (`Plans/stal-en-veld.md`) als ambacht buiten de straten.
+- De stal, het veld en de dieren (`Plans/DONE/stal-en-veld.md`) als ambacht buiten de straten.

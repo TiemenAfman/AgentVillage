@@ -77,9 +77,9 @@ import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
-// The stable's horse and hens, the bakery's oven and its baker (Plans/stal-en-veld.md).
+// The stable's horse and hens, the bakery's oven and its baker (Plans/DONE/stal-en-veld.md).
 import { attachStable, updateStable } from './stable.js';
-// The beat a dancer keeps when there is no hall to keep it (Plans/dansen.md).
+// The beat a dancer keeps when there is no hall to keep it (Plans/DONE/dansen.md).
 import { clockBeat, wallBeat } from './dance.js';
 import { attachBakery, updateBakery } from './countryside.js';
 import { attachBaker, updateBaker } from './bakery-keeper.js';
@@ -364,7 +364,7 @@ if (modest) console.info('island: integrated graphics detected, running lighter'
 // ?stats counts the shadow pass too, and the frame time (render-stats.js).
 const renderStats = statsReadout ? createRenderStats(renderer) : null;
 
-// Drawing less while this machine cannot keep up (web/js/quality.js, Plans/sneller-tekenen.md):
+// Drawing less while this machine cannot keep up (web/js/quality.js, Plans/DONE/sneller-tekenen.md):
 // fed every frame from tick(), and what it answers is applied here and nowhere else. `modest`
 // above is the boot-time guess off the GPU's name; this is the correction from what the frames
 // actually do. ?quality=n pins rung n (0 full .. 4 lightest), to look at one.
@@ -445,7 +445,7 @@ const buildingMat = createBuildingMaterial();
 const crowdMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 // Every building body on this island, one draw call a pass (web/js/record-batch.js,
-// Plans/gebouwen-in-een-batch.md). A record keeps a stand-in where its mesh used to hang, and
+// Plans/DONE/gebouwen-in-een-batch.md). A record keeps a stand-in where its mesh used to hang, and
 // the batch copies that stand-in's visibility and matrix every render - so what shows, hides or
 // moves a house still does it to the record's group, and never has to know about this.
 const homeBatch = createRecordBatch({ material: buildingMat, parent: scene });
@@ -465,7 +465,7 @@ const state = {
   // The four graphics distances, which are four different knobs on four different parts of
   // the renderer and not one number wearing four names. As this browser last left them
   // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
-  // onGraphicsSetting is the only thing that moves them. Plans/graphics-afstanden.md is why
+  // onGraphicsSetting is the only thing that moves them. Plans/DONE/graphics-afstanden.md is why
   // they are not collapsed into camera.far.
   graphics: loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]),
   filters: { code: true, cowork: true, apprentices: true },
@@ -506,7 +506,7 @@ const state = {
   // last poll left it. Nothing else about anybody's mail is ever held on this side.
   mailbox: null, mailCounts: [], mailAt: 0, borrel: null, sound: null,
   // What the gold pit holds: the keeper's five-hour usage window as /api/gold and
-  // `event: gold` last said it (shared/gold.mjs goldOf, Plans/goudkuil.md). Null until then,
+  // `event: gold` last said it (shared/gold.mjs goldOf, Plans/DONE/goudkuil.md). Null until then,
   // and for good on a visitor's page - the island only tells its own keeper - which draws a
   // full pit, the same as an island that has never had a reading.
   gold: null,
@@ -628,12 +628,12 @@ addEventListener('keydown', (e) => {
 
 // ------------------------------------------------------------ a beer for a settler
 // A glass in your hand and one of our own settlers within reach: G hands it over
-// (Plans/bier-en-dronken.md). They stop and turn to you on the sea - the same `attend` a
+// (Plans/DONE/bier-en-dronken.md). They stop and turn to you on the sea - the same `attend` a
 // conversation uses, so everybody watching sees that much - and drink it on this page:
 // the pint, the gulp and, from the third, the sway are ours alone (crowd-view.js giveBeer).
 // Reach is measured to the body, not to their house, and one gift is going at a time.
 // Only on foot with both feet on the ground: not from the boat, the bicycle (`w.bike`,
-// never `aboard()`, which is the boat alone - Plans/fiets.md) or halfway through a jump.
+// never `aboard()`, which is the boat alone - Plans/DONE/fiets.md) or halfway through a jump.
 const GIVE_R = 1.6;
 let gift = null;   // { id, until } while a beer is going down
 function giveTarget() {
@@ -761,7 +761,7 @@ function blockersOf(rec) {
   }));
 }
 
-// ---- the body left standing (Plans/karakter-blijft-staan.md) ---------------------------
+// ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
 // Where the islander starts you: in front of the board on the square, as enterWalk's own
 // fallback does, facing it.
 function parkOnSquare() {
@@ -963,7 +963,7 @@ function interactables() {
       // much is left without anything to open.
       out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
     } else if (rec.spec.civicType === 'goldmine') {
-      // The week over the keys, the pit's way (Plans/goudmijn.md).
+      // The week over the keys, the pit's way (Plans/DONE/goudmijn.md).
       out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: minePrompt() });
     } else if (rec.spec.civicType === 'goldsmith') {
       out.push({ id: rec.id, kind: 'goldsmith', x: p.x, z: p.z, r: 2.4, label: 'the goldsmith' });
@@ -990,7 +990,7 @@ function interactables() {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
     }
   }
-  // The innkeeper and the mayor (Plans/kroegbaas-en-burgemeester.md), wherever they are
+  // The innkeeper and the mayor (Plans/DONE/kroegbaas-en-burgemeester.md), wherever they are
   // standing. Getters, because walk.js measures the distance every frame and a keeper does
   // not stand still - and looked up by id each time, because a new roster enrols a new
   // figure object under the same id.
@@ -1337,7 +1337,7 @@ async function pollMail(force = false) {
 }
 
 // --------------------------------------------------------------- the gold pit
-// The keeper's five-hour usage window as a pile of bars by the square (Plans/goudkuil.md).
+// The keeper's five-hour usage window as a pile of bars by the square (Plans/DONE/goudkuil.md).
 // Asked for once at boot and then told: serve.mjs sends `event: gold` whenever the status
 // line or the desktop app writes a new reading down, or a window runs out. A visitor is told nothing - the
 // server refuses /api/gold to anybody but the keeper - so their pit stays full, and so does
@@ -1397,7 +1397,7 @@ function pitBars(n) {
 
 // --------------------------------------------------------------- the gold mine
 // The keeper's week as ore in the mine's bin, and the run that brings the pit's gold out of it
-// by way of the goldsmith whenever the five-hour window turns over (Plans/goudmijn.md). The
+// by way of the goldsmith whenever the five-hour window turns over (Plans/DONE/goudmijn.md). The
 // week comes in with the pit's count - `mine` on /api/gold and on `event: gold` - under the
 // same rule: the keeper's page only, a full mine for anybody else.
 const oreNow = () => (state.gold && state.gold.mine && Number.isFinite(state.gold.mine.ore) ? state.gold.mine.ore : MINE_ORE);
@@ -1453,7 +1453,7 @@ function goldRunOf() {
   }
   return state.goldRun || null;
 }
-// ---- the director (web/js/director.js, Plans/regisseur.md) --------------------------------
+// ---- the director (web/js/director.js, Plans/DONE/regisseur.md) --------------------------------
 // After a while with nobody touching the island, the camera goes to look at something happening
 // and follows it. What there is to look at is asked for here, where all of it is to hand; any
 // input stops it where it stands.
@@ -1619,7 +1619,7 @@ const pokeDirector = () => state.director.poke();
 for (const type of ['pointerdown', 'pointermove', 'wheel', 'touchstart']) renderer.domElement.addEventListener(type, pokeDirector, { passive: true });
 addEventListener('keydown', pokeDirector, { capture: true });
 
-// The timber run (Plans/houtkar.md): made once the scene is there, like the gold run. Nothing
+// The timber run (Plans/DONE/houtkar.md): made once the scene is there, like the gold run. Nothing
 // in it is the keeper's, so a visitor gets the same wagon at the same moment.
 function syncTimberRun() {
   // A wagon that cannot be drawn must never cost the island its boot: this runs inside
@@ -1991,7 +1991,7 @@ function promptFor(near) {
 const rooms = new Map();
 let cameFrom = null;
 
-// ---- the castle on a Saturday night (Plans/rave-in-het-kasteel.md) ----
+// ---- the castle on a Saturday night (Plans/DONE/rave-in-het-kasteel.md) ----
 // The hours are shared/daylight.mjs's (RAVE, raveAt), asked of the world's clock like the
 // borrel is, so it is the same Saturday night on every screen in the sea. `?rave` opens the
 // gate whatever the hour, for trying it on a Tuesday.
@@ -2045,7 +2045,7 @@ function raveHeard() {
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
 }
 
-// The beat everybody on this screen dances to (Plans/dansen.md): ourselves (R) and every other
+// The beat everybody on this screen dances to (Plans/DONE/dansen.md): ourselves (R) and every other
 // player whose pose says they are dancing, since only the bit crosses the wire. The hall's own
 // count when we are in it, which already follows the music when there is music; outside, the
 // music when we can hear it (the thump through the castle walls); otherwise the wall clock at
@@ -2347,7 +2347,7 @@ function enterWalk(spot = null) {
     spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
   }
   // No place in mind and a body left standing (exitWalk parks it): down into it, wherever it
-  // walked to meanwhile (Plans/karakter-blijft-staan.md).
+  // walked to meanwhile (Plans/DONE/karakter-blijft-staan.md).
   if (!spot && !reboard && state.walk.parked()) {
     const p = state.walk.state.pos, y = state.walk.state.yaw;
     spot = { at: [p.x, p.z], facing: [p.x + Math.sin(y) * 10, p.z + Math.cos(y) * 10] };
@@ -2356,7 +2356,7 @@ function enterWalk(spot = null) {
   // `?square` skips the recall - the way home for somebody left treading water.
   if (!spot && !params.has('square')) spot = recalledSpot();
   // `?edge`: in the water a few strokes short of the world's east edge, facing it, to try
-  // the jump round the world without sailing two kilometres for it (Plans/ronde-wereld.md).
+  // the jump round the world without sailing two kilometres for it (Plans/DONE/ronde-wereld.md).
   if (params.has('edge') && state.homeOrigin && !reboard) {
     const x = WORLD_HALF - 12 - state.homeOrigin[0], z = -state.homeOrigin[1];
     spot = { at: [x, z], facing: [x + 10, z] };
@@ -2417,7 +2417,7 @@ function openTownHall() {
   state.townHall.open();
 }
 
-// The chronicle house keeps the island's history (Plans/kroniekhuis.md), and what it opens is
+// The chronicle house keeps the island's history (Plans/DONE/kroniekhuis.md), and what it opens is
 // the chronicle bar: ▶ from the founding day, at the speed the bar is set to - the same state
 // onPlay moves, through the same setChronicleTime. Not keeper-only, unlike the register: the
 // chronicle is drawn from village.json, which every visitor already has. From the sky, because
@@ -2603,7 +2603,7 @@ function exitWalk({ force = false } = {}) {
   // walk mode again. Leaving this pointed at a room you have left is how you come back down
   // from the sky invisible: the room's walk mode is no longer active, so nothing is sent.
   // Your body stays where you leave it, asleep, for you and for everybody on the sea
-  // (Plans/karakter-blijft-staan.md) - except at a tiller or on a deck, where the boat is
+  // (Plans/DONE/karakter-blijft-staan.md) - except at a tiller or on a deck, where the boat is
   // what stays: that is still the flight up it always was.
   const parks = !ownHull() && !state.walk.onDeck();
   if (state.net) { state.net.setRoom(null, state.walk); if (!parks) state.net.setWalking(false); }
@@ -2871,7 +2871,7 @@ function edgeReach() {
   return Math.max(120, toEdge + (WORLD_HALF - fleet) - 40);
 }
 
-// Round the world by a jump (Plans/ronde-wereld.md): whoever sails, rides or swims past the
+// Round the world by a jump (Plans/DONE/ronde-wereld.md): whoever sails, rides or swims past the
 // edge is moved the whole width back across, body, hull and bicycle together, before walk
 // mode steps. Everything is drawn relative to our berth, so the one frame later the world
 // looks exactly as it did; the sea is simply sent a pose on the other side, and every other
@@ -3127,7 +3127,7 @@ const SIDE_WORD = { n: 'north', e: 'east', s: 'south', w: 'west' };
 const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) || []);
 
 // B at one of this island's own harbours: another boat, free, three a harbour
-// (Plans/vier-havens.md). Counted here first so the answer is immediate, and again by the
+// (Plans/DONE/vier-havens.md). Counted here first so the answer is immediate, and again by the
 // server (lib/boatyard.mjs), which is the one that is believed. The hull appears when the
 // rescan that follows reaches this page as a new village - see harbourSig in applyVillage.
 async function buildBoatAt(d) {
@@ -3186,7 +3186,7 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
-  // The chips' own letters, from the sky only (Plans/esc-menu-en-knoppenbalk.md) - on foot I
+  // The chips' own letters, from the sky only (Plans/DONE/esc-menu-en-knoppenbalk.md) - on foot I
   // and M are walk.js's, and W A S D E are the feet. Not over another overlay, where a letter
   // may be somebody typing into a board's filter without an input having the focus. A chip
   // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
@@ -3253,8 +3253,8 @@ function showMinimap(on) {
 // about it.
 //
 // The first is the island's own and the rest are what its keeper has built at its harbours
-// or its village has earned there (at most three a harbour, Plans/vier-havens.md and
-// Plans/mijlpalen-tot-tweehonderd.md). None of them is conjured: a boat that
+// or its village has earned there (at most three a harbour, Plans/DONE/vier-havens.md and
+// Plans/DONE/mijlpalen-tot-tweehonderd.md). None of them is conjured: a boat that
 // belongs to nobody cannot also be always to hand, so if somebody has left one on the far
 // shore, that is where it is. The same reasoning lib/boats.mjs gives for putting them back
 // at their moorings on a restart.
@@ -3764,7 +3764,7 @@ async function ourRoster(ids) {
   if (heldWhere) { const held = heldWhere; heldWhere = null; placeOurs(held); }
 }
 
-// ---- the story animals (Plans/dierenverhalen.md, docs/animals-wire.md) ---------------------
+// ---- the story animals (Plans/DONE/dierenverhalen.md, docs/animals-wire.md) ---------------------
 // Every island's animals, ours included, are the sea's to walk and this page's only to draw -
 // the same bargain as the settlers. One batch for all of them (web/js/animal-view.js: one
 // InstancedMesh per species and body part, so six hens on three islands cost what one does)
@@ -3773,7 +3773,7 @@ function animalBatch() {
   if (!state.animalBatch) state.animalBatch = createAnimalBatch(scene, buildingMat);
   return state.animalBatch;
 }
-// ---- the ambient animals (web/js/herds.js, Plans/stal-en-veld.md) -------------------------
+// ---- the ambient animals (web/js/herds.js, Plans/DONE/stal-en-veld.md) -------------------------
 // Not the story animals: sheep and cows on the fields, hens by the huts, ducks on the river,
 // gulls over the quay - nobody's, placed from what every page has for an island and walked
 // by this page alone. One batch of their own for every island (`state.ambientHerds`), a herd
@@ -4431,16 +4431,16 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
     rec.bakery = attachBakery(group, built.animated.bakery.at, buildingMat);
     rec.baker = attachBaker(group, built.animated.bakery.at, buildingMat);
   }
-  // The butcher's (Plans/slagerij.md), a shop of the town's plan with something alive in it:
+  // The butcher's (Plans/DONE/slagerij.md), a shop of the town's plan with something alive in it:
   // his awning, his hanging meat and his smokehouse (web/js/butcher.js).
   if (built.animated && built.animated.butcher) {
     rec.butcher = attachButcher(group, built.animated.butcher.at, buildingMat);
   }
-  // The fisherman at the fisherman's hut (web/js/fisher.js, Plans/regisseur.md). Our own island
+  // The fisherman at the fisherman's hut (web/js/fisher.js, Plans/DONE/regisseur.md). Our own island
   // only: he finds the water's edge off the ground this page walks on, and a guest's hut stands
   // on a region whose ground is not `groundAt`'s.
   if (mail && spec.civicType === 'fishery') rec.fisher = attachFisher(group, buildingMat, groundAt);
-  // The quarry's treadwheel crane and its tub (Plans/ambachten.md, web/js/quarry.js), hung on the
+  // The quarry's treadwheel crane and its tub (Plans/DONE/ambachten.md, web/js/quarry.js), hung on the
   // record's group like the sawmill's blade. The brewery's copper steams from an anchor of its
   // own beside the chimney's smoke.
   if (built.animated && built.animated.quarry) {
@@ -4597,7 +4597,7 @@ function buildScene(village) {
   // offset needed to move. It did move, and nothing drawn moved with it: a joiner's own
   // settlers walked a berth's width east of their houses, and the host's island - at the
   // sea's origin, which was also this page's - was refused as overlapping home and shown
-  // as the beacon's silhouette in the haze. Plans/wie-joint-ziet-de-host-als-mist.md.
+  // as the beacon's silhouette in the haze. Plans/DONE/wie-joint-ziet-de-host-als-mist.md.
   state.region = state.sea.add(placeIsland(terrain, { id: 'home', origin: [0, 0] }));
   state.region.village = village;
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
@@ -5659,7 +5659,7 @@ function reportPlacements() {
   for (const [cell, y] of deckMapForHome()) decks[cell] = Math.round(y * 1000) / 1000;
   // And where the work is: the fields, the kitchen gardens and the edge of the wood, which
   // only this page's own survey knows - the sea sends idle settlers out to them
-  // (Plans/inwoners-aan-het-werk.md).
+  // (Plans/DONE/inwoners-aan-het-werk.md).
   const work = state.world && state.world.workSites ? state.world.workSites() : null;
   const key = JSON.stringify([at, decks, work]);
   if (key === toldPlacements) return;
@@ -5915,7 +5915,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else {
       state.ui.closeDossier();
-      // Our own ground, with nothing on it: send the body there (Plans/karakter-blijft-staan.md).
+      // Our own ground, with nothing on it: send the body there (Plans/DONE/karakter-blijft-staan.md).
       if (!hit && !pickedGuest.f && state.mode === 'orbit') walkToPointer();
     }
   }
@@ -6729,7 +6729,7 @@ async function boot() {
   else if (!state.ui.qualityAutoEnabled()) quality.setAuto(false);
 
   // The story animals' dossier, the island's animal diary and the "while you were away" card
-  // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
+  // (web/js/animal-dossier.js, Plans/DONE/dierenverhalen.md). Everything it shows about our own
   // animals comes from our own islander - /api/animals is not on PUBLIC_API - and a guest's
   // animal is shown from the public card the sea carries (`herd`), never fetched.
   state.animals = createAnimalPanel({
@@ -6787,7 +6787,7 @@ async function boot() {
     // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
     onApply: (spec) => {
       if (state.walk) state.walk.setAvatar(spec);
-      // Everybody else sees the new look too (Plans/andere-spelers-zoals-jij.md).
+      // Everybody else sees the new look too (Plans/DONE/andere-spelers-zoals-jij.md).
       if (state.net) state.net.setLook(spec);
     },
     onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
@@ -7053,7 +7053,7 @@ async function boot() {
   state.horizon = createHorizon({ scene, pickables: state.pickables, half: state.terrain.half });
   // The islets are the sea bed between the islands: handed to the archipelago, which answers
   // for feet, hulls and the water's depth, and the water is worked out again round them
-  // whenever the set changes (Plans/starter-eilanden.md, "erbij"). buildScene hands the bed
+  // whenever the set changes (Plans/DONE/starter-eilanden.md, "erbij"). buildScene hands the bed
   // to a sea it makes afresh.
   state.islets = createIslets({
     scene, modest,
@@ -7242,7 +7242,7 @@ async function standaloneHome() {
     .filter((i) => i && Array.isArray(i.origin))
     // On what each island holds of the sea rather than its size today, as the sea lays berths
     // out: a starter is small and holds the room of the island that will take it
-    // (Plans/starter-eilanden.md). A sea from before `reach` sends only the size.
+    // (Plans/DONE/starter-eilanden.md). A sea from before `reach` sends only the size.
     .map((i) => ({ half: i.reach ?? (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
   state.islandId = null;
   state.homeOrigin = nextOrigin(placed, OPEN_HOME / 2);
@@ -7424,8 +7424,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
     || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'
-    // And the fisherman's smokehouse, whose fish are smoked all day (Plans/havengebouwen.md),
-    // and the fire under the brewery's copper (Plans/ambachten.md).
+    // And the fisherman's smokehouse, whose fish are smoked all day (Plans/DONE/havengebouwen.md),
+    // and the fire under the brewery's copper (Plans/DONE/ambachten.md).
     || rec.spec.civicType === 'fishery' || rec.spec.civicType === 'brewery';
   if (rec.smokeAnchor && (rec.spec.active || civicFire)
     && rec.group.position.distanceToSquared(camera.position) < 120 * 120) {

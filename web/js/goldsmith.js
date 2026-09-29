@@ -1,4 +1,4 @@
-// The goldsmith's furnace, and where the goldsmith stands (Plans/goudmijn.md).
+// The goldsmith's furnace, and where the goldsmith stands (Plans/DONE/goudmijn.md).
 //
 // Built like smithy.js: the fire in the furnace's mouth is baked inside the building's asset
 // with its origin in the middle of the mouth (scripts/build-goldsmith.py), buildings.js leaves

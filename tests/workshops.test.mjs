@@ -1,5 +1,5 @@
 // The brewery, the training field and the quarry (scripts/build-workshops.py, web/js/quarry.js,
-// Plans/ambachten.md): three trades in one Blender set, each a building and a yard.
+// Plans/DONE/ambachten.md): three trades in one Blender set, each a building and a yard.
 //
 // What is held here is what a trade is trusted with before `TRADES` in lib/layout.mjs hands it a
 // three by three: that the whole of each bake fits half a lot either way from its middle (the

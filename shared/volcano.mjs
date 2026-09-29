@@ -198,7 +198,7 @@ function bridgeFoot(terrain) {
 // One building on the mountain that the sea puts there itself, and every guard lives in
 // it: their door is its door. That keeps them inside the model the crowd already has - a
 // figure belongs to a building - with the one new rule that this building has more than
-// one resident (lib/crowd.mjs). Plans/vulkaan-in-het-midden.md, section 7.
+// one resident (lib/crowd.mjs). Plans/DONE/vulkaan-in-het-midden.md, section 7.
 
 // Its id, and the pattern every guard's id follows. The page has no building called
 // `guard:3`, so it dresses a guard from its own id (web/js/crowd-view.js) - which is also
@@ -315,7 +315,7 @@ export function guardhouseSpec(terrain) {
 // Every islander with Codex sessions sends the sea a short list of its Codex settlers
 // (lib/islandbundle.mjs packCodex / parseCodex, POST /island/:id/codex), and the sea puts
 // them up here: a house on the flank for as many as there are plots, and a bed in the
-// guardhouse for the rest. Plans/vulkaan-in-het-midden.md, section 8. Nobody can do anything
+// guardhouse for the rest. Plans/DONE/vulkaan-in-het-midden.md, section 8. Nobody can do anything
 // with a house on the volcano, so unlike a house on anybody's own island it is allowed to
 // move - the plot follows from the id, not from a layout.json.
 

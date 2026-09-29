@@ -6,7 +6,7 @@
 // import map, api.js keeps working out `mine()` from its own URL, and lib/access.mjs sees a
 // loopback socket with a matching Host and Origin, the same as from any browser. Bundling
 // web/ into the app was the scaffold's default and would have broken all three of those at
-// once - Plans/eiland-als-desktop-app.md has the full reasoning.
+// once - Plans/DONE/eiland-als-desktop-app.md has the full reasoning.
 //
 // What the shell adds over a browser is the one thing a browser cannot do: make sure the
 // service is there before showing it. The window opens on a splash of its own (splash/),

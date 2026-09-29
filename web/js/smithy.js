@@ -1,4 +1,4 @@
-// The smithy at work (Plans/smidse.md). By day a smith - a passive settler, nobody's agent -
+// The smithy at work (Plans/DONE/smidse.md). By day a smith - a passive settler, nobody's agent -
 // stands at the anvil and strikes, three blows and a breath, and sparks fly off each one; the
 // bellows pump and the oven's mouth breathes with them. At nightfall he walks to the door and
 // goes in, the bellows stop, and the fire dies back slowly to an afterglow that lights the

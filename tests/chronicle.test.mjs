@@ -1,4 +1,4 @@
-// The chronicle house, the ladder's last rung (Plans/kroniekhuis.md).
+// The chronicle house, the ladder's last rung (Plans/DONE/kroniekhuis.md).
 //
 // What is held here:
 //   the door      E is asked at the foot of the portico, on the side the layout's rot says the

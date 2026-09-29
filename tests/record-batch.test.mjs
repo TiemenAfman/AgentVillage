@@ -1,5 +1,5 @@
 // Every building on an island in one BatchedMesh (web/js/record-batch.js,
-// Plans/gebouwen-in-een-batch.md). The batch mirrors each record's stand-in - its visibility up
+// Plans/DONE/gebouwen-in-een-batch.md). The batch mirrors each record's stand-in - its visibility up
 // the scene graph, its layer mask, its matrix - so everything that shows, hides or moves a house
 // keeps writing the record's group and never learns the batch is there. These drive the mirror
 // the way a render does (onBeforeRender with a renderer's frame counter), with real three.js

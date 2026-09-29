@@ -255,7 +255,7 @@ test('nothing in the line home listens for instructions', async () => {
     assert.ok(!src.includes(forbidden), `lib/seaclient.mjs reaches for ${forbidden}`);
   }
   // It handles exactly three things the sea can say, and none of them is a command. The third
-  // is an animal's errand being done (Plans/dierenverhalen.md): it names an action this
+  // is an animal's errand being done (Plans/DONE/dierenverhalen.md): it names an action this
   // islander itself posted, and all it can do is let the reducer finish a visit that is still
   // pending on this very connection - see the test below.
   const handled = [...src.matchAll(/m\.t === '([a-z]+)'/g)].map((m) => m[1]).sort();

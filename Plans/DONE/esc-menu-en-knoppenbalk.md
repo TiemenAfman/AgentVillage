@@ -1,6 +1,6 @@
 # Een Esc-menu, en een knoppenbalk in twee groepen
 
-**🚧 Status: in aanbouw sinds 29 september 2026 (tweede ronde: het menu wordt de instellingen).**
+**✅ Status: gebouwd op 29 september 2026 (twee rondes: het menu, daarna het menu als instellingen), en door Tiemen goedgekeurd.**
 
 ## Wat er gevraagd werd
 

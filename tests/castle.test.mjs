@@ -1,4 +1,4 @@
-// The castle on two super-cells square (Plans/groot-kasteel.md).
+// The castle on two super-cells square (Plans/DONE/groot-kasteel.md).
 //
 // What is held here:
 //   the doors     a lot's door is in the middle of its front, and a three by three's is
@@ -150,7 +150,7 @@ function oldCastle(seed, size, n, { pinned = false } = {}) {
 }
 
 // Seed 90210, not 1337: on 1337 the fourth harbour's approach road (`road:harbour:3:approach`,
-// Plans/vier-havens.md) runs through every seven by seven that holds the old lot, and
+// Plans/DONE/vier-havens.md) runs through every seven by seven that holds the old lot, and
 // `castleSite` rightly refuses a road cell - so there it is the next test's case, a castle with
 // no room, whether or not the sheds pin it.
 test('an old castle grows where it stands, keeps its front and its turn, and moves nothing else', () => {

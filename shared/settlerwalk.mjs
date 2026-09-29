@@ -42,7 +42,7 @@ export const MAX_STROLL = 36;      // settlers out on an errand at the same time
 // ---- work ------------------------------------------------------------------
 // Somebody with nothing to do goes and does something: hoes a field, weeds a kitchen
 // garden, fells and gathers wood at the edge of the forest, or fishes off the coast and the
-// quay. Plans/inwoners-aan-het-werk.md has the why; the short version of the numbers:
+// quay. Plans/DONE/inwoners-aan-het-werk.md has the why; the short version of the numbers:
 //
 // A cap of its own beside MAX_STROLL rather than a share of it, because a chore spends most
 // of its time standing still at the far end - a stroll is nearly all walking - and forty
@@ -85,7 +85,7 @@ export const DT = 0.05;
 // than what it replaced, not a compromise.
 const GATHER_PER_TICK = 8;
 
-// Fetching gold before building (Plans/goudkuil.md). A settler whose session is running
+// Fetching gold before building (Plans/DONE/goudkuil.md). A settler whose session is running
 // hammers at their own door; with a gold pit on the island they first wheel a barrow over to
 // it, load it, wheel it home and only then set to work - and go again every few minutes of
 // work after that. All in seconds of walk time, drawn from the settler's own `<id>:gold`
@@ -266,7 +266,7 @@ export function createWalk(terrain, village = null) {
     // shed is barely wider than it is, walks straight through them.
     const rot = (spec.plot ? spec.plot.rot : 0) | 0;
     const [ox, oz] = DOOR_DIR[rot] || DOOR_DIR[0];
-    // A building's keeper (`opts.post`, Plans/kroegbaas-en-burgemeester.md) says how far
+    // A building's keeper (`opts.post`, Plans/DONE/kroegbaas-en-burgemeester.md) says how far
     // out their door is: a civic lot is three cells wide, and the house's 0.85 is inside it.
     const reach = opts.reach != null ? opts.reach : (spec.kind === 'shed' ? 0.46 : 0.85);
     // And to one side of the doorway if they are told to (`opts.aside`): (-oz, ox) is the
@@ -619,7 +619,7 @@ export function createWalk(terrain, village = null) {
     walkRoute(f, out, { kind: 'stroll-out', route: out, home: [f.home[0], f.home[1]] });
   }
 
-  // A keeper's round (Plans/kroegbaas-en-burgemeester.md): out to a cell of the square
+  // A keeper's round (Plans/DONE/kroegbaas-en-burgemeester.md): out to a cell of the square
   // near their own door and back, the same two walks a stroll is. One who `tours` - the
   // mayor, the priest - takes one now and then across the whole square; one who `serves` -
   // the innkeeper - only while the village is gathered, and only as far as the tables by
@@ -838,7 +838,7 @@ export function createWalk(terrain, village = null) {
   }
 
   // ---- gold ---------------------------------------------------------------------
-  // The gold pit by the square (Plans/goudkuil.md): where a settler goes before setting to
+  // The gold pit by the square (Plans/DONE/goudkuil.md): where a settler goes before setting to
   // work. `setGold` is handed the site by whoever knows the island - lib/crowd.mjs, out of
   // the bundle - as three things in this island's own frame:
   //
@@ -1137,7 +1137,7 @@ export function createWalk(terrain, village = null) {
         // end of every errand in the village.
         // Home from the wood with a bundle on the shoulder: still a walk to everything that
         // asks, only drawn carrying something.
-        // And to and from the gold pit behind a wheelbarrow (Plans/goudkuil.md): 'barrow'
+        // And to and from the gold pit behind a wheelbarrow (Plans/DONE/goudkuil.md): 'barrow'
         // with it empty, 'carry' with it loaded - both a walk to everything on the wire too.
         f.anim = f.carry === 'gold' ? 'carry' : f.carry === 'barrow' ? 'barrow' : f.hauling ? 'haul' : 'walk';
         const t = f.path[Math.min(f.pathI + 1, f.path.length - 1)];

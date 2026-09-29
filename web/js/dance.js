@@ -1,4 +1,4 @@
-// The dance, the one copy of it (Plans/rave-in-het-kasteel.md, Plans/dansen.md): the moves the
+// The dance, the one copy of it (Plans/DONE/rave-in-het-kasteel.md, Plans/DONE/dansen.md): the moves the
 // settlers on the castle's floor dance (settler-figures.js, off `f.anim = 'dance'`) and the ones a
 // player dances when they press R (classic-avatar.js, for yourself in walk.js and for everybody
 // else in peers.js). Two rigs, one set of angles, so a player on the floor dances the crowd's

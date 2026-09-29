@@ -1,4 +1,4 @@
-// The butcher's at work (Plans/slagerij.md). By day a butcher - a passive settler, nobody's
+// The butcher's at work (Plans/DONE/slagerij.md). By day a butcher - a passive settler, nobody's
 // agent - stands behind the chopping block facing the street and chops, three and a breath: at
 // each chop the joint gives, a slice comes off its cut end and pushes the ones before it along,
 // and a moment after the third they slide over the far edge into the tub. At nightfall he walks

@@ -13,7 +13,7 @@
 //     matters: by 165 settlers the harbour houses are shoulder to shoulder, and the first
 //     draft of the placement quietly gave up on the real island for exactly that reason;
 //   - an island with no quay district - which is most of them, the live island included -
-//     stands it at the kadehaven instead (Plans/mijlpalen-tot-tweehonderd.md), beside that
+//     stands it at the kadehaven instead (Plans/DONE/mijlpalen-tot-tweehonderd.md), beside that
 //     harbour's slipway and on the same terms, where it used to wait for good;
 //   - an island with no harbour at all simply does not have one, and says so instead of
 //     throwing.

@@ -1,9 +1,10 @@
 # De havengebouwen: het pakhuis, de waag en de vissershut
 
-**🚧 NOG NIET KLAAR** — de drie modellen zijn er en zijn tekenbaar; de treden en hun plek aan de
-haven nog niet.
+**✅ Status: gebouwd en op main** (nagekeken tegen de code op 29 september 2026): de treden 113, 127 en 184, hun plek aan de
+haven en het gedrag (de rook, de visser bij de hut). Wat onder *Later* staat is niet gebouwd; de
+koppen "Nog niet op het eiland" hieronder zijn ouder dan de bouw.
 
-Begonnen op 28 september 2026, als stap 4 van `Plans/mijlpalen-tot-tweehonderd.md` ("de andere
+Begonnen op 28 september 2026, als stap 4 van `Plans/DONE/mijlpalen-tot-tweehonderd.md` ("de andere
 gebouwen, één voor één, elk met een eigen kort plan"). Na het kasteel keert het dorp zich naar zee,
 en dit zijn drie gebouwen voor dat tweede centrum:
 

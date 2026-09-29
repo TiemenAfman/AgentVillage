@@ -1,5 +1,5 @@
 // Who the island's story animals are, as words and numbers every side agrees on
-// (Plans/dierenverhalen.md). The islander decides what happens to them (lib/animal-stories.mjs),
+// (Plans/DONE/dierenverhalen.md). The islander decides what happens to them (lib/animal-stories.mjs),
 // the sea walks them (shared/animalwalk.mjs, lib/animal-crowd.mjs) and the page draws them
 // (web/js/animal-view.js); each of those reads its vocabulary from here, so the one copy of
 // "which acts exist, in which wire order" and "what does a restless goat do differently" is

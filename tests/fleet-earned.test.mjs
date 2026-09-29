@@ -1,4 +1,4 @@
-// The fleet grows with the village (Plans/mijlpalen-tot-tweehonderd.md, "De vloot").
+// The fleet grows with the village (Plans/DONE/mijlpalen-tot-tweehonderd.md, "De vloot").
 //
 // From 130 settlers a boat every five, dealt round the harbours from the one the island's
 // first boat lies at, until every harbour moors its three. What has to hold beyond the

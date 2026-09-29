@@ -1,6 +1,6 @@
 """The goldsmith. Rebuild with scripts/blender.mjs --background --python scripts/build-goldsmith.py.
 
-Plans/goudmijn.md: when the keeper's five-hour window turns over, a cart of ore comes down the
+Plans/DONE/goudmijn.md: when the keeper's five-hour window turns over, a cart of ore comes down the
 road from the gold mine, the goldsmith melts it and casts it, and wheels the bars to the gold
 pit. So this is a small workshop by the pit: a narrow house with its gable to the street, a
 lit shop window and a hanging sign with a gold ring on it, and against its right wall a lean-to

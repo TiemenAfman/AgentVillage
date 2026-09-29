@@ -378,7 +378,7 @@ function gullBuffer(ctx) {
 
 // --- the rave --------------------------------------------------------------
 //
-// Saturday night in the castle (Plans/rave-in-het-kasteel.md): sixteen bars of techno in A
+// Saturday night in the castle (Plans/DONE/rave-in-het-kasteel.md): sixteen bars of techno in A
 // minor, looped. Twelve bars of groove - four on the floor, a clap on two and four, open
 // hats on the offbeat, a rolling bass under it and an acid line from bar five - then four of
 // breakdown and build with no kick, a pad, a snare roll that tightens bar by bar and a riser,

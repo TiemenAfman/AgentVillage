@@ -1,5 +1,5 @@
 // The gold pit by the square: the keeper's five-hour usage window as a pile of bars, and
-// every settler who sets to work walking over for one first (Plans/goudkuil.md).
+// every settler who sets to work walking over for one first (Plans/DONE/goudkuil.md).
 //
 // Five things are held here, each for the way it would fail without anybody noticing:
 //
@@ -123,7 +123,7 @@ test('the desktop app\'s last sample is a reading, its reset five hours after th
   assert.equal(r.fiveHour.used, 11);
   assert.equal(r.at, start + 6 * Q, 'when the app sampled it, not when we read it');
   assert.equal(r.fiveHour.resetsAt, start + 3 * Q + 5 * H, 'the first sample with usage in it opened the window by then');
-  // The week (Plans/goudmijn.md, tests/goldmine.test.mjs): its number, and no reset while the
+  // The week (Plans/DONE/goudmijn.md, tests/goldmine.test.mjs): its number, and no reset while the
   // history shows the week never turning over.
   assert.deepEqual(r.sevenDay, { used: 12, resetsAt: null }, 'no reset for the seven days is invented');
   assert.equal(goldOf(r, start + 6 * Q).bars, 89);
@@ -180,7 +180,7 @@ test('whichever of the status line and the desktop app spoke last is the reading
 
 // Run from a copy of the four files it needs, in a scratch folder, with PROMPTHOLM_HOME
 // pointing there too. The copy alone is not enough: lib/paths.mjs keeps an island in
-// ~/.promptholm unless it is a linked worktree (Plans/een-thuis-voor-het-eiland.md), so a
+// ~/.promptholm unless it is a linked worktree (Plans/DONE/een-thuis-voor-het-eiland.md), so a
 // scratch folder with no .git file in it would write the real island's data/usage.json.
 const STATUS_LINE_FILES = ['hooks/statusline.mjs', 'lib/usage.mjs', 'lib/paths.mjs', 'shared/gold.mjs'];
 function statusLine(input, args = []) {

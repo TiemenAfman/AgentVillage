@@ -6,7 +6,7 @@
 //     shared/        shared/, where web/index.html's import map looks for it
 //     index.html     web/index.html with PROMPTHOLM_STANDALONE written into its head
 //
-// The desktop window deliberately bundles nothing (Plans/eiland-als-desktop-app.md): its
+// The desktop window deliberately bundles nothing (Plans/DONE/eiland-als-desktop-app.md): its
 // page belongs to the islander on 4747. A phone has no islander and never will, so there
 // the page has to travel inside the app, and web/js/api.js's STANDALONE is how it knows it
 // is on its own - mine() refuses without asking, and the sea is the one written in here.

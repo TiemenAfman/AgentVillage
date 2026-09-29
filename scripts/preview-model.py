@@ -10,7 +10,7 @@ or `npm run models:preview [-- props prop_barrel]`, which finds Blender for you.
 `--around` renders every asset from five sides instead of one - the usual front right, and
 then straight on from the front, the back, the left and the right - as
 assets/<set>/renders/<asset>-<side>.png. One view hides whatever the model's back is doing,
-and the island turns half its buildings round (Plans/goudmijn.md: "check it from several
+and the island turns half its buildings round (Plans/DONE/goudmijn.md: "check it from several
 sides").
 
 The renders go to assets/<set>/renders/<asset>.png and are gitignored: they are made

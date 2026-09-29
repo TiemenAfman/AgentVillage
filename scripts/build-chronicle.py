@@ -1,6 +1,6 @@
 """The chronicle house. Rebuild with scripts/blender.mjs --background --python scripts/build-chronicle.py.
 
-The last rung of the ladder (Plans/mijlpalen-tot-tweehonderd.md, rung 200; Plans/kroniekhuis.md):
+The last rung of the ladder (Plans/DONE/mijlpalen-tot-tweehonderd.md, rung 200; Plans/DONE/kroniekhuis.md):
 the building where the village writes down its own history, and the one that opens the chronicle
 the bar at the bottom of the screen already is. So it is the island's museum and archive in the
 Dutch classicist manner of a seventeenth-century town's weigh house or its Mauritshuis: a brick

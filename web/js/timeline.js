@@ -6,7 +6,7 @@
 // (peers.js) and the boats somebody else is steering (main.js `glideBoats`) are drawn from
 // the same two numbers, because a pilot is drawn standing on their hull: a body and a hull
 // on two different lags is a pilot left behind in the water, as far out as the boat goes in
-// the difference (Plans/lopen-op-de-boot.md). Kept apart from peers.js so it can be tested:
+// the difference (Plans/DONE/lopen-op-de-boot.md). Kept apart from peers.js so it can be tested:
 // that file reaches walk.js, and walk.js cannot be loaded under Node.
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { WORLD_HALF } from 'shared/regions.mjs';
@@ -48,7 +48,7 @@ export function sampleAt(a, b, render, out = {}, final = false) {
 // carried on past its end, and not at all when the newest is `final`.
 const KEEP = 4;
 // A sample more than half the world from the one before is somebody who sailed off the edge
-// and came in at the other side (Plans/ronde-wereld.md): the track starts again there, or
+// and came in at the other side (Plans/DONE/ronde-wereld.md): the track starts again there, or
 // they would be drawn gliding back across the whole world in LAG_MS.
 export function pushSample(track, s) {
   const last = track[track.length - 1];

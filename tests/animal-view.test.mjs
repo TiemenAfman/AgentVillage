@@ -1,5 +1,5 @@
 // The story animals as the page draws them (web/js/animal-view.js, web/js/fauna.js's pose;
-// Plans/dierenverhalen.md, docs/animals-wire.md).
+// Plans/DONE/dierenverhalen.md, docs/animals-wire.md).
 //
 // The promises: every act the sea can say has a pose, and the ones that mean something
 // different look different; the demo's own animals move through that same pose; all the

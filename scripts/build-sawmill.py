@@ -3,7 +3,7 @@
 Modelled after Ideas/Images to Render: a red-brown plank barn with a front gable, a sign over
 the big door and a lamp over the sign; a lean-to on the right full of logs, a stair and a
 conveyor on the left, and in front of the door a saw bench standing in its own sawdust. Not yet
-placed on the island (Plans/zagerij.md) - it stands on /demo.
+placed on the island (Plans/DONE/zagerij.md) - it stands on /demo.
 
 Two civic assets, each under the civic budget of 1500:
 

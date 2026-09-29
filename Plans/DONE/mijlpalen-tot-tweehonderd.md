@@ -1,6 +1,9 @@
 # De ladder tot tweehonderd: de haven, het VOC-schip en de vloot
 
-**🚧 NOG NIET KLAAR** — de ladder, de werf, de Batavia, de vloot en de vuurtoren staan sinds 28 september 2026 op main en op het eiland; over de Batavia lopen en haar laten varen komt later.
+**✅ Status: gebouwd** (nagekeken tegen de code op 29 september 2026): de ladder, de werf, de Batavia, de vloot, de vuurtoren en de
+kraan staan sinds 28 september 2026 op main en op het eiland. Niet gebouwd: over de Batavia lopen
+(stap 3) en haar laten varen, de tewaterlating als animatie, en een release 0.7 (`package.json`
+staat nog op 0.6.4).
 
 Begonnen op 28 september 2026. Onderaan staat wat
 Tiemen nog moet beslissen.
@@ -131,12 +134,12 @@ waar het dorp zijn eigen geschiedenis gaat opschrijven.
 
 Waarom elk gebouw er staat:
 
-- **Brouwerij**: de kroeg tapt sinds `Plans/bier-en-dronken.md` bier, en dat moet ergens vandaan
+- **Brouwerij**: de kroeg tapt sinds `Plans/DONE/bier-en-dronken.md` bier, en dat moet ergens vandaan
   komen.
 - **Vissershut** (`Ideas/Ideas.MD` §15): netten, een droogrek, een roeiboot en een visser, een
   passieve settler zoals de smid. Bewust aan een andere haven, zodat elke haven iets eigens krijgt.
 - **Oefenveld** (§16, `Ideas/Images to Render/trainingarea.png`): strooien poppen en een
-  zwaardenrek, bij het vechten uit `Plans/aanvallen-en-blokkeren.md`.
+  zwaardenrek, bij het vechten uit `Plans/DONE/aanvallen-en-blokkeren.md`.
 - **Steengroeve** (§15): de steen voor de dijk van 150, op de hoogste rotsige grond.
 - **Waag**: weegt wat de schepen brengen, met een torentje.
 - **Kroniekhuis** (§10, §17): de kroniek als gebouw. Klikken opent `history.js`, zoals het stadhuis
@@ -229,7 +232,7 @@ geschaald:
   een schoorsteen. Hij blijft op zijn ene cel (`SMALL`), en de plekregel verandert niet.
 - **Alles wat de vuurtoren leest, gaat mee**: het licht en de bundel van `web/js/beacon.js`, en
   elke plek die zijn hoogte of ankers gebruikt (het mysterie bij de vuurtoren uit
-  `Plans/dierenverhalen.md`). Het budget is een hero (4000); de huidige zit op 1714.
+  `Plans/DONE/dierenverhalen.md`). Het budget is een hero (4000); de huidige zit op 1714.
 
 **Gebouwd op 28 september (branch `wp-vuurtoren`).** Gemeten op de bake en op wat `buildBuilding`
 tekent:
@@ -320,9 +323,9 @@ niet, dus er ligt alleen de boot van de oude kade.
      naar de rede vaart, mag erbij: `sailIn` (`main.js:4516`) is het voorbeeld.
 2. **De vloot die vanzelf groeit**: `earnedBoats`. Er is geen model voor nodig en er verandert
    niets aan de zee, dus dit kan ook vóór of tegelijk met stap 1.
-3. **Aan boord van het schip**: de dekken en trappen als `decks`.
+3. **Aan boord van het schip** (*Later*, niet gebouwd): de dekken en trappen als `decks`.
 4. **De andere gebouwen**, één voor één in ladder-volgorde, elk met een eigen kort plan zoals
-   `Plans/zagerij.md`. Een trede gaat erin tegelijk met zijn model.
+   `Plans/DONE/zagerij.md`. Een trede gaat erin tegelijk met zijn model.
 5. **Het tweede en derde schip, en meer boten tegelijk op het water** (de kant van de zee).
 
 Wat mee moet veranderen:
@@ -362,7 +365,7 @@ eiland niet goed lezen, en dat is precies wat de patch-regel verbiedt:
   (`bataviaOnStocks` in `web/js/buildings.js`): dezelfde romp, met het achterschip naar zee en op
   de helling van 1 op 24 gelegd, zonder tuig en in kaal hout. Wie op 115 de werf ziet en op 120 de
   rede, ziet dus hetzelfde schip, alleen geschilderd en getuigd. Stadium 1 tot 3 zijn op haar
-  lijnen getekend. Zie `Plans/scheepswerf.md`.
+  lijnen getekend. Zie `Plans/DONE/scheepswerf.md`.
 - **Bestaande treden.** Wil Tiemen 0–100 toch spreiden, bijvoorbeeld het theehuis, de bibliotheek en
   de toverstokkenwinkel uit het drukke stuk 30–45 halen? Dan met de `was`-regel:
   - een omgenummerde trede houdt zijn oude getal als `was`;

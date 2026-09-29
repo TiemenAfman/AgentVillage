@@ -255,7 +255,7 @@ dry run verifieert opnieuw), `promptholm.plan.view` `{cx, cz, hh}`.
 
 | Bestand | Wat |
 |---|---|
-| `Plans/wijkjes-verplaatsen.md`, `Plans/README.md` | dit plan + verkenning (stap 0) |
+| `Plans/DONE/wijkjes-verplaatsen.md`, `Plans/README.md` | dit plan + verkenning (stap 0) |
 | `shared/lattice.mjs` (nieuw) | `PITCH`, `blockOf`, `superOf`, `centreOfCell`, `cellsOfSuper` |
 | `lib/plan.mjs` (nieuw) | parse, ops, prune, diff, snapshot |
 | `lib/layout.mjs` | exports, `replayGrid`, `heldOf`/`zoneCells`, `Super.release`, `zones` in empty/load/migrate/reset, RESERVED-stempel; fase 2: `polderFromSupers`/`digPolder`/`reclaim(dig)` |
@@ -279,7 +279,7 @@ assertion 5: "after a plan apply, a second scan changes nothing". Fase 2: `lib/i
 
 ## Fasering — elke fase laat een eiland achter waar je diezelfde avond mee werkt
 
-**Fase 0 — vastleggen.** `Plans/wijkjes-verplaatsen.md` + README-regel.
+**Fase 0 — vastleggen.** `Plans/DONE/wijkjes-verplaatsen.md` + README-regel.
 
 **Fase 1a — loodgieterswerk + zones.** `shared/lattice.mjs`; `lib/plan.mjs` (parse, zone, prune,
 diff, snapshot); `layout.mjs` exports + `replayGrid` + `heldOf` + zones; `scan.mjs`-slot met dry run

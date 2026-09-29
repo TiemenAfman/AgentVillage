@@ -1,7 +1,7 @@
 // The island's ambient animals: sheep and cows on the fields, hens by the huts, ducks on the
-// river and the lake, gulls over the quay (Plans/stal-en-veld.md, "Later").
+// river and the lake, gulls over the quay (Plans/DONE/stal-en-veld.md, "Later").
 //
-// Scenery, not somebody. The story animals (web/js/animal-view.js, Plans/dierenverhalen.md)
+// Scenery, not somebody. The story animals (web/js/animal-view.js, Plans/DONE/dierenverhalen.md)
 // have names and a diary, are walked by the sea and are the same bird on every screen to the
 // centimetre; these are nobody's, nothing remembers them and nothing is sent about them. What
 // every screen does agree on is *where* they are kept - which field has the flock, which hut

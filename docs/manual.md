@@ -960,7 +960,7 @@ used to stop: the polder mill fifty settlers after the castle, the crane fifteen
 and then nothing. It carries on along the same curve to two hundred now, with eleven rungs,
 and none of them in the centre. The square stopped growing at ninety and the castle has the
 last good ground of the town's plan, so the village turns to the sea
-(`Plans/mijlpalen-tot-tweehonderd.md`).
+(`Plans/DONE/mijlpalen-tot-tweehonderd.md`).
 
 The **kadehaven** is the harbour where the harbour's buildings gather: the quay district's,
 when there is one; else the harbour where the island's first boat lies - the quay every page

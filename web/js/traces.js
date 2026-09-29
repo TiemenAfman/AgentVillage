@@ -1,4 +1,4 @@
-// The marks the story animals leave on an island for good (Plans/dierenverhalen.md,
+// The marks the story animals leave on an island for good (Plans/DONE/dierenverhalen.md,
 // docs/animals-wire.md `traces`): a hen's nest by a door, a goat's cairn, a sparrow's
 // birdhouse, the Feathered Corner's feeder, and the mystery's print, find and cache.
 //

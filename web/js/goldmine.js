@@ -1,4 +1,4 @@
-// The ore in the gold mine's bin, the miner, and the cart (Plans/goudmijn.md).
+// The ore in the gold mine's bin, the miner, and the cart (Plans/DONE/goudmijn.md).
 //
 // The bin holds the keeper's week: a hundred lumps of gold-bearing rock, one for every percent
 // of the seven-day window, taken off the top of the heap as the week is used - the gold pit's

@@ -1,4 +1,4 @@
-// The butcher's (scripts/build-butcher.py, web/js/butcher.js, Plans/slagerij.md).
+// The butcher's (scripts/build-butcher.py, web/js/butcher.js, Plans/DONE/slagerij.md).
 //
 // The promises: the building never draws a moving part twice; the cleaver comes down on the cut
 // end of the joint, measured off the rig itself; the butcher works by day and goes in at night

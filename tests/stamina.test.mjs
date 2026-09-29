@@ -1,6 +1,6 @@
 // Shift's two pools (web/js/stamina.js), drained and refilled under plain Node.
 //
-// The numbers are the design's (Plans/vulkaan-in-het-midden.md) and they are asserted as
+// The numbers are the design's (Plans/DONE/vulkaan-in-het-midden.md) and they are asserted as
 // durations a player would feel - six seconds of sprint, a second's breath, five to fill -
 // rather than as the per-frame arithmetic that produces them, because the arithmetic is
 // exactly what a later tweak changes and the durations are what somebody chose.

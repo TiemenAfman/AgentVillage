@@ -1,4 +1,4 @@
-// The shipyard (Plans/scheepswerf.md, scripts/build-shipyard.py): which of its parts a stage
+// The shipyard (Plans/DONE/scheepswerf.md, scripts/build-shipyard.py): which of its parts a stage
 // draws, and where on its lot it stands. Plain arithmetic and no three.js, because the island,
 // a guest island and the tests all ask the same two questions and must get the same answers.
 //

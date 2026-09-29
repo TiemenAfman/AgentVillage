@@ -1,6 +1,6 @@
 // An island that grows keeps every corner it had: the founding ground is set down in the
 // middle of a bigger grid unchanged, and a growth step only ever raises sea that is joined
-// to the open water. Plans/eiland-laten-groeien.md is the design; these are its promises.
+// to the open water. Plans/DONE/eiland-laten-groeien.md is the design; these are its promises.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTerrain, foundingCoast, gridForCoast, BEACH_MAX } from '../shared/terrain.mjs';

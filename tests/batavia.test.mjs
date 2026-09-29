@@ -1,4 +1,4 @@
-// The Batavia (Plans/batavia.md, scripts/build-batavia.py): the ship the village earns, lying
+// The Batavia (Plans/DONE/batavia.md, scripts/build-batavia.py): the ship the village earns, lying
 // at anchor on the roads.
 //
 // What is held here:

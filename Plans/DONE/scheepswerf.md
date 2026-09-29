@@ -1,7 +1,8 @@
 # De scheepswerf
 
-**🚧 NOG NIET KLAAR**: er staan nog losse eindjes in dit plan (de tewaterlating, lopen op de
-helling, werkers).
+**✅ Status: gebouwd en op main** (nagekeken tegen de code op 29 september 2026): de werf op 5 bij 16, de romp in vijf stadia en de
+refit bij een nieuw stadium. Niet gebouwd, onder *Later*: de tewaterlating, de kleuren van de
+tweede en derde romp, lopen op de helling en werkers.
 
 Begonnen op 28 september 2026. Referentie: de VOC-werf op Oostenburg in Amsterdam. Daar ligt een
 houten helling die op palen het water in loopt, met stapelblokken en schoren. Aan de landkant

@@ -44,7 +44,7 @@ export const DEFAULT_AVATAR = {
 // and 'shield' are the first purely cosmetic pair, added the same way - see classic-
 // avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from. 'torch' is the first one
 // that does something after dark: its flame glows (GLOWING below). 'beer' is the first one
-// its hand's mouse button uses instead of fighting with (Plans/bier-en-dronken.md).
+// its hand's mouse button uses instead of fighting with (Plans/DONE/bier-en-dronken.md).
 export const HAND_ITEMS = [
   { id: 'parasol', name: 'Parasol', icon: '⛱️' },
   { id: 'hammer', name: 'Hammer', icon: '🔨' },
