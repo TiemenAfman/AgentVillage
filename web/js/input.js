@@ -5,7 +5,8 @@
 // asks `p.hit('interact')` and never learns that interact is button 2 - which is why
 // the same `pad()` in walk.js works outdoors and in the tavern, where half those
 // actions simply are not in the map and so never fire.
-import { BTN } from './gamepad.js';
+import { BTN, padLabel } from './gamepad.js';
+import { padOf, onBindingsChange } from './keybinds.js';
 
 // Who wins when more than one says it is active. A panel covers the room it was opened
 // from, so it comes first; the sky is last because it is always true.
@@ -13,30 +14,21 @@ const ORDER = ['panel', 'parley', 'build', 'inside', 'walk', 'orbit'];
 
 // The only place left in the codebase that names a button. `hit` fires once per press,
 // `down` is held, `label` is what the HUD calls it.
+//
+// The on-foot buttons (`walk`, and the few of them `inside`) are not written here any more:
+// they come out of the player's bindings (keybinds.js, Settings -> Controls) in
+// `applyPadBindings` below, whose defaults are the ones this table used to spell out - A jumps,
+// B crouches (hold it to lie down), X interacts, LB and RB the tools, LT the destructive one,
+// RT the primary, L3 sprints (tap to keep running, hold to run), Y the bicycle, up the dance.
+// Back and Start are not bindable: they leave walk mode and open the menu.
 export const MAPS = {
-  // On foot, outdoors. A confirms and jumps, the way a console expects it.
   walk: {
-    jump:      { hit: BTN.A, label: 'A' },
-    crouch:    { hit: BTN.B, down: BTN.B, label: 'B' },      // hold it to lie down
-    interact:  { hit: BTN.X, label: 'X' },
-    prevTool:  { hit: BTN.LB, label: 'LB' },
-    nextTool:  { hit: BTN.RB, label: 'RB' },
-    secondary: { hit: BTN.LT, label: 'LT' },                 // the destructive one
-    primary:   { hit: BTN.RT, label: 'RT' },
-    sprint:    { hit: BTN.L3, down: BTN.L3, label: 'L3' },   // tap to keep running, hold to run
     exit:      { hit: BTN.BACK, label: 'BACK' },
     exitAlt:   { hit: BTN.START },
-    bike:      { hit: BTN.Y, label: 'Y' },                    // on and off the bicycle, like F
-    dance:     { hit: BTN.UP, label: '↑' },                   // like R (Plans/DONE/dansen.md)
   },
   // Indoors. There is nothing to sow in a tavern and nobody to send off the island from
   // a bar stool, so those actions are left out and the buttons go quiet on their own.
   inside: {
-    jump:     { hit: BTN.A, label: 'A' },
-    crouch:   { hit: BTN.B, down: BTN.B, label: 'B' },
-    interact: { hit: BTN.X, label: 'X' },
-    sprint:   { hit: BTN.L3, down: BTN.L3, label: 'L3' },
-    dance:    { hit: BTN.UP, label: '↑' },
     exit:     { hit: BTN.BACK, label: 'BACK' },
     exitAlt:  { hit: BTN.START },
   },
@@ -82,11 +74,42 @@ export const MAPS = {
   },
 };
 
+// keybinds.js action -> the name walk.js asks the pad for; held ones also fire on `down`.
+const FOOT_PAD = [
+  ['jump', 'jump'], ['crouch', 'crouch'], ['interact', 'interact'], ['prevSeed', 'prevTool'],
+  ['nextSeed', 'nextTool'], ['sendAway', 'secondary'], ['plant', 'primary'], ['run', 'sprint'],
+  ['bike', 'bike'], ['dance', 'dance'],
+];
+const HELD = new Set(['crouch', 'sprint']);
+// Indoors only these: nothing to sow at a bar and nobody to send off it.
+const INSIDE = new Set(['jump', 'crouch', 'interact', 'sprint', 'dance']);
+
+// Build the on-foot maps from the bindings. Mutates MAPS in place, because everything holds the
+// one object; an action with no button is left out, and so simply never fires.
+export function applyPadBindings() {
+  for (const [action, name] of FOOT_PAD) {
+    const b = padOf(action);
+    for (const [mode, allowed] of [['walk', null], ['inside', INSIDE]]) {
+      if (allowed && !allowed.has(name)) continue;
+      const map = MAPS[mode];
+      if (b == null) { delete map[name]; continue; }
+      map[name] = HELD.has(name) ? { hit: b, down: b, label: padLabel(b) } : { hit: b, label: padLabel(b) };
+    }
+  }
+}
+applyPadBindings();
+onBindingsChange(applyPadBindings);
+
 // What the HUD prints for an action, or '' when that mode does not have it.
 export function padKey(mode, action) {
   const m = MAPS[mode];
   return (m && m[action] && m[action].label) || '';
 }
+
+// While Settings waits for a controller button to bind, the pad belongs to it: the same press
+// would otherwise close the panel (B is back everywhere) or jump the walker (A).
+let suspended = false;
+export function suspendPad(on) { suspended = !!on; }
 
 export function createInput(gamepad, { onFirstPad } = {}) {
   const modes = [];
@@ -124,6 +147,7 @@ export function createInput(gamepad, { onFirstPad } = {}) {
     current = null;
     if (!p) return null;
     if (!seen) { seen = true; onFirstPad && onFirstPad(p.id); }
+    if (suspended) return null;
     const m = modes.find((x) => x.active());
     if (!m) return null;
     current = m.id;

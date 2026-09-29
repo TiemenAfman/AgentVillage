@@ -28,6 +28,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
+  wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als
+  tabel met primaire toets, secundaire toets en controllerknop per actie (grijs zonder controller,
+  met de naam van de controller in de kop). Open: een binding set, apart op en neer binden.
 - 🚧 [onderwater-zwemmen.md](onderwater-zwemmen.md) — de zee wordt een plek: duiken vanaf het
   oppervlak (`diving.js`), een zeebodem als teken- en botslaag naast het terrein (geulen tot -3.5,
   banken tot -1.0, nooit `H`), een onderwaterlook met het oppervlak van onderen, verdrinken door de

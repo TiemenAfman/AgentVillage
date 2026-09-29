@@ -2,8 +2,9 @@
 // the chronicle bar, the floating labels and the toasts.
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
-import { padKey } from './input.js';
-import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
+import { padKey, suspendPad } from './input.js';
+import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, padOf, keyLabel, bindKey, bindPad, resetKeys, resetPad } from './keybinds.js';
+import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
 
@@ -673,17 +674,89 @@ export function createUI(handlers) {
       + `<div style="display:flex;gap:6px;margin-top:8px"><input id="sea-url" class="field" placeholder="http://address:4750/" style="flex:1"><button class="chip" id="sea-add">Add</button></div>`;
   }
 
-  // Which action is waiting for its new key, if any.
+  // Which cell is waiting for its new key or button, if any: { action, slot } with slot 0 (primary),
+  // 1 (secondary) or 'pad'. And a line about what the last binding did to another one.
   let rebinding = null;
-  function controlsSection() {
-    const row = ([a, , says]) => `<button class="keyrow${rebinding === a ? ' on' : ''}" data-rebind="${a}">`
-      + `<span>${esc(says)}</span><kbd>${rebinding === a ? '…' : esc(keyLabel(keyOf(a)))}</kbd></button>`;
-    return '<div><h3 class="sec">Controls</h3>'
-      + `<p class="muted" style="margin:0 0 9px">On foot. Click one and press the key you want. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand.</p>`
-      + `<div class="keylist">${ACTIONS.map(row).join('')}</div>`
-      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button></div></div>`;
+  let bindNote = '';
+  let padWatch = 0;
+  const connectedPad = () => {
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()) : [];
+    return pads.find((p) => p && p.connected) || null;
+  };
+  const says = (action) => {
+    const key = ACTIONS.find(([a]) => a === action);
+    if (key) return key[2];
+    const only = PAD_ONLY.find(([a]) => a === action);
+    return only ? only[1] : action;
+  };
+  function stopCapture() {
+    rebinding = null;
+    if (padWatch) cancelAnimationFrame(padWatch);
+    padWatch = 0;
+    suspendPad(false);
   }
-      
+  // The pad belongs to Settings for as long as it waits for a button (input.js suspendPad); the
+  // first button that goes down and was not already down is the one. Back and Start are how you
+  // leave and open the menu, so they are refused with a word rather than taken.
+  function watchPad() {
+    const held = new Set();
+    const first = connectedPad();
+    if (first) first.buttons.forEach((b, i) => { if (b.pressed || b.value > 0.5) held.add(i); });
+    suspendPad(true);
+    const tick = () => {
+      if (!rebinding || rebinding.slot !== 'pad') return;
+      const p = connectedPad();
+      if (!p) { stopCapture(); renderSettings(); return; }
+      for (let i = 0; i < Math.min(16, p.buttons.length); i++) {
+        const b = p.buttons[i];
+        const down = b.pressed || b.value > 0.5;
+        if (!down) { held.delete(i); continue; }
+        if (held.has(i)) continue;
+        held.add(i);
+        if (PAD_RESERVED.has(i)) {
+          bindNote = `${padLabel(i, p.id)} leaves walk mode and opens the menu, so it cannot be bound.`;
+          renderSettings();
+          continue;
+        }
+        const lost = bindPad(rebinding.action, i);
+        bindNote = lost ? `${padLabel(i, p.id)} was ${says(lost)}'s; it has swapped.` : '';
+        stopCapture();
+        renderSettings();
+        return;
+      }
+      padWatch = requestAnimationFrame(tick);
+    };
+    padWatch = requestAnimationFrame(tick);
+  }
+
+  function controlsSection() {
+    const pad = connectedPad();
+    const cell = (action, slot, label) => {
+      const on = rebinding && rebinding.action === action && rebinding.slot === slot;
+      const off = slot === 'pad' && !pad;
+      return `<button class="bind${on ? ' on' : ''}${off ? ' off' : ''}" data-bind="${action}:${slot}"${off ? ' disabled title="No controller connected"' : ''}>`
+        + `${on ? '\u2026' : esc(label)}</button>`;
+    };
+    const fixed = (label, off) => `<span class="bind fixed${off ? ' off' : ''}">${esc(label)}</span>`;
+    const key = (a, slot) => cell(a, slot, keyLabel(keysOf(a)[slot]));
+    const btn = (a) => {
+      if (STICK_LABEL[a]) return fixed(STICK_LABEL[a], !pad);
+      const b = padOf(a);
+      return cell(a, 'pad', b == null ? '\u2014' : padLabel(b, pad && pad.id));
+    };
+    const rows = ACTIONS.map(([a, , label]) => `<div class="bindrow"><span class="act" title="${esc(label)}">${esc(label)}</span>${key(a, 0)}${key(a, 1)}${btn(a)}</div>`).join('')
+      + PAD_ONLY.map(([a, label]) => `<div class="bindrow"><span class="act" title="${esc(label)}">${esc(label)}</span>${fixed('\u2014', true)}${fixed('\u2014', true)}${btn(a)}</div>`).join('');
+    const head = `<div class="bindrow head"><span class="act">Action</span><span>Primary</span><span>Secondary</span>`
+      + `<span class="${pad ? '' : 'off'}" title="${pad ? esc(pad.id) : 'No controller connected'}">${pad ? esc(padName(pad.id)) : 'Controller'}</span></div>`;
+    return '<div><h3 class="sec">Controls</h3>'
+      + `<p class="muted" style="margin:0 0 9px">On foot. Click a cell and press the key (or the controller button) you want; <kbd>Del</kbd> empties it, <kbd>Esc</kbd> cancels. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand. In the water, look down and swim on to dive, look up to climb.</p>`
+      + `<div class="bindtable">${head}${rows}</div>`
+      + (bindNote ? `<p class="muted" style="margin:6px 0 0">${esc(bindNote)}</p>` : '')
+      + (pad ? '' : `<p class="muted" style="margin:6px 0 0">No controller found. Plug one in and press a button on it; its column comes alive.</p>`)
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-rebind-reset="1">Default keys</button>`
+      + `<button class="chip${pad ? '' : ' off'}" data-rebind-reset-pad="1"${pad ? '' : ' disabled'}>Default buttons</button></div></div>`;
+  }
+
   // Each slider from GRAPHICS_LIMITS (graphics-settings.js), the same table main.js clamps
   // against, so the panel cannot offer a number the frame would refuse.
   const GRAPHICS_ROWS = [
@@ -799,12 +872,22 @@ export function createUI(handlers) {
       try { if (directorOn) localStorage.removeItem(DIRECTOR_KEY); else localStorage.setItem(DIRECTOR_KEY, '0'); } catch { /* kept for this page only */ }
       renderSettings();
     }));
-    el('settings-body').querySelectorAll('[data-rebind]').forEach((b) => b.addEventListener('click', () => {
-      rebinding = rebinding === b.dataset.rebind ? null : b.dataset.rebind;
+    el('settings-body').querySelectorAll('[data-bind]').forEach((b) => b.addEventListener('click', () => {
+      const [action, slot] = b.dataset.bind.split(':');
+      const want = { action, slot: slot === 'pad' ? 'pad' : Number(slot) };
+      const same = rebinding && rebinding.action === want.action && rebinding.slot === want.slot;
+      stopCapture();
+      bindNote = '';
+      if (!same) {
+        rebinding = want;
+        if (want.slot === 'pad') watchPad();
+      }
       renderSettings();
     }));
     const reset = el('settings-body').querySelector('[data-rebind-reset]');
-    if (reset) reset.addEventListener('click', () => { rebinding = null; resetKeys(); renderSettings(); });
+    if (reset) reset.addEventListener('click', () => { stopCapture(); bindNote = ''; resetKeys(); renderSettings(); });
+    const resetP = el('settings-body').querySelector('[data-rebind-reset-pad]');
+    if (resetP) resetP.addEventListener('click', () => { stopCapture(); bindNote = ''; resetPad(); renderSettings(); });
     el('settings-body').querySelectorAll('[data-islandsize]')
       .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
@@ -826,10 +909,27 @@ export function createUI(handlers) {
     if (!rebinding) return;
     e.preventDefault(); e.stopImmediatePropagation();
     const k = e.key.toLowerCase();
-    if (k !== 'escape') bind(rebinding, k);
-    rebinding = null;
+    if (k === 'escape') { stopCapture(); bindNote = ''; renderSettings(); return; }
+    const clear = k === 'delete' || k === 'backspace';
+    if (rebinding.slot === 'pad') {
+      // Waiting for a button; the keyboard can only empty the cell.
+      if (!clear) return;
+      bindPad(rebinding.action, null);
+      bindNote = '';
+    } else {
+      const lost = bindKey(rebinding.action, rebinding.slot, clear ? null : k);
+      bindNote = lost ? `${keyLabel(k)} was ${says(lost)}'s; it has swapped.` : '';
+    }
+    stopCapture();
     renderSettings();
   }, true);
+  // A pad shows itself to the page only after a button press, and can be pulled out: the
+  // controller column follows either way, and a capture waiting on a vanished pad ends.
+  addEventListener('gamepadconnected', () => renderSettings());
+  addEventListener('gamepaddisconnected', () => {
+    if (rebinding && rebinding.slot === 'pad') stopCapture();
+    renderSettings();
+  });
   renderSettings();
 
   // --- labels & toasts -----------------------------------------------------
