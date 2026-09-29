@@ -386,9 +386,9 @@ function hipLift(lean, look) {
 // dark through the same per-vertex night mask the player's does, which is what reads from
 // across the water anyway.
 export function createFigures(scene, material, { armed = false } = {}) {
-  function makeMesh(geo) {
+  function makeMesh(geo, { shadow = true } = {}) {
     const m = new THREE.InstancedMesh(geo, material, CAPACITY);
-    m.castShadow = true;
+    m.castShadow = shadow;
     m.count = 0;
     m.frustumCulled = false;
     scene.add(m);
@@ -410,16 +410,22 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // CAPACITY in an evening and leave the next arrival undrawn.
   const spare = [];
   const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
-  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]));
+  // No shadow from what lies on the body's own surface: the waistcoat, apron and buttons on
+  // the shirt, the neck between head and collar, and the face's eyes, brows, sideburns and
+  // hair cap on the head. Each is inside the silhouette of a batch that does cast, a figure
+  // is some ten texels tall in the shadow map at its sharpest, and figures receive no
+  // shadow, so none of it ever showed - but it was 142k of the 852k triangles the shadow
+  // pass drew on a 150-settler island (the buttons alone are 300 a figure).
+  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]), { shadow: false });
   const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
   const rightLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)]));
   const leftArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)]));
   const rightArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)]));
   const leftHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)]));
   const rightHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)]));
-  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
+  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]), { shadow: false });
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false });
   // Optional clothing and hair remain two population-wide batches, never a mesh
   // per woman. They share the resident slot and follow its body/head respectively.
   const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
