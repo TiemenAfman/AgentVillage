@@ -1578,10 +1578,18 @@ web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of
 scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
 `outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
 which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
-(`coastSite`), so their door's step is water and their road is `civicRoad`'s fallback: from
-the nearest ground joined to the square, the beach in between left unpaved. `coastSite` does
-not yet ask whether a road can reach its lot at all (seed 2024's weigh house, boxed in by the
-warehouse and the water, has none). **Sixteen is a ceiling, not headroom**:
+(`coastSite`), so their door's step is water and the road finds the lot from its sides.
+`coastSite` takes a lot only if `civicRoad`, tried with the lot stood on the grid, begins
+within `GATE_REACH` of the door (`atDoor`: `houseGate`'s box, where a settler finds a road -
+a `path:` further off is a road on paper). It puts the trial cells back to what they were, not
+FREE, because beach is BLOCKED. Failing every harbour, `harbourSite` goes round again with
+the door on one cell of beach and open water straight past it. `civicRoad` paves the sand it
+walks: the **strandpad** ([Plans/DONE/strandpaden.md](Plans/DONE/strandpaden.md)) goes
+into the path's `cells` and into `paths[].strand`, which the replay (placeAll's and
+`replayGrid`) forces back to PATH while it is still BLOCKED land, since the replay otherwise
+paves only FREE.
+`growCanvas` shifts it. A new layout.json field, so it ships in a minor, not a patch.
+**Sixteen is a ceiling, not headroom**:
 `parseBundle` takes a `w`/`d` of 1 to 16, and a lot one cell longer makes every older sea refuse
 the whole island. What stands at the water goes to the **kadehaven** (`kadehaven`: the quay
 district's harbour; else where the island's first boat lies - the landing's quay, or the harbour

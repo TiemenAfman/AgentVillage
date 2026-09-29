@@ -10,12 +10,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyLayout, placeAll, kadehaven, plotDoor, yardRows, replayGrid, Super, heldOf, registerLand, districtOrder, sideOf,
-  YARD_ID, YARD_LOT, YARD_DRY, YARD_WET, YARD_LAND_MAX, TOWN_PLAN, FREE, NONE, TOWN,
+  YARD_ID, YARD_LOT, YARD_DRY, YARD_WET, YARD_LAND_MAX, TOWN_PLAN, FREE, PATH, NONE, TOWN,
 } from '../lib/layout.mjs';
 import { MILESTONES, civicIdOf } from '../lib/village.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 import { quayFor } from '../shared/quay.mjs';
 import { superOf } from '../shared/lattice.mjs';
+import { houseGate } from '../shared/roads.mjs';
 import { village, clone, key } from './support/village.mjs';
 
 const SIZE = 128;
@@ -66,6 +67,8 @@ function planCells(layout) {
 const islands = new Map();
 // The seeds whose warehouse and weigh house both stand on the kadehaven's own quay.
 const onTheKade = [];
+// Every strandpad on those islands (Plans/DONE/strandpaden.md), as seed:path.
+const strands = [];
 function grow(seed) {
   if (islands.has(seed)) return islands.get(seed);
   const layout = emptyLayout(seed, SIZE);
@@ -135,7 +138,10 @@ for (const seed of SEEDS) {
       for (const c of cellsOf(p)) assert.ok(terrain.isLand(c[0], c[1]), `${id} stands on land at ${c}`);
       const [fx, fz] = LOOK[p.rot];
       const front = [p.gx + 1 + 2 * fx, p.gz + 1 + 2 * fz];
-      assert.ok(sea.has(key(front)), `${id}'s front opens on the open sea`);
+      // On the open sea, or - where no harbour had such a lot with a road to it (seed 2024's
+      // weigh house) - on one cell of beach with the open sea straight past it.
+      const past = [front[0] + fx, front[1] + fz];
+      assert.ok(sea.has(key(front)) || (terrain.isBeach(front[0], front[1]) && sea.has(key(past))), `${id}'s front opens on the open sea`);
       const kade = kadehaven(layout, terrain);
       const harbours = (layout.harbours || []).filter(Boolean);
       const middle = [p.gx + 1, p.gz + 1];
@@ -216,7 +222,57 @@ for (const seed of SEEDS) {
       assert.ok(plotDoor(id, p), `${id} has a door`);
     }
   });
+
+  // A door with no road is for good, since the lot never moves: `coastSite` takes only a lot a
+  // road reaches (seed 2024's weigh house stood on a spit of beach whose one way ashore ran
+  // through the warehouse's lot). And a road is one only where a settler standing at the door
+  // finds it - `houseGate`, the walk's own question - which the road on paper to seed 10's and
+  // seed 11's weigh houses was not.
+  test(`seed ${seed}: every civic door has a road of its own, and a settler at the door finds it`, () => {
+    const { layout } = grow(seed);
+    const walks = {
+      paths: layout.paths, bridges: layout.bridges || [], island: { town: layout.town },
+      districts: Object.entries(layout.districts).map(([id, d]) => ({ id, ...d })),
+    };
+    let doors = 0;
+    for (const [id, p] of Object.entries(layout.plots)) {
+      if (!id.startsWith('civic:')) continue;
+      const door = plotDoor(id, p);
+      if (!door) continue;
+      doors++;
+      assert.ok(layout.paths.some((q) => q.id === `path:${id}`), `${id} has no road`);
+      assert.notEqual(houseGate(walks, layout.size, door.door), null, `no road within reach of ${id}'s door`);
+    }
+    assert.ok(doors > 20, 'the ladder was climbed to its top');
+  });
+
+  // The sand a civic road crosses is paved, and kept paved: it is in the road's cells, so every
+  // reader has it, and in `strand`, which the replay forces back because beach is BLOCKED.
+  test(`seed ${seed}: a strandpad is road on the sand, and stays road`, () => {
+    const { layout, terrain } = grow(seed);
+    const grid = replayGrid(terrain, layout);
+    for (const q of layout.paths) {
+      if (!q.strand) continue;
+      assert.ok(String(q.id).startsWith('path:civic:'), `${q.id} carries a strandpad`);
+      const own = new Set(q.cells.map(key));
+      for (const c of q.strand) {
+        assert.ok(own.has(key(c)), `${q.id}'s strandpad is among its cells at ${c}`);
+        assert.ok(terrain.isLand(c[0], c[1]) && !terrain.isBuildable(c[0], c[1]), `${q.id}'s strandpad is on ground no road could use at ${c}`);
+        assert.equal(grid.get(c[0], c[1]), PATH, `${q.id}'s strandpad replays as road at ${c}`);
+      }
+      strands.push(`${seed}:${q.id}`);
+    }
+    // And the scan after it changes nothing, as layout.json has it: in JSON, where a field left
+    // undefined is no field at all.
+    const again = clone(layout);
+    placeAll(again, ladder(STEPS[STEPS.length - 1]), { seed, size: SIZE });
+    assert.equal(JSON.stringify(again), JSON.stringify(layout));
+  });
 }
+
+test('and on at least one island a civic road walks up the sand to its door', () => {
+  assert.ok(strands.length, 'no island has a strandpad to test');
+});
 
 test('and on at least one island both stand on the kadehaven\'s own quay', () => {
   assert.ok(onTheKade.length, 'no seed put its warehouse and weigh house at the kadehaven');
