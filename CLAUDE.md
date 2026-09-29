@@ -49,6 +49,13 @@ node --test tests/models.test.mjs
 with MODULE_NOT_FOUND. A fresh worktree needs `npm install` first, or every test that
 imports `three` fails.
 
+`tests/layout-measure.test.mjs` (and `plan-scan.test.mjs`) scan a copy of whatever island
+`DATA` holds, so they fail or pass on the keeper's island as it stands, not on the last
+commit: from the main checkout that is `~/.promptholm`; from a linked worktree it is the
+worktree's own empty `data/`, i.e. a fresh founding that proves nothing about the live
+island. To measure the live island from a worktree, run them with `PROMPTHOLM_HOME` on a
+copy of `~/.promptholm` (below).
+
 Tests exercise browser modules under Node: they `register('./support/shared-loader.mjs')`
 to resolve the `shared/` import-map prefix, and stub `globalThis.document` before importing
 anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at import time).
@@ -1373,7 +1380,12 @@ ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd
 its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
 web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
 scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
-`outsideDoor(..., p.w)` of a lot that may not be square. **Sixteen is a ceiling, not headroom**:
+`outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
+which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
+(`coastSite`), so their door's step is water and their road is `civicRoad`'s fallback: from
+the nearest ground joined to the square, the beach in between left unpaved. `coastSite` does
+not yet ask whether a road can reach its lot at all (seed 2024's weigh house, boxed in by the
+warehouse and the water, has none). **Sixteen is a ceiling, not headroom**:
 `parseBundle` takes a `w`/`d` of 1 to 16, and a lot one cell longer makes every older sea refuse
 the whole island. What stands at the water goes to the **kadehaven** (`kadehaven`: the quay
 district's harbour; else where the island's first boat lies - the landing's quay, or the harbour

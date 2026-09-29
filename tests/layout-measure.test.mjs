@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { scan } from '../scan.mjs';
 import { DATA, readJson, loadConfig } from '../lib/paths.mjs';
-import { outsideDoor, TOWN_CORE_R } from '../lib/layout.mjs';
+import { outsideDoor, plotDoor, TOWN_CORE_R } from '../lib/layout.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'promptholm-layout-'));
@@ -92,8 +92,11 @@ const L = layout2;
 const key = (c) => `${c[0]},${c[1]}`;
 const plots = Object.entries(L.plots);
 const houses = plots.filter(([id]) => id.startsWith('house:'));
-// Three by three, or the castle's seven (CASTLE_LOT): every civic building with a door.
-const civicLots = plots.filter(([id, p]) => id.startsWith('civic:') && p.w >= 3);
+// Every civic building with a door, asked of `plotDoor`, the one reading of a door. This was
+// `p.w >= 3` - three by three, or the castle's seven - which stopped being the same question
+// when the ladder went to sea: a ship is four wide and has no door and no road by design, and
+// on the live island the three of them read as three roads missing.
+const civicLots = plots.filter(([id, p]) => id.startsWith('civic:') && plotDoor(id, p));
 
 // Everything a door may open onto: road, the paving of the square and its frontage, and
 // the deck of a bridge. Read off the layout rather than off the cell grid, which is not
@@ -283,7 +286,7 @@ test('every civic lot keeps its road', () => {
   // was built, 10 against 9. It still has to lead to something that stands.
   const roads = L.paths.filter((p) => String(p.id).startsWith('path:civic:'));
   for (const p of roads) assert.ok(L.plots[p.id.slice('path:'.length)], `${p.id} leads to a civic building that is not there`);
-  const lotRoads = roads.filter((p) => L.plots[p.id.slice('path:'.length)].w >= 3);
+  const lotRoads = roads.filter((p) => { const id = p.id.slice('path:'.length); return plotDoor(id, L.plots[id]); });
   assert.equal(lotRoads.length, civicLots.length, 'a civic lot has no road, or has two');
   for (const [id] of civicLots) {
     assert.ok(L.paths.some((p) => p.id === `path:${id}`), `${id} has no road`);
