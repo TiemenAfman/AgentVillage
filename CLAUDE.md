@@ -369,8 +369,11 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   Distance, and a record is taken out of the render list (`keepRecord` in
   `web/js/record-cull.js`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
   is cut is always already the colour of the fog, and on the way in it thickens out of it.
-  The sky dome's band along the horizon *is* the fog colour (`uFog`, by reference to
-  `scene.fog.color`), so a fully fogged mast against the sky matches it too. Two things are
+  The sky dome's band along the horizon *is* the fog colour (`uFog`, written in
+  `sky.onBeforeRender` in the *output* colour space - three hands every material its fog that
+  way, after `colorspace_fragment`, and the dome writes its colours as they are; given the
+  linear value it showed 171,206,243 against the fogged sea's 214,232,249, a hard line), so a
+  fully fogged mast against the sky matches it too. Two things are
   never masked: lights (turned down to 0 instead - the light count is in every lit program's
   key, and a masked campfire recompiled every material on screen) and records with a
   `fog: false` part (a lighthouse beam, a campfire flame: landmarks, never cut).
@@ -403,6 +406,13 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed to every
   crowd mesh where it is made (`createFigures`). An imp is not given to a guard in the band
   (`inBand`, only while the dither is on), since its skinned material knows nothing of it.
+- **The water patch is tiled per island** (`waterPatchPlan` in world.js, `tests/water-patch.test.mjs`):
+  one vertex per unit only within `WATER_REACH` of an island's grid, every `WATER_FADE_STEP`
+  in the fade into the ocean, one quad per row of open sea - the same outline and fade as the
+  old single plane over the archipelago's bounding box, which was 2.5M of 2.75M triangles on
+  a full page. Swell (`aWave`) goes to zero before the dense/coarse join so the two meet flat.
+  The water shader fogs by `distance(vWorld, cameraPosition)` per pixel: a radial fog
+  interpolated across the ocean disc's huge triangles over-fogged it.
 - **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
   islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
   pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).

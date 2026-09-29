@@ -1892,8 +1892,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunColor: { value: new THREE.Color(0xffffff) },
       uStars: { value: 0 },
-      // The fog's own colour, by reference (set once scene.fog exists, below), for the band
-      // along the horizon. See the fragment shader.
+      // The fog's colour as it lands on screen, for the band along the horizon: written just
+      // before the dome is drawn (sky.onBeforeRender, below). See the fragment shader.
       uFog: { value: new THREE.Color(0xdcefff) },
     },
     // On the far plane, whatever the far plane is: z = w puts every vertex at depth 1, the
@@ -2019,9 +2019,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
   // sync there - and the fixed pair always won. Colour still follows the sky, below.
   scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
-  // By reference, so the dome's horizon band is whatever the fog is at render time - after
-  // the hour has tinted it below and the weather has dulled it (weather.js), not a copy.
-  skyMat.uniforms.uFog.value = scene.fog.color;
+  // The dome's horizon band is the fog exactly as a fogged thing shows it: taken at render
+  // time (after the hour has tinted the fog below and the weather has dulled it, weather.js)
+  // and converted the way three converts the fog for every other material - into the output
+  // colour space, because fog_fragment runs after colorspace_fragment
+  // (WebGLMaterials.refreshFogUniforms). This shader writes its colours as they are, so a
+  // band given the fog's linear value showed ~171,206,243 against the fogged sea's
+  // 214,232,249: the same number, a different colour, and a hard line at the horizon.
+  sky.onBeforeRender = (renderer) => {
+    if (scene.fog) scene.fog.color.getRGB(skyMat.uniforms.uFog.value, renderer.getRenderTarget() ? THREE.ColorManagement.workingColorSpace : renderer.outputColorSpace);
+  };
 
   // ---- lights --------------------------------------------------------------
   const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);

@@ -268,7 +268,18 @@ eiland. Wat domineerde en buiten de afstanden viel, en wat eraan gedaan is:
   telefoon.
 - **Telefoon**: één gasteiland volledig (`DETAILED` 1) en pixel ratio 1.
 - **Het waterraster**: 2.53M van de 2.75M driehoeken op `full` was één watervlak over de omhullende
-  rechthoek van álle eilanden, lege zee inbegrepen. Apart opgepakt (zie de volgende commit).
+  rechthoek van álle eilanden, lege zee inbegrepen. Nu in tegels per eiland (`waterPatchPlan`):
+  fijn binnen 16 units van een eilandraster, grof in de overgang naar de oceaan, één quad per rij
+  open zee; hetzelfde omtrek en dezelfde overgang. Water op `full` 2.53M → 182k driehoeken, de hele
+  pagina 2.74M → 396k; op `?modest` 484k → 237k. Uiterlijk gelijk (screenshots rond het eiland, een
+  buur en de vulkaan). De donkere rechthoek in de mist die een worker zag was echt: radiale mist
+  per vertex, geïnterpoleerd over de reusachtige driehoeken van de oceaanschijf, rekende die te
+  mistig; de watershader rekent de afstand nu per pixel.
+- **Een harde lijn aan de horizon** (van hoog boven zee, `?modest`): de horizonband van de koepel
+  kreeg de lineaire mistkleur, terwijl three de mist aan elk material in de uitvoer-kleurruimte
+  geeft (na `colorspace_fragment`) en de koepel zijn kleuren rauw schrijft: 171,206,243 tegen
+  214,232,249. De band krijgt de mistkleur nu omgezet zoals three dat doet (`sky.onBeforeRender`);
+  gemeten naadloos van hoog en van laag, met het blauwe verloop erboven intact.
 - Niet gedaan: de eilandjes (~52k driehoeken, één InstancedMesh over de hele zee, per eilandje
   maskeren vraagt de buffers elke frame opnieuw) en een schaduwkaart van 512 op de telefoon.
 

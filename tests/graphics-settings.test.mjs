@@ -150,7 +150,9 @@ test('the sky is drawn on the far plane, so a short view never shows the clear c
   // Along the horizon the dome is the fog's own colour, by reference, so a fully fogged mast
   // standing against the sky is the colour of the sky behind it when it is cut.
   assert.match(sky, /col = mix\(uFog, col, smoothstep\(0\.0, 0\.14, d\.y\)\)/);
-  assert.match(world, /skyMat\.uniforms\.uFog\.value = scene\.fog\.color;/);
+  // In the output colour space, as three hands the fog to every other material: the same
+  // linear number written raw by this shader was a visibly different colour.
+  assert.match(world, /scene\.fog\.color\.getRGB\(skyMat\.uniforms\.uFog\.value, renderer\.getRenderTarget\(\) \? THREE\.ColorManagement\.workingColorSpace : renderer\.outputColorSpace\)/);
   // The sun and moon carry no fog, so they are pulled inside the far plane instead.
   assert.match(world, /celestial = Math\.min\(CELESTIAL, far \* 0\.8\)/);
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
