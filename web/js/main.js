@@ -4978,7 +4978,11 @@ function syncHamlets(village) {
   }
 }
 
-function frameIsland() {
+// `glide`: fly there over OVERVIEW_S through the same tween focusOn uses, instead of cutting.
+// The Overview chip (and O) glides; the boot and the intro's fallbacks still cut, because
+// they are setting a camera nobody has seen yet.
+const OVERVIEW_S = 1.2;
+function frameIsland({ glide = false } = {}) {
   const t = state.terrain;
   let minX = 99, maxX = -99, minZ = 99, maxZ = -99;
   for (const [gx, gz] of t.landCells) {
@@ -5002,13 +5006,19 @@ function frameIsland() {
   // and 175 stays as the floor so a small island is framed exactly as it was.
   const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, Math.max(175, t.half * 1.7));
   const az = 0.6, el = 0.72;
-  controls.target.set(cx, 1, cz);
-  camera.position.set(
+  const target = new THREE.Vector3(cx, 1, cz);
+  const pos = new THREE.Vector3(
     cx + Math.cos(el) * Math.sin(az) * dist,
     1 + Math.sin(el) * dist,
     cz + Math.cos(el) * Math.cos(az) * dist,
   );
-  controls.update();
+  if (glide) {
+    state.tween = { t: 0, dur: OVERVIEW_S, from: controls.target.clone(), to: target, fromPos: camera.position.clone(), toPos: pos };
+  } else {
+    controls.target.copy(target);
+    camera.position.copy(pos);
+    controls.update();
+  }
   return { cx, cz, dist, az, el };
 }
 
@@ -6508,7 +6518,7 @@ async function boot() {
     canWalkHere: () => !!(state.walk && state.walk.parked()),
     onOverview: () => {
       if (state.mode === 'plan') { state.plan.frameIsland(); return; }
-      state.intro = null; state.tween = null; controls.enabled = true; frameIsland();
+      state.intro = null; controls.enabled = true; frameIsland({ glide: true });
     },
     onScrub: (frac) => {
       const { start, end } = chronicleBounds();
