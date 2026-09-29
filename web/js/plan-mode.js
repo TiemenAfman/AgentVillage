@@ -38,6 +38,7 @@ import * as THREE from 'three';
 import { blockOf, superOf, superComplete } from 'shared/lattice.mjs';
 import { DOOR_DIR } from 'shared/settlerwalk.mjs';
 import { mine } from './api.js';
+import { pickedId } from './record-batch.js';
 
 const DRAFT_KEY = 'promptholm.plan.draft';
 const VIEW_KEY = 'promptholm.plan.view';
@@ -716,8 +717,15 @@ export function createPlanMode({ dom, terrain, village, byId, pickables, bounds,
     ndc.set((px / innerWidth) * 2 - 1, -(py / innerHeight) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const recs = byId();
-    const hits = ray.intersectObjects(pickables().filter((m) => m.parent && m.parent.visible && recs.has(m.userData.id)), false);
-    return hits.length ? hits[0].object.userData.id : null;
+    // The houses are one pickable (the island's batch, record-batch.js) and the rest - a dock,
+    // a neighbour's ground - are not buildings to drag, so they are passed over rather than
+    // allowed to stand in front of one.
+    const hits = ray.intersectObjects(pickables().filter((m) => m.parent && m.parent.visible), false);
+    for (const h of hits) {
+      const id = pickedId(h);
+      if (recs.has(id)) return id;
+    }
+    return null;
   }
   // A hamlet is picked whole, every piece of land its project has: picking one piece let a
   // drag carry it off and leave the rest behind, which is how two projects on the live island

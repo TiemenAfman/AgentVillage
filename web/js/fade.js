@@ -131,7 +131,8 @@ export function cullNext(dist, range, culled) {
 //
 // The discard happens where it is cheapest - after the emissive, before any of the lighting
 // is done - and it is a hash rather than an alpha, so a fading house stays in the opaque
-// pass. No transparency, nothing to sort, depth writes untouched, one draw call per building.
+// pass. No transparency, nothing to sort, depth writes untouched, and the island's buildings
+// still one batch (record-batch.js).
 //
 // The numbers are interpolated from the constants above, not typed out twice, because a
 // band that starts at 80% on the CPU and 79% on the screen is a bug nobody finds by staring.

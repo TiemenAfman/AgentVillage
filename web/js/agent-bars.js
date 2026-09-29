@@ -12,7 +12,7 @@
 // Two draw calls for every bar on the screen, however many: one InstancedMesh for the dark
 // backs and one for the red fills, each instance turned to face the camera on the CPU.
 // Twenty-odd bars as meshes of their own would have been forty-odd draw calls, which is the
-// budget of a whole island (CLAUDE.md, "One material, one draw call per building").
+// budget of a whole island (CLAUDE.md, "One material, one batch per island").
 import * as THREE from 'three';
 
 // How many bars at once, nearest the eye first.

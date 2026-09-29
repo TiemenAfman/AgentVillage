@@ -85,8 +85,10 @@ export const SHIPYARD_LAND = models.part('shipyard slipway').at[1];
 // - turns a building from one draw call into one per part, and there are hundreds of
 // buildings. It would also mean handing main.js an array where it passes a single
 // material, and main.js hands that same material to the settlers, the crops, the boats
-// and the bridges, none of which have groups to match it. So: one material, one draw
-// call per building, and a branch in the fragment shader.
+// and the bridges, none of which have groups to match it. So: one material and a branch in
+// the fragment shader. It is also what lets every building on an island share one draw call
+// (web/js/record-batch.js): a BatchedMesh has one material, and a material array would split
+// the batch as surely as it split a building.
 const texLoader = new THREE.TextureLoader();
 // One white pixel until a sheet arrives, and for good if none ever does: white
 // multiplies out, so a building with no textures is the building the island always drew.
@@ -143,7 +145,7 @@ export function createBuildingMaterial() {
   // for the world and once for the crowd, because Object Distance and NPC Distance are two
   // numbers and a shared material has one uniform slot. Same onBeforeCompile below and the
   // same customProgramCacheKey, so three hands both the same compiled program - two uniform
-  // sets, one program, and one draw call per building either way.
+  // sets, one program, and the same draw calls either way.
   mat.userData.fadeOn = false;
   sheetUsers.push(mat.userData.uniforms);
   mat.onBeforeCompile = (shader) => {

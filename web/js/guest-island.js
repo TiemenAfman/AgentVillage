@@ -30,6 +30,7 @@ import { isShipyard, shipyardGround } from './shipyard.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeExtras } from './record-extras.js';
 import { floatingPose } from './batavia.js';
+import { createRecordBatch, VERTICES_PER_BUILDING } from './record-batch.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -134,6 +135,16 @@ export function createGuestIsland({
   // applyBuildings below), and housePlacement and the yard nudge ask this list about a
   // building's neighbours.
   let buildings = given;
+  // Their bodies, one draw call a pass, as ours are (record-batch.js). Inside the island's own
+  // group, so its matrices are in their local frame - small numbers, where float32 is exact
+  // enough - and so keepRegion's mask on that group takes the whole batch out in one go.
+  // Sized for what the bundle holds: a starter's four civics are ~20k vertices, and a batch
+  // sized for our own island would hold 7 MB of nothing each. The volcano's Codex houses,
+  // which come later, grow it.
+  const seats = Math.max(8, given.length);
+  const batch = material
+    ? createRecordBatch({ material, parent: group, instances: seats, vertices: seats * VERTICES_PER_BUILDING, name: `buildings:${region.id}` })
+    : null;
   const local = region.terrain;
   const plotCentre = (plot) => [plot.gx + plot.w / 2 - local.half, plot.gz + plot.d / 2 - local.half];
   const plotOf = (id) => {
@@ -182,9 +193,9 @@ export function createGuestIsland({
     const g = new THREE.Group();
     g.position.set(x, y, z);
     g.rotation.y = pose.yaw;
-    const mesh = new THREE.Mesh(built.geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    // The body into the island's batch; `mesh` is its stand-in (see makeRecord in main.js).
+    const mesh = batch.add(built.geometry);
+    built.geometry = null;
     // Namespaced, and it has to be. Both islands have a `civic:board`, a `civic:townhall`
     // and a `civic:tavern`, so a bare id put into state.byId would overwrite ours - and
     // clicking their town hall would quietly open the dossier of our own.
@@ -231,7 +242,7 @@ export function createGuestIsland({
         continue;
       }
       group.remove(rec.group);
-      rec.built.geometry.dispose();
+      batch.remove(rec.mesh);
       // Everything main.js's attachExtras hung on it too: a Codex house has none today, but a
       // guest's buildings changing in place is not only ever going to be tents.
       disposeExtras(rec);
@@ -289,11 +300,12 @@ export function createGuestIsland({
       land.dispose();
       scene.remove(group);
       for (const rec of records) {
-        rec.built.geometry.dispose();
         // What main.js's attachExtras hung on it - the clocks, the gold, the trades' moving
         // parts and their people. One list for every place a record goes: see record-extras.js.
         disposeExtras(rec);
       }
+      // Every body at once: the batch's buffers and its matrix textures.
+      if (batch) batch.dispose();
       if (bridgeMesh) bridgeMesh.geometry.dispose();
     },
   };

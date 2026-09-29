@@ -41,6 +41,7 @@ import {
 } from './buildings.js';
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
+import { createRecordBatch, pickedId } from './record-batch.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
@@ -443,6 +444,11 @@ const buildingMat = createBuildingMaterial();
 // shader, and the crowd still costs one draw call per body part exactly as it did.
 const crowdMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
+// Every building body on this island, one draw call a pass (web/js/record-batch.js,
+// Plans/gebouwen-in-een-batch.md). A record keeps a stand-in where its mesh used to hang, and
+// the batch copies that stand-in's visibility and matrix every render - so what shows, hides or
+// moves a house still does it to the record's group, and never has to know about this.
+const homeBatch = createRecordBatch({ material: buildingMat, parent: scene });
 
 const state = {
   village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
@@ -453,7 +459,9 @@ const state = {
   // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
   sea: createArchipelago(), region: null, guests: [], boats: [], docks: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
-  byId: new Map(), districts: new Map(), pickables: [],
+  // The home batch is in from the start: one pickable for every house (pickedId turns a hit
+  // on it back into the house's id).
+  byId: new Map(), districts: new Map(), pickables: [homeBatch.mesh],
   // The four graphics distances, which are four different knobs on four different parts of
   // the renderer and not one number wearing four names. As this browser last left them
   // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
@@ -4294,9 +4302,12 @@ function makeRecord(spec) {
   // grass while the square was behind it. Mirroring the turn agrees with all four.
   group.rotation.y = pose.yaw;
 
-  const mesh = new THREE.Mesh(built.geometry, buildingMat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  // The body goes into the island's batch (record-batch.js), and what hangs here is its
+  // stand-in: an empty Object3D whose visibility and matrix the batch copies every render.
+  // `rec.mesh` stays the name for it, because the Batavia's swell moves it and hangs her flags
+  // on it, and the planner reads where it stands. The geometry itself is the batch's now.
+  const mesh = homeBatch.add(built.geometry);
+  built.geometry = null;
   mesh.userData.id = spec.id;
   group.add(mesh);
   scene.add(group);
@@ -4309,7 +4320,6 @@ function makeRecord(spec) {
   attachExtras(rec);
   if (spec.active) addScaffold(rec);
   state.byId.set(spec.id, rec);
-  state.pickables.push(mesh);
   return rec;
 }
 
@@ -4459,7 +4469,9 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
 // that is not allowed to read the lettering should not be the page that rasterised it.
 function signOn(rec) {
   if (!rec.sign || rec.nameplate) return;
-  const plate = createNameplate(rec.sign.text, rec.sign.opts);
+  // Its frame into the island's batch with the buildings (nameplate.js): 395 signs on
+  // Hoogezand were a call each in both passes. The lettered face stays a mesh of its own.
+  const plate = createNameplate(rec.sign.text, { ...rec.sign.opts, batch: homeBatch });
   plate.group.position.set(...rec.sign.at);
   plate.group.rotation.y = rec.sign.turn;
   rec.group.add(plate.group);
@@ -4477,12 +4489,11 @@ function applySigns() {
 function countFires() { let n = 0; for (const r of state.byId.values()) if (r.fire) n++; return n; }
 
 function disposeRecord(rec) {
-  rec.mesh.geometry.dispose();
+  // Its body out of the batch; the range it held is compacted away when room runs short.
+  homeBatch.remove(rec.mesh);
   // Everything attachExtras hung on it, from the one list guest-island.js also lowers by.
   disposeExtras(rec);
   scene.remove(rec.group);
-  const i = state.pickables.indexOf(rec.mesh);
-  if (i >= 0) state.pickables.splice(i, 1);
 }
 
 function rebuild(rec, spec) {
@@ -5474,6 +5485,11 @@ function applyVillage(next, { animate }) {
   syncBorrelTables(next);
 
   const events = [];
+  // Room in the batch for whoever is new, before they are built: the first village is every
+  // house on the island, and growing the batch as it fills would copy its buffer five times.
+  let arriving = 0;
+  for (const [id, spec] of nextSpecs) if (spec.plot && !state.byId.has(id)) arriving++;
+  homeBatch.reserve(arriving);
   for (const [id, spec] of nextSpecs) {
     if (!spec.plot) continue;
     const rec = state.byId.get(id);
@@ -5863,6 +5879,9 @@ const GUEST_PICK_T = PEOPLE_PICK_RANGE * 1.5;
 
 function pick() {
   ray.setFromCamera(pointer, camera);
+  // The houses are one pickable, the batch, whose raycast skips every house it did not draw
+  // last frame - filtered out, not yet popped in, or past Object Distance - which is what the
+  // `parent.visible` test did for a house of its own. pickedId reads which house was hit.
   const buildings = ray.intersectObjects(state.pickables.filter((m) => m.parent && m.parent.visible), false);
   const b = buildings[0] || null;
 
@@ -5922,7 +5941,7 @@ function pick() {
     }
     if (pickedGuest.f) return `guest:${pickedGuest.g.region.id}:${pickedGuest.f.id}`;
   }
-  return b ? b.object.userData.id : null;
+  return b ? pickedId(b) : null;
 }
 // Guest crowds are hidden while the chronicle is scrubbed back (crowd-view draw), and the
 // same test as the frame loop's `live` says so here.
@@ -7072,7 +7091,11 @@ async function boot() {
     dom: renderer.domElement,
     terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
     pickables: () => state.pickables, bounds: () => state.bounds, ghostPose,
-    overlay: createPlanOverlay({ scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId }),
+    overlay: createPlanOverlay({
+      scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
+      // A ghost's shape, copied out of the batch: the record has no geometry of its own now.
+      shapeOf: (rec) => homeBatch.positionsOf(rec.mesh),
+    }),
     panel: createPlanPanel({
       onTool: (t) => state.plan.setTool(t), onOverview: () => state.plan.frameIsland(), onDone: () => exitPlan(),
       onUndo: () => state.plan.undo(), onRedo: () => state.plan.redo(), onClear: () => state.plan.clear(),

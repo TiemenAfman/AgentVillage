@@ -193,7 +193,7 @@ no `ladder`, starts it at its first scan and keeps every date it had; `emptyLayo
 is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
 `OrthographicCamera` (north up, so a screen rectangle is a world rectangle) and never touches
 `camera`/`controls`, which is what makes leaving free. A hamlet being dragged is drawn as
-ghosts (`plan-overlay.js`: the real meshes' geometry under ghost.js's green/red) while the
+ghosts (`plan-overlay.js`: each building's shape, copied out of the batch, under ghost.js's green/red) while the
 real groups stay put — `reportPlacements` reads their positions after every scan, and a drag
 across the 60 s rescan would have published a village standing in the wrong place. The
 server is the authority: a dry run after every change, the real thing on Apply, and then
@@ -351,10 +351,30 @@ flag and no path list that can spend any of them, and an `inviteCode` is back to
 look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
 `parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
 
-**One material, one draw call per building.** Which texture sheet a face uses is a number
-carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
-mask. Giving a building a material array turns 300 houses into thousands of draw calls.
-`?stats` reports the colour pass only — the shadow pass is not in it.
+**One material, one batch per island** ([Plans/gebouwen-in-een-batch.md](Plans/gebouwen-in-een-batch.md)).
+Which texture sheet a face uses is a number carried on the vertex, not a material of its own,
+and night glow is a per-vertex emissive mask - and every building body on an island is one
+instance in that island's `BatchedMesh` (`web/js/record-batch.js`: `homeBatch` in main.js in
+`scene`, one per guest inside its offset group), so all of them are one draw call a pass. The
+yard signs' frames are instances in the same batch (`createNameplate({ batch })`, two shared
+shapes); their lettered faces are still a mesh each. **The record keeps its scene graph and the
+batch mirrors it:** `rec.mesh` is an empty Object3D stand-in, and in the batch's own
+`onBeforeRender`, once per `render()` (after `updateMatrixWorld`, before the shadow pass), the
+batch copies each stand-in's visibility (every parent up to the batch's parent `visible`, and
+`layers.mask !== 0`) and its matrix. So `applyVisibility`, `popIn`, `leaveAnimation`, the
+Object Distance cut, `keepRegion` and the Batavia's swell keep writing the group or the stand-in
+and never touch the batch - keep it that way rather than telling the batch from each writer.
+A hit's id is `pickedId(hit)` (batchId -> stand-in -> `userData.id`); a ghost's shape is
+`positionsOf(stand)`, a copy, because the batch keeps the only copy of every building (the
+loose geometry is disposed on `add`). r170 quirks it works round: `frustumCulled = false` on the
+batch (its own sphere is computed once and never again), one `setColorAt(white)` (the renderer
+compares a field that does not exist, `object.colorTexture`, and otherwise re-picks the program
+every draw), and `deleteGeometry` frees an id and not its range (`optimize()` compacts before
+the batch grows). Giving a building a material array, or a mesh of its own, takes it out of the
+batch: a call a pass again - on Hoogezand the 806 bodies and 395 sign frames cost ~13 ms of a
+28 ms frame from above.
+`?stats` reports both passes (render-stats.js); without `WEBGL_multi_draw` three draws a batch
+house by house but still skips its per-object work, which is where the time went.
 
 **Four graphics distances, and they are not one number with four names.** View Distance
 is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes the haze at
@@ -445,7 +465,8 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   `popIn()` and a build clear it. The Object Distance cut is `layers.mask = 0` on the record's
   objects instead (kept and restored through `userData.cullMask`), a mask nothing else in
   the project uses; it takes the record out of the colour pass, the shadow pass and the
-  raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
+  raycaster (the body through its stand-in, which the batch then hides), and the frame loop
+  skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
   only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
   is never touched by the cut.
 - **A settler who is not drawn is not an instance** ([Plans/verborgen-inwoners-tellen-niet.md](Plans/verborgen-inwoners-tellen-niet.md)).
@@ -1166,7 +1187,12 @@ frames - an fps number, a soak - use the Chrome DevTools MCP's own Chrome, and b
 to the front (`select_page` with `bringToFront`) first: behind another window every GL call
 blocks on the present, and the island runs at 1 fps with 1.5 s of `?stats` "work" a frame,
 which reads exactly like a regression and is not one (measured: the 61-settler island went from
-1 to 100 fps on that one call).
+1 to 100 fps on that one call). Comparing two versions: run one islander at a time (two local
+seas each walking Hoogezand's crowd made the same page swing between 40 and 67 fps), take the
+second pass after a load (the first is still compiling and collecting), and alternate - the same
+code measured 23 ms and 28 ms an hour apart on this laptop. To see the price of something, hide it
+from the console (`rec.mesh.visible = false` on every record is the batch's ceiling) rather than
+reasoning from call counts.
 
 **First person is the wheel's last notch (or V), and it is a view model, not a body.**
 `state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the
@@ -1565,7 +1591,7 @@ they need no entry in `capabilities/default.json` (only plugin calls do).
 | `scan.mjs` / `serve.mjs` | the two entry points |
 | `lib/` | sources, parsing, the village model, `layout.mjs` (plots, hamlets, roads), `plan.mjs` (the keeper's hand: moving hamlets, zones) + `survey.mjs` (the land register as bits, for the planner's preview), `access.mjs`, `dispatch.mjs` (spawning agents), `sprint.mjs` / `issues.mjs` (the two noticeboards), `mail.mjs` + `imap.mjs` + `smtp.mjs` (the postbox), `usage.mjs` + `statusline.mjs` (the gold pit's reading, and putting the status line into `~/.claude/settings.json`), `ws.mjs` (hand-written, no dependency); on the sea side `guards.mjs` and `residents.mjs` (the volcano's guards, and every islander's Codex settlers housed on it) |
 | `shared/` | terrain, regions (the world/local contract), `lattice.mjs` (the super-grid arithmetic: `blockOf`, `superOf` — the one copy), rng, crops, shapes, `boating.mjs` (settlers taking a boat out), `hull.mjs` (how a hull sits in the water) — Node and browser both |
-| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
+| `web/js/` | `crowd-view.js` (every island's people, ours too, off the wire), `guest-island.js` (a region at a berth), `record-batch.js` (every building body on an island in one BatchedMesh), `boat.js` (`stepBoat` is pure), `main.js` (boot, camera, animation queue), `world.js` (ground, sea, forest, sky), `buildings.js` (every primitive shape), `hamlets.js`, `walk.js`; the inventory is `studio.js` (markup, the two renderers), `inventory.js` (the slot table, DOM-free and tested) and `popover.js` (one floating picker at a time); the settlers are in three files — `settler-walk.js` (a re-export of
 `shared/settlerwalk.mjs`, kept for the workbench pages), `settler-figures.js` (what is
 drawn; every mesh and every sine wave) and `settlers.js`, which nothing simulates out of
 any more — what is still imported from it is the wardrobe and `figureGeometry`; `*-mesh.js` are baked output — never hand-edit |
