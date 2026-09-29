@@ -188,7 +188,9 @@ hier). De telefoon heeft geen eigen eiland, dus daar gaat het om de gasteilanden
 3. *Later:* de gezichten in een atlas, als één transparante batch. Vraagt een verdeling van de
    textuur (395 gezichten van 512x202 passen niet in één 4096²-textuur; op 256 breed wel) en een
    afweging tussen scherpte van dichtbij en geheugen. Nu houden 395 canvas-texturen samen ~217 MB
-   vast (met mipmaps).
+   vast (met mipmaps). Het eenvoudiger alternatief - het gezicht niet tekenen waar het onleesbaar
+   klein is, met een crème vlakje in de batch als wat je van veraf ziet - staat in
+   [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md).
 
    **Gemeten** (29 september, na stap 1 en 2, de 399 gezichten in dezelfde pagina om de beurt aan
    en uit, zeven keer per standpunt, gepaard verschil): van boven **~4,2 ms** per frame (full 20,9 → 15,8

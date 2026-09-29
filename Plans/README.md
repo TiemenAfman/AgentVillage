@@ -31,6 +31,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,
   tijdlijn, popIn, de mist-cut en de planner werken ongewijzigd. Hoogezand van boven: 1.945 / 1.460
   calls → 727 / 258, 28,5 → 15 ms. Open: de beletterde gezichten in een atlas, en de telefoon.
+- 🚧 [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md) — plan, nog niet gebouwd: het
+  beletterde gezicht van een naambordje alleen tekenen waar het groot genoeg is om te lezen (in
+  pixels op het scherm, met een fade), met een crème vlakje in de batch voor van veraf. Van boven
+  ~4 ms (gemeten plafond), zonder atlas, zonder verlies aan scherpte.
 - ✅ [verborgen-inwoners-tellen-niet.md](verborgen-inwoners-tellen-niet.md) — een inwoner voorbij
   NPC Distance, onder een imp of nog niet geplaatst was een instance op y = -999 binnen `count`, en
   de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
