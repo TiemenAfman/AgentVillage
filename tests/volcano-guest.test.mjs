@@ -218,6 +218,7 @@ test('a crowd that runs all evening gives a departed body\'s slot to the next on
     assert.equal(gone.slot, null);
     const next = { id: `guard:${i}`, pos: [0, 0], y: 0, yaw: 0, visible: true };
     assert.equal(view.enrol(next, look, 'adult'), true, `no room on arrival ${i}`);
+    view.draw(new Map([[0, next]]), 0);
     assert.equal(view.figureAt(view.pickables()[0], next.slot), next, 'the slot still names the one who left');
     bodies[i % CAPACITY] = next;
   }

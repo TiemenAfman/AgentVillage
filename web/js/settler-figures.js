@@ -48,9 +48,10 @@ const barrowObj = new THREE.Object3D();
 const frameMat = new THREE.Matrix4();
 const partMat = new THREE.Matrix4();
 const spinMat = new THREE.Matrix4();
-// Out of sight: the same parking spot hide() puts a whole figure in.
-const HIDDEN = new THREE.Matrix4().compose(new THREE.Vector3(0, -999, 0), new THREE.Quaternion(),
-  new THREE.Vector3(0.0001, 0.0001, 0.0001));
+// `n` floats at `i` and at `j` trade places: two instances' matrices or colours.
+function swapFloats(a, i, j, n) {
+  for (let k = 0; k < n; k++) { const t = a[i + k]; a[i + k] = a[j + k]; a[j + k] = t; }
+}
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
 export const CAPACITY = 640;
@@ -421,16 +422,64 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     mesh.instanceColor.needsUpdate = true;
   };
 
-  // Everyone shares one slot number across the articulated meshes that everyone has, which is
-  // also what lets a ray hit on a torso or a head name the person it belongs to.
-  const roster = [];
-  let slots = 0;
-  // Slots given back by `free`, taken again before the count grows. A crowd used to be
-  // enrolled once and thrown away whole, so a slot was never reused; the volcano's crowd
-  // runs for as long as the page does while guards fall and come back and islanders' Codex
-  // settlers arrive and leave, and every one of those that took a fresh slot would fill
-  // CAPACITY in an evening and leave the next arrival undrawn.
-  const spare = [];
+  // A batch: meshes that draw one instance per figure in it, and which figure is in which slot.
+  // Kept packed (Plans/verborgen-inwoners-tellen-niet.md): the figures drawn this frame in
+  // [0, live), the ones enrolled but not drawn in [live, n), nobody past n, and `count` is
+  // `live`. It used to be the highest slot ever taken, with a hidden figure parked at y = -999
+  // under a scale of 0.0001 - and the GPU ran the vertex shader for every one of those, in
+  // the colour pass and the shadow pass: measured on Hoogezand, NPC Distance 1000 or 50 was
+  // 432 triangles apart out of 5.5 million, 2 million of them people nobody could see.
+  // `key` is the field on the figure that holds its slot here.
+  const batch = (meshes, key) => ({ meshes, key, figs: [], live: 0, n: 0 });
+  // Two slots trade places: matrix and colour in every mesh of the batch, and the two figures
+  // their numbers. Only ever for somebody changing sides, so a crowd that stands still costs
+  // nothing and one that walks out of NPC Distance costs a few hundred floats a body.
+  function trade(b, i, j) {
+    if (i === j) return;
+    for (const m of b.meshes) {
+      swapFloats(m.instanceMatrix.array, i * 16, j * 16, 16);
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) { swapFloats(m.instanceColor.array, i * 3, j * 3, 3); m.instanceColor.needsUpdate = true; }
+    }
+    const fi = b.figs[i], fj = b.figs[j];
+    b.figs[i] = fj; b.figs[j] = fi;
+    if (fi) fi[b.key] = j;
+    if (fj) fj[b.key] = i;
+  }
+  // No draw call, and no program set up for one, for a batch nobody in it is drawn from - the
+  // same bargain as the tools: a guest island past NPC Distance costs its meshes nothing.
+  function settle(b) {
+    for (const m of b.meshes) { m.count = b.live; m.visible = b.live > 0; }
+  }
+  // In at the undrawn end: nobody is drawn before draw() has put them somewhere, so a new
+  // arrival never shows an identity matrix, or the last pose of whoever had the slot before.
+  function join(b, f) {
+    const i = b.n++;
+    b.figs[i] = f;
+    f[b.key] = i;
+  }
+  function show(b, f) {
+    const i = f[b.key];
+    if (i < b.live) return;
+    trade(b, i, b.live++);
+    settle(b);
+  }
+  function unshow(b, f) {
+    const i = f[b.key];
+    if (i >= b.live) return;
+    trade(b, i, --b.live);
+    settle(b);
+  }
+  // Out altogether: to the undrawn side, then to the very end, and the end moves in by one. A
+  // slot freed is the next one taken, so the volcano's crowd - guards falling and coming back,
+  // Codex settlers arriving and leaving, for as long as the page is open - never fills up.
+  function leave(b, f) {
+    unshow(b, f);
+    trade(b, f[b.key], --b.n);
+    b.figs.pop();
+    f[b.key] = -1;
+  }
+
   const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
   // No shadow from what lies on the body's own surface: the waistcoat, apron and buttons on
   // the shirt, the neck between head and collar, and the face's eyes, brows, sideburns and
@@ -449,22 +498,29 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
   const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false });
   // Optional clothing and hair remain two population-wide batches, never a mesh
-  // per woman. They share the resident slot and follow its body/head respectively.
+  // per woman. Each keeps its own slots, like the hats, so whoever does not wear one has no
+  // instance in it at all: a skirt or a head of hair parked under everybody else was 166k
+  // triangles a pass on Hoogezand. They follow the body and the head respectively.
   const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
   const womanHair = makeMesh(mergeParts([residentPart('womanHair', null, -HEAD_Y)]));
   skirts.name = 'resident-skirts';
   womanHair.name = 'resident-woman-hair';
   // Untinted: the baked parts carry their own brass, steel and flame in the vertex colours,
   // and setColorAt is never called on these two, so there is no instance colour to multiply.
+  // Counted every frame like the hammer, not given a slot each: a hand that is busy with
+  // something else holds no sword, rather than a sword parked out of sight.
   const swords = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.sword, RESIDENT_GRIP)) : null;
   const torches = armed ? makeMesh(heldGeometry(HELD_ITEM_PARTS.torch,
     [-RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]])) : null;
   if (swords) swords.name = 'resident-swords';
   if (torches) torches.name = 'resident-torches';
-  const body = [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details, skirts, womanHair,
-    ...(armed ? [swords, torches] : [])];
-  torso.userData.bucket = { figs: roster };
-  head.userData.bucket = { figs: roster };
+  // Everyone shares one slot number across the articulated meshes that everyone has, which is
+  // also what lets a ray hit on a torso or a head name the person it belongs to.
+  const body = batch([torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details], 'slot');
+  const skirted = batch([skirts], 'skirtSlot');
+  const haired = batch([womanHair], 'hairSlot');
+  torso.userData.bucket = { figs: body.figs };
+  head.userData.bucket = { figs: body.figs };
 
   // `turn` is a turn about z after the swing about x - the same XYZ order classic-avatar.js
   // poses the player's arms in - which only a drinking arm uses, to bring its fist in.
@@ -498,8 +554,13 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   const hats = new Map();
   for (const h of HAT_SHAPES) {
     if (h.id === 'none') continue;
-    hats.set(h.id, { mesh: makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y))), slots: 0, spare: [] });
+    hats.set(h.id, batch([makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y)))], 'hatSlot'));
   }
+  const batches = [body, skirted, haired, ...hats.values()];
+  // Which of those each figure is in, body first, and its hat's mesh. Kept here rather than on
+  // the figure, which is the caller's: a figure that held its batches held every mesh and every
+  // other figure, and an assertion that failed on one tried to print all of it.
+  const worn = new WeakMap();
 
   const hammerGeo = mergeGeometries([
     paintGeo(new THREE.BoxGeometry(0.022, 0.16, 0.022), 0x8b5e3c),
@@ -613,33 +674,37 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
 
   let time = 0;
 
-  // Dress a figure the walk has already made, and give it a slot in the crowd. Returns
+  // Dress a figure the walk has already made, and give it a slot in the crowd - on the
+  // undrawn side, until the first draw() that is handed it `visible`. Returns
   // false when the crowd is full, which is the caller's cue to take the figure back out
   // again - a body with no slot would be stepped every frame and drawn nowhere.
   function enrol(f, look, kind) {
-    const slot = spare.length ? spare.pop() : slots;
-    if (slot >= CAPACITY) return false;
-    if (slot === slots) slots++;
-    for (const m of body) m.count = slots;
+    if (body.n >= CAPACITY) return false;
+    join(body, f);
+    const slot = f.slot;
     tint(torso, slot, look.tunic);
-    tint(skirts, slot, look.tunic);
-    skirts.setMatrixAt(slot, HIDDEN);
-    womanHair.setMatrixAt(slot, HIDDEN);
     for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
     for (const mesh of [trim, leftLeg, rightLeg]) tint(mesh, slot, look.trim);
     tint(head, slot, look.skin);
     for (const mesh of [leftHand, rightHand, skinCore]) tint(mesh, slot, look.skin);
-    const hatBucket = hats.get(look.hatShape) || null;
-    let hatSlot = -1;
-    if (hatBucket && (hatBucket.spare.length || hatBucket.slots < CAPACITY)) {
-      hatSlot = hatBucket.spare.length ? hatBucket.spare.pop() : hatBucket.slots++;
-      hatBucket.mesh.count = hatBucket.slots;
-      tint(hatBucket.mesh, hatSlot, look.hat);
+    // What only some wear goes in a batch of its own, or nowhere. None of these can be fuller
+    // than the body, which has already said there is room.
+    const wears = [body];
+    f.skirtSlot = f.hairSlot = f.hatSlot = -1;
+    if (look.outfit === 'skirt') {
+      join(skirted, f);
+      tint(skirts, f.skirtSlot, look.tunic);
+      wears.push(skirted);
     }
-    f.slot = slot;
+    if (look.presentation === 'woman') { join(haired, f); wears.push(haired); }
+    const hat = hats.get(look.hatShape) || null;
+    if (hat) {
+      join(hat, f);
+      tint(hat.meshes[0], f.hatSlot, look.hat);
+      wears.push(hat);
+    }
+    worn.set(f, { batches: wears, hat: hat ? hat.meshes[0] : null });
     f.look = look;
-    f.hatBucket = hatBucket;
-    f.hatSlot = hatSlot;
     f.baseScale = kind === 'apprentice' ? 0.62 : 1;
     // The body stretches and thickens; the head rides on top of it at its own size, or
     // a tall settler would be a normal one seen through a lens.
@@ -654,7 +719,6 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     const rng = makeRng(hash32(f.id + ':gait'));
     f.gait = rng.range(10.2, 11.8);
     f.phase = rng.range(0, 6.28);
-    roster[slot] = f;
     return true;
   }
 
@@ -687,30 +751,23 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     put(head, f.look.skin);
   }
 
+  // Out of sight: past `count` in every batch the figure is in, so the GPU does nothing for
+  // it at all. Now, for a caller that will not draw again this frame (crowd-view's crowd
+  // taken off the screen while the chronicle is scrubbed back); draw() does the same for any
+  // figure it is handed with `visible` false, and puts back whoever has it true.
   function hide(f) {
     if (f.slot == null) return;
-    tmpObj.position.set(0, -999, 0);
-    tmpObj.rotation.set(0, 0, 0);
-    tmpObj.scale.setScalar(0.0001);
-    tmpObj.updateMatrix();
-    for (const m of body) { m.setMatrixAt(f.slot, tmpObj.matrix); m.instanceMatrix.needsUpdate = true; }
-    if (f.hatBucket && f.hatSlot >= 0) {
-      f.hatBucket.mesh.setMatrixAt(f.hatSlot, tmpObj.matrix);
-      f.hatBucket.mesh.instanceMatrix.needsUpdate = true;
-    }
+    for (const b of worn.get(f).batches) unshow(b, f);
   }
 
-  // Out of sight for good: hidden, and its slots handed back for the next one enrolled. The
+  // Out of sight for good: out of every batch, its slots taken by the next one enrolled. The
   // figure keeps nothing of them, so a figure freed and then drawn again would draw nowhere -
   // the caller enrols a new one instead (web/js/crowd-view.js retire).
   function free(f) {
     if (f.slot == null) return;
-    hide(f);
-    if (roster[f.slot] === f) roster[f.slot] = null;
-    spare.push(f.slot);
-    if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.spare.push(f.hatSlot);
+    for (const b of worn.get(f).batches) leave(b, f);
+    worn.delete(f);
     f.slot = null;
-    f.hatSlot = -1;
   }
 
   // Everything the eye sees, from where the walk has put everybody. `f.anim` is the whole
@@ -719,9 +776,15 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
-    let hammerCount = 0, pintCount = 0, bundleCount = 0, barrowCount = 0, trayCount = 0;
+    let hammerCount = 0, pintCount = 0, bundleCount = 0, barrowCount = 0, trayCount = 0, swordCount = 0, torchCount = 0;
     for (const f of figures.values()) {
-      if (!f.visible || f.slot == null) continue;
+      if (f.slot == null) continue;
+      // Whether they are drawn is `visible`, read here and nowhere else in this file: whoever
+      // has it false goes past `count`, whoever has it true is brought in front of it. Both
+      // are no-ops for somebody already on that side, which is everybody on most frames.
+      if (!f.visible) { hide(f); continue; }
+      const dress = worn.get(f);
+      for (const b of dress.batches) show(b, f);
       // Turn towards whatever the walk pointed at. `faceAngle` is the one case where an
       // angle comes from outside - a boat knows its own heading and the body in it takes
       // it whole, with no easing, because the hull has already done the turning.
@@ -786,7 +849,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
       torso.setMatrixAt(f.slot, bodyMat);
-      skirts.setMatrixAt(f.slot, f.look.outfit === 'skirt' ? bodyMat : HIDDEN);
+      if (f.skirtSlot >= 0) skirts.setMatrixAt(f.skirtSlot, bodyMat);
       trim.setMatrixAt(f.slot, bodyMat);
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
@@ -857,19 +920,27 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
         // A settler at work puts the sword away for the hammer, the tool or a beer rather
         // than holding both in one fist; the torch stays lit in the other hand unless that
         // one is at work too.
-        if (hammering || work || hauling || pushing || drunk) swords.setMatrixAt(f.slot, HIDDEN);
-        else setPosed(swords, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
-        if ((work && f.anim !== 'fish') || pushing) torches.setMatrixAt(f.slot, HIDDEN);
-        else setPosed(torches, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+        if (!(hammering || work || hauling || pushing || drunk)) setPosed(swords, swordCount++, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+        if (!((work && f.anim !== 'fish') || pushing)) setPosed(torches, torchCount++, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       }
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);
-      womanHair.setMatrixAt(f.slot, f.look.presentation === 'woman' ? headMat : HIDDEN);
-      if (f.hatBucket && f.hatSlot >= 0) f.hatBucket.mesh.setMatrixAt(f.hatSlot, headMat);
+      if (f.hairSlot >= 0) womanHair.setMatrixAt(f.hairSlot, headMat);
+      if (f.hatSlot >= 0) dress.hat.setMatrixAt(f.hatSlot, headMat);
     }
-    for (const m of body) m.instanceMatrix.needsUpdate = true;
-    for (const h of hats.values()) if (h.slots) h.mesh.instanceMatrix.needsUpdate = true;
+    for (const b of batches) if (b.live) for (const m of b.meshes) m.instanceMatrix.needsUpdate = true;
+    // With no island's sphere to hang on (the tests, the rave), three works the one a ray is
+    // tested against out once, from wherever the instances stood then, and keeps it. It used
+    // to be saved by the parked bodies at y = -999, which stretched it over everything.
+    if (!sphere) { torso.boundingSphere = null; head.boundingSphere = null; }
+    if (armed) {
+      for (const [m, n] of [[swords, swordCount], [torches, torchCount]]) {
+        m.count = n;
+        m.visible = n > 0;
+        if (n) m.instanceMatrix.needsUpdate = true;
+      }
+    }
     hammers.count = hammerCount;
     hammers.instanceMatrix.needsUpdate = true;
     pints.count = pintCount;
@@ -896,9 +967,11 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   // the head are offered: a ray that grazes a hat brim carries on into the head behind
   // it, and leaving the other meshes out halves the instances every hover has to test.
   const pickables = () => [torso, head].filter((m) => m.count > 0);
+  // Only a slot under `count` is somebody drawn: past it are the undrawn, whose slots a ray
+  // can never have come back with.
   const figureAt = (mesh, i) => {
     const b = mesh && mesh.userData && mesh.userData.bucket;
-    const f = b && i != null ? b.figs[i] : null;
+    const f = b && i != null && i < mesh.count ? b.figs[i] : null;
     return f && f.visible ? f : null;
   };
 
@@ -907,7 +980,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   // rebuilt on every reseed, and instanced meshes left standing empty per rebuild
   // is a leak that only shows up on the machine somebody has had open all day.
   function dispose() {
-    for (const m of [...body, hammers, pints, hoes, axes, rods, bundles, barrows, wheels, trayBars, ...[...hats.values()].map((h) => h.mesh)]) {
+    for (const m of [...batches.flatMap((b) => b.meshes), swords, torches, hammers, pints, hoes, axes, rods, bundles, barrows, wheels, trayBars]) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();
@@ -917,9 +990,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       // with every guest region.
       m.dispose();
     }
-    roster.length = 0;
-    slots = 0;
-    spare.length = 0;
+    for (const b of batches) { b.figs.length = 0; b.live = 0; b.n = 0; }
   }
 
   return { enrol, hide, free, flinch, strike, drinkBeer, draw, pickables, figureAt, dispose };
