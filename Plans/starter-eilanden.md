@@ -146,8 +146,14 @@ de zee voor zijn neus (screenshot van Martijn, onder een galjoen). Nu de vloer `
 nearvlak van 0,5), tenzij `state.diving` - de vlag van het duiken/onderwater-zwemmen-plan, dat
 de camera juist onder water wil.
 
-**Later:** palmen en struiken zijn nog niet solide (je loopt erdoorheen), en de uitjes van de
-settlers (`lib/boats.mjs`) weten van de eilandjes niets, want de zee rekent ze niet uit; ze varen
+**Palmen zijn solide (2026-09-29):** een ronde blokkade per stam (`islets.blockers()`, via
+`walkableBlockers`), en de stam staat niet op de oorsprong van het model: de gebakken Quaternius-palm
+heeft zijn voet 0,39 opzij, gedraaid met `rot` - `PALM_FOOT` wordt net zo gedraaid en geschaald als
+de mesh, gemeten aan de bark. Bekeken met rode palen op de blokkades en `blockedAt` in de app.
+Struiken zijn niet solide: je strijkt erlangs, en een wandelaar die aan elke struik blijft hangen
+komt op een zandplaat niet meer weg.
+
+**Later:** de uitjes van de settlers (`lib/boats.mjs`) weten van de eilandjes niets, want de zee rekent ze niet uit; ze varen
 alleen rond hun eigen eiland, waar geen eilandje mag liggen.
 
 Hangt niet van de starters af en kan ervoor of erna gebouwd worden. Samen met het logboek

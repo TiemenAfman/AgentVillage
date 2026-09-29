@@ -29,6 +29,13 @@ const GRASS = new THREE.Color(0x7c9a4f);
 // Upper bounds for the instance buffers, so a fleet change never has to make a new mesh:
 // a few dozen islets in range, five palms and six bushes at most on one.
 const MAX_ISLETS = 64;
+// Where flora_palm_a's trunk stands, in the model's own frame, and how thick it is at the
+// foot - both measured off the baked bark (the bake is Quaternius's palm, whose origin is not
+// under its trunk: the foot is 0.39 to one side, and the mesh is turned by `rot` when it is
+// placed, so a blocker at the palm's own position would be a wall in the air beside it).
+// The walker adds its own body on top of the radius.
+const PALM_FOOT = [-0.39, -0.05];
+const PALM_TRUNK = 0.13;
 
 function nearestFirst(list, [x, z]) {
   const d = (i) => Math.abs(i.x - x) + Math.abs(i.z - z);
@@ -207,6 +214,24 @@ export function createIslets({ scene, modest = false, onChange = null }) {
     placeBushes();
   }
 
+  // The palms' trunks as walk mode's round blockers ({ x, z, r }), in scene coordinates. Bushes
+  // are not solid: you brush through one, and a walker stopped by every shrub on a sandbank
+  // would spend the island stuck. Read when walk mode is handed its blockers (`walkableBlockers`
+  // in main.js), and again whenever the set of islets changes.
+  function blockers() {
+    const out = [];
+    for (const islet of islets) {
+      const [ox, oz] = worldToScene([islet.x, islet.z], home);
+      for (const p of islet.palms) {
+        const c = Math.cos(p.rot), s = Math.sin(p.rot);
+        const fx = PALM_FOOT[0] * p.s, fz = PALM_FOOT[1] * p.s;
+        // three's rotation.y: x' = x cos + z sin, z' = -x sin + z cos.
+        out.push({ id: `${islet.id}:palm`, x: ox + p.x + fx * c + fz * s, z: oz + p.z - fx * s + fz * c, r: PALM_TRUNK * p.s });
+      }
+    }
+    return out;
+  }
+
   // What an islet says the sea's depth is at a point in scene coordinates, or null off every
   // islet - what the archipelago answers with between the islands, and for a test to ask.
   // The ground itself where there is any, sinking into OPEN_SEA at ISLET_SPAN radii (`isletBed`).
@@ -240,5 +265,5 @@ export function createIslets({ scene, modest = false, onChange = null }) {
     for (const m of [palmNear, palmFar, bushMesh]) if (m) m.dispose();
   }
 
-  return { apply, update, heightAt, seabed, list: () => islets, dispose, group };
+  return { apply, update, heightAt, seabed, blockers, list: () => islets, dispose, group };
 }

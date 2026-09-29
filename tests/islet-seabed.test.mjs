@@ -156,3 +156,30 @@ test('the camera keeps above the surface over open water, and only there', () =>
   // The swell is a tenth, the near plane half a unit: the margin covers both.
   assert.ok(WATER_CAM_MIN >= 0.09 + 0.3 && WATER_CAM_MIN >= 0.5);
 });
+
+test('every palm is a round blocker on its trunk, which is not on the origin of the model', () => {
+  const { islets } = raised();
+  const palms = islets.list().flatMap((islet, k) => islet.palms.map((p) => ({ islet, k, p })));
+  const blockers = islets.blockers();
+  assert.equal(blockers.length, palms.length, 'a palm without a blocker, or the other way round');
+  const squares = islets.seabed.squares();
+  palms.forEach(({ k, p }, n) => {
+    const b = blockers[n];
+    const [ox, oz] = squares[k].origin;
+    // The foot is 0.39 to the side of the origin at scale 1, turned by rot and scaled by s -
+    // so its distance from where the palm is placed is the same whatever the turn.
+    const off = Math.hypot(b.x - (ox + p.x), b.z - (oz + p.z));
+    assert.ok(Math.abs(off - Math.hypot(0.39, 0.05) * p.s) < 1e-9, `${b.id}: the trunk is ${off.toFixed(3)} from the palm's origin`);
+    assert.ok(b.r > 0 && b.r < 0.3, `${b.id}: a trunk of ${b.r}`);
+    assert.equal(b.id.endsWith(':palm'), true);
+  });
+  // Turned a quarter, the foot that was to the west lies to the south - three's rotation.y.
+  const one = islets.list()[0];
+  const save = one.palms[0].rot;
+  one.palms[0].rot = Math.PI / 2;
+  const q = islets.blockers()[0];
+  const [ox, oz] = squares[0].origin;
+  const p = one.palms[0];
+  assert.ok(Math.abs(q.x - (ox + p.x + -0.05 * p.s)) < 1e-9 && Math.abs(q.z - (oz + p.z + 0.39 * p.s)) < 1e-9, 'the foot is not where a quarter turn puts it');
+  one.palms[0].rot = save;
+});

@@ -1048,7 +1048,10 @@ hook is why feet (`heightUnder`), hulls (`boatGround`: an islet is a shoal to a 
 `ISLET_SHOAL_REACH` 6 and every second vertex, or 59 of them cost a tenth of a page instead of
 2.8%; dense tiles that touch take the finest step, or the coarser leaves a T-junction). The bed is
 a general hook (`seabed`, not islets): anything else that raises the sea floor goes through it.
-Palms and bushes are not solid.
+A palm is solid at its trunk: `islets.blockers()` (round `{ x, z, r }`, into `walkableBlockers`, and
+re-handed to walk mode on `onChange`) - and the trunk is *not* at the model's origin: the baked
+Quaternius palm stands 0.39 to one side, turned by `rot`, so `PALM_FOOT` is rotated and scaled like the
+mesh. Bushes are not solid.
 The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap` in main.js)
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
 line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per

@@ -840,6 +840,8 @@ function walkableBlockers() {
   // And so are the houses on a guest island, which are not in state.byId - see
   // guest-island.js for why they are deliberately kept out of it.
   for (const g of state.guests) out.push(...g.blockers());
+  // A palm on an islet: its trunk, not the crown (web/js/islets.js).
+  if (state.islets) out.push(...state.islets.blockers());
   return out;
 }
 
@@ -6970,6 +6972,7 @@ async function boot() {
     onChange: () => {
       if (state.sea) state.sea.setSeabed(state.islets.seabed);
       if (state.world) state.world.reshapeWater();
+      if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
     },
   });
   state.minimap = createMinimap();
