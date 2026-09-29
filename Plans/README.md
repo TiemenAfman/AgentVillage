@@ -92,14 +92,22 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - ✅ [andere-spelers-zoals-jij.md](andere-spelers-zoals-jij.md) — andere spelers met dezelfde rig
   als jij, in hun eigen uiterlijk en uitrusting (`{t:'look'}`), met liggen, hurken en zitten als
   pose-bits en slaan en drinken als gebeurtenissen. Gebouwd op 25 september 2026.
-- 🚧 [lopen-op-de-boot.md](lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
-  boot (een nieuwe, grotere sloep): je plek ten opzichte van de romp (`state.deck`), een plat
-  dek uit het model, en op de lijn romp en lokale plek samen zoals `encodeRides` het voor
-  settlers al doet, zodat niemand naast de boot zweeft. Fase 0 (de stuurder was voor anderen
-  onzichtbaar) en fase 1 (boten van anderen varen vloeiend, op één tijdlijn met de spelers)
-  gebouwd op 25 september 2026, en het grondwerk voor 2 tot en met 6 (soorten boten, het
-  dekstelsel, crew op de zee, dekposities op de lijn); nog geen nieuwe boot en niets
-  aangezet in walk-mode.
+- ✅ [lopen-op-de-boot.md](DONE/lopen-op-de-boot.md) — tot vijf spelers vrij rondlopen op een varende
+  boot (het piratenschip): je plek ten opzichte van de romp (`state.deck`), een plat dek uit
+  het model, en op de lijn romp en lokale plek samen zoals `encodeRides` het voor settlers al
+  doet, zodat niemand naast de boot zweeft. Aan boord kom je zonder toets: een touwladder
+  aan elke kant, en eraf ga je door over de reling te springen of langs de ladder. Gebouwd
+  op 29 september 2026 (fase 0 en 1 op de 25e).
+- ✅ [karakter-blijft-staan.md](DONE/karakter-blijft-staan.md) — ga je terug naar de lucht, dan blijft
+  je karakter staan met een Zzz boven zijn hoofd (pose-bit `ASLEEP`) in plaats van weg te
+  teleporteren; van boven klik je op de grond of kies je *Walk here* bij een gebouw en hij loopt
+  erheen, en bij het opstarten sta je op het plein. Gebouwd op 28 september 2026; de open zee moet
+  nog geredeployd voor de Zzz bij anderen.
+- ✅ [een-thuis-voor-het-eiland.md](DONE/een-thuis-voor-het-eiland.md): release, debug-build,
+  hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
+  desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande
+  eiland verhuist bij de eerste start vanzelf, gekopieerd vanaf het eiland waar de
+  session-hook naartoe wijst. Gebouwd op 24 september 2026.
 - ✅ [een-thuis-voor-het-eiland.md](een-thuis-voor-het-eiland.md): release, debug-build,
   hook en scanner delen één eiland in `~/.promptholm`, en niet in AppData, omdat Claude
   desktop daar een eigen kopie schrijft. Worktrees houden hun eigen data. Het bestaande

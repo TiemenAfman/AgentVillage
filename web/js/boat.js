@@ -17,11 +17,14 @@
 // Worth writing down once: getting it backwards steers like a mirror and reads as a bug
 // in the keyboard rather than in the sign.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
-import { CRAFTS } from 'shared/crafts.mjs';
-import { buildBoatGeometry, mesh } from './buildings.js';
+import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
+import { createSurface } from 'shared/hullwalk.mjs';
+import { SHIPWALK } from './shipwalk-map.js';
+import { buildBoatGeometry, mesh, box } from './buildings.js';
 import * as models from './models.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
@@ -39,6 +42,37 @@ export const BOAT_TURN_BITE = 0.25; // a hard turn spends way: v *= 1 - BITE*|tu
 export const BOAT_TURBO = 1.6;
 // The baked hull's one part. One part, so one draw call.
 const HULL = 'benchy hull';
+
+// A hull is a reference plane, and whoever stands on it stands on *that*: the transform the hull
+// is drawn with this frame, swell and all (pitch and roll about the waterline, not only a rise),
+// applied to where they are in the hull's own frame. Anything less puts them beside the planks:
+// a hull pitching 0.04 over a deck 1.2 above its pivot moves that deck 0.05 sideways, which the
+// walker's own `toWorld` knows nothing of, and on a settler half a unit tall that is feet
+// sliding over the boards. The caller poses the hull first (place and bob at this frame's clock)
+// so that what it reads here is the very matrix that is drawn.
+//
+// `hullPointOf` is a point of the hull's frame in the world - `y` above DECK_Y like everything in
+// a craft; `hullTiltOf` is the plane's own tilt, the hull's rotation less her heading, so that a
+// body's own yaw can be turned about the world's vertical first and tilted with the plane after.
+const PLANE_Y = new THREE.Vector3(0, 1, 0);
+const planeYaw = new THREE.Quaternion();
+export function hullPointOf(b, lx, y, lz, out = new THREE.Vector3()) {
+  const o = b.craft && b.craft.object;
+  if (!o) {
+    // No mesh to read (a test's stand-in): the flat frame, which is what there was before.
+    const s = Math.sin(b.yaw), c = Math.cos(b.yaw);
+    return out.set(b.x + lx * c + lz * s, DECK_Y + y, b.z - lx * s + lz * c);
+  }
+  o.updateMatrixWorld();
+  return o.localToWorld(out.set(lx, DECK_Y + y, lz));
+}
+export function hullTiltOf(b, out = new THREE.Quaternion()) {
+  const o = b.craft && b.craft.object;
+  if (!o) return out.identity();
+  o.updateMatrixWorld();
+  o.getWorldQuaternion(out);
+  return out.multiply(planeYaw.setFromAxisAngle(PLANE_Y, -b.yaw));
+}
 
 // How deep she sits, and where a body stands once she is sitting there. In shared/hull.mjs
 // because the sea seats a rider without ever drawing one; re-exported here so the call
@@ -303,19 +337,64 @@ const BOB_ROLL = 0.03;
 // (7 and 12.55 of 58.56 up, the bake's SHIP_TALL). Every island's first boat is one
 // (shared/crafts.mjs kindOf), laid in deep water off its berth (main.js shipBerth).
 const SHIP = 'pirateship hull';
-const SHIP_TALL = 12.29;    // the bake's height, keel to masthead (build-pirateship.py prints it)
-const SHIP_DRAUGHT = SHIP_TALL * 7 / 58.56;
+// SHIP_TALL and SHIP_DRAUGHT are shared/crafts.mjs's, because the walk map is cut from the hull where
+// she floats and has to agree.
 // The wheel, on the quarterdeck two units abaft the middle: measured by the bake's own
 // downward rays (build-pirateship.py prints the deck heights, 1.631 above the keel there).
 // In the hull's frame, +z forward. The pilot stands here rather than on the middle of the
 // hull, which on a ship this size is the foot of the main mast.
-const SHIP_HELM = { x: 0, y: 3.262 - SHIP_DRAUGHT, z: -3.2 };
+// The ship's walking surface, cut from her model (scripts/build-shipwalk.mjs): what a body on her deck
+// stands on and walks into. One for every ship, since every ship is the same hull.
+export const SHIP_SURFACE = createSurface(SHIPWALK);
+// The wheel stands on a round plinth of three tiers that the model has 0.2 over the quarterdeck, and the
+// pilot stands on top of it, not in it: asked of the model, since it is the model that has the plinth.
+const HELM_AT = [0, -3.2];
+const SHIP_HELM = { x: HELM_AT[0], y: (SHIP_SURFACE.floorIn(HELM_AT[0], HELM_AT[1], 1.9) ?? 1.738) + DECK_Y, z: HELM_AT[1] };
+
+// The rope ladders (craft.ladders, shared/crafts.mjs) as boxes, from the same numbers the
+// climb follows: two ropes from the bulwark to under the water, rungs across them, and the
+// ropes taken in over the rail to where they are made fast. Made of boxes rather than baked:
+// there is nothing to model in a rope, and drawn from the craft's own numbers a ladder cannot
+// drift from the one you climb. Merged into the hull's geometry, so a ship with two of them is
+// still one draw call. `y` is above DECK_Y, like everything in the craft.
+const ROPE = 0x9c7f52, RUNG = 0x6e4d2b;
+const ROPE_W = 0.05, RUNG_H = 0.045, RUNG_STEP = 0.2;
+function ladderBoxes(spec) {
+  const out = [];
+  for (const l of spec.ladders || []) {
+    const s = l.x < 0 ? -1 : 1;
+    const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
+    const inward = Math.abs(l.x) - 0.6;
+    for (const side of [-1, 1]) {
+      const z = l.z + side * l.hw;
+      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { x: l.x, y: foot, z }));
+      // Over the bulwark and down its inside face a little, where the ropes are belayed.
+      out.push(box(Math.abs(l.x) - inward, ROPE_W, ROPE_W, ROPE, { x: s * (inward + Math.abs(l.x)) / 2, y: top, z }));
+    }
+    for (let y = foot + 0.15; y < top - 0.1; y += RUNG_STEP) {
+      out.push(box(ROPE_W + 0.02, RUNG_H, 2 * l.hw + ROPE_W, RUNG, { x: l.x, y, z: l.z }));
+    }
+  }
+  return out;
+}
+
+// The hull with its ladders hung on it. Both are the same attribute layout (position, colour,
+// emissive - no sheet, no normals), which is what lets them weld into one geometry.
+function withLadders(hull, spec) {
+  const boxes = ladderBoxes(spec);
+  if (!boxes.length) return hull;
+  const merged = mergeGeometries([hull, ...boxes], false);
+  hull.dispose();
+  for (const b of boxes) b.dispose();
+  return merged;
+}
+
 export function createBoat({ scene, material, kind = 'benchy' }) {
   const ship = kind === 'ship' && models.has(SHIP);
   // The Benchy, if it has been baked; the drawn hull otherwise. The same `models.has` guard
   // barrel() in props.js uses, and for the same reason: a set that is not there yet should
   // leave the island drawing something rather than throwing on the boot path.
-  const geometry = ship ? mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }) : models.has(HULL)
+  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon) : models.has(HULL)
     ? mesh(HULL, 0xffffff, { y: -DRAUGHT })
     : buildBoatGeometry();
   const object = new THREE.Mesh(geometry, material);
@@ -329,6 +408,9 @@ export function createBoat({ scene, material, kind = 'benchy' }) {
     // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side.
     helm: ship ? SHIP_HELM : null,
     spec: ship ? CRAFTS.galleon : CRAFTS.benchy,
+    // What a body on her deck walks on and into (shared/hullwalk.mjs); the Benchy has none, since her
+    // whole deck is her helm.
+    walk: ship ? SHIP_SURFACE : null,
     camScale: ship ? 10 : 2.2,
     beam: ship ? 3.5 : 0.35,
 

@@ -1,4 +1,4 @@
-// Standing on something that moves (Plans/lopen-op-de-boot.md): a position kept in a hull's
+// Standing on something that moves (Plans/DONE/lopen-op-de-boot.md): a position kept in a hull's
 // own frame, and the arithmetic between that frame and the world.
 //
 // Somebody on a deck is somewhere *on the boat*, not somewhere in the sea: every frame the
@@ -59,10 +59,16 @@ export function hullVelocity(frame, v) {
 const inside = (r, x, z) => Math.abs(x - r.x) <= r.hx && Math.abs(z - r.z) <= r.hz;
 
 // The height of the planking at a point of the deck, above DECK_Y, or null where there is no
-// deck: the highest stretch that covers it, so a raised poop deck over the waist is stood on.
+// deck: the highest stretch that covers it, so a raised poop deck over the waist is stood on. A
+// stretch with a `slope` is a ramp - a staircase, as far as feet are concerned - and is `y` at
+// its centre and that much higher for every unit of z beyond it.
 export function deckAt(craft, lx, lz) {
   let y = null;
-  for (const r of craft.deck) if (inside(r, lx, lz) && (y === null || (r.y || 0) > y)) y = r.y || 0;
+  for (const r of craft.deck) {
+    if (!inside(r, lx, lz)) continue;
+    const h = (r.y || 0) + (r.slope ? r.slope * (lz - r.z) : 0);
+    if (y === null || h > y) y = h;
+  }
   return y;
 }
 
@@ -81,9 +87,13 @@ export function clampToDeck(craft, lx, lz, out = [0, 0]) {
   return out;
 }
 
-// Whether a body of radius `r` standing at a point is inside a rail, a mast, a cabin wall.
-function railed(craft, lx, lz, r) {
+// Whether a body of radius `r` standing at a point, its feet at height `y`, is inside a rail, a
+// mast, a cabin wall. A rail with a `top` is a bulwark and stops nobody whose feet are already
+// above it - a jump over the side; one without is a mast, whatever the height. Exported for the
+// test that asks which points of a deck a body can be at (tests/deck-bake.test.mjs).
+export function railed(craft, lx, lz, r, y) {
   for (const w of craft.rails) {
+    if (w.top !== undefined && y >= w.top) continue;
     if (Math.abs(lx - w.x) < w.hx + r && Math.abs(lz - w.z) < w.hz + r) return true;
   }
   return false;
@@ -107,8 +117,8 @@ export function stepDeck(s, input, craft, dt, move) {
   const nx = s.x + input.x * step, nz = s.z + input.z * step;
   // Each axis on its own, so a body pressed against a rail slides along it rather than
   // stopping dead - walk.js's own rule for walls.
-  if (!railed(craft, nx, s.z, radius)) s.x = nx;
-  if (!railed(craft, s.x, nz, radius)) s.z = nz;
+  if (!railed(craft, nx, s.z, radius, s.y)) s.x = nx;
+  if (!railed(craft, s.x, nz, radius, s.y)) s.z = nz;
 
   if (input.jump && s.grounded) { s.vy = jumpV; s.grounded = false; }
   const floor = deckAt(craft, s.x, s.z);
@@ -123,6 +133,107 @@ export function stepDeck(s, input, craft, dt, move) {
   if (floor === null) { s.off = true; return s; }
   if (s.y <= floor && s.vy <= 0) { s.y = floor; s.vy = 0; s.grounded = true; }
   return s;
+}
+
+// ---- ladders ------------------------------------------------------------------------
+//
+// The way aboard from the water or a quay is a rope ladder over the side, and it has no key:
+// you walk into its foot and you climb it, walk out onto its head from the deck and you climb
+// down (craft.ladders, shared/crafts.mjs). What is here is the geometry of that, with no clock:
+// where a body has to be and which way it has to push to start one, and the path it then
+// follows in the hull's frame - a path and not a physics, because a body on a rope ladder is
+// carried along it at one speed and a hull that pitches under it cannot make it fall.
+
+// How far outside the ropes' plumb line a climber's feet are: on the rungs, not in the hull.
+const CLIMB_OUT = 0.16;
+// How far outside the ropes a body may stand and still be at the foot of the ladder.
+const FOOT_REACH = 0.45;
+// How far along the hull, beyond the ropes, a body may stand and still be at the ladder.
+const LADDER_SLACK = 0.2;
+// How high a body's feet may be to reach for the foot of a ladder: in the water, or on a quay
+// a hull lies against (a plank is a fifth above the waterline), not stood on the deck above.
+const FOOT_HEIGHT = 0.6;
+// How squarely a body has to push at the ladder to take it. At the foot that is "into the
+// hull"; on the deck it is "out over the side", and the harder of the two, because a deck
+// walked along the rail with a little outward push in it must not carry you over the side.
+const PUSH_UP = 0.35;
+const PUSH_DOWN = 0.8;
+
+const sideOf = (ladder) => (ladder.x < 0 ? -1 : 1);
+const dist3 = (a, b) => {
+  const x = b.x - a.x, y = b.y - a.y, z = b.z - a.z;
+  return Math.sqrt(x * x + y * y + z * z);
+};
+
+// The way up a ladder, in the hull's frame: from a body treading water beside its foot (`y0`,
+// the height of its feet then), straight up the outside of the hull to the bulwark, over it and
+// down onto the deck. Climbed backwards it is the way down. Points of { x, z, y }, y on the same
+// scale as a deck's, above DECK_Y.
+export function ladderPath(craft, ladder, y0) {
+  const s = sideOf(ladder);
+  const out = s * (Math.abs(ladder.x) + CLIMB_OUT);
+  const [lx, lz] = ladder.land;
+  const floor = deckAt(craft, lx, lz);
+  return [
+    { x: out, z: ladder.z, y: y0 },
+    { x: out, z: ladder.z, y: ladder.top },
+    // Over the bulwark: a hair above its top, half way in.
+    { x: s * (Math.abs(ladder.x) - 0.42), z: ladder.z, y: ladder.top + 0.06 },
+    { x: lx, z: lz, y: floor === null ? ladder.top : floor },
+  ];
+}
+
+// How long a path is, and where a body `d` along it is (clamped to its ends).
+export function pathLength(path) {
+  let n = 0;
+  for (let i = 1; i < path.length; i++) {
+    n += dist3(path[i - 1], path[i]);
+  }
+  return n;
+}
+export function pathAt(path, d, out = { x: 0, z: 0, y: 0 }) {
+  let left = Math.max(0, d);
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    const len = dist3(a, b);
+    if (left <= len || i === path.length - 1) {
+      const k = len > 0 ? Math.min(1, left / len) : 1;
+      out.x = a.x + (b.x - a.x) * k;
+      out.z = a.z + (b.z - a.z) * k;
+      out.y = a.y + (b.y - a.y) * k;
+      return out;
+    }
+    left -= len;
+  }
+  return out;
+}
+
+// The ladder a body in the water (or on a quay) is at the foot of and pushing into, or null.
+// `lx`, `lz` is where it is in the hull's frame, `ly` its feet's height there, and `dx` how hard
+// it is pushing along the hull's x (+ to starboard), in the frame too, from an input no longer
+// than 1 (dirToLocal). Only that one component matters: the ladder is on the side of the hull.
+export function ladderUp(craft, lx, lz, ly, dx) {
+  if (!craft.ladders || ly > FOOT_HEIGHT) return null;
+  for (const l of craft.ladders) {
+    const s = sideOf(l);
+    const beyond = s * lx - Math.abs(l.x);
+    if (beyond < -LADDER_SLACK || beyond > FOOT_REACH) continue;
+    if (Math.abs(lz - l.z) > l.hw + LADDER_SLACK) continue;
+    if (-s * dx >= PUSH_UP) return l;
+  }
+  return null;
+}
+
+// The ladder a body standing on the deck is at the head of and pushing out over, or null.
+export function ladderDown(craft, lx, lz, dx) {
+  if (!craft.ladders) return null;
+  for (const l of craft.ladders) {
+    const s = sideOf(l);
+    if (s * lx < Math.abs(l.land[0]) - LADDER_SLACK) continue;
+    if (Math.abs(lz - l.z) > l.hw + LADDER_SLACK) continue;
+    if (s * dx >= PUSH_DOWN) return l;
+  }
+  return null;
 }
 
 // ---- getting on and off -------------------------------------------------------------

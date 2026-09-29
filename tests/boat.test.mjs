@@ -26,7 +26,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // the moment it loads. The same stub tests/paths.test.mjs uses, for the same reason.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const {
-  stepBoat, createBoat,
+  stepBoat, createBoat, hullPointOf, hullTiltOf,
   BOAT_TOP, BOAT_REVERSE, BOAT_TURN, BOAT_TURN_MIN, BOAT_TURBO, BOW, DECK_Y,
 } = await import('../web/js/boat.js');
 delete globalThis.document;
@@ -229,6 +229,34 @@ test('rubbish from the tiller is hands off, not a NaN in the hull', () => {
 });
 
 // ---- the mesh -----------------------------------------------------------------------
+
+test('a hull is a reference plane: a point of her frame is read off the transform she is drawn with', () => {
+  // A stand-in hull, pitched and rolled about her waterline the way bob() does, and turned. What
+  // is stood on her must move with the deck sideways as well as up, or a settler's feet slide.
+  const yaw = 0.7;
+  const object = new THREE.Object3D();
+  object.position.set(40, 0.02, -12);
+  object.rotation.set(0.04, yaw, -0.03);
+  const b = { x: 40, z: -12, yaw, craft: { object } };
+  const at = hullPointOf(b, 1.35, 1.108, 1.85, new THREE.Vector3());
+  const flat = new THREE.Vector3(
+    40 + 1.35 * Math.cos(yaw) + 1.85 * Math.sin(yaw), DECK_Y + 1.108, -12 - 1.35 * Math.sin(yaw) + 1.85 * Math.cos(yaw));
+  // The deck is 1.16 over the pivot: the tilt moves it 0.04 and more sideways, which the flat frame
+  // (toWorld) knows nothing of and which was the slide.
+  assert.ok(Math.hypot(at.x - flat.x, at.z - flat.z) > 0.03, `the plane moved the point ${Math.hypot(at.x - flat.x, at.z - flat.z).toFixed(3)} sideways`);
+  const direct = new THREE.Vector3(1.35, DECK_Y + 1.108, 1.85).applyMatrix4(object.matrixWorld);
+  assert.ok(at.distanceTo(direct) < 1e-9, 'the point is the object matrix applied to the local point');
+  // The plane's tilt is her rotation less her heading: turned about the vertical first, tilted
+  // with her after, it is her own orientation again.
+  const tilt = hullTiltOf(b, new THREE.Quaternion());
+  const heading = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  const again = tilt.clone().multiply(heading);
+  assert.ok(again.angleTo(object.quaternion) < 1e-6, 'tilt, then heading, is the hull as drawn');
+  assert.ok(tilt.angleTo(new THREE.Quaternion()) < 0.06, 'and the tilt of a swell is a couple of degrees');
+  // A hull with no mesh to read is the flat frame, which is what there was before.
+  const bare = hullPointOf({ x: 5, z: 6, yaw: 0, craft: null }, 1, 0.5, 2, new THREE.Vector3());
+  assert.deepEqual([bare.x, bare.y, bare.z], [6, DECK_Y + 0.5, 8]);
+});
 
 test('the rider stands on the baked cabin floor with room below its roof', () => {
   const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
