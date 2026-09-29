@@ -15,7 +15,7 @@ import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 import { bedGeometry } from './crops.js';
-import { propGeometry, propFootprint, propReach } from './props.js';
+import { propGeometry, propFootprint, propReach, propLift } from './props.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
@@ -518,7 +518,7 @@ line(['sailor', 'plaque'], (what, x, z) => {
 // The bridge and the dock are left out: both are drawn to stand over water and their decks
 // sit below the grass, so on a flat field they are shapes half buried. The bridge has a row
 // of its own further down over a valley, and the dock is what the Quay row is made of.
-const DRY = (k) => k !== 'bridge' && k !== 'dock';
+const DRY = (k) => k !== 'bridge' && k !== 'archbridge' && k !== 'dock';
 for (let i = 0; i < KINDS.length; i += 7) {
   const slice = KINDS.slice(i, i + 7).filter(DRY);
   line(slice, (kind, x, z) => {
@@ -774,6 +774,35 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   });
   tag(HEADING_X + PITCH * 1.1, z, 'over a real valley', 'cells derived, not hand-listed');
   row += 2;
+}
+
+// The arch bridge, over a channel wide enough to sail, with the Benchy under its crown: the
+// one thing this row is for is seeing that she clears it, so she is put there rather than
+// described. The channel runs along x and the boat heads down it; the bridge crosses on z.
+{
+  // Half a row further on than usual, so its channel does not overlap the valleys above.
+  const z = (row + 0.7) * ROW;
+  heading('Arch bridge', z);
+  // The field is one flat sheet at FIELD_Y, and a sunken valley would be drawn under it -
+  // so the channel is a strip of water laid on the field, the way the quay row lays its sea,
+  // and the banks are the field at sea level: the lowest the bridge is ever lifted.
+  const t = { worldHeight: () => 0 };
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(26, 5.6).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x4d95b0, roughness: 0.3 }));
+  water.position.set(0, FIELD_Y + 0.004, z);
+  water.receiveShadow = true;
+  scene.add(water);
+  const spec = { kind: 'archbridge', x: 0, z: 0, rot: 0, length: 10 };
+  const m = new THREE.Mesh(propGeometry(spec), material);
+  m.position.set(0, propLift(spec, t) + FIELD_Y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  scene.add(m);
+  const benchy = createBoat({ scene, material, kind: 'benchy' });
+  benchy.place(0, z, Math.PI / 2);
+  benchy.object.position.y = FIELD_Y;
+  tag(0, z + 5.6, 'Arch bridge', 'the Benchy under the crown');
+  row += 3;
 }
 
 // ---- the quay ------------------------------------------------------------------

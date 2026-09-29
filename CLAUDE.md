@@ -162,6 +162,23 @@ for the smallest one that does the job. [docs/branches.md](docs/branches.md) lis
 assert after a layout change, and the trap: **stop the server before measuring**
 (tray → Stop, or `taskkill /f /im promptholm-island.exe`), or its own rescan interleaves with yours and every plot looks moved.
 
+**A tent may leave; what the village earned never does** ([Plans/tenten-vertrekken.md](Plans/tenten-vertrekken.md)).
+A resident drawn as a tent (`tier === 'tent'`: fewer than three human turns, not a harbour
+house, not a hotel), not running, not a founder, not rehomed and quiet for `tentGraceMs` (a
+week) packs up in `buildVillage`: house and sheds into `dropped`, front path lifted in
+`scan.mjs` like a banishment's, session id in `model.departed` (village.json `departed`, which
+the town hall's register reads to offer **Invite**). So `stats.settlers` can go *down*, and
+nothing earned may be gated on it: the ladder counts `stats.reached`, the most there have ever
+been at once, kept in `layout.ladder = { since, settlers, apprentices }` (written back by
+scan.mjs, moved only by a new most-ever). **`reachedOf(model)` in lib/village.mjs is the one
+reading** - milestones, furniture, `yardStage`, `earnedBoats` and every gate in `placeAll`
+(fairway, polders, square, bridge) take it; only the header count and `nextMilestone`'s
+`remaining` measure from who lives here now, which is what makes the next rung take longer.
+`model.arrivals` is now "the first moment n lived here at once" (`firstsOf`), with a departure
+dated `lastAt + tentGraceMs` but never before `ladder.since`: a layout from before the rule has
+no `ladder`, starts it at its first scan and keeps every date it had; `emptyLayout` carries
+`{ since: 0 }` because a new town has no such past; `resetForNewTerrain` keeps it.
+
 **The planner is a third mode, and nothing real moves in it before Apply.** `state.mode`
 is `'orbit' | 'walk' | 'plan'`; `web/js/plan-mode.js` renders the same scene through its own
 `OrthographicCamera` (north up, so a screen rectangle is a world rectangle) and never touches
@@ -328,6 +345,99 @@ look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its
 carried on the vertex, not a material of its own, and night glow is a per-vertex emissive
 mask. Giving a building a material array turns 300 houses into thousands of draw calls.
 `?stats` reports the colour pass only — the shadow pass is not in it.
+
+**Four graphics distances, and they are not one number with four names.** View Distance
+is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes the haze at
+`FOG_CAP` = 0.95 of it, and never tied to the world's size; the sky dome is drawn *on* the
+far plane, `p.xyww` in world.js, so a near far plane never shows the black clear colour, and
+`world.setFar` keeps the fog-free sun and moon inside it); Object Distance is how far a
+house, prop or boat is still drawn - and the haze closes no further out than it; NPC
+Distance is how far a *person* is still drawn; Shadow Distance is the ceiling on how wide
+the sun's shadow box may grow (`setShadowDistance` in world.js - not `shadow.camera.far`,
+which `followShadow` rewrites on every zoom). The sliders are in Settings → Graphics, per
+browser (`web/js/graphics-settings.js`), and only the ones somebody moved are stored
+(`saveGraphic`); the rest follow the machine's tier - `full` (1250/2000/1000/380: a far plane
+of 1400, the old look), `modest` (main.js's `modest`: integrated graphics or `?modest`) and
+`phone` (the app), with "This machine's defaults" to forget every choice. `state.graphics` is
+written from exactly one place, `onGraphicsSetting` - which has to be on **createUI**'s
+handlers; it was handed to `createNet` once and every slider moved its label and nothing else
+(`tests/graphics-settings.test.mjs` reads the source for it). The plan is
+`Plans/graphics-afstanden.md`. Before touching any of them:
+
+- **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js
+  (`fogCeilingOf` in fade.js) caps the haze at the nearer of the far plane and Object
+  Distance, and a record is taken out of the render list (`keepRecord` in
+  `web/js/record-cull.js`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
+  is cut is always already the colour of the fog, and on the way in it thickens out of it.
+  The sky dome's band along the horizon *is* the fog colour (`uFog`, written in
+  `sky.onBeforeRender` in the *output* colour space - three hands every material its fog that
+  way, after `colorspace_fragment`, and the dome writes its colours as they are; given the
+  linear value it showed 171,206,243 against the fogged sea's 214,232,249, a hard line), so a
+  fully fogged mast against the sky matches it too. Two things are
+  never masked: lights (turned down to 0 instead - the light count is in every lit program's
+  key, and a masked campfire recompiled every material on screen) and records with a
+  `fog: false` part (a lighthouse beam, a campfire flame: landmarks, never cut).
+  A whole guest island whose nearest edge is past the fog ceiling plus the pad is masked the
+  same way (`keepRegion`, key `'far'`: ground, wood, fields, props, houses; not while anything
+  on it is a landmark), and its `update` skipped. Cuts are kept per object in `userData.cut`
+  with the list of keys holding it, so a record cut and its island cut undo in any order.
+  The cut is taken in `cullRecords()`, right before the render, once every branch of the
+  frame has put the camera where it is drawn from. Anything `fog: false` that a fogged house
+  could hide breaks the rule when the house goes: the fireflies were the one measured case,
+  and now fade their alpha with the fog.
+  From above, Object Distance is floored at the orbit target's distance × 1.5 + 32
+  (`objectReachOf` in fade.js, `objectReach()` in main.js - every reader goes through it), so
+  zooming out never fogs away the town being looked at; on foot it is the setting. Since that
+  moves the ceiling with the zoom, the crowd's dither is decided against `widestFogCeiling()`
+  (the floor at the end of the leash), and the cut is never tighter than `fogAt`, the haze
+  actually standing (set before `controls.update`).
+  That is what makes an older machine playable without the island looking cut short: the
+  `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
+  people are past the haze and not drawn at all.
+- **The fog is by distance, not depth** (`web/js/radial-fog.js` patches three's `fog_vertex`
+  chunk once, before anything compiles; every shader that fogs, the hand-written water, lava
+  and weather ones too, goes through it). three's own fog was `-mvPosition.z`, and at the
+  corner of the frame a thing is only ~0.76 as deep as it is far, so "cut in full fog" was true
+  in the middle of the screen and false at its corners. The far plane still cuts on depth,
+  and distance is never less than depth, so the far-plane cut is in full fog with more margin.
+- **The dither is for the people.** `web/js/fade.js` (a screen-hash `discard` on
+  `length(mvPosition.xyz)`, spliced into `createBuildingMaterial`, so it stays in the opaque
+  pass) is compiled into `crowdMat` only while `fadeNeeded(npcDistance, fogCeiling())` says a
+  cut could be seen; NPC Distance can lie well inside the haze, and there a person dithers out
+  over the last fifth before `beyond` in crowd-view.js (`NPC_PAD`) hands them back. The
+  building material is never asked: its range *is* the fog ceiling. Decided in
+  `applyObjectDistances` (sliders, the planner) against the ceiling, never the fog of the
+  moment, and never per frame; `customProgramCacheKey` carries the `-fade`. The crowd's
+  shadows fade with them through the material's depth twin (`mat.userData.fadeDepth`, the same
+  band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed to every
+  crowd mesh where it is made (`createFigures`). An imp is not given to a guard in the band
+  (`inBand`, only while the dither is on), since its skinned material knows nothing of it.
+- **The water patch is tiled per island** (`waterPatchPlan` in world.js, `tests/water-patch.test.mjs`):
+  one vertex per unit only within `WATER_REACH` of an island's grid, every `WATER_FADE_STEP`
+  in the fade into the ocean, one quad per row of open sea - the same outline and fade as the
+  old single plane over the archipelago's bounding box, which was 2.5M of 2.75M triangles on
+  a full page. Swell (`aWave`) goes to zero before the dense/coarse join so the two meet flat.
+  The water shader fogs by `distance(vWorld, cameraPosition)` per pixel: a radial fog
+  interpolated across the ocean disc's huge triangles over-fogged it.
+  And a small dense patch sails with you (`nearWaterPlan`, `setWaterFocus` from main.js each
+  frame: the walker or boat on foot, the orbit target from above), 5 x 5 lattice cells made
+  only of the cells the plan draws coarse, whose coarse fragments inside its square are
+  discarded (`uNear`, `aCoarse`) - so the swell is under your boat everywhere and nothing is
+  drawn twice. Past the outline its rim slopes down `OCEAN_DROP` to the ocean disc: before
+  it, a boat far from any island floated 0.2 over that disc.
+- **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
+  islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
+  pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
+- **Fog-free lights at the horizon fade before the far plane** (`horizon.js update`, reach
+  0.9 of `camera.far`), and the sun and moon hang inside it (`world.setFar`).
+- **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is
+  state: `applyVisibility()` owns it (filtered, alive in the chronicle, arrived),
+  `popIn()` and a build clear it. The Object Distance cut is `layers.mask = 0` on the record's
+  objects instead (kept and restored through `userData.cullMask`), a mask nothing else in
+  the project uses; it takes the record out of the colour pass, the shadow pass and the
+  raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
+  only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
+  is never touched by the cut.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,

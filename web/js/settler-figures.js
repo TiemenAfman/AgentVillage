@@ -386,8 +386,18 @@ function hipLift(lean, look) {
 // dark through the same per-vertex night mask the player's does, which is what reads from
 // across the water anyway.
 export function createFigures(scene, material, { armed = false } = {}) {
+  // Every mesh the crowd is drawn with. The one place they are made, so the one place each is
+  // handed the material's depth twin (buildings.js `fadeDepth`, when the material has one):
+  // with NPC Distance inside the haze a settler dithers out, and without the twin their
+  // shadow stayed whole on the grass. Given at birth rather than found by a sweep over the
+  // scene, which cost every frame budget a walk once a second.
+  const instanced = (geo, n) => {
+    const m = new THREE.InstancedMesh(geo, material, n);
+    if (material.userData && material.userData.fadeDepth) m.customDepthMaterial = material.userData.fadeDepth;
+    return m;
+  };
   function makeMesh(geo) {
-    const m = new THREE.InstancedMesh(geo, material, CAPACITY);
+    const m = instanced(geo, CAPACITY);
     m.castShadow = true;
     m.count = 0;
     m.frustumCulled = false;
@@ -484,7 +494,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   hammerGeo.rotateX(Math.PI / 2);
   hammerGeo.translate(...RESIDENT_GRIP);
   hammerGeo.computeVertexNormals();
-  const hammers = new THREE.InstancedMesh(hammerGeo, material, CAPACITY);
+  const hammers = instanced(hammerGeo, CAPACITY);
   hammers.count = 0;
   hammers.frustumCulled = false;
   hammers.name = 'resident-hammers';
@@ -499,7 +509,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
     g.rotateX(tilt);
     g.translate(...RESIDENT_GRIP);
     g.computeVertexNormals();
-    const m = new THREE.InstancedMesh(g, material, CAPACITY);
+    const m = instanced(g, CAPACITY);
     m.count = 0;
     m.frustumCulled = false;
     m.visible = false;
@@ -539,7 +549,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   bundleGeo.rotateZ(1.05);
   bundleGeo.translate(0, 0.27, -0.075);
   bundleGeo.computeVertexNormals();
-  const bundles = new THREE.InstancedMesh(bundleGeo, material, CAPACITY);
+  const bundles = instanced(bundleGeo, CAPACITY);
   bundles.count = 0;
   bundles.frustumCulled = false;
   bundles.visible = false;
@@ -549,7 +559,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // no draw call while nobody is fetching any. The bars are the pile's own ingot
   // (web/js/goldpit.js), a size down to lie in a tray.
   const barrowMesh = (geo, n) => {
-    const m = new THREE.InstancedMesh(geo, material, n);
+    const m = instanced(geo, n);
     m.count = 0;
     m.castShadow = true;
     m.frustumCulled = false;
@@ -582,7 +592,7 @@ export function createFigures(scene, material, { armed = false } = {}) {
   scene.add(hammers);
   // Everybody's beer, drawn only while it is being drunk (count 0 the rest of the time, so
   // an island nobody has bought a round costs no draw call for it).
-  const pints = new THREE.InstancedMesh(pintGeometry(), material, PINTS);
+  const pints = instanced(pintGeometry(), PINTS);
   pints.count = 0;
   pints.castShadow = true;
   pints.frustumCulled = false;

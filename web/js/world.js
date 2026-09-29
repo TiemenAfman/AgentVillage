@@ -211,17 +211,6 @@ export function plantMaterials() {
   return { bark, foliage };
 }
 
-// How big the detailed water patch is and where its middle sits. Exported and pure so the
-// budget can be asserted without a WebGL context - tests/water-span.test.mjs - because the
-// patch is by a wide margin the heaviest geometry on the island (135k triangles of the
-// 430k on a 64-grid) and it is now sized by something that can grow.
-//
-// `gridBounds` is the union of every island's own square, or null for one island at the
-// origin. The margin is what a lone island of this size always had - 130 out from a
-// 64-grid, 60 for the largest - so an island on its own gets exactly the patch it had, to
-// the vertex. A rectangle rather than a square over the longest side: two 64-grids a berth
-// apart come out 372x260 instead of 372x372, which is a third of the triangles saved on
-// water nobody can see.
 // The heightfield ends on a square, often while its seabed is still shallow.
 // Let the optical depth reach open sea before that boundary without moving the
 // actual seabed (which boats, terrain hashes and saved plots depend on).
@@ -232,6 +221,22 @@ export function waterColourDepth(height, x, z, half) {
   return height + (Math.min(height, -2.5) - height) * offshore;
 }
 
+// The outline of the water patch: where it stops and fades into the open-ocean disc.
+// Exported and pure so it can be asserted without a WebGL context -
+// tests/water-span.test.mjs.
+//
+// `gridBounds` is the union of every island's own square, or null for one island at the
+// origin. The margin is what a lone island of this size always had - 130 out from a
+// 64-grid, 60 for the largest - so an island on its own fades out exactly where it always
+// did. A rectangle rather than a square over the longest side: two 64-grids a berth apart
+// come out 372x260 instead of 372x372.
+//
+// `segX`/`segZ` are what this outline would cost at the patch's full density - a vertex per
+// unit, every other one on integrated graphics. The patch was once built exactly like that,
+// one PlaneGeometry over the whole outline, and with the volcano and the starters in the sea
+// that was 2.53M of the page's 2.75M triangles, nearly all of it open sea where the depth is
+// one number. It is no longer built from these (waterPatchPlan, below); they are kept as the
+// ceiling the plan is measured against.
 export function waterPatchSpan(half, gridBounds, modest = false) {
   const margin = Math.max(60, 130 - half);
   const gb = gridBounds || { minX: -half, maxX: half, minZ: -half, maxZ: half };
@@ -246,6 +251,170 @@ export function waterPatchSpan(half, gridBounds, modest = false) {
     // grid, so the depth it shaded by came from the bank.
     segX: Math.max(1, Math.round(modest ? width / 2 : width)),
     segZ: Math.max(1, Math.round(modest ? depth / 2 : depth)),
+  };
+}
+
+// What the patch inside that outline is made of: rectangles on one lattice, dense only near
+// an island and as coarse as the fade allows everywhere else. Pure, like the span, so
+// tests/water-patch.test.mjs can hold the triangle budget to the islands rather than to the
+// box around them.
+//
+// Why the open sea can be coarse without looking any different: past every island's grid
+// the depth the water shades by is one number (OPEN_SEA, which is also what the open-ocean
+// disc carries), so the colour, the surf (none) and the opacity (whole) are the same
+// whatever the vertex spacing - and the normal the light uses and the fog's distance are
+// both worked out per pixel from the world position, never from the mesh (the fog on
+// purpose: see the end of the water shader). What a vertex per unit does buy out there is
+// the swell's tenth of a unit of height, which nothing out there is close enough to show. So:
+//
+//   - within WATER_REACH of an island's own square: a vertex per unit (every other one on
+//     `modest`), exactly the density the patch always had there - the rivers, the quay
+//     basin and the shallows all lie inside the grid, and the swell runs on out past it;
+//   - in the last WATER_FADE of the outline: a vertex every WATER_FADE_STEP, enough to draw
+//     the fade into the ocean disc (a smoothstep over 40) to within 3% of what it was;
+//   - everything else: one quad per run of tiles along a row.
+//
+// Why one mesh of disjoint rectangles and not a patch per island: the patch is transparent
+// and writes no depth, so two patches overlapping in a channel would blend twice; and the
+// swell is `sin(position.x ...)`, so one mesh at the origin is one wave clock with no seam.
+// Tiles on one lattice cannot overlap by construction. Where a dense tile meets a coarse one
+// the edges do not share every vertex; the swell is faded out to nothing before that seam
+// (`waveAt`, 0 on every vertex WATER_REACH or more from any grid, which is every vertex of
+// a coarse tile and every vertex a dense tile shares with one), so both sides lie flat on
+// y = 0 there and the seam is a straight line in deep, opaque water over an ocean disc of the
+// same colour.
+//
+// Leaving the empty sea between islands to the ocean disc outright was the other way, and it
+// is not invisible: the disc sits at y = -0.2 so the patch's troughs never dip under it, and
+// a boat or an islet out there would suddenly stand 0.8 m proud of its waterline.
+export const WATER_TILE = 16;
+export const WATER_REACH = 16;
+export const WATER_FADE = 40;
+export const WATER_FADE_STEP = 8;
+
+export function waterPatchPlan(half, regions, modest = false) {
+  const list = regions && regions.length ? regions : [{ origin: [0, 0], half }];
+  const squares = list.map((r) => ({
+    minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
+    minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half,
+  }));
+  // The same union shared/regions.mjs gridBounds() makes, so the outline is the old one.
+  const gb = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (const s of squares) {
+    gb.minX = Math.min(gb.minX, s.minX); gb.maxX = Math.max(gb.maxX, s.maxX);
+    gb.minZ = Math.min(gb.minZ, s.minZ); gb.maxZ = Math.max(gb.maxZ, s.maxZ);
+  }
+  const span = waterPatchSpan(half, gb, modest);
+
+  // Tile edges on multiples of WATER_TILE in the page's frame, clipped to the outline, so
+  // the outline itself does not move by a unit.
+  const cuts = (lo, hi) => {
+    const out = [lo];
+    for (let v = Math.floor(lo / WATER_TILE) * WATER_TILE + WATER_TILE; v < hi; v += WATER_TILE) out.push(v);
+    out.push(hi);
+    return out;
+  };
+  const xs = cuts(span.minX, span.maxX), zs = cuts(span.minZ, span.maxZ);
+  const near = (x0, x1, z0, z1) => squares.some((s) =>
+    x0 < s.maxX + WATER_REACH && x1 > s.minX - WATER_REACH
+    && z0 < s.maxZ + WATER_REACH && z1 > s.minZ - WATER_REACH);
+  const inland = (x0, x1, z0, z1) =>
+    x0 >= span.minX + WATER_FADE && x1 <= span.maxX - WATER_FADE
+    && z0 >= span.minZ + WATER_FADE && z1 <= span.maxZ - WATER_FADE;
+
+  const fine = modest ? 2 : 1;
+  const quads = [];
+  let triangles = 0;
+  const put = (x0, x1, z0, z1, step, dense = false) => {
+    const segX = Math.max(1, Math.round((x1 - x0) / step));
+    const segZ = Math.max(1, Math.round((z1 - z0) / step));
+    quads.push({ minX: x0, maxX: x1, minZ: z0, maxZ: z1, segX, segZ, dense });
+    triangles += 2 * segX * segZ;
+  };
+  for (let j = 0; j + 1 < zs.length; j++) {
+    const z0 = zs[j], z1 = zs[j + 1];
+    let run = null;   // where a run of open sea along this row started
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const x0 = xs[i], x1 = xs[i + 1];
+      const close = near(x0, x1, z0, z1);
+      if (!close && inland(x0, x1, z0, z1)) { if (run === null) run = x0; continue; }
+      if (run !== null) { put(run, x0, z0, z1, Infinity); run = null; }
+      put(x0, x1, z0, z1, close ? fine : WATER_FADE_STEP, close);
+    }
+    if (run !== null) put(run, span.maxX, z0, z1, Infinity);
+  }
+
+  // How much of the swell a vertex carries: all of it up to half WATER_REACH past a grid,
+  // none from WATER_REACH on (see above for why that is the seam's whole trick).
+  const waveAt = (x, z) => {
+    let e = Infinity;
+    for (const s of squares) e = Math.min(e, Math.max(0, s.minX - x, x - s.maxX, s.minZ - z, z - s.maxZ));
+    return 1 - smoothstep(WATER_REACH / 2, WATER_REACH, e);
+  };
+  // The fade into the ocean disc, over the last WATER_FADE of the outline - the formula the
+  // single PlaneGeometry always used, now asked of wherever the vertices happen to be.
+  const blendAt = (x, z) => smoothstep(0, WATER_FADE,
+    Math.min(x - span.minX, span.maxX - x, z - span.minZ, span.maxZ - z));
+  // What decides whether a sea that changed needs a new patch: the outline and every square
+  // in it, in no particular order. An island that joins inside the old outline needs its
+  // dense tiles, which comparing the outline alone - as reshapeWater used to - would miss.
+  const key = [modest ? 'm' : 'f', span.minX, span.maxX, span.minZ, span.maxZ,
+    ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}`).sort()].join('|');
+  return { span, quads, triangles, waveAt, blendAt, key, dense: near, fine };
+}
+
+// The fine water that sails with you. The plan above leaves the open sea between islands to
+// flat coarse tiles, and past its outline there is only the ocean disc, 0.2 below the water
+// line - so a boat far enough from any island floated: the dense water with its swell had
+// stopped under it and the disc it sat over was lower (seen in play before the tiling, when
+// the outline was the only edge; the tiling moved that edge in to 16 units off every coast).
+// This is a small patch of the same water, dense and swelling, round a focus - your boat, or
+// whatever the orbit camera looks at - snapped to the plan's own lattice so the swell, which
+// is anchored to the world, never slides under it.
+//
+// It never overlaps the plan: it is made only of the lattice cells round the focus that the
+// plan draws coarse, and the plan's coarse fragments inside its square are discarded
+// (`uNear` in the water shader; dense ones never are). So every pixel is drawn once. Its
+// swell is faded to nothing over NEAR_RIM from its edge - its own square's, and every dense
+// cell it leaves out, whose seam is flat on the plan's side too - so it meets flat water flat.
+// Past the outline, where the ocean disc is all there is, its rim sinks the OCEAN_DROP down to
+// the disc over the same NEAR_RIM: a slope of 0.2 in 8 units of deep water, instead of a step.
+export const NEAR_CELLS = 2;       // cells each side of the focus's own: 5 x 5, 80 units across
+export const NEAR_RIM = 8;
+export const OCEAN_DROP = 0.2;     // how far below the water line the ocean disc lies
+
+export function nearWaterPlan(plan, fx, fz) {
+  const T = WATER_TILE;
+  const cx = Math.floor(fx / T), cz = Math.floor(fz / T);
+  const rect = {
+    minX: (cx - NEAR_CELLS) * T, maxX: (cx + NEAR_CELLS + 1) * T,
+    minZ: (cz - NEAR_CELLS) * T, maxZ: (cz + NEAR_CELLS + 1) * T,
+  };
+  const cells = [], left = [];
+  for (let j = -NEAR_CELLS; j <= NEAR_CELLS; j++) {
+    for (let i = -NEAR_CELLS; i <= NEAR_CELLS; i++) {
+      const c = { minX: (cx + i) * T, maxX: (cx + i + 1) * T, minZ: (cz + j) * T, maxZ: (cz + j + 1) * T };
+      (plan.dense(c.minX, c.maxX, c.minZ, c.maxZ) ? left : cells).push(c);
+    }
+  }
+  const { span } = plan;
+  const rimDist = (x, z) => Math.min(x - rect.minX, rect.maxX - x, z - rect.minZ, rect.maxZ - z);
+  // How far (x, z) is from where this patch stops: its square's edge or a dense cell it
+  // leaves to the plan.
+  const edgeDist = (x, z) => {
+    let d = rimDist(x, z);
+    for (const c of left) {
+      const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ);
+      d = Math.min(d, Math.hypot(dx, dz));
+    }
+    return d;
+  };
+  const inSpan = (x, z) => x >= span.minX && x <= span.maxX && z >= span.minZ && z <= span.maxZ;
+  return {
+    rect, cells,
+    key: `${cx},${cz}|${plan.key}`,
+    waveAt: (x, z) => smoothstep(0, NEAR_RIM, edgeDist(x, z)),
+    baseAt: (x, z) => (inSpan(x, z) ? 0 : OCEAN_DROP * (smoothstep(0, NEAR_RIM, rimDist(x, z)) - 1)),
   };
 }
 
@@ -1519,10 +1688,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
   //     one wave clock, which is the same reason the ocean disc shares these uniforms.
   //
   // A rectangle over the union of the grids rather than a square over its longest side: on
-  // two 64-grids side by side that is 372x260 instead of 372x372, which is a third of the
-  // triangles saved for water nobody can see. The margin is what it always was for an
-  // island of this size - 130 out from a 64-grid, 60 for the largest - so an island on its
-  // own gets exactly the patch it had.
+  // two 64-grids side by side that is 372x260 instead of 372x372. The margin is what it
+  // always was for an island of this size - 130 out from a 64-grid, 60 for the largest - so
+  // an island on its own fades out where it always did.
+  //
+  // One surface, but no longer one density. With the volcano and the starters in the sea the
+  // rectangle is over a thousand units across, and at a vertex per unit it was 2.53M of the
+  // page's 2.75M triangles - almost all of it open sea whose depth is one number. It is dense
+  // now only round each island's own grid and coarse everywhere else; waterPatchPlan has the
+  // tiles and the argument for why nothing drawn changes.
   //
   // This lives in `group`, which is the only createWorld that draws the decor and is always
   // the one at the origin; a region at a berth is drawn by a world that makes no water.
@@ -1550,25 +1724,76 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
   // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
   // that holds a reference to the mesh has to know.
-  let ws = null, waterGeo = null, wp = null;
+  let waterGeo = null, wp = null, wplan = null;
+  const seaRegions = () => (opts.sea ? opts.sea.regions() : null);
   function buildWaterGeometry() {
-    ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(ws.cx, 0, ws.cz);
-    const p = geo.attributes.position;
-    const d = new Float32Array(p.count);
-    const blend = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) {
+    wplan = waterPatchPlan(half, seaRegions(), opts.modest);
+    let most = 0, cells = 0;
+    for (const q of wplan.quads) { most += (q.segX + 1) * (q.segZ + 1); cells += q.segX * q.segZ; }
+    const pos = new Float32Array(most * 3);
+    const index = most > 65535 ? new Uint32Array(cells * 6) : new Uint16Array(cells * 6);
+    // Neighbouring dense tiles share their edge vertices rather than each carrying a copy:
+    // the same positions either way (and so the same depth and blend - no crack), a ninth
+    // fewer vertices through the shader. Keyed on an eighth of a unit, finer than any step.
+    //
+    // Dense and coarse keep their own copies, though: a coarse vertex carries aCoarse = 1 so
+    // the water that sails with you can take its place (nearWaterPlan), and a vertex shared
+    // with a dense tile would smear that across the dense tile's edge. The seam is at the
+    // same positions either way.
+    const seen = [new Map(), new Map()];
+    const coarse = new Uint8Array(most);
+    let count = 0, k = 0;
+    let dense = false;
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      const map = seen[dense ? 1 : 0];
+      let n = map.get(key);
+      if (n === undefined) {
+        n = count++;
+        pos[n * 3] = x; pos[n * 3 + 2] = z;
+        coarse[n] = dense ? 0 : 1;
+        map.set(key, n);
+      }
+      return n;
+    };
+    for (const q of wplan.quads) {
+      dense = q.dense;
+      const w = q.maxX - q.minX, d = q.maxZ - q.minZ;
+      let prev = null;
+      for (let j = 0; j <= q.segZ; j++) {
+        const z = j === q.segZ ? q.maxZ : q.minZ + (j / q.segZ) * d;
+        const row = new Array(q.segX + 1);
+        for (let i = 0; i <= q.segX; i++) row[i] = vertex(i === q.segX ? q.maxX : q.minX + (i / q.segX) * w, z);
+        // Counter-clockwise seen from above, which is the side a FrontSide material draws:
+        // (x0,z0) (x0,z1) (x1,z0), then (x0,z1) (x1,z1) (x1,z0).
+        if (prev) {
+          for (let i = 0; i < q.segX; i++) {
+            index[k++] = prev[i]; index[k++] = row[i]; index[k++] = prev[i + 1];
+            index[k++] = row[i]; index[k++] = row[i + 1]; index[k++] = prev[i + 1];
+          }
+        }
+        prev = row;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    const p = new THREE.BufferAttribute(pos.slice(0, count * 3), 3);
+    geo.setAttribute('position', p);
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    const depth = new Float32Array(count);
+    const blend = new Float32Array(count);
+    const wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
       const x = p.getX(i), z = p.getZ(i);
-      d[i] = depthAt(x, z);
+      depth[i] = depthAt(x, z);
       // The patch always extends at least sixty units past every island grid.
       // Fade within that spare water, never across a beach or a river.
-      const edge = Math.min(x - ws.minX, ws.maxX - x, z - ws.minZ, ws.maxZ - z);
-      blend[i] = smoothstep(0, 40, edge);
+      blend[i] = wplan.blendAt(x, z);
+      wave[i] = wplan.waveAt(x, z);
     }
-    geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
     geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(Float32Array.from(coarse.subarray(0, count)), 1));
     waterGeo = geo;
     wp = p;
     return geo;
@@ -1589,23 +1814,31 @@ export function createWorld(scene, terrain, village, opts = {}) {
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xffffff) },
         uNight: { value: 0 },
+        uNear: { value: new THREE.Vector4(1e9, 1e9, -1e9, -1e9) },
       },
     ]),
     vertexShader: `
       #include <fog_pars_vertex>
       attribute float aDepth;
       attribute float aBlend;
+      // 1 wherever the swell is drawn, 0 on the coarse open sea and the seam into it
+      // (waterPatchPlan): a wave sampled every sixteen units is a tilting slab, not a wave.
+      attribute float aWave;
+      // 1 on the plan's coarse tiles: the ones the water that sails with you replaces.
+      attribute float aCoarse;
       uniform float uTime;
       varying float vDepth;
       varying vec3 vWorld;
       varying float vBlend;
+      varying float vCoarse;
       void main() {
         vDepth = aDepth;
         vBlend = aBlend;
+        vCoarse = aCoarse;
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
-        p.y += 0.05 * w1 + 0.04 * w2;
+        p.y += (0.05 * w1 + 0.04 * w2) * aWave;
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
         vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -1617,10 +1850,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uniform vec3 uDeep, uShallow, uFoam, uSunColor;
       uniform vec3 uSunDir;
       uniform float uTime, uNight;
+      // The square the water that sails with you covers (minX, minZ, maxX, maxZ): the plan's
+      // coarse tiles step aside inside it, so the two are never drawn over each other.
+      uniform vec4 uNear;
       varying float vDepth;
       varying vec3 vWorld;
       varying float vBlend;
+      varying float vCoarse;
       void main() {
+        if (vCoarse > 0.5 && vWorld.x > uNear.x && vWorld.x < uNear.z && vWorld.z > uNear.y && vWorld.z < uNear.w) discard;
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
         // The surf. It used to fade in over three tenths of a unit of depth, which on
@@ -1654,7 +1892,23 @@ export function createWorld(scene, terrain, village, opts = {}) {
         // boundary must disappear beneath the water, not tint an entire tile.
         float opacity = mix(1.0, 0.88, smoothstep(-1.8, -0.35, vDepth));
         gl_FragColor = vec4(col, opacity * vBlend);
-        #include <fog_fragment>
+        // three's fog_fragment, but with the distance taken here rather than handed down
+        // from the vertices. The fog is radial (radial-fog.js: vFogDepth is the length of
+        // mvPosition), and a length interpolated across a triangle is always longer than the
+        // real one in between - by nothing on the patch's dense vertices, and by a lot on the
+        // ocean disc, whose triangles run from under the camera to 1500 out: from 250 up with
+        // the fog closing at 550 (modest) the disc was fogged as if half as far again, and
+        // the patch showed through it as a darker rectangle inside the haze. vWorld is exact
+        // at every pixel, so the two agree now, and a coarse patch fogs like a dense one.
+        #ifdef USE_FOG
+          float fogDist = distance(vWorld, cameraPosition);
+          #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDist * fogDist);
+          #else
+            float fogFactor = smoothstep(fogNear, fogFar, fogDist);
+          #endif
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif
       }
     `,
   });
@@ -1662,6 +1916,70 @@ export function createWorld(scene, terrain, village, opts = {}) {
   water.position.y = 0;
   water.renderOrder = 1;
   group.add(water);
+
+  // The water that sails with you (nearWaterPlan): the same material, so the same clock, sun,
+  // fog and night; rebuilt only when the focus crosses into another lattice cell or the plan
+  // changes - a few thousand vertices, never the whole patch.
+  const sailWater = new THREE.Mesh(new THREE.BufferGeometry(), waterMat);
+  sailWater.renderOrder = 1;
+  sailWater.visible = false;
+  group.add(sailWater);
+  let nearKey = null;
+  function buildNearWater(np) {
+    const fine = wplan.fine;
+    const n = Math.round(WATER_TILE / fine);
+    const pos = [], idx = [];
+    const seen = new Map();
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      let v = seen.get(key);
+      if (v === undefined) { v = pos.length / 3; pos.push(x, np.baseAt(x, z), z); seen.set(key, v); }
+      return v;
+    };
+    for (const c of np.cells) {
+      let prev = null;
+      for (let j = 0; j <= n; j++) {
+        const z = c.minZ + j * fine;
+        const row = [];
+        for (let i = 0; i <= n; i++) row.push(vertex(c.minX + i * fine, z));
+        if (prev) {
+          for (let i = 0; i < n; i++) idx.push(prev[i], row[i], prev[i + 1], row[i], row[i + 1], prev[i + 1]);
+        }
+        prev = row;
+      }
+    }
+    const count = pos.length / 3;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setIndex(idx);
+    const depth = new Float32Array(count), blend = new Float32Array(count).fill(1), wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = pos[i * 3], z = pos[i * 3 + 2];
+      depth[i] = depthAt(x, z);
+      wave[i] = np.waveAt(x, z);
+    }
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+    geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(new Float32Array(count), 1));
+    geo.computeBoundingSphere();
+    return geo;
+  }
+  // Where the water that sails with you is: your boat, or what the camera looks at. Cheap to
+  // call every frame - it does nothing until the focus changes cell.
+  function setWaterFocus(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !wplan) return;
+    const np = nearWaterPlan(wplan, x, z);
+    if (np.key === nearKey) return;
+    nearKey = np.key;
+    const old = sailWater.geometry;
+    sailWater.geometry = np.cells.length ? buildNearWater(np) : new THREE.BufferGeometry();
+    old.dispose();
+    sailWater.visible = np.cells.length > 0;
+    const r = np.rect;
+    if (np.cells.length) waterMat.uniforms.uNear.value.set(r.minX, r.minZ, r.maxX, r.maxZ);
+    else waterMat.uniforms.uNear.value.set(1e9, 1e9, -1e9, -1e9);
+  }
 
   // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
   // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
@@ -1689,6 +2007,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
   oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
   oceanGeo.setAttribute('aBlend', new THREE.BufferAttribute(
     new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  // The swell it always had, which on a vertex at the middle and 128 at the rim is nothing.
+  oceanGeo.setAttribute('aWave', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  oceanGeo.setAttribute('aCoarse', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count), 1));
   const oceanMat = waterMat.clone();
   oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
   oceanMat.transparent = false;
@@ -1697,7 +2020,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
   // disc carries the same wave, but with a vertex only at its centre and its rim it is
   // flat where the patch is not, so the two do not dip together.
-  ocean.position.y = -0.2;
+  ocean.position.y = -OCEAN_DROP;
   ocean.renderOrder = 0;
   group.add(ocean);
 
@@ -1711,15 +2034,32 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunColor: { value: new THREE.Color(0xffffff) },
       uStars: { value: 0 },
+      // The fog's colour as it lands on screen, for the band along the horizon: written just
+      // before the dome is drawn (sky.onBeforeRender, below). See the fragment shader.
+      uFog: { value: new THREE.Color(0xdcefff) },
     },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    // On the far plane, whatever the far plane is: z = w puts every vertex at depth 1, the
+    // same trick three's own background cube uses. The dome used to be a sphere of r1340
+    // sitting inside a far plane fixed at 1400; once View Distance could bring the far plane
+    // in to 250, the whole dome was past it and the sky was the clear colour - a black void
+    // over a sea that the fog had already closed. The colour only ever read the direction
+    // (vDir), so where the geometry is drawn is free to be wherever depth says is furthest.
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
     fragmentShader: `
-      uniform vec3 uTop, uHor, uSunColor; uniform vec3 uSunDir; uniform float uStars;
+      uniform vec3 uTop, uHor, uSunColor, uFog; uniform vec3 uSunDir; uniform float uStars;
       varying vec3 vDir;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
       void main(){
         vec3 d = normalize(vDir);
         vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.45, d.y));
+        // Along the horizon the sky is the fog's colour exactly. A house is taken out of the
+        // picture only once the fog has closed over it (main.js fogCeiling), and fully fogged
+        // it *is* the fog colour - which matched fogged ground and sea, but not the sky: a
+        // mast or a castle standing up against the horizon was a fog-coloured shape on a
+        // slightly different blue, and went at the cut. Anything that far off stands only a
+        // few degrees above the horizon, so the band is narrow and the gradient above it
+        // untouched; the sun's halo goes on top of it, so a low sun still warms the horizon.
+        col = mix(uFog, col, smoothstep(0.0, 0.14, d.y));
         float halo = pow(max(dot(d, normalize(uSunDir)), 0.0), 48.0);
         col += uSunColor * halo * 0.5;
         if (uStars > 0.01 && d.y > 0.0) {
@@ -1731,7 +2071,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
     `,
   });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea, inside the camera's far plane
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea; drawn on the far plane (see the vertex shader)
   sky.frustumCulled = false;
   group.add(sky);
 
@@ -1794,9 +2134,22 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // The sky rides the eye's height as well, and the ocean does not. Parked at sea level, the
   // sky's underside is R + h from an eye at height h, and with the leash an archipelago
   // allows (hundreds up) that went past the far plane: the clear colour showed through as a
-  // black polygon in the sphere's own low-poly shape. Centred on the eye every part of it is
-  // r1340 away, always inside 1400, and below eye level it is the horizon colour - the fog's.
+  // black polygon in the sphere's own low-poly shape. Centred on the eye it is the same in
+  // every direction, drawn on the far plane whatever that is (the vertex shader), and below
+  // eye level it is the horizon colour - the fog's.
   // The sun and moon hang off the same centre so the disc stays inside its own halo.
+  // How far out the sun and moon hang. 430 for as long as the far plane was 1400; they are
+  // fog-free discs, so a far plane nearer than that would cut them off and leave the halo in
+  // the sky with nothing in it. View Distance hands the far plane in (setFar) and they are
+  // drawn inside it, scaled down with the distance so the disc is the same size on screen.
+  const CELESTIAL = 430;
+  let celestial = CELESTIAL;
+  const setFar = (far) => {
+    celestial = Math.min(CELESTIAL, far * 0.8);
+    const k = celestial / CELESTIAL;
+    sunDisc.scale.setScalar(k);
+    moonDisc.scale.setScalar(k);
+  };
   const recentre = (x, y, z) => {
     horizonAt.set(x, y, z);
     sky.position.set(x, y, z);
@@ -1808,6 +2161,16 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
   // sync there - and the fixed pair always won. Colour still follows the sky, below.
   scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
+  // The dome's horizon band is the fog exactly as a fogged thing shows it: taken at render
+  // time (after the hour has tinted the fog below and the weather has dulled it, weather.js)
+  // and converted the way three converts the fog for every other material - into the output
+  // colour space, because fog_fragment runs after colorspace_fragment
+  // (WebGLMaterials.refreshFogUniforms). This shader writes its colours as they are, so a
+  // band given the fog's linear value showed ~171,206,243 against the fogged sea's
+  // 214,232,249: the same number, a different colour, and a hard line at the horizon.
+  sky.onBeforeRender = (renderer) => {
+    if (scene.fog) scene.fog.color.getRGB(skyMat.uniforms.uFog.value, renderer.getRenderTarget() ? THREE.ColorManagement.workingColorSpace : renderer.outputColorSpace);
+  };
 
   // ---- lights --------------------------------------------------------------
   const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
@@ -1819,6 +2182,11 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
   key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
   key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
+  // key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  // NOT opts.shadowDistance. See setShadowDistance below: the slider is the width the
+  // frustum may grow to, and the depth follows from the width. Putting the number straight
+  // into `far` looks like it works until you zoom out, at which point the box is wider than
+  // the depth that reaches it and shadows get sliced off at an invisible plane.
   key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.03;
@@ -1933,17 +2301,36 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const ffGeo = new THREE.BufferGeometry();
   ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
   ffGeo.setAttribute('color', new THREE.BufferAttribute(ffCol, 3));
+  // They go out in the haze rather than being hazed over: additive light blended towards the
+  // fog colour would *add* fog colour and glow grey, so the fog here scales their alpha down
+  // to nothing instead. Before this they were fog: false and shone at full strength through
+  // any haze - and since Object Distance takes houses out behind a closed fog, cutting a
+  // fully fogged house showed the fireflies it had been hiding, a few pixels at dusk and
+  // night that were the one measurable break of "a house is cut in full fog". vFogDepth is
+  // the distance, like everything else's (radial-fog.js).
   const fireflies = new THREE.Points(ffGeo, new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
     vertexColors: true,
-    uniforms: { uScale: { value: window.innerHeight * 0.5 } },
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uScale: { value: window.innerHeight * 0.5 } }]),
     vertexShader: `varying vec3 vC; uniform float uScale;
-      void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 0.13 * uScale / max(0.001, -mv.z); gl_Position = projectionMatrix * mv; }`,
+      #include <fog_pars_vertex>
+      void main(){ vC = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = 0.13 * uScale / max(0.001, -mvPosition.z); gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
     fragmentShader: `varying vec3 vC;
+      #include <fog_pars_fragment>
       void main(){ float d = length(gl_PointCoord - 0.5);
         float m = smoothstep(0.5, 0.0, d); if (m <= 0.01) discard;
-        gl_FragColor = vec4(vC, m * m); }`,
+        float a = m * m;
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            a *= exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+          #else
+            a *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);
+          #endif
+        #endif
+        gl_FragColor = vec4(vC, a); }`,
   }));
   fireflies.frustumCulled = false;
   fireflies.renderOrder = 2;
@@ -1968,17 +2355,41 @@ export function createWorld(scene, terrain, village, opts = {}) {
   const shadowFocus = new THREE.Vector3();
   let shadowSpan = SHADOW_SPAN[0];
   let lightRange = shadowSpan + 60;
-  const followShadow = (x, z, dist) => {
-    shadowFocus.set(x, 0, z);
-    if (!(dist > 0)) return;
-    const f = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
-    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+  // Shadow Distance, as the widest the shadow box is allowed to get. Half of it, because
+  // the frustum is built from a half-width and a distance is a full one.
+  let shadowLimit = Math.max(0, opts.shadowDistance || 150) / 2;
+  const applyShadowSpan = (f) => {
     shadowSpan = f;
     lightRange = f + 60;
     const cam = key.shadow.camera;
     cam.left = -f; cam.right = f; cam.top = f; cam.bottom = -f;
     cam.near = 10; cam.far = 2 * f + 90;
     cam.updateProjectionMatrix();
+  };
+  let followDist = 0;
+  const followShadow = (x, z, dist) => {
+    shadowFocus.set(x, 0, z);
+    if (!(dist > 0)) return;
+    followDist = dist;
+    // Zoom still decides, and still tightens as you come in - the box follows the camera
+    // exactly as it always has. Shadow Distance is only a ceiling on how far it follows.
+    const wanted = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
+    const f = Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit));
+    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+    applyShadowSpan(f);
+  };
+  // Shadow Distance, live. Rebuilt here rather than left for the next followShadow so that
+  // the shadows change under the slider instead of on the next camera move. Zoomed in, where
+  // the box is narrower than the limit anyway, moving the slider changes nothing, and that is
+  // what a ceiling means.
+  //
+  // Both ways from the zoom it was last given, not from the box as it stands: taking the
+  // smaller of the box and the new limit only ever pulled it in, so raising the slider left
+  // the shadows short until the camera next moved.
+  const setShadowDistance = (range) => {
+    shadowLimit = Math.max(0, range) / 2;
+    const wanted = followDist > 0 ? clamp(followDist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]) : shadowSpan;
+    applyShadowSpan(Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit)));
   };
 
   // `sea` is the sea's own clock, `{ t, moon }`: t in epoch milliseconds as the sea has it
@@ -2026,7 +2437,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 
     const isDay = hour >= 6 && hour <= 18;
     sunDisc.visible = isDay; moonDisc.visible = !isDay;
-    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(430).add(horizonAt);
+    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(celestial).add(horizonAt);
 
     placeClouds(seaSeconds);
     moonAt(dir, moon);
@@ -2062,13 +2473,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   // The whole patch, for when the archipelago itself has changed shape: an island joined, or
-  // left. Rebuilding is only worth it when the span actually moved, because the geometry is
-  // the heaviest thing on the island - 135k triangles for one island, 193k for two - so this
-  // compares first and usually does nothing.
+  // left, or grew its grid. Rebuilding is only worth it when the plan actually changed, so
+  // this compares first and usually does nothing. It compares the plan's key - the outline
+  // and every island's square - rather than the outline alone, because the dense water now
+  // follows the islands: one that joins inside the old outline still needs its shallows.
   function reshapeWater() {
-    const next = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    if (ws && next.minX === ws.minX && next.maxX === ws.maxX
-      && next.minZ === ws.minZ && next.maxZ === ws.maxZ) {
+    const next = waterPatchPlan(half, seaRegions(), opts.modest);
+    if (wplan && next.key === wplan.key) {
       resampleWater();
       return false;
     }
@@ -2096,7 +2507,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
-    followShadow, recentre, reshapeWater, state, reshape,
+    followShadow, setShadowDistance, setFar, recentre, reshapeWater, setWaterFocus, state, reshape,
   };
 }
 

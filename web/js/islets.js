@@ -63,6 +63,14 @@ export function createIslets({ scene, modest = false }) {
   let sig = '';
   let home = [0, 0];
   let since = RESPLIT_S;
+  // Past the fog ceiling (plus a pad, below) a palm or a bush is not put in the buffers at all:
+  // one InstancedMesh over the whole sea cannot be masked per islet, but the palms are already
+  // re-laid every RESPLIT_S, so leaving the far ones out of that pass costs nothing extra.
+  // Measured from the camera (`eye`), like keepRecord, not from the focus the near/far palm
+  // split uses. `Infinity` until the frame loop has said, and always in the planner's reach.
+  let eye = null;
+  let reach = Infinity;
+  const inReach = (x, z) => !eye || Math.hypot(x - eye.x, z - eye.z) <= reach;
   const tmp = new THREE.Object3D();
   const tint = new THREE.Color();
 
@@ -133,6 +141,7 @@ export function createIslets({ scene, modest = false }) {
       const [ox, oz] = worldToScene([islet.x, islet.z], home);
       for (const b of islet.bushes) {
         if (k >= bushMesh.instanceMatrix.count) break;
+        if (!inReach(ox + b.x, oz + b.z)) continue;
         put(bushMesh, k++, ox + b.x, b.y - 0.04, oz + b.z, b.rot, b.s, 0.85 + (b.s - 0.8) * 0.3, b.s * 0.85);
       }
     }
@@ -147,6 +156,7 @@ export function createIslets({ scene, modest = false }) {
       const [ox, oz] = worldToScene([islet.x, islet.z], home);
       for (const p of islet.palms) {
         const x = ox + p.x, z = oz + p.z;
+        if (!inReach(x, z)) continue;
         const whole = palmNear && Math.hypot(x - fx, z - fz) < NEAR_PALM;
         const mesh = whole ? palmNear : palmFar;
         if (!mesh) continue;
@@ -179,11 +189,17 @@ export function createIslets({ scene, modest = false }) {
     return islets.length;
   }
 
-  function update(dt, focus) {
+  // `view` is { eye, reach }: the camera and how far out anything is still worth drawing.
+  function update(dt, focus, view = null) {
     since += dt;
-    if (since < RESPLIT_S || !palmNear) return;
+    if (since < RESPLIT_S) return;
     since = 0;
+    const culls = !!view && Number.isFinite(view.reach);
+    if (!palmNear && !culls && !Number.isFinite(reach)) return;
+    eye = culls ? { x: view.eye.x, z: view.eye.z } : null;
+    reach = culls ? view.reach : Infinity;
     placePalms(focus);
+    placeBushes();
   }
 
   // The ground an islet puts under a point in scene coordinates, or null off every islet -
