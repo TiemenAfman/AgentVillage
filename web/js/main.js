@@ -16,7 +16,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
-import { allowImp, setImpNight } from './imp.js';
+import { allowImp, setImpNight, IMP_CAP, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
@@ -38,7 +38,7 @@ import {
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
 import { fogCeilingOf } from './fade.js';
-import { keepRecord } from './record-cull.js';
+import { keepRecord, keepRegion } from './record-cull.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
@@ -341,7 +341,9 @@ async function openBoardWithoutIsland() {
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
 const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
-renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
+// A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
+// third more pixels to fill than 1, and fill is what a phone's GPU runs out of first.
+renderer.setPixelRatio(Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -2574,6 +2576,11 @@ function cullRecords() {
   const range = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
   for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
   for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
+  // And a whole neighbour once the fog has closed over all of it - its ground, wood and fields
+  // are not records, and were drawn in full fog however far off they lay. After the records,
+  // so each record's landmark answer (rec.seen) is fresh for keepRegion to read.
+  const ceiling = state.mode === 'plan' ? Infinity : fogCeiling();
+  for (const g of state.guests) keepRegion(g, ceiling, cullEye);
 }
 
 // Where the haze begins and where it closes, and the only place that decides either.
@@ -3176,7 +3183,10 @@ async function learnTheWorld() {
 // 1.6x budget, and that was with signs off, no forest and no settlers. Eight islands in
 // full does not render, and the honest way to have eight in the world is to draw the near
 // ones and suggest the rest.
-const DETAILED = modest ? 2 : 4;
+// A phone draws one: a whole guest island is its landscape as well as its houses, and on a
+// phone's GPU that is the difference that counts (measured: DETAILED was already the biggest
+// lever for guests on a modest page).
+const DETAILED = STANDALONE ? 1 : modest ? 2 : 4;
 
 // Near to *whom*. It used to be near to our own berth, which never moves - so a silhouette
 // stayed a silhouette however close you sailed, with no houses, no people and no ground to
@@ -3862,6 +3872,10 @@ function raiseGuestIslands() {
       buildings: (region.village && region.village.buildings) || [],
       range: npcRange(),
       fading: crowdMat.userData.fadeOn,
+      // A lighter machine stands as few imps as a phone: each is a 25k-triangle skinned mesh
+      // with a shadow, and seven of them measured a quarter of a modest page's frame at the
+      // volcano.
+      impLimit: modest ? IMP_CAP.phone : IMP_LIMIT,
       // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
       // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
       // imps. Scene frame, the same one the crowd's positions are in.
@@ -6016,7 +6030,9 @@ function frame(nowMs) {
     // it. Their island is built by the same createLandscape ours is, so it wants the same
     // one call a frame - without it a neighbour's forest would still be in the season it
     // was raised in while ours turned around it.
-    if (g.update) g.update(dt, month);
+    // Not while the whole island is behind the fog (keepRegion): its season is picked up on
+    // the first frame it is drawn again.
+    if (g.update && !g.farOut) g.update(dt, month);
     // Their people, drawn where the sea last said they were and interpolated between, at
     // the height their own island's decks and steps put them - which is what puts a body on
     // a quay's planks rather than in the water beside them.

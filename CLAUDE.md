@@ -374,6 +374,10 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   never masked: lights (turned down to 0 instead - the light count is in every lit program's
   key, and a masked campfire recompiled every material on screen) and records with a
   `fog: false` part (a lighthouse beam, a campfire flame: landmarks, never cut).
+  A whole guest island whose nearest edge is past the fog ceiling plus the pad is masked the
+  same way (`keepRegion`, key `'far'`: ground, wood, fields, props, houses; not while anything
+  on it is a landmark), and its `update` skipped. Cuts are kept per object in `userData.cut`
+  with the list of keys holding it, so a record cut and its island cut undo in any order.
   The cut is taken in `cullRecords()`, right before the render, once every branch of the
   frame has put the camera where it is drawn from. Anything `fog: false` that a fogged house
   could hide breaks the rule when the house goes: the fireflies were the one measured case,
@@ -399,6 +403,9 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed to every
   crowd mesh where it is made (`createFigures`). An imp is not given to a guard in the band
   (`inBand`, only while the dither is on), since its skinned material knows nothing of it.
+- **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
+  islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
+  pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
 - **Fog-free lights at the horizon fade before the far plane** (`horizon.js update`, reach
   0.9 of `camera.far`), and the sun and moon hang inside it (`world.setFar`).
 - **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is

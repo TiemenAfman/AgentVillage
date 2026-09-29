@@ -9,7 +9,7 @@
 // build clear it), and writing it from here would put a filtered-out code house back on the
 // island. A mask of 0 matches no camera, no light's shadow pass and no raycaster, and nothing
 // else in the project touches layers, so the mask belongs to this file alone. The mask each
-// object had is kept in `userData.cullMask` and put back.
+// object had is kept in `userData.cut` and put back.
 //
 // Two kinds of object are not masked, and both were found by review rather than by eye:
 //
@@ -24,7 +24,7 @@
 //   night a neighbour's beam is visible through the haze on purpose (beacon.js), and masking
 //   it made it vanish at the line and pop back on the way in. Such a record is a landmark and
 //   is never cut - there are few of them, and a tent is cheap.
-import { cullNext } from './fade.js';
+import { cullNext, CULL_PAD, CULL_HYST } from './fade.js';
 
 // Does anything under `g` draw without fog? Asked once per group (the answer is cached on the
 // record against the group, since a rebuilt record gets a new one).
@@ -38,30 +38,38 @@ export function seenThroughFog(g) {
   return yes;
 }
 
-export function maskGroup(g) {
-  g.traverse((o) => {
-    if (o.isLight) {
-      if (o.userData.cullIntensity === undefined) o.userData.cullIntensity = o.intensity;
-      o.intensity = 0;
-      return;
-    }
-    if (o.userData.cullMask === undefined) o.userData.cullMask = o.layers.mask;
-    o.layers.mask = 0;
-  });
+// `key` names whose cut this is. A record can be cut (key 'cull') and the whole island it
+// stands on cut as well (key 'far', keepRegion below), in either order and undone in either
+// order. So each object keeps what it had once, in `userData.cut`, with the list of cuts that
+// hold it; it is drawn again only when the last of them lets go. (Two separate saved masks
+// were tried first and are wrong: an island cut before its record saved the record's live
+// mask, and then the island coming back put a still-cut record back on screen.) An array and
+// not a Set, because Object3D.copy clones userData through JSON.
+function cut(o, key) {
+  let c = o.userData.cut;
+  if (!c) c = o.userData.cut = { keys: [], mask: o.layers.mask, intensity: o.intensity };
+  if (!c.keys.includes(key)) c.keys.push(key);
+  if (o.isLight) o.intensity = 0;
+  else o.layers.mask = 0;
+}
+function uncut(o, key) {
+  const c = o.userData.cut;
+  if (!c) return;
+  const i = c.keys.indexOf(key);
+  if (i < 0) return;
+  c.keys.splice(i, 1);
+  if (c.keys.length) return;
+  if (o.isLight) o.intensity = c.intensity;
+  else o.layers.mask = c.mask;
+  delete o.userData.cut;
 }
 
-export function unmaskGroup(g) {
-  g.traverse((o) => {
-    if (o.isLight) {
-      if (o.userData.cullIntensity === undefined) return;
-      o.intensity = o.userData.cullIntensity;
-      delete o.userData.cullIntensity;
-      return;
-    }
-    if (o.userData.cullMask === undefined) return;
-    o.layers.mask = o.userData.cullMask;
-    delete o.userData.cullMask;
-  });
+export function maskGroup(g, key = 'cull') {
+  g.traverse((o) => cut(o, key));
+}
+
+export function unmaskGroup(g, key = 'cull') {
+  g.traverse((o) => uncut(o, key));
 }
 
 // How many objects hang under `g`, all the way down: a nameplate or a scaffold added to a
@@ -106,5 +114,31 @@ export function keepRecord(rec, range, eye) {
       c.count = countUnder(g);
     }
   }
+  return !out;
+}
+
+// A whole neighbour behind the fog: its ground, its wood, its fields, its props and its houses
+// in one mask. Records are cut one by one past Object Distance, but an island's landscape is
+// not a record and was drawn in full fog however far off it lay - a starter's forest alone is
+// ~80k triangles, measured. `g` is a guest island (guest-island.js: `group` offset to the
+// region's origin, `region.half`, `records`). Judged by the nearest point of its square, flat,
+// against `ceiling` - main.js fogCeiling(), where the haze has closed - plus the same pad and
+// hysteresis as a record, so everything masked is past the fog and nothing pops. `ceiling`
+// Infinity (the planner) lets it back. An island with a landmark on it (seenThroughFog) is left
+// alone, for the same reason its lighthouse is. Returns whether it is drawn.
+export function keepRegion(g, ceiling, eye) {
+  const grp = g.group;
+  if (!grp || !g.region) return true;
+  const e = grp.matrixWorld.elements;
+  const half = g.region.half || 0;
+  const dx = Math.max(0, Math.abs(eye.x - e[12]) - half);
+  const dz = Math.max(0, Math.abs(eye.z - e[14]) - half);
+  const d = Math.hypot(dx, dz);
+  const landmark = (g.records || []).some((r) => r.group && (r.seen && r.seen.group === r.group ? r.seen.through : seenThroughFog(r.group)));
+  const edge = ceiling + CULL_PAD;
+  const out = Number.isFinite(ceiling) && !landmark && (g.farOut ? d >= edge - CULL_HYST : d >= edge);
+  if (out && !g.farOut) { maskGroup(grp, 'far'); g.farOut = { kids: grp.children.length }; }
+  else if (!out && g.farOut) { unmaskGroup(grp, 'far'); g.farOut = null; }
+  else if (out && grp.children.length !== g.farOut.kids) { maskGroup(grp, 'far'); g.farOut.kids = grp.children.length; }
   return !out;
 }

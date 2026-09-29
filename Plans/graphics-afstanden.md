@@ -255,6 +255,23 @@ in de nevel (hun alpha, niet hun kleur: additief licht naar de mistkleur zou gri
 de knip wordt nu genomen vlak voor de render (`cullRecords`), waar elke tak van de frame de camera
 al heeft neergezet; eerder in de frame mat hij van waar de camera wás.
 
+Uit de meting per soort toestel (headless SwiftShader, dus alleen relatief): de lichtere
+standen waren 2.5-3x sneller dan `full`, maar 85-90% daarvan kwam uit wat `modest` al deed
+(half zo dicht water, `DETAILED` 2, minder bomen, 1024-schaduw). De vier afstanden hielpen alleen
+bij de vulkaan (de imps) en over zee (de far plane); huizen knippen scheelde weinig op dit kleine
+eiland. Wat domineerde en buiten de afstanden viel, en wat eraan gedaan is:
+
+- **Het landschap van gasteilanden** (bos, velden, grond) werd in volle mist getekend: een heel
+  gasteiland wordt nu gemaskeerd zodra zijn dichtstbijzijnde rand voorbij de mist ligt
+  (`keepRegion`). Op `?modest`: over zee 611k → 543k driehoeken, bij de vulkaan 550k → 481k.
+- **Imps** (25k driehoeken, met schaduw): een `modest` pagina zet er maximaal zes neer, als een
+  telefoon.
+- **Telefoon**: één gasteiland volledig (`DETAILED` 1) en pixel ratio 1.
+- **Het waterraster**: 2.53M van de 2.75M driehoeken op `full` was één watervlak over de omhullende
+  rechthoek van álle eilanden, lege zee inbegrepen. Apart opgepakt (zie de volgende commit).
+- Niet gedaan: de eilandjes (~52k driehoeken, één InstancedMesh over de hele zee, per eilandje
+  maskeren vraagt de buffers elke frame opnieuw) en een schaduwkaart van 512 op de telefoon.
+
 Niet gedaan, bewust: de zon kan bij View 100 vóór heuvels op 200 hangen (de prijs van een
 mistvrije schijf binnen de far plane); vlaggen van geknipte huizen blijven in de gedeelde
 InstancedMesh staan, bevroren en in volle mist.

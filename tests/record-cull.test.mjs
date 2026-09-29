@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
 const THREE = await import('three');
-const { keepRecord, maskGroup, unmaskGroup, seenThroughFog } = await import('../web/js/record-cull.js');
+const { keepRecord, keepRegion, maskGroup, unmaskGroup, seenThroughFog } = await import('../web/js/record-cull.js');
 const { CULL_PAD } = await import('../web/js/fade.js');
 
 const eye = new THREE.Vector3(0, 0, 0);
@@ -42,7 +42,7 @@ test('near stays drawn, past the range plus the pad goes, and comes back as it w
   rec.group.position.x = 50; rec.group.updateMatrixWorld(true);
   assert.equal(keepRecord(rec, 60, eye), true);
   assert.ok(drawn(rec.group) && drawn(body) && drawn(roof));
-  assert.equal(body.userData.cullMask, undefined);
+  assert.equal(body.userData.cut, undefined);
 });
 
 test('a range of 0 (the planner) lets everything back in', () => {
@@ -116,4 +116,54 @@ test('mask and unmask are exact inverses, and keep a mask somebody else set', ()
   assert.equal(body.layers.mask, 1 << 3);
   unmaskGroup(rec.group);
   assert.equal(body.layers.mask, 1 << 3);
+});
+
+test('a record and its island cut in either order come back only when both let go', () => {
+  const { rec, body } = record(0);
+  // Island first, then the record, then the island back: the record must stay cut.
+  maskGroup(rec.group, 'far');
+  maskGroup(rec.group, 'cull');
+  unmaskGroup(rec.group, 'far');
+  assert.ok(!drawn(body), 'the island coming back put a cut record on screen');
+  unmaskGroup(rec.group, 'cull');
+  assert.ok(drawn(body));
+  // And the other way round.
+  maskGroup(rec.group, 'cull');
+  maskGroup(rec.group, 'far');
+  unmaskGroup(rec.group, 'cull');
+  assert.ok(!drawn(body));
+  unmaskGroup(rec.group, 'far');
+  assert.ok(drawn(body));
+  assert.equal(body.userData.cut, undefined);
+  // It survives a clone, which copies userData through JSON.
+  maskGroup(rec.group, 'cull');
+  assert.deepEqual(body.clone().userData.cut.keys, ['cull']);
+});
+
+test('a whole neighbour behind the fog is masked, and not while anything on it shines through', () => {
+  const island = (x, extras = []) => {
+    const group = new THREE.Group();
+    group.position.set(x, 0, 0);
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    const house = record(0, extras).rec;
+    group.add(ground, house.group);
+    group.updateMatrixWorld(true);
+    return { g: { group, region: { half: 32 }, records: [house] }, ground };
+  };
+  const ceiling = 200;
+  // Nearest edge at 400 - 32 = 368, past 200 + the pad: masked.
+  const far = island(400);
+  assert.equal(keepRegion(far.g, ceiling, eye), false);
+  assert.ok(!drawn(far.ground));
+  // Nearest edge inside the pad: drawn.
+  const near = island(32 + ceiling + CULL_PAD - 1);
+  assert.equal(keepRegion(near.g, ceiling, eye), true);
+  assert.ok(drawn(near.ground));
+  // The planner (no ceiling) brings it back.
+  assert.equal(keepRegion(far.g, Infinity, eye), true);
+  assert.ok(drawn(far.ground));
+  // A lighthouse on it: never masked.
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({ fog: false }));
+  const lit = island(900, [beam]);
+  assert.equal(keepRegion(lit.g, ceiling, eye), true);
 });
