@@ -4,6 +4,7 @@ import { addScaffold as attachScaffold } from './scaffold.js';
 import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
 import { createRenderStats, statsLine } from './render-stats.js';
+import { createQualityGovernor, MIN_PIXEL_RATIO } from './quality.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
@@ -16,7 +17,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
-import { allowImp, setImpNight } from './imp.js';
+import { allowImp, setImpNight, setImpBudget, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
@@ -333,7 +334,9 @@ async function openBoardWithoutIsland() {
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
 const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
-renderer.setPixelRatio(Math.min(devicePixelRatio, modest ? 1.15 : 1.5));
+// The best this screen is drawn at; the quality governor below only ever takes from it.
+const basePixelRatio = Math.min(devicePixelRatio, modest ? 1.15 : 1.5);
+renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -342,6 +345,25 @@ renderer.toneMappingExposure = 1.05;
 if (modest) console.info('island: integrated graphics detected, running lighter');
 // ?stats counts the shadow pass too, and the frame time (render-stats.js).
 const renderStats = statsReadout ? createRenderStats(renderer) : null;
+
+// Drawing less while this machine cannot keep up (web/js/quality.js, Plans/sneller-tekenen.md):
+// fed every frame from tick(), and what it answers is applied here and nowhere else. `modest`
+// above is the boot-time guess off the GPU's name; this is the correction from what the frames
+// actually do. ?quality=n pins rung n (0 full .. 4 lightest), to look at one.
+const quality = createQualityGovernor();
+let shadowEvery = 1, shadowFrame = 0;
+function applyQuality(rung) {
+  renderer.setPixelRatio(Math.min(basePixelRatio, Math.max(MIN_PIXEL_RATIO, basePixelRatio * rung.pixel)));
+  renderer.setSize(innerWidth, innerHeight, false);
+  // Every frame is three.js's own autoUpdate; any slower and frame() asks for the map by hand.
+  shadowEvery = rung.shadowEvery;
+  shadowFrame = 0;
+  renderer.shadowMap.autoUpdate = shadowEvery === 1;
+  renderer.shadowMap.needsUpdate = true;
+  setImpBudget(IMP_LIMIT * rung.imps);
+  if (statsReadout) console.info(`island: drawing at quality "${rung.name}"`);
+}
+if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
@@ -5625,6 +5647,8 @@ function tick(nowMs) {
     try {
       frame(nowMs);
       recovery.frame(nowMs, document.visibilityState === 'visible');
+      const rung = quality.frame(nowMs, document.visibilityState === 'visible');
+      if (rung) applyQuality(rung);
     } catch (e) {
       recovery.failed();
       if (frameErrors++ < 3) console.error('frame failed', e);
@@ -5916,12 +5940,16 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
+  // The shadow map every n-th frame when the quality governor asks (applyQuality). Its light
+  // matrix is only rebuilt when the map is, so what stands still stays exactly where its
+  // shadow is between two redraws; only what moves has a shadow a frame or two behind.
+  if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
   renderer.render(state.inside ? state.inside.scene : scene, eye);
   if (renderStats) {
     // Both passes now, the shadow map's apart (render-stats.js). Comparing two runs is what
     // they are for; the frame times are this machine's and nobody else's.
     const s = renderStats.end(performance.now());
-    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${statsLine(s)} · ${state.particles?.count() ?? 0} particles`;
+    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${quality.rung().name}${quality.auto() ? '' : ' (fixed)'} · ${statsLine(s)} · ${state.particles?.count() ?? 0} particles`;
   }
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
@@ -6237,7 +6265,15 @@ async function boot() {
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    // Settings -> Drawing -> Lighter when slow. A ?quality pin outranks it: that is somebody
+    // looking at one rung on purpose.
+    onQualityAuto: (on) => {
+      if (params.has('quality')) return;
+      const rung = quality.setAuto(on);
+      if (rung) applyQuality(rung);
+    },
   });
+  if (!params.has('quality') && !state.ui.qualityAutoEnabled()) quality.setAuto(false);
 
   // The story animals' dossier, the island's animal diary and the "while you were away" card
   // (web/js/animal-dossier.js, Plans/dierenverhalen.md). Everything it shows about our own
@@ -6931,7 +6967,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
 // to want to try: ?join= only fires at boot, and a bundle needs a second machine.
 window.settlers = {
   state, scene, camera, controls, renderer, THREE, frameIsland, focusOn,
-  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange, enterPlan, exitPlan,
+  joinIsland, raiseGuestIslands, syncFleet, applyFogRange, applyCameraRange, enterPlan, exitPlan, quality,
 };
 
 addEventListener('resize', () => {

@@ -36,7 +36,7 @@ export function createRenderStats(renderer) {
       if (lastAt !== null) {
         const dt = now - lastAt;
         // A hidden tab or a breakpoint is not a slow frame.
-        if (dt < 250) interval = interval ? interval + (dt - interval) * EASE : dt;
+        if (dt < 5000) interval = interval ? interval + (dt - interval) * EASE : dt;
       }
       lastAt = now;
       startedAt = now;

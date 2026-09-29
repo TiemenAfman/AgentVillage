@@ -431,6 +431,13 @@ export function createUI(handlers) {
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
 
+  // The quality governor (web/js/quality.js, Plans/sneller-tekenen.md): drawing less while
+  // this machine cannot keep up. On unless switched off, per browser - it is about this
+  // screen's graphics, not the island.
+  const QUALITY_KEY = 'promptholm.quality.auto';
+  let qualityAuto = true;
+  try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
+
   // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
   function setKeeper(keeper) { el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper; }
 
@@ -585,6 +592,11 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${directorOn
         ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
         : 'Off: the camera stays where you leave it.'}</p>`
+      + '<h3 class="sec">Drawing</h3>'
+      + `<div class="chips wrap"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
+      + `<p class="muted" style="margin-top:9px">${qualityAuto
+        ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
+        : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`
       + '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -604,6 +616,12 @@ export function createUI(handlers) {
       youOn = !youOn;
       try { if (youOn) localStorage.removeItem(YOU_KEY); else localStorage.setItem(YOU_KEY, '0'); } catch { /* kept for this page only */ }
       renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-qualityauto]').forEach((b) => b.addEventListener('click', () => {
+      qualityAuto = !qualityAuto;
+      try { if (qualityAuto) localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, '0'); } catch { /* kept for this page only */ }
+      renderSettings();
+      if (handlers.onQualityAuto) handlers.onQualityAuto(qualityAuto);
     }));
     el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {
       directorOn = !directorOn;
@@ -1084,7 +1102,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn, directorEnabled: () => directorOn,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youArrowEnabled: () => youOn, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close

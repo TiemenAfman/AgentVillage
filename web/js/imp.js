@@ -69,6 +69,14 @@ export const wantsImp = (id) => isGuard(id);
 // "all" here and a cap there, because the cap is also what keeps a slow laptop honest.
 export const IMP_CAP = Object.freeze({ desktop: 16, phone: 6 });
 export const IMP_LIMIT = STANDALONE ? IMP_CAP.phone : IMP_CAP.desktop;
+// How many of those the page may stand right now: IMP_LIMIT, unless the quality governor
+// (quality.js) has turned it down on a machine that cannot keep up. A function rather than a
+// number handed to each crowd at creation, because the governor turns it while the volcano's
+// crowd is standing; pickImps simply picks fewer next frame, and the rest are the instanced
+// figures they would have been beyond the limit anyway.
+let budget = IMP_LIMIT;
+export const impBudget = () => budget;
+export function setImpBudget(n) { budget = Math.max(0, Math.min(IMP_LIMIT, Math.round(n))); }
 // How much nearer a guard without an imp has to be than one with, before it takes the imp
 // over: distances of holders are scaled by this. Without it two guards at the edge of the
 // cap trade an imp - a clone and a dispose - on every frame the camera drifts between them.
