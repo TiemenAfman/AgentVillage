@@ -14,7 +14,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // stub the other tests that reach it use.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 
-const { fadeAmount, fadeNeeded, cornerCos, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
+const { fadeAmount, fadeNeeded, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
   FADE_VERTEX_BODY, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_BODY, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM,
 } = await import('../web/js/fade.js');
 
@@ -60,18 +60,22 @@ test('a cut the fog can never reach past is invisible, so the dither is not comp
   assert.equal(fadeNeeded(300, Infinity), true);
 });
 
-test('the corner of the frame is shallower than the middle, and fadeNeeded asks there', () => {
-  // The fog is linear in depth and the cut is on a distance. At the corner of a 16:9 frame at
-  // 45 degrees a thing is about 0.76 as deep as it is far, so a cut at 600 under a fog capped
-  // at 522 is in full fog straight ahead and in clear air at the corner.
-  const cos = cornerCos(45, 16 / 9);
-  assert.ok(cos > 0.74 && cos < 0.78, `corner cos ${cos}`);
-  assert.equal(fadeNeeded(600, 522, 1), false);
-  assert.equal(fadeNeeded(600, 522, cos), true);
-  // Straight down a tube with no width, the corner is the axis.
-  assert.ok(Math.abs(cornerCos(1e-9, 1) - 1) < 1e-12);
-  // A wider window has a corner further off the axis.
-  assert.ok(cornerCos(45, 21 / 9) < cornerCos(45, 16 / 9));
+test('the fog is by distance, so a cut in full fog is in full fog at every corner', async () => {
+  const THREE = await import('three');
+  const { useRadialFog, DEPTH_FOG_LINE, RADIAL_FOG_LINE } = await import('../web/js/radial-fog.js');
+  // The line it replaces is still three's, or the patch is a silent no-op after an upgrade.
+  const before = THREE.ShaderChunk.fog_vertex;
+  assert.ok(before.includes(DEPTH_FOG_LINE) || before.includes(RADIAL_FOG_LINE), 'three rewrote fog_vertex');
+  assert.equal(useRadialFog(THREE), true);
+  assert.ok(THREE.ShaderChunk.fog_vertex.includes(RADIAL_FOG_LINE));
+  assert.ok(!THREE.ShaderChunk.fog_vertex.includes(DEPTH_FOG_LINE));
+  // Twice is once.
+  assert.equal(useRadialFog(THREE), true);
+  assert.equal(THREE.ShaderChunk.fog_vertex.split(RADIAL_FOG_LINE).length, 2);
+  // And the building shader measures the same distance, so the dither and the fog agree.
+  assert.ok(FADE_VERTEX_BODY.includes('length(mvPosition.xyz)'));
+  // A chunk it does not recognise is left alone and reported.
+  assert.equal(useRadialFog({ ShaderChunk: { fog_vertex: 'something else' } }), false);
 });
 
 // ---------------------------------------------------------------- the CPU cut behind it
@@ -102,7 +106,7 @@ test('the shader uses the same band as the arithmetic, or nothing pops in the ri
   assert.ok(FADE_VERTEX_BODY.includes(FADE_BAND.toFixed(4)));
   assert.equal(FADE_RANGE_UNIFORM, 'uFadeRange');
   // A distance, not a depth: the CPU cut behind the fade measures straight-line distance, and
-  // on a depth the corners of the frame would still be in the band when the cut came.
+  // so does the fog (radial-fog.js).
   assert.ok(FADE_VERTEX_BODY.includes('length(mvPosition.xyz)'));
   assert.ok(!FADE_VERTEX_BODY.includes('-mvPosition.z'));
   assert.ok(FADE_VERTEX_BODY.includes(FADE_RANGE_UNIFORM));
@@ -218,7 +222,7 @@ test('the depth twin fades the shadow with the building, and only while the fade
   assert.equal(depth.customProgramCacheKey(), 'settlers-depth-v1');
 
   const before = depth.version;
-  mat.userData.fade(100, 522, 0.76);
+  mat.userData.fade(100, 522);
   assert.ok(depth.version > before, 'the twin was not told to recompile');
   assert.equal(depth.customProgramCacheKey(), 'settlers-depth-v1-fade');
   const on = compile();
@@ -267,7 +271,7 @@ test("a building's other materials fade with it, and keep the program they had",
   assert.doesNotMatch(compile(gold, 'phong').fragmentShader, /discard/);
 
   const v = gold.version;
-  owner.userData.fade(100, 522, 0.76);
+  owner.userData.fade(100, 522);
   assert.ok(gold.version > v, 'a follower was not told to recompile');
   assert.equal(gold.customProgramCacheKey(), plainKey + '|fade');
   assert.equal(flag.customProgramCacheKey(), 'settlers-flag|fade');

@@ -641,6 +641,7 @@ export function createUI(handlers) {
     return '<div><h3 class="sec">Graphics</h3>'
       + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
       + GRAPHICS_ROWS.map(row).join('')
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-graphics-reset="1">This machine's defaults</button></div>`
       + `</div>`;
   }
   function renderSettings() {
@@ -703,6 +704,13 @@ export function createUI(handlers) {
         if (youMode === 'you') localStorage.removeItem(YOU_KEY);
         else localStorage.setItem(YOU_KEY, youMode === 'off' ? '0' : youMode);
       } catch { /* kept for this page only */ }
+      renderSettings();
+    }));
+    // Every slider back to what this kind of machine starts at (graphics-settings.js), and the
+    // panel drawn again from the numbers main.js now holds.
+    el('settings-body').querySelectorAll('[data-graphics-reset]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onGraphicsReset) handlers.onGraphicsReset();
+      if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {

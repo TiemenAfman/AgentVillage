@@ -28,7 +28,49 @@ wereld, weer) en krijgt alleen een lager plafond (`FOG_CAP * camera.far`, 0.95) 
 Distance omlaag gaat. De +150 is bewust: de mist moet vóór de harde knip van de far plane al
 helemaal dicht zijn, anders zie je een gebogen rand over de zee.
 
+## Huizen komen door de mist tevoorschijn (29 september, tweede ronde)
+
+Het verzoek: *speelbaar op oudere toestellen, en huizen moeten niet spontaan verschijnen maar door
+de mist tevoorschijn komen.* De dither hieronder deed het eerste half en het tweede niet: een huis
+dat in heldere lucht uit stippels opbouwt verschijnt nog steeds, alleen zachter.
+
+Nu **sluit de mist nooit verder dan Object Distance** (`fogCeiling()` in `main.js`:
+`min(0.95 · far, objectDistance)`). Een huis wordt pas `CULL_PAD` voorbij die afstand uit de
+render list gehaald, en is dan al volledig mistkleurig; op de terugweg wordt het uit de mist
+opgebouwd door dezelfde lineaire nevel die het land en de zee al hebben. De dither is voor de
+gebouwen daardoor nooit meer nodig (`fadeNeeded(objectDistance, fogCeiling())` is altijd onwaar)
+en de gebouwshader blijft zoals hij altijd was — ook op een zwak toestel scheelt dat de vroege
+diepte-test. Voor bewoners blijft hij: NPC Distance kan ruim binnen de nevel liggen.
+
+Daarvoor moest **de mist op afstand rekenen in plaats van diepte** (`web/js/radial-fog.js`, één
+patch op three's `fog_vertex` vóór er iets compileert). Met diepte-mist was een huis in de hoek van
+het beeld (~0.76 zo diep als ver) bij de knip nog niet helemaal in de mist. De far plane knipt
+nog op diepte, en afstand is nooit kleiner dan diepte, dus die knip zit met méér marge in volle
+mist dan eerst.
+
+De prijs, bewust: Object Distance onder View Distance trekt nu ook de nevel over land en zee naar
+binnen. View Distance blijft de far plane en het plafond van de mist; Object Distance is de knop
+die op een zwak toestel het verschil maakt, en die ziet er dan uit als een heiige dag in plaats
+van als een dorp dat ophoudt.
+
+**Standaard per soort toestel** (`GRAPHICS_TIERS` in `graphics-settings.js`), gekozen met de
+bestaande `modest`-detectie in `main.js` (integrated graphics via `MODEST_GPU`, of `?modest`) en
+`STANDALONE` voor de telefoon:
+
+| | View | Object (= waar de mist dichtgaat) | NPC | Shadow |
+|---|---|---|---|---|
+| `full` | 1250 (far 1400) | 2000 | 1000 | 380 |
+| `modest` | 800 | 550 | 300 | 160 |
+| `phone` | 600 | 380 | 200 | 110 |
+
+Alleen wat iemand zelf verschuift wordt bewaard (`saveGraphic`, sleutel `.v3`): de eerdere versies
+bewaarden alle vier bij elke wijziging, en dan zou een laptop die later als `modest` herkend werd de
+desktopwaarden houden. "This machine's defaults" in het paneel vergeet alle keuzes.
+
 ## Solide, dan een dither, dan een knip — en de knip pas als de dither klaar is
+
+*(Dit was de eerste ronde. Voor gebouwen is de dither nu nooit nodig, zie hierboven; het
+mechanisme blijft voor bewoners, en als vangnet.)*
 
 Voor Object en NPC Distance is de regel voor elk bereik `r`:
 
@@ -81,29 +123,23 @@ mesh, eigen material zonder dither) wordt niet meer gegeven aan een wachter in d
 
 Een `discard` kost de vroege diepte-test voor het hele material, en dat material is elk gebouw
 op het eiland. Dus de patch zit er alleen in als een knip zichtbaar zou kunnen zijn:
-`fadeNeeded(range, fogCap, cos)`.
+`fadeNeeded(range, fogCap)`.
 
 De eerste versie vroeg `range < scene.fog.far` en dat was op drie punten fout:
 
-1. **De mist is lineair in diepte, de knip is een afstand.** In de hoek van een 16:9-beeld op 45°
-   is iets maar ~0.76 zo diep als het ver is. Een huis op 300 in de hoek staat op diepte 229, in
-   heldere lucht onder een mist die op 260 dichtgaat. `cornerCos(fov, aspect)` is die verhouding.
+1. **De mist was lineair in diepte, de knip is een afstand.** In de hoek van een 16:9-beeld op 45°
+   is iets maar ~0.76 zo diep als het ver is. Eerst opgevangen met een cosinus van de hoek van het
+   beeld; nu rekent de mist zelf op afstand (radial-fog.js) en is die correctie weg.
 2. **`scene.fog.far` is geen constante.** `applyFogRange()` beweegt hem met de zoom, de buren, de
    rand van de wereld en het weer, soms elke frame. Een besluit tegen de mist van dat moment liet
    de dither eruit terwijl een opklarende lucht de knip in beeld bracht. Nu wordt gevraagd tegen
-   het plafond, `FOG_CAP * camera.far`, dat alleen View Distance verschuift.
+   het plafond, `fogCeiling()`, dat alleen View en Object Distance verschuiven.
 3. **Hercompileren is niet gratis**, dus het besluit valt bij een schuifregelaar, een resize of de
    planner (`applyObjectDistances`), nooit per frame.
 
-**Standaardwaarden: hoog** (29 september, op verzoek). View 1250 (dus `camera.far` 1400, het
-oude uitzicht), Object 2000, NPC 1000, Shadow 380 (de breedste doos die `SHADOW_SPAN[1]` toelaat).
-Object staat op zijn maximum en niet gelijk aan View, omdat 2000 in de hoek van het beeld nog
-dieper ligt dan de mist onder een far plane van 1400 ooit sluit: de dither zit bij de
-standaard dus niet in de gebouwshader en alles rendert precies als vroeger. Voor bewoners staat
-hij wel aan (1000 · 0.76 < 1330), maar dat raakt alleen de pixels van mensen. De schuifregelaars
-zijn om het omlaag te zetten op een machine die dat nodig heeft. De opslagsleutel werd
-`promptholm.graphics.v2`: de eerste versie bewaarde bij elke wijziging alle vier, dus wie alleen
-de schaduw had verschoven zat vast aan een View van 400 die hij nooit koos.
+**Standaardwaarden: hoog** (29 september, op verzoek) voor een gewone machine: View 1250 (dus
+`camera.far` 1400, het oude uitzicht), Object 2000, NPC 1000, Shadow 380 (de breedste doos die
+`SHADOW_SPAN[1]` toelaat). Zwakkere toestellen hebben hun eigen, lagere standaard (zie boven).
 
 De oude bewering dat de dither bij de standaard niets kostte klopte alleen omdat er toen ook
 geen CPU-knip was: voorbij Object Distance werd niets weggehaald, alleen de molens stonden
@@ -179,6 +215,14 @@ weggestippeld is erger dan geen schuifregelaar. `leftPlan()` zet ze terug.
   voordat de eerste record geknipt wordt. De eerste meting liet nog een stap van ~27 pixels
   zien: het goud op de kuil en het erts in de mijn, met een eigen material. Daarvoor is
   `followFade` er: elk ander ingebouwd material in een record vervaagt mee.
+- **Door de mist (tweede ronde).** Op `?modest` sluit de mist op 550 in plaats van 1035 en komt het
+  eiland op ~420 uit de nevel; schuifregelaar, opslag per sleutel en "This machine's defaults"
+  werken; geen shaderfouten, en de radiale `fog_vertex` staat erin. De pixelmeting (elk frame met en
+  zonder huizen) bleef te ruizig om een stap te bewijzen of uit te sluiten — zee en wolken bewegen
+  tussen de twee opnamen, een ruisvloer van ~400-700k tegen 1.3M voor het hele dorp. Dat er geen
+  stap is volgt hier uit de constructie: bij de knip ligt elk punt van het huis ≥ Object Distance
+  ver, de mist is daar `fogFactor = 1`, en dan is de kleur *exact* de mistkleur — dezelfde als van
+  het land en de lucht erachter.
 
 ## Open vragen
 

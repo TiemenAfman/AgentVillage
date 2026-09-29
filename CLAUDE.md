@@ -351,31 +351,40 @@ is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes 
 `FOG_CAP` = 0.95 of it, and never tied to the world's size; the sky dome is drawn *on* the
 far plane, `p.xyww` in world.js, so a near far plane never shows the black clear colour, and
 `world.setFar` keeps the fog-free sun and moon inside it); Object Distance is how far a
-house, prop or boat is still drawn; NPC Distance is how far a *person* is still drawn;
-Shadow Distance is the ceiling on how wide the sun's shadow box may grow (`setShadowDistance`
-in world.js - not `shadow.camera.far`, which `followShadow` rewrites on every zoom). The
-sliders are in Settings → Graphics, per browser (`web/js/graphics-settings.js`: defaults,
-limits, localStorage). The defaults are high on purpose - view 1250 (a far plane of 1400, the
-old look), object 2000 (so the dither is not compiled in at all), NPC 1000, shadow 380 - and
-the sliders are for turning it down. And `state.graphics` is written from exactly one place,
-`onGraphicsSetting` - which has to be on **createUI**'s handlers; it was handed to
-`createNet` once and every slider moved its label and nothing else
+house, prop or boat is still drawn - and the haze closes no further out than it; NPC
+Distance is how far a *person* is still drawn; Shadow Distance is the ceiling on how wide
+the sun's shadow box may grow (`setShadowDistance` in world.js - not `shadow.camera.far`,
+which `followShadow` rewrites on every zoom). The sliders are in Settings → Graphics, per
+browser (`web/js/graphics-settings.js`), and only the ones somebody moved are stored
+(`saveGraphic`); the rest follow the machine's tier - `full` (1250/2000/1000/380: a far plane
+of 1400, the old look), `modest` (main.js's `modest`: integrated graphics or `?modest`) and
+`phone` (the app), with "This machine's defaults" to forget every choice. `state.graphics` is
+written from exactly one place, `onGraphicsSetting` - which has to be on **createUI**'s
+handlers; it was handed to `createNet` once and every slider moved its label and nothing else
 (`tests/graphics-settings.test.mjs` reads the source for it). The plan is
 `Plans/graphics-afstanden.md`. Before touching any of them:
 
-- **Solid, then a dither, then a cut - and the cut only once the dither is done.** The last
-  fifth of each range is a screen-hash `discard` (`web/js/fade.js`, spliced into
-  `createBuildingMaterial`, so it stays in the opaque pass) on the straight-line distance
-  `length(mvPosition.xyz)`; past the range plus `CULL_PAD` a record is taken out of the render
-  list (`keepRecord` in main.js) and a person out of the crowd (`beyond` in crowd-view.js,
-  `NPC_PAD`). A *distance*, not the fog's depth, because the CPU cut is a distance and at the
-  corner of the frame a thing is only ~0.76 as deep as it is far.
-- **The dither is compiled in only while a cut could be seen.** A `discard` costs the early
-  depth test for every building, prop, boat and person, so `fadeNeeded(range, fogCap, cos)`
-  asks whether even the corner of the frame (`cornerCos`) at the range is deeper than the fog
-  can *ever* close (`FOG_CAP * camera.far`) - not `scene.fog.far`, which applyFogRange moves
-  with the zoom and the sky every frame. It is decided in `applyObjectDistances` (sliders,
-  resize, the planner), never per frame; `customProgramCacheKey` carries the `-fade`.
+- **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js caps the
+  haze at the nearer of the far plane and Object Distance, and a record is taken out of the
+  render list (`keepRecord`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
+  is cut is always already the colour of the fog, and on the way in it thickens out of it.
+  That is what makes an older machine playable without the island looking cut short: the
+  `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
+  people are past the haze and not drawn at all.
+- **The fog is by distance, not depth** (`web/js/radial-fog.js` patches three's `fog_vertex`
+  chunk once, before anything compiles; every shader that fogs, the hand-written water, lava
+  and weather ones too, goes through it). three's own fog was `-mvPosition.z`, and at the
+  corner of the frame a thing is only ~0.76 as deep as it is far, so "cut in full fog" was true
+  in the middle of the screen and false at its corners. The far plane still cuts on depth,
+  and distance is never less than depth, so the far-plane cut is in full fog with more margin.
+- **The dither is for the people.** `web/js/fade.js` (a screen-hash `discard` on
+  `length(mvPosition.xyz)`, spliced into `createBuildingMaterial`, so it stays in the opaque
+  pass) is compiled in only while `fadeNeeded(range, fogCeiling())` says a cut could be seen.
+  For the buildings that is never, since the fog closes at their range; NPC Distance can lie
+  well inside the haze, and there a person dithers out over the last fifth before `beyond` in
+  crowd-view.js (`NPC_PAD`) hands them back. Decided in `applyObjectDistances` (sliders,
+  resize, the planner) against the ceiling, never the fog of the moment, and never per frame;
+  `customProgramCacheKey` carries the `-fade`.
 - **Shadows fade too.** Each building material has a depth twin (`mat.userData.fadeDepth`,
   the same band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed
   to meshes as `customDepthMaterial` by `adoptFadeDepth` - once a second over the scene while a

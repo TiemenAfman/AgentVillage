@@ -2,6 +2,7 @@ import { addScaffold as attachScaffold } from './scaffold.js';
 // Boot, camera, the live feed and the animation queue that turns a data diff into
 // something you can watch happen.
 import * as THREE from 'three';
+import { useRadialFog } from './radial-fog.js';
 import { createRecovery } from './graphics-health.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
@@ -36,8 +37,8 @@ import {
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye, adoptFadeDepth, followFadeUnder,
 } from './buildings.js';
-import { cornerCos, cullNext } from './fade.js';
-import { loadGraphics, saveGraphics, clampGraphic } from './graphics-settings.js';
+import { cullNext } from './fade.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
@@ -119,6 +120,11 @@ import { captionCell } from './captions.js';
 
 // In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
 installDesktopGuards();
+
+// Before any material compiles: the haze by distance, not depth (radial-fog.js), so a house
+// cut at Object Distance is in full fog at every corner of the screen and not only in the
+// middle of it. Logged rather than thrown if three's chunk ever changes under us.
+if (!useRadialFog(THREE)) console.warn('island: three.js fog chunk changed; the haze is by depth again');
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('stage');
@@ -410,7 +416,7 @@ const state = {
   // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
   // onGraphicsSetting is the only thing that moves them. Plans/graphics-afstanden.md is why
   // they are not collapsed into camera.far.
-  graphics: loadGraphics(),
+  graphics: loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]),
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
@@ -2484,23 +2490,35 @@ function applyViewDistance() {
   applyFogRange();
 }
 
-// Object and NPC Distance, and the fade that goes with them (web/js/fade.js). Whether a cut
-// is worth fading is asked against the furthest the fog can ever close - FOG_CAP of the far
-// plane, which only View Distance moves - and at the corner of the frame, not against where
-// the haze happens to be this frame: applyFogRange moves that with every zoom and every
-// change of sky, and a decision taken against it left the dither out while a clearing sky
-// brought the cut into view. So this runs when a slider, the window or the planner changes,
-// and never per frame.
+// The furthest the haze may close: inside the far plane (FOG_CAP of it), and never further out
+// than Object Distance. The second half is what makes a house come out of the mist rather than
+// appear: every record past Object Distance is taken out of the picture (keepRecord), and with
+// the fog closed by then it was already the colour of the fog - on every part of the screen,
+// since the fog is by distance (radial-fog.js), like the cut. It is also what keeps an older
+// machine playable without the island looking cut short: what is not drawn is behind a haze
+// that thickens towards it, not a line where the town stops. The planner draws everything.
+function fogCeiling() {
+  const view = camera.far * FOG_CAP;
+  return state.mode === 'plan' ? view : Math.min(view, state.graphics.objectDistance);
+}
+
+// Object and NPC Distance, and the fade that goes with them (web/js/fade.js). The fog now
+// closes at Object Distance at the latest, so the houses never need the dither - they are cut
+// in full fog - and the building shader is left as it always was; fadeNeeded says so. The
+// people do: NPC Distance can be well inside the haze, and there the dither is what stops a
+// settler vanishing in clear air. Decided against fogCeiling(), the furthest the fog can ever
+// close, not the fog of the moment - applyFogRange moves that with every zoom and every change
+// of sky, and a decision taken against it left the dither out while a clearing sky brought the
+// cut into view. So this runs when a slider, the window or the planner changes, never per frame.
 //
 // The planner draws everything - enterPlan pushes the fog to 4000 so the whole island is
 // legible - and a town seen from above with half of it stippled away is worse than no slider
 // at all. A range of 0 is how "off" is spelled everywhere in this file.
 function applyObjectDistances() {
   const plan = state.mode === 'plan';
-  const cap = camera.far * FOG_CAP;
-  const cos = cornerCos(camera.fov, camera.aspect);
-  buildingMat.userData.fade(plan ? 0 : state.graphics.objectDistance, cap, cos);
-  crowdMat.userData.fade(plan ? 0 : state.graphics.npcDistance, cap, cos);
+  const cap = fogCeiling();
+  buildingMat.userData.fade(plan ? 0 : state.graphics.objectDistance, cap);
+  crowdMat.userData.fade(plan ? 0 : state.graphics.npcDistance, cap);
   // The shadows fade with what casts them, and a building's other materials fade with it:
   // both handed out by sweepFadeDepth, on the next frame rather than a second from now.
   fadeSweepAt = 0;
@@ -2529,16 +2547,28 @@ function sweepFadeDepth(nowMs) {
 
 // What the settings panel calls. Four keys, four places, and the only way into all of them -
 // the numbers in state.graphics are not written anywhere else, so there is no second path
-// that could move one of these without the other three finding out. Remembered per browser
-// on every change (graphics-settings.js).
+// that could move one of these without the other three finding out. Remembered per browser,
+// the one that moved and not the other three (graphics-settings.js saveGraphic), so the rest
+// go on following this machine's defaults.
 function onGraphicsSetting(key, value) {
   const v = clampGraphic(key, value);
   if (v == null) return;
   state.graphics[key] = v;
-  saveGraphics(state.graphics);
-  if (key === 'viewDistance') { applyViewDistance(); applyObjectDistances(); return; }
-  if (key === 'shadowDistance') { if (state.world) state.world.setShadowDistance(v); return; }
-  applyObjectDistances();
+  saveGraphic(key, v);
+  applyGraphics(key);
+}
+function applyGraphics(key = null) {
+  if (!key || key === 'viewDistance') applyViewDistance();
+  // Object Distance moves the haze (fogCeiling) before it decides anything about fading.
+  else if (key === 'objectDistance') applyFogRange();
+  if (!key || key === 'shadowDistance') { if (state.world) state.world.setShadowDistance(state.graphics.shadowDistance); }
+  if (key !== 'shadowDistance') applyObjectDistances();
+}
+// Settings → Graphics → "This machine's defaults": every choice forgotten, back to the tier.
+function onGraphicsReset() {
+  forgetGraphics();
+  Object.assign(state.graphics, GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]);
+  applyGraphics();
 }
 
 // Object Distance, on the CPU: a record past its range is taken out of the render list, so
@@ -2666,8 +2696,8 @@ function setFogRange(half, out, far) {
   // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
-  const cap = camera.far * FOG_CAP;
-  scene.fog.far = Math.min(h.far, cap);
+  // And never past Object Distance, so the houses come out of the mist (fogCeiling).
+  scene.fog.far = Math.min(h.far, fogCeiling());
   scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
 }
 
@@ -6337,6 +6367,7 @@ async function boot() {
     // the panel's handlers: it was handed to createNet, which never calls it, and every
     // slider moved its own label and nothing else.
     onGraphicsSetting,
+    onGraphicsReset,
     graphics: () => state.graphics,
     onSpeechTap: () => endParley(),
     onSay: () => state.islandchat && state.islandchat.toggle(),

@@ -45,36 +45,26 @@ export function fadeAmount(dist, range) {
 // and one material here is every building, prop, boat, animal and person on the island - so
 // the dither is compiled in only where a cut could be seen without it.
 //
-// A cut is invisible when everything cut is already in full fog. Three things make that
+// A cut is invisible when everything cut is already in full fog. Two things make that
 // question harder than "is the range past fog.far", and the first version of this function
-// asked exactly that and was wrong on all three:
+// asked exactly that and was wrong on both (and on a third, now gone):
 //
-// - The fog is linear in *depth* (`-mvPosition.z`, three's fog_vertex), and a cut is on a
-//   *distance*. Out at the edge of the picture a thing is further away than it is deep: at
-//   the corner of a 16:9 frame at 45 degrees its depth is about 0.76 of its distance, so a
-//   house cut at 300 there sits at a depth of 229 - in clear air under a fog that closes at
-//   260. `cos` is that ratio at the corner of the frame (cornerCos), the worst case on
-//   screen.
 // - fog.far is not a constant. applyFogRange moves it with the zoom, the neighbours, the
 //   world's edge and the weather, and it can do so every frame. Deciding against a moment's
 //   fog.far meant a clearing sky left the dither out while the cut came out of the haze.
-//   `fogCap` is therefore the ceiling fog.far can never pass - `0.95 * camera.far`, which
-//   only View Distance moves - so the answer holds whatever the haze does next.
+//   `fogCap` is therefore the ceiling fog.far can never pass - main.js fogCeiling: inside the
+//   far plane, and never past Object Distance - so the answer holds whatever the haze does.
 // - Recompiling is not free, so a decision that flipped with the haze would stutter; one
 //   against the ceiling flips only when a slider is dragged.
+// - (Gone:) three's fog was linear in *depth*, and a cut is on a distance; at the corner of
+//   the frame a thing is only ~0.76 as deep as it is far, so a cut "past the fog" was in clear
+//   air there. The fog is by distance now (radial-fog.js), and the two agree everywhere.
 //
-// So: the dither is compiled in unless even the nearest point a cut can happen at (`range`,
-// seen at the corner of the frame) is deeper than the fog could ever reach.
-export function fadeNeeded(range, fogCap, cos = 1) {
-  return range > 0 && range * cos < fogCap;
-}
-
-// The cosine of the angle between the view axis and the corner of the frame: how deep a
-// thing at distance 1 in the corner is. Vertical field of view in degrees, as three keeps it.
-export function cornerCos(fovDeg, aspect) {
-  const tv = Math.tan((fovDeg * Math.PI) / 360);
-  const th = tv * aspect;
-  return 1 / Math.sqrt(1 + tv * tv + th * th);
+// Because the ceiling is never past Object Distance, a building cut never needs the dither -
+// it is always cut in full fog, and comes out of the mist on the way back. The people do:
+// NPC Distance can lie well inside the haze.
+export function fadeNeeded(range, fogCap) {
+  return range > 0 && range < fogCap;
 }
 
 // ---------------------------------------------------------------------------------
@@ -82,8 +72,8 @@ export function cornerCos(fovDeg, aspect) {
 // ---------------------------------------------------------------------------------
 // The dither only throws pixels away; the vertices are still transformed and the triangles
 // still rasterised, and the mill still turns. A record past its range is therefore also
-// taken out of the render list on the CPU (main.js cullRecords) - but only once it is gone
-// in the shader as well, or the cut is a pop after all. A record is judged by its origin, and
+// taken out of the render list on the CPU (main.js keepRecord) - but only once it is gone,
+// in the fog or in the shader, or the cut is a pop after all. A record is judged by its origin, and
 // a building reaches out from its origin: CULL_PAD is more than the reach of the biggest
 // thing on the island (a ship's lot is 4 x 16, and the Batavia's masts stand above it), so a
 // record whose origin is CULL_PAD past the range has nothing left nearer than the range.
@@ -111,9 +101,8 @@ export function cullNext(dist, range, culled) {
 //
 // Two things make it cheap. There is no uniform for the camera in the colour pass:
 // `mvPosition` is in view space, where the eye is the origin by definition, so
-// `length(mvPosition.xyz)` *is* the distance. (Not `-mvPosition.z`, the depth the fog uses:
-// see fadeNeeded for why the cut and the band are on a distance and not a depth, and the
-// CPU cut behind them has to agree with the shader about which one.) And it is correct for
+// `length(mvPosition.xyz)` *is* the distance - the same one the fog now uses (radial-fog.js)
+// and the CPU cut measures, so the three agree about what "far" means. And it is correct for
 // the instanced crowd without knowing anything about instancing, because project_vertex
 // applies the instanceMatrix before the modelViewMatrix.
 //

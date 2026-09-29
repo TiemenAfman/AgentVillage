@@ -334,12 +334,12 @@ export function createBuildingMaterial() {
   // The materials that fade with this one (followFade), told when it compiles in or out.
   mat.userData.followers = new Set();
   // Ask for a range, get the right shader. `fogCap` is the furthest the fog can ever close
-  // (0.95 * camera.far) and `cos` how much shallower than far the corner of the frame is -
-  // see fadeNeeded for why it is those two and not the fog of the moment. A shader that
-  // costs every building on the island its early depth test to hide a cut nobody can see is
-  // a bad trade at any default, so the patch is only in while somebody could see the cut.
-  mat.userData.fade = (range, fogCap, cos = 1) => {
-    const on = fadeNeeded(range, fogCap, cos);
+  // (main.js fogCeiling) - see fadeNeeded for why it is that and not the fog of the moment.
+  // A shader that costs every building on the island its early depth test to hide a cut
+  // nobody can see is a bad trade at any default, so the patch is only in while somebody
+  // could see the cut.
+  mat.userData.fade = (range, fogCap) => {
+    const on = fadeNeeded(range, fogCap);
     if (on !== mat.userData.fadeOn) {
       mat.userData.fadeOn = on;
       mat.needsUpdate = true;

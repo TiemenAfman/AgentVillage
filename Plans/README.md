@@ -6,11 +6,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ## Besluiten die nog niet in een eigen plan zitten
 
 - 🚧 [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
-  en Shadow Distance) in plaats van één `camera.far` op 1400. Solide, dan een dither in de shader,
-  dan pas een knip op de CPU als er niets meer te zien is — ook voor de schaduwen, via een
-  depth-tweeling. De dither compileert alleen in als een knip zichtbaar kan zijn, gevraagd tegen
-  het plafond van de mist en de hoek van het beeld. Bewoners buiten bereik worden niet meer
-  bijgewerkt maar níet vergeten; per browser bewaard.
+  en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
+  tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en
+  een huis wordt pas daarachter uit de render list gehaald. Standaard hoog op een gewone machine,
+  lager op integrated graphics en de telefoon; alleen wat iemand zelf verschuift wordt bewaard.
+  Bewoners dithereren weg, buiten bereik niet bijgewerkt maar níet vergeten.
 
 - **Een onbezette boot drift terug naar zijn aanlegplaats.** Een boot die niemand aan het
   sturen heeft en die 5 minuten (`IDLE_HOME_MS` in `lib/boats.mjs`) niet is aangeraakt, gaat
