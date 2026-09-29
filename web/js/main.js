@@ -3,6 +3,7 @@ import { addScaffold as attachScaffold } from './scaffold.js';
 // something you can watch happen.
 import * as THREE from 'three';
 import { createRecovery } from './graphics-health.js';
+import { createRenderStats, statsLine } from './render-stats.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights } from 'shared/quay-basin.mjs';
@@ -339,6 +340,8 @@ renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 if (modest) console.info('island: integrated graphics detected, running lighter');
+// ?stats counts the shadow pass too, and the frame time (render-stats.js).
+const renderStats = statsReadout ? createRenderStats(renderer) : null;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 1400);
@@ -5633,6 +5636,7 @@ function tick(nowMs) {
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
+  if (renderStats) renderStats.begin(nowMs);
 
   if (state.chronicle.playing) advanceChronicle(dt);
 
@@ -5913,12 +5917,11 @@ function frame(nowMs) {
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
   renderer.render(state.inside ? state.inside.scene : scene, eye);
-  if (statsReadout) {
-    // Colour pass only: three.js resets renderer.info after the shadow pass, so the
-    // shadow map's own calls and triangles are not in these numbers. Comparing two runs
-    // is what they are for, and for that they are honest.
-    const info = renderer.info.render;
-    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${info.calls} calls · ${info.triangles.toLocaleString()} tris · ${state.particles?.count() ?? 0} particles`;
+  if (renderStats) {
+    // Both passes now, the shadow map's apart (render-stats.js). Comparing two runs is what
+    // they are for; the frame times are this machine's and nobody else's.
+    const s = renderStats.end(performance.now());
+    statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${statsLine(s)} · ${state.particles?.count() ?? 0} particles`;
   }
   // After the canvas, on its own layer above it. This one has no depth of its own - see
   // the top of web/js/panels.js for what that costs.
