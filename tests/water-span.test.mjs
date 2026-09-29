@@ -8,9 +8,10 @@
 // line where its beach met the deep.
 //
 // Two things are worth a test rather than a look. That an island on its own still gets
-// exactly the patch it had, to the vertex - this is the sort of change that quietly costs
+// exactly the span it had, to the vertex - this is the sort of change that quietly costs
 // every existing island a frame. And that two islands cost a rectangle rather than a square,
-// which is the whole reason the second one is affordable.
+// which is the whole reason the second one is affordable. (Since waterPatchMesh the lattice
+// over that span is drawn in full only over the grids; the last two tests hold that half.)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -19,7 +20,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // world.js reaches buildings.js for the tier table, and buildings.js asks for its texture
 // sheets the moment it loads. The same stub the tavern and paths tests use.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { waterPatchSpan, waterColourDepth } = await import('../web/js/world.js');
+const { waterPatchSpan, waterPatchMesh, waterColourDepth } = await import('../web/js/world.js');
 delete globalThis.document;
 
 const { makeTerrain } = await import('../shared/terrain.mjs');
@@ -118,4 +119,66 @@ test('the patch is given each island own depth, and open sea in between', () => 
   }
   assert.ok(overHome > 3000 && overGuest > 3000, 'both islands are under the patch');
   assert.ok(outside > overHome + overGuest, 'and most of it is open water, as a sea should be');
+});
+
+// The lattice is only drawn in full over the grids (waterPatchMesh); open sea gets a tile of
+// two triangles. What must not change is everything the fine tiles hold, and what is gained
+// is the budget - so both are asserted, on the archipelago that made it matter: the volcano
+// in the middle, a home island a ring out and a starter beside it.
+test('the patch keeps its lattice over every grid and two triangles a tile elsewhere', () => {
+  const home = placeIsland(makeTerrain(1337, { size: 64 }), { id: 'home', origin: [432, 0] });
+  const volcano = placeIsland(makeTerrain(7, { size: 192 }), { id: 'volcano', origin: [0, 0] });
+  const starter = placeIsland(makeTerrain(99, { size: 64 }), { id: 'starter', origin: [0, -432] });
+  const sea = createArchipelago();
+  for (const r of [home, volcano, starter]) sea.add(r);
+  const rects = sea.regions().map((r) => ({ minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
+    minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half }));
+  const s = waterPatchSpan(home.half, sea.gridBounds(), false);
+  const m = waterPatchMesh(s, rects);
+
+  // It covers the rectangle exactly once: the triangles' areas add up to it, and every one
+  // faces up (the winding PlaneGeometry had once laid flat).
+  let area = 0;
+  for (let t = 0; t < m.index.length; t += 3) {
+    const a = m.index[t], b = m.index[t + 1], c = m.index[t + 2];
+    const cross = (m.z[b] - m.z[a]) * (m.x[c] - m.x[a]) - (m.x[b] - m.x[a]) * (m.z[c] - m.z[a]);
+    assert.ok(cross > 0, `triangle ${t / 3} faces down`);
+    area += cross / 2;
+  }
+  assert.ok(Math.abs(area - s.width * s.depth) < 1e-3 * s.width * s.depth, `covers ${area} of ${s.width * s.depth}`);
+
+  // Every vertex of the old plane over a grid is still there, where it was.
+  const have = new Set();
+  for (let i = 0; i < m.x.length; i++) have.add(`${m.x[i]},${m.z[i]}`);
+  let checked = 0;
+  for (let j = 0; j <= s.segZ; j++) {
+    const z = Math.fround(s.minZ + (j / s.segZ) * s.depth);
+    for (let i = 0; i <= s.segX; i++) {
+      const x = Math.fround(s.minX + (i / s.segX) * s.width);
+      if (!sea.regionAt(x, z)) continue;
+      assert.ok(have.has(`${x},${z}`), `(${x},${z}) over a grid lost its vertex`);
+      checked++;
+    }
+  }
+  assert.ok(checked > 45000, `the three grids were walked (${checked})`);
+
+  // And every vertex that is not over a grid really is in open sea, so the flat -2.5 it is
+  // given is what the old lattice would have sampled there too.
+  for (let i = 0; i < m.x.length; i++) {
+    if (sea.regionAt(m.x[i], m.z[i])) continue;
+    assert.equal(sea.height(m.x[i], m.z[i]), OPEN_SEA);
+  }
+
+  // The budget: the whole lattice would be tris(s) - 1.14 million here - and this is an
+  // eighth of it (141k, most of it the volcano), measured when it was written.
+  const n = m.index.length / 3;
+  assert.ok(n < tris(s) / 7, `${n} triangles against ${tris(s)} for the whole lattice`);
+});
+
+test('an island alone keeps its own grid in full and loses the open water round it', () => {
+  const s = waterPatchSpan(32, null, false);
+  const m = waterPatchMesh(s, [{ minX: -32, maxX: 32, minZ: -32, maxZ: 32 }]);
+  const n = m.index.length / 3;
+  assert.ok(n >= 64 * 64 * 2, 'at least the grid itself at a vertex per unit');
+  assert.ok(n < tris(s) / 4, `${n} of ${tris(s)}`);
 });

@@ -385,12 +385,25 @@ function hipLift(lean, look) {
 // three.js recompiles every material whenever that number changes. The flame glows after
 // dark through the same per-vertex night mask the player's does, which is what reads from
 // across the water anyway.
-export function createFigures(scene, material, { armed = false } = {}) {
-  function makeMesh(geo) {
+//
+// `bounds` ({ x, z, r }, scene frame) is where this crowd can be: its island's grid. Every
+// batch is culled on that one sphere. Without it they are never culled, because three
+// culls an InstancedMesh on a sphere worked out once from wherever the instances stood
+// then, and a crowd walks. Measured on a 150-settler island with the volcano and three
+// starters in the sea: the four guest crowds' 36 shadow-pass calls were drawn into a shadow
+// map a few hundred units away from every one of them. The same sphere is what a ray tests
+// first when a figure is hovered (InstancedMesh.raycast), and it is right for that too.
+export function createFigures(scene, material, { armed = false, bounds = null } = {}) {
+  const sphere = bounds ? new THREE.Sphere(new THREE.Vector3(bounds.x, 0, bounds.z), bounds.r) : null;
+  const cull = (m) => {
+    if (sphere) { m.boundingSphere = sphere; m.frustumCulled = true; } else m.frustumCulled = false;
+    return m;
+  };
+  function makeMesh(geo, { shadow = true } = {}) {
     const m = new THREE.InstancedMesh(geo, material, CAPACITY);
-    m.castShadow = true;
+    m.castShadow = shadow;
     m.count = 0;
-    m.frustumCulled = false;
+    cull(m);
     scene.add(m);
     return m;
   }
@@ -410,16 +423,22 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // CAPACITY in an evening and leave the next arrival undrawn.
   const spare = [];
   const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
-  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]));
+  // No shadow from what lies on the body's own surface: the waistcoat, apron and buttons on
+  // the shirt, the neck between head and collar, and the face's eyes, brows, sideburns and
+  // hair cap on the head. Each is inside the silhouette of a batch that does cast, a figure
+  // is some ten texels tall in the shadow map at its sharpest, and figures receive no
+  // shadow, so none of it ever showed - but it was 142k of the 852k triangles the shadow
+  // pass drew on a 150-settler island (the buttons alone are 300 a figure).
+  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]), { shadow: false });
   const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
   const rightLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)]));
   const leftArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)]));
   const rightArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)]));
   const leftHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)]));
   const rightHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)]));
-  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]));
+  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]), { shadow: false });
   const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]));
+  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false });
   // Optional clothing and hair remain two population-wide batches, never a mesh
   // per woman. They share the resident slot and follow its body/head respectively.
   const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
@@ -484,9 +503,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
   hammerGeo.rotateX(Math.PI / 2);
   hammerGeo.translate(...RESIDENT_GRIP);
   hammerGeo.computeVertexNormals();
-  const hammers = new THREE.InstancedMesh(hammerGeo, material, CAPACITY);
+  const hammers = cull(new THREE.InstancedMesh(hammerGeo, material, CAPACITY));
   hammers.count = 0;
-  hammers.frustumCulled = false;
   hammers.name = 'resident-hammers';
 
   // The chores' tools (Plans/inwoners-aan-het-werk.md): one InstancedMesh each for the
@@ -499,9 +517,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
     g.rotateX(tilt);
     g.translate(...RESIDENT_GRIP);
     g.computeVertexNormals();
-    const m = new THREE.InstancedMesh(g, material, CAPACITY);
+    const m = cull(new THREE.InstancedMesh(g, material, CAPACITY));
     m.count = 0;
-    m.frustumCulled = false;
     m.visible = false;
     scene.add(m);
     return m;
@@ -539,9 +556,8 @@ export function createFigures(scene, material, { armed = false } = {}) {
   bundleGeo.rotateZ(1.05);
   bundleGeo.translate(0, 0.27, -0.075);
   bundleGeo.computeVertexNormals();
-  const bundles = new THREE.InstancedMesh(bundleGeo, material, CAPACITY);
+  const bundles = cull(new THREE.InstancedMesh(bundleGeo, material, CAPACITY));
   bundles.count = 0;
-  bundles.frustumCulled = false;
   bundles.visible = false;
   scene.add(bundles);
   // Everybody's wheelbarrow on the way to and from the gold pit, its wheel, and the gold in
@@ -549,10 +565,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
   // no draw call while nobody is fetching any. The bars are the pile's own ingot
   // (web/js/goldpit.js), a size down to lie in a tray.
   const barrowMesh = (geo, n) => {
-    const m = new THREE.InstancedMesh(geo, material, n);
+    const m = cull(new THREE.InstancedMesh(geo, material, n));
     m.count = 0;
     m.castShadow = true;
-    m.frustumCulled = false;
     m.visible = false;
     scene.add(m);
     return m;
@@ -582,10 +597,9 @@ export function createFigures(scene, material, { armed = false } = {}) {
   scene.add(hammers);
   // Everybody's beer, drawn only while it is being drunk (count 0 the rest of the time, so
   // an island nobody has bought a round costs no draw call for it).
-  const pints = new THREE.InstancedMesh(pintGeometry(), material, PINTS);
+  const pints = cull(new THREE.InstancedMesh(pintGeometry(), material, PINTS));
   pints.count = 0;
   pints.castShadow = true;
-  pints.frustumCulled = false;
   scene.add(pints);
 
   let time = 0;
