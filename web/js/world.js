@@ -213,12 +213,13 @@ export function plantMaterials() {
 
 // How big the detailed water patch is and where its middle sits. Exported and pure so the
 // budget can be asserted without a WebGL context - tests/water-span.test.mjs - because the
-// patch is by a wide margin the heaviest geometry on the island (135k triangles of the
-// 430k on a 64-grid) and it is now sized by something that can grow.
+// patch was by a wide margin the heaviest geometry on the island (135k triangles of the
+// 430k on a 64-grid, 2.3 million once the volcano and the starters were in the sea) and it
+// is sized by something that can grow. Which of its lattice is drawn is waterPatchMesh's.
 //
 // `gridBounds` is the union of every island's own square, or null for one island at the
 // origin. The margin is what a lone island of this size always had - 130 out from a
-// 64-grid, 60 for the largest - so an island on its own gets exactly the patch it had, to
+// 64-grid, 60 for the largest - so an island on its own gets exactly the span it had, to
 // the vertex. A rectangle rather than a square over the longest side: two 64-grids a berth
 // apart come out 372x260 instead of 372x372, which is a third of the triangles saved on
 // water nobody can see.
@@ -247,6 +248,58 @@ export function waterPatchSpan(half, gridBounds, modest = false) {
     segX: Math.max(1, Math.round(modest ? width / 2 : width)),
     segZ: Math.max(1, Math.round(modest ? depth / 2 : depth)),
   };
+}
+
+// Which of the patch's triangles are worth having. The lattice above is a vertex per unit
+// over the whole rectangle, and with the volcano and the starters in the sea that rectangle
+// is a kilometre across: 2.3 million triangles, 70% of everything the colour pass drew on a
+// 150-settler island (Plans/sneller-tekenen.md), almost all of it over water that is the
+// flat -2.5 of open sea. Out there the vertices carry nothing: the depth is the constant
+// OPEN_SEA, the colour, the normal and the sparkle are all worked out per fragment from
+// `vWorld`, and the only per-vertex thing left is a 5 cm wave - the same bargain the ocean
+// disc under it has always made with a vertex only at its centre and rim.
+//
+// So the rectangle is cut into WATER_TILE-step square tiles, and a tile is drawn at the full
+// lattice only where it touches an island's grid (`fine`, the squares a region's heightfield
+// covers, padded by a cell). Every other tile is two triangles over its four corners.
+// Those corners are vertices of the same lattice, so every vertex the fine tiles keep is
+// exactly where the old plane had it. The seam between the two kinds is a T-junction, which
+// the wave can open by a few centimetres - between two pieces of the same opaque deep water
+// with the ocean disc, in the same colour, 20 cm below: nothing to see through the crack.
+//
+// Only *outside* every grid, never over land or shallows inside one, because a coast that
+// moves inside a grid (growth, a polder given back, a chronicle replay) only resamples the
+// depths; it is the grids moving, or an island joining or leaving, that rebuilds this, and
+// `reshapeWater` compares `fine` as well as the span for that reason.
+export const WATER_TILE = 16;
+export function waterPatchMesh(ws, fine, pad = 2) {
+  const nx = ws.segX, nz = ws.segZ, row = nx + 1;
+  const xAt = (i) => ws.minX + (i / nx) * ws.width;
+  const zAt = (j) => ws.minZ + (j / nz) * ws.depth;
+  const touches = (x0, x1, z0, z1) => fine.some((r) => x1 >= r.minX - pad && x0 <= r.maxX + pad
+    && z1 >= r.minZ - pad && z0 <= r.maxZ + pad);
+  const slot = new Int32Array(row * (nz + 1)).fill(-1);
+  const xs = [], zs = [], index = [];
+  const v = (i, j) => {
+    const k = j * row + i;
+    if (slot[k] < 0) { slot[k] = xs.length; xs.push(xAt(i)); zs.push(zAt(j)); }
+    return slot[k];
+  };
+  // The winding PlaneGeometry had once rotated flat: (a, b, d) and (b, c, d) with a the
+  // lower corner in x and z, so the face looks up.
+  const quad = (i0, j0, i1, j1) => {
+    const a = v(i0, j0), b = v(i0, j1), c = v(i1, j1), d = v(i1, j0);
+    index.push(a, b, d, b, c, d);
+  };
+  for (let tj = 0; tj < nz; tj += WATER_TILE) {
+    const tj1 = Math.min(nz, tj + WATER_TILE);
+    for (let ti = 0; ti < nx; ti += WATER_TILE) {
+      const ti1 = Math.min(nx, ti + WATER_TILE);
+      if (!touches(xAt(ti), xAt(ti1), zAt(tj), zAt(tj1))) { quad(ti, tj, ti1, tj1); continue; }
+      for (let j = tj; j < tj1; j++) for (let i = ti; i < ti1; i++) quad(i, j, i + 1, j + 1);
+    }
+  }
+  return { x: Float32Array.from(xs), z: Float32Array.from(zs), index: Uint32Array.from(index) };
 }
 
 
@@ -1551,26 +1604,39 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
   // that holds a reference to the mesh has to know.
   let ws = null, waterGeo = null, wp = null;
+  // The squares that have a heightfield under them: every region's grid, or our own alone
+  // without an archipelago. Only these get the full lattice (waterPatchMesh).
+  const fineRects = () => (opts.sea
+    ? opts.sea.regions().map((r) => ({ minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
+      minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half }))
+    : [{ minX: -half, maxX: half, minZ: -half, maxZ: half }]);
+  const rectsKey = (rects) => rects.map((r) => `${r.minX},${r.maxX},${r.minZ},${r.maxZ}`).sort().join('|');
   function buildWaterGeometry() {
     ws = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
-    const geo = new THREE.PlaneGeometry(ws.width, ws.depth, ws.segX, ws.segZ);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(ws.cx, 0, ws.cz);
-    const p = geo.attributes.position;
-    const d = new Float32Array(p.count);
-    const blend = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), z = p.getZ(i);
+    const fine = fineRects();
+    ws.fineKey = rectsKey(fine);
+    const mesh = waterPatchMesh(ws, fine);
+    const n = mesh.x.length;
+    const position = new Float32Array(n * 3);
+    const d = new Float32Array(n);
+    const blend = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = mesh.x[i], z = mesh.z[i];
+      position[i * 3] = x; position[i * 3 + 2] = z;
       d[i] = depthAt(x, z);
       // The patch always extends at least sixty units past every island grid.
       // Fade within that spare water, never across a beach or a river.
       const edge = Math.min(x - ws.minX, ws.maxX - x, z - ws.minZ, ws.maxZ - z);
       blend[i] = smoothstep(0, 40, edge);
     }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(position, 3));
     geo.setAttribute('aDepth', new THREE.BufferAttribute(d, 1));
     geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setIndex(new THREE.BufferAttribute(mesh.index, 1));
+    geo.computeBoundingSphere();
     waterGeo = geo;
-    wp = p;
+    wp = geo.attributes.position;
     return geo;
   }
   buildWaterGeometry();
@@ -2062,13 +2128,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
 
   // The whole patch, for when the archipelago itself has changed shape: an island joined, or
-  // left. Rebuilding is only worth it when the span actually moved, because the geometry is
-  // the heaviest thing on the island - 135k triangles for one island, 193k for two - so this
-  // compares first and usually does nothing.
+  // left. Rebuilding is only worth it when the span or the grids under it moved - an island
+  // joining inside the span there already was lands on tiles waterPatchMesh laid as two
+  // triangles of open sea - so this compares both first and usually does nothing.
   function reshapeWater() {
     const next = waterPatchSpan(half, opts.sea ? opts.sea.gridBounds() : null, opts.modest);
     if (ws && next.minX === ws.minX && next.maxX === ws.maxX
-      && next.minZ === ws.minZ && next.maxZ === ws.maxZ) {
+      && next.minZ === ws.minZ && next.maxZ === ws.maxZ && rectsKey(fineRects()) === ws.fineKey) {
       resampleWater();
       return false;
     }
