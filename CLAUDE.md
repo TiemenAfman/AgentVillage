@@ -1161,7 +1161,12 @@ the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look 
 where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
 pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
-and a `setTimeout` loop polling the page sees time stand still.
+and a `setTimeout` loop polling the page sees time stand still. For anything that needs real
+frames - an fps number, a soak - use the Chrome DevTools MCP's own Chrome, and bring its window
+to the front (`select_page` with `bringToFront`) first: behind another window every GL call
+blocks on the present, and the island runs at 1 fps with 1.5 s of `?stats` "work" a frame,
+which reads exactly like a regression and is not one (measured: the 61-settler island went from
+1 to 100 fps on that one call).
 
 **First person is the wheel's last notch (or V), and it is a view model, not a body.**
 `state.firstPerson` in `walk.js`: the camera sits `FP_BACK` behind the eye (carried through the
