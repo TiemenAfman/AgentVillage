@@ -59,14 +59,23 @@ The chips at the top right are in two groups. On the left is what you do: **New 
 **Inventory**, **Animals** (once the island has one) and **Overview**, which frames the whole
 island. On a narrow screen only their icons show; hover for the name.
 
-Everything you set once and leave is in the **menu**. Open it with the ☰ at the far right,
-with Esc from the sky, or with Start on a controller. It holds **Settings** (the keeper's),
-the **Legend**, **Sound**, **Controls** on a phone, the **Show** toggles for Code, Cowork and
-apprentices, and **Which sea…**, the choice you are offered when the island starts. Esc always
-closes whatever is open first: a panel, the chart, the inventory. The menu opens only when there
-is nothing left to close. On foot the first Esc frees the mouse and the second takes you up into
-the sky; the third opens the menu there. When one of the Show toggles is off, a Show row stays
-under the chips, so a village with its houses hidden says so.
+The **menu** holds everything you set once and leave, and it is where the settings live. Open
+it with the ☰ at the far right, with Esc from the sky, or with Start on a controller. It has
+four tabs:
+
+- **This screen**: sound, the **Show** toggles for Code, Cowork and apprentices, the YOU arrow,
+  *Wander by itself*, and *Lighter when slow*.
+- **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
+- **Island**: the house signs, how big the island may grow, and which sea it is in. Only the
+  keeper sees this tab, because it writes the island's own config.json.
+- **Help**: the legend, the keys, and which build this is.
+
+Everything on the first two tabs is kept by your browser, so a visitor can change it too.
+
+Esc always closes whatever is open first: a panel, the chart, the inventory. The menu opens only
+when there is nothing left to close. On foot the first Esc frees the mouse and the second takes
+you up into the sky; the third opens the menu there. When one of the Show toggles is off, a Show
+row stays under the chips, so a village with its houses hidden says so.
 
 From the sky the chips have letters: **M** map, **I** inventory, **O** overview, **N** new
 settler, **L** legend and, for the keeper, **P** planner.
@@ -392,7 +401,7 @@ they restart a server they do not think of as holding your data.
 
 **The house signs.** The board in a settler's front yard is the one label that spells a
 title out in the world itself rather than in a panel you have to open, so it has a setting
-of its own, under **Settings** in the menu (the ☰ at the top right, or Esc from the sky):
+of its own, on the menu's **Island** tab (the ☰ at the top right, or Esc from the sky):
 
 | | |
 |---|---|
@@ -1040,9 +1049,9 @@ them all without waiting out somebody else's afternoon.
 
 ## What the island sounds like
 
-**Sound** in the menu (the ☰ at the top right, or Esc from the sky), beside Legend. It starts off, and whichever
+**Sound** on the menu's **This screen** tab (the ☰ at the top right, or Esc from the sky). It starts off, and whichever
 way you leave it is how that browser finds it next time — it is a setting of your speakers
-rather than of the island, so it is not in Settings and a visitor gets it too. Nothing makes
+rather than of the island, so it is not on the Island tab and a visitor gets it too. Nothing makes
 a noise before you click something: browsers will not start audio on their own, and neither
 will this.
 

@@ -4,6 +4,7 @@ import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
 import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
+import { createSysMenu } from './sysmenu.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -96,9 +97,7 @@ export function createUI(handlers) {
   // loud somebody's own speakers are is theirs alone. So this is a chip, and what it
   // remembers lives in that browser's localStorage next to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
-  el('settings-btn').addEventListener('click', () => (el('settings').hidden ? openSettings() : close('settings')));
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
-  el('sea-btn').addEventListener('click', () => handlers.onWhichSea && handlers.onWhichSea());
   el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
@@ -134,7 +133,18 @@ export function createUI(handlers) {
   // The side panels on the right, one open at a time. The last two are the animals'
   // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
   // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
-  const SIDE = ['dossier', 'legend', 'settings', 'phone', 'animal-dossier', 'animal-journal'];
+  const SIDE = ['dossier', 'legend', 'phone', 'animal-dossier', 'animal-journal'];
+  // The menu behind Esc and the ☰, which is the settings too (sysmenu.js). Drawn afresh each
+  // time it opens, and the keeper's islander asked who is out on the sea and how big the
+  // island may grow - the Island tab's two lists - before it is.
+  const menu = createSysMenu({
+    closers: ['legend-btn', 'phone-btn'],
+    onOpen: () => {
+      if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
+      renderSettings();
+      el('sysmenu-build').textContent = handlers.buildLabel ? handlers.buildLabel() : '';
+    },
+  });
   const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
     if (!el(which)) return;
@@ -151,7 +161,6 @@ export function createUI(handlers) {
     syncSidebar();
   }
   function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
-  function openSettings() { hideSide('settings'); el('settings').hidden = false; syncSidebar(); handlers.onSettingsOpen && handlers.onSettingsOpen(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
     const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
@@ -163,7 +172,6 @@ export function createUI(handlers) {
     if (a) a.hidden = walking || planning || panelOpen || !a.querySelector('li');
     el('chronicle').hidden = walking || planning;
     el('legend-btn').classList.toggle('on', !el('legend').hidden);
-    el('settings-btn').classList.toggle('on', !el('settings').hidden);
     el('phone-btn').classList.toggle('on', !el('phone').hidden);
   }
   let hasBuilders = false;
@@ -457,12 +465,17 @@ export function createUI(handlers) {
   let qualityAuto = true;
   try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
 
-  // The planner moves hamlets on this machine's layout, so like Settings it is the keeper's.
-  function setKeeper(keeper) {
-    el('settings-btn').hidden = !keeper; el('plan-btn').hidden = !keeper;
+  // The planner moves hamlets on this machine's layout, and the menu's Island tab writes its
+  // config.json (the signs, the size, the sea), so both are the keeper's. The rest of the
+  // settings are this browser's and everybody's - they used to be behind the keeper's
+  // Settings chip too, and a visitor could not so much as rebind a key.
+  let keeper = false;
+  function setKeeper(k) {
+    keeper = !!k;
+    el('plan-btn').hidden = !keeper;
     el('sysmenu-plan-key').hidden = !keeper;
-    // Only the keeper's islander can be moved to another sea (POST /api/sea).
-    el('sea-btn').hidden = !keeper;
+    el('tab-island').hidden = !keeper;
+    menu.refresh();
   }
 
   // The app on a phone: on foot for good, so the ways up to the sky and into the planner
@@ -470,10 +483,14 @@ export function createUI(handlers) {
   // (setWalking among them) hand some of these chips their `hidden` back later.
   // The app on a phone. It also gets the two chips a phone needs and a keyboard does not:
   // Say, for the island chat that otherwise only T opens, and Controls (phoneprefs.js).
+  let standalone = false;
   function setStandalone() {
+    standalone = true;
     document.body.classList.add('standalone');
     el('say-btn').hidden = false;
     el('phone-btn').hidden = false;
+    el('touch-controls').hidden = false;
+    renderSettings();
   }
   el('say-btn').addEventListener('click', () => handlers.onSay && handlers.onSay());
   el('phone-btn').addEventListener('click', () => (el('phone').hidden ? openPhone() : close('phone')));
@@ -599,15 +616,14 @@ export function createUI(handlers) {
   }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
-    el('settings-body').innerHTML = '<h3 class="sec" style="margin-top:0">House signs</h3>'
+    // One section per tab of the menu (sysmenu.js); the Island one only for the keeper, whose
+    // config.json it writes, and the keys only where there is a keyboard.
+    const signs = '<h3 class="sec" style="margin-top:0">House signs</h3>'
       + `<p class="muted" style="margin:0 0 9px">The board in a settler's front yard carries the session's own title — which is the prompt it opened with.</p>`
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
-      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`
-      + controlsSection()
-      + sizeSection()
-      + seaSection()
-      + '<h3 class="sec">From the sky</h3>'
+      + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+    const sky = '<h3 class="sec">From the sky</h3>'
       + `<div class="chips wrap"><button class="chip${youOn ? ' on' : ''}" data-youarrow="1" aria-pressed="${youOn}">YOU arrow</button></div>`
       + `<p class="muted" style="margin-top:9px">${youOn
         ? 'On: when you go up into the sky, YOU and an arrow hang over where you left yourself standing.'
@@ -620,12 +636,15 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
       + `<p class="muted" style="margin-top:9px">${qualityAuto
         ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
-        : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`
-      + '<h3 class="sec">Debug</h3>'
+        : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
+    const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
         : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
+    el('settings-body').innerHTML = `<section data-tab="screen">${sky}</section>`
+      + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
+      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
@@ -1135,6 +1154,7 @@ export function createUI(handlers) {
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
     setSeas, setIslandSize,
     closeOverlays: () => SIDE.forEach(close),
+    sysmenu: menu,
   };
 }
 

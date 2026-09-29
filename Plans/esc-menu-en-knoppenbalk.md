@@ -1,6 +1,6 @@
 # Een Esc-menu, en een knoppenbalk in twee groepen
 
-**🚧 Status: in aanbouw sinds 29 september 2026.**
+**🚧 Status: in aanbouw sinds 29 september 2026 (tweede ronde: het menu wordt de instellingen).**
 
 ## Wat er gevraagd werd
 
@@ -44,6 +44,36 @@ voorstel van Gemini, dat Tiemen doorgaf met "zelf bijschaven mag":
 - Esc: een luisteraar in de capture-fase onthoudt of er bij het indrukken iets open was. Die in
   de bubble-fase opent pas het menu als dat niet zo was en niemand de toets heeft opgeëist
   (`defaultPrevented`). Zo sluit dezelfde Esc niet eerst een paneel en opent daarna het menu.
+
+## Tweede ronde: het menu wás de instellingen niet
+
+Tiemens reactie op de eerste versie: "Er is geen Esc-menu, wel een minimaal settings-scherm."
+Dat klopte. De eerste versie was een doorgeefluik: een kaart met *Back*, *Settings*, *Legend*,
+*Sound* en *Which sea…*, en Settings kwam uit in hetzelfde zijpaneel van 316 px breed. Daarin
+stonden huisbordjes, toetsen, eilandgrootte, de zee, de camera, de tekenkwaliteit en debug onder
+elkaar. Twee klikken om bij hetzelfde smalle lijstje te komen. En het Gemini-voorstel (ook AI)
+had het echte probleem niet gezien:
+
+- **Het paneel was alleen voor de keeper, maar het meeste erin is van de browser.** Toetsen, de
+  YOU-pijl, de regisseur en *Lighter when slow* staan in `localStorage`. Een bezoeker, of iemand
+  aan de telefoon, kon ze nooit veranderen, omdat `setKeeper` de hele Settings-knop verborg om
+  drie instellingen (bordjes, grootte, de zee) die wél van het eiland zijn.
+- Instellingen die bij elkaar horen stonden niet bij elkaar: Sound als losse knop, Show als
+  losse rij, de rest in het paneel.
+
+Besluit: **het menu is de instellingen.** Eén venster midden op het scherm, met tabbladen:
+
+| Tab | Wat erin | Voor wie |
+|---|---|---|
+| *This screen* | Geluid, wat er te zien is (Show), de camera van boven (YOU-pijl, *Wander by itself*), tekenen (*Lighter when slow*) | iedereen |
+| *Controls* | De toetsen te voet, om te zetten; de letters van boven; op de telefoon de aanraakbediening | iedereen |
+| *Island* | Huisbordjes, eilandgrootte, de zee, debug (Build mode) | de keeper: dit schrijft `config.json` |
+| *Help* | De legenda, wat Esc doet, de versie | iedereen |
+
+Het zijpaneel *Settings* en de knop *Which sea…* verdwijnen: de zee staat nu op het tabblad
+*Island*, met de lijst en *Add*, en dat is meer dan het hoofdmenu bood. De legenda blijft een
+zijpaneel. Het is naslag die je naast het eiland wilt houden, niet iets om in een venster ervoor
+te lezen.
 
 ## Versie
 

@@ -20,7 +20,6 @@ import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { allowImp, setImpNight, setImpBudget, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
-import { createSysMenu } from './sysmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
 import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
@@ -4808,7 +4807,7 @@ function frameIsland() {
 // /api/seas probes every candidate's /health, and POST /api/sea writes config.json and then
 // actually closes the sea it was in and joins the new one - so this is a menu over working
 // plumbing rather than a picture of one.
-function openMainMenu({ reopened = false } = {}) {
+function openMainMenu() {
   const menu = createMainMenu({
     islandName: (state.village && state.village.island && state.village.island.name) || 'this island',
     hasIslander: islanderHere() && !state.guest,
@@ -4843,9 +4842,8 @@ function openMainMenu({ reopened = false } = {}) {
       await followSea();
       return { ok: true };
     },
-    // Whatever was chosen, the opening sweep happens afterwards rather than under it - at
-    // boot. Asked again from the menu ("Which sea…"), the camera stays where the keeper had it.
-    onDone: () => { if (!reopened) startIntro(); },
+    // Whatever was chosen, the opening sweep happens afterwards rather than under it.
+    onDone: () => startIntro(),
   });
   menu.open();
 }
@@ -6211,7 +6209,6 @@ function playerName() {
 }
 
 async function boot() {
-  state.sysmenu = createSysMenu();
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
     onSpeechTap: () => endParley(),
@@ -6301,7 +6298,13 @@ async function boot() {
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
-    onWhichSea: () => openMainMenu({ reopened: true }),
+    // Which code this is, for the foot of the menu: the islander's release (or checkout) from
+    // /api/hello; on a phone, what the pack baked in, if anything.
+    buildLabel: () => {
+      const b = state.build;
+      const said = b ? [b.version, b.commit].filter(Boolean).join(' · ') : '';
+      return said ? `Promptholm ${said}` : '';
+    },
     // Settings -> Drawing -> Lighter when slow. A ?quality pin outranks it: that is somebody
     // looking at one rung on purpose.
     onQualityAuto: (on) => {
@@ -6310,6 +6313,8 @@ async function boot() {
       if (rung) applyQuality(rung);
     },
   });
+  // The menu behind Esc is the settings, and ui.js owns the settings (sysmenu.js).
+  state.sysmenu = state.ui.sysmenu;
   // Here rather than where the governor is made: applyQuality reaches `state`, which does not
   // exist yet up there.
   if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));

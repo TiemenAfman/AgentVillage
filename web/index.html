@@ -142,28 +142,51 @@
   </div>
 </div>
 
-<!-- The menu behind Esc and the ☰ (web/js/sysmenu.js). The chips in it are the ones that
-     stood in the bar before, moved rather than copied: ui.js still finds them by id and
-     still hides Settings from everybody but the keeper and Controls from everybody but a
-     phone. -->
-<div class="sysmenu" id="sysmenu" hidden>
+<!-- The menu behind Esc and the ☰ (web/js/sysmenu.js), and it is the settings: one window,
+     four tabs (Plans/esc-menu-en-knoppenbalk.md, "Tweede ronde"). The chips in it that stood in
+     the bar before are moved rather than copied, so ui.js still finds them by id. What ui.js
+     draws itself (#settings-body) comes in sections carrying their own data-tab; the stylesheet
+     shows only the open tab's. -->
+<div class="sysmenu" id="sysmenu" data-tab="screen" hidden>
   <div class="sysmenu-card card" role="dialog" aria-modal="true" aria-labelledby="sysmenu-title">
-    <h2 id="sysmenu-title">Promptholm</h2>
-    <button class="btn sysmenu-back" id="sysmenu-close">Back to the island <kbd>Esc</kbd></button>
-    <div class="sysmenu-list">
-      <button class="chip" id="settings-btn" title="What the island shows" hidden>Settings</button>
-      <button class="chip" id="legend-btn" title="What everything on the island means (L)">Legend</button>
-      <button class="chip" id="phone-btn" title="How the controls feel" hidden>Controls</button>
-      <button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button>
-      <button class="chip" id="sea-btn" title="Which sea this island is in" hidden>Which sea…</button>
+    <nav class="sysmenu-nav" aria-label="Menu">
+      <h2 id="sysmenu-title">Promptholm</h2>
+      <div class="sysmenu-tabs" role="tablist">
+        <button class="sysmenu-tab" role="tab" data-tabbtn="screen">This screen</button>
+        <button class="sysmenu-tab" role="tab" data-tabbtn="controls">Controls</button>
+        <button class="sysmenu-tab" role="tab" data-tabbtn="island" id="tab-island" hidden>Island</button>
+        <button class="sysmenu-tab" role="tab" data-tabbtn="help">Help</button>
+      </div>
+      <button class="btn sysmenu-back" id="sysmenu-close">Back to the island <kbd>Esc</kbd></button>
+      <p class="muted sysmenu-build" id="sysmenu-build"></p>
+    </nav>
+    <div class="sysmenu-body">
+      <section data-tab="screen">
+        <h3 class="sec">Sound</h3>
+        <div class="chips wrap"><button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button></div>
+        <p class="muted">The sea where there is sea, the wind where there is not, and the village round you. This browser remembers it.</p>
+        <h3 class="sec">Show on the island</h3>
+        <div class="chips wrap" role="group" aria-label="Show on the island">
+          <button class="chip on" data-filter="code" aria-pressed="true" title="Claude Code sessions: show or hide their houses">Code</button>
+          <button class="chip on" data-filter="cowork" aria-pressed="true" title="Cowork tasks: show or hide the harbour houses">Cowork</button>
+          <button class="chip on" data-filter="apprentices" aria-pressed="true" title="Subagents: show or hide the sheds beside the houses">Apprentices</button>
+        </div>
+        <p class="muted">While one of these is off, a Show row stays under the chips at the top, so the island says it is not showing everything.</p>
+      </section>
+      <section data-tab="controls" id="touch-controls" hidden>
+        <h3 class="sec">Touch</h3>
+        <div class="chips wrap"><button class="chip" id="phone-btn" title="How the controls feel" hidden>Touch controls</button></div>
+      </section>
+      <div id="settings-body"></div>
+      <section data-tab="help">
+        <h3 class="sec">What you are looking at</h3>
+        <div class="chips wrap"><button class="chip" id="legend-btn" title="What everything on the island means (L)">Open the legend</button></div>
+        <p class="muted">The legend stands beside the island rather than over it, so you can look from one to the other.</p>
+        <h3 class="sec">Keys</h3>
+        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
+        <p class="muted sysmenu-keys">On foot: the first <kbd>Esc</kbd> frees the mouse, the second takes you up into the sky. The rest is under Controls.</p>
+      </section>
     </div>
-    <h3 class="sec">Show on the island</h3>
-    <div class="chips wrap" role="group" aria-label="Show on the island">
-      <button class="chip on" data-filter="code" aria-pressed="true" title="Claude Code sessions: show or hide their houses">Code</button>
-      <button class="chip on" data-filter="cowork" aria-pressed="true" title="Cowork tasks: show or hide the harbour houses">Cowork</button>
-      <button class="chip on" data-filter="apprentices" aria-pressed="true" title="Subagents: show or hide the sheds beside the houses">Apprentices</button>
-    </div>
-    <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span></p>
   </div>
 </div>
 
@@ -196,10 +219,6 @@
   <div class="panel-body" id="legend-body"></div>
 </aside>
 
-<aside class="panel" id="settings" hidden>
-  <div class="panel-head"><h2>Settings</h2><button class="x" data-close="settings">✕</button></div>
-  <div class="panel-body" id="settings-body"></div>
-</aside>
 
 <aside class="panel" id="dossier" hidden>
   <div class="panel-head"><h2 id="dossier-name">—</h2><button class="x" data-close="dossier">✕</button></div>
