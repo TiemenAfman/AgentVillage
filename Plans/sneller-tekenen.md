@@ -55,6 +55,31 @@ wijk (de projectherkenning is voor Windows-paden geschreven), `--no-rescan`.
 |---|---|---|---|---|
 | Boot, van boven, `?nointro` | 901 | 3.296.467 | – | – |
 
+## Wat de lektest vond
+
+Gemeten in headless Chromium op het testeiland (de vulkaan en drie startereilanden): de fleet
+acht keer leeggemaakt en teruggezet, met de GL-objecten zelf geteld (create/delete van buffers,
+texturen, programma's en VAO's), omdat `renderer.info` de instance-buffers van een
+InstancedMesh nooit telt en twee van de vier lekken dus niet had kunnen zien.
+
+| | boot | na 8 keer |
+|---|---|---|
+| Voor: GL-buffers | 4143 | 4700 (+92 per keer) |
+| Voor: texturen | 184 | 215 (+5 per keer, ~7 MB: de grondmaskers en -vellen van de vulkaan) |
+| Na: GL-buffers | 4143 | 4133 |
+| Na: texturen | 184 | 184 |
+
+Vier lekken, elk een eigen commit: de bewegende delen van gebouwen (klok, fontein, ertshoop,
+oven; nu één lijst in `web/js/record-extras.js`), de InstancedMeshes van het bos, die van de
+menigte, en de texturen van de grond (DataTextures en geladen vellen, die `Material.dispose()`
+niet vrijgeeft als ze alleen via `onBeforeCompile` bereikbaar zijn). `tests/guest-leak.test.mjs`
+bouwt een echte `starterBundle(0)` met elke bewegende civic op en weer af, en faalt op elk van
+de vier. De inventaris maakt per bezoek twee contexten en geeft ze beide terug met
+`forceContextLoss`; daar hoefde niets.
+
+Nog open, klein: `awaitingSheet` in `hamlets.js` houdt weggegooide veldmaterialen vast (alleen
+CPU-geheugen) als het veldvel nooit laadt.
+
 ## Versie
 
 Alleen paginacode; niets op de lijn, niets in `layout.json` of de bundle. Een patch mag dat.
