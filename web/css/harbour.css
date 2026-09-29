@@ -92,14 +92,25 @@ body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
   min-width: 0;
 }
 
-/* The controls: one action a line, its key on the right. */
-.keylist { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
-.keylist .keyrow { display: flex; justify-content: space-between; align-items: center; width: 100%;
-  padding: 5px 10px; border: 1px solid transparent; border-radius: 8px; background: none;
-  color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.keylist .keyrow:hover { background: #ffffff0a; border-color: var(--edge); }
-.keylist .keyrow.on { border-color: var(--accent); background: #e8c17c14; }
-.keylist .keyrow kbd { min-width: 48px; text-align: center; }
+/* The controls: one action a line, its two keys and its controller button in columns. The
+   controller column is dimmed and dead while no pad is connected (Plans/toetsen-en-bindings.md). */
+.bindtable { display: grid; grid-template-columns: minmax(92px, 1.5fr) repeat(3, minmax(56px, 1fr));
+  gap: 3px 4px; align-items: center; margin: 0 0 8px; }
+.bindrow { display: contents; }
+.bindrow .act { padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bindrow.head span { font-size: .78em; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim);
+  text-align: center; padding-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bindrow.head .act { text-align: left; }
+.bind { display: block; width: 100%; padding: 4px 6px; border: 1px solid var(--edge); border-radius: 7px;
+  background: #ffffff08; color: inherit; font: inherit; text-align: center; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bind:hover { background: #ffffff12; }
+.bind.on { border-color: var(--accent); background: #e8c17c14; }
+.bind.fixed { cursor: default; font-style: italic; }
+.bind.fixed:hover { background: #ffffff08; }
+.bind.off, .bindrow.head span.off, .chip.off { opacity: .38; }
+.bind.off, .chip.off { pointer-events: none; cursor: default; }
+@media (max-width: 480px) { .bindtable { font-size: 12px; grid-template-columns: minmax(64px, 1.2fr) repeat(3, minmax(44px, 1fr)); } }
 #clock-chip { border-radius: 8px; padding: 7px 12px; letter-spacing: .05em; }
 .btn, .fab { box-shadow: inset 0 1px #ffffff08; }
 .btn:hover { border-color: #e8c17c70; }

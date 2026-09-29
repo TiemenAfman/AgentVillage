@@ -40,12 +40,59 @@ export const BED_CLEAR = 0.05;
 export const SHALLOW = 0.3;
 export const SHALLOW_LIFT = 0.6;
 
+// Steering by the view: swim where you look. The camera is behind and above the body, so the
+// mouse's pitch (walk.js `camPitch`, positive = the camera high, looking down) is the way up and
+// down: look down and swim on and you sink, look up and you climb. A third-person camera rests at
+// about 0.3 - the default is 0.28, a spawn 0.44 - so that is level, with a dead band either side
+// (the whole of the view a surface swimmer normally has, or a stroke along the top would dive by
+// itself); the ends of the range (-0.25, 0.95) are a full stroke. In first person the eye is the
+// view, and level is level.
+export const LOOK_LEVEL = 0.34;
+export const LOOK_DEAD = 0.2;
+export const LOOK_SPAN = 0.4;
+export const LOOK_LEVEL_FP = 0;
+export const LOOK_DEAD_FP = 0.15;
+export const LOOK_SPAN_FP = 0.6;
+
+// What the view asks of the depth, -1 (down) to +1 (up), for a body being pushed straight
+// forward; walk.js scales it by how far forward the push is, so a stroke backwards climbs where
+// it would have sunk and a sideways one does neither. Continuous, zero across the dead band.
+export function lookRise(pitch, firstPerson = false) {
+  const level = firstPerson ? LOOK_LEVEL_FP : LOOK_LEVEL;
+  const dead = firstPerson ? LOOK_DEAD_FP : LOOK_DEAD;
+  const span = firstPerson ? LOOK_SPAN_FP : LOOK_SPAN;
+  const off = pitch - level;
+  const beyond = Math.abs(off) - dead;
+  if (beyond <= 0) return 0;
+  return -Math.sign(off) * Math.min(1, beyond / span);
+}
+
 // May the body at `bed` go under? Only water deep enough to hold it.
 export const canDive = (bed, surface = 0) => bed < surface - DIVE_MIN_WATER;
 
 // Is the head under the surface? What `state.diving` means, and what the camera, the mist, the
 // sound and the sea's air all key on.
 export const headUnder = (y, surface = 0) => y + DIVE_HEAD < surface;
+
+// A fall into deep water does not stop at the surface. Coming down faster than PLUNGE_MIN (a
+// jump off level ground is about 3, off a ship's rail 5.5, off a rock 9) the body goes in with
+// PLUNGE_KEEP of its speed, capped at PLUNGE_MAX, and carries it under: past a stroke's own
+// DIVE_DOWN the extra dies away at DIVE_COAST instead of DIVE_RATE, so it is a plunge of a metre
+// or two and not the half-second stop of letting go of C. A slower landing, or too little water
+// to hold a body (`canDive`), floats as it always did. Returns the vertical speed to dive in with
+// (negative), or 0 for none.
+export const PLUNGE_MIN = 3.6;
+export const PLUNGE_KEEP = 0.7;
+export const PLUNGE_MAX = 9;
+export const DIVE_COAST = 2.2;
+// The way a hull had on her when you went over her side (walk.js `drift`) is killed at the
+// surface at 3/s - about a second - but a body that has gone under carries on: at 1/s it shoots
+// on for the best part of a boat's speed in units, and only then is a diver again.
+export const DIVE_DRIFT = 1;
+export function plungeSpeed(vy, bed, surface = 0) {
+  if (vy > -PLUNGE_MIN || !canDive(bed, surface)) return 0;
+  return -Math.min(PLUNGE_MAX, -vy * PLUNGE_KEEP);
+}
 
 // One step of a body that is under water. `d` is { y, vy } (the feet and their vertical speed);
 // `rise` is what is asked, -1 (down) to +1 (up), from C / pad B and Space / pad A. The world is
@@ -60,7 +107,11 @@ export function stepDive(d, rise, dt, { bed, lid = Infinity, surface = 0, sink =
   let want = rise > 0 ? DIVE_UP * rise : DIVE_DOWN * rise;
   // The shallows lift a body that is not being pushed down.
   if (bed > rest - SHALLOW && want <= 0) want = DIVE_UP * SHALLOW_LIFT;
-  let vy = d.vy + (want - d.vy) * (1 - Math.exp(-DIVE_RATE * dt));
+  // Faster down than a stroke can be (a plunge) coasts out at DIVE_COAST; from a stroke's own
+  // speed on it follows the keys as ever. The speed is continuous across DIVE_DOWN and with no
+  // plunge this is the one line it was.
+  const rate = d.vy < -DIVE_DOWN ? DIVE_COAST : DIVE_RATE;
+  let vy = d.vy + (want - d.vy) * (1 - Math.exp(-rate * dt));
   let y = d.y + vy * dt;
   // A deck over the head: the same hole walk.js closes for a jumper, from the other side. The
   // ceiling stops a rise; it never pushes a diver down through the bed.

@@ -1252,12 +1252,19 @@ at `position: fixed` and catches Escape in the capture phase on `window`, so the
 closes the popover and only the second closes the panel - the studio's own Escape handler and
 `walk.js` both listen later in that same keydown.
 
-**The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels the ctrl shortcuts a
-page is allowed to cancel (save, print, find, reload, …) and asks for a Keyboard Lock
-(`navigator.keyboard.lock`) on the letters and digits the browser pairs with ctrl. The lock only
+**The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
+ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
+the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock
+(`navigator.keyboard.lock`) on the same letters. The lock only
 takes effect in fullscreen - that is the API, not a choice - so outside fullscreen ctrl+W, ctrl+T,
-ctrl+N and ctrl+<digit> still belong to the browser, and Escape is deliberately not locked (a
-locked Escape makes leaving fullscreen press-and-hold). The mouse buttons fight, one per hand:
+ctrl+N and ctrl+<digit> still belong to the browser (the desktop window has no tab to lose), and
+Escape is deliberately not locked (a
+locked Escape makes leaving fullscreen press-and-hold). ctrl+A is cancelled in every mode, from the sky
+too (`web/js/page-keys.js`, installed from main.js; a field keeps it). **Ctrl is a bindable key**
+(`'control'`, unbound by default): once it is somebody's, `ctrlIsKey()` makes `onKeyDown` treat it and
+whatever is pressed while it is held as game keys instead of throwing the press away, and the browser
+shortcut is cancelled all the same - `tests/ctrl-key.test.mjs`. AltGr arrives as ctrl+alt on a Dutch
+layout and stays a letter; its synthetic Control press does fire a bound Ctrl. The mouse buttons fight, one per hand:
 the left button is the left hand, the right button the right (`SIDE_OF` in walk.js). A hand
 holding a shield blocks while its button is held; any other hand (sword, hammer, bare fist)
 attacks - the right on the press, the left on the press under a pointer lock and otherwise on a
@@ -1276,9 +1283,21 @@ pint and the sway are this page's alone and live per house id in the crowd view,
 (`seaIdOf`, the inverse of `/api/crowd-ids`) - our own `house:<uuid>` is nobody on the sea.
 
 **The keys on foot are rebindable and listed only under Settings → Controls** (the key row
-at the bottom is off, `SHOW_KEY_ROW` in ui.js). `web/js/keybinds.js` keeps them per browser;
-walk.js still tests the *default* keys, because `canon()` turns a pressed key into the default
-key of the action bound to it - so a new action is a row in `ACTIONS`, not a handler change.
+at the bottom is off, `SHOW_KEY_ROW` in ui.js), as a table of three columns per action - primary key,
+secondary key, controller button ([Plans/toetsen-en-bindings.md](Plans/toetsen-en-bindings.md)).
+`web/js/keybinds.js` keeps them per browser (`promptholm.bindings`, only what differs from the default;
+the old one-key `promptholm.keys` is read as primary keys and not written); walk.js still tests the
+*default* keys, because `canon()` turns a pressed key into the default key of the action bound to it in
+either slot - so a new action is a row in `ACTIONS`, not a handler change. The arrow keys are the default
+secondary keys of walking (`canon` sends them to W A S D; an unbound default key is `null`, dead). A key
+or a button is one action's alone and taking one **swaps** (the loser is handed what the winner let go
+of); Esc, Alt/AltGr/Meta and the pad's Back and Start cannot be bound. The controller column comes out
+of `MAPS.walk`/`MAPS.inside` in `input.js`, built by `applyPadBindings` from `padOf` (and rebuilt on
+`onBindingsChange`, so a change needs no reload; every other mode keeps its fixed buttons). It is greyed
+and dead while `navigator.getGamepads()` shows no pad, its head then says **Controller** and with one the
+pad's name (`padName`), the labels follow its family (`padLabel`: ✕ ◯ □ △ on a PlayStation pad), and a
+capture holds the pad away from the rest of the page (`suspendPad`) so that pressing B does not also
+close Settings.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
@@ -1335,7 +1354,11 @@ frame (`tests/diving-walk.test.mjs` holds the step small).
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
 swimming in water deep enough (`canDive`: a body's height of sea) sinks the body; Space (pad A)
-swims it up; letting go hangs it (neutral buoyancy). `web/js/diving.js` is pure like `stepBike`:
+swims it up; letting go hangs it (neutral buoyancy). **The view steers too** (`lookRise` in diving.js): with a stroke
+going, `camPitch` well below level sinks and well above climbs (third person: a dead band 0.14 to 0.54
+around the camera's 0.28 to 0.44; first person: level is 0), by how far forward the stroke is - backwards
+turns it round, sideways and standing still do nothing - and it adds to C and Space, it does not
+replace them. `web/js/diving.js` is pure like `stepBike`:
 `stepDive` takes `{ y, vy }` and the world (`bed`, `lid`, `surface`) and says where the feet end
 up and whether the body has `surfaced` - at exactly `WATER_Y - SWIM_SINK`, the height walk.js
 floats a swimmer at, so leaving dive mode is no step. **Three flags on walk state, and they mean
@@ -1350,7 +1373,12 @@ not a crouch down there. What a diver stands on is `bedUnder` (`sea.bedAt`, the 
 the quay's basin), never `groundAt`, whose meaning ("the surface or deck under the feet", also
 main.js's "can I step out here") does not change. Under a deck `ceilingAt` stops the rise; in the
 shallows (`SHALLOW`) the water lifts a body that is not pushed down, so a diver reaching a beach
-rises out of it instead of being snapped up when the bed comes dry. `reach()` offers nothing
+rises out of it instead of being snapped up when the bed comes dry. **A fall into deep water plunges** (`plungeSpeed` in diving.js, called where walk.js's airborne branch
+lands in water): faster than `PLUNGE_MIN` 3.6 - a hop off level ground is ~3, a ship's rail ~5.5, a rock ~9 -
+the body dives with 0.7 of its speed instead of having it zeroed at the surface, and below a stroke's own
+`DIVE_DOWN` `stepDive` coasts at `DIVE_COAST` rather than `DIVE_RATE`, so it is a metre or two down and then
+hangs like any diver (no automatic float up: Space swims you back). A jump off a moving hull keeps her way
+(`drift`) shooting on under water too, decaying at `DIVE_DRIFT` 1/s instead of the surface's 3/s. `reach()` offers nothing
 to a body that is `dive`-ing: the distances are flat, and E would board the dock's boat from two
 units down. The phone shows B in the water through `walk.inWater()` (`touchpad.js setHands`).
 `?dive` starts walk mode in open water off the home island's east side. Others see a diver

@@ -20,6 +20,37 @@ export const BTN = {
   UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15,
 };
 
+// What the buttons are called on the pad in the player's hands, by BTN index. The browser
+// reports every pad in the Xbox layout (`mapping: 'standard'`), so the numbers are the same;
+// only the names on the plastic differ.
+const LABELS_XBOX = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Menu', 'L3', 'R3', '↑', '↓', '←', '→'];
+const LABELS_SONY = ['✕', '◯', '□', '△', 'L1', 'R1', 'L2', 'R2', 'Share', 'Options', 'L3', 'R3', '↑', '↓', '←', '→'];
+
+// 'sony' for anything with Sony's vendor id (054c) or a DualShock/DualSense/PlayStation name,
+// 'xbox' for the rest - which is also what an unknown pad's standard mapping means.
+export function padFamily(id) {
+  const s = String(id || '');
+  return /054c|dualshock|dualsense|playstation|ps[345]/i.test(s) ? 'sony' : 'xbox';
+}
+
+export function padLabel(index, id = null) {
+  const labels = padFamily(id) === 'sony' ? LABELS_SONY : LABELS_XBOX;
+  return labels[index] || `#${index}`;
+}
+
+// The name a person would give the pad, out of the id string the browser makes up: Chrome
+// says "Xbox 360 Controller (XInput STANDARD GAMEPAD)" or "DualSense Wireless Controller
+// (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)", Firefox "045e-028e-Xbox 360 Controller".
+export function padName(id) {
+  const s = String(id || '')
+    .replace(/^[0-9a-f]{4}-[0-9a-f]{4}-/i, '')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s*(vendor|product):\s*[0-9a-f]+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return s || 'Controller';
+}
+
 export function createGamepad({ onConnect } = {}) {
   const prev = new Set();
   const justPressed = new Set();

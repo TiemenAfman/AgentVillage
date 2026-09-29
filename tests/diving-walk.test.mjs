@@ -177,3 +177,67 @@ test('a diver at the foot of a shallow shelf keeps a camera under the water, and
   assert.ok(camera.position.y < 0, `the camera is over the water, at ${camera.position.y}, and the diver behind the surface`);
   assert.ok(camera.position.y >= shelf(camera.position.x) - 1e-9, 'the camera is in the sand');
 });
+
+// ---- steering by the mouse ------------------------------------------------------------------
+
+test('looking down and swimming on takes the body under, with neither C nor Space', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  walk.state.camPitch = 0.9;
+  press('w');
+  run(walk, 2);
+  const s = walk.state;
+  assert.equal(s.dive, true, 'the view did not start a dive');
+  assert.ok(s.pos.y < -0.8, `only at ${s.pos.y}`);
+  assert.equal(s.crouching, false);
+  globalThis.dispatchKey('w', false);
+});
+
+test('looking up while diving and swimming on climbs back to the surface', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  press('c');
+  run(walk, 3);
+  globalThis.dispatchKey('c', false);
+  const s = walk.state;
+  assert.equal(s.onBed, true);
+  walk.state.camPitch = -0.2;
+  press('w');
+  run(walk, 4);
+  assert.equal(s.dive, false, 'still diving after looking up for four seconds');
+  assert.ok(Math.abs(s.pos.y - -0.07) < 1e-9, `surfaced at ${s.pos.y}`);
+  globalThis.dispatchKey('w', false);
+});
+
+test('the normal view along the top does not dive, and a body hanging still is not steered', () => {
+  const { walk } = fresh();
+  run(walk, 0.3);
+  press('w');
+  run(walk, 2);
+  assert.equal(walk.state.dive, false, 'a plain stroke along the surface dived by itself');
+  globalThis.dispatchKey('w', false);
+  // Looking straight down with no key pressed: nothing to steer with.
+  walk.state.camPitch = 0.95;
+  run(walk, 2);
+  assert.equal(walk.state.dive, false, 'the view alone must not dive a body that is not swimming on');
+});
+
+test('a stroke backwards goes the other way, and a stroke sideways goes neither', () => {
+  const a = fresh();
+  a.walk.state.camPitch = 0.9;
+  run(a.walk, 0.3);
+  press('c'); run(a.walk, 1); globalThis.dispatchKey('c', false);   // under first
+  const y0 = a.walk.state.pos.y;
+  press('s'); run(a.walk, 1);
+  assert.ok(a.walk.state.pos.y > y0, `backwards while looking down should climb: ${y0} -> ${a.walk.state.pos.y}`);
+  globalThis.dispatchKey('s', false);
+  const b = fresh();
+  b.walk.state.camPitch = 0.9;
+  run(b.walk, 0.3);
+  press('c'); run(b.walk, 1); globalThis.dispatchKey('c', false);
+  b.walk.state.vy = 0;
+  const y1 = b.walk.state.pos.y;
+  press('d'); run(b.walk, 1);
+  assert.ok(Math.abs(b.walk.state.pos.y - y1) < 0.15, `sideways moved the depth: ${y1} -> ${b.walk.state.pos.y}`);
+  globalThis.dispatchKey('d', false);
+});
