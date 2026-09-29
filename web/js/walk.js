@@ -28,6 +28,9 @@ const PLANE_UP = new THREE.Vector3(0, 1, 0);
 // How much of a hull's tilt the third-person camera takes on (placeCamera): 0 is a level camera
 // over a deck that rocks under it, 1 is the deck held still on the screen and the whole sea rocking.
 const CAM_TILT = 0.25;
+// How far up a swimmer may look (camPitch, radians; negative is the camera below the head). About 63
+// degrees: enough to see the surface from the bed and the sky from the top of a stroke.
+const SWIM_PITCH_MIN = -1.1;
 const WALK_SPEED = 3.4;
 const RUN_SPEED = 6.6;
 const TURN_LERP = 0.18;
@@ -649,7 +652,15 @@ export function createWalkMode({
   };
   // From behind the eyes the camera may look nearly straight up and down; from behind the
   // back it may not, or it swings under the ground or over the head.
-  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [-0.25, 0.95]);
+  // In the water the mouse may look much further up (SWIM_PITCH_MIN): it is how a swimmer sees where
+  // they are heading, and how a diver climbs (diving.js lookRise). On land a camera that low would
+  // be under the ground, so the range narrows again as soon as the feet are out of the water and
+  // `relaxPitch` eases whatever was left over back into it.
+  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [state.swimming ? SWIM_PITCH_MIN : -0.25, 0.95]);
+  function relaxPitch(dt) {
+    const lo = pitchRange()[0];
+    if (state.camPitch < lo) state.camPitch = Math.min(lo, state.camPitch + (lo - state.camPitch) * (1 - Math.exp(-8 * dt)) + 1e-4);
+  }
   // The island's camera keeps its near plane half a cell out, which in first person would
   // cut away the hands and everything in them. Pulled in only while we are looking out of
   // the head, since a near plane that close costs depth precision at the horizon.
@@ -1842,6 +1853,7 @@ export function createWalkMode({
     // The camera goes over to a diver's rules (under the surface, floor at the sea bed) and back
     // over about 0.4 s, or the head going under would throw it two units.
     camDive = clamp(camDive + (state.diving ? dt : -dt) / CAM_DIVE_S, 0, 1);
+    relaxPitch(dt);
     if (state.active) placeCamera(fp);
 
     // what is within reach?
@@ -1873,7 +1885,14 @@ export function createWalkMode({
     // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
     const blend = camDive * camDive * (3 - 2 * camDive);
     const floor = cameraFloor({ ground: under, waterY: WATER_Y, blend });
-    camera.position.set(cx, applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor }), cz);
+    const camY = applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor });
+    camera.position.set(cx, camY, cz);
+    // The floor above the water is what keeps the lens from sitting half under the sea (a swimmer
+    // looking up used to put the camera below the surface, its top cutting the view in two). It must
+    // not also flatten the view: a camera pushed up by it aims as far above the body as it was pushed,
+    // so the direction the mouse asked for survives and looking up still looks up. Only upwards, and
+    // only for a swimmer - the diver's ceiling pulling the camera down keeps its old view of the diver.
+    const lift = state.swimming && !fp ? Math.max(0, camY - cy) : 0;
     // On a plane the camera stands in the plane's own frame: its offset from you turned with her tilt
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
@@ -1900,7 +1919,7 @@ export function createWalkMode({
       : stoop ? camAim * CROUCH_SCALE
         : state.sitting ? camAim * SIT_SCALE : camAim;
     if (plane) camera.lookAt(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
-    else camera.lookAt(state.pos.x, state.pos.y + aim, state.pos.z);
+    else camera.lookAt(state.pos.x, state.pos.y + aim + lift, state.pos.z);
     if (fp) {
       // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
       // saddle's lean), and a little behind it so the hands are in front of the lens.

@@ -47,6 +47,11 @@ een 3e voor de controllers", "grey out when no controller connected", "anders co
   de uiteinden van het bereik zijn een volle slag. Alleen als er gezwommen wordt en naar voren of achteren
   (`iz`): achteruit keert het om, opzij en stilhangen niets. C en Spatie tellen erbij op in plaats van te
   vervangen. In eerste persoon is het oog de richting en is level gewoon level.
+- **In het water mag de muis ver omhoog kijken** (`SWIM_PITCH_MIN` -1,1 in plaats van -0,25), en de camera
+  houdt zijn kijkrichting als de vloer hem omhoog duwt: `placeCamera` tilt het richtpunt op met precies
+  zoveel als de camera omhoog is gezet (`lift`; alleen een zwemmer, alleen omhoog). De lens zit dus nooit
+  half onder zee, en omhoog kijken kijkt omhoog; het lichaam schuift vanaf ongeveer -0,6 onderaan uit beeld.
+  Op het droge krimpt het bereik weer, zacht (`relaxPitch`).
 - **Drie kolommen per actie: primair, secundair, controller**, zoals op het plaatje. Model in
   `keybinds.js`: per actie `{ primary, secondary }` toetsen plus één controllerknop; alleen wat afwijkt van
   de standaard wordt bewaard (`promptholm.bindings`, versie 2). `promptholm.keys` (versie 1, `{ actie: toets }`)

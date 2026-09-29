@@ -1349,7 +1349,13 @@ wheeled-out camera look up at a boat through the underside of the water. While `
 `WATER_CAM_MAX` under the surface - a camera left above a diver would look down through a sea that
 is opaque at depth. Both go over on `blend`, a smoothstep of a 0.8 s timer (`camDive`), never on
 the flag: the surface swimmer's camera hangs 2.3 up, and an exponential ease moved it 0.16 in one
-frame (`tests/diving-walk.test.mjs` holds the step small).
+frame (`tests/diving-walk.test.mjs` holds the step small). **A swimmer may look far up, and the floor
+bends the aim instead of flattening it**: `pitchRange` opens to `SWIM_PITCH_MIN` (-1.1, about 63 degrees;
+on land it is -0.25, and `relaxPitch` eases the extra away over about a third of a second once the feet are
+out of the water), and `placeCamera` lifts the look-at point by however far `cameraFloor`/`applyCeiling`
+pushed the camera *up* (`lift`, swimmers only, never first person, never downward - the diver's ceiling keeps
+its old view of the diver). So the lens still never sits half under the sea, and the mouse looking up still
+looks up: the body slides out of the bottom of the frame from about -0.6, which is the price of seeing the sky.
 
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
