@@ -888,6 +888,11 @@ export function createFigures(scene, material, { armed = false } = {}) {
       if (!m) continue;
       if (m.parent) m.parent.remove(m);
       if (m.geometry) m.geometry.dispose();
+      // And the mesh itself: every one of these is an InstancedMesh of CAPACITY, and its
+      // instanceMatrix and instanceColor buffers are freed by the renderer on the mesh's
+      // dispose() alone - the geometry's leaves them. Some 21 of them a crowd, raised again
+      // with every guest region.
+      m.dispose();
     }
     roster.length = 0;
     slots = 0;
