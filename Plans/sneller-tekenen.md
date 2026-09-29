@@ -1,6 +1,6 @@
 # Sneller tekenen: meten, dan de kwaliteit laten meebewegen
 
-**🚧 Status: in aanbouw sinds 29 september 2026.**
+**✅ Status: gebouwd op 29 september 2026.** Open: een lage settler voor ver weg (Blender), zie *Metingen*.
 
 ## Waar dit vandaan komt
 
@@ -53,7 +53,29 @@ wijk (de projectherkenning is voor Windows-paden geschreven), `--no-rescan`.
 
 | Scenario | Calls (colour) | Driehoeken (colour) | Calls (schaduw) | Driehoeken (schaduw) |
 |---|---|---|---|---|
-| Boot, van boven, `?nointro` | 901 | 3.296.467 | – | – |
+| Van boven, vóór | 902 | 3.302.467 | 716 | 852.461 |
+| Van boven, na | 708 | 1.179.313 | 502 | 670.617 |
+| Te voet, vóór | 144 | 3.050.298 | 750 | 863.444 |
+| Te voet, na | 102 | 933.144 | 536 | 681.600 |
+
+64% minder driehoeken in de kleurpas, 21% minder calls, 30% minder schaduwcalls. De uitsplitsing
+komt van `__renderStats.breakdown()` (alleen met `?stats`: één frame lang elke draw call met
+zijn eigen calls en driehoeken, per pas). Wat het opleverde, elk een eigen commit:
+
+- **Het water** was 2,3 miljoen van de 3,3 miljoen driehoeken: één vlak met een hoekpunt per
+  eenheid over ruim een kilometer, bijna allemaal open zee op een vaste -2,5 waar kleur, normaal
+  en glinstering toch per pixel worden uitgerekend. Nu tegels van 16: fijn waar een eiland onder
+  ligt (dezelfde hoekpunten als voorheen), twee driehoeken daarbuiten (`waterPatchMesh`).
+- **Naamborden**: palen, balk en bord één mesh in één materiaal, 151 calls per pas minder.
+- **Settlers**: vest, hals en ogen gooien geen eigen schaduw meer (154k schaduwdriehoeken); ze
+  liggen binnen de omtrek van wat wel schaduw gooit.
+- **Menigten** krijgen de bol van hun eiland als bounding sphere in plaats van
+  `frustumCulled = false`: de vier gastmenigten werden in een schaduwkaart honderden eenheden
+  verderop getekend.
+
+Blijft over, bewust: onze eigen menigte is nu 40-47% van elke pas (een settler is ~3.100
+driehoeken, drie knopen samen 300). Een gebakken lage versie voor verre figuren is de volgende
+stap, en die vraagt Blender.
 
 ## Wat de lektest vond
 
