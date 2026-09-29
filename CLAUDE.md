@@ -54,6 +54,13 @@ to resolve the `shared/` import-map prefix, and stub `globalThis.document` befor
 anything that reaches `web/js/buildings.js` (it builds a `TextureLoader` at import time).
 Copy that preamble when adding a test that touches `web/js/`.
 
+A test that goes through `scan()` must date its transcripts relative to now, never on a
+fixed day: `scan()` builds the village on `Date.now()` with the config from HOME (its `now`
+option reaches only the planner's snapshot name), so a fixture's tent packs up a week after
+its date and nothing the test hands `scan()` stops it. Tests that call `buildVillage`
+directly pass their own `now` and `config: { tentGraceMs: 0 }` instead
+(`tests/tents-leave.test.mjs`).
+
 `.claude/launch.json` has `island-worktree` (auto-port, `--no-rescan`) for previewing from a
 worktree without colliding with the island already running on 4747. Pitfall: the preview
 tool reads `launch.json` from the directory the session was *launched* in and starts the
