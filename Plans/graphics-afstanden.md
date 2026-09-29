@@ -275,6 +275,13 @@ eiland. Wat domineerde en buiten de afstanden viel, en wat eraan gedaan is:
   buur en de vulkaan). De donkere rechthoek in de mist die een worker zag was echt: radiale mist
   per vertex, geïnterpoleerd over de reusachtige driehoeken van de oceaanschijf, rekende die te
   mistig; de watershader rekent de afstand nu per pixel.
+- **Golven onder je boot, ook ver van een eiland.** Na het tegelen lag er alleen binnen 16 units
+  van een eilandraster water met deining; daarbuiten vlakke grove tegels, en voorbij de oude omtrek
+  de oceaanschijf 0.2 lager - daar ging een boot zweven (al gezien vóór deze sessie). Nu vaart er
+  een klein fijn watervlak mee met je boot of het kijkpunt (`nearWaterPlan`, 5 x 5 tegels, ~6.5k
+  hoekpunten), gemaakt van alleen de tegels die het plan grof tekent; het plan laat daar zijn grove
+  fragmenten weg (`uNear`), dus niets dubbel. De deining loopt naar nul aan de randen, en voorbij
+  de omtrek zakt de rand in 8 units naar de oceaanschijf in plaats van een trede.
 - **Een harde lijn aan de horizon** (van hoog boven zee, `?modest`): de horizonband van de koepel
   kreeg de lineaire mistkleur, terwijl three de mist aan elk material in de uitvoer-kleurruimte
   geeft (na `colorspace_fragment`) en de koepel zijn kleuren rauw schrijft: 171,206,243 tegen

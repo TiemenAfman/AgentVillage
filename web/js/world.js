@@ -360,7 +360,62 @@ export function waterPatchPlan(half, regions, modest = false) {
   // dense tiles, which comparing the outline alone - as reshapeWater used to - would miss.
   const key = [modest ? 'm' : 'f', span.minX, span.maxX, span.minZ, span.maxZ,
     ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}`).sort()].join('|');
-  return { span, quads, triangles, waveAt, blendAt, key };
+  return { span, quads, triangles, waveAt, blendAt, key, dense: near, fine };
+}
+
+// The fine water that sails with you. The plan above leaves the open sea between islands to
+// flat coarse tiles, and past its outline there is only the ocean disc, 0.2 below the water
+// line - so a boat far enough from any island floated: the dense water with its swell had
+// stopped under it and the disc it sat over was lower (seen in play before the tiling, when
+// the outline was the only edge; the tiling moved that edge in to 16 units off every coast).
+// This is a small patch of the same water, dense and swelling, round a focus - your boat, or
+// whatever the orbit camera looks at - snapped to the plan's own lattice so the swell, which
+// is anchored to the world, never slides under it.
+//
+// It never overlaps the plan: it is made only of the lattice cells round the focus that the
+// plan draws coarse, and the plan's coarse fragments inside its square are discarded
+// (`uNear` in the water shader; dense ones never are). So every pixel is drawn once. Its
+// swell is faded to nothing over NEAR_RIM from its edge - its own square's, and every dense
+// cell it leaves out, whose seam is flat on the plan's side too - so it meets flat water flat.
+// Past the outline, where the ocean disc is all there is, its rim sinks the OCEAN_DROP down to
+// the disc over the same NEAR_RIM: a slope of 0.2 in 8 units of deep water, instead of a step.
+export const NEAR_CELLS = 2;       // cells each side of the focus's own: 5 x 5, 80 units across
+export const NEAR_RIM = 8;
+export const OCEAN_DROP = 0.2;     // how far below the water line the ocean disc lies
+
+export function nearWaterPlan(plan, fx, fz) {
+  const T = WATER_TILE;
+  const cx = Math.floor(fx / T), cz = Math.floor(fz / T);
+  const rect = {
+    minX: (cx - NEAR_CELLS) * T, maxX: (cx + NEAR_CELLS + 1) * T,
+    minZ: (cz - NEAR_CELLS) * T, maxZ: (cz + NEAR_CELLS + 1) * T,
+  };
+  const cells = [], left = [];
+  for (let j = -NEAR_CELLS; j <= NEAR_CELLS; j++) {
+    for (let i = -NEAR_CELLS; i <= NEAR_CELLS; i++) {
+      const c = { minX: (cx + i) * T, maxX: (cx + i + 1) * T, minZ: (cz + j) * T, maxZ: (cz + j + 1) * T };
+      (plan.dense(c.minX, c.maxX, c.minZ, c.maxZ) ? left : cells).push(c);
+    }
+  }
+  const { span } = plan;
+  const rimDist = (x, z) => Math.min(x - rect.minX, rect.maxX - x, z - rect.minZ, rect.maxZ - z);
+  // How far (x, z) is from where this patch stops: its square's edge or a dense cell it
+  // leaves to the plan.
+  const edgeDist = (x, z) => {
+    let d = rimDist(x, z);
+    for (const c of left) {
+      const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ);
+      d = Math.min(d, Math.hypot(dx, dz));
+    }
+    return d;
+  };
+  const inSpan = (x, z) => x >= span.minX && x <= span.maxX && z >= span.minZ && z <= span.maxZ;
+  return {
+    rect, cells,
+    key: `${cx},${cz}|${plan.key}`,
+    waveAt: (x, z) => smoothstep(0, NEAR_RIM, edgeDist(x, z)),
+    baseAt: (x, z) => (inSpan(x, z) ? 0 : OCEAN_DROP * (smoothstep(0, NEAR_RIM, rimDist(x, z)) - 1)),
+  };
 }
 
 
@@ -1680,19 +1735,29 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // Neighbouring dense tiles share their edge vertices rather than each carrying a copy:
     // the same positions either way (and so the same depth and blend - no crack), a ninth
     // fewer vertices through the shader. Keyed on an eighth of a unit, finer than any step.
-    const seen = new Map();
+    //
+    // Dense and coarse keep their own copies, though: a coarse vertex carries aCoarse = 1 so
+    // the water that sails with you can take its place (nearWaterPlan), and a vertex shared
+    // with a dense tile would smear that across the dense tile's edge. The seam is at the
+    // same positions either way.
+    const seen = [new Map(), new Map()];
+    const coarse = new Uint8Array(most);
     let count = 0, k = 0;
+    let dense = false;
     const vertex = (x, z) => {
       const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
-      let n = seen.get(key);
+      const map = seen[dense ? 1 : 0];
+      let n = map.get(key);
       if (n === undefined) {
         n = count++;
         pos[n * 3] = x; pos[n * 3 + 2] = z;
-        seen.set(key, n);
+        coarse[n] = dense ? 0 : 1;
+        map.set(key, n);
       }
       return n;
     };
     for (const q of wplan.quads) {
+      dense = q.dense;
       const w = q.maxX - q.minX, d = q.maxZ - q.minZ;
       let prev = null;
       for (let j = 0; j <= q.segZ; j++) {
@@ -1728,6 +1793,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
     geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
     geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(Float32Array.from(coarse.subarray(0, count)), 1));
     waterGeo = geo;
     wp = p;
     return geo;
@@ -1748,6 +1814,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xffffff) },
         uNight: { value: 0 },
+        uNear: { value: new THREE.Vector4(1e9, 1e9, -1e9, -1e9) },
       },
     ]),
     vertexShader: `
@@ -1757,13 +1824,17 @@ export function createWorld(scene, terrain, village, opts = {}) {
       // 1 wherever the swell is drawn, 0 on the coarse open sea and the seam into it
       // (waterPatchPlan): a wave sampled every sixteen units is a tilting slab, not a wave.
       attribute float aWave;
+      // 1 on the plan's coarse tiles: the ones the water that sails with you replaces.
+      attribute float aCoarse;
       uniform float uTime;
       varying float vDepth;
       varying vec3 vWorld;
       varying float vBlend;
+      varying float vCoarse;
       void main() {
         vDepth = aDepth;
         vBlend = aBlend;
+        vCoarse = aCoarse;
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
@@ -1779,10 +1850,15 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uniform vec3 uDeep, uShallow, uFoam, uSunColor;
       uniform vec3 uSunDir;
       uniform float uTime, uNight;
+      // The square the water that sails with you covers (minX, minZ, maxX, maxZ): the plan's
+      // coarse tiles step aside inside it, so the two are never drawn over each other.
+      uniform vec4 uNear;
       varying float vDepth;
       varying vec3 vWorld;
       varying float vBlend;
+      varying float vCoarse;
       void main() {
+        if (vCoarse > 0.5 && vWorld.x > uNear.x && vWorld.x < uNear.z && vWorld.z > uNear.y && vWorld.z < uNear.w) discard;
         float shallow = smoothstep(-2.0, -0.1, vDepth);
         vec3 col = mix(uDeep, uShallow, shallow);
         // The surf. It used to fade in over three tenths of a unit of depth, which on
@@ -1841,6 +1917,70 @@ export function createWorld(scene, terrain, village, opts = {}) {
   water.renderOrder = 1;
   group.add(water);
 
+  // The water that sails with you (nearWaterPlan): the same material, so the same clock, sun,
+  // fog and night; rebuilt only when the focus crosses into another lattice cell or the plan
+  // changes - a few thousand vertices, never the whole patch.
+  const sailWater = new THREE.Mesh(new THREE.BufferGeometry(), waterMat);
+  sailWater.renderOrder = 1;
+  sailWater.visible = false;
+  group.add(sailWater);
+  let nearKey = null;
+  function buildNearWater(np) {
+    const fine = wplan.fine;
+    const n = Math.round(WATER_TILE / fine);
+    const pos = [], idx = [];
+    const seen = new Map();
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      let v = seen.get(key);
+      if (v === undefined) { v = pos.length / 3; pos.push(x, np.baseAt(x, z), z); seen.set(key, v); }
+      return v;
+    };
+    for (const c of np.cells) {
+      let prev = null;
+      for (let j = 0; j <= n; j++) {
+        const z = c.minZ + j * fine;
+        const row = [];
+        for (let i = 0; i <= n; i++) row.push(vertex(c.minX + i * fine, z));
+        if (prev) {
+          for (let i = 0; i < n; i++) idx.push(prev[i], row[i], prev[i + 1], row[i], row[i + 1], prev[i + 1]);
+        }
+        prev = row;
+      }
+    }
+    const count = pos.length / 3;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setIndex(idx);
+    const depth = new Float32Array(count), blend = new Float32Array(count).fill(1), wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = pos[i * 3], z = pos[i * 3 + 2];
+      depth[i] = depthAt(x, z);
+      wave[i] = np.waveAt(x, z);
+    }
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+    geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(new Float32Array(count), 1));
+    geo.computeBoundingSphere();
+    return geo;
+  }
+  // Where the water that sails with you is: your boat, or what the camera looks at. Cheap to
+  // call every frame - it does nothing until the focus changes cell.
+  function setWaterFocus(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !wplan) return;
+    const np = nearWaterPlan(wplan, x, z);
+    if (np.key === nearKey) return;
+    nearKey = np.key;
+    const old = sailWater.geometry;
+    sailWater.geometry = np.cells.length ? buildNearWater(np) : new THREE.BufferGeometry();
+    old.dispose();
+    sailWater.visible = np.cells.length > 0;
+    const r = np.rect;
+    if (np.cells.length) waterMat.uniforms.uNear.value.set(r.minX, r.minZ, r.maxX, r.maxZ);
+    else waterMat.uniforms.uNear.value.set(1e9, 1e9, -1e9, -1e9);
+  }
+
   // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
   // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
   // and an island of the largest grid reaches 256 further again, so the far water is
@@ -1870,6 +2010,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // The swell it always had, which on a vertex at the middle and 128 at the rim is nothing.
   oceanGeo.setAttribute('aWave', new THREE.BufferAttribute(
     new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  oceanGeo.setAttribute('aCoarse', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count), 1));
   const oceanMat = waterMat.clone();
   oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
   oceanMat.transparent = false;
@@ -1878,7 +2020,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
   // disc carries the same wave, but with a vertex only at its centre and its rim it is
   // flat where the patch is not, so the two do not dip together.
-  ocean.position.y = -0.2;
+  ocean.position.y = -OCEAN_DROP;
   ocean.renderOrder = 0;
   group.add(ocean);
 
@@ -2365,7 +2507,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
-    followShadow, setShadowDistance, setFar, recentre, reshapeWater, state, reshape,
+    followShadow, setShadowDistance, setFar, recentre, reshapeWater, setWaterFocus, state, reshape,
   };
 }
 

@@ -6047,6 +6047,13 @@ function frame(nowMs) {
   // owns the horizon.
   const eye = state.mode === 'plan' && state.plan ? state.plan.camera : camera;
   if (state.world) state.world.recentre(eye.position.x, eye.position.y, eye.position.z);
+  // The fine, swelling water follows you: your body or your boat on foot, what the camera
+  // looks at from above (world.js nearWaterPlan). Without it the swell stopped sixteen units
+  // off every coast, and past the old outline a boat floated over the lower ocean disc.
+  if (state.world) {
+    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos : controls.target;
+    state.world.setWaterFocus(w.x, w.z);
+  }
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.

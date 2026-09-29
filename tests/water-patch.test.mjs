@@ -15,7 +15,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 
 // world.js reaches buildings.js, which asks for its texture sheets the moment it loads.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { waterPatchPlan, waterPatchSpan, WATER_TILE, WATER_REACH, WATER_FADE } = await import('../web/js/world.js');
+const { waterPatchPlan, waterPatchSpan, nearWaterPlan, WATER_TILE, WATER_REACH, WATER_FADE, NEAR_CELLS, NEAR_RIM, OCEAN_DROP } = await import('../web/js/world.js');
 delete globalThis.document;
 
 const { makeTerrain } = await import('../shared/terrain.mjs');
@@ -183,4 +183,63 @@ test('the fade band is in the spare water, never across an island', () => {
     }
   }
   assert.ok(WATER_FADE < Math.max(60, 130 - 32) - WATER_REACH);
+});
+
+// ---------------------------------------------------------------- the water that sails with you
+// Past sixteen units off every coast the plan is flat coarse water, and past its outline only
+// the ocean disc, 0.2 lower: a boat out there floated. nearWaterPlan is the dense, swelling
+// patch that follows you instead; what has to hold is that it and the plan never draw the same
+// water twice, that its swell meets flat water flat, and that past the outline it sinks to the
+// disc rather than standing on a step.
+test('the water that sails with you takes only the coarse cells, and swells to nothing at its edges', () => {
+  const plan = waterPatchPlan(32, [{ origin: [0, 0], half: 32 }]);
+  // Out on the open sea, well away from the island: every cell of the square is coarse.
+  const out = nearWaterPlan(plan, 90, 90);
+  const side = 2 * NEAR_CELLS + 1;
+  assert.equal(out.cells.length, side * side);
+  assert.equal(out.rect.maxX - out.rect.minX, side * WATER_TILE);
+  assert.equal(out.rect.minX % WATER_TILE, 0, 'not on the plan\'s lattice');
+  // Next to the island: the dense cells are left to the plan, and the rest are exactly the
+  // cells the plan draws coarse - so between the two every cell is drawn once.
+  const by = nearWaterPlan(plan, 40, 0);
+  assert.ok(by.cells.length < side * side && by.cells.length > 0);
+  for (const c of by.cells) assert.equal(plan.dense(c.minX, c.maxX, c.minZ, c.maxZ), false);
+  for (let x = by.rect.minX; x < by.rect.maxX; x += WATER_TILE) {
+    for (let z = by.rect.minZ; z < by.rect.maxZ; z += WATER_TILE) {
+      const mine = by.cells.some((c) => c.minX === x && c.minZ === z);
+      assert.equal(mine, !plan.dense(x, x + WATER_TILE, z, z + WATER_TILE), `cell ${x},${z}`);
+    }
+  }
+  // Flat at its own rim and against every dense cell it leaves out, full swell inside.
+  assert.equal(by.waveAt(by.rect.minX, by.rect.minZ + 40), 0);
+  for (const c of by.cells) {
+    const touches = !by.cells.some((d) => d.minX === c.minX - WATER_TILE && d.minZ === c.minZ)
+      && c.minX > by.rect.minX;
+    if (touches) assert.equal(by.waveAt(c.minX, (c.minZ + c.maxZ) / 2), 0, 'swell against a dense cell');
+  }
+  const mid = out.cells[Math.floor(out.cells.length / 2)];
+  assert.equal(out.waveAt((mid.minX + mid.maxX) / 2, (mid.minZ + mid.maxZ) / 2), 1);
+  // A new cell, a new patch; the same cell, the same one.
+  assert.equal(nearWaterPlan(plan, 91, 89).key, out.key);
+  assert.notEqual(nearWaterPlan(plan, 90 + WATER_TILE, 90).key, out.key);
+});
+
+test('past the outline it sinks to the ocean disc at its rim, and inside it lies on the water line', () => {
+  const plan = waterPatchPlan(32, [{ origin: [0, 0], half: 32 }]);
+  const inside = nearWaterPlan(plan, 0, plan.span.minZ + 60);
+  assert.equal(inside.baseAt(inside.rect.minX, inside.rect.minZ + 30), 0);
+  // Well past the outline: level with the water in the middle, down at the disc on the rim.
+  const past = nearWaterPlan(plan, plan.span.maxX + 300, 0);
+  assert.equal(past.baseAt((past.rect.minX + past.rect.maxX) / 2, 8), 0);
+  assert.ok(Math.abs(past.baseAt(past.rect.minX, 8) + OCEAN_DROP) < 1e-9);
+  assert.ok(Math.abs(past.baseAt(past.rect.minX + NEAR_RIM / 2, 8) + OCEAN_DROP / 2) < 1e-9);
+});
+
+test('the water shader lets the coarse plan step aside where the sailing water lies', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(vCoarse > 0\.5 && vWorld\.x > uNear\.x && vWorld\.x < uNear\.z && vWorld\.z > uNear\.y && vWorld\.z < uNear\.w\) discard;/);
+  // The ocean disc is never the one that steps aside, and its drop is the one copy.
+  assert.match(src, /oceanGeo\.setAttribute\('aCoarse'/);
+  assert.match(src, /ocean\.position\.y = -OCEAN_DROP;/);
 });

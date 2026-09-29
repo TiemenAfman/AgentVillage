@@ -413,6 +413,12 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   a full page. Swell (`aWave`) goes to zero before the dense/coarse join so the two meet flat.
   The water shader fogs by `distance(vWorld, cameraPosition)` per pixel: a radial fog
   interpolated across the ocean disc's huge triangles over-fogged it.
+  And a small dense patch sails with you (`nearWaterPlan`, `setWaterFocus` from main.js each
+  frame: the walker or boat on foot, the orbit target from above), 5 x 5 lattice cells made
+  only of the cells the plan draws coarse, whose coarse fragments inside its square are
+  discarded (`uNear`, `aCoarse`) - so the swell is under your boat everywhere and nothing is
+  drawn twice. Past the outline its rim slopes down `OCEAN_DROP` to the ocean disc: before
+  it, a boat far from any island floated 0.2 over that disc.
 - **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
   islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
   pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
