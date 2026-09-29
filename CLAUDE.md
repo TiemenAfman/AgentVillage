@@ -1271,7 +1271,8 @@ no intro, no tween, no open `aside.panel`, not the chronicle, Settings' *Wander 
 it picks a shot from `directorShots()` - an arrival first (`state.arrivals`, fed by the `arrive`
 event), then by weight the gold run (`goldRun.focus()`), the timber wagon (`timberRun.where`),
 a yard hand (`timberRun.handAt`), a working settler (a visible figure whose `anim` is in
-`WORK_WORDS`), a story animal (the goat weighted up) and the fisherman - never the same key
+`WORK_WORDS`), a story animal (the goat weighted up), the fisherman and, at most once per
+`CENTRE_EVERY`, the town centre - never the same key
 twice running, flies to it over `FLY_S`, follows and circles it for `HOLD_S` from the shot's
 `dist`, and says what it is in `#director-caption`. After every shot it goes back up to the whole
 island (`overview`, `islandFrame()` in main.js - the boot framing) for `OVERVIEW_S`, circling it

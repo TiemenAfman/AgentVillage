@@ -44,6 +44,7 @@ volgt, en (2) een visser bij de vissershut, want daar leeft nu niets.
 | Tussen twee shots | Na elk shot vliegt hij in 5 s terug naar het hele eiland (het beeld van `frameIsland`) en draait daar `OVERVIEW_S` (12 s) langzaam omheen (`OVERVIEW_RATE`, een rondje in drie minuten), dan pas het volgende shot. | Het eiland is het onderwerp; een shot is een uitstapje ernaartoe, en een rij close-ups achter elkaar liet nooit zien waar ze lagen. |
 | Niets te doen | Blijft hij om het eiland draaien, zonder opnieuw te vliegen, en kijkt elke `OVERVIEW_S` of er iets begint. | "Mag de camera langzaam om het eiland heen draaien." De vaste gebouwen die eerst als reserve dienden (stadhuis, taverne, …) zijn daarmee weer weg: dat was stilstaan op iets waar niets gebeurde. |
 | Een wandelende inwoner | Blijft een shot (licht gewogen). | Iemand die loopt, is iets dat gebeurt. |
+| Het centrum | Af en toe een shot van het plein (`town.centre`) van `CENTRE_DIST` (22) en wat hoger, hooguit eens per `CENTRE_EVERY` (2 min), gerekend vanaf het moment dat hij er echt naar kijkt. | "Neem ook af en toe een shot van het centrum mee." Het plein is er altijd; zonder die pauze wisselde een stil eiland alleen nog plein en overzicht af. |
 
 ## Later
 

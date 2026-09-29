@@ -1438,6 +1438,15 @@ const WORK_WORDS = {
   carry: 'A settler bringing a bar of gold home', barrow: 'A settler off to fetch gold from the pit',
 };
 const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the sparrow' };
+const CENTRE_EVERY = 120000;
+const CENTRE_DIST = 22;
+let centreShownAt = -Infinity;
+// The middle of the square itself, not the board or the hall at its edge (townCentreScenePos).
+function townSquareScenePos() {
+  const town = state.village && state.village.island && state.village.island.town;
+  if (town && town.centre && state.terrain) return state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return townCentreScenePos();
+}
 state.arrivals = new Map();
 function directorShots() {
   const out = [];
@@ -1478,6 +1487,14 @@ function directorShots() {
   }
   const hut = state.byId.get('civic:fishery');
   if (hut && hut.fisher && fisherAt(hut.fisher)) out.push({ key: 'fisher', weight: 2, dist: CLOSE, label: 'The fisherman at his hut', where: () => lift(fisherAt(hut.fisher)) });
+  // Now and then the town centre, from high enough to take in the square and the ring round
+  // it. Always there, so held back for CENTRE_EVERY after each showing - otherwise a quiet island
+  // swapped between the square and the whole island, which is not "now and then".
+  const centre = townSquareScenePos();
+  if (centre && now - centreShownAt > CENTRE_EVERY) {
+    out.push({ key: 'centre', weight: 1, dist: CENTRE_DIST, el: 0.75, label: 'The town centre',
+      where: () => lift(townSquareScenePos(), 0.5) });
+  }
   // Somebody out and about. When not even that is happening (a quiet island at night), the
   // director circles the whole island instead (`overview`).
   const walkers = [];
@@ -1522,6 +1539,9 @@ function stepDirector(dt) {
     controls.target.set(...pose.target);
     camera.position.set(...pose.position);
   }
+  // Counted from when it is watched, not when it is offered: pickShot asks every candidate's
+  // `where` while choosing, so marking it there held the centre back without ever showing it.
+  if (state.director.key() === 'centre') centreShownAt = Date.now();
   const words = state.director.caption();
   directorCaption.hidden = !words;
   if (words && directorCaption.textContent !== words) directorCaption.textContent = words;
