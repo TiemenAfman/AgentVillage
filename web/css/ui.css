@@ -20,6 +20,17 @@ html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin
 html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; }
 body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; }
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* The sea over the lens (web/js/underwater.js). Opacity is the eased amount times 0.35, so
+   the gradient is strong and the layer is not: a clear turquoise from the light above to a
+   green-black below, and the corners closed in. No z-index on purpose - it follows the canvas
+   in the document, so it lies over the picture and under every card, chip and the touch pad.
+   Never a filter on #stage: vitals.js writes the beer's blur there. */
+#underwater {
+  position: fixed; inset: 0; pointer-events: none; opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgba(40, 170, 185, 0) 32%, rgba(2, 34, 48, .92) 100%),
+    linear-gradient(to bottom, rgba(96, 214, 220, .85), rgba(6, 74, 92, .9));
+}
 
 .card, .panel {
   background: var(--panel);
@@ -276,10 +287,10 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
 
-/* Health over stamina over beer (web/js/vitals.js), each an emoji and a track. The fill is
+/* Health over stamina over air over beer (web/js/vitals.js), each an emoji and a track. The fill is
    a scaleX of a full-width bar rather than a width, so the frame loop writes one custom
    property and nothing reflows; the rounded ends belong to the track (`b`), which clips it.
-   A bar with nothing to say - full for the first two, empty for the beer - fades out on a
+   A bar with nothing to say - full for the first three, empty for the beer - fades out on a
    delay, emoji and all, and one that moves comes straight back: the transition that applies
    is the one on the state being entered, so `.full`/`.empty` carry the slow one and the
    plain rule the quick one. */
@@ -292,6 +303,7 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .vital i { display: block; height: 100%; transform-origin: left center; transform: scaleX(var(--f, 1)); }
 .vital.health i { background: linear-gradient(#ea7a68, #b93c30); }
 .vital.stamina i { background: linear-gradient(#f5d98a, #d9a441); }
+.vital.air i { background: linear-gradient(#a6e0fa, #3f8fd0); }
 .vital.tipsy i { background: linear-gradient(#c79cf2, #7b3fc4); }
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }

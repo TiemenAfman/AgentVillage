@@ -425,6 +425,17 @@ export const NEAR_CELLS = 2;       // cells each side of the focus's own: 5 x 5,
 export const NEAR_RIM = 8;
 export const OCEAN_DROP = 0.2;     // how far below the water line the ocean disc lies
 
+// How high the swell stands over the water line at (x, z), in the page's frame and on the
+// sea's clock `t` (waterMat.uniforms.uTime): the water shader's vertex term, written a second
+// time for the one reader that is not a shader - web/js/underwater.js asks where the surface
+// is to know whether the lens has gone under it. `wave` is how much of the swell the water
+// carries there (waterPatchPlan's waveAt, 0 on the flat coarse sea). The two are kept
+// together by tests/underwater.test.mjs, which reads the shader for the same coefficients.
+export const SWELL_MAX = 0.09;
+export function swellAt(x, z, t, wave = 1) {
+  return (0.05 * Math.sin(x * 1.3 + t * 1.1) + 0.04 * Math.sin(z * 1.7 - t * 0.9)) * wave;
+}
+
 export function nearWaterPlan(plan, fx, fz) {
   const T = WATER_TILE;
   const cx = Math.floor(fx / T), cz = Math.floor(fz / T);
@@ -1994,6 +2005,14 @@ export function createWorld(scene, terrain, village, opts = {}) {
   sailWater.visible = false;
   group.add(sailWater);
   let nearKey = null;
+  // The plan the water that sails with you was built from, or null while it has nothing to
+  // draw: surfaceAt reads the swell off it, because that patch is where the swell is under a
+  // boat far from any island.
+  let nearPlan = null;
+  // The lens is under the surface (setUnderwater, below). The three sea meshes that draw the
+  // top of the water are hidden for as long as it is - see the note there - and this is what
+  // setWaterFocus has to respect when it decides whether the sailing patch shows.
+  let underNow = false;
   function buildNearWater(np) {
     const fine = wplan.fine;
     const n = Math.round(WATER_TILE / fine);
@@ -2044,7 +2063,8 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const old = sailWater.geometry;
     sailWater.geometry = np.cells.length ? buildNearWater(np) : new THREE.BufferGeometry();
     old.dispose();
-    sailWater.visible = np.cells.length > 0;
+    nearPlan = np.cells.length ? np : null;
+    sailWater.visible = !!nearPlan && !underNow;
     const r = np.rect;
     if (np.cells.length) waterMat.uniforms.uNear.value.set(r.minX, r.minZ, r.maxX, r.maxZ);
     else waterMat.uniforms.uNear.value.set(1e9, 1e9, -1e9, -1e9);
@@ -2345,6 +2365,208 @@ export function createWorld(scene, terrain, village, opts = {}) {
   }
   group.add(clouds);
 
+  // ---- the surface, from underneath ---------------------------------------------------
+  // The sea meshes above are one-sided on purpose - the patch and the sailing patch are
+  // FrontSide, the disc is opaque and 0.2 down - so a camera under them sees no water at all,
+  // and worse sees *through* it: the sky, the sun, the far islands and every fog:false
+  // landmark (a lighthouse beam, a campfire) hang in the void over its head, and the ocean
+  // disc, opaque, hides the sea bed from anybody within 0.2 of the surface.
+  //
+  // What replaces them while the lens is under (`setUnderwater`, from web/js/underwater.js) is
+  // ONE full-screen quad and not a second set of meshes on the same geometry, and the reason
+  // is measured, not taste. A BackSide copy of the patch is a surface, and a surface has
+  // edges: the camera's near plane is half a cell out (main.js keeps it there for depth
+  // precision at the horizon), so with the lens 0.3 under the water - which is where a diver
+  // swims for the first seconds - the surface within half a unit is cut away and the town
+  // above shows through a round hole in the ceiling; the swell is +-0.09, so a lens between a
+  // trough and the mean sees the trough's back faces from the wrong side and the ceiling has
+  // holes in it at the horizon; and three meshes have to follow every reshapeWater and
+  // setWaterFocus swap. A quad has none of that. Every pixel of it works out where its own ray
+  // meets the plane y = the surface at the camera, shades that point (Snell's window, below),
+  // and writes the DEPTH of that point - so everything above the surface is behind it and
+  // everything under is in front of it, per pixel, exactly, whatever the near plane is: a hit
+  // closer than the near plane writes depth 0 and covers what the geometry would have clipped.
+  // It is drawn first (renderOrder), so the depth it leaves is what the rest of the frame is
+  // rejected against, early. Rays that never reach the surface - looking down or along it -
+  // are discarded, and belong to the scene: the sea bed, or the fog's own colour behind it.
+  //
+  // What it looks like, for the record. The water is 1.33 times as dense as air, so a ray from
+  // an eye under it leaves through the surface only inside a cone 48.75 degrees off vertical -
+  // Snell's window - and inside it the sky is squeezed into that circle, horizon at its rim;
+  // outside it the surface is a mirror of the water, and so it is drawn as the water's own
+  // colour, the fog's, a little darker. The ripples that break the sun's glint up are the
+  // swell's own terms and a second set of smaller ones, all of them on the sea's clock and on
+  // the three rates WAVE_LOOP folds seamlessly (WAVE_RATES): a rate of its own would jump once
+  // every sixty seconds when uTime folds.
+  //
+  // Nothing of this exists above water: the quad is `visible = false` and not in the render
+  // list, so it costs nothing until the lens goes under.
+  const ceilingMat = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uSurfaceY: { value: 0 },
+        // The projection, for the depth. The fragment stage is not handed one by three (the
+        // vertex stage is), and the quad lives in clip space, so it is copied in per frame.
+        uProj: { value: new THREE.Matrix4() },
+      },
+    ]),
+    vertexShader: `
+      #include <fog_pars_vertex>
+      varying vec3 vDir;
+      void main() {
+        // A ray through this corner of the screen, in the world: the far plane's point in view
+        // space, turned by the camera. The quad's four corners are all there is - the ray is
+        // linear in the screen, so the interpolation between them is exact.
+        vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+        vDir = (inverse(viewMatrix) * vec4(view.xyz / view.w, 0.0)).xyz;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+        #ifdef USE_FOG
+          vFogDepth = 0.0;
+        #endif
+      }
+    `,
+    fragmentShader: `
+      #include <fog_pars_fragment>
+      uniform vec3 uSkyTop, uSkyHor, uSunColor;
+      uniform vec3 uSunDir;
+      uniform float uTime, uNight, uSurfaceY;
+      uniform mat4 uProj;
+      varying vec3 vDir;
+      void main() {
+        vec3 I = normalize(vDir);
+        // Nothing to see of the surface when looking down or along it, and none at all from a
+        // camera that is above it.
+        float rise = uSurfaceY - cameraPosition.y;
+        if (I.y < 0.0004 || rise <= 0.0) discard;
+        float dist = rise / I.y;
+        vec3 hit = cameraPosition + I * dist;
+
+        // The ripples: the swell's own slopes, and a smaller pair, each at a rate WAVE_LOOP
+        // folds. Amplified - the true slope is a few degrees and a window that barely moves
+        // reads as a hole in the ceiling, not as water.
+        float t = uTime;
+        vec2 sl = vec2(
+          -0.065 * cos(hit.x * 1.3 + t * 1.1) - 0.05 * cos(hit.x * 2.9 + hit.z * 2.3 + t * 1.3),
+          -0.068 * cos(hit.z * 1.7 - t * 0.9) - 0.05 * cos(hit.z * 3.3 - hit.x * 2.1 - t * 0.9));
+        vec3 N = -normalize(vec3(sl.x * 2.2, 1.0, sl.y * 2.2));
+
+        // Snell's window: k is what is left under the root when the ray is taken across into
+        // air (1.3333 squared is 1.7778) - below zero the ray never leaves the water and the
+        // surface is a mirror.
+        float cosI = -dot(N, I);
+        float k = 1.0 - 1.7778 * (1.0 - cosI * cosI);
+        float win = smoothstep(0.0, 0.07, k);
+        vec3 A = k > 0.0 ? normalize(refract(I, N, 1.3333)) : vec3(0.0, 1.0, 0.0);
+        vec3 sky = mix(uSkyHor, uSkyTop, smoothstep(-0.05, 0.45, A.y));
+        // The sun through the ripples: a tight glint and a wide halo, both broken up by N.
+        float sd = max(dot(A, normalize(uSunDir)), 0.0);
+        sky += uSunColor * (pow(sd, 90.0) * 2.6 + pow(sd, 9.0) * 0.22);
+        sky *= exp(-0.1 * dist);
+
+        #ifdef USE_FOG
+          vec3 mirror = fogColor * 0.78;
+        #else
+          vec3 mirror = vec3(0.05, 0.26, 0.31);
+        #endif
+        float rip = 0.5 + 0.5 * sin(hit.x * 2.3 + hit.z * 1.9 + t * 1.1 + 2.5 * sin(hit.z * 0.9 - t * 0.9));
+        // Fading with distance: at a grazing angle the ripples are a fine corduroy that crawls
+        // as the camera moves, and the haze is the better picture of it.
+        mirror *= 1.0 + (rip - 0.5) * 0.2 * exp(-0.07 * dist);
+        // The window is seen through water: a third of the way to the water's own colour.
+        vec3 col = mix(mirror, mix(sky, mirror * 1.6, 0.3), win);
+        col *= mix(1.0, 0.75, uNight);
+
+        gl_FragColor = vec4(col, 1.0);
+        // The same fog as the water's, by the distance to the point (the fog is radial,
+        // radial-fog.js): a surface seen at a grazing angle is a long way off and is the
+        // haze's colour, which is what the murk behind an unfinished sea bed is too.
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp(- fogDensity * fogDensity * dist * dist);
+          #else
+            float fogFactor = smoothstep(fogNear, fogFar, dist);
+          #endif
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif
+
+        vec4 clip = uProj * (viewMatrix * vec4(hit, 1.0));
+        gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+      }
+    `,
+  });
+  // The clock, the sun and the sky's own colours, by reference: the very objects world.update
+  // and weather.js write every frame, so the window shows the sky as it is now (dulled by
+  // cloud, dark at night) with nothing copied.
+  Object.assign(ceilingMat.uniforms, {
+    uTime: waterMat.uniforms.uTime,
+    uSunDir: waterMat.uniforms.uSunDir,
+    uSunColor: waterMat.uniforms.uSunColor,
+    uNight: waterMat.uniforms.uNight,
+    uSkyTop: skyMat.uniforms.uTop,
+    uSkyHor: skyMat.uniforms.uHor,
+  });
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ceilingMat);
+  ceiling.frustumCulled = false;
+  // First of everything: what it leaves in the depth buffer is what the rest is tested against.
+  ceiling.renderOrder = -1000;
+  ceiling.visible = false;
+  ceiling.onBeforeRender = (renderer, scn, cam) => { ceilingMat.uniforms.uProj.value.copy(cam.projectionMatrix); };
+  group.add(ceiling);
+
+  // The lens has gone under, or come back. `amount` is the eased 0..1 of underwater.js and is
+  // only ever a fade for the fog and the light, which are the caller's; what THIS decides is
+  // which meshes exist, and that follows the boolean `under`, immediately - a sea drawn wrong
+  // for a tenth of a second is a flash. `surfaceY` is where the water is at the camera.
+  //
+  // Going under: the ceiling on; the three meshes that draw the top of the water off (their
+  // top faces are culled from below anyway, but the patch is tens of thousands of triangles
+  // and the disc, being opaque and 0.2 down, would hide the sea bed from the top 0.2 of
+  // every dive); the dome, the clouds and the sun and moon off - they are behind the ceiling
+  // and would only cost vertices. The clouds are put back to how they were found, not to
+  // "visible": the planner hides them too and owns that.
+  //
+  // world.update turns the sun and moon on again every frame, so they are turned off again
+  // every frame; nothing else here is written more than once per crossing.
+  let cloudsWere = true;
+  function setUnderwater(amount, isUnder = amount > 0, surfaceY = 0) {
+    ceilingMat.uniforms.uSurfaceY.value = surfaceY;
+    if (isUnder !== underNow) {
+      underNow = isUnder;
+      ceiling.visible = isUnder;
+      water.visible = !isUnder;
+      ocean.visible = !isUnder;
+      sailWater.visible = !isUnder && !!nearPlan;
+      sky.visible = !isUnder;
+      if (isUnder) { cloudsWere = clouds.visible; clouds.visible = false; } else clouds.visible = cloudsWere;
+    }
+    if (underNow) { sunDisc.visible = false; moonDisc.visible = false; }
+  }
+
+  // Where the water's surface is at (x, z), for whatever needs to know whether something is
+  // under it: the swell where the sea has one, and the sailing patch's slope down to the
+  // ocean disc where it stops (baseAt). It is the same arithmetic the vertices do, evaluated
+  // at one point - so within a few centimetres of the drawn surface, and exact on the flat.
+  function surfaceAt(x, z) {
+    const t = waterMat.uniforms.uTime.value;
+    const r = nearPlan && nearPlan.rect;
+    if (r && x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) {
+      return nearPlan.baseAt(x, z) + swellAt(x, z, t, nearPlan.waveAt(x, z));
+    }
+    const sp = wplan && wplan.span;
+    if (sp && x >= sp.minX && x <= sp.maxX && z >= sp.minZ && z <= sp.maxZ) {
+      return swellAt(x, z, t, wplan.waveAt(x, z));
+    }
+    // Past the patch and the sailing water: the ocean disc, and its own swell is a few
+    // centimetres on a surface a kilometre across.
+    return -OCEAN_DROP;
+  }
+
   // ---- fireflies -----------------------------------------------------------
   // Fireflies gather near the lake and along the edge of the forest, not out at sea.
   const nearWater = terrain.landCells.filter(([gx, gz]) => {
@@ -2577,6 +2799,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
     ownership: land.ownership, season: land.season,
     followShadow, setShadowDistance, setFar, recentre, reshapeWater, setWaterFocus, state, reshape,
+    // The sea's own uniforms - the clock, the sun, the night - by reference, for whatever else
+    // is drawn under the water and has to move with it (the sea bed's caustics).
+    waterUniforms: waterMat.uniforms,
+    // Under the surface (web/js/underwater.js): the lens has gone under or come back, and where
+    // the water is at a point. See the note above setUnderwater.
+    setUnderwater, surfaceAt,
   };
 }
 

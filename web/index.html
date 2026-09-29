@@ -91,6 +91,11 @@
      z-index for the UI to fall between. -->
 <div id="panels"></div>
 <canvas id="stage"></canvas>
+<!-- The water over the lens when the camera is under the sea (web/js/underwater.js): a teal
+     veil with a vignette, on a layer of its own over the canvas - never a CSS filter on
+     #stage, which the beer's blur already owns (web/js/vitals.js). After the canvas and with
+     no z-index, so it lies over the picture and under every piece of interface. -->
+<div id="underwater" hidden></div>
 
 <div id="boot" class="boot"><div class="boot-inner"><div class="boot-mark">🏝️</div><div id="boot-text">Charting the island…</div></div></div>
 
@@ -265,13 +270,14 @@
 </footer>
 
 <div class="walk-hud" id="walk-hud" hidden>
-  <!-- Health, stamina and beer (web/js/vitals.js). First in the strip so the bars sit on top
+  <!-- Health, stamina, air and beer (web/js/vitals.js). First in the strip so the bars sit on top
        of it, and never hidden: a bar with nothing to say fades to nothing but keeps its
        place, so the purse and the keys under it do not jump each time Shift is let go. The
        emoji is part of the row, so it fades with its bar. -->
   <div class="vitals" id="vitals" aria-hidden="true">
     <div class="vital health full"><span>❤️</span><b><i></i></b></div>
     <div class="vital stamina full"><span>⚡</span><b><i></i></b></div>
+    <div class="vital air full"><span>🫧</span><b><i></i></b></div>
     <div class="vital tipsy empty"><span>🍺</span><b><i></i></b></div>
   </div>
   <div class="card walk-prompt" id="walk-prompt" hidden></div>

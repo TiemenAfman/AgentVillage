@@ -32,7 +32,9 @@
 // This module lives in shared/ and obeys shared/'s rule: no Math.random, no sin/cos/pow.
 // The berths are axis-aligned, which needs no trigonometry at all - one of the reasons to
 // snap them to the compass rather than hash a bearing.
-import { clamp } from './rng.mjs';
+import { clamp, smoothstep } from './rng.mjs';
+import { BED_BAND, fieldHeight, distToSquare, distToSquares } from './seabed.mjs';
+export { distToSquares };
 
 // Outside every region there is open sea, and open sea is exactly this. Not the nearest
 // island's edge height, which is what makeTerrain's own clamp hands back
@@ -411,6 +413,81 @@ export function createArchipelago() {
     }
     return OPEN_SEA;
   };
+
+  // ---- the floor a diver stands on (shared/seabed.mjs) --------------------------------------
+  //
+  // `height` above is the logical water surface: boats, guards and the colour of the water read
+  // it, and it stays OPEN_SEA between the islands. `bedAt` is what is *under* that, for a body
+  // that has dived and for the page's own sea-bed mesh (web/js/seabed.js). Two rules make it
+  // safe to add beside everything else:
+  //
+  //   - Nothing here touches a terrain's `H`, so no terrain hash moves and no house with it.
+  //   - It is additive: `height`, `setSeabed` and `waterSquares` answer exactly as they did.
+  //
+  // Three zones, in order:
+  //   INSIDE a grid: the island's own heightfield, *unramped* - `r.terrain.worldHeight`, which
+  //     is what the island's mesh really draws. `placeIsland.worldHeight` (used by `height`)
+  //     ramps the outer BLEND_CELLS to OPEN_SEA so the water's colour has no seam, and that is
+  //     not the ground: a diver at the rim of a grid would hover over a bed that dives away from
+  //     under the mesh it sees.
+  //   Up to BED_BAND OUTSIDE a grid: a smoothstep from the height at the grid's edge (the
+  //     terrain clamps into its own grid, so asking it outside is asking for that edge) into the
+  //     field. The mesh stops on a square, sometimes while still in shallows (26-42% of a grid's
+  //     edge corners are shallower than -1.5), and the field starts flat: this is the seam
+  //     between them, and it is continuous on both sides by construction.
+  //   Beyond: `fieldHeight`, the relief of shared/seabed.mjs faded in with the distance to the
+  //     nearest grid *or* islet square. An islet's own bed (`seabed.height`, non-null over its
+  //     dome and shoals) wins where it exists - by `max`, so it can raise the field, which is
+  //     flat there anyway, and never sink it.
+  //
+  // The field is in the WORLD frame and this archipelago is in the page's SCENE frame (the page
+  // draws home at the scene origin and translates everybody else by its berth), so `setBedHome`
+  // is handed that berth - the same `state.homeOrigin` net.js applies at the socket - and the
+  // field is asked about `scene + home`. Without it two pages would put a bank in two places,
+  // and one diver standing on it in the other's sand. Grids and islets are already scene frame.
+  let bedHome = [0, 0];
+  function setBedHome(home) {
+    bedHome = home && Number.isFinite(home[0]) && Number.isFinite(home[1]) ? [home[0], home[1]] : [0, 0];
+  }
+
+  // A snapshot: the grids, the islets' squares and bed, and the berth as they are *now*. One
+  // call of it is cheap and a bulk reader (the sea-bed mesh asks for ten thousand points a
+  // rebuild) should make it once, because `seabed.squares()` builds a fresh array of every
+  // islet each time it is asked.
+  function bedSampler() {
+    const grids = list.map((r) => ({ r, origin: r.origin, half: r.half, terrain: r.terrain || null }));
+    const islets = seabed ? seabed.squares() : [];
+    const squares = grids.map((g) => ({ origin: g.origin, half: g.half })).concat(islets);
+    const isletBed = seabed ? seabed.height : null;
+    const hx = bedHome[0], hz = bedHome[1];
+    return function sample(x, z) {
+      for (const g of grids) {
+        if (!g.r.contains(x, z)) continue;
+        return g.terrain ? g.terrain.worldHeight(x - g.origin[0], z - g.origin[1]) : g.r.worldHeight(x, z);
+      }
+      let h = fieldHeight(x + hx, z + hz, distToSquares(x, z, squares), OPEN_SEA);
+      // The seam at a grid's edge. Weighted, not "the nearest one", so that the answer stays
+      // continuous where two grids are both within the band; with the gap the sea keeps
+      // (SEA_GAP) that never happens, and the sum is then just the one grid.
+      let acc = 0, wSum = 0;
+      for (const g of grids) {
+        const d = distToSquare(x, z, g.origin, g.half);
+        if (d >= BED_BAND) continue;
+        const w = 1 - smoothstep(0, BED_BAND, d);
+        const edge = g.terrain ? g.terrain.worldHeight(x - g.origin[0], z - g.origin[1]) : OPEN_SEA;
+        acc += w * (edge - h);
+        wSum += w;
+      }
+      if (wSum > 0) h += acc / Math.max(1, wSum);
+      if (isletBed) {
+        const ib = isletBed(x, z);
+        if (ib != null && ib > h) h = ib;
+      }
+      return h;
+    };
+  }
+  const bedAt = (x, z) => bedSampler()(x, z);
+
   // Every square the water is dense round: the islands' grids and the sea bed's own.
   const waterSquares = () => {
     const out = list.map((r) => ({ origin: r.origin, half: r.half }));
@@ -513,7 +590,7 @@ export function createArchipelago() {
     // handed to anything that wanted a terrain for its heights, which is most things.
     worldHeight: height,
     add, remove, replace, get, regionAt, height, isWaterAt, levelKey, bounds, gridBounds, radius,
-    nearestCoast, shoreWithin, setSeabed, waterSquares,
+    nearestCoast, shoreWithin, setSeabed, waterSquares, bedAt, bedSampler, setBedHome,
     regions: () => list.slice(),
     count: () => list.length,
   };

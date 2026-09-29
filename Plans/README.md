@@ -26,6 +26,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ✅ **DONE** = af; 🚧 = er is binnen het plan nog iets niet gebouwd. Een sectie *Later* of
 *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
+- 🚧 [onderwater-zwemmen.md](onderwater-zwemmen.md) — de zee wordt een plek: duiken vanaf het
+  oppervlak (`diving.js`), een zeebodem als teken- en botslaag naast het terrein (geulen tot -3.5,
+  banken tot -1.0, nooit `H`), een onderwaterlook met het oppervlak van onderen, verdrinken door de
+  zee (`breath`), anderen die je op diepte zien, en leven (kelp, koraal, vissen, bellen).
 - 🚧 [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
   frame van elk naambord) is een instance in één `BatchedMesh` (`record-batch.js`); het record houdt
   een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,

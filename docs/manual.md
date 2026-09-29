@@ -103,7 +103,15 @@ jump, crouch, swing, raise a shield or press R again; everybody else on the sea 
 dance (up on the D-pad on a controller). You can walk into
 the sea and you swim rather than walk once you are past the waterline - as far as you
 like, even to another island, but slowly: the boat is five times faster. You cannot jump
-out of the water.
+out of the water - but you can go under it. Hold **C** (**B** on the pad, the down arrow
+button on a phone) in water deep enough to hold you and you dive; **Space** (**A**) swims
+you back up, and letting go of both leaves you hanging in the water, which is the way to
+look at something. Down there you swim a little slower than at the surface, and on the
+bottom you walk. The sea floor has banks, trenches and stones, and the water has kelp,
+coral, shells and schools of fish that part as you come. You can only dive where there is
+a body's height of water; in the shallows the sea lifts you back out. A deck over your
+head stops you rising, so you can swim under a pier. Other people see you go down, and
+the bubbles that come off you.
 
 Shift is a turbo wherever you are: a run on land, a harder stroke in the water, and at
 the tiller the boat opens up to about one and a half times her speed. It does not last.
@@ -113,8 +121,14 @@ fill again a second after you let go, even while you are spending the other. Run
 dry and Shift does nothing - the bar goes dull - until it is back to a quarter. A full
 bar fades away.
 
-The red bar above it is health, and the sea keeps it: a guard's blow or a step into the
-volcano's lava costs some, and the bar flares red when it drops. Three seconds without
+The blue bar is your air. It only shows while your head is under the water, and it drains
+at one part in thirty a second: thirty seconds of breath, refilled in three at the surface.
+Run it out and you start to drown - the red bar drains until you come up, and if it empties
+you are sent home like anywhere else (a sea that has not been updated gives you the bar
+and no harm).
+
+The red bar above them is health, and the sea keeps it: a guard's blow, a step into the
+volcano's lava or a lungful of sea costs some, and the bar flares red when it drops. Three seconds without
 being hurt and it fills again by itself, from empty to full in four. Run it out and you
 are sent back to your own town square (a phone, to its skiff), whole. The **left mouse
 button** swings whatever you hold - a sword, a hammer, or a fist - and a swing that

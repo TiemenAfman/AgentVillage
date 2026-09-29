@@ -10,8 +10,9 @@ import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf } from './boat.js';
-import { cameraFloor } from './camera-floor.js';
+import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
+import { stepDive, canDive, headUnder, divePitch, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
@@ -244,6 +245,16 @@ export function createWalkMode({
   scene.add(zzz);
 
   const keys = new Set();
+  // How far the camera has gone over to a diver's rules (camera-floor.js), 0..1, eased in
+  // afterMove: the head going under moves the floor and the ceiling two units, and the camera
+  // must not jump with it. Space held is what swims a diver up (a key is not in `keys`, which
+  // holds only the walking ones), and the pad's A is the same.
+  let camDive = 0;
+  // The time it takes: long enough that the two and a half units between the surface
+  // swimmer's camera and the diver's are covered at a few units a second, not a jump.
+  const CAM_DIVE_S = 0.8;
+  let spaceHeld = false;
+  let padJump = false;
   const state = {
     active: false,
     // The body left standing while the keeper is up in the sky (Plans/karakter-blijft-staan.md):
@@ -267,6 +278,15 @@ export function createWalkMode({
     // and land on top of the thing they were swimming under.
     floor: 0,
     swimming: false,
+    // Diving (web/js/diving.js, Plans/onderwater-zwemmen.md). `dive`: the feet are free of the
+    // surface - `pos.y` is stepDive's, not WATER_Y - SWIM_SINK - and a diver is still
+    // `swimming` (grounded, in the water, no fight, no dance), so every reader of that word,
+    // the sea's SWIMMING bit included, stays true. `diving`: the HEAD is under the surface,
+    // which is what the camera's ceiling, the mist and the sea's air key on. `onBed`: standing
+    // on the sand, where a diver walks instead of swims.
+    dive: false,
+    diving: false,
+    onBed: false,
     crouching: false,
     lying: false,
     // Where you are sitting, or null. A seat carries its own height, so a bar stool holds
@@ -330,6 +350,15 @@ export function createWalkMode({
     state.sitting = null;
     state.crouchSince = 0;
     state.dancing = false;
+    endDive();
+  }
+  // Back to floating at the surface (or to whatever the caller is about to make of the body:
+  // a hull, a stool, a walk-mode exit). The height is left where it is; the next step puts the
+  // body where the ordinary rules say.
+  function endDive() {
+    state.dive = false;
+    state.diving = false;
+    state.onBed = false;
   }
 
   // Jumping and crouching live here rather than in the key handler because the controller
@@ -364,6 +393,7 @@ export function createWalkMode({
   // nothing counts down to it and the seat says how high you end up.
   function sitOn({ x, z, y, yaw = 0 }) {
     putBikeAway();
+    endDive();
     state.crouching = false;
     state.lying = false;
     state.crouchSince = 0;
@@ -412,7 +442,8 @@ export function createWalkMode({
     if (k === 'f' && !e.repeat) { e.preventDefault(); toggleBike(); }
     if (k === 'v' && !e.repeat) { e.preventDefault(); setFirstPerson(!state.firstPerson); }
     // Only from the ground, so holding space does not climb the sky. On the bike it is a hop.
-    if (k === ' ') { e.preventDefault(); jump(); }
+    // Held, it swims a diver up (`spaceHeld`, read by update).
+    if (k === ' ') { e.preventDefault(); spaceHeld = true; jump(); }
     // Not on a repeat: crouchToggle() is a toggle, and the OS keeps sending keydown for
     // 'c' the whole time it is held. Without this, holding C past LIE_AFTER_MS meant the
     // very next repeat found the settler just lain down and stood them straight back up
@@ -451,12 +482,13 @@ export function createWalkMode({
   const onKeyUp = (e) => {
     const k = canon(e.key.toLowerCase());
     keys.delete(k);
+    if (k === ' ') spaceHeld = false;
     if (k === 'c') releaseCrouch();
   };
   // A keyup that never arrives - the window losing focus with C held - would leave the
   // settler crouched for good, so anything that takes the keyboard away ends the crouch.
   // A nap survives it, the same as it survives letting go of the key.
-  const onBlur = () => releaseCrouch();
+  const onBlur = () => { spaceHeld = false; releaseCrouch(); };
   addEventListener('blur', onBlur);
   addEventListener('keydown', onKeyDown);
   addEventListener('keyup', onKeyUp);
@@ -697,6 +729,26 @@ export function createWalkMode({
     const reach = from + STEP_UP;
     for (const y of above) if (y <= reach && y > best) best = y;
     return best;
+  }
+
+  // The sea floor under a diver: what is DRAWN there, which is not what `groundAt` says. The
+  // archipelago's `height()` is the logical water (an island's grid ramps to OPEN_SEA over its
+  // outer four cells, and between islands it is flat), while `bedAt` is the bed the diver can
+  // see and touch - the island mesh as it is drawn, the shoals, the banks and the trenches
+  // (shared/seabed.mjs). Where the archipelago has none - a room, the workbench, a sea from
+  // before it - it falls back to the height, so a diver simply finds the old flat floor. The
+  // quay's basin is its own floor (a sunken lane along the planks), as groundAt reads it.
+  const bedOf = ground && ground.bedAt ? (x, z) => ground.bedAt(x, z) : heightUnder;
+  function bedUnder(x, z) {
+    const region = ground?.regionAt?.(x, z);
+    const basin = region && quayBasin(region.village, region.terrain);
+    if (basin) {
+      const local = region.toLocal(x, z);
+      const ramp = basin.rampHeight(...local);
+      if (ramp != null) return ramp;
+      if (basin.contains(...local)) return basin.height(...local);
+    }
+    return bedOf(x, z);
   }
 
   // The lowest surface above you, or Infinity under the open sky. This is the half that
@@ -1194,6 +1246,7 @@ export function createWalkMode({
     state.route = null;
     zzz.visible = false;
     avatar.visible = true;
+    camDive = 0;                             // whatever a dive left of the camera's rules
     keys.clear();
     lockKeys(true);
     syncLock();
@@ -1216,7 +1269,7 @@ export function createWalkMode({
     lounge.visible = false;
     standUp();
     keys.clear();
-    stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false;
+    stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; spaceHeld = false; padJump = false;
     if (document.pointerLockElement === dom) document.exitPointerLock?.();
     state.parked = false;
     state.route = null;
@@ -1305,6 +1358,8 @@ export function createWalkMode({
     if (raw.zoom && raw.zoom !== 1) zoomBy(raw.zoom);
     if (p.hit('bike')) toggleBike();
     if (p.hit('jump')) jump();
+    // Held, it swims a diver up - the pad's Space (update reads it).
+    padJump = p.down('jump');
     if (p.hit('crouch') && !state.bike) crouchToggle();
     if (p.hit('dance')) danceToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
@@ -1325,7 +1380,7 @@ export function createWalkMode({
     state.paused = !!v;
     // The sprint toggle is state now, so it has to be dropped along with the rest - or you
     // come out of a conversation already running.
-    if (v) { keys.clear(); stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; }
+    if (v) { keys.clear(); stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; spaceHeld = false; padJump = false; }
     // An overlay needs the cursor; closing it hands the mouse back to looking around.
     syncLock();
   }
@@ -1512,12 +1567,15 @@ export function createWalkMode({
     // on a stool, it is not a run and costs nothing. `swimming` is last frame's answer,
     // which is the one every other line here uses too. An empty pool is the ordinary gait -
     // a walk on land, a plain stroke in the water - until RECOVER_AT opens it again.
-    const wants = boost && push > 0.02 && !state.lying && !state.sitting && (state.swimming || !state.crouching);
+    // Walking on the bottom is not a stroke and spends nothing (BOTTOM_SPEED has no turbo).
+    const wants = boost && push > 0.02 && !state.lying && !state.sitting && (state.swimming || !state.crouching)
+      && !(state.dive && state.onBed);
     const turbo = stepPool(state.stamina.body, wants, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = turbo;
     const run = turbo && !state.swimming;
     const speed = (state.lying || state.sitting ? 0
+      : state.dive ? (state.onBed ? BOTTOM_SPEED : turbo ? DIVE_TURBO : DIVE_SPEED)
       : state.swimming ? (turbo ? SWIM_TURBO : SWIM_SPEED)
         : state.crouching ? CROUCH_SPEED
           : run ? RUN_SPEED : WALK_SPEED) * push * dt;
@@ -1581,8 +1639,31 @@ export function createWalkMode({
     if (state.grounded) state.floor = ground;
     const inWater = ground < 0;
     const underfoot = inWater ? WATER_Y - SWIM_SINK : ground;
+    // Going under: a swimmer with C (or the pad's B) held, in water deep enough to hold a
+    // body. Space (the pad's A) swims a diver back up. `crouching` is exactly "the key is
+    // held" here - it is set on the press and dropped on the release - so both keyboard and pad
+    // come through the one flag, and a rebound key follows for free.
+    const rise = (spaceHeld || padJump ? 1 : 0) - (state.crouching ? 1 : 0);
+    if (!state.dive && state.swimming && rise < 0 && !state.sitting && !state.lying
+        && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y)) {
+      state.dive = true;
+      state.vy = -0.3;                       // a first push under; stepDive takes it from here
+    }
+    // The bed came up dry under a diver (they swam in to a beach): wade, as swimmers always did.
+    if (state.dive && !inWater) endDive();
     if (state.sitting) {
       state.pos.y = state.sitting.y;         // the stool, not the floor
+    } else if (state.dive) {
+      const bed = bedUnder(state.pos.x, state.pos.z);
+      const r = stepDive({ y: state.pos.y, vy: state.vy }, rise, dt, {
+        bed, lid: ceilingAt(state.pos.x, state.pos.z, state.pos.y), surface: WATER_Y, sink: SWIM_SINK,
+      });
+      state.pos.y = r.y;
+      state.vy = r.vy;
+      state.onBed = r.onBed;
+      state.floor = bed;
+      state.grounded = true;                 // a diver is not airborne, whatever their height
+      if (r.surfaced) endDive();             // floating again, at the very height this left
     } else if (state.grounded) {
       state.pos.y = underfoot;
     } else {
@@ -1596,7 +1677,8 @@ export function createWalkMode({
       }
       if (state.pos.y <= underfoot) { state.pos.y = underfoot; state.vy = 0; state.grounded = true; }
     }
-    state.swimming = state.grounded && inWater && !state.sitting;
+    state.swimming = state.dive || (state.grounded && inWater && !state.sitting);
+    state.diving = state.dive && headUnder(state.pos.y, WATER_Y);
 
     // Standing still with C held long enough is a decision to stop for the day, and it
     // outlasts the key: once down, the settler stays down until they move or press C
@@ -1675,8 +1757,11 @@ export function createWalkMode({
       avatar.position.set(state.pos.x, state.pos.y + Math.sin(state.bob) * 0.03, state.pos.z);
       // Positive pitch, so the head goes forward: rotating about local x maps +y (up,
       // towards the head) onto +z, which is the direction yaw points along. The other
-      // sign swims feet first.
-      avatar.rotation.set(1.32 + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
+      // sign swims feet first. A diver tips head-down on the way to the bottom and head-up on
+      // the way to the top, off the vertical speed alone (diving.js divePitch) - which is
+      // also all a peer has to go on (peers.js), so both screens draw the same body.
+      const pitch = state.dive ? divePitch(state.vy) : 1.32;
+      avatar.rotation.set(pitch + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(nod, state.yaw, roll);
@@ -1685,9 +1770,11 @@ export function createWalkMode({
       if (state.crouching) avatar.scale.set(1, 0.82, 1);
     }
 
+    // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
+    const stoop = state.crouching && !state.dive;
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded,
-      crouching: state.crouching, sitting: !!state.sitting, lying: state.lying,
+      crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
       dancing: dancingNow(),
@@ -1705,6 +1792,9 @@ export function createWalkMode({
       bobZzz(zzz, performance.now() / 1000);
       zzz.position.y += state.pos.y;
     }
+    // The camera goes over to a diver's rules (under the surface, floor at the sea bed) and back
+    // over about 0.4 s, or the head going under would throw it two units.
+    camDive = clamp(camDive + (state.diving ? dt : -dt) / CAM_DIVE_S, 0, 1);
     if (state.active) placeCamera(fp);
 
     // what is within reach?
@@ -1720,11 +1810,23 @@ export function createWalkMode({
     // camUp over the head looked straight down on the hat, and never at a face. Wheeled out it
     // stays camUp, so the view from further back is the one it always was.
     const up = camUp * Math.min(1, back / camBack);
-    const eyeDrop = state.lying ? up * 0.55 : state.crouching || state.sitting ? up * 0.3 : 0;
+    // C is "swim down" to a diver, so it does not fold the eye (see `stoop` in afterMove).
+    const stoop = state.crouching && !state.dive;
+    const eyeDrop = state.lying ? up * 0.55 : stoop || state.sitting ? up * 0.3 : 0;
     const cy = state.pos.y + up - eyeDrop + Math.sin(state.camPitch) * dist;
-    // Over water the floor is the surface, not the sea bed - see camera-floor.js. `diving` is
-    // the diving mode's own flag (unset, so false, until it exists).
-    camera.position.set(cx, Math.max(cy, cameraFloor({ ground: groundAt(cx, cz, cy), waterY: WATER_Y, diving: state.diving })), cz);
+    // Over water the floor is the surface, not the sea bed - see camera-floor.js - until the
+    // head goes under: then the camera belongs under it too, floored by the bed and held below
+    // the surface (`camDive` eases the change). The bed a diver sees is `bedUnder`, which is
+    // not always what `groundAt` says at the rim of an island's grid, so the camera takes the
+    // higher of the two.
+    let under = groundAt(cx, cz, cy);
+    if (camDive > 0) under = Math.max(under, bedUnder(cx, cz));
+    // A smoothstep of the timer, so the camera starts and ends gently: the surface swimmer's
+    // camera hangs 2.3 up and the diver's is under the surface, and a plain exponential ease
+    // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
+    const blend = camDive * camDive * (3 - 2 * camDive);
+    const floor = cameraFloor({ ground: under, waterY: WATER_Y, blend });
+    camera.position.set(cx, applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor }), cz);
     // On a plane the camera stands in the plane's own frame: its offset from you turned with her tilt
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
@@ -1742,7 +1844,7 @@ export function createWalkMode({
     // left to scale - the figure is flat on the towel, and a fifth of eye level is the
     // middle of what is left above the ground.
     const aim = state.lying ? camAim * LIE_AIM
-      : state.crouching ? camAim * CROUCH_SCALE
+      : stoop ? camAim * CROUCH_SCALE
         : state.sitting ? camAim * SIT_SCALE : camAim;
     if (plane) camera.lookAt(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
     else camera.lookAt(state.pos.x, state.pos.y + aim, state.pos.z);
@@ -1762,7 +1864,10 @@ export function createWalkMode({
 
   function reach() {
     let near = null, bestD = Infinity;
-    for (const it of state.interactables) {
+    // Nothing is within reach of a body under the water: `it.x`/`it.z` are a flat distance, so a
+    // diver two units down would be offered the dock's boat, and E would climb into it.
+    // Surface first (swimming up to a hull from the water still boards it, as it always did).
+    if (!state.dive) for (const it of state.interactables) {
       const dx = it.x - state.pos.x, dz = it.z - state.pos.z;
       const d = Math.hypot(dx, dz);
       if (d < (it.r || 2.6) && d < bestD) { bestD = d; near = it; }
@@ -1829,6 +1934,13 @@ export function createWalkMode({
     },
     // On foot and on land, which is when the hands have anything to do.
     onFoot: () => state.active && !state.paused && !state.vehicle && !state.bike && !state.swimming,
+    // In the water under your own power - the phone's B (down) and A (up) mean diving here,
+    // so touchpad.js shows them although the hands and the bike stay hidden (onFoot is false).
+    inWater: () => state.active && !state.paused && !state.vehicle && !state.bike && state.swimming,
+    // The head is under the surface: the mist, the sound and the sea's air (main.js).
+    diving: () => state.diving,
+    // The sea floor as a diver meets it (see bedUnder).
+    bedAt: (x, z) => bedUnder(x, z),
     // How far back the camera sits against what it would for this mode: the wheel's or the pinch's.
     zoom: () => zoomPref,
     dispose, isActive: () => state.active };

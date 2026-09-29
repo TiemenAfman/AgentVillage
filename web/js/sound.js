@@ -629,11 +629,30 @@ export function createSound({ camera, scene, island }) {
   // not switch it on at the waterline.
   const bed = { seaWant: 0, seaAt: 0, windWant: 0, windAt: 0, duckWant: 1, duckAt: 1 };
 
+  // Under the sea everything is heard through water: one lowpass on the master bus - three's
+  // listener has exactly one slot for a filter, `setFilter`, between its gain and the speakers
+  // - open at 20 kHz (which is to say, not there) and closed to a muffle as the lens goes under
+  // (web/js/underwater.js hands `setUnderwater` the eased 0..1). On the bus and not on the
+  // beds, or the hammers and the gulls would carry on ringing through it. The amount is
+  // remembered before there is a graph: a page that loads with the camera under water is
+  // muffled from the first note.
+  const OPEN_HZ = 20000, MUFFLED_HZ = 600;
+  let muffle = null;
+  let underwater = 0;
+  let muffleAt = OPEN_HZ;
+
   function build() {
     listener = new THREE.AudioListener();
     ctx = listener.context;
     camera.add(listener);
     listener.setMasterVolume(0);          // brought up by update(), so a switch is not a thump
+    muffle = ctx.createBiquadFilter();
+    muffle.type = 'lowpass';
+    muffle.frequency.value = OPEN_HZ;
+    muffle.Q.value = 0.7;
+    listener.setFilter(muffle);
+    muffleAt = OPEN_HZ;
+    applyMuffle();
 
     const buffers = {
       surf: surfBuffer(ctx),
@@ -768,6 +787,23 @@ export function createSound({ camera, scene, island }) {
     // the last one did. The call is here at all because nothing updates this scene's
     // matrices while you are indoors and a room is what is being rendered.
     voice.holder.updateMatrixWorld(true);
+  }
+
+  // The cut-off is geometric in the amount, because pitch is: half way under is the middle of
+  // the range as the ear hears it (about 3.5 kHz), not as the number says (10 kHz). Scheduled
+  // only when it has moved by more than two per cent, so a camera bobbing under the surface
+  // does not queue a ramp per frame. A no-op with no graph, which is every page that has not
+  // been touched yet.
+  function applyMuffle() {
+    if (!muffle || !ctx) return;
+    const hz = OPEN_HZ * Math.pow(MUFFLED_HZ / OPEN_HZ, underwater);
+    if (Math.abs(Math.log(hz / muffleAt)) < 0.02) return;
+    muffleAt = hz;
+    muffle.frequency.setTargetAtTime(hz, ctx.currentTime, 0.08);
+  }
+  function setUnderwater(amount) {
+    underwater = clamp(Number(amount) || 0, 0, 1);
+    applyMuffle();
   }
 
   // How much of what is around the camera is water. Eight probes on a ring rather than one
@@ -1022,6 +1058,8 @@ export function createSound({ camera, scene, island }) {
     toggle: () => setOn(!on),
     update,
     raveClock,
+    // Under the sea, 0..1: the master bus goes through water (see applyMuffle).
+    setUnderwater,
     // There is nothing to hear from a test and nothing to see in a screenshot, so the only
     // way to check the two promises this module makes - that nothing exists before the
     // gesture, and that a village of three hundred is still nine sources - is to read them
@@ -1034,6 +1072,9 @@ export function createSound({ camera, scene, island }) {
       // The ceiling, and what is actually standing. These two are equal by construction:
       // every pool is built once, at its length, and nothing here allocates a voice again.
       cap: HAMMERS + GULLS + 1,
+      // How far under the sea the listener is, and where the master lowpass has been sent.
+      underwater: Math.round(underwater * 100) / 100,
+      muffle: Math.round(muffleAt),
       voices: built ? built.hammers.length + built.gulls.length + 1 : 0,
       bedSources: built ? 2 : 0,
       // Where the bed has got to, rounded. The only way to see that the sea comes up as
