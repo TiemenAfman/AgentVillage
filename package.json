@@ -1,6 +1,6 @@
 {
   "name": "promptholm",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
