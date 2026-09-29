@@ -57,14 +57,16 @@ says what that does and does not give away.
 The chips at the top right are in two groups. On the left is what you do: **New settler**,
 **Walk**, **Plan** (the keeper's) and **Say**. After the line is what you look at: **Map**,
 **Inventory**, **Animals** (once the island has one) and **Overview**, which frames the whole
-island. On a narrow screen only their icons show; hover for the name.
+island. They show as icons; hover one for its name and its key, or switch on *Names on the
+buttons* in the menu to have the words beside them wherever the window is wide enough.
 
 The **menu** holds everything you set once and leave, and it is where the settings live. Open
 it with the ☰ at the far right, with Esc from the sky, or with Start on a controller. It has
 four tabs:
 
 - **This screen**: sound, the **Show** toggles for Code, Cowork and apprentices, what hangs over
-  you from the sky (*You*, *You + arrow* or *Off*), *Wander by itself*, the **Timeline** bar, and
+  you from the sky (*You*, *You + arrow* or *Off*), *Wander by itself*, the **Timeline** bar,
+  *Names on the buttons*, and
   **Graphics**: how far the view, the buildings, the people and the shadows reach, each on its
   own slider (*This machine's defaults* puts all four back), with *Lighter when slow* under them.
 - **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
