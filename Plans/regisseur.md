@@ -46,6 +46,17 @@ volgt, en (2) een visser bij de vissershut, want daar leeft nu niets.
 | Een wandelende inwoner | Blijft een shot (licht gewogen). | Iemand die loopt, is iets dat gebeurt. |
 | Het centrum | Af en toe een shot van het plein (`town.centre`) van `CENTRE_DIST` (22) en wat hoger, hooguit eens per `CENTRE_EVERY` (2 min), gerekend vanaf het moment dat hij er echt naar kijkt. | "Neem ook af en toe een shot van het centrum mee." Het plein is er altijd; zonder die pauze wisselde een stil eiland alleen nog plein en overzicht af. |
 
+## Derde ronde: de smid en de bakker
+
+> neem ook de smid en de bakker mee als shot.
+
+Twee shots zoals de visser: alleen terwijl ze aan het werk zijn (`mode` 'work'; 's avonds lopen
+ze naar binnen en gaat het shot mee weg), van dichtbij (`CLOSE`). Het eerste beeld van de smid was
+een dak: de camera kwam van waar hij toevallig stond en de smidse stond ertussen. Een shot kan
+daarom een kant noemen (`az`): de camera vliegt naar die kant en draait er een halve slag omheen,
+met die kant in het midden. Voor de smid en de bakker is dat de kant van het gebouw waar ze staan,
+gemeten vanaf het midden van het gebouw.
+
 ## Later
 
 - Een aankomende inwoner per boot (`sailIn`) wordt gevolgd zodra zijn figuur er is; de boot zelf nog niet.

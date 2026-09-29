@@ -157,6 +157,22 @@ test('with nothing happening it circles the whole island, slowly, and flies nowh
   assert.ok(Math.abs(turned - OVERVIEW_RATE * OVERVIEW_S * 3) < 0.01, `it turned ${turned.toFixed(3)} rad`);
 });
 
+test('a shot that names its side is watched from that side, whichever way the camera came', () => {
+  for (const side of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const d = createDirector({ sources: () => [still('smith', [0, 0, 0], { az: side })], rand: () => 0 });
+    let cam = { target: [0, 1, 0], position: [30, 40, 30] };
+    const seen = [];
+    for (let t = 0; t < IDLE_S + FLY_S + HOLD_S - 0.2; t += 0.1) {
+      const p = d.step(0.1, true, cam);
+      if (p) { cam = p; if (d.key() === 'smith' && t > IDLE_S + FLY_S) seen.push(viewOf(cam.target, cam.position).az); }
+    }
+    const off = (a) => Math.abs(Math.atan2(Math.sin(a - side), Math.cos(a - side)));
+    const middle = seen[Math.floor(seen.length / 2)];
+    assert.ok(off(middle) < 0.1, `side ${side.toFixed(2)}: the middle of the circle was ${middle.toFixed(2)}`);
+    assert.ok(seen.every((a) => off(a) < 0.6), 'and it never swung round to the far side');
+  }
+});
+
 // ---- the fisherman ---------------------------------------------------------------------------
 
 test('the fisherman comes out in the morning, fishes at the water\'s edge, and goes in at night', () => {

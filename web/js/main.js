@@ -1438,6 +1438,17 @@ const WORK_WORDS = {
   carry: 'A settler bringing a bar of gold home', barrow: 'A settler off to fetch gold from the pit',
 };
 const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the sparrow' };
+const TRADESMEN = [
+  ['civic:smithy', 'smithy', 'smith', 'The smith at the anvil'],
+  ['civic:bakery', 'baker', 'baker', 'The baker at the oven'],
+];
+const atWork = (v) => !!(v && v.mode === 'work' && v.figure && v.figure.visible);
+const figureSpot = new THREE.Vector3();
+// Where a villager's rig stands, lifted to about the chest: they hang in their building's group.
+function figureAt(fig) {
+  fig.getWorldPosition(figureSpot);
+  return [figureSpot.x, figureSpot.y + 0.35, figureSpot.z];
+}
 const CENTRE_EVERY = 120000;
 const CENTRE_DIST = 22;
 let centreShownAt = -Infinity;
@@ -1487,6 +1498,18 @@ function directorShots() {
   }
   const hut = state.byId.get('civic:fishery');
   if (hut && hut.fisher && fisherAt(hut.fisher)) out.push({ key: 'fisher', weight: 2, dist: CLOSE, label: 'The fisherman at his hut', where: () => lift(fisherAt(hut.fisher)) });
+  // The smith at the anvil and the baker at the oven: the village's own tradesfolk, watched only
+  // while at it (`mode` 'work'; in the evening they walk in and the shot goes with them).
+  for (const [id, part, key, label] of TRADESMEN) {
+    const rec = state.byId.get(id);
+    if (rec && atWork(rec[part])) {
+      // Watched from the side of the building they work on, so the building is behind them: from
+      // wherever the camera happened to be, the smith was once a roof.
+      const [fx, , fz] = figureAt(rec[part].figure);
+      const az = Math.atan2(fx - rec.group.position.x, fz - rec.group.position.z);
+      out.push({ key, weight: 2, dist: CLOSE, az, label, where: () => (atWork(rec[part]) ? figureAt(rec[part].figure) : null) });
+    }
+  }
   // Now and then the town centre, from high enough to take in the square and the ring round
   // it. Always there, so held back for CENTRE_EVERY after each showing - otherwise a quiet island
   // swapped between the square and the whole island, which is not "now and then".

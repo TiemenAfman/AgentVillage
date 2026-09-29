@@ -11,7 +11,8 @@
 // a list of candidates { key, label, weight, first, dist, where } where `where()` is a point
 // [x, y, z] for as long as the thing is still worth watching, and null once it is not, and `dist`
 // how far off it is best watched from (SHOT_DIST when not said: a settler is watched from closer
-// than a wagon and its horse). `overview()` is { target, dist, el } for the whole island, or null
+// than a wagon and its horse), and `az` which way round it is best watched from, when that
+// matters (a smith behind his own forge is a roof). `overview()` is { target, dist, el } for the whole island, or null
 // on a page that has none to show; without it the director only ever goes from shot to shot.
 
 export const IDLE_S = 45;       // quiet this long before the camera wanders off by itself
@@ -26,6 +27,13 @@ const OVERVIEW_FLY_S = 5;       // up from a settler to the whole island is a lo
 const FOLLOW = 2.5;             // how briskly the look follows a moving thing, per second
 const RETRY_S = 8;              // nothing to look at: ask again this much later
 
+// The shortest way round from one bearing to another.
+const turnTo = (a, b, k) => {
+  let d = (b - a) % (2 * Math.PI);
+  if (d > Math.PI) d -= 2 * Math.PI;
+  if (d < -Math.PI) d += 2 * Math.PI;
+  return a + d * k;
+};
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const lerp = (a, b, k) => a + (b - a) * k;
 
@@ -91,7 +99,11 @@ export function createDirector({ sources, overview = null, rand = Math.random, i
       c, t: 0, fly: c.fly || FLY_S,
       from: { target: [...from.target], dist: v.dist, el: v.el },
       look: [...from.target],
-      az: v.az,
+      az0: v.az,
+      // A shot that says where to watch from starts its circle that much before that side, so the
+      // side itself is the middle of the hold: the circle already turns during the flight.
+      azTo: Number.isFinite(c.az) ? c.az - (c.rate || ORBIT_RATE) * ((c.fly || FLY_S) + 0.5 * (c.hold || HOLD_S)) : null,
+      spin: 0,
     };
   }
 
@@ -129,12 +141,15 @@ export function createDirector({ sources, overview = null, rand = Math.random, i
         if (shot !== was) return null;
       }
       const el = shot.c.el ?? SHOT_EL, dist = shot.c.dist || SHOT_DIST;
-      shot.az += (shot.c.rate || ORBIT_RATE) * d;
+      shot.spin += (shot.c.rate || ORBIT_RATE) * d;
+      const around = (k) => (shot.azTo === null ? shot.az0 : turnTo(shot.az0, shot.azTo, k)) + shot.spin;
       if (shot.t < shot.fly) {
         const k = ease(shot.t / shot.fly);
+        shot.az = around(k);
         shot.look = [0, 1, 2].map((i) => lerp(shot.from.target[i], at[i], k));
         return poseOf(shot.look, { az: shot.az, el: lerp(shot.from.el, el, k), dist: lerp(shot.from.dist, dist, k) });
       }
+      shot.az = around(1);
       const f = 1 - Math.exp(-FOLLOW * d);
       shot.look = [0, 1, 2].map((i) => shot.look[i] + (at[i] - shot.look[i]) * f);
       return poseOf(shot.look, { az: shot.az, el, dist });
