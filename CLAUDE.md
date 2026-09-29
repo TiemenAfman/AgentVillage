@@ -385,6 +385,12 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   frame has put the camera where it is drawn from. Anything `fog: false` that a fogged house
   could hide breaks the rule when the house goes: the fireflies were the one measured case,
   and now fade their alpha with the fog.
+  From above, Object Distance is floored at the orbit target's distance × 1.5 + 32
+  (`objectReachOf` in fade.js, `objectReach()` in main.js - every reader goes through it), so
+  zooming out never fogs away the town being looked at; on foot it is the setting. Since that
+  moves the ceiling with the zoom, the crowd's dither is decided against `widestFogCeiling()`
+  (the floor at the end of the leash), and the cut is never tighter than `fogAt`, the haze
+  actually standing (set before `controls.update`).
   That is what makes an older machine playable without the island looking cut short: the
   `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
   people are past the haze and not drawn at all.

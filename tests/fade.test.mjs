@@ -14,7 +14,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // stub the other tests that reach it use.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 
-const { fadeAmount, fadeNeeded, fogCeilingOf, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
+const { fadeAmount, fadeNeeded, fogCeilingOf, objectReachOf, ORBIT_REACH, ORBIT_MARGIN, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
   FADE_VERTEX_BODY, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_BODY, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM,
 } = await import('../web/js/fade.js');
 
@@ -87,6 +87,22 @@ test('the haze closes at Object Distance at the latest, so no house needs the di
   // Whatever the two numbers, a house at Object Distance is past where the fog closed.
   for (const [view, obj] of [[1330, 2000], [1330, 550], [237, 60], [900, 900]]) {
     assert.equal(fadeNeeded(obj, fogCeilingOf(view, obj)), false, `${view}/${obj}`);
+  }
+});
+
+test('from above, Object Distance never takes away the town the camera looks at', () => {
+  // On foot the setting is the setting, and 0 is still off in the sky.
+  assert.equal(objectReachOf(150), 150);
+  assert.equal(objectReachOf(150, null), 150);
+  assert.equal(objectReachOf(0, 400), 0);
+  // Close in, the setting already reaches past the target: nothing changes.
+  assert.equal(objectReachOf(1000, 80), 1000);
+  // Pulled back past it, the floor takes over.
+  assert.equal(objectReachOf(150, 400), 400 * ORBIT_REACH + ORBIT_MARGIN);
+  // And the target is out of the haze at every zoom: it opens at 0.8 of where it closes.
+  for (const d of [5, 50, 200, 1000]) {
+    const far = fogCeilingOf(1330 + 5000, objectReachOf(60, d));
+    assert.ok(far * 0.8 > d, `${d}`);
   }
 });
 

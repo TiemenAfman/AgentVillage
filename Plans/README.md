@@ -5,7 +5,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
-- 🚧 [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
+- ✅ [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
   en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
   tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en
   een huis wordt pas daarachter uit de render list gehaald. Standaard hoog op een gewone machine,

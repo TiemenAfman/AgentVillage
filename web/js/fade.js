@@ -75,6 +75,21 @@ export function fogCeilingOf(view, objectDistance, plan = false) {
   return Math.min(view, objectDistance);
 }
 
+// Object Distance from above. It is a distance to the camera, and from the sky that let a
+// low setting take away the very village the camera orbits: pulled back past Object Distance,
+// the town under the target went into the fog and out of the picture. So in orbit it never
+// lies nearer than the target's own distance times ORBIT_REACH plus ORBIT_MARGIN. The factor
+// is what keeps the target itself out of the haze at every zoom: setFogRange opens the haze
+// at 0.8 of where it closes, and 0.8 x 1.5 is past 1. The margin is the neighbourhood round
+// it when the camera is close in. On foot `orbit` is null and the setting means exactly what
+// it says - that is the price, and the reason the floor is only ever a floor.
+export const ORBIT_REACH = 1.5;
+export const ORBIT_MARGIN = 32;
+export function objectReachOf(objectDistance, orbit = null) {
+  if (!(objectDistance > 0) || !(orbit >= 0)) return objectDistance;
+  return Math.max(objectDistance, orbit * ORBIT_REACH + ORBIT_MARGIN);
+}
+
 // ---------------------------------------------------------------------------------
 // The cut behind the fade
 // ---------------------------------------------------------------------------------

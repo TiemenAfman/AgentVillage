@@ -132,9 +132,15 @@ test('the full defaults are the old look, and every tier cuts its houses inside 
 test('the haze never closes past Object Distance, and a slider change moves it', () => {
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   const ceil = main.slice(main.indexOf('function fogCeiling()'), main.indexOf('function fogCeiling()') + 300);
-  assert.match(ceil, /fogCeilingOf\(camera\.far \* FOG_CAP, state\.graphics\.objectDistance, state\.mode === 'plan'\)/);
+  assert.match(ceil, /fogCeilingOf\(camera\.far \* FOG_CAP, objectReach\(\), state\.mode === 'plan'\)/);
+  // Object Distance as the frame reads it: floored by the orbit target only from above.
+  const reach = main.slice(main.indexOf('function objectReach()'), main.indexOf('function objectReach()') + 300);
+  assert.match(reach, /state\.mode === 'orbit' \? camera\.position\.distanceTo\(controls\.target\) : null/);
+  assert.match(reach, /objectReachOf\(state\.graphics\.objectDistance, orbit\)/);
   const set = main.slice(main.indexOf('function setFogRange('), main.indexOf('function setFogRange(') + 1600);
-  assert.match(set, /scene\.fog\.far = Math\.min\(h\.far, fogCeiling\(\)\)/);
+  assert.match(set, /fogAt = fogCeiling\(\);\r?\n\s*scene\.fog\.far = Math\.min\(h\.far, fogAt\)/);
+  // The floor moves with the zoom, so the frame asks again on one island too.
+  assert.match(main, /state\.sea\.count\(\) > 1 \|\| \(state\.mode !== 'plan' && fogCeiling\(\) !== fogAt\)\) applyFogRange\(\)/);
   const apply = main.slice(main.indexOf('function applyGraphics('), main.indexOf('function applyGraphics(') + 600);
   assert.match(apply, /key === 'objectDistance'\) applyFogRange\(\)/);
   // The page starts at its own machine's defaults.
@@ -170,5 +176,5 @@ test('the fireflies go out in the haze, and the cut is taken where the camera is
   assert.match(ff, /a \*= 1\.0 - smoothstep\(fogNear, fogFar, vFogDepth\)/);
   // The cut runs right before the render, after every branch has moved the camera.
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
-  assert.match(main, /cullRecords\(\);\n\s*renderer\.render\(state\.inside \? state\.inside\.scene : scene, eye\);/);
+  assert.match(main, /cullRecords\(\);\r?\n\s*renderer\.render\(state\.inside \? state\.inside\.scene : scene, eye\);/);
 });

@@ -37,7 +37,7 @@ import {
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
-import { fogCeilingOf } from './fade.js';
+import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
@@ -2501,7 +2501,19 @@ function applyViewDistance() {
 // machine playable without the island looking cut short: what is not drawn is behind a haze
 // that thickens towards it, not a line where the town stops. The planner draws everything.
 function fogCeiling() {
-  return fogCeilingOf(camera.far * FOG_CAP, state.graphics.objectDistance, state.mode === 'plan');
+  return fogCeilingOf(camera.far * FOG_CAP, objectReach(), state.mode === 'plan');
+}
+// Object Distance as this frame uses it: the setting, floored from above by the orbit target's
+// distance (fade.js objectReachOf), so pulling back never takes away the town being looked at.
+// A parked walk is still orbit; only walking is on foot.
+function objectReach() {
+  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target) : null;
+  return objectReachOf(state.graphics.objectDistance, orbit);
+}
+// And the furthest fogCeiling can go before the next slider, for what may not be decided per
+// frame (the crowd's dither): the floor at the end of the leash, whatever the mode is now.
+function widestFogCeiling() {
+  return fogCeilingOf(camera.far * FOG_CAP, objectReachOf(state.graphics.objectDistance, controls.maxDistance), state.mode === 'plan');
 }
 
 // Object and NPC Distance. The houses need nothing here: the fog closes at Object Distance at
@@ -2522,7 +2534,9 @@ function fogCeiling() {
 // at all. A range of 0 is how "off" is spelled everywhere in this file.
 function applyObjectDistances() {
   const range = npcRange();
-  crowdMat.userData.fade(range, fogCeiling());
+  // Against the widest the haze can close, not the fog of this zoom: the orbit floor moves the
+  // ceiling out as the camera pulls back, and a dither decided close in would be missing then.
+  crowdMat.userData.fade(range, widestFogCeiling());
   // The people are also cut on the CPU, and that one has to be told now: raising NPC Distance
   // puts them back within a frame, not whenever the sea next says where they are.
   const fading = crowdMat.userData.fadeOn;
@@ -2573,7 +2587,11 @@ const cullEye = new THREE.Vector3();
 function cullRecords() {
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
-  const range = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
+  // Never tighter than the haze actually standing: the frame loop sets it before
+  // controls.update moves the camera, so on a fast zoom in the floor has already come in and
+  // the fog is still where it was - cut to the new floor, a house between the two would pop.
+  const reach = objectReach();
+  const range = state.mode === 'plan' || !(reach > 0) ? 0 : Math.max(reach, fogAt || 0);
   for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
   for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
   // And a whole neighbour once the fog has closed over all of it - its ground, wood and fields
@@ -2657,9 +2675,14 @@ function setFogRange(half, out, far) {
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
   // And never past Object Distance, so the houses come out of the mist (fogCeiling).
-  scene.fog.far = Math.min(h.far, fogCeiling());
+  fogAt = fogCeiling();
+  scene.fog.far = Math.min(h.far, fogAt);
   scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
 }
+// The ceiling setFogRange last closed the haze under. From above it moves with the zoom (the
+// orbit floor), so the frame loop asks again whenever it differs - on one island too, which
+// otherwise sets the haze only when something changes.
+let fogAt = null;
 
 // How far the eye may see before something across the world's edge would come into view:
 // its way to the nearest edge, plus the open water between the edge and the fleet on the
@@ -3397,6 +3420,8 @@ async function doSyncFleet() {
   launchBoats();
   applyFogRange();
   applyCameraRange();
+  // A longer leash moves the widest the haze can close (widestFogCeiling).
+  applyObjectDistances();
   // The quay's planks are a deck, and they are built here rather than with the village -
   // so the report that goes out with applyVillage has not seen them yet. Sent again from
   // here, and it costs nothing when nothing changed: reportPlacements compares first.
@@ -4383,7 +4408,9 @@ function buildScene(village) {
   joinRegionsFromParams(terrain, village);   // has to be in the sea before the water is laid
   state.world = createWorld(scene, terrain, village, {
     month: worldNow().month,
-    shadowSize: modest ? 1024 : 2048,
+    // A phone's GPU runs out of fill before anything else, and its screen is small enough
+    // that 512 texels over the shadow box still reads as a shadow.
+    shadowSize: STANDALONE && modest ? 512 : modest ? 1024 : 2048,
     // The two graphics distances that are a property of the world rather than of this frame.
     // View Distance never comes here - it is the camera's own far plane - and the two cuts
     // are not here either: both are read every frame, not fixed when the world is built.
@@ -5965,7 +5992,10 @@ function frame(nowMs) {
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
   if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0, camera.far * 0.9, camera.position);
-  if (state.islets) state.islets.update(dt, focusPoint());
+  // The pad is three CULL_PADs rather than one: the islets are only re-laid every two seconds,
+  // and a camera flying in may cover a pad's width in that time - so a palm must still be past
+  // full fog when it comes back into the buffers.
+  if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: fogCeiling() + 3 * CULL_PAD });
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -6057,7 +6087,7 @@ function frame(nowMs) {
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
-  if (state.sea.count() > 1) applyFogRange();
+  if (state.sea.count() > 1 || (state.mode !== 'plan' && fogCeiling() !== fogAt)) applyFogRange();
 
   if (!state.intro && state.mode === 'orbit') {
     stepDirector(dt);
