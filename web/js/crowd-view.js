@@ -111,7 +111,14 @@ export function createCrowdView({
   // this is only what makes it look like they mean it). Read off the bundle the region
   // was raised from, the same flag the sea reads - there is no second copy of it.
   const armed = region.village?.island?.hostile === true;
-  const view = createFigures(scene, material, { armed });
+  // Culled on the island they belong to (createFigures' `bounds`): its grid's corners, and
+  // a margin past them for an outing's circle (planVoyage keeps under 13 from its berth)
+  // and a guard swimming off the coast.
+  const view = createFigures(scene, material, {
+    armed,
+    bounds: Number.isFinite(region.half)
+      ? { x: region.origin[0], z: region.origin[1], r: region.half * Math.SQRT2 + 32 } : null,
+  });
   // index -> the figure the renderer draws, plus where it is coming from and going to.
   const figures = new Map();
   // The village's buildings by id, so a roster entry can be dressed. A guest island's
