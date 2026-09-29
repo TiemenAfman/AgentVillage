@@ -1429,6 +1429,10 @@ export function createLandscape({
     parent.remove(group);
     group.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
+      // The wood, the rocks, the grass and the hedges are InstancedMeshes, and their
+      // instanceMatrix and instanceColor buffers are the mesh's own, not the geometry's: the
+      // renderer frees them on the mesh's dispose() and on nothing else.
+      if (o.isInstancedMesh) o.dispose();
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) m.dispose();
     });
   }
