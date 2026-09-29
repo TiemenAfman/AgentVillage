@@ -66,6 +66,9 @@ zijn eigen calls en driehoeken, per pas). Wat het opleverde, elk een eigen commi
   eenheid over ruim een kilometer, bijna allemaal open zee op een vaste -2,5 waar kleur, normaal
   en glinstering toch per pixel worden uitgerekend. Nu tegels van 16: fijn waar een eiland onder
   ligt (dezelfde hoekpunten als voorheen), twee driehoeken daarbuiten (`waterPatchMesh`).
+  Bij het samenvoegen met `main` bleek daar hetzelfde al gebouwd, completer (`waterPatchPlan`:
+  de deining loopt uit vóór de naad, en `nearWaterPlan` legt fijn water onder je boot, ook ver
+  van een eiland); dat is gebleven en `waterPatchMesh` is weg.
 - **Naamborden**: palen, balk en bord één mesh in één materiaal, 151 calls per pas minder.
 - **Settlers**: vest, hals en ogen gooien geen eigen schaduw meer (154k schaduwdriehoeken); ze
   liggen binnen de omtrek van wat wel schaduw gooit.

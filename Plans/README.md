@@ -5,6 +5,13 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [graphics-afstanden.md](graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
+  en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
+  tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en
+  een huis wordt pas daarachter uit de render list gehaald. Standaard hoog op een gewone machine,
+  lager op integrated graphics en de telefoon; alleen wat iemand zelf verschuift wordt bewaard.
+  Bewoners dithereren weg, buiten bereik niet bijgewerkt maar níet vergeten.
+
 - **Een onbezette boot drift terug naar zijn aanlegplaats.** Een boot die niemand aan het
   sturen heeft en die 5 minuten (`IDLE_HOME_MS` in `lib/boats.mjs`) niet is aangeraakt, gaat
   vanzelf terug naar zijn mooring — zie `driftHome()` in `lib/boats.mjs`, aangehaakt op de
@@ -28,6 +35,11 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   groepen met iconen, en een Esc-menu dat de instellingen ís: vier tabbladen, waarvan alleen
   *Island* van de keeper is (de rest stond achter de keeper-knop en was van de browser).
   Wacht op Tiemens oordeel.
+- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
+  (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
+  mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
+  een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
+  genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf

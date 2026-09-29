@@ -161,3 +161,27 @@ test('other players project onto the radar and world map within bounds', async (
   assert.ok(px > 400, 'east of center');
   assert.ok(py < 400, 'north of center');
 });
+
+test('the wheel zooms the chart round the pointer and never off the sheet', async () => {
+  const { fitMap, zoomedFit, zoomMapAt, MAP_ZOOM_MAX } = await import('../web/js/minimap.js');
+  const W = 800, H = 600;
+  const base = fitMap({ minX: -2016, maxX: 2016, minZ: -2016, maxZ: 2016 }, W, H, 58);
+  assert.equal(zoomedFit(base, W, H, null), base, 'no magnifier is the fit itself');
+  // The world point under the pointer stays under it.
+  const [mx, my] = [620, 150];
+  const before = base.toWorld(mx, my);
+  const v = zoomMapAt(null, base, W, H, mx, my, 2);
+  assert.equal(v.k, 2);
+  const after = zoomedFit(base, W, H, v).toWorld(mx, my);
+  assert.ok(Math.abs(after[0] - before[0]) < 1e-9 && Math.abs(after[1] - before[1]) < 1e-9);
+  // In at a corner: the view is held inside what the unzoomed sheet shows.
+  let c = null;
+  for (let i = 0; i < 40; i++) c = zoomMapAt(c, base, W, H, 0, 0, 1.5);
+  assert.equal(c.k, MAP_ZOOM_MAX, 'capped');
+  const z = zoomedFit(base, W, H, c), [bx, bz] = base.toWorld(0, 0), [zx, zz] = z.toWorld(0, 0);
+  assert.ok(zx >= bx - 1e-9 && zz >= bz - 1e-9, 'not past the sheet\'s corner');
+  // Back out all the way is no magnifier again.
+  let o = c;
+  for (let i = 0; i < 40 && o; i++) o = zoomMapAt(o, base, W, H, 400, 300, 0.5);
+  assert.equal(o, null);
+});

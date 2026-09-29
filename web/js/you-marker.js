@@ -5,9 +5,10 @@
 // marker of its own. Only in the sky: on foot the camera is behind you and you know.
 import * as THREE from 'three';
 
-function arrowMaterial() {
+// `withArrow` false draws YOU alone, on a canvas cut to the word (Settings → From the sky).
+function arrowMaterial(withArrow = true) {
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 220;
+  c.width = 128; c.height = withArrow ? 220 : 60;
   const g = c.getContext('2d');
   // YOU over a fat downward arrow in the island's accent, outlined dark so both hold on
   // grass and sand.
@@ -17,12 +18,14 @@ function arrowMaterial() {
   g.lineJoin = 'round';
   g.lineWidth = 10; g.strokeStyle = '#1f2a3a'; g.strokeText('YOU', 64, 6);
   g.fillStyle = '#ffd24a'; g.fillText('YOU', 64, 6);
+  if (withArrow) {
   g.beginPath();
   g.moveTo(40, 64); g.lineTo(88, 64); g.lineTo(88, 128); g.lineTo(118, 128);
   g.lineTo(64, 210); g.lineTo(10, 128); g.lineTo(40, 128); g.closePath();
   g.lineJoin = 'round';
   g.lineWidth = 12; g.strokeStyle = '#1f2a3a'; g.stroke();
   g.fillStyle = '#ffd24a'; g.fill();
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   // Drawn over everything: an arrow behind a roof is an arrow nobody finds.
@@ -36,6 +39,13 @@ export function createYouMarker(scene) {
   arrow.renderOrder = 999;
   arrow.visible = false;
   scene.add(arrow);
+  // YOU without the arrow: the same width on screen, only as tall as the word.
+  const word = new THREE.Sprite(arrowMaterial(false));
+  word.center.set(0.5, 0);
+  word.scale.set(0.035, 0.06 * 60 / 220, 1);
+  word.renderOrder = 999;
+  word.visible = false;
+  scene.add(word);
 
   // Where it is going: a flat ring on the ground, the same yellow.
   const ring = new THREE.Mesh(
@@ -62,11 +72,17 @@ export function createYouMarker(scene) {
   const m4 = new THREE.Matrix4();
 
   // `at` the body's feet (or null to hide everything), `route` what is left of its walk
-  // ([[x, z], ...] or null), `heightAt(x, z)` the ground under a dot. `showArrow` false
-  // leaves the YOU arrow off and the route on (Settings → From the sky, ui.js).
-  function update(at, route, heightAt, t, showArrow = true) {
-    arrow.visible = !!at && showArrow;
-    if (at) arrow.position.set(at.x, at.y + 0.9 + Math.abs(Math.sin(t * 3)) * 0.25, at.z);
+  // ([[x, z], ...] or null), `heightAt(x, z)` the ground under a dot. `show` is
+  // 'arrow' (YOU and the arrow), 'you' (the word alone) or 'off'; the route stays on in all
+  // three (Settings → From the sky, ui.js).
+  function update(at, route, heightAt, t, show = 'you') {
+    arrow.visible = !!at && show === 'arrow';
+    word.visible = !!at && show === 'you';
+    if (at) {
+      const y = at.y + 0.9 + Math.abs(Math.sin(t * 3)) * 0.25;
+      arrow.position.set(at.x, y, at.z);
+      word.position.set(at.x, y, at.z);
+    }
     const going = !!(at && route && route.length);
     ring.visible = going;
     let n = 0;

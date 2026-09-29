@@ -64,6 +64,37 @@
    draft grows with what is in it instead of standing screen-tall around one line. */
 .panel.left { top: 206px; }
 .panel.plan-ledger { bottom: auto; max-height: calc(100vh - 256px); }
+/* The graphics distances in the menu (web/js/sysmenu.js): a label and its slider a line. The
+   settings used to be a 316px side panel, then a screen-wide one; they are the menu now, whose
+   card holds the tabs on the left and this on the right. */
+.sysmenu .setting-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  align-items: center;
+  column-gap: 20px;
+  margin-bottom: 12px;
+}
+
+.sysmenu .setting-row label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.sysmenu .setting-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The controls: one action a line, its key on the right. */
+.keylist { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
+.keylist .keyrow { display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: 5px 10px; border: 1px solid transparent; border-radius: 8px; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.keylist .keyrow:hover { background: #ffffff0a; border-color: var(--edge); }
+.keylist .keyrow.on { border-color: var(--accent); background: #e8c17c14; }
+.keylist .keyrow kbd { min-width: 48px; text-align: center; }
 #clock-chip { border-radius: 8px; padding: 7px 12px; letter-spacing: .05em; }
 .btn, .fab { box-shadow: inset 0 1px #ffffff08; }
 .btn:hover { border-color: #e8c17c70; }
@@ -135,6 +166,8 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .chips-label { display: none; }
   .right-column { top: 215px; }
   .panel { top: auto; height: min(62vh, calc(100vh - 190px)); bottom: 80px; }
+  /* A slider under its label: 180px of label beside it leaves the slider a thumb's width. */
+  .sysmenu .setting-row { grid-template-columns: 1fr; row-gap: 4px; }
   /* The animals' panels are .panel and so bottom sheets already. The return card stays in
      the right column, but short: three lines, not a third of the island. */
   .animal-summary { max-height: 32vh; padding: 9px 11px; }

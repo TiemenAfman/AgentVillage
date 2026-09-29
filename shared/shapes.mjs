@@ -15,6 +15,9 @@ export const SHAPES = {
   rock: { what: 'A boulder', takes: ['scale'] },
   bush: { what: 'A low shrub', takes: ['scale'] },
   bridge: { what: 'A plank bridge with railings, spanning whatever is under it', takes: ['rot', 'length'] },
+  // Drawn in web/js/props.js with an opening a Benchy sails under: stone abutments on the
+  // banks, nothing standing in the channel.
+  archbridge: { what: 'A high round-backed arch bridge, tall enough for a boat to pass under', takes: ['rot', 'length'] },
   // Built out of the quay's own dock set, and it sits on the sea rather than on the
   // ground: a dock put down inland is a dock buried in a hillside, which is the right
   // answer to asking for one there.
