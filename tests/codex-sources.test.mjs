@@ -10,7 +10,13 @@ import { buildBundle, parseBundle } from '../lib/islandbundle.mjs';
 import { loadConfig } from '../lib/paths.mjs';
 
 const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const row = (type, payload) => JSON.stringify({ timestamp: '2026-09-22T10:00:00Z', type, payload }) + '\n';
+// An hour ago, never a fixed date: the fixture's one settler is a tent (a single human
+// turn), and buildVillage sends a tent quiet for longer than `tentGraceMs` packing
+// (Plans/tenten-vertrekken.md) - with '2026-09-22' the island below was empty from the
+// 29th on. An hour is also past the 10 minutes that would count the rollout as running.
+// Only the id in the rollout's path and name is read, so those keep their date.
+const at = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+const row = (type, payload) => JSON.stringify({ timestamp: at, type, payload }) + '\n';
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-island-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

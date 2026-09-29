@@ -47,7 +47,13 @@ node --test tests/models.test.mjs
 
 `node --test tests/` does **not** work — Node treats the directory as a module and fails
 with MODULE_NOT_FOUND. A fresh worktree needs `npm install` first, or every test that
-imports `three` fails.
+imports `three` fails. It also has no `data/layout.json` or `cache.json` of its own (its
+island is itself, see HOME below), so `tests/layout-measure.test.mjs` founds the island
+three times over every transcript on the machine with a cold cache, and
+`tests/plan-scan.test.mjs`, waiting on the same `data/scan.lock`, gives up after ~20 s -
+a failure of the sandbox, not of the planner; alone it passes. A fixture's timestamps are
+relative to `Date.now()`: a tent quiet for a week leaves (`tentGraceMs`), so a hard-coded
+date empties the fixture's island a week later.
 
 Tests exercise browser modules under Node: they `register('./support/shared-loader.mjs')`
 to resolve the `shared/` import-map prefix, and stub `globalThis.document` before importing
