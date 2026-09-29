@@ -18,7 +18,10 @@
    side of it. Inherited, so this one line covers the dossier, the legend, the town hall... */
 html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin; }
 html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; }
-body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; }
+body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
+/* Nothing on the island is text to copy, so a drag or double-click never paints a selection over it - except in
+   a field, where the caret and a selection are how you type. */
+input, textarea, select, [contenteditable="true"] { user-select: text; -webkit-user-select: text; }
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 /* The sea over the lens (web/js/underwater.js). Opacity is the eased amount times 0.35, so
    the gradient is strong and the layer is not: a clear turquoise from the light above to a
