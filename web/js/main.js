@@ -1433,14 +1433,6 @@ const WORK_WORDS = {
   carry: 'A settler bringing a bar of gold home', barrow: 'A settler off to fetch gold from the pit',
 };
 const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the sparrow' };
-// The town's own buildings, for when nothing is happening anywhere: one of them, lightly weighted.
-const SIGHTS = [
-  ['civic:townhall', 'The town hall'], ['civic:tavern', 'The tavern'], ['civic:well', 'The well on the square'],
-  ['civic:goldpit', 'The gold pit'], ['civic:goldmine', 'The gold mine'], ['civic:goldsmith', 'The goldsmith'],
-  ['civic:sawmill', 'The sawmill'], ['civic:shipyard', 'The shipyard'], ['civic:fishery', 'The fisherman\'s hut'],
-  ['civic:windmill', 'The windmill'], ['civic:castle', 'The castle'], ['civic:chapel', 'The chapel'],
-  ['civic:market', 'The market'], ['civic:clocktower', 'The clock tower'], ['civic:lighthouse', 'The lighthouse'],
-];
 state.arrivals = new Map();
 function directorShots() {
   const out = [];
@@ -1481,29 +1473,32 @@ function directorShots() {
   }
   const hut = state.byId.get('civic:fishery');
   if (hut && hut.fisher && fisherAt(hut.fisher)) out.push({ key: 'fisher', weight: 2, dist: CLOSE, label: 'The fisherman at his hut', where: () => lift(fisherAt(hut.fisher)) });
-  // What is always there. Everything above waits on something happening - a session at work,
-  // a yard the island may not have yet, daylight for the fisherman - and a quiet island at night
-  // had none of it, so the camera never left the overview it was meant to bring to life.
+  // Somebody out and about. When not even that is happening (a quiet island at night), the
+  // director circles the whole island instead (`overview`).
   const walkers = [];
   if (state.settlers) for (const f of state.settlers.figures().values()) if (f && f.visible && (f.anim === 'walk' || f.anim === 'step')) walkers.push(f);
   if (walkers.length) {
     const f = walkers[Math.floor(Math.random() * walkers.length)];
     out.push({ key: `walk:${f.id}`, weight: 1, dist: CLOSE, label: 'A settler out and about', where: () => (f.visible ? lift(f.pos) : null) });
   }
-  const sights = [];
-  for (const [id, words] of SIGHTS) {
-    const rec = state.byId.get(id);
-    if (rec && rec.group && rec.group.visible) sights.push([id, words, rec]);
-  }
-  if (sights.length) {
-    const [id, words, rec] = sights[Math.floor(Math.random() * sights.length)];
-    out.push({ key: `sight:${id}`, weight: 0.5, label: words, where: () => (rec.group.visible ? lift([rec.group.position.x, rec.group.position.z], 1) : null) });
-  }
   return out;
 }
 // ?director=5 wanders off after five seconds instead of IDLE_S, to try it without waiting.
 const directorIdle = Number(params.get('director'));
-state.director = createDirector({ sources: directorShots, ...(directorIdle > 0 ? { idleS: directorIdle } : {}) });
+// The whole island, circled between two shots and whenever nothing is happening.
+// Asked every frame while it is on, and islandFrame walks every land cell, so kept per terrain:
+// a grown island or a new polder is a new terrain object.
+let overviewOf = null, overviewShot = null;
+const directorOverview = () => {
+  if (!state.terrain) return null;
+  if (overviewOf !== state.terrain) {
+    const f = islandFrame();
+    overviewOf = state.terrain;
+    overviewShot = { target: [f.cx, 1, f.cz], dist: f.dist, el: f.el };
+  }
+  return overviewShot;
+};
+state.director = createDirector({ sources: directorShots, overview: directorOverview, ...(directorIdle > 0 ? { idleS: directorIdle } : {}) });
 const directorCaption = document.createElement('div');
 directorCaption.id = 'director-caption';
 directorCaption.hidden = true;
@@ -4972,7 +4967,9 @@ function syncHamlets(village) {
   }
 }
 
-function frameIsland() {
+// Where the whole island is seen from: the opening sweep's end (frameIsland) and the director's
+// overview between two shots.
+function islandFrame() {
   const t = state.terrain;
   let minX = 99, maxX = -99, minZ = 99, maxZ = -99;
   for (const [gx, gz] of t.landCells) {
@@ -4995,6 +4992,10 @@ function frameIsland() {
   // distance a 45-degree lens needs to hold a round island with a little sea around it,
   // and 175 stays as the floor so a small island is framed exactly as it was.
   const dist = clamp((r / Math.tan(fov / 2)) * 0.82, 22, Math.max(175, t.half * 1.7));
+  return { cx, cz, dist, el: 0.72 };
+}
+function frameIsland() {
+  const { cx, cz, dist } = islandFrame();
   const az = 0.6, el = 0.72;
   controls.target.set(cx, 1, cz);
   camera.position.set(

@@ -1,8 +1,9 @@
 // The director (Plans/regisseur.md): when nobody has touched the island for IDLE_S, the camera
 // goes to look at something happening - a settler just arrived, the gold on its way, the timber
 // wagon, the yard at work, somebody at work, one of the story animals, the fisherman - follows
-// it while it circles it slowly, and after HOLD_S goes on to the next. Any input stops it where
-// it stands.
+// it while it circles it slowly, and after HOLD_S goes back up to the whole island before the
+// next (`overview`), which it circles more slowly still for OVERVIEW_S - and for as long as
+// nothing is happening at all. Any input stops it where it stands.
 //
 // No DOM and no camera here, so it can be tested: `step` is handed where the camera looks from
 // now and hands back where it should look from next; main.js puts that on the camera and the
@@ -10,7 +11,8 @@
 // a list of candidates { key, label, weight, first, dist, where } where `where()` is a point
 // [x, y, z] for as long as the thing is still worth watching, and null once it is not, and `dist`
 // how far off it is best watched from (SHOT_DIST when not said: a settler is watched from closer
-// than a wagon and its horse).
+// than a wagon and its horse). `overview()` is { target, dist, el } for the whole island, or null
+// on a page that has none to show; without it the director only ever goes from shot to shot.
 
 export const IDLE_S = 45;       // quiet this long before the camera wanders off by itself
 export const FLY_S = 3;         // the flight from where the camera is to the first look
@@ -18,6 +20,9 @@ export const HOLD_S = 16;       // how long one thing is watched
 export const SHOT_DIST = 8.5;   // how far off it is watched from
 export const SHOT_EL = 0.5;     // and how high: radians over the horizon
 export const ORBIT_RATE = 0.06; // how briskly it circles, radians a second
+export const OVERVIEW_S = 12;   // the whole island between two shots, at the least
+export const OVERVIEW_RATE = 0.035; // and how briskly it is circled: a full turn in three minutes
+const OVERVIEW_FLY_S = 5;       // up from a settler to the whole island is a long way
 const FOLLOW = 2.5;             // how briskly the look follows a moving thing, per second
 const RETRY_S = 8;              // nothing to look at: ask again this much later
 
@@ -50,19 +55,40 @@ export function pickShot(candidates, last, rand = Math.random) {
   return list[list.length - 1];
 }
 
-export function createDirector({ sources, rand = Math.random, idleS = IDLE_S } = {}) {
+export function createDirector({ sources, overview = null, rand = Math.random, idleS = IDLE_S } = {}) {
   let idle = 0;
   let shot = null;
-  let last = null;
+  let last = null;          // the last *shot*: the overview between two never counts
   let retry = 0;
 
-  function start(from) {
-    const c = pickShot(sources(), last, rand);
+  // The whole island as a shot of its own. Its `where` is the island's middle, asked again each
+  // time so a grown island is framed as it is now.
+  function wide() {
+    const o = overview && overview();
+    if (!o) return null;
+    return {
+      key: 'overview', label: null, wide: true,
+      dist: o.dist, el: o.el, hold: OVERVIEW_S, fly: OVERVIEW_FLY_S, rate: OVERVIEW_RATE,
+      where: () => { const n = overview && overview(); return n ? n.target : null; },
+    };
+  }
+
+  // What comes next: the island again after every shot, otherwise something happening, and the
+  // island once more when nothing is.
+  function next(from) {
+    let c = null;
+    if (!(shot && shot.c.wide)) c = shot ? wide() : null;
+    if (!c) {
+      c = pickShot(sources(), last, rand);
+      if (c) last = c.key;
+    }
+    if (!c) c = wide();
     if (!c) return null;
-    last = c.key;
+    // Nothing new after the overview: keep circling where it is, without flying anywhere.
+    if (c.wide && shot && shot.c.wide) { shot.t = shot.fly; return shot; }
     const v = viewOf(from.target, from.position);
     return {
-      c, t: 0,
+      c, t: 0, fly: c.fly || FLY_S,
       from: { target: [...from.target], dist: v.dist, el: v.el },
       look: [...from.target],
       az: v.az,
@@ -90,26 +116,28 @@ export function createDirector({ sources, rand = Math.random, idleS = IDLE_S } =
       if (!shot) {
         if (idle < idleS) return null;
         if (retry > 0) { retry -= d; return null; }
-        shot = start(from);
+        shot = next(from);
         if (!shot) { retry = RETRY_S; return null; }
       }
       shot.t += d;
       const at = shot.c.where();
       // Gone, or watched long enough: on to the next from exactly where the camera is now.
-      if (!at || shot.t >= FLY_S + HOLD_S) {
-        shot = start(from);
+      if (!at || shot.t >= shot.fly + (shot.c.hold || HOLD_S)) {
+        const was = shot;
+        shot = next(from);
         if (!shot) { retry = RETRY_S; return null; }
-        return null;
+        if (shot !== was) return null;
       }
-      shot.az += ORBIT_RATE * d;
-      if (shot.t < FLY_S) {
-        const k = ease(shot.t / FLY_S);
+      const el = shot.c.el ?? SHOT_EL, dist = shot.c.dist || SHOT_DIST;
+      shot.az += (shot.c.rate || ORBIT_RATE) * d;
+      if (shot.t < shot.fly) {
+        const k = ease(shot.t / shot.fly);
         shot.look = [0, 1, 2].map((i) => lerp(shot.from.target[i], at[i], k));
-        return poseOf(shot.look, { az: shot.az, el: lerp(shot.from.el, SHOT_EL, k), dist: lerp(shot.from.dist, shot.c.dist || SHOT_DIST, k) });
+        return poseOf(shot.look, { az: shot.az, el: lerp(shot.from.el, el, k), dist: lerp(shot.from.dist, dist, k) });
       }
       const f = 1 - Math.exp(-FOLLOW * d);
       shot.look = [0, 1, 2].map((i) => shot.look[i] + (at[i] - shot.look[i]) * f);
-      return poseOf(shot.look, { az: shot.az, el: SHOT_EL, dist: shot.c.dist || SHOT_DIST });
+      return poseOf(shot.look, { az: shot.az, el, dist });
     },
   };
 }

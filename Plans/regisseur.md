@@ -34,6 +34,17 @@ volgt, en (2) een visser bij de vissershut, want daar leeft nu niets.
   de goudvracht, de visser en een inwoner die schoffelde, nooit twee keer hetzelfde achter elkaar,
   met het onderschrift eronder. De verhaaldieren waren er op dat eiland nog niet.
 
+## Tweede ronde (29 september 2026)
+
+> na elke focus op een inwoner/werker moet het overview van het eiland weer getoond worden. als
+> er geen activiteit is mag de camera langzaam om het eiland heen draaien.
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Tussen twee shots | Na elk shot vliegt hij in 5 s terug naar het hele eiland (het beeld van `frameIsland`) en draait daar `OVERVIEW_S` (12 s) langzaam omheen (`OVERVIEW_RATE`, een rondje in drie minuten), dan pas het volgende shot. | Het eiland is het onderwerp; een shot is een uitstapje ernaartoe, en een rij close-ups achter elkaar liet nooit zien waar ze lagen. |
+| Niets te doen | Blijft hij om het eiland draaien, zonder opnieuw te vliegen, en kijkt elke `OVERVIEW_S` of er iets begint. | "Mag de camera langzaam om het eiland heen draaien." De vaste gebouwen die eerst als reserve dienden (stadhuis, taverne, …) zijn daarmee weer weg: dat was stilstaan op iets waar niets gebeurde. |
+| Een wandelende inwoner | Blijft een shot (licht gewogen). | Iemand die loopt, is iets dat gebeurt. |
+
 ## Later
 
 - Een aankomende inwoner per boot (`sailIn`) wordt gevolgd zodra zijn figuur er is; de boot zelf nog niet.

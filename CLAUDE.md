@@ -1242,7 +1242,9 @@ event), then by weight the gold run (`goldRun.focus()`), the timber wagon (`timb
 a yard hand (`timberRun.handAt`), a working settler (a visible figure whose `anim` is in
 `WORK_WORDS`), a story animal (the goat weighted up) and the fisherman - never the same key
 twice running, flies to it over `FLY_S`, follows and circles it for `HOLD_S` from the shot's
-`dist`, and says what it is in `#director-caption`. `stepDirector` runs just before
+`dist`, and says what it is in `#director-caption`. After every shot it goes back up to the whole
+island (`overview`, `islandFrame()` in main.js - the boot framing) for `OVERVIEW_S`, circling it
+at `OVERVIEW_RATE`, and stays there, circling, for as long as nothing is happening. `stepDirector` runs just before
 `controls.update()` in the orbit branch, and any input `poke()`s it: it stops where it stands.
 `?director=5` starts after five seconds. The fisherman is `web/js/fisher.js` (the smith's
 pattern, our own island only because he measures the water's edge off `groundAt`), with a

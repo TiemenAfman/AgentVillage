@@ -5,6 +5,8 @@
 // Held here:
 //   the choice   an arrival before anything else, never the same thing twice in a row, and by
 //                weight otherwise;
+//   the island   back up to the whole island after every shot, and circling it slowly for as
+//                long as nothing is happening;
 //   the camera   nothing before IDLE_S of quiet, a flight with no jump in it, a slow circle round
 //                what it watches, the next thing after HOLD_S or as soon as this one is gone, and
 //                any input stopping it where it stands;
@@ -14,7 +16,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 
-import { createDirector, pickShot, viewOf, poseOf, IDLE_S, FLY_S, HOLD_S, SHOT_DIST, SHOT_EL } from '../web/js/director.js';
+import { createDirector, pickShot, viewOf, poseOf, IDLE_S, FLY_S, HOLD_S, SHOT_DIST, SHOT_EL, OVERVIEW_S, OVERVIEW_RATE } from '../web/js/director.js';
 
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
@@ -116,6 +118,43 @@ test('a thing that is over is left at once, and any input stops the camera where
 test('with nothing to watch the camera stays where it is', () => {
   const r = running(() => []);
   for (let t = 0; t < IDLE_S * 3; t += 0.1) assert.equal(r.step(0.1), null);
+});
+
+test('after every shot the camera goes back up to the whole island before the next', () => {
+  const island = { target: [0, 1, 0], dist: 150, el: 0.72 };
+  const d = createDirector({ sources: () => [still('a', [5, 0, 5]), still('b', [-5, 0, -5])], overview: () => island, rand: () => 0 });
+  let cam = { target: [0, 1, 0], position: [30, 40, 30] };
+  const keys = [];
+  for (let t = 0; t < IDLE_S + 4 * (FLY_S + HOLD_S + OVERVIEW_S + 5); t += 0.1) {
+    const pose = d.step(0.1, true, cam);
+    if (pose) cam = pose;
+    const k = d.key();
+    if (k && keys[keys.length - 1] !== k) keys.push(k);
+  }
+  assert.ok(keys.length >= 5, keys.join(' '));
+  keys.forEach((k, i) => assert.equal(k === 'overview', i % 2 === 1, `shot and island should take turns: ${keys.join(' ')}`));
+  assert.equal(d.caption() === null || typeof d.caption() === 'string', true);
+});
+
+test('with nothing happening it circles the whole island, slowly, and flies nowhere else', () => {
+  const island = { target: [10, 1, -4], dist: 150, el: 0.72 };
+  const d = createDirector({ sources: () => [], overview: () => island });
+  let cam = { target: [0, 1, 0], position: [30, 40, 30] };
+  const step = (n) => { for (let i = 0; i < n; i++) { const p = d.step(0.1, true, cam); if (p) cam = p; } };
+  step(IDLE_S * 10 + 80);
+  assert.equal(d.key(), 'overview');
+  assert.equal(d.caption(), null, 'the island needs no caption');
+  const v0 = viewOf(cam.target, cam.position);
+  assert.ok(dist3(cam.target, island.target) < 0.05 && Math.abs(v0.dist - 150) < 1e-6, 'it frames the island');
+  let prev = cam;
+  for (let i = 0; i < (OVERVIEW_S * 3) * 10; i++) {
+    step(1);
+    assert.ok(dist3(cam.position, prev.position) < 150 * OVERVIEW_RATE * 0.1 * 1.5, 'the orbit jumped, or flew off again');
+    prev = cam;
+  }
+  const v1 = viewOf(cam.target, cam.position);
+  const turned = ((v1.az - v0.az) + 4 * Math.PI) % (2 * Math.PI);
+  assert.ok(Math.abs(turned - OVERVIEW_RATE * OVERVIEW_S * 3) < 0.01, `it turned ${turned.toFixed(3)} rad`);
 });
 
 // ---- the fisherman ---------------------------------------------------------------------------
