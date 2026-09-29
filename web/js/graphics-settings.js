@@ -37,13 +37,14 @@ export function graphicsTier({ modest = false, phone = false } = {}) {
 
 // The sliders' own ranges. A remembered number outside them is clamped rather than thrown
 // away: somebody who had 600 before a maximum came down to 500 wants the furthest there is.
-// Shadow Distance stops at 380 because the box cannot get wider than SHADOW_SPAN[1] allows
-// anyway; a slider past it would move and change nothing.
+// Shadow Distance runs 85..380 because the box is never narrower than SHADOW_SPAN[0] nor
+// wider than SHADOW_SPAN[1] (half-widths 42 and 190, world.js): a slider below 84 or above 380
+// would move and change nothing.
 export const GRAPHICS_LIMITS = Object.freeze({
   viewDistance: { min: 100, max: 2000, step: 10 },
   objectDistance: { min: 50, max: 2000, step: 10 },
   npcDistance: { min: 50, max: 1000, step: 10 },
-  shadowDistance: { min: 25, max: 380, step: 5 },
+  shadowDistance: { min: 85, max: 380, step: 5 },
 });
 
 // What is stored is only what somebody set, never the whole four. The first two versions
@@ -58,7 +59,7 @@ export const GRAPHICS_KEY = 'promptholm.graphics.v3';
 export function clampGraphic(key, value) {
   const lim = GRAPHICS_LIMITS[key];
   const n = Number(value);
-  if (!lim || value === null || value === '' || !Number.isFinite(n)) return null;
+  if (!lim || typeof value === 'boolean' || value === null || value === '' || !Number.isFinite(n)) return null;
   return Math.min(lim.max, Math.max(lim.min, n));
 }
 

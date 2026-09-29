@@ -364,10 +364,16 @@ handlers; it was handed to `createNet` once and every slider moved its label and
 (`tests/graphics-settings.test.mjs` reads the source for it). The plan is
 `Plans/graphics-afstanden.md`. Before touching any of them:
 
-- **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js caps the
-  haze at the nearer of the far plane and Object Distance, and a record is taken out of the
-  render list (`keepRecord`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
+- **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js
+  (`fogCeilingOf` in fade.js) caps the haze at the nearer of the far plane and Object
+  Distance, and a record is taken out of the render list (`keepRecord` in
+  `web/js/record-cull.js`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
   is cut is always already the colour of the fog, and on the way in it thickens out of it.
+  The sky dome's band along the horizon *is* the fog colour (`uFog`, by reference to
+  `scene.fog.color`), so a fully fogged mast against the sky matches it too. Two things are
+  never masked: lights (turned down to 0 instead - the light count is in every lit program's
+  key, and a masked campfire recompiled every material on screen) and records with a
+  `fog: false` part (a lighthouse beam, a campfire flame: landmarks, never cut).
   That is what makes an older machine playable without the island looking cut short: the
   `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
   people are past the haze and not drawn at all.
@@ -379,19 +385,18 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   and distance is never less than depth, so the far-plane cut is in full fog with more margin.
 - **The dither is for the people.** `web/js/fade.js` (a screen-hash `discard` on
   `length(mvPosition.xyz)`, spliced into `createBuildingMaterial`, so it stays in the opaque
-  pass) is compiled in only while `fadeNeeded(range, fogCeiling())` says a cut could be seen.
-  For the buildings that is never, since the fog closes at their range; NPC Distance can lie
-  well inside the haze, and there a person dithers out over the last fifth before `beyond` in
-  crowd-view.js (`NPC_PAD`) hands them back. Decided in `applyObjectDistances` (sliders,
-  resize, the planner) against the ceiling, never the fog of the moment, and never per frame;
-  `customProgramCacheKey` carries the `-fade`.
-- **Shadows fade too.** Each building material has a depth twin (`mat.userData.fadeDepth`,
-  the same band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed
-  to meshes as `customDepthMaterial` by `adoptFadeDepth` - once a second over the scene while a
-  fade is compiled in (`sweepFadeDepth`). Without it a village stippled away left its shadows.
-  The same sweep runs `followFadeUnder` over every record: its *other* built-in materials (the
-  gold, the ore, a flag, a flame, a yard sign) follow the building material's fade with their
-  own cache key kept plus `|fade`, or they stood solid to the cut and went at once.
+  pass) is compiled into `crowdMat` only while `fadeNeeded(npcDistance, fogCeiling())` says a
+  cut could be seen; NPC Distance can lie well inside the haze, and there a person dithers out
+  over the last fifth before `beyond` in crowd-view.js (`NPC_PAD`) hands them back. The
+  building material is never asked: its range *is* the fog ceiling. Decided in
+  `applyObjectDistances` (sliders, the planner) against the ceiling, never the fog of the
+  moment, and never per frame; `customProgramCacheKey` carries the `-fade`. The crowd's
+  shadows fade with them through the material's depth twin (`mat.userData.fadeDepth`, the same
+  band against `uFadeEye`, the camera copied in once a frame by `setFadeEye`), handed to every
+  crowd mesh where it is made (`createFigures`). An imp is not given to a guard in the band
+  (`inBand`, only while the dither is on), since its skinned material knows nothing of it.
+- **Fog-free lights at the horizon fade before the far plane** (`horizon.js update`, reach
+  0.9 of `camera.far`), and the sun and moon hang inside it (`world.setFar`).
 - **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is
   state: `applyVisibility()` owns it (filtered, alive in the chronicle, arrived),
   `popIn()` and a build clear it. The Object Distance cut is `layers.mask = 0` on the record's
@@ -399,8 +404,7 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   the project uses; it takes the record out of the colour pass, the shadow pass and the
   raycaster, and the frame loop skips its `animateExtras`. In `crowd-view.js` `f.visible` *is*
   only "drawn this frame" and `view.hide(f)` is free to use; the sea's state (`f.to`, `f.pos`)
-  is never touched by the cut. An imp is not given to a guard in the band (`inBand`), since
-  its skinned material knows nothing of the dither.
+  is never touched by the cut.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,

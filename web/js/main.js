@@ -35,9 +35,10 @@ import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
   buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
-  QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye, adoptFadeDepth, followFadeUnder,
+  QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
-import { cullNext } from './fade.js';
+import { fogCeilingOf } from './fade.js';
+import { keepRecord } from './record-cull.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites } from './hamlet-sign-placement.js';
@@ -2498,52 +2499,35 @@ function applyViewDistance() {
 // machine playable without the island looking cut short: what is not drawn is behind a haze
 // that thickens towards it, not a line where the town stops. The planner draws everything.
 function fogCeiling() {
-  const view = camera.far * FOG_CAP;
-  return state.mode === 'plan' ? view : Math.min(view, state.graphics.objectDistance);
+  return fogCeilingOf(camera.far * FOG_CAP, state.graphics.objectDistance, state.mode === 'plan');
 }
 
-// Object and NPC Distance, and the fade that goes with them (web/js/fade.js). The fog now
-// closes at Object Distance at the latest, so the houses never need the dither - they are cut
-// in full fog - and the building shader is left as it always was; fadeNeeded says so. The
-// people do: NPC Distance can be well inside the haze, and there the dither is what stops a
-// settler vanishing in clear air. Decided against fogCeiling(), the furthest the fog can ever
-// close, not the fog of the moment - applyFogRange moves that with every zoom and every change
-// of sky, and a decision taken against it left the dither out while a clearing sky brought the
-// cut into view. So this runs when a slider, the window or the planner changes, never per frame.
+// Object and NPC Distance. The houses need nothing here: the fog closes at Object Distance at
+// the latest (fogCeiling), so keepRecord only ever cuts a record the haze has already covered,
+// and the building shader stays exactly what it always was - no dither, no depth twin, no
+// early depth test given up by every building on the island.
+//
+// The people are another matter: NPC Distance can lie well inside the haze, and there a
+// settler would vanish in clear air. So the crowd's own material dithers over the last fifth
+// (web/js/fade.js) while fadeNeeded says a cut could be seen - asked against fogCeiling(), the
+// furthest the fog can ever close, not the fog of the moment, which applyFogRange moves with
+// every zoom and every change of sky. So this runs when a slider, the window or the planner
+// changes, never per frame. The crowd's meshes carry the material's depth twin from the moment
+// they are made (settler-figures.js), so a faded settler takes their shadow with them.
 //
 // The planner draws everything - enterPlan pushes the fog to 4000 so the whole island is
 // legible - and a town seen from above with half of it stippled away is worse than no slider
 // at all. A range of 0 is how "off" is spelled everywhere in this file.
 function applyObjectDistances() {
-  const plan = state.mode === 'plan';
-  const cap = fogCeiling();
-  buildingMat.userData.fade(plan ? 0 : state.graphics.objectDistance, cap);
-  crowdMat.userData.fade(plan ? 0 : state.graphics.npcDistance, cap);
-  // The shadows fade with what casts them, and a building's other materials fade with it:
-  // both handed out by sweepFadeDepth, on the next frame rather than a second from now.
-  fadeSweepAt = 0;
+  const range = npcRange();
+  crowdMat.userData.fade(range, fogCeiling());
   // The people are also cut on the CPU, and that one has to be told now: raising NPC Distance
   // puts them back within a frame, not whenever the sea next says where they are.
-  const range = plan ? 0 : state.graphics.npcDistance;
-  if (state.settlers) state.settlers.setRange(range);
-  for (const g of state.guests) if (g.crowd) g.crowd.setRange(range);
+  const fading = crowdMat.userData.fadeOn;
+  if (state.settlers) state.settlers.setRange(range, fading);
+  for (const g of state.guests) if (g.crowd) g.crowd.setRange(range, fading);
 }
-const fadeCompiled = () => buildingMat.userData.fadeOn || crowdMat.userData.fadeOn;
-
-// Once a second while a fade is compiled in: whatever was built since - a house, a boat, a
-// guest island, a crowd's meshes - gets its depth twin, or its shadow would stay whole while
-// the thing itself stippled away; and whatever a record carries in a material of its own
-// (the gold, the ore, a flag, a flame, a yard sign) is made to fade with the buildings, or it
-// would stand solid to the cut and go at once (followFade in buildings.js). A walk and an
-// equality test per mesh; with the fade out of the shader it does not run at all.
-let fadeSweepAt = 0;
-function sweepFadeDepth(nowMs) {
-  if (!fadeCompiled() || nowMs < fadeSweepAt) return;
-  fadeSweepAt = nowMs + 1000;
-  adoptFadeDepth(scene);
-  for (const rec of state.byId.values()) if (rec.group) followFadeUnder(rec.group, buildingMat);
-  for (const g of state.guests) for (const rec of g.records || []) if (rec.group) followFadeUnder(rec.group, buildingMat);
-}
+const npcRange = () => (state.mode === 'plan' ? 0 : state.graphics.npcDistance);
 
 // What the settings panel calls. Four keys, four places, and the only way into all of them -
 // the numbers in state.graphics are not written anywhere else, so there is no second path
@@ -2571,57 +2555,14 @@ function onGraphicsReset() {
   applyGraphics();
 }
 
-// Object Distance, on the CPU: a record past its range is taken out of the render list, so
-// it costs no vertices, no triangles and no shadow, and its mill, clock and smoke stop
-// (the frame loop skips animateExtras for it). Only once the shader has already finished it
-// off - cullNext waits CULL_PAD past the range, where nothing of even a ship is left inside
-// the band, and fade.js says why that also holds with the dither compiled out. So nothing
-// pops on the way out, and nothing on the way back in: coming back, the record is drawn
-// again while it is still fully stippled or fully in fog, and fades in from there.
-//
-// It deliberately does NOT set rec.group.visible, even though that would have been the
-// obvious line. That flag is not a rendering decision, it is a state one: applyVisibility
-// owns it (filtered in, alive in the chronicle, arrived), popIn clears it while a house is
-// still sailing in, and a build clears it again while the thing is being placed. Writing it
-// from here would put a filtered-out code house back on the island the moment somebody
-// switched the Code filter off. The cut is a layer mask instead - `layers.mask = 0` matches
-// no camera, no light's shadow pass and no raycaster - which nothing else in this project
-// touches, so it belongs to this function alone. The mask each object had is kept and put
-// back, and children added while a record is out (a nameplate, a scaffold) are masked on the
-// frame they appear.
-//
-// Distance from the eye in a straight line, like the shader's: a guest island's records sit
-// inside a group carrying their region origin, so the position is read off matrixWorld - the
-// one number that means the same for both, and already worked out by the last render.
+// Object Distance, on the CPU: a record past its range is taken out of the render list
+// (web/js/record-cull.js keepRecord), so it costs no vertices, no triangles and no shadow, and
+// its mill, clock and smoke stop - the frame loop skips animateExtras for it. Only CULL_PAD
+// past Object Distance, where the fog (fogCeiling) has already closed over all of it: nothing
+// pops on the way out, and on the way back the record is drawn again while it is still the
+// colour of the fog, and comes out of it. The eye both it and the crowd's shadow fade measure
+// from is the camera, copied once a frame.
 const cullEye = new THREE.Vector3();
-function maskGroup(g) {
-  g.traverse((o) => {
-    if (o.userData.cullMask === undefined) o.userData.cullMask = o.layers.mask;
-    o.layers.mask = 0;
-  });
-}
-function unmaskGroup(g) {
-  g.traverse((o) => {
-    if (o.userData.cullMask === undefined) return;
-    o.layers.mask = o.userData.cullMask;
-    delete o.userData.cullMask;
-  });
-}
-// true while the record is drawn (and so worth animating). Plan mode passes 0, which lets
-// every record back in: the planner looks at the whole island through a camera of its own.
-function keepRecord(rec, range) {
-  const g = rec.group;
-  if (!g) return true;
-  // A record whose group was rebuilt has a fresh group nobody masked.
-  if (rec.cull && rec.cull.group !== g) rec.cull = null;
-  const e = g.matrixWorld.elements;
-  const d = Math.hypot(e[12] - cullEye.x, e[13] - cullEye.y, e[14] - cullEye.z);
-  const out = cullNext(d, range, !!rec.cull);
-  if (out && !rec.cull) { maskGroup(g); rec.cull = { group: g, kids: g.children.length }; }
-  else if (!out && rec.cull) { unmaskGroup(g); rec.cull = null; }
-  else if (out && g.children.length !== rec.cull.kids) { maskGroup(g); rec.cull.kids = g.children.length; }
-  return !out;
-}
 
 // Where the haze begins and where it closes, and the only place that decides either.
 // world.js makes the Fog object and tints it with the sky; these two distances were being
@@ -3907,7 +3848,8 @@ function raiseGuestIslands() {
       // cuts stay two cuts.
       scene, material: crowdMat, region,
       buildings: (region.village && region.village.buildings) || [],
-      range: state.graphics.npcDistance,
+      range: npcRange(),
+      fading: crowdMat.userData.fadeOn,
       // Only the volcano's crowd asks: its imps (web/js/imp.js) swing at a walker who comes
       // within reach, and the nearest IMP_LIMIT guards to the camera are the ones drawn as
       // imps. Scene frame, the same one the crowd's positions are in.
@@ -4553,12 +4495,12 @@ function buildScene(village) {
   state.settlers = createCrowdView({
     scene, material: crowdMat, region: state.region,
     buildings: village.buildings || [],
-    // Ours get the eye, and the range, because ours are the ones NPC Distance is about. The
-    // imps still ask for the eye and not get one here: they are the volcano's crowd, and the
-    // volcano is a guest island. crowdMat is the same shader with its own uniform, so the
-    // people can be cut at 250 while the houses go on to 300.
+    // The eye and the range, because NPC Distance is about people. crowdMat is the building
+    // shader with its own uniform, so the people can dither out at their own distance while
+    // the houses go on into the fog.
     eye: () => camera.position,
-    range: state.graphics.npcDistance,
+    range: npcRange(),
+    fading: crowdMat.userData.fadeOn,
   });
   // The last roster the sea sent, if it arrived before this scene existed - at boot it
   // always does, and after a reseed it is the scene that was rebuilt, not the island.
@@ -5996,7 +5938,7 @@ function frame(nowMs) {
   }
   // The feeder's bell and the glint of a find.
   if (state.traces) state.traces.update(dt);
-  if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0);
+  if (state.horizon) state.horizon.update(dt, state.world ? state.world.state.night : 0, camera.far * 0.9, camera.position);
   if (state.islets) state.islets.update(dt, focusPoint());
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -6038,12 +5980,11 @@ function frame(nowMs) {
   // per-building animated bits
   const nightAmt = state.world ? state.world.state.night : 0;
   // Object Distance, and the reason the far houses are cheap rather than merely faint.
-  // The eye both the CPU cut and the shadow pass's fade measure from, once for the frame.
+  // The eye both the CPU cut and the crowd's shadow fade measure from, once for the frame.
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
-  sweepFadeDepth(nowMs);
   const objectRange = state.mode === 'plan' ? 0 : state.graphics.objectDistance;
-  for (const rec of state.byId.values()) if (keepRecord(rec, objectRange)) animateExtras(rec, dt, hour, nightAmt, nowMs);
+  for (const rec of state.byId.values()) if (keepRecord(rec, objectRange, cullEye)) animateExtras(rec, dt, hour, nightAmt, nowMs);
   // The miner and the goldsmith, and the cart and the barrow between them (goldrun.js).
   if (state.goldRun) state.goldRun.update(dt);
   // The timber wagon from the sawmill to the yard, and the hands at the yard (timberrun.js),
@@ -6060,7 +6001,7 @@ function frame(nowMs) {
   // the price of walking a second list - it is a village over there too, and a village whose
   // mills have stopped reads as a diorama.
   for (const g of state.guests) {
-    for (const rec of g.records) if (keepRecord(rec, objectRange)) animateExtras(rec, dt, hour, nightAmt, nowMs);
+    for (const rec of g.records) if (keepRecord(rec, objectRange, cullEye)) animateExtras(rec, dt, hour, nightAmt, nowMs);
     // And their ground: the season their wood is drawn in, and anything falling over on
     // it. Their island is built by the same createLandscape ours is, so it wants the same
     // one call a frame - without it a neighbour's forest would still be in the season it
@@ -7175,8 +7116,6 @@ addEventListener('resize', () => {
   if (state.panels) state.panels.resize();
   if (state.plan) state.plan.resize();
   if (state.particles) state.particles.mat.uniforms.uScale.value = innerHeight * 0.5;
-  // A wider frame has a corner further off its axis, which is where fadeNeeded asks.
-  applyObjectDistances();
 });
 
 boot();

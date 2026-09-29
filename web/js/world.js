@@ -1711,6 +1711,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunColor: { value: new THREE.Color(0xffffff) },
       uStars: { value: 0 },
+      // The fog's own colour, by reference (set once scene.fog exists, below), for the band
+      // along the horizon. See the fragment shader.
+      uFog: { value: new THREE.Color(0xdcefff) },
     },
     // On the far plane, whatever the far plane is: z = w puts every vertex at depth 1, the
     // same trick three's own background cube uses. The dome used to be a sphere of r1340
@@ -1720,12 +1723,20 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // (vDir), so where the geometry is drawn is free to be wherever depth says is furthest.
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
     fragmentShader: `
-      uniform vec3 uTop, uHor, uSunColor; uniform vec3 uSunDir; uniform float uStars;
+      uniform vec3 uTop, uHor, uSunColor, uFog; uniform vec3 uSunDir; uniform float uStars;
       varying vec3 vDir;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
       void main(){
         vec3 d = normalize(vDir);
         vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.45, d.y));
+        // Along the horizon the sky is the fog's colour exactly. A house is taken out of the
+        // picture only once the fog has closed over it (main.js fogCeiling), and fully fogged
+        // it *is* the fog colour - which matched fogged ground and sea, but not the sky: a
+        // mast or a castle standing up against the horizon was a fog-coloured shape on a
+        // slightly different blue, and went at the cut. Anything that far off stands only a
+        // few degrees above the horizon, so the band is narrow and the gradient above it
+        // untouched; the sun's halo goes on top of it, so a low sun still warms the horizon.
+        col = mix(uFog, col, smoothstep(0.0, 0.14, d.y));
         float halo = pow(max(dot(d, normalize(uSunDir)), 0.0), 48.0);
         col += uSunColor * halo * 0.5;
         if (uStars > 0.01 && d.y > 0.0) {
@@ -1827,6 +1838,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
   // sync there - and the fixed pair always won. Colour still follows the sky, below.
   scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
+  // By reference, so the dome's horizon band is whatever the fog is at render time - after
+  // the hour has tinted it below and the weather has dulled it (weather.js), not a copy.
+  skyMat.uniforms.uFog.value = scene.fog.color;
 
   // ---- lights --------------------------------------------------------------
   const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);

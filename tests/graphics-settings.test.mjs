@@ -51,15 +51,15 @@ test('nothing remembered is the defaults, and a broken store is too', () => {
 
 test('only what somebody moved is kept; the rest follows the machine', () => {
   const s = memory();
-  saveGraphic('shadowDistance', 60, s);
+  saveGraphic('shadowDistance', 120, s);
   // Stored: that one choice, not all four.
-  assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { shadowDistance: 60 });
+  assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { shadowDistance: 120 });
   // So a modest machine keeps its own View Distance under it, and a full one its own.
   assert.equal(loadGraphics(GRAPHICS_TIERS.modest, s).viewDistance, GRAPHICS_TIERS.modest.viewDistance);
   assert.equal(loadGraphics(GRAPHICS_TIERS.full, s).viewDistance, GRAPHICS_TIERS.full.viewDistance);
-  assert.equal(loadGraphics(GRAPHICS_TIERS.modest, s).shadowDistance, 60);
+  assert.equal(loadGraphics(GRAPHICS_TIERS.modest, s).shadowDistance, 120);
   saveGraphic('viewDistance', 250, s);
-  assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { shadowDistance: 60, viewDistance: 250 });
+  assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { shadowDistance: 120, viewDistance: 250 });
   // One bad field keeps the other three, and a remembered number outside its slider is clamped.
   const kept = loadGraphics(GRAPHICS_DEFAULTS, memory({ [GRAPHICS_KEY]: JSON.stringify({ viewDistance: 'far', npcDistance: 120, objectDistance: 9999 }) }));
   assert.equal(kept.viewDistance, GRAPHICS_DEFAULTS.viewDistance);
@@ -85,6 +85,7 @@ test('clampGraphic refuses what is not one of the four or not a number', () => {
   assert.equal(clampGraphic('viewDistance', null), null);
   assert.equal(clampGraphic('viewDistance', ''), null);
   assert.equal(clampGraphic('fov', 90), null);
+  assert.equal(clampGraphic('viewDistance', true), null);
 });
 
 test('the sliders are wired to the panel that has them', () => {
@@ -131,7 +132,7 @@ test('the full defaults are the old look, and every tier cuts its houses inside 
 test('the haze never closes past Object Distance, and a slider change moves it', () => {
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   const ceil = main.slice(main.indexOf('function fogCeiling()'), main.indexOf('function fogCeiling()') + 300);
-  assert.match(ceil, /Math\.min\(view, state\.graphics\.objectDistance\)/);
+  assert.match(ceil, /fogCeilingOf\(camera\.far \* FOG_CAP, state\.graphics\.objectDistance, state\.mode === 'plan'\)/);
   const set = main.slice(main.indexOf('function setFogRange('), main.indexOf('function setFogRange(') + 1600);
   assert.match(set, /scene\.fog\.far = Math\.min\(h\.far, fogCeiling\(\)\)/);
   const apply = main.slice(main.indexOf('function applyGraphics('), main.indexOf('function applyGraphics(') + 600);
@@ -146,6 +147,10 @@ test('the sky is drawn on the far plane, so a short view never shows the clear c
   const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
   const sky = world.slice(world.indexOf('const skyMat'), world.indexOf('const sky = new THREE.Mesh'));
   assert.match(sky, /gl_Position = p\.xyww/);
+  // Along the horizon the dome is the fog's own colour, by reference, so a fully fogged mast
+  // standing against the sky is the colour of the sky behind it when it is cut.
+  assert.match(sky, /col = mix\(uFog, col, smoothstep\(0\.0, 0\.14, d\.y\)\)/);
+  assert.match(world, /skyMat\.uniforms\.uFog\.value = scene\.fog\.color;/);
   // The sun and moon carry no fog, so they are pulled inside the far plane instead.
   assert.match(world, /celestial = Math\.min\(CELESTIAL, far \* 0\.8\)/);
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');

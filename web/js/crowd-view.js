@@ -110,7 +110,7 @@ export const NPC_PAD = 1;
 // once. See syncImps below.
 export function createCrowdView({
   scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = IMP_LIMIT,
-  range = 0,
+  range = 0, fading = false,
 } = {}) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
   // this is only what makes it look like they mean it). Read off the bundle the region
@@ -137,6 +137,9 @@ export function createCrowdView({
   // planner is looking at the island from above and wants the whole village. The planner
   // says so through setRange, not by having a second switch.
   let far = Math.max(0, range) || Infinity;
+  // Whether the crowd's material is dithering the last fifth of the range (main.js
+  // applyObjectDistances). Only then is there a band for an imp to be kept out of.
+  let dithering = !!fading;
 
   // Is this body past the range? Flat, because a person is judged by how far along the ground
   // they are and not by how high the camera happens to be - otherwise walking up a hill
@@ -163,8 +166,12 @@ export function createCrowdView({
   // the band would stand solid and then vanish at the cut. Handed back to the instanced
   // figure here instead, it fades like everybody else - the same swap pickImps already makes
   // for the guards beyond the nearest `impLimit`.
+  //
+  // Only while the dither is compiled in: with NPC Distance past the fog there is no band, and
+  // swapping the imp for a settler at 0.8 of the range would be a lava imp turning into a
+  // person in plain view.
   const inBand = (f) => {
-    if (far === Infinity || !eye) return false;
+    if (!dithering || far === Infinity || !eye) return false;
     const e = eye();
     const dx = f.pos[0] - e.x, dz = f.pos[1] - e.z;
     const start = far * FADE_START;
@@ -663,7 +670,7 @@ export function createCrowdView({
     // NPC Distance, live. Not remembered per figure: the next draw asks again, so a body that
     // has just come back inside the range is placed on that same frame and a body that has
     // just gone past it is handed back without waiting for the sea to say anything.
-    setRange: (r) => { far = Math.max(0, r) || Infinity; },
+    setRange: (r, fade = dithering) => { far = Math.max(0, r) || Infinity; dithering = !!fade; },
     count: () => figures.size,
     // The bodies themselves, for anything that wants to look: the hover labels, a
     // measurement, a console. Read-only by convention - the sea owns where these are.

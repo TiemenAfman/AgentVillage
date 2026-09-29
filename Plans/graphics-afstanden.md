@@ -89,12 +89,9 @@ blijft staan. Alle gebouwen delen één material, dus opacity kan niet; een per-
 wel, en die kost geen uniform voor de camera: `length(mvPosition.xyz)` ís de afstand tot het oog,
 ook voor de instanced crowd.
 
-**Wat een gebouw verder draagt** (het goud, het erts, een vlag, een vlam, een naambord) heeft
-een eigen material en wist niets van de dither. `followFade` in `buildings.js` laat zo'n
-ingebouwd material meevervagen met de gebouwen (zelfde band, zelfde uniform, eigen cache key
-behouden plus een achtervoegsel) en geeft zijn mesh de depth-tweeling; `sweepFadeDepth` doet
-dat voor elke record. Een `ShaderMaterial` heeft geen chunks om in te splitsen en blijft zoals
-hij is (de rookdeeltjes: een paar pixels).
+**Wat een gebouw verder draagt** (goud, erts, vlag, vlam, naambord) volgde in de eerste ronde de
+dither via `followFade`. Sinds de mist de huizen afhandelt is dat weg (zie "Review"): een huis
+wordt in volle mist geknipt, met al zijn materialen tegelijk.
 
 **De knip op de CPU** is wat de performance oplevert: een record voorbij `r + CULL_PAD` (16)
 krijgt `layers.mask = 0` op al zijn objecten (`keepRecord` in `main.js`). Dat haalt hem uit de
@@ -147,15 +144,13 @@ stil — en dat stilvallen was zelf een zichtbare pop in heldere lucht.
 
 ## Schaduwen vervagen mee
 
-De zon tekent het eiland een tweede keer met three's `MeshDepthMaterial`, die niets van de patch
-weet. Zonder meer liet een weggeditherd huis zijn hele schaduw liggen: met Object Distance onder
-de orbit-afstand was het dorp onder je een veld schaduwen zonder huizen. Daarom heeft elk
-building material een **depth-tweeling** (`mat.userData.fadeDepth`): dezelfde band en hash,
-gemeten tegen `uFadeEye`, de camera in wereldcoördinaten (in die pass is de view die van de
-zon). `adoptFadeDepth` zet hem als `customDepthMaterial` op elke mesh met dat material, eens per
-seconde over de scene zolang er een fade gecompileerd is (`sweepFadeDepth`). Zonder fade is de
-tweeling ongepatcht en precies het material dat three zelf gebruikt (`RGBADepthPacking`;
-`getDepthMaterial` kopieert side, map en clipping ook naar een custom material).
+De zon tekent het eiland een tweede keer met three's `MeshDepthMaterial`, die niets van de dither
+weet: een weggeditherde inwoner liet zijn schaduw liggen. Daarom heeft het material een
+**depth-tweeling** (`mat.userData.fadeDepth`): dezelfde band en hash, gemeten tegen `uFadeEye`, de
+camera in wereldcoördinaten (in die pass is de view die van de zon). Elke mesh van de crowd krijgt
+hem bij het aanmaken (`createFigures`). Zonder fade is de tweeling ongepatcht en precies het
+material dat three zelf gebruikt. Huizen hebben hem niet nodig: die worden in volle mist geknipt,
+en een geknipt record werpt ook geen schaduw meer.
 
 ## De lucht wordt nooit een zwart vlak
 
@@ -199,22 +194,24 @@ weggestippeld is erger dan geen schuifregelaar. `leftPlan()` zet ze terug.
 
 ## Getest
 
-- `tests/fade.test.mjs` — de band, bereik 0 is uit, `fadeNeeded` met het plafond en de hoek van
-  het beeld, `cullNext` (pas knippen na de pad, hysterese binnen de pad), dezelfde constanten in
+- `tests/fade.test.mjs` — de band, bereik 0 is uit, `fadeNeeded` en `fogCeilingOf`, de radiale
+  mist, `cullNext` (pas knippen na de pad, hysterese binnen de pad), dezelfde constanten in
   de GLSL, de hook points in three's `standard` én `depth` shader, en de depth-tweeling.
+- `tests/record-cull.test.mjs` — maskeren en terugzetten met echte three-objecten: kleinkinderen,
+  lichten (op 0, niet uit de lijst), bakens, wat erbij komt terwijl een record weg is, herbouw.
 - `tests/graphics-settings.test.mjs` — opslaan en laden per veld, klemmen, en dat
   `onGraphicsSetting` aan `createUI` hangt en niet aan `createNet`.
 - In een echte browser (headless Chromium, SwiftShader): geen shaderfouten, de vier
   schuifregelaars werken live en overleven een reload, de schaduwdoos volgt Shadow Distance
   beide kanten op, en bewoners voorbij NPC Distance worden niet getekend terwijl hun `f.to`
   blijft staan.
-- **Pop-in, gemeten.** Alleen de gebouwen in beeld op een effen achtergrond, Object Distance 60,
+- **Pop-in, gemeten (eerste ronde, met de dither).** Alleen de gebouwen in beeld op een effen achtergrond, Object Distance 60,
   de camera in stappen van 2 units van het dorp weg, en per frame geteld hoeveel pixels gebouw
   zijn. Met de dither uitgezet springt de dekking bij elke knip (595 → 410, 374 → 210,
   177 → 53). Met de dither loopt ze vloeiend af en is ze al op de achtergrondruis (~50 pixels)
   voordat de eerste record geknipt wordt. De eerste meting liet nog een stap van ~27 pixels
-  zien: het goud op de kuil en het erts in de mijn, met een eigen material. Daarvoor is
-  `followFade` er: elk ander ingebouwd material in een record vervaagt mee.
+  zien: het goud op de kuil en het erts in de mijn, met een eigen material. (Dat was de reden
+  voor `followFade`; sinds de mist de huizen afhandelt is die weg.)
 - **Door de mist (tweede ronde).** Op `?modest` sluit de mist op 550 in plaats van 1035 en komt het
   eiland op ~420 uit de nevel; schuifregelaar, opslag per sleutel en "This machine's defaults"
   werken; geen shaderfouten, en de radiale `fog_vertex` staat erin. De pixelmeting (elk frame met en
@@ -223,6 +220,33 @@ weggestippeld is erger dan geen schuifregelaar. `leftPlan()` zet ze terug.
   stap is volgt hier uit de constructie: bij de knip ligt elk punt van het huis ≥ Object Distance
   ver, de mist is daar `fogFactor = 1`, en dan is de kleur *exact* de mistkleur — dezelfde als van
   het land en de lucht erachter.
+
+## Review (29 september, derde ronde)
+
+Drie achtergrond-workers: een onafhankelijke code review, een deterministische pop-in-meting en
+een meting per soort toestel. Uit de review, gerepareerd:
+
+- **Lichten.** Een gemaskeerd record haalde zijn kampvuur-, smidse-, oven- of vuurtorenlicht uit
+  three's lichtlijst, en het aantal lichten zit in de sleutel van elk belicht programma: elke keer
+  dat zo'n record de grens passeerde hercompileerde elk material in beeld. Een licht wordt nu op 0
+  gezet in plaats van gemaskeerd (`web/js/record-cull.js`, nu een eigen, geteste module).
+- **Mistvrije onderdelen.** De straal van een vuurtoren en de vlam van een kampvuur hebben
+  `fog: false`; "geknipt in volle mist" zegt voor hen niets en ze verdwenen op de grens. Een record
+  met zo'n onderdeel is een baken en wordt nooit geknipt.
+- **De lucht achter een mast.** Volledig mistig is de mistkleur, en die paste bij land en zee maar
+  niet bij de lucht: een mast of kasteel boven de horizon was een mistkleurige vorm tegen iets
+  ander blauw. De koepel is nu langs de horizon exact de mistkleur (`uFog`, bij referentie).
+- **Een sweep die elke seconde de hele scene doorliep**, terwijl de gebouwfade nooit aan kon. Weg,
+  met `followFade`; de crowd krijgt zijn tweeling bij het aanmaken.
+- **Lampjes aan de horizon** (`fog: false`) knipperden tegen de far plane zodra View Distance
+  omlaag ging; ze vervagen nu over het laatste vijfde van 0.9 · `camera.far`.
+- Kleiner: een imp wisselt alleen naar een gewone figuur als de dither echt aan staat; een
+  gastcrowd die tijdens de planner binnenkomt krijgt bereik 0; Shadow Distance begint op 85
+  (daaronder deed de schuif niets); `clampGraphic(true)` weigert.
+
+Niet gedaan, bewust: de zon kan bij View 100 vóór heuvels op 200 hangen (de prijs van een
+mistvrije schijf binnen de far plane); vlaggen van geknipte huizen blijven in de gedeelde
+InstancedMesh staan, bevroren en in volle mist.
 
 ## Open vragen
 

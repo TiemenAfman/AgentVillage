@@ -14,7 +14,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // stub the other tests that reach it use.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 
-const { fadeAmount, fadeNeeded, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
+const { fadeAmount, fadeNeeded, fogCeilingOf, cullNext, CULL_PAD, CULL_HYST, FADE_START, FADE_BAND,
   FADE_VERTEX_BODY, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_BODY, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM,
 } = await import('../web/js/fade.js');
 
@@ -76,6 +76,18 @@ test('the fog is by distance, so a cut in full fog is in full fog at every corne
   assert.ok(FADE_VERTEX_BODY.includes('length(mvPosition.xyz)'));
   // A chunk it does not recognise is left alone and reported.
   assert.equal(useRadialFog({ ShaderChunk: { fog_vertex: 'something else' } }), false);
+});
+
+test('the haze closes at Object Distance at the latest, so no house needs the dither', () => {
+  assert.equal(fogCeilingOf(1330, 2000), 1330);
+  assert.equal(fogCeilingOf(1330, 550), 550);
+  // The planner draws everything, and a range of 0 is off.
+  assert.equal(fogCeilingOf(1330, 550, true), 1330);
+  assert.equal(fogCeilingOf(1330, 0), 1330);
+  // Whatever the two numbers, a house at Object Distance is past where the fog closed.
+  for (const [view, obj] of [[1330, 2000], [1330, 550], [237, 60], [900, 900]]) {
+    assert.equal(fadeNeeded(obj, fogCeilingOf(view, obj)), false, `${view}/${obj}`);
+  }
 });
 
 // ---------------------------------------------------------------- the CPU cut behind it
@@ -202,7 +214,7 @@ test('the patched shader still says what it has to say', async () => {
 
 test('the depth twin fades the shadow with the building, and only while the fade is on', async () => {
   const THREE = await import('three');
-  const { createBuildingMaterial, adoptFadeDepth } = await import('../web/js/buildings.js');
+  const { createBuildingMaterial } = await import('../web/js/buildings.js');
   const mat = createBuildingMaterial();
   const depth = mat.userData.fadeDepth;
   assert.ok(depth && depth.isMeshDepthMaterial, 'no depth twin');
@@ -233,73 +245,11 @@ test('the depth twin fades the shadow with the building, and only while the fade
   assert.equal(on.uniforms[FADE_RANGE_UNIFORM], mat.userData.uniforms[FADE_RANGE_UNIFORM]);
   assert.ok(on.uniforms[FADE_EYE_UNIFORM].value.isVector3);
 
-  // Handed to meshes drawn with the material, and to nothing else.
-  const root = new THREE.Group();
-  const ours = new THREE.Mesh(new THREE.BoxGeometry(), mat);
-  const other = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
-  const claimed = new THREE.Mesh(new THREE.BoxGeometry(), mat);
-  const own = new THREE.MeshDepthMaterial();
-  claimed.customDepthMaterial = own;
-  root.add(ours, other, claimed);
-  adoptFadeDepth(root);
-  assert.equal(ours.customDepthMaterial, depth);
-  assert.equal(other.customDepthMaterial, undefined);
-  assert.equal(claimed.customDepthMaterial, own, 'a depth material somebody chose was replaced');
-});
-
-test("a building's other materials fade with it, and keep the program they had", async () => {
-  const THREE = await import('three');
-  const { createBuildingMaterial, followFade, followFadeUnder } = await import('../web/js/buildings.js');
-  const owner = createBuildingMaterial();
-  const compile = (m, lib) => {
-    const shader = { vertexShader: THREE.ShaderLib[lib].vertexShader, fragmentShader: THREE.ShaderLib[lib].fragmentShader, uniforms: {} };
-    m.onBeforeCompile(shader, null);
-    return shader;
-  };
-  // Two plain materials: before following, three would key both on the default no-op's text.
-  // After, they must still differ from anything with a real onBeforeCompile of its own.
-  const gold = new THREE.MeshPhongMaterial();
-  const flag = new THREE.MeshStandardMaterial();
-  flag.onBeforeCompile = (shader) => { shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\n// flag'); };
-  flag.customProgramCacheKey = () => 'settlers-flag';
-  const plainKey = gold.customProgramCacheKey();
-  assert.equal(followFade(gold, owner), true);
-  assert.equal(followFade(flag, owner), true);
-  assert.equal(followFade(gold, owner), false, 'followed twice');
-  assert.equal(gold.customProgramCacheKey(), plainKey, 'following changed the key while the fade is off');
-  assert.equal(flag.customProgramCacheKey(), 'settlers-flag');
-  assert.doesNotMatch(compile(gold, 'phong').fragmentShader, /discard/);
-
-  const v = gold.version;
-  owner.userData.fade(100, 522);
-  assert.ok(gold.version > v, 'a follower was not told to recompile');
-  assert.equal(gold.customProgramCacheKey(), plainKey + '|fade');
-  assert.equal(flag.customProgramCacheKey(), 'settlers-flag|fade');
-  const g = compile(gold, 'phong');
-  assert.ok(g.vertexShader.includes(FADE_VERTEX_BODY));
-  assert.ok(g.fragmentShader.includes(FADE_FRAGMENT_BODY));
-  assert.equal(g.uniforms[FADE_RANGE_UNIFORM], owner.userData.uniforms[FADE_RANGE_UNIFORM]);
-  // The flag's own splice still happens, before the fade's.
-  const f = compile(flag, 'standard');
-  assert.ok(f.vertexShader.includes('// flag'));
-  assert.ok(f.fragmentShader.includes(FADE_FRAGMENT_BODY));
-  // Basic has no emissive chunk, which is why the followers splice at the clipping planes.
-  const basic = new THREE.MeshBasicMaterial();
-  followFade(basic, owner);
-  assert.ok(compile(basic, 'basic').fragmentShader.includes(FADE_FRAGMENT_BODY));
-
-  // A shader of somebody's own, and a building material, are left alone.
-  const custom = new THREE.ShaderMaterial();
-  assert.equal(followFade(custom, owner), false);
-  assert.equal(followFade(createBuildingMaterial(), owner), false);
-
-  // Under a record: followed, and given the owner's depth twin - except a cut-out.
-  const root = new THREE.Group();
-  const pile = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshPhongMaterial());
-  const leaf = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ alphaTest: 0.5 }));
-  root.add(pile, leaf);
-  followFadeUnder(root, owner);
-  assert.equal(pile.material.userData.fadeOwner, owner);
-  assert.equal(pile.customDepthMaterial, owner.userData.fadeDepth);
-  assert.equal(leaf.customDepthMaterial, undefined);
+  // And the crowd's meshes carry it from the moment they are made.
+  const { createFigures } = await import('../web/js/settler-figures.js');
+  const scene = new THREE.Scene();
+  createFigures(scene, mat);
+  const meshes = scene.children.filter((o) => o.isInstancedMesh);
+  assert.ok(meshes.length > 5, 'the crowd made no meshes');
+  for (const m of meshes) assert.equal(m.customDepthMaterial, depth, 'a crowd mesh without the depth twin');
 });

@@ -67,6 +67,14 @@ export function fadeNeeded(range, fogCap) {
   return range > 0 && range < fogCap;
 }
 
+// The furthest the haze may close (main.js fogCeiling): inside the far plane - `view` is
+// already FOG_CAP of it - and never further out than Object Distance, so a house is always
+// cut in full fog and comes out of it on the way in. The planner draws the whole island.
+export function fogCeilingOf(view, objectDistance, plan = false) {
+  if (plan || !(objectDistance > 0)) return view;
+  return Math.min(view, objectDistance);
+}
+
 // ---------------------------------------------------------------------------------
 // The cut behind the fade
 // ---------------------------------------------------------------------------------
