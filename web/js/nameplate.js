@@ -2,10 +2,25 @@
 // The post and board are flat-shaded wood; the lettering is a canvas texture, because
 // text is the one thing the merged vertex-colour geometry cannot draw.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// The frame and legs are shared across every sign — only the lettered face is per-house.
-const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, flatShading: true, roughness: 0.85 });
-const postMat = new THREE.MeshStandardMaterial({ color: 0x5a3c28, flatShading: true, roughness: 0.85 });
+// The frame - legs, beam and board - is one mesh in one material shared by every sign, its
+// two woods carried as vertex colours; only the lettered face is per-house. It used to be
+// a mesh per piece in two materials, which on a 150-house island was 302 of the 900 calls
+// in the colour pass and 302 of the 715 in the shadow pass, for 5,700 triangles
+// (Plans/sneller-tekenen.md). `new THREE.Color(hex)` is the same linear colour a
+// material's `color` would have been given, so the wood looks exactly as it did.
+const frameMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
+const WOOD = new THREE.Color(0x6b4a2f);
+const POST = new THREE.Color(0x5a3c28);
+function painted(geo, colour, x, y, z) {
+  geo.translate(x, y, z);
+  const n = geo.attributes.position.count;
+  const c = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) colour.toArray(c, i * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return geo;
+}
 
 const BOARD_W = 0.86;
 const BOARD_H = 0.34;
@@ -97,35 +112,31 @@ export function createNameplate(text, {
   const grow = Math.sqrt(width / BOARD_W);
   const span = arch ? arch / 2 : width * s * 0.42;
   const legH = arch ? boardY + height * s + 0.12 : boardY + 0.04;
-  const legs = [];
+  const pieces = [];
   const n = arch ? 2 : posts;
   for (let i = 0; i < n; i++) {
     const r = arch ? 0.045 : 0.022 * grow;
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.25, legH, 6), postMat);
-    leg.position.set(n === 1 ? 0 : (i === 0 ? -1 : 1) * span, legH / 2, 0);
-    leg.castShadow = true;
-    group.add(leg);
-    legs.push(leg);
+    pieces.push(painted(new THREE.CylinderGeometry(r, r * 1.25, legH, 6), POST,
+      n === 1 ? 0 : (i === 0 ? -1 : 1) * span, legH / 2, 0));
   }
   if (arch) {
     // The beam overhangs its posts a little, the way a real one is pegged on top.
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(arch + 0.22, 0.1, 0.13), postMat);
-    beam.position.y = legH + 0.05;
-    beam.castShadow = true;
-    group.add(beam);
+    pieces.push(painted(new THREE.BoxGeometry(arch + 0.22, 0.1, 0.13), POST, 0, legH + 0.05, 0));
   }
 
-
   const bw = width * s, bh = height * s;
-  const board = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.03), woodMat);
-  board.position.y = boardY + bh / 2 - 0.02;
-  board.castShadow = true;
-  group.add(board);
+  const boardAt = boardY + bh / 2 - 0.02;
+  pieces.push(painted(new THREE.BoxGeometry(bw, bh, 0.03), WOOD, 0, boardAt, 0));
+  const frameGeo = mergeGeometries(pieces, false);
+  pieces.forEach((g) => g.dispose());
+  const frame = new THREE.Mesh(frameGeo, frameMat);
+  frame.castShadow = true;
+  group.add(frame);
 
   const tex = draw(text, width, height, canvasW, band);
   const faceMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
   const face = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.94, bh * 0.86), faceMat);
-  face.position.set(0, board.position.y, 0.017);
+  face.position.set(0, boardAt, 0.017);
   group.add(face);
 
   group.scale.setScalar(s < 1 ? 1 : 1);   // reserved: keep API stable
@@ -133,8 +144,7 @@ export function createNameplate(text, {
   return {
     group,
     dispose() {
-      for (const leg of legs) leg.geometry.dispose();
-      board.geometry.dispose();
+      frameGeo.dispose();
       face.geometry.dispose();
       faceMat.dispose();
       tex.dispose();
