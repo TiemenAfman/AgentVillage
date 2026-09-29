@@ -1563,6 +1563,7 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
+| `site/` | promptholm.com, the landing page: static, no build step, light only, published by `.github/workflows/site.yml`; its download buttons use `releases/latest/download/<asset>`, so keep the asset names `release.yml` makes ([Plans/website.md](Plans/website.md)) |
 
 `data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
 window above) - and a checkout's own `data/` is only the backup an island moved out of

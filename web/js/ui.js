@@ -4,8 +4,8 @@ import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey } from './input.js';
 import { ACTIONS, keyOf, keyLabel, bind, resetKeys } from './keybinds.js';
-import { createSysMenu } from './sysmenu.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
+import { createSysMenu } from './sysmenu.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -717,6 +717,18 @@ export function createUI(handlers) {
       + `<div class="chips wrap">${NAMEPLATES
         .map(([k, label]) => `<button class="chip${k === signMode ? ' on' : ''}" data-signs="${k}">${label}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">${esc(chosen ? chosen[2] : 'Asking the island…')}</p>`;
+    // The words on the chips at the top right (namesOn, above): its own heading, after the
+    // timeline, because it is about the bar at the top rather than about the sky.
+    const buttons = '<h3 class="sec">Buttons</h3>'
+      + `<div class="chips wrap"><button class="chip${namesOn ? ' on' : ''}" data-chipnames="1" aria-pressed="${namesOn}">Names on the buttons</button></div>`
+      + `<p class="muted" style="margin-top:9px">${namesOn
+        ? 'On: the buttons at the top right carry their name beside the icon, wherever the window is wide enough for it.'
+        : 'Off: icons only. Hover one for its name and its key.'}</p>`;
+    const timeline = '<h3 class="sec">Timeline</h3>'
+      + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
+      + `<p class="muted" style="margin-top:9px">${timelineOn
+        ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
+        : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`;
     const sky = '<h3 class="sec">From the sky</h3>'
       + `<div class="chips wrap">${YOU_MODES
         .map(([k, label]) => `<button class="chip${k === youMode ? ' on' : ''}" data-youarrow="${k}" aria-pressed="${k === youMode}">${label}</button>`).join('')}</div>`
@@ -725,20 +737,8 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${directorOn
         ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
         : 'Off: the camera stays where you leave it.'}</p>`
-      + '<h3 class="sec">Timeline</h3>'
-      + `<div class="chips wrap"><button class="chip${timelineOn ? ' on' : ''}" data-timeline="1" aria-pressed="${timelineOn}">Timeline</button></div>`
-      + `<p class="muted" style="margin-top:9px">${timelineOn
-        ? 'On: the bar with play, the slider and Live sits at the bottom of the screen.'
-        : 'Off: the island always stays live. The chronicle building still replays its history, with the bar back until you press Live.'}</p>`
-      + '<h3 class="sec">Buttons</h3>'
-      + `<div class="chips wrap"><button class="chip${namesOn ? ' on' : ''}" data-chipnames="1" aria-pressed="${namesOn}">Names on the buttons</button></div>`
-      + `<p class="muted" style="margin-top:9px">${namesOn
-        ? 'On: the buttons at the top right carry their name beside the icon, wherever the window is wide enough for it.'
-        : 'Off: icons only. Hover one for its name and its key.'}</p>`
-      // The four distances and the governor are one subject - how much this screen draws - so
-      // the governor's switch sits under the sliders rather than under a heading of its own.
-      + graphicsSection()
-      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
+      + '<h3 class="sec">Drawing</h3>'
+      + `<div class="chips wrap"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
       + `<p class="muted" style="margin-top:9px">${qualityAuto
         ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
         : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
@@ -747,7 +747,7 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
         : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
-    el('settings-body').innerHTML = `<section data-tab="screen">${sky}</section>`
+    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${graphicsSection()}${timeline}${buttons}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')

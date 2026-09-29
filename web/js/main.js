@@ -1438,6 +1438,14 @@ const WORK_WORDS = {
   carry: 'A settler bringing a bar of gold home', barrow: 'A settler off to fetch gold from the pit',
 };
 const SPECIES_WORDS = { goat: 'the goat', chicken: 'the hen', sparrow: 'the sparrow' };
+// The town's own buildings, for when nothing is happening anywhere: one of them, lightly weighted.
+const SIGHTS = [
+  ['civic:townhall', 'The town hall'], ['civic:tavern', 'The tavern'], ['civic:well', 'The well on the square'],
+  ['civic:goldpit', 'The gold pit'], ['civic:goldmine', 'The gold mine'], ['civic:goldsmith', 'The goldsmith'],
+  ['civic:sawmill', 'The sawmill'], ['civic:shipyard', 'The shipyard'], ['civic:fishery', 'The fisherman\'s hut'],
+  ['civic:windmill', 'The windmill'], ['civic:castle', 'The castle'], ['civic:chapel', 'The chapel'],
+  ['civic:market', 'The market'], ['civic:clocktower', 'The clock tower'], ['civic:lighthouse', 'The lighthouse'],
+];
 state.arrivals = new Map();
 function directorShots() {
   const out = [];
@@ -1478,6 +1486,24 @@ function directorShots() {
   }
   const hut = state.byId.get('civic:fishery');
   if (hut && hut.fisher && fisherAt(hut.fisher)) out.push({ key: 'fisher', weight: 2, dist: CLOSE, label: 'The fisherman at his hut', where: () => lift(fisherAt(hut.fisher)) });
+  // What is always there. Everything above waits on something happening - a session at work,
+  // a yard the island may not have yet, daylight for the fisherman - and a quiet island at night
+  // had none of it, so the camera never left the overview it was meant to bring to life.
+  const walkers = [];
+  if (state.settlers) for (const f of state.settlers.figures().values()) if (f && f.visible && (f.anim === 'walk' || f.anim === 'step')) walkers.push(f);
+  if (walkers.length) {
+    const f = walkers[Math.floor(Math.random() * walkers.length)];
+    out.push({ key: `walk:${f.id}`, weight: 1, dist: CLOSE, label: 'A settler out and about', where: () => (f.visible ? lift(f.pos) : null) });
+  }
+  const sights = [];
+  for (const [id, words] of SIGHTS) {
+    const rec = state.byId.get(id);
+    if (rec && rec.group && rec.group.visible) sights.push([id, words, rec]);
+  }
+  if (sights.length) {
+    const [id, words, rec] = sights[Math.floor(Math.random() * sights.length)];
+    out.push({ key: `sight:${id}`, weight: 0.5, label: words, where: () => (rec.group.visible ? lift([rec.group.position.x, rec.group.position.z], 1) : null) });
+  }
   return out;
 }
 // ?director=5 wanders off after five seconds instead of IDLE_S, to try it without waiting.

@@ -11,6 +11,7 @@
 // exactly the patch it had, to the vertex - this is the sort of change that quietly costs
 // every existing island a frame. And that two islands cost a rectangle rather than a square,
 // which is the whole reason the second one is affordable.
+// Which part of that span is drawn dense is waterPatchPlan's, held in water-patch.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';

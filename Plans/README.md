@@ -31,6 +31,14 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
   getekend wordt aaneengesloten vooraan in elke batch (swap bij een wissel), met rokken en haar in
   eigen batches: geparkeerd is 0, en op NPC 50 scheelt het 37% van de kleurpas.
+- 🚧 [website.md](website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
+  nieuwe screenshots uit de game en downloadknoppen die altijd naar de nieuwste release wijzen.
+  Gebouwd op 29 september 2026; nog niet online (Pages en DNS aanzetten).
+- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
+  (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
+  mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
+  een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
+  genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
 - ✅ [sneller-tekenen.md](sneller-tekenen.md) — een AI-reviewplan naast de code gelegd: het meeste
   bestond al of brak een regel. Wel gedaan: `?stats` telt de schaduwpas, een kwaliteitsregelaar
   die zonder shader-recompile lichter tekent onder ~28 fps, vier geheugenlekken bij het ophalen van
@@ -40,11 +48,6 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   groepen met iconen, en een Esc-menu dat de instellingen ís: vier tabbladen, waarvan alleen
   *Island* van de keeper is (de rest stond achter de keeper-knop en was van de browser).
   Wacht op Tiemens oordeel.
-- ✅ [tenten-vertrekken.md](tenten-vertrekken.md) — een inwoner met alleen een tent die een week
-  (`tentGraceMs`) niets gevraagd is, pakt zijn tent in en vertrekt; het aantal settlers slinkt
-  mee. De ladder telt voortaan het meeste dat het dorp ooit tegelijk had (`layout.ladder`), dus
-  een gehaalde mijlpaal blijft staan en de volgende duurt langer. Huizen blijven altijd staan;
-  genodigden, kadehuizen, hotels en wie een eigen wijkje kreeg ook. Gebouwd op 28 september 2026.
 - 🚧 [mijlpalen-tot-tweehonderd.md](mijlpalen-tot-tweehonderd.md) — de ladder op dezelfde kromme
   door tot 200 (afstand ≈ 2 + n/25; 0–100 lag er al op, erboven gaapte een gat van 50): elf
   nieuwe treden bij de haven, op het water en buiten het dorp, want het centrum is vol. De werf
