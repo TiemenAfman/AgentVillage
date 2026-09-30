@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // can ask how tall somebody is from Node, without dragging three.js along.
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
-import { Color, Matrix4, MeshBasicMaterial, Vector3 } from 'three';
+import { Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial, Vector3 } from 'three';
 // Imported dynamically, and it has to be: a static import is hoisted above the register()
 // call and would resolve 'shared/…' before the loader that knows what that means exists.
 // classic-avatar.js now reaches web/js/buildings.js for the held-item primitives, which
@@ -17,6 +17,8 @@ const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
 
+// The refined hero reserves 24k triangles including every optional armour piece.
+// Smooth normals retain curved surfaces without the concept's render subdivisions.
 test('every Blender hat fits walking clearance and produces one complete material mesh', () => {
   for (const { id } of HAT_SHAPES) {
     const g = avatarPlayerGeometry({ ...DEFAULT_AVATAR, hatShape: id });
@@ -24,7 +26,7 @@ test('every Blender hat fits walking clearance and produces one complete materia
     assert.equal(g.boundingBox.min.y, 0, id);
     assert.ok(g.boundingBox.max.y <= .55, id);
     assert.ok(PLAYER_EYE < g.boundingBox.max.y, id);
-    assert.ok(g.attributes.position.count / 3 < 3000, id);
+    assert.ok(g.attributes.position.count / 3 < 24000, id);
     for (const name of ['normal', 'color', 'aEmissive', 'aSheet']) {
       assert.equal(g.attributes[name].count, g.attributes.position.count, `${id}: ${name}`);
       assert.ok(g.attributes[name].array.every(Number.isFinite), `${id}: ${name}`);
@@ -380,4 +382,40 @@ test('a relay keeps both glasses out of the face', () => {
   rig.dispose();
   whole.dispose();
   material.dispose();
+});
+
+test('the refined head preserves smooth Blender corner normals', () => {
+  const head = avatarPlayerComponentGeometry(DEFAULT_AVATAR, ['Head']);
+  const normals = head.attributes.normal;
+  let smoothTriangles = 0;
+  for (let i = 0; i < normals.count; i += 3) {
+    const a = new Vector3().fromBufferAttribute(normals, i);
+    const b = new Vector3().fromBufferAttribute(normals, i + 1);
+    if (a.distanceTo(b) > .01) smoothTriangles++;
+  }
+  assert.ok(smoothTriangles > normals.count / 6, 'normals were flattened after export or merge');
+  head.dispose();
+});
+
+test('the hero uses smooth shading without changing the shared island material', () => {
+  const source = new MeshStandardMaterial({ vertexColors: true, flatShading: true });
+  source.userData.uniforms = { uNight: { value: .7 } };
+  source.onBeforeCompile = (shader) => { shader.uniforms.uNight = source.userData.uniforms.uNight; };
+  const rig = createClassicAvatar(DEFAULT_AVATAR, source);
+  const used = new Set();
+  rig.object.traverse((o) => { if (o.isMesh) used.add(o.material); });
+  assert.equal(used.size, 1);
+  const smooth = [...used][0];
+  assert.notEqual(smooth, source);
+  assert.equal(smooth.flatShading, false);
+  assert.equal(source.flatShading, true);
+  const shader = { uniforms: {} }; smooth.onBeforeCompile(shader);
+  assert.equal(shader.uniforms.uNight, source.userData.uniforms.uNight);
+  let smoothDisposed = false, sourceDisposed = false;
+  smooth.addEventListener('dispose', () => { smoothDisposed = true; });
+  source.addEventListener('dispose', () => { sourceDisposed = true; });
+  rig.dispose();
+  assert.ok(smoothDisposed);
+  assert.equal(sourceDisposed, false);
+  source.dispose();
 });

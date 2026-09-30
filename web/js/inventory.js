@@ -18,13 +18,9 @@ const DYEABLE = ['skin', 'tunic', 'trim', 'hat'];
 export const hatParts = (shape) => SETTLER_PARTS.filter((p) => p.variant === shape).map((p) => p.name);
 // What the head slot shows with nothing on it: the head itself, so "bare-headed" reads as a
 // choice made rather than a slot nobody has filled.
-const HEAD_PARTS = [
-  'Head', 'Hair cap', 'Face', 'Left ear', 'Right ear', 'Round nose', 'Left eye', 'Right eye',
-  'Left eyebrow', 'Right eyebrow', 'Left sideburn', 'Right sideburn', 'Smile left', 'Smile right',
-];
-// The garment that is always worn, belt included: the tunic slot is the one slot with a
-// colour and no on/off, because there is no taking it off.
-const TUNIC_PARTS = ['Full tunic', 'Tunic hem', 'Belt', 'Belt buckle'];
+const HEAD_PARTS = SETTLER_PARTS.filter((p) => p.group === 'head' && p.variant === 'body').map((p) => p.name);
+// The selected traveller's whole outfit: linen shirt, fitted vest, belt and pouch.
+const TUNIC_PARTS = SETTLER_PARTS.filter((p) => p.group === 'outfit' || (p.group?.endsWith('Arm') && p.slot !== 'skin')).map((p) => p.name);
 export const NO_ITEM = { id: '', name: 'Empty' };   // short: a tile's label is one line wide
 
 // A held item lies diagonal in its slot the way an RPG icon does, rather than standing on
@@ -41,11 +37,11 @@ export const INVENTORY_SLOTS = [
   { id: 'head', side: 'left', label: 'Head', kind: 'pick', field: 'hatShape', options: PLAYER_HAT_SHAPES, dye: 'hat' },
   { id: 'chest', side: 'left', label: 'Chest', kind: 'toggle', equip: 'chestplate', parts: PIECE_PARTS.chestplate },
   { id: 'legs', side: 'left', label: 'Legs', kind: 'toggle', equip: 'leggings', parts: PIECE_PARTS.leggings },
-  { id: 'lefthand', side: 'left', label: 'Left hand', kind: 'pick', equip: 'leftHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Left hand'] },
+  { id: 'lefthand', side: 'left', label: 'Left hand', kind: 'pick', equip: 'leftHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Left hand', 'Left thumb'] },
   { id: 'back', side: 'right', label: 'Back', kind: 'toggle', equip: 'backpack', parts: PIECE_PARTS.backpack },
-  { id: 'tunic', side: 'right', label: 'Tunic', kind: 'dye', dye: 'tunic', parts: TUNIC_PARTS },
+  { id: 'tunic', side: 'right', label: 'Outfit', kind: 'dye', dye: 'tunic', parts: TUNIC_PARTS },
   { id: 'feet', side: 'right', label: 'Feet', kind: 'toggle', equip: 'boots', parts: PIECE_PARTS.boots },
-  { id: 'righthand', side: 'right', label: 'Right hand', kind: 'pick', equip: 'rightHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Right hand'] },
+  { id: 'righthand', side: 'right', label: 'Right hand', kind: 'pick', equip: 'rightHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Right hand', 'Right thumb'] },
 ];
 // The two flasks at the foot of the alcove, where an RPG keeps its potions: the dyes that
 // belong to no piece you can take off. First is drawn bottom-left, second bottom-right.

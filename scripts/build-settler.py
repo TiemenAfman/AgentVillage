@@ -41,8 +41,8 @@ def finish(name, slot):
     parts.append(obj)
     return obj
 
-def ball(name, pos, scale, slot, segments=10, rings=6):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=1, location=xyz(pos))
+def ball(name, pos, scale, slot, segments=20, rings=12):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=max(16, segments), ring_count=max(10, rings), radius=1, location=xyz(pos))
     obj = finish(name, slot)
     obj.scale = (scale[0], scale[2], scale[1])
     return obj
@@ -55,11 +55,11 @@ def box(name, pos, size, slot, bevel=.005):
     if bevel:
         mod = obj.modifiers.new('Soft worn edges', 'BEVEL')
         mod.width = bevel
-        mod.segments = 1
+        mod.segments = 3
         bpy.ops.object.modifier_apply(modifier=mod.name)
     return obj
 
-def rod(name, start, end, radius, slot, top=None, vertices=8):
+def rod(name, start, end, radius, slot, top=None, vertices=16):
     a, b = Vector(xyz(start)), Vector(xyz(end))
     bpy.ops.mesh.primitive_cone_add(vertices=vertices, radius1=radius,
         radius2=radius if top is None else top, depth=(b-a).length, location=(a+b)/2)
@@ -67,45 +67,51 @@ def rod(name, start, end, radius, slot, top=None, vertices=8):
     obj.rotation_euler = (b-a).to_track_quat('Z', 'Y').to_euler()
     return obj
 
-# Large shoes, short legs, a pear-shaped tunic and separate rounded sleeves.
-for sign, side in [(-1, 'Left'), (1, 'Right')]:
-    x = sign * .052
-    box(side+' boot', (x,.028,.023), (.083,.056,.125), 'trim', .012)
-    rod(side+' trousers', (x,.044,0), (x,.143,0), .030, 'trim')
-    rod(side+' stocking cuff', (x,.080,0), (x,.098,0), .032, 'tunic')
-    ball(side+' sleeve', (sign*.106,.245,0), (.046,.057,.049), 'tunic')
-    rod(side+' cuff', (sign*.124,.205,.010), (sign*.128,.223,.008), .030, 'trim')
-    ball(side+' hand', (sign*.131,.190,.018), (.028,.034,.031), 'skin', 8)
-ball('Full tunic', (0,.204,0), (.107,.111,.075), 'tunic', 12, 8)
-rod('Tunic hem', (0,.117,0), (0,.137,0), .097, 'trim', .099, 12).scale.y = .72
-rod('Belt', (0,.174,0), (0,.194,0), .108, 'trim', .108, 12).scale.y = .72
-box('Belt buckle', (0,.185,.080), (.025,.023,.009), 'brass', .003)
-rod('Neck', (0,.281,0), (0,.319,0), .031, 'skin')
-ball('Head', (0,.363,.008), (.083,.085,.074), 'skin', 12, 8)
-ball('Hair cap', (0,.392,-.003), (.085,.059,.073), 'hair', 12, 6)
-# Forehead and face sit in front of the hair silhouette.
-ball('Face', (0,.360,.036), (.072,.065,.055), 'skin', 12, 8)
-for sign, side in [(-1,'Left'), (1,'Right')]:
-    ball(side+' ear', (sign*.080,.359,.010), (.018,.026,.019), 'skin', 8)
-    ball(side+' eye', (sign*.029,.383,.085), (.007,.009,.0045), 'dark', 8, 4)
-    rod(side+' eyebrow', (sign*.018,.399,.080), (sign*.040,.399,.076), .004, 'hair', vertices=5)
-    ball(side+' sideburn', (sign*.070,.375,.040), (.012,.026,.019), 'hair', 8, 4)
-ball('Round nose', (0,.363,.093), (.018,.019,.021), 'skin', 8)
-rod('Smile left', (-.018,.340,.082), (0,.336,.087), .0025, 'hair', vertices=5)
-rod('Smile right', (0,.336,.087), (.018,.340,.082), .0025, 'hair', vertices=5)
-# Two shoulder straps, a flap backpack, rolled blanket and a small work hammer.
+# Concept 3 is the production traveller; equipment still uses the established names.
+import importlib.util
+import sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location('traveller_concepts', ROOT / 'scripts/build-settler-concepts.py')
+concept = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(concept)
+concept.PRODUCTION = True
+collection, character_root = concept.character(2)
+character_root.rotation_euler.z = 0
+SCALE = .94
+# Keep the old walking clearance; the concept's taller legs are proportional within it.
+character_root.scale = (SCALE, SCALE, SCALE)
+slot_map = {'shirt':'tunic', 'leather':'trim', 'eye':'dark', 'metal':'brass'}
+head_names = {'Neck','Head','Hair back','Nose bridge','Nose tip','Quiet smile'}
+pack_names = ('Backpack','Shoulder strap','Strap adjuster','Pack buckle strap','Rolled blanket','Blanket tie','Blanket roll spiral')
+hat_names = {'Soft straw brim','Rounded straw crown','Hat ribbon'}
+for obj in list(collection.objects):
+    if obj.type not in {'MESH', 'CURVE'}: continue
+    name = obj.name
+    if name in hat_names:
+        bpy.data.objects.remove(obj, do_unlink=True)
+        continue
+    slot = obj.get('avatar_slot', obj.data.materials[0].name.split('.')[0])
+    obj['avatar_slot'] = slot_map.get(slot, slot)
+    obj['avatar_variant'] = 'body'
+    group = 'outfit'
+    if name in hat_names:
+        obj['avatar_variant'] = 'wide'; group = 'head'
+    elif name in head_names or any(name.startswith(side+' '+part) for side in ['Left','Right'] for part in ['ear','eye','brow','side lock']):
+        group = 'head'
+    elif name.startswith(pack_names):
+        obj['avatar_variant'] = 'gear'; group = 'backpack'
+    elif name.startswith(('Left ', 'Right ')):
+        side = 'left' if name.startswith('Left ') else 'right'
+        group = side + ('Arm' if any(word in name for word in ['sleeve','cuff','hand','thumb']) else 'Leg')
+    obj['avatar_group'] = group
+    # Freeze modifiers and curves in the source: export and renders read the same mesh.
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True); bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.convert(target='MESH')
+    obj = bpy.context.object
+    parts.append(obj)
 variant = 'gear'
-for sign in [-1,1]:
-    rod('Shoulder strap', (sign*.056,.183,.064), (sign*.060,.293,.034), .010, 'trim', vertices=4)
-    rod('Strap over shoulder', (sign*.060,.293,.034), (sign*.060,.280,-.098), .010, 'trim', vertices=4)
-box('Canvas backpack', (0,.218,-.105), (.158,.150,.075), 'pack', .017)
-box('Backpack flap', (0,.268,-.147), (.165,.049,.014), 'trim', .008)
-box('Pack clasp', (0,.235,-.150), (.019,.023,.007), 'brass', .002)
-rod('Bedroll', (-.095,.315,-.096), (.095,.315,-.096), .036, 'blanket', vertices=10)
-for x in [-.060,.060]:
-    rod('Bedroll tie', (x-.006,.315,-.096), (x+.006,.315,-.096), .037, 'trim', vertices=10)
-rod('Hammer handle', (.118,.126,-.073), (.118,.266,-.073), .010, 'pack')
-box('Hammer head', (.118,.269,-.073), (.066,.030,.035), 'steel', .004)
+gear_start = len(parts)
 
 # Steel-and-brass armour (Plans/uitrusting-en-vasthouden.md): a second attempt at held/worn
 # gear after two rounds of code-primitive shapes (flat boxes, then sharper cone-built ones)
@@ -153,8 +159,15 @@ variant = 'gear'
 
 # The breastplate sits on 'Full tunic's own centre, slightly larger so it reads as worn
 # over the tunic rather than replacing it.
-ball('Chestplate body', (0,.204,.006), (.116,.102,.083), 'steel', 8, 6)
-rod('Chestplate trim', (0,.196,0), (0,.212,0), .114, 'brass', .114, 10)
+# A fitted cuirass follows the shirt instead of cutting through its lower hem.
+concept.M['steel'] = materials['steel']
+concept.M['brass'] = materials['brass']
+for name, slot, profile in [
+    ('Chestplate body', 'steel', [(.178,.078,.059),(.181,.084,.063),(.219,.084,.065),(.251,.080,.068),(.274,.069,.059),(.283,.053,.049)]),
+    ('Chestplate trim', 'brass', [(.176,.079,.060),(.178,.085,.064),(.184,.085,.064),(.186,.083,.063)])]:
+    obj = concept.rings(name, profile, slot)
+    obj['avatar_slot'] = slot; obj['avatar_variant'] = 'gear'
+    parts.append(obj)
 for sign, side in [(-1,'Left'), (1,'Right')]:
     ball(side+' chestplate pauldron', (sign*.108,.258,0), (.052,.040,.053), 'steel', 6, 5)
 
@@ -167,39 +180,53 @@ for sign, side in [(-1,'Left'), (1,'Right')]:
     box(side+' sabaton', (x,.030,.025), (.090,.060,.135), 'steel', .010)
     box(side+' sabaton trim', (x,.050,.080), (.070,.012,.020), 'brass', 0)
 
-for variant in ['wide','band','cap','sailor','dome','wizard','helmet']:
-    if variant == 'wide':
-        rod('Straw brim', (0,.426,0), (0,.439,0), .127, 'hat', vertices=12)
-        rod('Straw crown', (0,.437,0), (0,.482,0), .074, 'hat', .057, 10)
-        rod('Hat ribbon', (0,.440,0), (0,.450,0), .075, 'trim', .071, 10)
-    elif variant == 'band':
-        rod('Head band', (0,.410,0), (0,.429,0), .083, 'hat', vertices=12)
-    elif variant in ['cap','sailor']:
-        rod('Cap crown', (0,.422,0), (0,.463,0), .079, 'hat', .094 if variant == 'cap' else .087, 10)
-        box('Cap visor', (0,.428,.078), (.119,.013,.064), 'hat', .006)
-        rod('Cap band', (0,.420,0), (0,.432,0), .080, 'trim', vertices=10)
-    elif variant == 'dome':
-        ball('Wool cap', (0,.422,0), (.087,.052,.080), 'hat', 10, 6)
-        rod('Wool rim', (0,.419,0), (0,.435,0), .088, 'hat', vertices=10)
-    elif variant == 'wizard':
-        rod('Pointed brim', (0,.425,0), (0,.437,0), .109, 'hat', vertices=10)
-        rod('Pointed crown', (0,.435,0), (.021,.488,-.007), .078, 'hat', .005, 8)
-    else:
-        # A helmet replaces a hat rather than sitting beside one - same hatShape slot, one
-        # at a time - so it is built the same way the other six are and picked up by the
-        # exact same variant match in avatar.js's buildFigure(). 'Wool cap's own dome is the
-        # reference for size and clearance; only the material and the guard are new.
-        ball('Helmet dome', (0,.422,0), (.087,.058,.083), 'steel', 8, 5)
-        rod('Helmet rim', (0,.416,0), (0,.432,0), .090, 'brass', vertices=10)
-        box('Helmet nose guard', (0,.395,.082), (.012,.050,.014), 'steel', 0)
+# Fit the retained armour and hat choices to the new body. Bake transforms before export.
+for obj in parts[gear_start:]:
+    name = obj.name
+    obj['avatar_group'] = 'equipment'
+    if obj['avatar_variant'] not in ['gear','held']:
+        obj.scale.x *= .84; obj.scale.y *= .84
+        obj.location.z = .372 + (obj.location.z-.363)*.94
+        obj.scale.z *= .94
+        obj['avatar_group'] = 'head'
+    elif name.startswith(('Sword','Shield','Torch')):
+        obj.location += Vector((.120*.91*SCALE-.131, -(.012*SCALE-.018), .195*SCALE-.190))
+    elif 'chestplate pauldron' in name:
+        obj.location.z += .006
+        obj.location.x *= .80
+        obj.scale.x *= .81; obj.scale.y *= .87
+    elif 'legging' in name or 'knee cop' in name:
+        obj.location.x *= .82; obj.location.z *= 1.15
+        obj.scale.x *= .87; obj.scale.y *= .87; obj.scale.z *= 1.15
+    elif 'sabaton' in name:
+        obj.location.x *= .82
+        obj.scale.x *= .91; obj.scale.y *= .91
+    for face in obj.data.polygons:
+        face.use_smooth = not name.startswith(('Sword','Shield'))
+    if name.startswith('Chestplate'):
+        continue  # tailored rings already have their subdivision surface
+    bpy.context.view_layer.objects.active = obj
+    bevel = obj.modifiers.new('Equipment soft edge','BEVEL'); bevel.width=.001; bevel.segments=2
+    bpy.ops.object.modifier_apply(modifier=bevel.name)
+# Every headwear choice is authored directly to the refined head's dimensions.
+hat_spec = importlib.util.spec_from_file_location('traveller_hats', ROOT / 'scripts/build-settler-hats.py')
+hats = importlib.util.module_from_spec(hat_spec)
+hat_spec.loader.exec_module(hats)
+parts.extend(hats.build_hats(materials))
+
+bpy.context.scene['avatar_rig'] = json.dumps(dict(
+    leftLeg=[-.047*.91*SCALE,.156*SCALE,0], rightLeg=[.047*.91*SCALE,.156*SCALE,0],
+    leftArm=[-.080*.91*SCALE,.285*SCALE,0], rightArm=[.080*.91*SCALE,.285*SCALE,0],
+    head=[0,.3,0], grip=[.120*.91*SCALE,.195*SCALE,.012*SCALE]))
+bpy.context.scene['avatar_smooth_normals'] = True
 
 # Export the same colour-slot data when building or later editing the .blend.
 import runpy
-bpy.context.scene['avatar_eye_y'] = .383
+bpy.context.scene['avatar_eye_y'] = (.390+.013)*SCALE
 runpy.run_path(str(ROOT / 'scripts/export-settler.py'))
 
 for obj in parts:
-    obj.hide_render = obj['avatar_variant'] not in ['body','gear','wide']
+    obj.hide_render = obj['avatar_variant'] not in ['body','wide'] and obj.get('avatar_group') != 'backpack'
     obj.hide_set(obj.hide_render)
 
 # A reusable studio in the .blend, with a full-body three-quarter preview.

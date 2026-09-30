@@ -13,7 +13,7 @@ import { keyOf } from './keybinds.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 // What a slot's dye button says it paints; the two flasks carry their own labels.
-const DYE_LABEL = { hat: 'Hat colour', tunic: 'Tunic colour' };
+const DYE_LABEL = { hat: 'Hat colour', tunic: 'Shirt colour' };
 
 export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const el = document.createElement('div');
@@ -245,7 +245,7 @@ function light(scene) {
   key.position.set(1.4, 2.4, 1.9);
   scene.add(key);
 }
-const figureMaterial = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0 });
+const figureMaterial = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: false, roughness: 0.85, metalness: 0 });
 
 // renderer.dispose() alone leaves the GL context alive until its canvas is collected, and the
 // browser caps live contexts (Chrome at sixteen, oldest evicted first - which, after enough

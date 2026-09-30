@@ -1,10 +1,19 @@
 # Promptholm settler
 
-An original low-poly village worker inspired by the proportions of classic settlement
-games: short legs, broad sleeves, large boots, an expressive face, a leather backpack,
-bedroll and hammer. Created in Blender 5.2; no game assets or textures are used.
+The player uses the selected **Ambachtelijk karakter** study (concept 3): a smooth
+traveller with a fitted sage waistcoat, linen shirt, belt pouch, leather backpack and
+rolled blanket. Created in Blender 5.2 from the modelling helpers in
+`scripts/build-settler-concepts.py`; `scripts/build-settler.py` builds the compact runtime
+version and fitted equipment. No external character assets are used.
 
-- `promptholm-settler.blend`: editable named parts, six hidden/visible hat variants,
+The default traveller uses 17,124 triangles, including the hat and backpack. The
+geometry test caps the merged model, including optional armour, at 24,000 triangles.
+Blender corner normals survive export, so the island, inventory preview and item icons
+show the same soft surfaces. Clothing and leather still use the existing saved dyes;
+the waistcoat keeps its sage colour. The inventory's Outfit slot includes shirt sleeves,
+vest, belt and pouch. Equipment toggles and all eight headwear choices remain available.
+
+- `promptholm-settler.blend`: editable named parts, seven hidden/visible hat variants,
   materials, lighting and preview camera. Bare-headed uses no hat mesh.
 - `settler-preview.png`: Blender studio render of the default wardrobe.
 - `../../web/js/settler-mesh.js`: generated geometry used directly by the app.
@@ -26,10 +35,11 @@ is +Z, and scale remains 1.12. Eye height is exported from the Blender scene's
 
 ## Edit in Blender
 
-Open the blend file, edit its named meshes and save. Keep the `avatar_slot` and
-`avatar_variant` custom properties on each exported object. Hidden hat variants are
+Open the blend file, edit its named meshes and save. Keep the `avatar_slot`, `avatar_variant` and `avatar_group` custom properties on each exported object. Hidden hat variants are
 exported too; the floor, lights and camera are excluded. Blender uses Z up, with the
-character facing -Y. Update `avatar_eye_y` if you move the eyes vertically.
+character facing -Y. Update `avatar_eye_y` if you move the eyes vertically. The scene property
+`avatar_rig` stores arm, leg, neck and hand anchors in game coordinates.
+`avatar_smooth_normals` enables corner-normal export. Keep it enabled for the player.
 
 From the project root, export the saved edits in PowerShell:
 
@@ -86,5 +96,5 @@ and `avatar_slot` on edited meshes. The head and facial details pivot around gam
 Y=0.350; hands and neck follow the body. Hat, shirt, workwear and skin colours are
 replaced by each resident's wardrobe at runtime, while facial detail colours are baked.
 
-To regenerate the original residents from the saved player blend (replaces manual
-resident edits), run Blender with `--background --python scripts/build-villagers.py`.
+To regenerate the original residents from their own resident blend (replaces manual
+clothing edits, preserves the resident faces), run Blender with `--background --python scripts/build-villagers.py`.

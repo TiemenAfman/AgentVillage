@@ -1241,6 +1241,15 @@ loopback socket, a known `Host` and a matching `Origin`, and never reads
 `X-Forwarded-For`. The ceiling is `PROMPTHOLM_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
+**The player and inventory use the selected smooth traveller (concept 3).**
+`scripts/build-settler.py` reuses the concept helpers, fits equipment and stores rig
+anchors and body groups in the Blender source. `export-settler.py` preserves corner
+normals when `avatar_smooth_normals` is enabled; do not recompute them after merging.
+`classic-avatar.js` gives the hero a smooth material while sharing the island's live
+shader uniforms. The Outfit thumbnail includes the shirt, vest, belt and pouch.
+Resident rebuilds preserve faces from their own blend rather than copying the player.
+See [Plans/DONE/ambachtelijke-reiziger.md](Plans/DONE/ambachtelijke-reiziger.md).
+
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
 evicting the oldest, which after enough visits to a panel is the island's own. The inventory
