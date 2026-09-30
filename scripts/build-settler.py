@@ -7,7 +7,7 @@ import bpy
 import json
 import math
 from pathlib import Path
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'assets' / 'settler'
@@ -214,15 +214,37 @@ hats = importlib.util.module_from_spec(hat_spec)
 hat_spec.loader.exec_module(hats)
 parts.extend(hats.build_hats(materials))
 
-bpy.context.scene['avatar_rig'] = json.dumps(dict(
+rig = dict(
     leftLeg=[-.047*.91*SCALE,.156*SCALE,0], rightLeg=[.047*.91*SCALE,.156*SCALE,0],
     leftArm=[-.080*.91*SCALE,.285*SCALE,0], rightArm=[.080*.91*SCALE,.285*SCALE,0],
-    head=[0,.3,0], grip=[.120*.91*SCALE,.195*SCALE,.012*SCALE]))
+    head=[0,.3,0], grip=[.120*.91*SCALE,.195*SCALE,.012*SCALE])
+# Slightly smaller headwear and boots give the chosen traveller an athletic silhouette.
+bpy.context.view_layer.update()
+head_centre = Vector((0, 0, .390*SCALE))
+for obj in parts:
+    if obj.name == 'Tailored linen tunic':
+        inverse = obj.matrix_world.inverted()
+        for vertex in obj.data.vertices:
+            point = obj.matrix_world @ vertex.co
+            if point.z < .183: point.z += .039 * max(0, min(1, (.183-point.z)/.052))
+            vertex.co = inverse @ point
+    if obj.get('avatar_group') == 'head' and obj.name != 'Neck':
+        obj.matrix_world = Matrix.Translation(head_centre) @ Matrix.Scale(.92, 4) @ Matrix.Translation(-head_centre) @ obj.matrix_world
+    elif any(word in obj.name for word in ['boot', 'sole', 'toe seam', 'sabaton']):
+        centre = Vector((obj.matrix_world.translation.x,0,0))
+        obj.matrix_world = Matrix.Translation(centre) @ Matrix.Diagonal((.90,.86,.92,1)) @ Matrix.Translation(-centre) @ obj.matrix_world
+bpy.context.view_layer.update()
+rig_spec = importlib.util.spec_from_file_location('traveller_rig', ROOT / 'scripts/rig-settler.py')
+rig_module = importlib.util.module_from_spec(rig_spec)
+rig_spec.loader.exec_module(rig_module)
+joints = rig_module.bind_traveller(parts, rig)
+bpy.context.scene['avatar_rig'] = json.dumps(rig)
+bpy.context.scene['avatar_joints'] = json.dumps(joints)
 bpy.context.scene['avatar_smooth_normals'] = True
 
 # Export the same colour-slot data when building or later editing the .blend.
 import runpy
-bpy.context.scene['avatar_eye_y'] = (.390+.013)*SCALE
+bpy.context.scene['avatar_eye_y'] = (.390+.013*.92)*SCALE
 runpy.run_path(str(ROOT / 'scripts/export-settler.py'))
 
 for obj in parts:

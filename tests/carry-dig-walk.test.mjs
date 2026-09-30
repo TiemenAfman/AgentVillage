@@ -23,6 +23,7 @@ const handlers = { keydown: [], keyup: [] };
 globalThis.addEventListener = (type, fn) => { if (handlers[type]) handlers[type].push(fn); };
 globalThis.removeEventListener = noop;
 const { createWalkMode } = await import('../web/js/walk.js');
+const { WALK_SPEED } = await import('../web/js/avatar-gait.js');
 const { createBoat, cargoMesh, registerCargo, DECK_Y } = await import('../web/js/boat.js');
 
 const FRAME = 1 / 60;
@@ -108,7 +109,8 @@ test('a carrier walks at 0.55 of a walk, and Shift buys no run', () => {
   const walking = metres(false, false);
   const carrying = metres(true, false);
   const sprinting = metres(true, true);
-  assert.ok(walking > 3, `walks only ${walking}`);
+  // A second of walking; the speed itself is avatar-gait's (it went from 3.4 to 0.65 a second).
+  assert.ok(walking > 0.8 * WALK_SPEED, `walks only ${walking}`);
   assert.ok(Math.abs(carrying / walking - 0.55) < 0.02, `carries at ${(carrying / walking).toFixed(3)} of a walk`);
   assert.ok(Math.abs(sprinting - carrying) < 1e-6, `Shift made a carrier faster: ${sprinting} against ${carrying}`);
 });

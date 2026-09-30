@@ -5,6 +5,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
+- ✅ [verfijnde-hoedjes.md](DONE/verfijnde-hoedjes.md) — zeven opnieuw gemodelleerde hoofddeksels.
+
 - ✅ [ambachtelijke-reiziger.md](DONE/ambachtelijke-reiziger.md) — concept 3 in het spel en de inventory, met gladde vormen en passende uitrusting.
 
 - ✅ [hoofdpersoon-varianten.md](DONE/hoofdpersoon-varianten.md) — drie verfijnde Blender-concepten met renders ter vergelijking.
@@ -31,6 +34,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 *Later* of *Open vragen* is geen onaf werk. Elk plan draagt dezelfde markering bovenaan.
 
 ### Open
+
 
 - 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
   wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als

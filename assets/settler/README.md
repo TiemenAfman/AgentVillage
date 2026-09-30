@@ -6,8 +6,8 @@ rolled blanket. Created in Blender 5.2 from the modelling helpers in
 `scripts/build-settler-concepts.py`; `scripts/build-settler.py` builds the compact runtime
 version and fitted equipment. No external character assets are used.
 
-The default traveller uses 17,124 triangles, including the hat and backpack. The
-geometry test caps the merged model, including optional armour, at 24,000 triangles.
+The geometry test caps the assembled model, including optional armour and any
+one of the seven refined hats, at 24,000 triangles.
 Blender corner normals survive export, so the island, inventory preview and item icons
 show the same soft surfaces. Clothing and leather still use the existing saved dyes;
 the waistcoat keeps its sage colour. The inventory's Outfit slot includes shirt sleeves,
@@ -21,8 +21,13 @@ vest, belt and pouch. Equipment toggles and all eight headwear choices remain av
 The studio preview remains a vertex-coloured model with `aEmissive = 0` and
 `aSheet = 0`, compatible with the island material. In walk mode the same named Blender
 parts are split into a core, four limb groups and a backpack group by `classic-avatar.js`.
-This lightweight procedural rig adds idle, walk, sprint, jump, crouch and sit poses without
-changing the source mesh, wardrobe colours or saved avatar format. It is the only character
+The Blender source now includes three bones per limb and skin weights, built by
+`scripts/rig-settler.py`. Knees, ankles, elbows and wrists deform the clothing; shoe soles
+remain rigid. `avatar-gait.js` places feet with two-bone inverse kinematics and advances
+the cycle by actual displacement after collision checks, including interpolated peers
+and movement relative to ship decks. Walking uses 0.65 units/s and running 1.10 units/s.
+Running has longer strides, bent elbows and a brief flight phase. Water and vehicle
+travel retain their existing speeds. The saved wardrobe format is unchanged. It is the only character
 the Avatar panel offers - a second, rigged Kenney GLB used to be selectable alongside it and
 was removed outright, `character` field and all, rather than kept as a second, unused code
 path nothing built against any more.
@@ -33,12 +38,17 @@ tunic, leather/trim and hat colours are applied at runtime. Feet are at Y=0, for
 is +Z, and scale remains 1.12. Eye height is exported from the Blender scene's
 `avatar_eye_y` custom property, in unscaled game units.
 
+The interactive `/avatar-motion.html` workbench shows walk, run and idle, optional
+bones, two viewing angles and the live inventory. Motion captures are in `motion/`.
+
 ## Edit in Blender
 
 Open the blend file, edit its named meshes and save. Keep the `avatar_slot`, `avatar_variant` and `avatar_group` custom properties on each exported object. Hidden hat variants are
 exported too; the floor, lights and camera are excluded. Blender uses Z up, with the
 character facing -Y. Update `avatar_eye_y` if you move the eyes vertically. The scene property
 `avatar_rig` stores arm, leg, neck and hand anchors in game coordinates.
+`avatar_joints` stores bend/end anchors. Keep the limb vertex groups and `avatar_skin`
+properties when editing weighted meshes. `build-settler-hats.py` authors all seven hats.
 `avatar_smooth_normals` enables corner-normal export. Keep it enabled for the player.
 
 From the project root, export the saved edits in PowerShell:
