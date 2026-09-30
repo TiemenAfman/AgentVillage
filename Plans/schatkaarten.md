@@ -136,6 +136,12 @@ Bewust nog open:
 
 ## Wacht op de nieuwe tavern: de kist van de piraat "subtiel achter de tavern" (30 september 2026)
 
+> **Bijgewerkt 30 september 2026:** de nieuwe tavern is de piratenkroeg, *The Salty Kraken*
+> ([piratenkroeg.md](piratenkroeg.md)), een tweede kroeg op de piratenoever van de haven; de oude tavern blijft
+> zoals hij is. Vanaf trede 52 verhuist de kist naar de kroeg (`chestSpots` met de kroeg als gastheer, aan de
+> landzijde); onder 52 blijft hij ongewijzigd naast de deurstap van de oude tavern. De migratie "achter de oude
+> tavern" hieronder vervalt; het ontwerp van `chestSpots` wordt voor de kroeg hergebruikt.
+
 Wens van Martijn: de kist met de piratenvlag staat nu één cel langs de voorkant van de tavern-deurstap
 (`ALONG_FRONT` in `lib/layout.mjs`), op het plein, en valt te veel op. Hij moet **achter de tavern** komen, als
 een plekje dat je moet ontdekken, en kleiner zijn. Er is ontworpen, gemeten en deels gebouwd, maar de tavern

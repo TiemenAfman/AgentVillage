@@ -1,9 +1,12 @@
 # De piratenkroeg: "The Salty Kraken"
 
-**🚧 Status: plan van 30 september 2026, nog niet gebouwd.** Ontworpen in een planning-sessie (Fable 5.1);
+**🚧 Status: plan van 30 september 2026, in uitvoering.** Ontworpen in een planning-sessie (Fable 5.1);
 het stap-voor-stap uitvoeringsplan met alle bestandsverwijzingen staat in
 `~/.claude/plans/ik-wil-een-nieuwe-synchronous-seahorse.md` en wordt door een Opus-sessie uitgevoerd. Dit
-document is het *waarom* en de besluiten.
+document is het *waarom* en de besluiten. **De plek is gewijzigd** (zie "De plek: de piratenoever" hieronder):
+niet meer de kadehaven zoals die nu is, maar de piratenoever van de haventrechter die de quay-sessie bouwt
+(`quay-en-rivier.md`, op `fix/quay-en-rivier`, nog niet op deze branch). Daarom komt de server-kant (de trede,
+het kavel, de kist) als **laatste**, na alles wat de haven niet raakt.
 
 ## Aanleiding
 
@@ -21,7 +24,7 @@ de muur).
 
 | Vraag | Besluit | Waarom |
 |---|---|---|
-| Plek | **Aan de kadehaven**, een 3x3-kavel met de gevel op het water, geplaatst zoals het pakhuis en de waag (`harbourSite` → `coastSite`; in `AT_THE_WATER`, `QUAYSIDE`, `FACES_WATER`, `CLAIMS_LAND`). | Een havenkroeg waar de piraten aan land komen. Buiten blijft het één kavel: alle plaatsingscode is op 3x3 geschreven, en de ruimte zit toch binnen. |
+| Plek | **Op de piratenoever van de haventrechter**, links van de trechter (de oever tegenover de stenen kademuur), een 3x3-kavel met de gevel op het water. De plek komt uit één eigen functie, `pirateTavernSite` in `lib/layout.mjs`, die vandaag nog de bestaande `harbourSite` → `coastSite` aanroept en die de quay-sessie later op de piratenoever richt (`havenBanks(...)` → `'pirate'`). Zie "De plek: de piratenoever". | Een havenkroeg waar de piraten aan land komen, aan de oever waar ook de werf en de grote schepen komen - niet aan de kade met de kraan en het pakhuis. Buiten blijft het één kavel: alle plaatsingscode is op 3x3 geschreven, en de ruimte zit toch binnen. |
 | Wanneer | **Nieuwe trede op 52 settlers** (`MILESTONES`: vuurtoren 50, zagerij 55). | "Als het licht brandt, vinden de piraten de haven." Vroeg genoeg dat de quests er niet lang op wachten; het live eiland krijgt hem bij de eerstvolgende scan. |
 | De piraat en zijn kist | **Verhuizen mee**: de kist "subtiel achter" de kroeg aan de landzijde (`chestSpots`, het afgeprinte ontwerp uit schatkaarten.md, gegeneraliseerd naar een gastheer), de piraat ervoor als uitsmijter. Onder 52 blijft de kist waar hij nu staat, naast de deurstap van de oude tavern; de starters van de zee ook. | Eén plek voor alles wat piraat is. De migratie "achter de oude tavern" vervalt: 23 % van de verse eilanden had daar geen plek. |
 | Wie zit er binnen | **De bemanning**: zes piraten aan tafel (kapitein, navigator, bootsman, kanonnier, uitkijk, kok), een piratenbarkeep en één leunend bij de haard. Lokaal getekend als geïnstanceerde figuren met een nieuwe teken-anim `'sit'`; niet op de draad. | Het rave-precedent: meubilair, geen zee-figuren; geen `SEA_V`, geen redeploy. `ANIMS` op de draad verandert niet. |
@@ -32,6 +35,33 @@ de muur).
 | Exterieur | **Een hero-bake** (`assets/piratetavern/`, ≤ 4000 driehoeken, precedent het grote kasteel): een scheve tweelaagse vakwerk-haveninn met overstekende bovenverdieping, erker, boeg met kraakkop boven de deur, grote lantaarn, tonnen, meerpaal en een gebakken Jolly Roger. **Zonder `anchor.flag`.** | Op elke `anchors.flag` hangt main.js de districtsvlag; een piratenkroeg draagt zijn eigen vlag. |
 | Ingang | Het E-bereik ligt op het kavelmidden (`r 2.6`), niet bij de deur. | `coastSite` legt de deurstap op het water; vanaf de kade naast het pand is het midden binnen bereik. |
 | Licht binnen | **Precies zeven point lights**, zoals de tavern. | Het aantal lichten zit in de shader-key van het gebouwmateriaal: zeven hergebruikt het al gecompileerde programma, elk ander aantal is een hapering in de deuropening. |
+
+## De plek: de piratenoever (gewijzigd 30 september 2026)
+
+Het oorspronkelijke besluit was "aan de kadehaven", met het pakhuis en de waag. Tegelijk met dit plan gooit
+de quay-sessie (`quay-en-rivier.md`, branch `fix/quay-en-rivier`) de haven om:
+
+- de haven wordt een **trechter in de riviermonding** (`layout.works.haven`), grondwerk met profielen
+  (`layout.works`);
+- de **rechteroever** wordt een stenen kademuur met de kraan aan het eind en het pakhuis aan het zuideinde; het
+  quay-bassin verdwijnt;
+- de **linkeroever** is de *piratenoever*: daar komen de scheepswerf en de grote schepen, en - wens van de
+  keeper - de Salty Kraken, links van de trechter. De quay-sessie bouwt en reserveert daar niets behalve de
+  voetafdruk van het havenprofiel (de oeverhelling), die de kroeg vrij moet laten.
+
+Wat daaruit volgt:
+
+1. **Eén functie beslist de plek**: `pirateTavernSite(...)` in `lib/layout.mjs`. Vandaag roept hij de
+   bestaande `harbourSite`/`coastSite` aan (zodat de trede nu al ergens aan het water staat en getest kan
+   worden); de quay-sessie richt hem later op de piratenoever met `havenBanks(...)` → `'pirate'`.
+   `harbourSite` en `coastSite` zelf veranderen hier niet.
+2. **De server-kant komt als laatste en smal**: de trede, het civic-type, de lijst-entries en die ene functie.
+   Vóór dat werk wordt met de quay-sessie afgestemd welke functies en regels van `lib/layout.mjs` geraakt
+   worden. Alles daarbuiten (de bake, de kamer, de bemanning, de quests, de shanty, de docs) raakt de haven
+   niet en wordt eerst gebouwd.
+3. **Meten van de plek wacht op de quay-sessie**: de kroeg op het live eiland meten heeft pas zin als de
+   trechter en de oevers er liggen. Tot dan is de plaatsing op de piratenoever het open punt van dit plan.
+4. **Mergen doet de keeper**; wie als tweede merget lost de conflicten in `lib/layout.mjs` met de hand op.
 
 ## De zaal
 
@@ -92,19 +122,27 @@ veraf dicht, maar de originele stand is goedgekeurd. Zie Risico's over de herkom
 
 ## Fasen
 
+Bewust in deze volgorde, want alleen de server-kant raakt de haven (zie "De plek"):
+
 0. Dit document; `Plans/README.md`.
-1. **Server**: trede 52, kavel aan de kade, `chestSpots` + gastheer-regel, éénmalige migratie van de kist,
-   tests (`tests/pirate-tavern-layout.test.mjs`). Een nieuw plot in `layout.json`: een **minor**.
-2. **Bake**: `scripts/build-piratetavern.py`, `web/js/piratetavern-mesh.js`, `buildings.js`, `/demo`.
-3. **Kamer en bemanning**: `web/js/pirate-tavern.js`, `'sit'` in `settler-figures.js`, haken in `interior.js`.
-4. **Quests en spreken**: `shared/quests.mjs`, `quest-log.js`, `pirate.js` → `createQuestGiver`, main.js.
-5. **Shanty**: `sound.js`, `shantyHeard()` in main.js.
-6. **Docs**: `docs/manual.md`, CLAUDE.md.
+1. **Bake**: `scripts/build-piratetavern.py`, `web/js/piratetavern-mesh.js`, `buildings.js`, `/demo`.
+2. **Kamer en bemanning**: `web/js/pirate-tavern.js`, `'sit'` in `settler-figures.js`, haken in `interior.js`,
+   Captain Spack Jarrow (`web/js/captain.js`).
+3. **Quests en spreken**: `shared/quests.mjs`, `quest-log.js`, `pirate.js` → `createQuestGiver`, main.js.
+4. **Shanty**: `sound.js`, `shantyHeard()` in main.js.
+5. **Docs** (wat niet over de plek gaat): `docs/manual.md`, CLAUDE.md.
+6. **Server, als laatste**: trede 52, `civic:piratetavern` met de plek uit `pirateTavernSite`, `chestSpots` +
+   gastheer-regel, éénmalige migratie van de kist, tests (`tests/pirate-tavern-layout.test.mjs`). Een nieuw
+   plot in `layout.json`: een **minor**. Afgestemd met de quay-sessie; het richten op de piratenoever doet die
+   sessie.
 
 ## Risico's
 
-- **Het live eiland**: heeft de kadehaven geen vrij waterfront-3x3 met een weg aan de deur, dan blijft de
-  kroeg `unplaced` (het pakhuis-risico van 28-29 september). Eerst meten op een kopie van `~/.promptholm`.
+- **Het live eiland**: heeft de piratenoever (of, zolang die er niet is, de kadehaven) geen vrij waterfront-3x3
+  met een weg aan de deur, dan blijft de kroeg `unplaced` (het pakhuis-risico van 28-29 september). Meten op
+  een kopie van `~/.promptholm`, en pas als de quay-sessie klaar is.
+- **Twee sessies in `lib/layout.mjs`**: de quay-sessie schrijft de haven om. De kroeg raakt daar alleen de
+  lijsten, de trede en `pirateTavernSite`; `harbourSite`, `coastSite` en de haven-functies blijven onaangeraakt.
 - **Geen kist-spot bij de kroeg** (alle ringcellen weg, pier, water of steil): de kist blijft bij de oude
   tavern en het blok probeert elke scan opnieuw.
 - **Duikdiepte twee** ligt in open zee (bodem −2.5, geulen tot −3.5) - vanaf de haven kan dat een eind zwemmen zijn.
