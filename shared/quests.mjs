@@ -74,6 +74,38 @@ export const QUESTS = [
   },
 ];
 
+// The Salty Kraken's crew (Plans/piratenkroeg.md): who they are, what they are called and what
+// they say when there is nothing in the story for them to say. Their seats and their looks are
+// the room's (web/js/pirate-tavern.js); this is the part a quest step names in `with`.
+export const CREW = [
+  { id: 'captain', name: 'Captain Spack Jarrow', idle: [
+    "Why is the rum always gone? ... Ah. That's why.",
+    'This is the day ye will always remember as the day ye almost bought me a drink.',
+    'Savvy?',
+  ] },
+  { id: 'navigator', name: 'Quill', idle: [
+    'Charts lie, matey. The water never does.',
+    'I can read the stars. Reading the Captain is harder.',
+  ] },
+  { id: 'bosun', name: 'Bosun Tarr', idle: [
+    'Rope, tar and a strong back. That be a ship.',
+    'Ye dig like a landsman. Slower.',
+  ] },
+  { id: 'gunner', name: 'Powder Annie', idle: [
+    "Don't touch the cannon. She's loaded. Probably.",
+    "Meg waters the rum. I've measured it.",
+  ] },
+  { id: 'lookout', name: 'Sparrow', idle: [
+    'I saw yer boat come in. Ye steer like a drunk gull.',
+    "Nothin' on the horizon but weather, matey.",
+  ] },
+  { id: 'cook', name: 'Salt Pete', idle: [
+    "Fish stew. It's always fish stew.",
+    "The bitterballen are Meg's. The rest is mine, and ye'll eat it.",
+  ] },
+];
+export const CREW_IDS = CREW.map((c) => c.id);
+
 const questById = new Map(QUESTS.map((q) => [q.id, q]));
 const ONCE = QUESTS.filter((q) => !q.repeat);
 const KNOWN_UNLOCK = new Set(UNLOCK_IDS);

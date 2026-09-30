@@ -1056,6 +1056,14 @@ function interactables() {
         id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
         label: 'the tavern', prompt: 'step into the tavern',
       });
+    } else if (rec.spec.civicType === 'piratetavern') {
+      // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
+      // so `kind: 'tavern'` - but answered from the middle of the lot, not the door, because its
+      // door is on the water and the step in front of it is wet.
+      out.push({
+        id: rec.id, kind: 'tavern', room: 'piratetavern', x: p.x, z: p.z, r: 2.6,
+        label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
+      });
     } else if (rec.spec.civicType === 'castle') {
       // At the gate, not the middle of the lot: a seven by seven castle measured from its
       // centre would answer E from behind its back wall. A getter for the prompt, because
@@ -2045,7 +2053,7 @@ function applyPanelMessage(m) {
 // A board you are already working says how to let go of it, not how to take it.
 // The phone's buttons say what they would do: a word under X for what is in reach, and the
 // two hands only while there is ground under your feet to fight or drink on.
-const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter' };
+const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter', 'step into the Salty Kraken': 'Enter' };
 function touchHud(near, walk) {
   if (!state.touch) return;
   const word = !near ? ''
@@ -2199,6 +2207,7 @@ function enterInterior(room, at) {
   inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
+  if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the

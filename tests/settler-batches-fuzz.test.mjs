@@ -37,8 +37,9 @@ function stream(seed) {
 }
 
 // Every word the walk can hand a figure, so the tools (hammer, hoe, barrow, tray, rod, sword,
-// torch, pint) come and go with the bodies.
-const ANIMS = ['still', 'walk', 'step', 'hammer', 'haul', 'barrow', 'carry', 'load', 'dance', 'hoe', 'weed', 'chop', 'gather', 'fish'];
+// torch, pint) come and go with the bodies - and 'sit', which only a room's furniture hands out
+// (the Salty Kraken's crew) and which draws on a default seat when it is given none.
+const ANIMS = ['still', 'walk', 'step', 'hammer', 'haul', 'barrow', 'carry', 'load', 'dance', 'hoe', 'weed', 'chop', 'gather', 'fish', 'sit'];
 const KINDS = [['woman', 'skirt'], ['woman', 'trousers'], ['man', 'trousers']];
 
 function crowd({ armed = false } = {}) {

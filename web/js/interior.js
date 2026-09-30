@@ -16,6 +16,7 @@ import { figureGeometry } from './settlers.js';
 import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
+import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
@@ -439,10 +440,14 @@ function buildTavern() {
   };
 }
 
-// The castle's great hall on a Saturday night (Plans/DONE/rave-in-het-kasteel.md). It gets the
-// floor and the blocker shape handed in rather than importing them, so the two files do not
-// import each other.
-const ROOMS = { tavern: buildTavern, rave: () => buildRave({ FLOOR, rect }) };
+// The castle's great hall on a Saturday night (Plans/DONE/rave-in-het-kasteel.md), and the pirates'
+// pub by the harbour (Plans/piratenkroeg.md). They get the floor and the blocker shape handed in
+// rather than importing them, so the files do not import each other.
+const ROOMS = {
+  tavern: buildTavern,
+  rave: () => buildRave({ FLOOR, rect }),
+  piratetavern: () => buildPirateTavern({ FLOOR, rect }),
+};
 
 export const ROOM_KINDS = Object.keys(ROOMS);
 
@@ -470,7 +475,10 @@ function snackGeometry() {
 // ------------------------------------------------------------------ the machinery
 // Built once per room and kept: a visit is enter() and leave(), not another scene. Walk mode
 // hangs listeners on the window, so churning one per visit would pile them up.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null }) {
+// `onTalk(it)` is somebody in the room being spoken to (the Salty Kraken's crew, `kind: 'crew'`),
+// and `onOrder(room, what)` a drink ordered at a seat - which is the Kraken's first quest step,
+// and which walk mode's own onDrink cannot see, since that needs a glass already in the hand.
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -619,8 +627,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // the aim point keeps it from swinging under and staring at the rafters.
     const yNear = p.y + CAM.aim + 0.18;
     v.y = Math.max(yNear, v.y + (1 - t) * len * 0.8);
-    // Once it is up through the ceiling, the ceiling is in the way of the only view there is.
-    roofWanted = v.y < ROOF_AT - 0.04;
+    // Once it is up through the ceiling, the ceiling is in the way of the only view there is -
+    // this room's own ceiling, where a part of it is lower than the rest (the Kraken's cellar).
+    roofWanted = v.y < (a.ceiling != null ? FLOOR + a.ceiling : ROOF_AT) - 0.04;
   }
 
   // Over the shoulder, as everywhere else on the island, but closer in, lower, and aimed at
@@ -643,7 +652,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
   // What moves in a room beyond its fire and its barman - the castle's lights and its dancing
   // crowd (rave.js) - built once, like the rest of it, and handed each visit and each frame.
-  const show = def.show ? def.show({ scene, material }) : null;
+  const show = def.show ? def.show({ scene, material, camera }) : null;
 
   // The stage, as a surface to stand on. Walk mode keeps a list of what stands above the
   // floor of each cell and picks the one you belong to, which is how a bridge carries you
@@ -664,10 +673,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // ordering a beer standing up in the middle of the room is not a thing. Walking away is
   // how you get off the stool, which walk mode already does on its own.
   function onInteract(it) {
+    if (it.kind === 'crew') { if (onTalk) onTalk(it); return; }
     if (it.kind !== 'seat') return;
     if (!walk.state.sitting) { walk.sitOn({ x: it.x, z: it.z, y: it.y, yaw: it.yaw }); return; }
     const s = served[it.index];
     s.step = (s.step + 1) % 3;
+    if (s.step === 1 && onOrder) onOrder(room, 'beer');
     s.beer.visible = s.step >= 1;
     s.plate.visible = s.step >= 2;
     if (barman) barmanX = it[barman.along];  // he comes along the bar to serve it
@@ -687,7 +698,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       at: [def.spawn.x, def.spawn.z],
       facing: [def.spawn.x, def.spawn.z - 1],
       blockers,
-      interactables: def.seats.map((s, i) => ({ ...s, index: i })),
+      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || []),
       onInteract,
       onExit: leave,
     });
@@ -698,8 +709,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   let roofWanted = true;
   // `extra` is what the room is told from outside each frame: for the castle, where the
   // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear.
+  let lastExtra = {};
   function update(dt, extra = {}) {
     if (left) return null;
+    lastExtra = extra;
     roofWanted = true;
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
@@ -725,6 +738,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   function promptFor(near) {
+    if (near.kind === 'crew') {
+      return lastExtra.business === near.who ? `${near.name} has something for you` : `speak to ${near.name}`;
+    }
     if (near.kind !== 'seat') return null;
     if (!walk.state.sitting) return 'sit down';
     const step = served[near.index].step;
@@ -747,6 +763,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
   return {
     name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
+    // Which of sound.js's songs plays in here ('shanty'), or null: main.js asks sound.clockOf it.
+    music: def.music || null,
     // Where the room's music is, in beats, for everybody dancing in here (main.js danceBeat);
     // null in a room with no show.
     beat: hallBeat,

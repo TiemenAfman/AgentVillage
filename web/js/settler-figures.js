@@ -17,7 +17,7 @@ import { residentPart, residentNamedPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET }
 // body is has to be able to ask what it looks like, from Node. Re-exported here because
 // this file has always been where the rest of the island asks.
 import { HAT_SHAPES, settlerLook, styleLook, kindOf, styleOf } from 'shared/palette.mjs';
-import { makeRng, hash32 } from 'shared/rng.mjs';
+import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 // The heading is ours. The walk names a direction to turn towards and how briskly; turning
 // that into an angle needs atan2, and shared/ may not have one - see the header there.
 import { lerpAngle } from 'shared/settlerwalk.mjs';
@@ -377,6 +377,38 @@ export function workPose(anim, t) {
 // the body is lifted by. The hip is at 0.14 in the resident's own parts, before the height.
 function hipLift(lean, look) {
   return 0.14 * (1 - Math.cos(lean)) * ((look && look.height) || 1);
+}
+
+// Sitting, for a figure somebody has put on a bench or a stool (the Salty Kraken's crew,
+// web/js/pirate-tavern.js). Drawn only: `'sit'` is not one of the wire's ANIMS
+// (shared/settlerwire.mjs), because nobody the sea walks ever sits - it is the room's furniture
+// that does, like the rave's dancers dance. The caller sets `f.y` to the floor under the seat and
+// `f.seat = { h, rest }`: the seat's top over that floor, and where the feet rest (0 on the
+// floor, a stool's foot ring otherwise). `f.beat`, if it has one, is the tune they nod along to.
+//
+// The legs are one piece each with no knee, so a sitter's legs go forward from the hip until the
+// feet just clear what they rest on: the hip sinks SIT_SINK into the plank (nobody sits on the
+// top of a cushion), the clog's heel ends up a hair over the floor. Measured in the resident's
+// own parts: hip pivot at 0.14, legs 0.14 long, trunk from 0.121 up - so on the island's 0.135
+// benches a settler's hips are nearly at seat height already, which is why sitting is a small
+// drop and a lot of leg. A seat too high for the feet leaves them dangling (angle 0).
+const SIT_HIP = 0.14, SIT_SINK = 0.02, SIT_FOOT_CLEAR = 0.03;
+export function sitPose(f, time) {
+  const seat = f.seat || { h: SIT_HIP };
+  const h = SIT_HIP * ((f.look && f.look.height) || 1) * (f.baseScale || 1);
+  const hip = seat.h - SIT_SINK;
+  const legs = -Math.acos(clamp((hip - (seat.rest || 0) - SIT_FOOT_CLEAR) / h, 0, 1));
+  const phase = f.phase || 0;
+  const breath = Math.sin(time * 1.8 + phase);
+  const u = f.beat != null ? f.beat - Math.floor(f.beat) : 0;
+  return {
+    bob: hip - h + 0.004 * breath,
+    // A nod on every count of the tune, and a steady lean over the table without one.
+    lean: f.beat != null ? 0.04 + 0.07 * Math.exp(-u * 6) : 0.04,
+    left: -1.30 + 0.03 * breath,          // a forearm on the table
+    right: -1.10 - 0.03 * breath,         // a hand round the tankard
+    legL: legs, legR: legs + 0.08 * Math.sign(Math.sin(phase * 7.3) || 1),
+  };
 }
 
 // `armed` gives every resident a sword in the right hand and a torch in the left: two more
@@ -808,7 +840,8 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       }
       const work = workPose(loading ? 'gather' : f.anim, time + f.phase);
       const dance = f.anim === 'dance' ? dancePose(f.move || 0, f.beat || 0, f.hype || 0) : null;
-      const bob = f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
+      const sit = f.anim === 'sit' ? sitPose(f, time) : null;
+      const bob = sit ? 0 : f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : dance ? dance.bob
@@ -841,10 +874,10 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
 
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
-      tmpObj.position.set(sx, f.y + bob * f.baseScale, sz);
+      tmpObj.position.set(sx, f.y + (sit ? sit.bob : bob * f.baseScale), sz);
       const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
-      tmpObj.rotation.set((work ? work.lean : dance ? dance.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw,
-        (dance ? dance.roll : Math.sin(gaitPhase) * (walking ? 0.045 : 0.01)) + swayRoll);
+      tmpObj.rotation.set((sit ? sit.lean : work ? work.lean : dance ? dance.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw,
+        (sit ? 0 : dance ? dance.roll : Math.sin(gaitPhase) * (walking ? 0.045 : 0.01)) + swayRoll);
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
@@ -853,15 +886,15 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       trim.setMatrixAt(f.slot, bodyMat);
       skinCore.setMatrixAt(f.slot, bodyMat);
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
-      const idle = walking || hammering || work || dance ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
+      const idle = walking || hammering || work || dance || sit ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
       // Hauling, the right hand is up on the bundle and only the left arm swings. Behind a
       // barrow both are on the handles (BARROW_ARM) and neither swings.
-      const leftArmAngle = work ? work.left
+      const leftArmAngle = sit ? sit.left : work ? work.left
         : dance ? dance.left
           : pushing ? BARROW_ARM
             : (armed ? ARMED_ARM.left : 0) + (walking ? -stride * swing : idle);
-      let rightArmAngle = work ? work.right
+      let rightArmAngle = sit ? sit.right : work ? work.right
         : dance ? dance.right
           : hammering ? -0.55 - (0.5 + 0.5 * Math.sin(time * 8 + f.phase)) * 0.5
             : hauling ? -2.5
@@ -877,8 +910,9 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
         rightArmAngle += (drunk.x - rightArmAngle) * drunk.w;
         rightTurn = -drunk.z * drunk.w;       // inward, which for the right arm is -z
       }
-      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride);
-      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride);
+      // Not less the nod, as a chore's legs are: the nod is the trunk's, and the thighs stay on the bench.
+      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, sit ? sit.legL : work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride);
+      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, sit ? sit.legR : work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride);
       setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
       setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
       setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
