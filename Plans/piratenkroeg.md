@@ -79,12 +79,16 @@ Namen en sfeerregels zijn data in `shared/quests.mjs` (`CREW`); looks en stoelen
 alleen uit `HAT_SHAPES` (`wide` leest als tricorn, `band` als bandana): die lijst en `SWATCHES` blijven
 onaangeraakt, want de hele bevolking trekt eruit.
 
-**De kapitein is een eigen model.** Martijn leverde een gerigde FBX (15 delen, 4608 driehoeken, T-pose, zeven
-textures, geen animaties). Hij wordt naar het recept van het piratenschip gebakken tot één statische mesh: in
-Blender geposeerd (armen omlaag, een hand op de kaartentafel), de textures per vlak als vertex-kleur
-gesampled, 0.55 hoog, hero-set `captain` met een eigen budget (5000). In de kroeg staat hij aan de kaartentafel
-op de erker en draait naar je toe als je hem aanspreekt; geen instanced figuur, wel dezelfde spreek-interactable.
-De bron blijft buiten de repo (gitignore) - zie Risico's.
+**De kapitein is een eigen model, en hij blijft zoals hij is.** Uit drie aangeleverde kandidaten koos Martijn
+het getextureerde low-poly GLB (10.247 driehoeken, vier ingebedde textures, statisch, al in een sta-pose) - niet
+decimeren en niet naar vlakke vertex-kleuren omzetten, want "de rest wordt rommelig" (gemeten met renders naast
+elkaar op 30 september). Een textured mesh kan niet door de bake, dus hij gaat de ene route die het project
+daarvoor heeft: opgehaald zoals de lava-imp (`web/js/imp.js`) - `web/models/spack-jarrow.glb`, pas geladen bij
+de eerste stap de kroeg in, nooit bij boot, één keer, een mislukte load één keer gemeld en niets dat erop
+wacht; tot hij er is staat een gewone bemanningsfiguur op zijn plek. 0.55 hoog, op de erker naast de
+kaartentafel, draait naar je toe als je hem aanspreekt; dezelfde spreek-interactable als de rest van de
+bemanning. Eén retouche: **zijn ogen gaan open** (in de gezichtstexture staan ze dicht) - in de texture
+geschilderd en opnieuw als GLB geëxporteerd, verder niets aan het model. Zie Risico's over de herkomst.
 
 ## Fasen
 
@@ -105,9 +109,9 @@ De bron blijft buiten de repo (gitignore) - zie Risico's.
   tavern en het blok probeert elke scan opnieuw.
 - **Duikdiepte twee** ligt in open zee (bodem −2.5, geulen tot −3.5) - vanaf de haven kan dat een eind zwemmen zijn.
 - **De shanty onder 20 s** houden: de geluidstest kent de rave-buffer aan zijn duur.
-- **De kapitein**: de FBX lijkt een game-rip van een Disney-personage; de bron en textures horen niet in een
-  publieke repo. Alleen de gebakken, geposeerde en in eigen vertex-kleuren geverfde mesh erin (nog steeds een
-  afgeleide - Martijns keuze), en de rig van 615 naamloze botten poseren is proberen en renderen.
+- **De kapitein**: een Disney-likeness van onbekende herkomst die als GLB in de publieke repo komt, zoals
+  `hostile-settler.glb` - Martijns keuze. Het tweede opgehaalde model naast de imp: de imp-regels (niets bij
+  boot, één keer, falen één keer gemeld, niets wacht) gelden onverkort. Vijf draw calls in één kamer.
 
 ## Later, niet nu
 
