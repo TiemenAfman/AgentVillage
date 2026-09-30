@@ -183,6 +183,34 @@ export function bottleWashesUp(day, lastAtDays) {
   return false;
 }
 
+// ---- where the pirate's chest stands at the Salty Kraken ----------------------------------
+
+// Behind the pub, on its landward side, a corner you come upon rather than a signboard
+// (Plans/piratenkroeg.md, Plans/schatkaarten.md "Wacht op de nieuwe tavern"). The spots as
+// `[u, v]` from the middle of a three by three lot: `u` along the way it looks (negative is
+// behind it), `v` along its front. Best first: straight behind the middle, then behind either
+// side, then along the back half of the flanks, the back corners, and the flanks at the middle.
+// Never in front: at a pub on the water the front is the sea, and a door's step is a path's.
+export const CHEST_SPOTS = [[-2, 0], [-2, 1], [-2, -1], [-1, 2], [-2, 2], [-1, -2], [-2, -2], [0, 2], [0, -2]];
+// Which way a lot looks at each `rot` - shared/settlerwalk.mjs DOOR_DIR, as data here so this
+// file imports no walk (tests/pirate-tavern-layout.test.mjs holds the two equal) - and which way
+// is along its front: LOOK turned a quarter.
+export const LOOK = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+const ALONG = LOOK.map(([lx, lz]) => [-lz, lx]);
+
+// `{ cell, rot, keeper }` for every spot round the lot `p` ({ gx, gz, rot }), best first: the
+// chest's cell, the way it faces - away from the wall it stands against - and the cell in front
+// of it, where the pirate stands (lib/crowd.mjs puts a keeper one step along DOOR_DIR[rot]).
+export function chestSpots(p) {
+  const [lx, lz] = LOOK[p.rot], [ax, az] = ALONG[p.rot];
+  const mx = p.gx + 1, mz = p.gz + 1;
+  return CHEST_SPOTS.map(([u, v]) => {
+    const cell = [mx + u * lx + v * ax, mz + u * lz + v * az];
+    const rot = u === -2 ? (p.rot + 2) % 4 : v > 0 ? (p.rot + 1) % 4 : (p.rot + 3) % 4;
+    return { cell, rot, keeper: [cell[0] + LOOK[rot][0], cell[1] + LOOK[rot][1]] };
+  });
+}
+
 // ---- what is in the chest ---------------------------------------------------------------
 
 // What can be found. The ids are the ones the inventory's tiles will carry: colours are

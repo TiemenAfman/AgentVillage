@@ -26,7 +26,13 @@ export const clone = (o) => JSON.parse(JSON.stringify(o));
 export const key = (c) => `${c[0]},${c[1]}`;
 // A plot's whole identity for this purpose: where it stands and which way it faces.
 export const stands = (l) => Object.fromEntries(Object.entries(l.plots).map(([id, p]) => [id, `${p.gx},${p.gz},${p.rot}`]));
-export const movedBetween = (a, b) => Object.keys(a).filter((id) => a[id] !== b[id]);
+// Less the one move the scan makes on purpose: the pirate's chest, from beside the tavern to
+// behind the Salty Kraken, on the scan the pub first stands (lib/layout.mjs, "the pirate's sea
+// chest"; Plans/piratenkroeg.md). Any other move of it, or any move at all on another scan, counts.
+const PUB = 'civic:piratetavern', CHEST = 'civic:pirate';
+export const movedBetween = (a, b) => Object.keys(a)
+  .filter((id) => a[id] !== b[id])
+  .filter((id) => !(id === CHEST && !a[PUB] && b[PUB]));
 
 // Every cell a plot stands on.
 export function plotCells(layout, filter = () => true) {

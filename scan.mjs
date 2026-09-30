@@ -341,15 +341,15 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     });
   }
 
-  // The pirate's sea chest on the tavern's pavement, and the keeper it gives the tavern a second
-  // one of (KEEPERS.pirate in shared/palette.mjs). It stands as soon as the tavern and a free cell
-  // beside its door do (lib/layout.mjs); like the postbox it holds nothing of the village's.
+  // The pirate's sea chest on the tavern's pavement - behind the Salty Kraken once that stands
+  // (Plans/piratenkroeg.md) - and the keeper it brings (KEEPERS.pirate in shared/palette.mjs).
+  // Where it stands is lib/layout.mjs's; like the postbox it holds nothing of the village's.
   const piratePlot = plot(PIRATE_ID);
   if (piratePlot) {
     civics.push({
       id: PIRATE_ID, kind: 'civic', civicType: 'pirate', district: null,
       plot: piratePlot, door: null, name: 'The pirate’s chest', label: 'Pirate’s chest',
-      title: 'A sea chest by the tavern door',
+      title: plot('civic:piratetavern') ? 'A sea chest behind the pirate tavern' : 'A sea chest by the tavern door',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },

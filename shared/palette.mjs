@@ -203,8 +203,11 @@ export const KEEPERS = {
     post: 'priest', name: 'The priest', tours: true,
     dress: { presentation: 'man', outfit: 'trousers', hatShape: 'none', tunic: 0x18181c, trim: 0xe8e4da },
   },
-  // The pirate keeps a sea chest, `civic:pirate`, on the tavern's pavement beside its door
-  // (Plans/schatkaarten.md): he is the one who sends a settler for the first buried treasure.
+  // The pirate keeps a sea chest, `civic:pirate`, beside whichever building hosts it: the
+  // tavern's pavement beside its door (Plans/schatkaarten.md), and from 52 settlers behind the
+  // Salty Kraken (Plans/piratenkroeg.md). He is the one who sends a settler for the first buried
+  // treasure, and the pub's crew take the story on from him. The pub itself has no keeper here -
+  // he is its doorman.
   // Wide-brimmed and black for now; the tricorn comes with its own hat shape in the bake and
   // replaces `hatShape` here. No `aside`: the chest already stands one cell along the tavern's
   // front (lib/layout.mjs, "the pirate's sea chest"), and he stands out in front of it - the
