@@ -363,16 +363,12 @@ for i, (sx, sz) in enumerate([(-1, 1), (1, 1), (-1, -.3), (1, -.3)]):
         r = .026 - .007 * k
         rod('kraken arm', pts[k], pts[k + 1], r, KRAKEN, top=r - .007, sides=6, fill='NOTHING' if k else 'NGON')
 
-# The sign, hung off the corner on the door's right: an iron arm and a board with a brass
-# kraken plate - the same five lines as the tavern's tankard sign, turned to the side.
-box('sign arm', (HW + .10, .74, FRONT - .02), (.26, .03, .03), IRON)
-rod('sign stay', (HW, .62, FRONT - .02), (HW + .18, .735, FRONT - .02), .008, IRON, sides=4)
-for x in (HW + .07, HW + .19):
-    rod('sign chain', (x, .72, FRONT - .02), (x, .64, FRONT - .02), .005, IRON, sides=4)
-box('sign board', (HW + .13, .54, FRONT - .02), (.24, .20, .04), TIMBER, .01)
-ball('sign kraken', (HW + .13, .56, FRONT + .005), (.06, .06, .012), BRASS, seg=8, rings=4)
-for x in (-.06, -.02, .02, .06):
-    box('sign kraken arm', (HW + .13 + x, .49, FRONT + .005), (.014, .06, .01), BRASS)
+# The sign is not baked here: it swings, so it is a set of its own (piratesign, drawn by
+# web/js/piratesign.js) hung on anchor.sign - the outer face of the upper storey's east wall,
+# near the front, above anybody's head. Only the iron plate its arm is bolted to is the house's.
+# The arm points out along that wall's normal, which is +x turned by the storey's TWIST.
+SIGN_AT = (UHW + .02, .98, UFRONT - .14)
+box('sign wall plate', (UHW + .012, SIGN_AT[1], SIGN_AT[2]), (.012, .10, .07), IRON, up=True)
 
 # ---- the Jolly Roger, off the back of the roof -------------------------------------------
 # No anchor.flag (see the top): the flag is baked, cloth and skull, on both faces, since the
@@ -426,8 +422,8 @@ rod('bollard cap', (.62, .16, FRONT + .30), (.62, .185, FRONT + .30), .06, IRON,
 rod('rope coil', (.86, 0, -.02), (.86, .045, -.02), .09, ROPE, sides=10)
 rod('rope coil top', (.86, .045, -.02), (.86, .07, -.02), .06, ROPE, sides=10)
 
-for name, p in (('smoke', (CX + .03, 1.93, CZ)), ('door', (0, 0, FRONT + .06))):
-    q = _turn @ Vector(xyz(p)) if name == 'smoke' else Vector(xyz(p))
+for name, p in (('smoke', (CX + .03, 1.93, CZ)), ('sign', SIGN_AT), ('door', (0, 0, FRONT + .06))):
+    q = _turn @ Vector(xyz(p)) if name != 'door' else Vector(xyz(p))
     bpy.ops.object.empty_add(location=q)
     bpy.context.object.name = 'anchor.' + name
 

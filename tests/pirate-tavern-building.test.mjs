@@ -38,6 +38,10 @@ test('it smokes from its chimney, has a door on the water side and flies no dist
   assert.ok(b.anchors.door[2] > 0.5, 'the door is on the +z face');
   assert.equal(b.anchors.flag, undefined, 'no anchor.flag: the Jolly Roger is baked');
   assert.equal(models.anchorsOf('piratetavern').flag, undefined);
+  // The swinging sign is a set of its own (piratesign) hung on this: on the east wall of the
+  // upper storey, outside it and above a settler's head (0.45 on the 0.18 porch).
+  assert.ok(b.anchors.sign, 'a sign anchor');
+  assert.ok(b.anchors.sign[0] > 0.76 && b.anchors.sign[1] > 1.0 && b.anchors.sign[2] > 0);
   const door = b.parts.find((p) => /door recess/.test(p.userData.part?.args[0] || ''));
   assert.ok(door, 'the door recess is a part');
   door.computeBoundingBox();
