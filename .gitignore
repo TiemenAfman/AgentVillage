@@ -8,6 +8,10 @@ data/*
 assets/**/renders/
 *.blend1
 
+# the keeper's own music for the rooms (lib/music.mjs): HOME/audio, which in a linked worktree is
+# the checkout itself - somebody's mp3s are theirs, never the repository's
+/audio/
+
 # per-machine settings; config.example.json is the template
 config.json
 config.json.bak*

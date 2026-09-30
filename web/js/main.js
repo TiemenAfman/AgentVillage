@@ -2153,6 +2153,37 @@ function raveHeard() {
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
 }
 
+// The keeper's own music (lib/music.mjs, HOME/audio/kroeg, rave, pirates): the list, asked again
+// at boot and at every door, so a file dropped in the folder plays the next time you walk in.
+// Our own islander only - a visitor is refused /api/music, and a phone has no islander - so
+// everywhere else the rooms keep the island's computed music.
+const MUSIC_SONGS = { kroeg: 'tavern', rave: 'rave', pirates: 'shanty' };
+async function refreshMusic() {
+  if (!state.sound) return;
+  try {
+    const r = await mine('/api/music');
+    if (!r.ok) return;
+    const lists = await r.json();
+    const out = {};
+    for (const [dir, kind] of Object.entries(MUSIC_SONGS)) {
+      const names = Array.isArray(lists && lists[dir]) ? lists[dir] : [];
+      out[kind] = names.map((n) => mineUrl(`/api/music/${dir}/${encodeURIComponent(n)}`));
+    }
+    state.sound.setPlaylists(out);
+  } catch { /* no islander, no tracks: the computed music plays */ }
+}
+
+// The village tavern, for the keeper's own tracks in HOME/audio/kroeg: the room when you are in
+// it, the distance to the tavern when you are near it. It has no computed song, so this is
+// heard only when there are tracks.
+function tavernHeard() {
+  if (state.inside) return state.inside.room === 'tavern' ? { inside: true } : null;
+  const rec = state.byId.get('civic:tavern');
+  if (!rec || !rec.group.visible) return null;
+  const dist = camera.position.distanceTo(rec.group.position);
+  return dist < 30 ? { inside: false, dist } : null;
+}
+
 // And about the Salty Kraken's shanty (Plans/piratenkroeg.md): the room when you are in it, the
 // distance to the pub when you are near it, and null further off than 40 - so the 1.7 MB of it
 // is never made for a page that does not go down to the harbour.
@@ -2221,6 +2252,7 @@ function enterInterior(room, at) {
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
+  refreshMusic();
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -7243,7 +7275,10 @@ async function boot() {
   // What the island sounds like. Made here and completely silent: web/js/sound.js builds
   // no AudioContext until the switch is thrown - which is both what a browser demands of
   // anything that wants to make a noise and what keeps the boot path clear of it.
-  state.sound = createSound({ camera, scene, island: soundSnapshot });
+  // The media element is made here and handed in, so sound.js itself still fetches nothing: it
+  // plays the keeper's own tracks (refreshMusic) only through what it was given.
+  state.sound = createSound({ camera, scene, island: soundSnapshot, makeElement: () => new Audio() });
+  refreshMusic();
   state.ui.setSound(state.sound.on, state.sound.possible);
 
   state.buildMenu = createBuildMenu(document.body, {
@@ -7941,6 +7976,7 @@ function soundSnapshot() {
     tables: state.borrel ? state.borrel.out : 0,
     rave: raveHeard(),
     shanty: shantyHeard(),
+    tavern: tavernHeard(),
   };
 }
 

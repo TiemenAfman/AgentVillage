@@ -35,6 +35,7 @@ import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs';
 import { loadTreasure, updateTreasure, viewOf as treasureView, TREASURE_ACTIONS } from './lib/treasure.mjs';
+import { ensureMusic, listMusic, musicFile, MUSIC_TYPES, MUSIC } from './lib/music.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
@@ -243,6 +244,31 @@ function safeJoin(base, rel) {
   const p = path.normalize(path.join(base, rel));
   // the separator matters: without it, a sibling folder named web-x would pass
   return p === base || p.startsWith(base + path.sep) ? p : null;
+}
+
+// A track, as a stream with byte ranges: a media element seeks and asks for its length that
+// way, and an album of mp3s is not something to read into memory whole. Not sendFile: that
+// reads in one go for data/*.json's sake (see there), which a track in HOME/audio is not.
+function sendAudio(req, res, file) {
+  let size;
+  try { size = fs.statSync(file).size; } catch { return json(res, 404, { error: 'no such track' }); }
+  const headers = { 'Content-Type': MUSIC_TYPES[path.extname(file).toLowerCase()], 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  let start = 0, end = size - 1, status = 200;
+  if (m && (m[1] || m[2])) {
+    start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (!(start <= end) || start >= size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    status = 206;
+    headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  }
+  headers['Content-Length'] = end - start + 1;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res);
 }
 
 function json(res, status, obj) {
@@ -545,6 +571,17 @@ async function handle(req, res) {
   // full pit. The same answer rides `event: gold` whenever it changes; see watchGold. The
   // gold mine's week is in it as `mine`, under the same rule.
   if (p === '/api/gold') return json(res, 200, goldNow());
+
+  // The keeper's own music for the rooms (lib/music.mjs): what is in HOME/audio, and a file of
+  // it. Not public paths, so only this machine's page hears them - they are the keeper's files,
+  // under whatever licence the keeper has, and a visitor hears the island's computed music.
+  if (p === '/api/music') return json(res, 200, listMusic());
+  if (p.startsWith('/api/music/') && req.method === 'GET') {
+    const [dir, name] = p.slice('/api/music/'.length).split('/').map((s) => { try { return decodeURIComponent(s); } catch { return ''; } });
+    const file = musicFile(dir, name);
+    if (!file) return json(res, 404, { error: 'no such track' });
+    return sendAudio(req, res, file);
+  }
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
   // see lib/access.mjs, where the API is deny-by-default.
@@ -1828,6 +1865,7 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
     log(`    Windows Firewall will ask about this port the first time.`);
   }
   fs.mkdirSync(DATA, { recursive: true });
+  if (ensureMusic()) log(`[music] drop your own tracks in ${MUSIC} (kroeg, rave, pirates)`);
   watchData();
   watchGold();
   // The status line that reads the gold pit its number (hooks/statusline.mjs), put into

@@ -57,6 +57,8 @@ function fakeContext() {
     createGain() { calls.gain++; return { ...wire(), gain: param(1) }; },
     createBiquadFilter() { calls.filter++; return { ...wire(), type: '', frequency: param(0), Q: param(1) }; },
     createPanner() { calls.panner++; return { ...wire(), setPosition() {}, setOrientation() {} }; },
+    // The keeper's own tracks go through a media element (web/js/sound.js setPlaylists).
+    createMediaElementSource() { return wire(); },
     createBufferSource() {
       calls.source++;
       const s = {
@@ -149,10 +151,23 @@ function village(n, { anim = 'hammer', tavern = true } = {}) {
   };
 }
 
-function made(look = village(3)) {
+function made(look = village(3), opts = {}) {
   const camera = new THREE.PerspectiveCamera();
   const scene = new THREE.Scene();
-  return createSound({ camera, scene, island: () => look });
+  return createSound({ camera, scene, island: () => look, ...opts });
+}
+
+// A media element with nothing behind it: what it was told to play, and an `ended` to fire.
+function fakeElement() {
+  const on = {};
+  const el = {
+    src: '', preload: '', playing: false, plays: 0,
+    play() { el.playing = true; el.plays++; return Promise.resolve(); },
+    pause() { el.playing = false; },
+    addEventListener(type, fn) { on[type] = fn; },
+    end() { el.playing = false; on.ended && on.ended(); },
+  };
+  return el;
 }
 
 // --- 1. nothing before the gesture ----------------------------------------
@@ -430,6 +445,60 @@ test('the jukebox loops without a seam, every tune on one count, each chorus ful
     const energy = (bar) => { let e = 0; const a = (s.from + bar * s.beatsPerBar) * perCount; for (let i = a; i < a + s.beatsPerBar * perCount; i++) e += d[Math.floor(i)] ** 2; return e; };
     assert.ok(energy(s.chorus + 1) > energy(1), `${s.name}: the chorus is the whole room`);
   }
+});
+
+// The keeper's own music (lib/music.mjs, HOME/audio): whole tracks one after the other, through
+// the same bed as a computed song, and the computed one never made for a room that has tracks.
+test('the keeper\'s own tracks play whole, one after the other, loud inside and muffled outside', () => {
+  store = {};
+  const look = village(3);
+  const els = [];
+  const sound = made(look, { makeElement: () => { const e = fakeElement(); els.push(e); return e; } });
+  sound.setOn(true);
+  dispatch('pointerdown');
+  sound.setPlaylists({ shanty: ['/api/music/pirates/01-a.mp3', '/api/music/pirates/02-b.mp3'], tavern: [], bogus: ['x'] });
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().tracks, null, 'nothing made before anybody is near');
+
+  look.shanty = { inside: false, dist: 6 };
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().shanty, null, 'the computed shanty is never made');
+  assert.equal(els.length, 1, 'one element');
+  const t = sound.stats().tracks.shanty;
+  assert.ok(t.playing && t.src.endsWith('01-a.mp3'), 'the first track, from the quay');
+  assert.ok(t.want > 0 && t.want < 0.22 && t.cut < 600, 'muffled through the walls');
+  assert.equal(sound.shantyClock(), null, 'a track has no count: the crew keep their own');
+
+  look.shanty = { inside: true };
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.ok(sound.stats().tracks.shanty.cut > 10000 && sound.stats().tracks.shanty.want > 0.4, 'whole inside');
+  assert.equal(els[0].plays, 1, 'stepping in does not start it again');
+
+  els[0].end();
+  assert.ok(els[0].src.endsWith('02-b.mp3') && els[0].playing, 'then the next');
+  els[0].end();
+  assert.ok(els[0].src.endsWith('01-a.mp3'), 'and round again');
+
+  look.shanty = null;
+  for (let i = 0; i < 60; i++) sound.update(1 / 60);
+  assert.equal(els[0].playing, false, 'paused out of earshot');
+  // An empty folder is no tracks: the village tavern stays with its murmur.
+  look.tavern = { inside: true };
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(els.length, 1);
+});
+
+test('without an element to play through, tracks are ignored and the rooms keep their own music', () => {
+  store = {};
+  const look = village(3);
+  const sound = made(look);
+  sound.setOn(true);
+  dispatch('pointerdown');
+  sound.setPlaylists({ shanty: ['/api/music/pirates/01-a.mp3'] });
+  look.shanty = { inside: true };
+  sound.update(1 / 6);
+  assert.equal(sound.stats().shanty.making, true, 'the computed shanty, as before');
+  assert.equal(sound.stats().tracks, null);
 });
 
 // --- 3. the noises themselves ---------------------------------------------

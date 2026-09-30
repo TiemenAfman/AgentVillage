@@ -849,7 +849,10 @@ export function soundPossible() {
  * the page has been touched. Keeping them apart is what lets the chip come up lit for
  * somebody who left it on, without a note having been played or a context created.
  */
-export function createSound({ camera, scene, island }) {
+// `makeElement` makes the media element the keeper's own tracks play through, and is main.js's to
+// hand in: this module still fetches nothing and makes nothing that does (tests/sound.test.mjs).
+// Without one, the keeper's tracks are not played and every room keeps its computed music.
+export function createSound({ camera, scene, island, makeElement = null }) {
   let on = soundPossible() && remembered();
   let gestured = false;          // the browser will not start a context before this
   let ctx = null;
@@ -955,12 +958,78 @@ export function createSound({ camera, scene, island }) {
     built.tavern.audio.setLoop(true);
   }
 
-  // The two songs, and how each is heard: loud and whole inside, a muffled tune through the
-  // walls outside, nothing past `range`.
+  // The songs, and how each is heard: loud and whole inside, a muffled tune through the walls
+  // outside, nothing past `range`. The village tavern has no song of its own - only the
+  // keeper's tracks, when there are some (setPlaylists).
   const SONGS = {
     rave: { make: raveSong, loud: RAVE_LOUD, out: RAVE_OUT, range: RAVE_RANGE, cut: 320 },
     shanty: { make: shantySong, loud: SHANTY_LOUD, out: SHANTY_OUT, range: SHANTY_RANGE, cut: 480 },
+    tavern: { make: null, loud: 0.45, out: 0.2, range: 22, cut: 480 },
   };
+
+  // The keeper's own tracks (lib/music.mjs: HOME/audio/kroeg, rave, pirates), per song, as urls.
+  // A song with tracks plays them whole, one after the other, through a media element - streamed,
+  // not decoded whole, since an album of mp3s is hundreds of megabytes of samples - and its
+  // computed version is never made. The same bed as a computed song: one source in and out, the
+  // filter open inside and shut outside.
+  let playlists = {};
+  function setPlaylists(next) {
+    playlists = {};
+    if (!makeElement) return;
+    for (const [kind, list] of Object.entries(next || {})) {
+      if (Object.hasOwn(SONGS, kind) && Array.isArray(list) && list.length) playlists[kind] = list.filter((u) => typeof u === 'string');
+    }
+    if (!built) return;
+    for (const kind of Object.keys(SONGS)) {
+      const t = built.tracks && built.tracks[kind];
+      if (t && !playlists[kind]) { t.el.pause(); t.want = 0; }
+    }
+  }
+  function makeTracks(kind) {
+    const el = makeElement();
+    el.preload = 'auto';
+    const a = new THREE.Audio(listener);
+    a.setMediaElementSource(el);
+    a.setVolume(0);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = SONGS[kind].cut;
+    filter.Q.value = 0.9;
+    a.setFilters([filter]);
+    const t = { el, audio: a, filter, want: 0, index: 0, playing: false };
+    // One track ends, the next begins; after the last, the first again.
+    el.addEventListener('ended', () => {
+      const list = playlists[kind];
+      if (!list || !list.length) { t.playing = false; return; }
+      t.index = (t.index + 1) % list.length;
+      el.src = list[t.index];
+      if (t.want > 0) el.play().catch(() => { t.playing = false; });
+    });
+    return t;
+  }
+  function steerTracks(kind, heard) {
+    const o = SONGS[kind], list = playlists[kind];
+    if (!heard && !(built.tracks && built.tracks[kind])) return;
+    built.tracks = built.tracks || {};
+    if (heard && !built.tracks[kind]) built.tracks[kind] = makeTracks(kind);
+    const t = built.tracks[kind];
+    if (!t) return;
+    t.want = !heard ? 0 : heard.inside ? o.loud
+      : o.out * Math.pow(clamp(1 - (heard.dist || 0) / o.range, 0, 1), 2);
+    const now = ctx.currentTime;
+    t.filter.frequency.setTargetAtTime(heard && heard.inside ? 16000 : o.cut, now, 0.12);
+    t.audio.gain.gain.setTargetAtTime(t.want, now, t.want > 0 ? 0.25 : 0.6);
+    if (t.want > 0 && !t.playing) {
+      t.index = Math.min(t.index, list.length - 1);
+      if (!t.el.src || !list.includes(t.el.src)) t.el.src = list[t.index];
+      t.playing = true;
+      t.el.play().catch(() => { t.playing = false; });
+    } else if (t.want <= 0 && t.playing && t.audio.gain.gain.value <= 0.001) {
+      // Paused, not stopped: walking back in picks the song up where it was.
+      t.el.pause();
+      t.playing = false;
+    }
+  }
 
   // One source for a song whether you are in the room or outside it, so the beat does not
   // start again at the door: walking in opens the filter, walking out closes it. Not
@@ -995,6 +1064,13 @@ export function createSound({ camera, scene, island }) {
   // are in its room and how far the building is when you are not.
   function steerSong(kind, heard) {
     const o = SONGS[kind];
+    if (playlists[kind]) {
+      // The keeper's tracks instead: a computed song already playing goes quiet.
+      if (built[kind] && built[kind].audio.isPlaying) { built[kind].want = 0; built[kind].audio.stop(); }
+      steerTracks(kind, heard);
+      return;
+    }
+    if (!o.make) return;
     if (heard && !built[kind]) built[kind] = makeSong(kind);
     const r = built[kind];
     if (!r) return;
@@ -1013,11 +1089,14 @@ export function createSound({ camera, scene, island }) {
   }
   const steerRave = (rave) => steerSong('rave', rave);
   const steerShanty = (shanty) => steerSong('shanty', shanty);
+  const steerTavern = (tavern) => steerSong('tavern', tavern);
 
   // How far into the loop a song is, in seconds, at the moment what is being drawn now is
   // heard - which is the output latency later than the context's clock - or null when there
   // is nothing to keep time to. The hall's lights and the Kraken's nodding crew run on this.
   function songClock(kind) {
+    // A keeper's track has no count this knows, so the room keeps its own time.
+    if (playlists[kind]) return null;
     const r = built && built[kind];
     if (!on || !r || r.making || !r.audio.isPlaying || ctx.state !== 'running') return null;
     const dur = r.audio.buffer.duration;
@@ -1126,6 +1205,7 @@ export function createSound({ camera, scene, island }) {
     findTavern(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
+    steerTavern(look.tavern || null);
 
     // --- the bed ---
     const wet = coastliness(look);
@@ -1323,6 +1403,8 @@ export function createSound({ camera, scene, island }) {
     update,
     raveClock,
     shantyClock,
+    // The keeper's own tracks per song ({ rave, shanty, tavern }: urls), from main.js's /api/music.
+    setPlaylists,
     // The clock of a room's song by its name (interior.js `music`), or null.
     clockOf: (kind) => (kind === 'rave' ? raveClock() : kind === 'shanty' ? shantyClock() : null),
     // Under the sea, 0..1: the master bus goes through water (see applyMuffle).
@@ -1367,6 +1449,11 @@ export function createSound({ camera, scene, island }) {
       rave: songStats('rave'),
       // The Salty Kraken's shanty, the same way: null until somebody has been near the harbour.
       shanty: songStats('shanty'),
+      // The keeper's own tracks, per song that has some: which is playing and how loud.
+      tracks: built && built.tracks ? Object.fromEntries(Object.entries(built.tracks).map(([k, t]) => [k, {
+        playing: t.playing, index: t.index, src: t.el.src, want: Math.round(t.want * 100) / 100,
+        cut: Math.round(t.filter.frequency.value),
+      }])) : null,
     }),
   };
   if (typeof window !== 'undefined') window.__sound = api;
