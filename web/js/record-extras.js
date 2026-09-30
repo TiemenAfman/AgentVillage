@@ -27,6 +27,7 @@ import { disposeQuarry } from './quarry.js';
 import { disposeBatavia } from './batavia.js';
 import { disposeClock } from './clock.js';
 import { disposePlaque } from './treasure-plaque.js';
+import { disposePirateSign } from './piratesign.js';
 
 export function disposeExtras(rec) {
   if (rec.nameplate) rec.nameplate.dispose();
@@ -50,4 +51,5 @@ export function disposeExtras(rec) {
   if (rec.fisher) disposeFisher(rec.fisher);
   if (rec.quarry) disposeQuarry(rec.quarry);
   if (rec.ship) disposeBatavia(rec.ship);
+  if (rec.pirateSign) disposePirateSign(rec.pirateSign);
 }

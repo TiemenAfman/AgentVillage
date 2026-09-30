@@ -17,6 +17,9 @@ import { textureUrl } from './assets.js';
 import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
   FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_DECL, FADE_DEPTH_VERTEX_BODY } from './fade.js';
 import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
+// The Salty Kraken's sign: piratesign.js imports this file back, which is safe because neither
+// reads the other before a building is built.
+import { pirateSignParts } from './piratesign.js';
 
 // Four styles, and every one of them roofed in the same family of fired clay. The roofs
 // used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
@@ -1662,6 +1665,13 @@ function civic(parts, spec, rng) {
       // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
       parts.push(...meshAsset('piratetavern'));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
+      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on the
+      // upper storey's east wall; what swings is hung by main.js on `animated.piratesign`, at the
+      // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
+      if (anchors.sign) {
+        parts.push(...pirateSignParts({ at: anchors.sign, yaw: PIRATE_SIGN_YAW }));
+        animated.piratesign = { yaw: PIRATE_SIGN_YAW };
+      }
       return { anchors, animated, height: models.heightOf('piratetavern') };
     }
     case 'chapel': {
@@ -2260,6 +2270,9 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
 // crate and bollard on the other closed with the walls into one block across the walk up to it.
 const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
+// The turn that brings the sign's arm (+x) to the outward normal of the Salty Kraken's upper east
+// wall: that storey is turned TWIST, two degrees, on the ground floor (scripts/build-piratetavern.py).
+const PIRATE_SIGN_YAW = 2 * Math.PI / 180;
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it

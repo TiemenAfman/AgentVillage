@@ -84,6 +84,7 @@ import { createCrops } from './crops.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
+import { attachPirateSign, updatePirateSign } from './piratesign.js';
 import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/DONE/stal-en-veld.md).
@@ -4826,6 +4827,11 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail, found = nul
   if (built.animated && built.animated.smithy) {
     rec.smithy = attachSmithy(group, built.animated.smithy.at, buildingMat);
   }
+  // The Salty Kraken's hanging sign (web/js/piratesign.js): its board and lantern swing on the
+  // sea's clock, so every screen has them at the same angle.
+  if (built.animated && built.animated.piratesign && built.anchors && built.anchors.sign) {
+    rec.pirateSign = attachPirateSign(group, buildingMat, { at: built.anchors.sign, yaw: built.animated.piratesign.yaw });
+  }
   // The Batavia (web/js/batavia.js): her swell goes on her own mesh rather than on the group,
   // whose position and turn blockersOf reads, and her flags hang on that mesh and lean with her.
   if (built.animated && built.animated.ship) {
@@ -7992,6 +7998,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.fountain) updateFountain(rec.fountain, dt);
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
+  if (rec.pirateSign) updatePirateSign(rec.pirateSign, timeNow() / 1000, nightAmt);
   if (rec.furnace) rec.furnace.update(dt);
   if (rec.orePile) rec.orePile.update(dt);
   if (rec.ship) updateBatavia(rec.ship, dt);

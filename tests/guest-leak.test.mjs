@@ -46,7 +46,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 // per landscape is exactly the kind of thing that is easy to leave behind.
 globalThis.document = {
   // The treasure statue's plaque paints a canvas (web/js/treasure-plaque.js); nothing here reads it.
-  createElement: () => ({ width: 0, height: 0, getContext: () => ({ fillRect() {}, strokeRect() {}, fillText() {}, measureText: () => ({ width: 0 }) }) }),
+  createElement: () => ({ width: 0, height: 0, getContext: () => ({ fillRect() {}, strokeRect() {}, fillText() {}, strokeText() {}, clearRect() {}, measureText: () => ({ width: 0 }) }) }),
   createElementNS: () => {
     const on = {};
     const img = {
@@ -88,6 +88,7 @@ const { attachFountain } = await import('../web/js/fountain.js');
 const { attachSawmill } = await import('../web/js/sawmill.js');
 const { attachBatavia } = await import('../web/js/batavia.js');
 const { attachSmithy } = await import('../web/js/smithy.js');
+const { attachPirateSign } = await import('../web/js/piratesign.js');
 const { attachStable } = await import('../web/js/stable.js');
 const { attachBakery } = await import('../web/js/countryside.js');
 const { attachBaker } = await import('../web/js/bakery-keeper.js');
@@ -117,7 +118,7 @@ function body(name) {
 // stands is not what this is about, and a trade in the sea still builds its trade.
 const CIVICS = ['clocktower', 'fountain', 'sawmill', 'smithy', 'stable', 'bakery', 'butcher', 'brewery', 'quarry',
   'windmill', 'lighthouse', 'goldmine', 'goldsmith', 'goldpit', 'ship', 'castle', 'market', 'chapel', 'school',
-  'grocer', 'fishery', 'shipyard', 'treasure'];
+  'grocer', 'fishery', 'shipyard', 'treasure', 'piratetavern'];
 function bundle() {
   const b = JSON.parse(JSON.stringify(starterBundle(0)));
   CIVICS.forEach((t, k) => {
@@ -160,7 +161,7 @@ const flameMat = new THREE.MeshBasicMaterial();
 // imported - and a mirror kept honest by the first test below, which fails the moment
 // attachExtras hangs something on a record that this list does not know about.
 const MIRRORED = new Set(['blades', 'beacon', 'clock', 'fountain', 'sawmill', 'smithy', 'ship', 'stable', 'bakery', 'baker',
-  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor', 'plaque']);
+  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor', 'plaque', 'pirateSign']);
 // What attachExtras hangs only on our own island: the postbox flag and the fisherman are behind
 // `mail`, a yard sign behind `signs`, and both are off for a guest.
 const OURS_ONLY = new Set(['mailFlag', 'fisher', 'sign']);
@@ -173,6 +174,7 @@ function extras(rec) {
   if (a.fountain) rec.fountain = attachFountain(group, a.fountain.at, material);
   if (a.sawmill) rec.sawmill = attachSawmill(group, a.sawmill.at, material);
   if (a.smithy) rec.smithy = attachSmithy(group, a.smithy.at, material);
+  if (a.piratesign && built.anchors && built.anchors.sign) rec.pirateSign = attachPirateSign(group, material, { at: built.anchors.sign, yaw: a.piratesign.yaw });
   if (a.ship) rec.ship = attachBatavia(rec.mesh, spec.id, material);
   if (a.stable) rec.stable = attachStable(group, a.stable.at, material);
   if (a.bakery) { rec.bakery = attachBakery(group, a.bakery.at, material); rec.baker = attachBaker(group, a.bakery.at, material); }
