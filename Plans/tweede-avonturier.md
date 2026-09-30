@@ -34,3 +34,7 @@ Voeg het door Tiemen gekozen Sketchfab-model als tweede personage toe naast de h
 ## Status
 
 Plan opgeslagen vóór implementatie. Eerst de officiële download verkrijgen; de technische integratie volgt na inspectie van de echte bronbestanden.
+
+### Downloadstatus
+
+De officiële download-API is gecontroleerd en geeft HTTP 401: Authentication credentials were not provided. Het bronmodel is nog niet beschikbaar. De eerstvolgende stap is het door Tiemen via Sketchfab gedownloade archief ontvangen, inclusief textures. Er zijn nog geen wijzigingen aan spelcode of modellen gedaan.
