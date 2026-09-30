@@ -1697,11 +1697,18 @@ ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__sta
 in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` but not `QUAYSIDE`: its lot comes from **one function,
 `pirateTavernSite`**, which today only calls `harbourSite` and which the quay work (`fix/quay-en-rivier`)
 retargets to the pirate bank of the haven funnel - never change `harbourSite` for it, and hold no test to a
-distance from one harbour. A new civic plot, so a minor. Outside it is a hero bake (`assets/piratetavern`,
-3838 of 4000 with the sign's arm) with **no `anchor.flag`** - main.js hangs the district's flag on every one,
-and it flies its own Jolly Roger - and an `anchor.sign` where `web/js/piratesign.js` hangs the swinging sign at
-`PIRATE_SIGN_YAW` (the upper storey's two-degree twist). E answers from the lot's middle (`kind: 'tavern'`,
-`room: 'piratetavern'`), since its door's step is wet. Inside is `ROOMS.piratetavern`
+distance from one harbour. A new civic plot, so a minor. Outside it is render 17 built literally: a galleon
+standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~72k
+triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
+texture of its own; the mesh module is ~11.7 MB). It is modelled for a **5 x 3 lot** (bbox held to 2.45 x 1.35
+by `tests/pirate-tavern-building.test.mjs`) that the server does not give it yet - on today's 3 x 3 it overlaps
+its neighbours, so the lot comes first ([Plans/piratenkroeg.md](Plans/piratenkroeg.md), "Het exterieur"). **No
+`anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly Rogers - and no
+porch (`NO_PORCH`: the rock is its footing). `anchor.sign` is on the stern castle's forward corner, where
+`web/js/piratesign.js` hangs the swinging sign at `PIRATE_SIGN_YAW` (-90 degrees: arm out to the water, board
+read along the quay); `anchor.door` is on the ground at the foot of the stair up the rock. E answers from the
+lot's middle (`kind: 'tavern'`, `room: 'piratetavern'`). Rebuild with `node scripts/blender.mjs --background
+--python scripts/build-piratetavern.py` - `npm run models` only re-exports the committed .blend. Inside is `ROOMS.piratetavern`
 (`web/js/pirate-tavern.js`): four rectangles, the camera kept in the hall, the cellar or the oriel (`areas`, a
 low `ceiling` per area takes the lid off earlier), and **exactly seven PointLights**, the tavern's count, which
 is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onTalk`, a seat's first order to

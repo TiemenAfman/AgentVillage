@@ -92,7 +92,14 @@ export const HERO_BUDGET = 4000;
 // scripts/build-batavia.py rather than decimated from a download, so she needs far less than
 // the galleon for more ship: she came out near 6200, and 8000 leaves room for a boat on her
 // waist, not for a second hull.
-export const HERO_BUDGETS = { pirateship: 30000, batavia: 8000 };
+// The Salty Kraken is a galleon run aground on a rock, whole, with its stern castle, rigging, rock
+// and stair (scripts/build-piratetavern.py). The ordinary 4000 was the old timber inn's; the keeper
+// asked for render 17 built literally, at about 80k (a first design came to 13k, an HD one to 56k):
+// every plank edge and bolt the picture shows has to be a triangle, since a building here has no
+// texture of its own. 95k is a guard against a bake running away, not a target. It is one instance
+// in each island's batch, so it costs triangles and no draw call - but it is drawn on every island
+// that has reached rung 52.
+export const HERO_BUDGETS = { pirateship: 30000, batavia: 8000, piratetavern: 95000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand

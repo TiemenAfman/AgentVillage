@@ -1666,7 +1666,7 @@ function civic(parts, spec, rng) {
       parts.push(...meshAsset('piratetavern'));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
       // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on the
-      // upper storey's east wall; what swings is hung by main.js on `animated.piratesign`, at the
+      // stern castle's water face; what swings is hung by main.js on `animated.piratesign`, at the
       // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
       if (anchors.sign) {
         parts.push(...pirateSignParts({ at: anchors.sign, yaw: PIRATE_SIGN_YAW }));
@@ -2270,9 +2270,10 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
 // crate and bollard on the other closed with the walls into one block across the walk up to it.
 const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
-// The turn that brings the sign's arm (+x) to the outward normal of the Salty Kraken's upper east
-// wall: that storey is turned TWIST, two degrees, on the ground floor (scripts/build-piratetavern.py).
-const PIRATE_SIGN_YAW = 2 * Math.PI / 180;
+// The turn that brings the sign's arm (+x) to the outward normal of the Salty Kraken's stern castle
+// on its water face (+z), so the arm stands out towards the water and the board is read along the
+// quay (scripts/build-piratetavern.py). The ship's three-degree list is left out: a sign hangs plumb.
+const PIRATE_SIGN_YAW = -Math.PI / 2;
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -2312,6 +2313,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The gold mine is a hill with an apron of its own, both going under the grass: a step round
   // a hill is a plinth under a mountain.
   'goldmine',
+  // The Salty Kraken is a ship on a rock, and the rock is its footing: a step round it read as a
+  // stone plinth under a wreck.
+  'piratetavern',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',
