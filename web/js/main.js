@@ -789,8 +789,40 @@ function blockersOf(rec) {
     ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
     // A ship's side, which is also what a boat meets (buildings.js shipSolids, walk.js hulls).
     ...(r.hull != null ? { hull: r.hull } : {}),
+    // A solid with a height (the Salty Kraken's: buildings.js pirateSolids) is a wall only to a
+    // body whose feet-to-head span meets it (walk.js atHeight), lifted with the building.
+    ...(r.y0 != null ? { y0: r.y0 + rec.group.position.y, y1: r.y1 + rec.group.position.y } : {}),
     id: rec.id,
   }));
+}
+
+// And the floors a building hands walk mode (the Salty Kraken's stair: buildings.js pirateSurfaces),
+// turned with it and put where it stands - walk.js `surfaces`, which on the island nothing else sets.
+// A ramp along the building's x can be along the world's z once it is turned, and then rises from
+// whichever end it rises from.
+function surfacesOf(rec) {
+  const list = rec.built && rec.built.surfaces;
+  if (!list) return [];
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+  const p = rec.group.position;
+  const at = (x, z) => [p.x + x * c + z * s, p.z - x * s + z * c];
+  return list.map((f) => {
+    const corners = [at(f.x0, f.z0), at(f.x1, f.z1), at(f.x0, f.z1), at(f.x1, f.z0)];
+    const xs = corners.map((q) => q[0]), zs = corners.map((q) => q[1]);
+    const box = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+    if (f.y != null) return { ...box, y: f.y + p.y };
+    const zm = (f.z0 + f.z1) / 2;
+    const [ax, az] = at(f.x0, zm), [bx, bz] = at(f.x1, zm);
+    const axis = Math.abs(bx - ax) > Math.abs(bz - az) ? 'x' : 'z';
+    const aFirst = axis === 'x' ? ax <= bx : az <= bz;
+    return { ...box, axis, y0: (aFirst ? f.y0 : f.y1) + p.y, y1: (aFirst ? f.y1 : f.y0) + p.y };
+  });
+}
+
+function walkSurfaces() {
+  const out = [];
+  for (const rec of state.byId.values()) if (rec.group.visible) out.push(...surfacesOf(rec));
+  return out;
 }
 
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
@@ -911,6 +943,9 @@ function walkToBuilding(id) {
 }
 
 function walkableBlockers() {
+  // Whoever is handed the walls is handed the floors that go with them (surfacesOf): the two
+  // come from the same records and change together.
+  if (state.walk) state.walk.setSurfaces(walkSurfaces());
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
@@ -1060,10 +1095,16 @@ function interactables() {
       });
     } else if (rec.spec.civicType === 'piratetavern') {
       // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
-      // so `kind: 'tavern'` - but answered from the middle of the lot, not the door, because its
-      // door is on the water and the step in front of it is wet.
+      // so `kind: 'tavern'` - answered at its door, at the top of the stair up the rock, with the
+      // stoop's height as its floor so the beach under it does not answer too. A bake from before
+      // the stair has no stoop, and falls back to the middle of the lot.
+      const stoop = (rec.built.surfaces || []).find((f) => f.name === 'stoop');
+      const [sx, sz] = stoop ? [(stoop.x0 + stoop.x1) / 2, (stoop.z0 + stoop.z1) / 2] : [0, 0];
+      const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
       out.push({
-        id: rec.id, kind: 'tavern', room: 'piratetavern', x: p.x, z: p.z, r: 2.6,
+        id: rec.id, kind: 'tavern', room: 'piratetavern',
+        x: p.x + sx * c + sz * s, z: p.z - sx * s + sz * c, r: stoop ? 0.9 : 2.6,
+        ...(stoop ? { floor: stoop.y + p.y } : {}),
         label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
       });
     } else if (rec.spec.civicType === 'castle') {
@@ -5409,6 +5450,7 @@ function handOutDecks() {
     }
   }
   if (state.walk) state.walk.setLevels(stacked);
+  if (state.walk) state.walk.setSurfaces(walkSurfaces());
   // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
   // the same keying createStandHeight wants - and it is built above for walk mode anyway.
   homeStand = state.terrain && state.region && state.region.village

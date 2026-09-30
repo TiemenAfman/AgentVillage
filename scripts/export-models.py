@@ -19,6 +19,7 @@ on either. This file bakes what it is given and only refuses what it cannot expr
 """
 import bpy
 import json
+import re
 import sys
 from pathlib import Path
 from mathutils import Vector
@@ -88,8 +89,10 @@ def bake(set_name, source):
             # several buildings the second one to have a door gets `anchor.door.001`
             # (assets/harbourhouses), and a second asset's anchor.smoke comes out as
             # anchor.smoke.001 (assets/workshops: the brewery's chimney and its copper). The
-            # word is the anchor; the number is only Blender's.
-            kind = obj.name.split('.')[1]
+            # word is the anchor; the number is only Blender's. Only that number comes off: a
+            # ship's and a walked building's anchors have dots of their own (anchor.deck.waist.lo,
+            # anchor.rail.3.a), and keeping only the second word made every one of them `deck`.
+            kind = re.sub(r'\.\d{3}$', '', obj.name[len('anchor.'):])
             if kind in where:
                 raise ValueError(f'{set_name}: {asset or set_name} has two anchor.{kind}')
             where[kind] = game(obj.matrix_world.translation)

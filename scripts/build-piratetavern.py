@@ -494,19 +494,23 @@ for k in range(5):
     nrm = Vector((math.cos(a), 0, math.sin(a)))
     box('cupola window', (CU[0] + nrm.x * 0.168, CU[1] + 0.11, CU[2] + nrm.z * 0.168), (0.06, 0.09, 0.01), GLASS, turn=math.atan2(nrm.x, nrm.z))
 rod('cupola eave', (CU[0], CU[1] + 0.2, CU[2]), (CU[0], CU[1] + 0.23, CU[2]), 0.2, OAK, sides=8)
-bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=1, location=xyz((CU[0], CU[1] + 0.23, CU[2])))
-dome = bpy.context.object
-dome.scale = (0.19, 0.19, 0.16)
-bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.select_all(action='DESELECT')
-bpy.ops.object.mode_set(mode='OBJECT')
-for v in dome.data.vertices:
-    v.select = v.co.z < -1e-4          # the lower half, in the sphere's own frame
-bpy.ops.object.mode_set(mode='EDIT')
-bpy.ops.mesh.delete(type='VERT')
-bpy.ops.object.mode_set(mode='OBJECT')
-link(dome, 'cupola dome', CASTLE_ROOF, True)
+# The dome, built ring by ring: a UV sphere with its lower half deleted came out of two builds in a
+# different triangle order, and a bake has to be the same bytes twice.
+dome_v, dome_f = [], []
+SEG, RINGS = 16, 5
+for j in range(RINGS):
+    phi = (math.pi / 2) * j / RINGS
+    for i in range(SEG):
+        a = i * math.tau / SEG
+        dome_v.append((CU[0] + 0.19 * math.cos(phi) * math.cos(a), CU[1] + 0.23 + 0.16 * math.sin(phi), CU[2] + 0.19 * math.cos(phi) * math.sin(a)))
+dome_v.append((CU[0], CU[1] + 0.39, CU[2]))
+for j in range(RINGS - 1):
+    for i in range(SEG):
+        dome_f.append((j * SEG + i, j * SEG + (i + 1) % SEG, (j + 1) * SEG + (i + 1) % SEG, (j + 1) * SEG + i))
+apex = len(dome_v) - 1
+for i in range(SEG):
+    dome_f.append(((RINGS - 1) * SEG + i, (RINGS - 1) * SEG + (i + 1) % SEG, apex))
+solid('cupola dome', dome_v, dome_f, CASTLE_ROOF)
 rod('cupola finial', (CU[0], CU[1] + 0.38, CU[2]), (CU[0], CU[1] + 0.47, CU[2]), 0.018, GOLD, top=0.0, sides=4)
 # Stern windows across the transom, and two on the water flank of the castle.
 for i, z in enumerate((-0.3, 0.0, 0.3)):
@@ -524,29 +528,44 @@ for side in (1, -1):
     sweep('quarter figure tail', [(C1 - 0.02, CY0 + 0.06, fz), (C1 + 0.02, CY0 - 0.08, fz), (C1 - 0.02, CY0 - 0.2, fz + side * 0.02)], [0.03, 0.02, 0.008], DARK, sides=4)
 # The stern lantern on its iron arm, off the castle's end (render 17, right).
 AR0 = (C1 + 0.01, RY - 0.08, 0.28)
-AR1 = (C1 + 0.26, RY - 0.08, 0.28)
+AR1 = (C1 + 0.07, RY - 0.08, 0.28)
 rod('stern lantern arm', AR0, AR1, 0.012, IRON, sides=4)
-sweep('stern lantern arm scroll', [(C1 + 0.01, RY - 0.25, 0.28), (C1 + 0.12, RY - 0.2, 0.28), (C1 + 0.2, RY - 0.1, 0.28)], [0.008] * 3, IRON, sides=3)
+sweep('stern lantern arm scroll', [(C1 + 0.01, RY - 0.25, 0.28), (C1 + 0.04, RY - 0.19, 0.28), (AR1[0] - 0.01, RY - 0.1, 0.28)], [0.008] * 3, IRON, sides=3)
 
 
-def lantern(name, top, size=1.0, ship=True):
-    """A ship's lantern hanging from `top`: ring, cap, glass, four ribs, base and a drip."""
+def lantern(name, top, size=1.2, ship=True, hung=True):
+    """A ship's lantern with its top at `top`: a ring to hang it by (when `hung`), a cone of a cap
+    with a rim, eight glass panes between iron stiles with a band round their middle, a base and a
+    finial under it. The first version was a four-sided glowing bottle with four ribs, and at the
+    size of render 17's lanterns it read as a bottle."""
     x, y, z = top
     s = size
-    rod(name + ' hanger', (x, y, z), (x, y - 0.06 * s, z), 0.004, IRON, ship=ship, sides=3)
-    rod(name + ' cap', (x, y - 0.06 * s, z), (x, y - 0.11 * s, z), 0.0, IRON, ship=ship, top=0.05 * s, sides=4)
-    rod(name + ' glass', (x, y - 0.11 * s, z), (x, y - 0.24 * s, z), 0.042 * s, GLASS, ship=ship, top=0.036 * s, sides=4)
-    for k in range(4):
-        a = k * math.pi / 2 + math.pi / 4
-        rod(name + ' rib', (x + 0.046 * s * math.cos(a), y - 0.11 * s, z + 0.046 * s * math.sin(a)),
-            (x + 0.04 * s * math.cos(a), y - 0.24 * s, z + 0.04 * s * math.sin(a)), 0.004, IRON, ship=ship, sides=3)
-    rod(name + ' base', (x, y - 0.24 * s, z), (x, y - 0.26 * s, z), 0.046 * s, IRON, ship=ship, sides=4)
-    rod(name + ' drip', (x, y - 0.26 * s, z), (x, y - 0.3 * s, z), 0.014 * s, IRON, ship=ship, top=0.0, sides=3)
+    if hung:
+        ring = [(x, y + 0.02 * s + 0.016 * s * math.cos(a), z + 0.016 * s * math.sin(a)) for a in [i * math.tau / 8 for i in range(9)]]
+        sweep(name + ' ring', ring, [0.0035 * s] * 9, IRON, ship=ship, sides=3, cap=False)
+    rod(name + ' cap', (x, y, z), (x, y - 0.065 * s, z), 0.012 * s, IRON, ship=ship, top=0.056 * s, sides=4)
+    rod(name + ' rim', (x, y - 0.065 * s, z), (x, y - 0.078 * s, z), 0.06 * s, IRON, ship=ship, sides=4)
+    rod(name + ' glass', (x, y - 0.078 * s, z), (x, y - 0.24 * s, z), 0.049 * s, GLASS, ship=ship, sides=4)
+    for k in range(8):
+        a = k * math.tau / 8 + math.tau / 16
+        rod(name + ' stile', (x + 0.052 * s * math.cos(a), y - 0.078 * s, z + 0.052 * s * math.sin(a)),
+            (x + 0.052 * s * math.cos(a), y - 0.24 * s, z + 0.052 * s * math.sin(a)), 0.0042 * s, IRON, ship=ship, sides=3)
+    rod(name + ' band', (x, y - 0.155 * s, z), (x, y - 0.163 * s, z), 0.054 * s, IRON, ship=ship, sides=4, fill='NOTHING')
+    rod(name + ' base', (x, y - 0.24 * s, z), (x, y - 0.258 * s, z), 0.06 * s, IRON, ship=ship, sides=4)
+    rod(name + ' foot', (x, y - 0.258 * s, z), (x, y - 0.29 * s, z), 0.05 * s, IRON, ship=ship, top=0.012 * s, sides=4)
+    rod(name + ' finial', (x, y - 0.29 * s, z), (x, y - 0.32 * s, z), 0.009 * s, IRON, ship=ship, top=0.0, sides=3)
+
+
+def post_lantern(name, base, height, size=1.0, ship=True):
+    """A lantern standing on a post, the post's top in its foot."""
+    x, y, z = base
+    rod(name + ' post', (x, y, z), (x, y + height, z), 0.018, POST, ship=ship, sides=4)
+    lantern(name, (x, y + height + 0.29 * size, z), size, ship=ship, hung=False)
 
 
 lantern('stern lantern', (AR1[0], AR1[1], AR1[2]))
 # The spar over the taffrail, leaning out and up to the east (the render's right).
-SP0, SP1 = (C1 - 0.2, RY + 0.06, -0.2), (STERN_X + 0.36, RY + 0.95, -0.2)
+SP0, SP1 = (C1 - 0.2, RY + 0.06, -0.2), (STERN_X + 0.16, RY + 0.9, -0.2)
 rod('stern spar', SP0, SP1, 0.028, OAK, top=0.018, sides=6)
 rod('stern spar band', tuple(Vector(SP0).lerp(Vector(SP1), 0.3)), tuple(Vector(SP0).lerp(Vector(SP1), 0.33)), 0.032, IRON, sides=6)
 
@@ -566,21 +585,29 @@ for side in (1, -1):
     rod('cathead', (F0 + 0.12, FY + 0.2, side * (FH - 0.05)), (F0 - 0.08, FY + 0.24, side * (FH + 0.14)), 0.03, DARK, sides=4)
 # The bowsprit, as steep as the lot allows, and the lantern on its bracket under it.
 BS0 = (BOW_X + 0.08, sheer(BOW_X) - 0.05, 0)
-BS1 = (-2.34, sheer(BOW_X) + 0.74, 0)
+BS1 = (-2.12, sheer(BOW_X) + 0.8, 0)       # inside the 11 x 6 lot at 2.5x
 rod('bowsprit', BS0, BS1, 0.04, OAK, top=0.022, sides=8)
 for f in (0.25, 0.5, 0.75):
     p = Vector(BS0).lerp(Vector(BS1), f)
     rod('bowsprit band', tuple(p), tuple(p + (Vector(BS1) - Vector(BS0)).normalized() * 0.025), 0.045 - 0.015 * f, IRON, sides=8)
 BR0 = (BOW_X + 0.02, sheer(BOW_X) - 0.18, 0.12)
-BR1 = (BOW_X - 0.2, sheer(BOW_X) - 0.18, 0.12)
+BR1 = (BOW_X - 0.07, sheer(BOW_X) - 0.18, 0.12)
 rod('bow lantern bracket', BR0, BR1, 0.011, IRON, sides=4)
 rod('bow lantern bracket stay', (BOW_X + 0.02, sheer(BOW_X) - 0.36, 0.12), (BOW_X - 0.16, sheer(BOW_X) - 0.19, 0.12), 0.008, IRON, sides=3)
 lantern('bow lantern', BR1)
 # The great Jolly Roger of the render: on a staff raked forward off the forecastle, flying aft.
 JR0 = (F0 + 0.16, FY + 0.25, 0.05)
-JR1 = (-2.16, FY + 1.65, 0.05)
+JR1 = (-2.06, FY + 1.65, 0.05)
 rod('flag staff', JR0, JR1, 0.022, OAK, top=0.014, sides=6)
 rod('flag staff truck', JR1, (JR1[0] - 0.02, JR1[1] + 0.05, JR1[2]), 0.025, GOLD, top=0.0, sides=4)
+
+# ---- the lanterns at the corners ------------------------------------------------------------------
+# Lanterns on the stern castle's three outer corners of its balustrade, on the forecastle's two bow
+# corners, and one hung under the fore top: at night the windows alone left the upper works dark.
+for cx, cz in ((C1 - 0.02, H1 - 0.06), (C1 - 0.02, -H1 + 0.06), (C0 + 0.02, H1 - 0.06)):
+    post_lantern('castle lantern', (cx, RY + 0.05 + RH + 0.014, cz), 0.07, 1.0)
+for cz in (-FH + 0.03, FH - 0.03):
+    post_lantern('forecastle lantern', (F0 + 0.02, FY + 0.402, cz), 0.06, 0.9)
 
 # ---- the deck: gratings, barrels, crates, coils ----------------------------------------------------
 for x in (-0.55, 0.35):
@@ -692,7 +719,9 @@ rod('foremast', (FORE_X, deck_y(FORE_X) - 0.02, 0), (FORE_X, FORE_TOP, 0), 0.065
 for y in (2.3, 2.8, 3.3, 4.0):
     rod('foremast band', (FORE_X, y, 0), (FORE_X, y + 0.025, 0), 0.068 - 0.008 * (y - 2.3), IRON, sides=8)
 top_platform('fore top', FORE_X, 3.56)
-sail('fore course', FORE_X, 3.52, 2.62, 1.95, belly=0.2, torn=0.12)
+rod('fore top lantern hook', (FORE_X, 3.46, 0.16), (FORE_X, 3.46, 0.24), 0.006, IRON, sides=3)
+lantern('fore top lantern', (FORE_X, 3.44, 0.24), 0.9)
+sail('fore course', FORE_X, 3.52, 2.62, 1.86, belly=0.2, torn=0.12)
 sail('fore topsail', FORE_X, 4.32, 3.82, 1.35, belly=0.14, torn=0.06)
 shrouds('fore', FORE_X, 3.56)
 rod('aftmast', (AFT_X, RY + 0.04, 0), (AFT_X, AFT_TOP, 0), 0.055, OAK, top=0.026, sides=8)
@@ -759,31 +788,6 @@ jolly_roger('great jolly roger', (JR1[0] + 0.03, JR1[1] - 0.08, JR1[2]), 0.62, 0
 jolly_roger('fore jolly roger', (FORE_X + 0.03, FORE_TOP - 0.02, 0), 0.5, 0.3, 1, tails=True)
 rod('fore truck', (FORE_X, FORE_TOP, 0), (FORE_X, FORE_TOP + 0.05, 0), 0.03, GOLD, top=0.0, sides=4)
 
-# ---- the door, cut in the hull under the stern castle ----------------------------------------------
-DOOR_X = 0.98
-DOOR_H, DOOR_W = 0.56, 0.3
-DOOR_SILL = keel(DOOR_X) + 0.48 * (sheer(DOOR_X) - keel(DOOR_X))
-dp, dn = hull_point(DOOR_X, (DOOR_SILL + DOOR_H * 0.5 - keel(DOOR_X)) / (sheer(DOOR_X) - keel(DOOR_X)), 1)
-DOOR_Z = dp.z + PROUD + 0.012
-door_outline = [(-DOOR_W / 2, 0), (DOOR_W / 2, 0)] + [(DOOR_W / 2 * c, DOOR_H - DOOR_W / 2 + DOOR_W / 2 * s) for c, s in ARCH]
-plate('door recess', [(u * 1.28, v * 1.07 - 0.015) for u, v in door_outline], DOOR_X, DOOR_SILL, DOOR_Z, 0.04, DARK)
-plate('door', door_outline, DOOR_X, DOOR_SILL, DOOR_Z + 0.024, 0.02, HULL)
-for k in range(1, 5):
-    u = -DOOR_W / 2 + DOOR_W * k / 5
-    box('door seam', (DOOR_X + u, DOOR_SILL + DOOR_H * 0.45, DOOR_Z + 0.035), (0.006, DOOR_H * 0.85, 0.004), DARK)
-for y in (0.12, 0.34):
-    box('door band', (DOOR_X, DOOR_SILL + y, DOOR_Z + 0.037), (DOOR_W * 0.94, 0.024, 0.008), IRON)
-    for u in (-0.1, 0.0, 0.1):
-        ball('door stud', (DOOR_X + u, DOOR_SILL + y, DOOR_Z + 0.043), (0.008, 0.008, 0.005), IRON, seg=3, rings=2)
-rod('door ring', (DOOR_X + 0.08, DOOR_SILL + 0.28, DOOR_Z + 0.036), (DOOR_X + 0.08, DOOR_SILL + 0.28, DOOR_Z + 0.05), 0.03, GOLD, sides=6, fill='NOTHING')
-ball('door skull', (DOOR_X, DOOR_SILL + DOOR_H + 0.07, DOOR_Z + 0.03), (0.055, 0.06, 0.04), BONE, seg=5, rings=4)
-for sx in (-1, 1):
-    ball('door skull socket', (DOOR_X + sx * 0.02, DOOR_SILL + DOOR_H + 0.08, DOOR_Z + 0.062), (0.014, 0.016, 0.01), VOID, seg=3, rings=2)
-# The lantern by the door, on its own little bracket (render 17: left of the door).
-LX = DOOR_X - 0.27
-rod('door lantern bracket', (LX, DOOR_SILL + 0.52, DOOR_Z - 0.01), (LX, DOOR_SILL + 0.52, DOOR_Z + 0.12), 0.008, IRON, sides=3)
-lantern('door lantern', (LX, DOOR_SILL + 0.52, DOOR_Z + 0.12), 0.85)
-
 # ---- the kraken, still holding on ---------------------------------------------------------------------
 # Four arms, up out of the rock: two on the water side, round the bow and over the waist, one over
 # the land side's rail and one round the stern. Swept tubes tapering to a curl, suckers inside.
@@ -831,9 +835,9 @@ def through(ctrl, n):
 ARMS = [
     ([(-1.62, 0.3, 0.62), (-1.78, 0.9, 0.98), (-1.66, 1.6, 0.9), (-1.52, 2.14, 0.66), (-1.42, 2.34, 0.4),
       (-1.3, 2.26, 0.2), (-1.22, 2.1, 0.26), (-1.28, 2.02, 0.36), (-1.36, 2.07, 0.33)], 0.12, 1),
-    ([(-0.62, 0.3, 0.74), (-0.5, 1.0, 1.08), (-0.66, 1.62, 0.96), (-0.82, 2.08, 0.7), (-0.9, 2.3, 0.44),
-      (-1.0, 2.2, 0.22), (-0.94, 2.06, 0.15), (-0.86, 2.1, 0.24), (-0.9, 2.17, 0.27)], 0.1, -1),
-    ([(0.2, 0.3, -0.76), (0.28, 1.0, -1.1), (0.12, 1.7, -0.95), (-0.05, 2.15, -0.68), (-0.15, 2.33, -0.42),
+    ([(-0.97, 0.3, 0.74), (-0.85, 1.0, 1.02), (-1.01, 1.62, 0.96), (-1.17, 2.08, 0.7), (-1.25, 2.3, 0.44),
+      (-1.35, 2.2, 0.22), (-1.29, 2.06, 0.15), (-1.21, 2.1, 0.24), (-1.25, 2.17, 0.27)], 0.1, -1),
+    ([(0.2, 0.3, -0.76), (0.28, 1.0, -1.04), (0.12, 1.7, -0.95), (-0.05, 2.15, -0.68), (-0.15, 2.33, -0.42),
       (-0.28, 2.22, -0.22), (-0.22, 2.08, -0.16), (-0.13, 2.12, -0.24), (-0.17, 2.19, -0.28)], 0.11, -1),
     ([(1.8, 0.3, -0.62), (2.02, 0.95, -0.9), (1.92, 1.6, -0.86), (1.76, 2.1, -0.6), (1.66, 2.3, -0.36),
       (1.54, 2.22, -0.2), (1.6, 2.08, -0.14), (1.69, 2.12, -0.22), (1.64, 2.19, -0.26)], 0.09, 1),
@@ -873,84 +877,245 @@ BIG = [(-1.7, 0.02, .45, .70, .50), (-1.2, -0.05, .52, .80, .55), (-0.6, 0.05, .
 for x, z, sx, sy, sz in BIG:
     boulder('rock', (x, sy * 0.5, z), (sx, sy, sz), rng.choice((ROCK, ROCK, ROCK_DARK)), subdiv=3)
 MEDIUM = [(-2.12, -0.35, .2, .24, .2), (-0.3, -0.72, .24, .22, .2), (0.9, -0.74, .22, .2, .2), (1.9, -0.6, .22, .24, .2),
-          (-1.5, 0.82, .2, .2, .18), (2.18, 0.72, .16, .18, .16), (1.95, 0.95, .18, .15, .16), (-0.6, 0.92, .16, .14, .15),
-          (2.16, -0.2, .16, .3, .2), (-2.18, 0.62, .16, .16, .14), (1.1, 1.0, .15, .13, .14), (0.2, 0.98, .12, .1, .12)]
+          (-1.5, 0.82, .2, .2, .18), (2.18, 0.72, .16, .18, .16), (1.95, 0.95, .18, .15, .16), (-0.25, 0.9, .16, .14, .15),
+          (2.16, -0.2, .16, .3, .2), (-2.18, 0.62, .16, .16, .14), (0.2, 0.98, .12, .1, .12)]   # none at the stair's foot
 for x, z, sx, sy, sz in MEDIUM:
     boulder('rock', (x, sy * 0.35, z), (sx, sy, sz), rng.choice((ROCK, ROCK_DARK)), subdiv=3)
 for i in range(26):
     x = -2.15 + 4.3 * rng.random()
     z = rng.choice((1, 1, -1)) * (0.85 + 0.35 * rng.random())
     r = 0.03 + 0.05 * rng.random()
-    if -1.35 < x < -0.25 and z > 0.8:
-        continue                     # the ground in front of the stair's foot stays clear
+    if -0.8 < x < 1.15 and z > 0.6:
+        continue                     # the ground along the stair stays clear
     boulder('stone', (x, r * 0.4, max(min(z, 1.24), -1.1)), (r * 1.3, r, r), rng.choice((ROCK, ROCK_DARK)), jag=0.25, subdiv=1)
 for i in range(18):
     x = -1.9 + 3.8 * i / 17 + rng.uniform(-0.08, 0.08)
-    ball('barnacle', (x, rng.uniform(0.04, 0.16), 0.9 + rng.uniform(-0.1, 0.12)), (0.03, 0.025, 0.03), rng.choice((BARNACLE, MOSS)), ship=False, seg=3, rings=2)
+    zb, yb, mb = 0.9 + rng.uniform(-0.1, 0.12), rng.uniform(0.04, 0.16), rng.choice((BARNACLE, MOSS))
+    if -0.8 < x < 1.15:
+        continue                     # not along the stair
+    ball('barnacle', (x, yb, zb), (0.03, 0.025, 0.03), mb, ship=False, seg=3, rings=2)
 
-# ---- the stair: steep plank treads on two stringers, up the rock to the door -------------------------
-STOOP = (DOOR_X, DOOR_SILL, DOOR_Z + 0.12)
-TOP = (DOOR_X - 0.24, DOOR_SILL, DOOR_Z + 0.22)
-FOOT = (TOP[0] - 1.2, 0.0, TOP[2] + 0.3)
-TREADS = 16
-run = Vector((TOP[0] - FOOT[0], 0, TOP[2] - FOOT[2]))
-turn = math.atan2(run.x, run.z)
-nrm = Vector((run.z, 0, -run.x)).normalized()
-if nrm.z < 0:
-    nrm = -nrm
-for i in range(TREADS):
-    t = (i + 0.5) / TREADS
-    c = Vector(FOOT) + run * t
-    y = DOOR_SILL * (i + 1) / TREADS
-    for half in (-1, 1):
-        o = nrm * half * 0.078
-        box('stair tread', (c.x + o.x, y - 0.02, c.z + o.z), (0.152, 0.035, run.length / TREADS + 0.02), TREAD, ship=False, turn=turn, round_=0.006)
-for side in (-1, 1):
-    a = Vector(FOOT) + nrm * side * 0.16
-    b = Vector(TOP) + nrm * side * 0.16
-    sweep('stair stringer', [tuple(a + Vector((0, 0.03, 0))), tuple(b + Vector((0, -0.05, 0)))], [0.03, 0.03], POST, ship=False, sides=4)
-box('stair stoop', (STOOP[0], STOOP[1] - 0.02, STOOP[2]), (0.44, 0.04, 0.3), TREAD, ship=False, round_=0.006)
-for dx in (-0.18, 0.18):
-    rod('stoop post', (STOOP[0] + dx, 0, STOOP[2] + 0.12), (STOOP[0] + dx, STOOP[1] - 0.04, STOOP[2] + 0.12), 0.028, POST, ship=False, sides=4)
-# Rock under the stair's lower half.
-for t, r in ((0.12, 0.2), (0.3, 0.24), (0.5, 0.26), (0.7, 0.24)):
-    c = Vector(FOOT) + run * t - nrm * 0.06
-    boulder('stair rock', (c.x, 0.0, c.z), (r * 1.3, DOOR_SILL * t * 0.92 + 0.05, r), ROCK_DARK, jag=0.15, subdiv=2)
-
-# ---- at the foot of the stair: barrels, a crate, rope --------------------------------------------
-for x, z in ((FOOT[0] - 0.6, FOOT[2] - 0.3), (FOOT[0] - 0.82, FOOT[2] - 0.36)):
-    rod('barrel', (x, 0, z), (x, .27, z), .105, OAK, ship=False, top=.095, sides=8)
-    for y in (.05, .20):
-        rod('barrel hoop', (x, y, z), (x, y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
-    rod('barrel lid', (x, .268, z), (x, .28, z), .09, DARK, ship=False, sides=8)
-box('crate', (FOOT[0] - 0.72, 0.1, FOOT[2] - 0.04), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
-rod('rope coil', (FOOT[0] - 1.0, 0, FOOT[2] - 0.12), (FOOT[0] - 1.0, .045, FOOT[2] - 0.12), .085, ROPE, ship=False, sides=8)
-
-# ---- the chimney and the sign's wall plate -------------------------------------------------------------
-# The chimney is an old cannon barrel stood on end through the castle roof, smoking.
+# ---- the chimney -----------------------------------------------------------------------------------------
+# An old cannon barrel stood on end through the castle roof, smoking.
 CHM = (C0 + 0.18, RY + 0.05, 0.22)
 rod('cannon chimney', CHM, (CHM[0], CHM[1] + 0.36, CHM[2]), 0.055, IRON, top=0.046, sides=6)
 rod('cannon chimney ring', (CHM[0], CHM[1] + 0.32, CHM[2]), (CHM[0], CHM[1] + 0.36, CHM[2]), 0.062, IRON, sides=6)
 SMOKE = (CHM[0], CHM[1] + 0.4, CHM[2])
-# The sign (web/js/piratesign.js) hangs on the stern castle's forward corner, its arm out over the
-# stair towards the water, its board read along the quay.
-SIGN_AT = (C0 + 0.07, CY0 + CH_ - 0.08, H1 - 0.05 * (CH_ - 0.08) / CH_ + 0.012)
-box('sign wall plate', (SIGN_AT[0], SIGN_AT[1], SIGN_AT[2] - 0.004), (0.07, 0.1, 0.012), IRON)
 
-# ---- the heel ---------------------------------------------------------------------------------------
+# ---- the heel, and then two and a half times the size ------------------------------------------------
+# Everything above is the ship of render 17 at the size it was first built, and it is set down on
+# the island two and a half times larger (the keeper, in the game: "hij is veel te klein"), on an
+# 11 x 6 lot. What a settler touches is built after this, at a settler's size: the door, the
+# stair, its rails, the lanterns by them, the sign on its post, the barrels at the foot.
+SCALE = 2.5
+LOT_HALF_X, LOT_HALF_Z = 5.5 - 0.15, 3.0 - 0.15
 bpy.context.view_layer.update()
 for o in SHIP_PARTS:
     o.matrix_world = _heel @ o.matrix_world
+_scale = Matrix.Diagonal((SCALE, SCALE, SCALE, 1))
+for o in list(bpy.context.scene.objects):
+    if o.type == 'MESH':
+        o.matrix_world = _scale @ o.matrix_world
 
 
-def heeled(p):
-    return tuple(_heel @ Vector(xyz(p)))
+def world_of(p):
+    """A point of the ship as it was drawn, where it is on the island now: heeled, then scaled."""
+    v = _scale @ (_heel @ Vector(xyz(p)))
+    return Vector((v.x, v.z, -v.y))
 
 
-# anchor.door is where a settler stands to go in: on the ground at the foot of the stair, which
-# is in E's reach of the lot's middle (web/js/main.js, `kind: 'tavern'`).
-for name, q in (('smoke', heeled(SMOKE)), ('sign', heeled(SIGN_AT)), ('door', xyz(tuple(Vector(FOOT) - run.normalized() * 0.34)))):
-    bpy.ops.object.empty_add(location=q)
+# ---- the door, cut in the hull under the stern castle ----------------------------------------------
+# Halfway up the hull's side, where it stands plumb, at a settler's size.
+DOOR_H, DOOR_W = 0.56, 0.3
+_dc = world_of(hull_point(0.98, 0.5, 1)[0])
+DX = _dc.x
+DOOR_SILL = _dc.y - DOOR_H * 0.5
+HZ = _dc.z + 0.02                      # the hull's outside at the door
+DOOR_Z = HZ + 0.02
+door_outline = [(-DOOR_W / 2, 0), (DOOR_W / 2, 0)] + [(DOOR_W / 2 * c, DOOR_H - DOOR_W / 2 + DOOR_W / 2 * s) for c, s in ARCH]
+plate('door recess', [(u * 1.3, v * 1.08 - 0.02) for u, v in door_outline], DX, DOOR_SILL, DOOR_Z, 0.06, DARK, ship=False)
+plate('door', door_outline, DX, DOOR_SILL, DOOR_Z + 0.034, 0.02, HULL, ship=False)
+for k in range(1, 5):
+    u = -DOOR_W / 2 + DOOR_W * k / 5
+    box('door seam', (DX + u, DOOR_SILL + DOOR_H * 0.45, DOOR_Z + 0.045), (0.006, DOOR_H * 0.85, 0.004), DARK, ship=False)
+for y in (0.12, 0.34):
+    box('door band', (DX, DOOR_SILL + y, DOOR_Z + 0.047), (DOOR_W * 0.94, 0.024, 0.008), IRON, ship=False)
+    for u in (-0.1, 0.0, 0.1):
+        ball('door stud', (DX + u, DOOR_SILL + y, DOOR_Z + 0.053), (0.008, 0.008, 0.005), IRON, ship=False, seg=3, rings=2)
+rod('door ring', (DX + 0.08, DOOR_SILL + 0.28, DOOR_Z + 0.046), (DX + 0.08, DOOR_SILL + 0.28, DOOR_Z + 0.06), 0.03, GOLD, ship=False, sides=6, fill='NOTHING')
+ball('door skull', (DX, DOOR_SILL + DOOR_H + 0.08, DOOR_Z + 0.04), (0.07, 0.075, 0.05), BONE, ship=False, seg=5, rings=4)
+for sx in (-1, 1):
+    ball('door skull socket', (DX + sx * 0.025, DOOR_SILL + DOOR_H + 0.09, DOOR_Z + 0.08), (0.017, 0.019, 0.012), VOID, ship=False, seg=3, rings=2)
+LX = DX - 0.3
+rod('door lantern bracket', (LX, DOOR_SILL + 0.55, DOOR_Z - 0.01), (LX, DOOR_SILL + 0.55, DOOR_Z + 0.13), 0.008, IRON, ship=False, sides=3)
+lantern('door lantern', (LX, DOOR_SILL + 0.55, DOOR_Z + 0.13), 1.05, ship=False)
+
+# ---- the stair: a zigzag up the rock, walked as well as drawn ------------------------------------------
+# Two flights along the water flank, at about 31 degrees: the lower from its foot (east) up to a
+# landing (west), the upper back east from the landing to the stoop at the door. Each is a floor
+# walk mode stands you on (anchor.deck.<name>.lo|hi for a floor, anchor.stair.<name>.lo|hi for a ramp
+# with `lo` at its foot - the ship's own vocabulary, scripts/model-rules.mjs - read by
+# web/js/buildings.js as `surfaces`), and each is drawn
+# as treads a settler's step apart on two stringers, with a rail on its open side.
+Y = DOOR_SILL
+STAIR_W, GAP, LAND_L, STOOP_L = 0.42, 0.06, 0.62, 0.7
+RUN = (Y / 2) / math.tan(math.radians(31))
+UZ0 = HZ + 0.14                    # clear of the hull's own solid (web/js/buildings.js pirateSolids)
+UZ1 = UZ0 + STAIR_W
+WZ0, WZ1 = UZ1 + GAP, UZ1 + GAP + STAIR_W
+XE = DX - STOOP_L / 2              # the upper flight's top and the lower flight's foot
+XLE = XE - RUN                     # the landing's east edge
+XLW = XLE - LAND_L
+SURFACES = {
+    'stoop': ((XE, Y, HZ + 0.02), (XE + STOOP_L, Y, UZ1)),
+    'up': ((XLE, Y / 2, UZ0), (XE, Y, UZ1)),
+    'land': ((XLW, Y / 2, UZ0), (XLE, Y / 2, WZ1)),
+    'down': ((XE, 0.0, WZ0), (XLE, Y / 2, WZ1)),
+}
+RISE = 0.085
+
+
+def flight(name, lo, hi, z0, z1):
+    """Treads from the lo end (x, y) to the hi end, two planks a tread, on two stringers."""
+    (x0, y0), (x1, y1) = lo, hi
+    n = max(2, round(abs(y1 - y0) / RISE))
+    run = (x1 - x0) / n
+    for i in range(n):
+        # each tread's top at the height the ramp has over its middle, so a foot on the drawing is
+        # a foot on the floor walk mode gives it
+        xm = x0 + run * (i + 0.5)
+        ym = y0 + (y1 - y0) * (i + 0.5) / n
+        for half in (0, 1):
+            zc = z0 + (z1 - z0) * (0.25 + 0.5 * half)
+            box(name + ' tread', (xm, ym - 0.018, zc), (abs(run) + 0.012, 0.035, (z1 - z0) / 2 - 0.012), TREAD, ship=False, round_=0.005)
+    for z in (z0 + 0.03, z1 - 0.03):
+        # never below the ground at the foot: every asset's lowest point is y = 0
+        sweep(name + ' stringer', [(x0, max(y0 - 0.06, 0.035), z), (x1, max(y1 - 0.06, 0.035), z)], [0.03, 0.03], POST, ship=False, sides=4)
+
+
+flight('stair lower', (XE, 0.0), (XLE, Y / 2), WZ0, WZ1)
+flight('stair upper', (XLE, Y / 2), (XE, Y), UZ0, UZ1)
+box('stair landing', ((XLW + XLE) / 2, Y / 2 - 0.02, (UZ0 + WZ1) / 2), (LAND_L, 0.04, WZ1 - UZ0), TREAD, ship=False, round_=0.006)
+box('stair stoop', (XE + STOOP_L / 2, Y - 0.02, (HZ + 0.02 + UZ1) / 2), (STOOP_L, 0.04, UZ1 - HZ - 0.02), TREAD, ship=False, round_=0.006)
+# What carries the landing and the stoop: posts down to the ground.
+for x, z in ((XLW + 0.05, WZ1 - 0.05), (XLE - 0.05, WZ1 - 0.05), (XLW + 0.05, UZ0 + 0.05)):
+    rod('stair landing post', (x, 0, z), (x, Y / 2 - 0.04, z), 0.03, POST, ship=False, sides=4)
+for x in (XE + 0.06, XE + STOOP_L - 0.06):
+    rod('stair stoop post', (x, 0, UZ1 - 0.04), (x, Y - 0.04, UZ1 - 0.04), 0.03, POST, ship=False, sides=4)
+# Rails: on the lower flight's water side, round the landing's open sides, on the upper flight's
+# water side (the drop to the lower flight) and round the stoop.
+RAIL_H = 0.32
+RAILS = []
+
+
+def rail(name, pts, posts_every=0.55):
+    """A rail at RAIL_H over a polyline of (x, y, z) floor points, with posts along it."""
+    path = [Vector(p) for p in pts]
+    posts = [path[0]]
+    for a, b in zip(path, path[1:]):
+        n = max(1, round((b - a).length / posts_every))
+        posts += [a.lerp(b, k / n) for k in range(1, n + 1)]
+    for p in posts:
+        rod(name + ' post', (p.x, max(p.y - 0.03, 0.0), p.z), (p.x, p.y + RAIL_H, p.z), 0.017, POST, ship=False, sides=4)
+    for lift, r in ((RAIL_H, 0.016), (RAIL_H * 0.5, 0.01)):
+        sweep(name, [(p.x, p.y + lift, p.z) for p in path], [r] * len(path), POST, ship=False, sides=4, cap=False)
+    # and every segment as a pair of anchors, the floor under each end: web/js/buildings.js makes a
+    # wall of it at that height, so the rail you see is a rail you are stopped by
+    for a, b in zip(path, path[1:]):
+        k = len(RAILS)
+        RAILS.append((a, b))
+    return posts
+
+
+lower_posts = rail('stair lower rail', [(XE, 0.0, WZ1 + 0.02), (XLE, Y / 2, WZ1 + 0.02), (XLW, Y / 2, WZ1 + 0.02), (XLW, Y / 2, UZ0)])
+rail('stair upper rail', [(XLE, Y / 2, UZ1 + 0.03), (XE, Y, UZ1 + 0.03), (XE + STOOP_L, Y, UZ1 + 0.03), (XE + STOOP_L, Y, HZ + 0.04)])
+post_lantern('stair foot lantern', (XE, RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
+post_lantern('stair landing lantern', (XLW, Y / 2 + RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
+post_lantern('stair stoop lantern', (XE + STOOP_L, Y + RAIL_H - 0.02, UZ1 + 0.03), 0.03, 0.95, ship=False)
+
+# ---- the rock under the stair, and the rock kept inside the lot -------------------------------------------
+# A few boulders of its own under the lower flight and the landing, and then every rock that
+# reaches under a tread cut off below it: the drawn stair lies on the rock, and walk mode's floor is
+# the stair's. Those rocks are renamed `stair rock`, which web/js/buildings.js leaves out of the
+# solids - the stair is walked over them, and a low solid under the high end of each flight keeps
+# anybody from walking underneath instead. Every rock is also kept inside the lot.
+for f, r in ((0.25, 0.32), (0.5, 0.42), (0.78, 0.46)):
+    x = XE + (XLE - XE) * f
+    boulder('stair rock', (x, 0.0, (WZ0 + WZ1) / 2 - 0.05), (r * 1.2, Y / 2 * f + 0.1, r), ROCK_DARK, jag=0.15, subdiv=2)
+boulder('stair rock', ((XLW + XLE) / 2, 0.0, (UZ0 + WZ1) / 2), (0.55, Y / 2, 0.55), ROCK_DARK, jag=0.15, subdiv=2)
+
+
+def floor_under(x, z):
+    """The stair's floor over (x, z), or None off it."""
+    best = None
+    for (lo, hi) in SURFACES.values():
+        x0, x1 = sorted((lo[0], hi[0]))
+        z0, z1 = sorted((lo[2], hi[2]))
+        if not (x0 - 0.12 <= x <= x1 + 0.12 and z0 - 0.12 <= z <= z1 + 0.12):
+            continue
+        t = 0.0 if hi[0] == lo[0] else min(max((x - lo[0]) / (hi[0] - lo[0]), 0.0), 1.0)
+        y = lo[1] + (hi[1] - lo[1]) * t
+        best = y if best is None else min(best, y)
+    return best
+
+
+bpy.context.view_layer.update()
+for o in list(bpy.context.scene.objects):
+    if o.type != 'MESH' or not any(k in o.name for k in ('rock', 'stone')):
+        continue
+    me = o.data
+    mw, inv = o.matrix_world, o.matrix_world.inverted()
+    cut = False
+    for v in me.vertices:
+        w = mw @ v.co
+        x, y, z = w.x, w.z, -w.y
+        cap = floor_under(x, z)
+        if cap is not None and y > cap - 0.08:
+            y, cut = max(cap - 0.08, 0.0), True
+        x = min(max(x, -LOT_HALF_X), LOT_HALF_X)
+        z = min(max(z, -LOT_HALF_Z), LOT_HALF_Z)
+        v.co = inv @ Vector((x, -z, y))
+    me.update()
+    if cut and 'stair rock' not in o.name:
+        n = _count.get('stair rock', 0)
+        _count['stair rock'] = n + 1
+        o.name = 'Salty stair rock' + (f' {n}' if n else '')
+
+# ---- at the foot of the stair: the sign on its post, barrels, a crate, rope ---------------------------
+# The sign (web/js/piratesign.js) stands on its own post beside the stair's foot, its arm out east
+# over the way in and its board facing the water, where the island's camera reads it.
+FOOT = (XE + 0.3, 0.0, (WZ0 + WZ1) / 2)
+SIGN_POST = (XE + 0.12, 0.0, WZ1 + 0.16)
+box('sign post', (SIGN_POST[0], 0.56, SIGN_POST[2]), (0.075, 1.12, 0.075), POST, ship=False, round_=0.008)
+box('sign post cap', (SIGN_POST[0], 1.13, SIGN_POST[2]), (0.1, 0.03, 0.1), POST, ship=False, round_=0.006)
+rod('sign post brace', (SIGN_POST[0] + 0.035, 0.72, SIGN_POST[2]), (SIGN_POST[0] + 0.2, 0.975, SIGN_POST[2]), 0.012, POST, ship=False, sides=4)
+SIGN_AT = (SIGN_POST[0] + 0.04, 0.98, SIGN_POST[2])
+box('sign wall plate', (SIGN_AT[0] - 0.003, SIGN_AT[1], SIGN_AT[2]), (0.008, 0.1, 0.07), IRON, ship=False)
+for x, z in ((XE + 0.95, WZ1 - 0.05), (XE + 1.17, WZ1 - 0.12)):
+    rod('barrel', (x, 0, z), (x, .27, z), .105, OAK, ship=False, top=.095, sides=8)
+    for y in (.05, .20):
+        rod('barrel hoop', (x, y, z), (x, y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
+    rod('barrel lid', (x, .268, z), (x, .28, z), .09, DARK, ship=False, sides=8)
+box('crate', (XE + 1.02, 0.1, WZ1 - 0.36), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
+rod('rope coil', (XE + 1.42, 0, WZ1 - 0.02), (XE + 1.42, .045, WZ1 - 0.02), .085, ROPE, ship=False, sides=8)
+
+# ---- anchors ----------------------------------------------------------------------------------------
+# anchor.door is where a settler stands to go in: on the ground at the foot of the stair. The
+# stair's floors go out as corner pairs; the hull's own solid (its footprint, from keel to the
+# castle's roof) as another, since the hull has no vertex a settler's height off the ground and
+# would otherwise be no wall to somebody on the stair.
+anchors = {'smoke': world_of(SMOKE), 'sign': Vector(SIGN_AT), 'door': Vector(FOOT)}
+for name, (lo, hi) in SURFACES.items():
+    kind = 'deck' if lo[1] == hi[1] else 'stair'
+    anchors[f'{kind}.{name}.lo'] = Vector(lo)
+    anchors[f'{kind}.{name}.hi'] = Vector(hi)
+for k, (a, b) in enumerate(RAILS):
+    anchors[f'rail.{k}.a'] = a
+    anchors[f'rail.{k}.b'] = b
+anchors['solid.hull.lo'] = Vector((world_of((BOW_X + 0.35, 0, 0)).x, world_of((0, KEEL_Y, 0)).y, -(HZ - 0.06)))
+anchors['solid.hull.hi'] = Vector((world_of((STERN_X, 0, 0)).x, world_of((0, RY + 0.2, 0)).y, HZ - 0.06))
+for name, q in anchors.items():
+    bpy.ops.object.empty_add(location=xyz(tuple(q)))
     bpy.context.object.name = 'anchor.' + name
 
 bpy.context.view_layer.update()
@@ -961,4 +1126,5 @@ if not PREVIEW_ONLY:
     OUT.mkdir(parents=True, exist_ok=True)
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-piratetavern.blend'))
-    runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'piratetavern'})
+    # Four decimals (0.4 mm on the island), as the hall inside: at six this module was 11.7 MB.
+    runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'piratetavern', 'DIGITS': 4})

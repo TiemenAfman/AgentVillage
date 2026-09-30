@@ -417,6 +417,20 @@ en `letterlijk/`.
 Tot dat er is, overlapt het schip op een kavel van 3 x 3 zijn buren. Op `/demo` doet het dat ook, omdat het
 werkblad uitgaat van kavels van 3.
 
+### Bijsturing na het eerste oordeel in het spel (1 oktober 2026)
+
+Op een kopie van Hoogezand vond de keeper het schip *"veel te klein"*. De trap kon je *"niet eens omhoog"*, en de
+kroeg stond tegen de stenen kade: *"een piraat hoort op het strand"*. Besluiten:
+
+| Besluit | Waarom |
+|---|---|
+| **2,5×**: het schip en de rots, op een kavel van **11 x 6** (vervangt het kavel van 5 x 3). De deur, de treden, de leuningen, de lantaarns bij de deur en het bord blijven op settler-maat | Een landmark van zo'n 50 m, op de schaal van de Batavia. Wat je aanraakt blijft even groot als jij. |
+| **Een beloopbare zigzagtrap**: een onderste trap van de voet (oost) naar een bordes (west), en een bovenste trap terug naar het stoepje bij de deur. Het gebouw geeft die als `surfaces` (vloeren en hellingen, zoals in de kamers) aan de walk van het eiland. De rots eronder wordt onder de treden afgevlakt | Walk mode kende buiten alleen celhoogtes. De kamers hebben al rechthoekige vloeren en hellingen, dus dat werkt ook op het eiland. |
+| **De muren van dit gebouw hebben een hoogte** (`y0`/`y1` per blok, door `blockersOf` meegegeven). De delen van de trap tellen niet als muur; onder het bordes en de bovenste trap staat een laag blok | Wie op de trap staat, loopt over de rots eronder. Wie eronder loopt, komt er niet doorheen. |
+| **E werkt bij de deur**, bovenaan de trap (`floor` op het doel) | Je gaat naar binnen door de trap op te lopen, niet vanaf het strand. |
+| **Op het strand, een blokje van de stenen kade af** (`pirateTavernSite` gebruikt `kadeSite` niet meer) | Een piratenkroeg hoort aan het zand, niet aan de kraan en het pakhuis. |
+| **Eénmalig verhuizen** op een eiland waar de kroeg al achter de kade staat | Een plot verhuist nooit vanzelf. Dit is een bewuste, eenmalige verhuizing, zoals die van de kist, gemeten op een kopie van het live eiland. Een nieuwe kavelmaat en een verhuizing: een **minor**. |
+
 **Kosten**: `web/js/piratetavern-mesh.js` is 11,7 MB (het oude exterieur was 0,5 MB, het piratenschip is 4,6 MB)
 en laadt mee bij het opstarten, ook in de APK. De precisie per set van de interieurbranch (`11f2248`, "Geef de
 exporter een precisie per set") kan dat flink kleiner maken, zodra die hier ligt.
