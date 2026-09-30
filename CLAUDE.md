@@ -417,7 +417,10 @@ every side). On the page the quay is ground painted as plaza (world.js `squareCe
 face) and feet stand on `quayKade(village, terrain).height` (shared/quay-basin.mjs: the foot cell at
 `level`, the treads) in walk.js `groundAt`/`bedUnder` and settlerwalk `createStandHeight` - **so the open
 sea must be redeployed for the settlers' stand height**; `parcelWaterField`/`quayWaterField`, the ground
-shader's discard and the basin mesh are gone. Known gap: the bridge at `havenBridgeSite` is not built.
+shader's discard and the basin mesh are gone. The commons keeps no ground the harbour drowned:
+`releaseHarbourCommons` (every pass, after `planResort`) drops a commons super-cell that is all water, touches
+the funnel or a dig and has nothing on it - the old shore's claims for crane, warehouse and yard were drawn by the
+planner as "the town" in the middle of the harbour. Known gap: the bridge at `havenBridgeSite` is not built.
 The quay stands at `kadeHarbour` (the harbour whose planks lie in the funnel's ring: the quay district's
 own first - Hoogezand - else the one nearest the funnel's top); beside any harbour but the district's own,
 or a district parcel wider than `KADE_PARCEL.across`, it is laid past `KADE_PARCEL` (Hoogezand's parcel in

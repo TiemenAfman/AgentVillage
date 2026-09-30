@@ -22,12 +22,15 @@ import { makeTerrain, funnelHas, openWaterOf } from '../shared/terrain.mjs';
 import {
   emptyLayout, planKade, planHaven, repairFairway, fillRingPonds, growStep, waterfront, kadeCraneCell,
   kadeRoadCells, trialRoad, replayGrid, havenKeys, havenBridgeSite, keptWater, yardRows, YARD_ID, YARD_WET, outsideDoor,
+  releaseHarbourCommons, dugKeys,
 } from '../lib/layout.mjs';
 import { shipWaterOf, SHIP_WATER } from '../shared/quay.mjs';
 import { CRAFTS } from '../shared/crafts.mjs';
 import { clone } from './support/village.mjs';
 import { HOOGEZAND } from './support/hoogezand-ground.mjs';
 import { HOOGEZAND_QUAY, HOOGEZAND_QUAY_LOBE } from './support/hoogezand-quay.mjs';
+import { HOOGEZAND_RESORT } from './support/hoogezand-resort.mjs';
+import { cellsOfSuper } from '../shared/lattice.mjs';
 
 const SEED = HOOGEZAND.seed;
 const MODEL = { districts: [{ id: 'quay' }] };
@@ -250,4 +253,38 @@ test('a quay record this code cannot draw is refused', () => {
   for (const bad of [{ cells, level: 113, back: [1, 0], hold: [], wall: 1 }, { cells, level: 0.44, back: [1, 0], hold: [] }, { cells, level: 113, back: [2, 0], hold: [] }, { cells: [], level: 113, back: [1, 0], hold: [] }]) {
     assert.throws(() => draw(bad), Error);
   }
+});
+
+// The commons had claimed super-cells on the old shore for the crane, the warehouse and the yard,
+// and the harbour drowned them: on Hoogezand ten super-cells of "the town" in the water, lighter
+// squares in the planner. Given back once they are water touching the harbour with nothing on
+// them; land, the town's core and water away from the harbour stay the town's.
+test('town ground the harbour drowned goes back to nobody, and nothing else does', () => {
+  const F = HOOGEZAND_RESORT;
+  const l = emptyLayout(F.seed, F.size, clone(F.grow));
+  Object.assign(l, clone({ polders: F.polders, fairway: F.fairway, works: F.works, town: F.town, lattice: F.lattice, districts: F.districts, plots: F.plots, paths: F.paths }));
+  const T = groundOf(l);
+  const harbour = new Set([...havenKeys(l), ...dugKeys(l)]);
+  const taken = new Set();
+  for (const p of Object.values(l.plots)) for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) taken.add(key(p.gx + x, p.gz + z));
+  for (const p of l.paths) for (const c of p.cells || []) taken.add(key(c[0], c[1]));
+  const kinds = { drowned: [], land: [], sea: [] };
+  for (let j = -44; j <= 44; j++) for (let i = -44; i <= 44; i++) {
+    const cells = cellsOfSuper(l.lattice, i, j);
+    if (!cells.every(([x, z]) => T.inGrid(x, z))) continue;
+    const wet = cells.every(([x, z]) => T.isWater(x, z) && !taken.has(key(x, z)));
+    const near = cells.some(([x, z]) => harbour.has(key(x, z)));
+    if (wet && near) kinds.drowned.push([i, j]);
+    else if (wet) kinds.sea.push([i, j]);
+    else if (cells.every(([x, z]) => !T.isWater(x, z))) kinds.land.push([i, j]);
+  }
+  assert.ok(kinds.drowned.length >= 5 && kinds.land.length && kinds.sea.length, JSON.stringify(Object.values(kinds).map((k) => k.length)));
+  const core = [[0, 0], [1, -1]];
+  const keep = [...core, ...kinds.land.slice(0, 5), ...kinds.sea.slice(0, 5)];
+  l.town.commons = [...keep.slice(0, 4), ...kinds.drowned, ...keep.slice(4)];
+  releaseHarbourCommons(l, T);
+  assert.deepEqual(l.town.commons, keep, 'only the drowned harbour super-cells go, and the rest keep their order');
+  const again = l.town.commons;
+  releaseHarbourCommons(l, T);
+  assert.equal(l.town.commons, again, 'a second pass changes nothing');
 });
