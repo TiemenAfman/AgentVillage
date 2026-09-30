@@ -18,3 +18,5 @@ keystore.properties
 
 /.tauri
 /tauri.settings.gradle
+# Kotlin 2 session files a Gradle build leaves in buildSrc
+.kotlin

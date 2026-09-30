@@ -75,19 +75,72 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     file.sync_all().map_err(|e| e.to_string())?;
     drop(file);
 
-    // Through the FileProvider, which is what the opener plugin does with a path: a file://
-    // URI would be a FileUriExposedException. What shows up is the phone's own "install this
-    // app?" - and the first time, a trip to settings to let this app install others
-    // (REQUEST_INSTALL_PACKAGES in the manifest is the permission to ask for it).
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| e.to_string())
+    // To our own Kotlin (InstallerPlugin.kt), which turns the path into a content:// URI
+    // through the FileProvider and starts the installer with it. What shows up is the
+    // phone's own "install this app?" - and the first time, a trip to settings to let this
+    // app install others (REQUEST_INSTALL_PACKAGES in the manifest is the permission to ask
+    // for it).
+    installer::install(&app, &path.to_string_lossy())
+}
+
+/// The Kotlin half of install_update: `InstallerPlugin` in
+/// gen/android/app/src/main/java/com/promptholm/sea, registered here by its name so Rust can
+/// call its one command. Not the opener plugin's open_path, which is what v0.7.0 called: on
+/// Android that is Intent(ACTION_VIEW, path.toUri()) - a bare path, no scheme, no type - and
+/// nothing on the phone answers it, so every update was fetched in full and then handed to
+/// the browser, whose own download of the same file sat at 100% and never installed.
+#[cfg(target_os = "android")]
+mod installer {
+    use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
+    use tauri::{AppHandle, Manager, Runtime};
+
+    struct Installer<R: Runtime> {
+        handle: PluginHandle<R>,
+    }
+
+    pub fn init<R: Runtime>() -> TauriPlugin<R> {
+        Builder::new("installer")
+            .setup(|app, api| {
+                let handle = api.register_android_plugin("com.promptholm.sea", "InstallerPlugin")?;
+                app.manage(Installer { handle });
+                Ok(())
+            })
+            .build()
+    }
+
+    /// Put the APK at `path` in front of the package installer. The path has to be under
+    /// the app's cache: that is the one folder res/xml/file_paths.xml lets the FileProvider
+    /// share, and the installer is another process.
+    pub fn install<R: Runtime>(app: &AppHandle<R>, path: &str) -> Result<(), String> {
+        let plugin = app.try_state::<Installer<R>>().ok_or("the installer did not load")?;
+        plugin
+            .handle
+            .run_mobile_plugin::<()>("install", serde_json::json!({ "path": path }))
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Anywhere but on a phone there is no installer to hand an APK to. This is here so the
+/// crate still type-checks on the machine that builds it, without a cross-compile.
+#[cfg(not(target_os = "android"))]
+mod installer {
+    use tauri::plugin::{Builder, TauriPlugin};
+    use tauri::{AppHandle, Runtime};
+
+    pub fn init<R: Runtime>() -> TauriPlugin<R> {
+        Builder::new("installer").build()
+    }
+
+    pub fn install<R: Runtime>(_app: &AppHandle<R>, _path: &str) -> Result<(), String> {
+        Err("only a phone can install an APK".into())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(installer::init())
         .invoke_handler(tauri::generate_handler![install_update, latest_release])
         .setup(|app| {
             let handle = app.handle().clone();
