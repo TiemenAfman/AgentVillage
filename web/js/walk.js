@@ -1,7 +1,7 @@
 // Walking the island on foot. A third-person camera behind a settler you steer with
 // WASD, terrain underfoot, buildings you cannot walk through, and a prompt when you
 // come close to something you can interact with.
-import { quayBasin } from 'shared/quay-basin.mjs';
+import { quayKade } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
 import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
@@ -870,12 +870,13 @@ export function createWalkMode({
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
   function groundAt(x, z, from = Infinity) {
+    // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
+    // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
+    // same answer the sea gives its settlers. So a swimmer meets a wall and climbs out by a stair.
     const region = ground?.regionAt?.(x, z);
-    const basin = region && quayBasin(region.village, region.terrain);
-    const local = region?.toLocal(x, z);
-    const ramp = basin && basin.rampHeight(...local);
-    if (ramp != null) return ramp;
-    let best = basin?.contains(...local) ? basin.height(...local) : heightUnder(x, z);
+    const kade = region && quayKade(region.village, region.terrain);
+    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    let best = wall != null ? wall : heightUnder(x, z);
     const above = levelsIn(x, z);
     if (!above) return best;
     const reach = from + STEP_UP;
@@ -889,18 +890,13 @@ export function createWalkMode({
   // see and touch - the island mesh as it is drawn, the shoals, the banks and the trenches
   // (shared/seabed.mjs). Where the archipelago has none - a room, the workbench, a sea from
   // before it - it falls back to the height, so a diver simply finds the old flat floor. The
-  // quay's basin is its own floor (a sunken lane along the planks), as groundAt reads it.
+  // quay's wall and its stairs stand on that floor, as groundAt reads them.
   const bedOf = ground && ground.bedAt ? (x, z) => ground.bedAt(x, z) : heightUnder;
   function bedUnder(x, z) {
     const region = ground?.regionAt?.(x, z);
-    const basin = region && quayBasin(region.village, region.terrain);
-    if (basin) {
-      const local = region.toLocal(x, z);
-      const ramp = basin.rampHeight(...local);
-      if (ramp != null) return ramp;
-      if (basin.contains(...local)) return basin.height(...local);
-    }
-    return bedOf(x, z);
+    const kade = region && quayKade(region.village, region.terrain);
+    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    return wall != null ? wall : bedOf(x, z);
   }
 
   // The lowest surface above you, or Infinity under the open sky. This is the half that

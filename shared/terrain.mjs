@@ -755,6 +755,8 @@ export function foundingCoast(size) { return (size / 2) * 0.9375; }
 // The smallest grid a coast of `r` fits on: the one an island founded on it would have.
 export function gridForCoast(r) { return 2 * Math.ceil(r / 0.9375); }
 
+const STEP_KEYS = ['r', 'grid', 'hold', 'relief', 'water', 'lane', 'ponds', 'haven'];
+const WATER_STEP_KEYS = ['lane', 'ponds', 'haven'];
 function checkGrow(grow, size) {
   const base = grow.base;
   const steps = Array.isArray(grow.steps) ? grow.steps : [];
@@ -777,7 +779,24 @@ function checkGrow(grow, size) {
     // the ground whoever took the step recorded the hash of.
     const relief = s && typeof s === 'object' && s.relief !== undefined ? s.relief : 0;
     if (relief !== 0 && relief !== RELIEF_VERSION) throw new Error(`a growth step drawn with relief ${relief} is not one this code knows`);
-    out.push({ r, grid, hold, relief, prev: last });
+    // Which water rule the ring was drawn with (settleRing, below): 0 is the ring that has
+    // no idea what water it pinches off, the only one there was until `water` existed. Same
+    // contract as `relief` - a number this code does not know is refused, not drawn as 0.
+    const water = s && typeof s === 'object' && s.water !== undefined ? s.water : 0;
+    if (water !== 0 && water !== WATER_VERSION) throw new Error(`a growth step drawn with water ${water} is not one this code knows`);
+    // Every other field is refused: a step decides the island's hash, and a field this code
+    // would pass over is ground it would draw differently from whoever wrote it. What the
+    // water rule decided (settleRing, below) rides only on a step drawn with it.
+    let lane = [], ponds = [], haven = null;
+    if (s && typeof s === 'object') {
+      for (const k of Object.keys(s)) {
+        if (!STEP_KEYS.includes(k) || (!water && WATER_STEP_KEYS.includes(k))) throw new Error(`a growth step with a field this code does not know: ${String(k).slice(0, 24)}`);
+      }
+      if (s.lane !== undefined) lane = cellList(s.lane, 'a growth step\'s lane');
+      if (s.ponds !== undefined) ponds = cellList(s.ponds, 'a growth step\'s ponds');
+      if (s.haven !== undefined && s.haven !== null) haven = checkFunnel(s.haven);
+    }
+    out.push({ r, grid, hold, relief, water, lane, ponds, haven, prev: last });
     last = r;
   }
   return { base, steps: out };
@@ -833,7 +852,8 @@ function groundForCoast(seed, size, r, g) {
 //
 // Returns the courses of any river the step's relief cut (grid indices of `size`), which the
 // caller adds to the island's rivers - so a later step keeps its bed like a founding one's.
-function accrete(H, size, seed, { r, grid, hold, relief, prev }, g) {
+function accrete(H, size, seed, step, g) {
+  const { r, grid, hold, relief, water, prev } = step;
   const N = size + 1;
   const F0 = groundForCoast(seed, grid, r, g);
   const F = grid === size ? F0 : embed(F0, grid, size);
@@ -904,13 +924,642 @@ function accrete(H, size, seed, { r, grid, hold, relief, prev }, g) {
     }
   }
 
-  const before = relief ? H.slice() : null;
+  const before = relief || water ? H.slice() : null;
   for (let k = 0; k < H.length; k++) {
     if (!sea[k] || keep[k] || dist[k] < 1) continue;
     const v = Math.min(F[k], GROW_SHORE + (dist[k] - 1) * GROW_RISE);
     if (v > H[k]) H[k] = Math.round(v * 256) / 256;
   }
-  return relief ? growRelief(H, before, size, seed, r, prev, sea, keep, dist, g.courses || []) : [];
+  const cut = relief ? growRelief(H, before, size, seed, r, prev, sea, keep, dist, g.courses || []) : [];
+  if (water) {
+    // After the relief, so its hills and rivers are kept out of the funnel and the lanes too.
+    const held = cornerMaskOf(hold, size, half);
+    if (g.settle && g.settle.index === g.index) {
+      // The step being taken: decide its lanes and ponds here, on this very ground, and hand
+      // them back for the layout to write on the step (lib/layout.mjs `growStep`).
+      const d = settleRing(H, before, size, keep, held, g.settle.channel || [], step.haven, g.settle.lane || []);
+      H.set(d.H);
+      g.settled.lane = d.lane; g.settled.ponds = d.ponds;
+    } else {
+      ringWater(H, before, size, step, held);
+    }
+  }
+  return cut;
+}
+
+// ---- earthworks with a profile -------------------------------------------------------------
+// Every edge people make in the ground - a channel dug through a bar, a pond filled in, a lane
+// a ring has to leave open, the harbour's funnel - is a MASK (which cells: the layout decides)
+// and a PROFILE by distance from it (what the ground becomes: decided here), applied with
+// `min` or `max` and never as a stamp at one height (Plans/quay-en-rivier.md, "Het ontwerp:
+// grondwerk met een profiel"). A stamp per cell was measured on Hoogezand: every dug or filled
+// edge jumped from sea to meadow in one cell (step p90 0.70 along the old fairway, slope p90
+// 1.57, against 0.15 and 0.23 on the natural coast), because a cell is the mean of four corners
+// shared with its eight neighbours and the stamp knows nothing past its own four. `carveRiver`
+// has always done it this way ("never up"); these are the same idea with a coast's profile.
+//
+// The profile runs out from the mask: the bed (CHANNEL_H) in it, then an underwater bank up to
+// the waterline, then a beach of WORK_BEACH cells from 0 to BEACH_MAX, then a land bank until it
+// meets the ground. So a dig always leaves a beach, hardly digs anything outside its mask on sand,
+// and against a hill leaves a slope instead of a wall. Trig-free (only Math.sqrt, which IEEE
+// rounds exactly like + and *, so Node and a browser agree to the bit) and quantised to 1/256
+// like every other height here.
+const WORK_BED = CHANNEL_H;
+const WORK_UNDER = 0.35;                     // rise per cell from the bed to the waterline
+const WORK_BEACH = 3;                        // cells of beach
+const WORK_BEACH_RISE = BEACH_MAX / WORK_BEACH;
+const WORK_BANK = 0.3;                       // rise per cell of the land bank past the beach
+const WORK_D0 = -WORK_BED / WORK_UNDER;      // where the underwater bank reaches the waterline
+const WORK_D1 = WORK_D0 + WORK_BEACH;        // where the beach ends
+// What a filled pond is never below: just dry, sand - a lagoon fallen dry is a sand flat.
+const WORK_DRY = 12 / 256;
+// Jacobi rounds of the fill's inpainting. A fixed count, not "until it settles": a tolerance
+// would stop after a different number of rounds wherever one sum rounds differently, and the
+// ground is in the hash. 256 settles a pond 30 cells across to well under 1/256.
+const WORK_FILL_ROUNDS = 256;
+
+const q256 = (v) => Math.round(v * 256) / 256;
+
+// The profile: height at `d` cells from the mask (0 on the mask's own corners).
+export function workProfile(d) {
+  if (d <= 0) return WORK_BED;
+  if (d <= WORK_D0) return WORK_BED + WORK_UNDER * d;
+  if (d <= WORK_D1) return (d - WORK_D0) * WORK_BEACH_RISE;
+  return BEACH_MAX + (d - WORK_D1) * WORK_BANK;
+}
+
+// Squared distance, in cells, from every corner (N x N, N = size + 1) to the nearest corner of a
+// cell in `cells` (a list of [gx, gz]; out-of-grid ones are skipped): the distance from a corner
+// to the nearest point of a cell's square is always the distance to one of that square's integer
+// corners, so this is exact. Felzenszwalb and Huttenlocher's separable transform, in whole
+// numbers; Infinity where there is no mask at all.
+export function cornerDistance2(cells, size) {
+  // "Far" is a finite number well past any real squared distance on a grid (2 * 1025^2), so the
+  // envelope below needs no special case for a line with no source; every sum stays a whole
+  // number under 2^53 and so is exact.
+  const N = size + 1, FAR = 1e12;
+  const f = new Float64Array(N * N).fill(FAR);
+  let any = false;
+  for (const c of cells) {
+    const gx = c[0], gz = c[1];
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+    const k = gx + gz * N;
+    f[k] = f[k + 1] = f[k + N] = f[k + N + 1] = 0;
+    any = true;
+  }
+  if (!any) return f.fill(Infinity);
+  const line = new Float64Array(N), out = new Float64Array(N);
+  const v = new Int32Array(N), z = new Float64Array(N + 1);
+  // The lower envelope of the parabolas (q - v)^2 + line[v], one line at a time.
+  const pass = (base, stride) => {
+    for (let i = 0; i < N; i++) line[i] = f[base + i * stride];
+    let k = 0;
+    v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+    for (let q = 1; q < N; q++) {
+      let s = ((line[q] + q * q) - (line[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) {
+        k--;
+        s = ((line[q] + q * q) - (line[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      }
+      k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+    }
+    k = 0;
+    for (let q = 0; q < N; q++) {
+      while (z[k + 1] < q) k++;
+      const d = q - v[k];
+      out[q] = d * d + line[v[k]];
+    }
+    for (let i = 0; i < N; i++) f[base + i * stride] = out[i];
+  };
+  for (let i = 0; i < N; i++) pass(i, N);          // down each column
+  for (let j = 0; j < N; j++) pass(j * N, 1);      // along each row
+  for (let k = 0; k < f.length; k++) if (f[k] >= FAR) f[k] = Infinity;
+  return f;
+}
+
+// Dig: H = min(H, P(d)). `fixed` (a corner mask, or null) is never lowered - what stands, which
+// the layout decided when it planned the dig (`works.hold`).
+export function profileDig(H, size, cells, fixed = null) {
+  const d2 = cornerDistance2(cells, size);
+  for (let k = 0; k < H.length; k++) {
+    if (d2[k] === Infinity || (fixed && fixed[k])) continue;
+    const t = q256(workProfile(Math.sqrt(d2[k])));
+    if (t < H[k]) H[k] = t;
+  }
+}
+
+// Keep open, in a ring: H = min(H, max(before, P(d))). The ring may not rise above the water's
+// profile, and nothing is ever put below what was there before the step - so where the ring
+// laid its own sea floor deeper than the profile that floor stays (no trench of -2.5 where the
+// grid's old edge was), and "accretion never lowers anything" is still literally true:
+// min(ring, x) with x >= before is never below before.
+export function profileKeep(H, before, size, cells) {
+  const d2 = cornerDistance2(cells, size);
+  for (let k = 0; k < H.length; k++) {
+    if (d2[k] === Infinity) continue;
+    const p = q256(workProfile(Math.sqrt(d2[k])));
+    const t = p > before[k] ? p : before[k];
+    if (t < H[k]) H[k] = t;
+  }
+}
+
+// Fill: the corners of the mask are inpainted from its rim (a fixed number of Jacobi rounds on
+// the mean of four neighbours, the rim held), never below WORK_DRY, and raised with `max`. The
+// pond becomes the ground that would have lain there - sand when its rim is sand - instead of a
+// plate at one height with a step round it (measured: 195 of 198 rim edges of the old fill stood
+// higher than the ground beside them). `fixed` (a corner mask, or null) is never raised and is
+// held at its own height as part of the rim: a house's corner, a lane's, the channel's.
+export function profileFill(H, size, cells, fixed = null) {
+  const N = size + 1;
+  const inMask = new Uint8Array(size * size);
+  for (const c of cells) {
+    const gx = c[0], gz = c[1];
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+    inMask[gx + gz * size] = 1;
+  }
+  const cellIn = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size && inMask[gx + gz * size] === 1;
+  // Corners in ascending order, so the rounds below always visit them in the same order.
+  const corners = [], rim = new Uint8Array(N * N), mark = new Uint8Array(N * N);
+  for (let gz = 0; gz < size; gz++) {
+    for (let gx = 0; gx < size; gx++) {
+      if (!inMask[gx + gz * size]) continue;
+      for (const k of [gx + gz * N, gx + 1 + gz * N, gx + (gz + 1) * N, gx + 1 + (gz + 1) * N]) mark[k] = 1;
+    }
+  }
+  for (let k = 0; k < mark.length; k++) {
+    if (!mark[k]) continue;
+    const i = k % N, j = (k - i) / N;
+    // A corner is rim when one of the four cells it belongs to is not pond (or is off the grid).
+    if (!cellIn(i - 1, j - 1) || !cellIn(i, j - 1) || !cellIn(i - 1, j) || !cellIn(i, j)) rim[k] = 1;
+    if (fixed && fixed[k]) rim[k] = 2;
+    corners.push(k);
+  }
+  const P = new Float64Array(H.length);
+  for (const k of corners) P[k] = rim[k] === 2 ? H[k] : rim[k] ? Math.max(H[k], WORK_DRY) : WORK_DRY;
+  const inner = corners.filter((k) => !rim[k]);
+  const next = new Float64Array(inner.length);
+  for (let round = 0; round < WORK_FILL_ROUNDS; round++) {
+    for (let n = 0; n < inner.length; n++) {
+      const k = inner[n];
+      next[n] = 0.25 * (P[k - 1] + P[k + 1] + P[k - N] + P[k + N]);
+    }
+    for (let n = 0; n < inner.length; n++) P[inner[n]] = next[n];
+  }
+  for (const k of corners) {
+    if (rim[k] === 2) continue;
+    const t = q256(Math.max(WORK_DRY, P[k]));
+    if (t > H[k]) H[k] = t;
+  }
+}
+
+// The corners (N x N) of a list of cells, as a mask - what `fixed` wants. `off` turns local
+// coordinates (a growth step's) into grid indices.
+export function cornerMaskOf(cells, size, off = 0) {
+  const N = size + 1, m = new Uint8Array(N * N);
+  for (const c of cells || []) {
+    const gx = c[0] + off, gz = c[1] + off;
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+    const k = gx + gz * N;
+    m[k] = m[k + 1] = m[k + N] = m[k + N + 1] = 1;
+  }
+  return m;
+}
+
+// ---- the harbour funnel -------------------------------------------------------------------------
+// The harbour is a funnel of water: narrow at the head of the inlet, where the river comes into
+// the bay (the bridge's place, lib/layout.mjs `havenBridgeSite`), wider towards the sea, up to a
+// most and then straight on (Plans/quay-en-rivier.md, "De haven als trechter"). The keeper drew
+// it that way over the ring map: a straight strip of one width (the first version) did not fit
+// the bay that is there, and "keep what was there before the ring" left a trench of -2.5 with
+// walls where the grid's old edge had been. `h = { top, dir, w0, open, max }`:
+//
+//   top   the head: a cell, in grid indices (in local ones on a growth step, drawn with `off`
+//         = half);
+//   dir   which way the funnel opens, a whole-number vector (no bearing, no trig);
+//   w0    half its width at the head, in cells from the axis to a cell's middle;
+//   open  how much wider each cell further out makes it, per side;
+//   max   the most half-width it grows to, and keeps from there on - so the rings either side
+//         still have coast to grow on.
+//
+// A cell is in it when its middle lies within the half-width at its distance along the axis;
+// behind the head, within a round cap of w0. It is a RAY: a bigger grid (growCanvas) puts new sea
+// past the old edge and the funnel runs on through it. A cell's middle minus the head's is a
+// whole number, and the rest is + - * / and one sqrt, which IEEE rounds the same in Node and in
+// a browser - so every side agrees on every cell.
+export const FUNNEL_W0_MAX = 8;
+export const FUNNEL_OPEN_MAX = 1;
+export const FUNNEL_MAX = 32;
+export function funnelHas(h, gx, gz, off = 0) {
+  const px = gx - (h.top[0] + off), pz = gz - (h.top[1] + off);
+  const dx = h.dir[0], dz = h.dir[1];
+  const L = Math.sqrt(dx * dx + dz * dz);
+  if (!L) return false;
+  const s = (px * dx + pz * dz) / L;
+  if (s < 0) return px * px + pz * pz <= h.w0 * h.w0;
+  const q = Math.abs(px * dz - pz * dx) / L;
+  const w = h.w0 + h.open * s;
+  return q <= (w < h.max ? w : h.max);
+}
+
+// The funnel as a list of the cells of a size x size grid, in row order.
+export function funnelCells(h, size, off = 0) {
+  const out = [];
+  for (let gz = 0; gz < size; gz++) for (let gx = 0; gx < size; gx++) if (funnelHas(h, gx, gz, off)) out.push([gx, gz]);
+  return out;
+}
+
+// A funnel as it may be written down: exactly these fields, whole numbers where they have to be,
+// and w0/max in halves and open in 64ths, so a layout, a bundle and a step can only carry what
+// this code draws. Throws, like `checkGrow` does on a relief it does not know: drawing a funnel
+// this code half-understands would hash an island nobody recorded. `extra` names the fields a
+// caller allows beside them (the layout's own record carries `from`).
+const FUNNEL_KEYS = ['top', 'dir', 'w0', 'open', 'max'];
+export function checkFunnel(h, extra = []) {
+  const what = 'a harbour funnel';
+  if (!h || typeof h !== 'object' || Array.isArray(h)) throw new Error(`${what} that is not an object`);
+  for (const k of Object.keys(h)) if (!FUNNEL_KEYS.includes(k) && !extra.includes(k)) throw new Error(`${what} with a field this code does not know: ${String(k).slice(0, 24)}`);
+  const pair = (c) => Array.isArray(c) && c.length === 2 && Number.isInteger(c[0]) && Number.isInteger(c[1]);
+  if (!pair(h.top) || !pair(h.dir) || (!h.dir[0] && !h.dir[1]) || Math.abs(h.dir[0]) > 1024 || Math.abs(h.dir[1]) > 1024) throw new Error(`${what} without a head and a way to open`);
+  const steps = (v, per, lo, hi) => typeof v === 'number' && Number.isInteger(v * per) && v >= lo && v <= hi;
+  if (!steps(h.w0, 2, 0.5, FUNNEL_W0_MAX) || !steps(h.open, 64, 1 / 64, FUNNEL_OPEN_MAX) || !steps(h.max, 2, h.w0, FUNNEL_MAX)) {
+    throw new Error(`${what} with a width this code does not draw`);
+  }
+  return { top: [h.top[0], h.top[1]], dir: [h.dir[0], h.dir[1]], w0: h.w0, open: h.open, max: h.max };
+}
+
+// The funnel has two banks, and each has a fixed role that is worked out, never stored
+// (Plans/quay-en-rivier.md): the quay's bank is the one the quay district stands on, and the
+// other is the pirates' - where the pirate tavern and the big ships will come (nothing is built
+// or reserved there by this code). `havenBank` says which a land cell is on, by which side of the
+// axis it lies on relative to `quayCell`, a cell on the quay's bank (its shore, or a plank). A
+// cell answers only within `reach` cells of the funnel's edge and no further than `behind` cells
+// before the head, where the two banks meet; cells inside the funnel and on the axis are
+// nobody's. Read-only: nothing is reserved by asking.
+export const HAVEN_BANK_REACH = 15;
+export const HAVEN_BANK_BEHIND = 12;
+export function havenBank(h, cell, quayCell, { reach = HAVEN_BANK_REACH, behind = HAVEN_BANK_BEHIND } = {}) {
+  const dx = h.dir[0], dz = h.dir[1], L = Math.sqrt(dx * dx + dz * dz);
+  if (!L) return null;
+  const side = (c) => Math.sign((c[0] - h.top[0]) * dz - (c[1] - h.top[1]) * dx);
+  const mine = side(quayCell);
+  if (!mine || funnelHas(h, cell[0], cell[1])) return null;
+  const px = cell[0] - h.top[0], pz = cell[1] - h.top[1];
+  const s = (px * dx + pz * dz) / L;
+  if (s < -behind) return null;
+  if (s < 0) {
+    if (Math.sqrt(px * px + pz * pz) > h.w0 + reach) return null;
+  } else {
+    const w = Math.min(h.max, h.w0 + h.open * s);
+    if (Math.abs(px * dz - pz * dx) / L > w + reach) return null;
+  }
+  const mineHere = side(cell);
+  return !mineHere ? null : mineHere === mine ? 'quay' : 'pirate';
+}
+
+// Every cell of the grid for which `havenBank` answers, sorted into its two lists. `usable(gx,
+// gz)` says which cells count (dry land, say - the caller's test, this file knows no plots).
+export function havenBanks(h, size, quayCell, usable, opts) {
+  const out = { quay: [], pirate: [] };
+  for (let gz = 0; gz < size; gz++) {
+    for (let gx = 0; gx < size; gx++) {
+      if (!usable(gx, gz)) continue;
+      const b = havenBank(h, [gx, gz], quayCell, opts);
+      if (b) out[b].push([gx, gz]);
+    }
+  }
+  return out;
+}
+
+// ---- the layout's earthworks: `works` ------------------------------------------------------------
+// What the layout decided to do to the ground, one record beside the polders and the fairway
+// (`layout.works`, handed to every makeTerrain as `works`, Plans/quay-en-rivier.md):
+//
+//   v      WORKS_VERSION: the profiles above. A record of another version is refused, not drawn.
+//   dig    [{ cells, hold }]: each a dig with `profileDig` - the mask, and the cells that stood
+//          within its reach when it was dug and whose corners it therefore leaves where they
+//          were (so a later dig never gives back ground an earlier one took from under a house
+//          built since: each dig carries its own `hold`). The repaired river mouth, the head of
+//          the harbour funnel.
+//   fill   cells a growth ring shut in and nothing belongs to, filled with `profileFill`.
+//   haven  the harbour funnel (above) plus `from`, how many growth steps there were when it
+//          was planned (provenance: the steps after it carry their own copy, see `accrete`).
+//   kade   the stone quay along the harbour (`levelKade` below): `{ cells, level, back, hold }`.
+//
+// Filled first and dug after, so a fill never lifts a channel; the quay after the digs, so its
+// wall stands where the harbour was dug; all of it after the rings and the fairway's own stamp,
+// before the polders (the dike wins).
+//
+// `kade` came after the first three and WORKS_VERSION stayed 1 for it: no island has ever been
+// released with `works` at all (Plans/quay-en-rivier.md, "Versies en hash"), so there is no
+// record of version 1 without it that a reader could misdraw. From the first release on, a new
+// kind of earthwork is a new version beside the old, never another field in this one. Its own record and not fields of the
+// fairway, which it was at first: an island with no channel then kept its ponds, and the
+// chronicle, which dates the fairway, took the fill away with it on every day before the dig.
+// A field this code does not know is refused, for the reason `checkGrow` refuses a relief it
+// does not know: an older copy of this code that ignored it would draw another island, find
+// another hash and plan the town again from nothing. Refusing is a loud failure instead.
+export const WORKS_VERSION = 1;
+const WORKS_KEYS = ['v', 'dig', 'fill', 'haven', 'kade'];
+function cellList(list, what) {
+  if (!Array.isArray(list)) throw new Error(`${what} that is not a list`);
+  for (const c of list) if (!Array.isArray(c) || c.length !== 2 || !Number.isInteger(c[0]) || !Number.isInteger(c[1])) throw new Error(`${what} with something that is not a cell`);
+  return list;
+}
+export function checkWorks(works) {
+  if (!works || typeof works !== 'object' || Array.isArray(works)) throw new Error('earthworks that are not an object');
+  for (const k of Object.keys(works)) if (!WORKS_KEYS.includes(k)) throw new Error(`earthworks with a field this code does not know: ${String(k).slice(0, 24)}`);
+  if (works.v !== WORKS_VERSION) throw new Error(`earthworks of version ${works.v} are not ones this code knows`);
+  const dig = [];
+  if (works.dig !== undefined && !Array.isArray(works.dig)) throw new Error('earthworks dig that is not a list');
+  for (const d of works.dig || []) {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('a dig that is not an object');
+    for (const k of Object.keys(d)) if (k !== 'cells' && k !== 'hold') throw new Error(`a dig with a field this code does not know: ${String(k).slice(0, 24)}`);
+    dig.push({ cells: cellList(d.cells, 'a dig'), hold: cellList(d.hold || [], 'a dig\'s hold') });
+  }
+  const fill = works.fill === undefined ? [] : cellList(works.fill, 'earthworks fill');
+  const haven = works.haven == null ? null : { ...checkFunnel(works.haven, ['from']), from: works.haven.from };
+  if (haven && !(Number.isInteger(haven.from) && haven.from >= 0)) throw new Error('a harbour funnel without the step it was planned at');
+  const kade = works.kade == null ? null : checkKade(works.kade);
+  return { dig, fill, haven, kade };
+}
+
+// ---- the stone quay: `works.kade` ---------------------------------------------------------
+// The one earthwork that wants a sharp edge (Plans/quay-en-rivier.md, fase 3): a quay wall. The
+// harbour is dug with the profile like any other dig (`works.dig`), and the quay is then laid
+// along its landward side as a strip of ground at one height:
+//
+//   cells  the quay's own cells, every corner of which is set to `level` exactly - so the row
+//          of corners on its water side is the wall's line: the dig took the cell in front of
+//          it to the channel's bed, and that cell (the wall's foot, which web/js/quay-basin.js
+//          covers with the stone face) slopes from the bed up to the quay. The wall is set by
+//          the quay, never "held": a dig that ran first is simply overruled on those corners;
+//   level  the quay's height in 256ths (113: the planks' BASIN_DECK, 0.44, on the 1/256 grid
+//          every height here lives on);
+//   back   the way the land lies from the quay, a whole-number unit vector ([1, 0] = +x);
+//   hold   cells that stood within KADE_REACH when the quay was laid, whose corners it leaves
+//          where they were (a dig's `hold`, for the same reason).
+//
+// Round the strip the ground above the quay is cut back to it with the works' land bank
+// (0.3 a cell), so a hill behind the quay slopes down to it instead of standing over it as a
+// cliff; and behind it (along `back`, from its landward edge) ground lower than the quay is
+// raised to meet it the same way - never on the water side, so the wall stays a wall. Trig-free
+// and on 1/256, like every other height here.
+export const KADE_REACH = 12;
+const KADE_BANK = WORK_BANK;
+const KADE_BACKS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+export function checkKade(k) {
+  const what = 'a quay';
+  if (!k || typeof k !== 'object' || Array.isArray(k)) throw new Error(`${what} that is not an object`);
+  for (const key of Object.keys(k)) if (!['cells', 'level', 'back', 'hold'].includes(key)) throw new Error(`${what} with a field this code does not know: ${String(key).slice(0, 24)}`);
+  const cells = cellList(k.cells, what);
+  if (!cells.length) throw new Error(`${what} with no cells`);
+  if (!Number.isInteger(k.level) || k.level < 0 || k.level > 1024) throw new Error(`${what} at a height this code does not draw`);
+  if (!Array.isArray(k.back) || !KADE_BACKS.some(([x, z]) => k.back[0] === x && k.back[1] === z) || k.back.length !== 2) throw new Error(`${what} with no side the land is on`);
+  return { cells, level: k.level, back: [k.back[0], k.back[1]], hold: cellList(k.hold || [], `${what}'s hold`) };
+}
+
+// The corners behind the quay: from the two corners on the landward face of each of its cells,
+// straight on along `back` for KADE_REACH + 1 corners.
+function kadeBehind(cells, back, size) {
+  const N = size + 1, out = new Uint8Array(N * N);
+  const [bx, bz] = back;
+  for (const [gx, gz] of cells) {
+    // The landward face: +x is the corners at gx+1, -x those at gx, and the same along z.
+    const face = bx > 0 ? [[gx + 1, gz], [gx + 1, gz + 1]] : bx < 0 ? [[gx, gz], [gx, gz + 1]]
+      : bz > 0 ? [[gx, gz + 1], [gx + 1, gz + 1]] : [[gx, gz], [gx + 1, gz]];
+    for (const [i0, j0] of face) {
+      for (let t = 1; t <= KADE_REACH + 1; t++) {
+        const i = i0 + bx * t, j = j0 + bz * t;
+        if (i < 0 || j < 0 || i > size || j > size) break;
+        out[i + j * N] = 1;
+      }
+    }
+  }
+  return out;
+}
+
+export function levelKade(H, size, kade) {
+  const level = kade.level / 256;
+  const d2 = cornerDistance2(kade.cells, size);
+  const on = cornerMaskOf(kade.cells, size);
+  const fixed = kade.hold.length ? cornerMaskOf(kade.hold, size) : null;
+  const behind = kadeBehind(kade.cells, kade.back, size);
+  for (let k = 0; k < H.length; k++) {
+    if (on[k]) { H[k] = level; continue; }
+    if (d2[k] === Infinity || (fixed && fixed[k])) continue;
+    const d = Math.sqrt(d2[k]);
+    if (d > KADE_REACH) continue;
+    const cut = q256(level + KADE_BANK * d);
+    if (H[k] > cut) H[k] = cut;
+    if (behind[k]) {
+      const raise = q256(level - KADE_BANK * d);
+      if (H[k] < raise) H[k] = raise;
+    }
+  }
+}
+
+// ---- water the ring must not pinch off ---------------------------------------------------
+// accrete raises what one flood from the edge reached, before it raised anything, and never
+// looks again at what it left behind. Where the bigger island's own coast is lower than the
+// waterline a corner stays shallow water, and a lagoon, a spit or a river's mouth is then
+// ringed in by the new ground: measured on Hoogezand's one step (seed 1337, r 156), seven
+// ponds of 247 cells, and - worse - the ring closed the seaward end of the dredged fairway
+// with a two-cell spit, so the river and its harbour no longer reached the sea at all.
+//
+// A step that carries `water: 1` is settled after it is drawn, with the profiles above:
+//
+//   haven  the harbour funnel as it stood when the step was taken (a copy, in local
+//          coordinates): kept open with `profileKeep`, so the ring builds nothing in it, meets it
+//          with a beach either side and leaves the sea floor it laid itself where that is deeper;
+//   lane   cells (local) that join a body of water the channel or the river belongs to back to
+//          the sea, also kept open with `profileKeep`;
+//   ponds  cells (local) of water the ring shut in that nothing belongs to, filled with
+//          `profileFill` - never at a corner of a house the step holds, of a lane or of the funnel.
+//
+// All three are DECIDED when the step is taken (lib/layout.mjs `growStep`, through makeTerrain's
+// `settle`) and written on the step, like `hold`. At first they were worked out here from the
+// fairway handed in, and a channel dug or repaired later then drew an old ring differently:
+// measured, 160 cells far from any channel turned between land and water - under houses
+// already standing, with the hash put on record again in the same pass so nobody noticed. A
+// step now depends on nothing but itself.
+//
+// Accretion still never lowers anything: `profileKeep` never goes below the ground before the
+// step, and `profileFill` only raises. Opt-in per step for the reason `relief` is; change the
+// rules and this number moves, with a second branch for the old one. (It meant a flat plate at
+// GROW_SHORE and a lane put back to the height before the step until 30 September 2026; no
+// island ever recorded a step of that, so the number was kept.)
+export const WATER_VERSION = 1;
+// The lane's half-width in cells: lib/layout.mjs FAIRWAY_HALF's twin (a channel five across).
+const WATER_LANE_HALF = 2;
+const WATER_ROUNDS = 8;
+
+const N8D = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+// The mean of a cell's four corners, in exactly the order and arithmetic `isWater` takes it
+// in, so the flood below and the terrain object can never disagree about a cell.
+function cellMean(H, N, gx, gz) {
+  const k = gx + gz * N;
+  return (H[k] + H[k + 1] + H[k + N] + H[k + N + 1]) * 0.25;
+}
+
+// The cells (size x size, 1 = open) that are water and that the tide reaches: four-connected
+// from the grid's edge, the same flood `enclosedWater` in lib/layout.mjs does with string
+// keys. What is water and not open is a pond.
+function openCells(H, size) {
+  const N = size + 1;
+  const open = new Uint8Array(size * size);
+  const queue = new Int32Array(size * size);
+  let head = 0, tail = 0;
+  const push = (gx, gz) => {
+    if (gx < 0 || gz < 0 || gx >= size || gz >= size) return;
+    const c = gx + gz * size;
+    if (open[c] || !(cellMean(H, N, gx, gz) < SEA_LEVEL)) return;
+    open[c] = 1; queue[tail++] = c;
+  };
+  for (let i = 0; i < size; i++) { push(i, 0); push(i, size - 1); push(0, i); push(size - 1, i); }
+  while (head < tail) {
+    const c = queue[head++], gx = c % size, gz = (c - gx) / size;
+    push(gx + 1, gz); push(gx - 1, gz); push(gx, gz + 1); push(gx, gz - 1);
+  }
+  return open;
+}
+
+// The open water of a finished terrain, for lib/layout.mjs: the cells `enclosedWater` there
+// calls not-still, as a mask.
+export function openWaterOf(terrain) { return openCells(terrain.H, terrain.size); }
+
+// What a step recorded, applied: the funnel and the lanes kept, then the ponds filled.
+function ringWater(H, before, size, { haven, lane, ponds }, held) {
+  const off = size / 2;
+  const kept = haven ? funnelCells(haven, size, off) : [];
+  for (const c of lane) kept.push([c[0] + off, c[1] + off]);
+  if (kept.length) profileKeep(H, before, size, kept);
+  if (ponds.length) {
+    const fixed = held.slice();
+    const m = cornerMaskOf(kept, size);
+    for (let k = 0; k < m.length; k++) if (m[k]) fixed[k] = 1;
+    profileFill(H, size, ponds.map((c) => [c[0] + off, c[1] + off]), fixed);
+  }
+}
+
+// Decide the lanes and ponds of a step being taken, on the ring as drawn so far (`H0`, after
+// the raising and the relief). `channel` is every cell the layout calls channel now (grid
+// indices: the fairway, the works' digs and the funnel); a body of water with one of those, or
+// with a corner in a river's banks (`keep`), gets a lane to the sea, any other body the step
+// shut in is a pond. Each round is drawn fresh from `H0` with everything decided so far, through
+// the very `ringWater` a later draw uses - so what is recorded draws exactly what was judged.
+// Water already shut in before the step (the founding lake, an older ring's pond, a river on
+// its sill) is none of this step's business and is left as it is. Raising can pinch a neck of
+// water off, and a lane can leave a bay behind it, so it goes round again until nothing new
+// is shut in.
+//
+// `seed` (grid indices) is lane decided before the rounds begin: water the layout wants kept
+// open whatever this step shuts in - the quay's resort on the sea (lib/layout.mjs `resortWater`).
+// It is kept in every round, exactly as a lane found here is, and comes back in `lane` with the
+// rest, so it rides on the step as ordinary lane: no field an older sea or page would not read.
+// Measured on Hoogezand (Plans/quay-op-zee.md): a step that carried the resort as a field of its
+// own and one that carries it folded into `lane` draw the same ground bit for bit.
+function settleRing(H0, before, size, keep, held, channel, haven, seed = []) {
+  const N = size + 1, off = size / 2;
+  const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const open0 = openCells(before, size);
+  const isChannel = new Uint8Array(size * size);
+  const channelCells = [...channel, ...(haven ? funnelCells(haven, size, off) : [])];
+  for (const c of channelCells) if (inGrid(c[0], c[1])) isChannel[c[0] + c[1] * size] = 1;
+  const heldCell = (gx, gz) => { const k = gx + gz * N; return held[k] || held[k + 1] || held[k + N] || held[k + N + 1]; };
+  const lane = new Set(), ponds = new Set();
+  for (const c of seed) if (inGrid(c[0], c[1])) lane.add(c[0] + c[1] * size);
+  const label = new Int32Array(size * size);
+  const queue = new Int32Array(size * size);
+  const came = new Int32Array(size * size);
+  const list = (set) => [...set].sort((a, b) => a - b).map((c) => [(c % size) - off, Math.floor(c / size) - off]);
+  let H = H0;
+  for (let round = 0; round < WATER_ROUNDS; round++) {
+    H = H0.slice();
+    ringWater(H, before, size, { haven, lane: list(lane), ponds: list(ponds) }, held);
+    // The channel as makeTerrain will lay it after the rings, so the tide reaches through it.
+    const D = H.slice();
+    for (const c of channelCells) {
+      if (!inGrid(c[0], c[1])) continue;
+      const k = c[0] + c[1] * N;
+      for (const q of [k, k + 1, k + N, k + N + 1]) if (D[q] > CHANNEL_H) D[q] = CHANNEL_H;
+    }
+    const open = openCells(D, size);
+    label.fill(-1);
+    const bodies = [];
+    for (let c0 = 0; c0 < size * size; c0++) {
+      const x0 = c0 % size, z0 = (c0 - x0) / size;
+      if (label[c0] !== -1 || open[c0] || !(cellMean(D, N, x0, z0) < SEA_LEVEL)) continue;
+      const id = bodies.length, cells = [];
+      let head = 0, tail = 0;
+      queue[tail++] = c0; label[c0] = id;
+      while (head < tail) {
+        const c = queue[head++], gx = c % size, gz = (c - gx) / size;
+        cells.push(c);
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = gx + dx, nz = gz + dz;
+          if (!inGrid(nx, nz)) continue;
+          const n = nx + nz * size;
+          if (label[n] !== -1 || open[n] || !(cellMean(D, N, nx, nz) < SEA_LEVEL)) continue;
+          label[n] = id; queue[tail++] = n;
+        }
+      }
+      bodies.push(cells);
+    }
+    let changed = 0;
+    for (const cells of bodies) {
+      if (!cells.some((c) => open0[c])) continue;            // not shut in by this step
+      const belongs = cells.some((c) => {
+        if (isChannel[c] || lane.has(c)) return true;
+        const gx = c % size, gz = (c - gx) / size, k = gx + gz * N;
+        return keep[k] || keep[k + 1] || keep[k + N] || keep[k + N + 1];
+      });
+      if (belongs) {
+        // A lane out to open water: breadth-first, eight ways, from every cell of the body that
+        // was open sea, through cells that were open sea. A diagonal step needs one of the two
+        // cells it cuts across, so a lane is always one water body.
+        const wet = (c) => open0[c] || open[c];
+        came.fill(-2);
+        let head = 0, tail = 0, goal = -1;
+        for (const c of cells) if (open0[c]) { came[c] = -1; queue[tail++] = c; }
+        while (head < tail && goal < 0) {
+          const c = queue[head++], gx = c % size, gz = (c - gx) / size;
+          for (const [dx, dz] of N8D) {
+            const nx = gx + dx, nz = gz + dz, n = nx + nz * size;
+            if (!inGrid(nx, nz) || came[n] !== -2 || !wet(n)) continue;
+            if (dx && dz && !wet(gx + dx + gz * size) && !wet(gx + (gz + dz) * size)) continue;
+            came[n] = c; queue[tail++] = n;
+            if (open[n]) { goal = n; break; }
+          }
+        }
+        if (goal < 0) continue;
+        for (let c = goal; c >= 0; c = came[c]) {
+          const cx = c % size, cz = (c - cx) / size;
+          for (let dz = -WATER_LANE_HALF; dz <= WATER_LANE_HALF; dz++) {
+            for (let dx = -WATER_LANE_HALF; dx <= WATER_LANE_HALF; dx++) {
+              if (dx * dx + dz * dz > WATER_LANE_HALF * WATER_LANE_HALF + 1) continue;   // round, like the channel
+              const gx = cx + dx, gz = cz + dz, n = gx + gz * size;
+              if (!inGrid(gx, gz) || !open0[n] || lane.has(n) || isChannel[n]) continue;
+              lane.add(n); changed++;
+            }
+          }
+        }
+      } else {
+        for (const c of cells) {
+          const gx = c % size, gz = (c - gx) / size;
+          if (ponds.has(c) || heldCell(gx, gz)) continue;
+          ponds.add(c); changed++;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  const out = { lane: list(lane), ponds: list(ponds) };
+  // The last round found nothing new, so `H` is what the lists draw; a round cap reached with
+  // work left draws the lists as they are, which is what the step records either way.
+  H = H0.slice();
+  ringWater(H, before, size, { haven, ...out }, held);
+  return { ...out, H };
 }
 
 // ---- relief in the new ground ------------------------------------------------------------
@@ -1369,6 +2018,14 @@ export function makeTerrain(seed, opts) {
   // since laid round it by `accrete`. Absent - or a base the size of the grid and no steps -
   // is the island as it always was, bit for bit. The volcano does not grow.
   const grow = opts && opts.grow && !volcano && !open ? checkGrow(opts.grow, size) : null;
+  // What the layout did to the ground itself (checkWorks). Absent or empty is nothing, so every
+  // island without it hashes as it always did.
+  const works = opts && opts.works && !volcano && !open ? checkWorks(opts.works) : null;
+  // Only for lib/layout.mjs `growStep` while it takes a step of `water: 1`: `{ index, channel }`
+  // asks that step's lanes and ponds to be decided on the ground as drawn (settleRing) rather
+  // than read off the step, and the answer comes back as `terrain.settled`.
+  const settle = grow && opts.settle ? opts.settle : null;
+  const settled = settle ? { lane: [], ponds: [] } : null;
   const N = size + 1, half = size / 2;
   const g = groundOf(seed, grow ? grow.base : size, volcano);
   const { hillCentre, lakeCentre, vol, lavaFlows, floorQ, fields, vents } = g;
@@ -1381,10 +2038,10 @@ export function makeTerrain(seed, opts) {
     }
     // A river a ring's relief cut joins the island's own, so the next ring keeps its bed
     // (GROW_RIVER_KEEP) and the reeds, the bridges and the dredger see it like any other.
-    for (const step of grow.steps) {
-      const cut = accrete(H, size, seed, step, { ...g, courses });
+    grow.steps.forEach((step, index) => {
+      const cut = accrete(H, size, seed, step, { ...g, courses, index, settle, settled });
       if (cut.length) courses = courses.concat(cut);
-    }
+    });
   }
 
   const setCell = (gx, gz, v) => {
@@ -1412,7 +2069,19 @@ export function makeTerrain(seed, opts) {
       if (H[k] > CHANNEL_H) H[k] = CHANNEL_H;
     }
   };
+  // The channel as it was always stamped: an island dredged before the profiles keeps the ground
+  // its hash was recorded on (Hoogezand's 03aefc04), so `fairway.cells` is never profiled.
   if (fairway) for (const c of fairway.cells || []) dig(c[0], c[1]);
+
+  // ---- the layout's earthworks (`works`, see checkWorks) -------------------------------
+  // After the rings and the fairway's stamp, before the polders: filled first and dug after,
+  // so a fill never lifts a channel's floor, the quay after the digs so its wall stands where
+  // the harbour was dug, and the dike wins over all of them.
+  if (works) {
+    if (works.fill.length) profileFill(H, size, works.fill);
+    for (const d of works.dig) profileDig(H, size, d.cells, d.hold.length ? cornerMaskOf(d.hold, size) : null);
+    if (works.kade) levelKade(H, size, works.kade);
+  }
 
   for (const p of polders) {
     for (const c of p.cells || []) setCell(c[0], c[1], POLDER_H);
@@ -1582,6 +2251,8 @@ export function makeTerrain(seed, opts) {
     // web/js/world.js. Null on every island but the volcano.
     oldLava: fields,
     fairway,
+    // The lanes and ponds decided for the step `settle` asked about (local cells), else null.
+    settled,
     hash: hashHeights(H),
   };
 }

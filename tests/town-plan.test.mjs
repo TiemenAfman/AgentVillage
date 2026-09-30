@@ -126,7 +126,7 @@ for (const seed of SEEDS) {
     // A shop stands off the streets only when no street lot could take it: every street lot
     // left empty is ground that cannot be built on, is under something, or is a hamlet's.
     if (taken.length < SHOPS.length) {
-      const terrain = makeTerrain(seed, { size: SIZE, polders: layout.polders || [], fairway: layout.fairway || null, grow: layout.grow || null });
+      const terrain = makeTerrain(seed, { size: SIZE, polders: layout.polders || [], fairway: layout.fairway || null, works: layout.works || null, grow: layout.grow || null });
       const c = layout.town.centre;
       const under = new Set();
       for (const p of Object.values(layout.plots)) for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) under.add(`${p.gx + x},${p.gz + z}`);

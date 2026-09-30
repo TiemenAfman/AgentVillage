@@ -58,6 +58,18 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   tweede kroeg op de piratenoever van de haventrechter (trede 52) met een piratenbemanning aan tafel die de
   quests geeft, de piraat en zijn kist ervoor, een shanty en een eigen bake. De plaatsing komt als laatste,
   afgestemd met de quay-sessie (`quay-en-rivier.md`, op `fix/quay-en-rivier`).
+- 🚧 [quay-en-rivier.md](quay-en-rivier.md) — plan van 29 september 2026: de vaargeul is door de
+  groeiring van open zee afgesneden, er zitten ringplassen ingesloten en de quay is een rechthoekig
+  bassin in een heuvel. Groei breekt geen water meer (fase 1), een vaste haven-sectie in de
+  riviermonding als trechter (fase 2), één haven met een stenen kade aan de oostkant en de werf en de grote
+  schepen op de piratenoever (fase 3), en migratie van de live-island (fase 4). Fase 0 t/m 3 zijn gebouwd,
+  niet gecommit; open: de brug, de plek van de piratenkroeg en fase 4.
+- 🚧 [quay-op-zee.md](quay-op-zee.md) — plan van 30 september 2026: het quay-district (The Quay) gaat de
+  haven uit en komt als recreatie-oord op zee aan de kade-kant te liggen, zodat de haven vrij is voor boten.
+  Bouwt voort op quay-en-rivier fase 3. Gebouwd (niet gecommit): variant A in de baai oost van het
+  kade-eind (`layout.resort`, afgeleid door `resortSite`), de pier blijft bij de kade (optie A),
+  `QUAY_VERSION` 3, langere palen, een ring houdt het oord open. Open: kade op nieuwe eilanden is zeldzaam,
+  de open zee redeployen, de echte island migreren.
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in

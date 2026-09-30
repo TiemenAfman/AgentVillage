@@ -22,7 +22,7 @@
 // these is a relation between the crane and the planks it was placed against.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyLayout, placeAll, kadehaven } from '../lib/layout.mjs';
+import { emptyLayout, placeAll, kadehaven, kadeCraneCell } from '../lib/layout.mjs';
 import { MILESTONES } from '../lib/village.mjs';
 import { QUAY_REACH } from '../shared/quay.mjs';
 
@@ -81,9 +81,15 @@ function assertStandsAtTheQuay(layout, terrain, quay) {
   assert.ok(terrain.isLand(here[0], here[1]), 'it stands on land');
 
   // Within reach of the hull it exists to unload: no further from the far end of the
-  // planks than the planks are long.
-  const head = quay.pier[quay.pier.length - 1];
-  assert.ok(cheb(here, head) <= QUAY_REACH, `the crane stands ${cheb(here, head)} cells from the berth`);
+  // planks than the planks are long. On an island with a stone quay (planKade) it stands at the
+  // quay's seaward end instead, on the wall - the keeper's place for it (Plans/quay-en-rivier.md,
+  // fase 3) - wherever that is from the planks.
+  const kade = kadeCraneCell(layout);
+  if (kade) assert.deepEqual(here, kade, 'the crane stands on the seaward end of the stone quay');
+  else {
+    const head = quay.pier[quay.pier.length - 1];
+    assert.ok(cheb(here, head) <= QUAY_REACH, `the crane stands ${cheb(here, head)} cells from the berth`);
+  }
 
   // And looking at the water rather than back at the town, which is the whole reason the
   // placement hands this one plot something other than the town centre to face.

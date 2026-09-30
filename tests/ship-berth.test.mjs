@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { makeTerrain } from '../shared/terrain.mjs';
 import { placeIsland } from '../shared/regions.mjs';
 import { CRAFTS } from '../shared/crafts.mjs';
-import { shipBerth, SHIP_WATER, SHIP_TRIG, mooringsFor } from '../shared/quay.mjs';
+import { shipBerth, shipWater, shipWaterOf, SHIP_WATER, SHIP_TRIG, mooringsFor } from '../shared/quay.mjs';
 import { emptyLayout, placeAll } from '../lib/layout.mjs';
 
 // web/js/main.js, as it was on 28 September 2026 before the move.
@@ -63,7 +63,7 @@ function island({ seed, size }) {
   };
   const layout = emptyLayout(seed, size);
   placeAll(layout, village, { seed, size });
-  const terrain = makeTerrain(seed, { size, polders: layout.polders, fairway: layout.fairway, grow: layout.grow });
+  const terrain = makeTerrain(seed, { size, polders: layout.polders, fairway: layout.fairway, works: layout.works || null, grow: layout.grow });
   const view = { island: { landing: layout.landing, harbours: (layout.harbours || []).filter(Boolean).map((h) => ({ side: h.side, shore: h.shore, pier: h.pier, boats: 3 })) }, districts: [] };
   return { terrain, moorings: mooringsFor('x', terrain, view) };
 }
@@ -95,4 +95,67 @@ test('a heading that is not a mooring\'s is handed back untouched', () => {
   const { terrain } = island(ISLANDS[0]);
   const m = { x: 0, z: 0, yaw: 0.3 };
   assert.equal(shipBerth(m, placeIsland(terrain).worldHeight), m);
+});
+
+// ---- the big ships' water (fase 3 of Plans/quay-en-rivier.md) ------------------------------
+// On an island with a stone quay the galleon lies in `shipWater`: the pirates' half of the
+// harbour funnel, off the channel's lane, past the quay's end. The sixteen rays do not find a
+// strip that narrow, so she is laid on the middle of the nearest cell whose every hull point
+// floats and is allowed - whole numbers from the mooring's own cell, so a page that draws the
+// island at another origin lays her in the same cell to the bit.
+test('with no ships\' water she lies exactly where she always did', () => {
+  const { terrain, moorings } = island(ISLANDS[0]);
+  const height = placeIsland(terrain).worldHeight;
+  for (const m of moorings) assert.deepEqual(shipBerth(m, height, null), shipBerth(m, height));
+  assert.equal(shipWater(null, terrain.half), null);
+  assert.equal(shipWater({ v: 1, haven: { top: [1, 1], dir: [0, 64], w0: 1.5, open: 0.25, max: 6, from: 0 } }, terrain.half), null, 'a funnel and no quay: no ships\' water');
+});
+
+test('in the ships\' water she lies in the nearest cell that takes all of her, on every page alike', () => {
+  const { terrain, moorings } = island(ISLANDS[0]);
+  const height = placeIsland(terrain).worldHeight;
+  const half = terrain.half;
+  const PTS = [[0, 0], ...CRAFTS.galleon.sail.probes, ...CRAFTS.galleon.sail.probes.map(([x, z]) => [x, -z])];
+  let placed = 0;
+  for (const m of moorings) {
+    // A strip of the sea some way off the mooring, the way the pirates' half of a funnel is.
+    const [mx, mz] = [Math.floor(m.x + half), Math.floor(m.z + half)];
+    const allow = (gx, gz) => gx >= mx + 6 && gx <= mx + 20 && gz >= mz - 30 && gz <= mz + 30;
+    const water = { half, origin: [0, 0], allow };
+    const at = shipBerth(m, height, water);
+    const [fs, fc] = SHIP_TRIG.HEADINGS.find(([y]) => y === m.yaw)[1];
+    const fits = (x, z) => PTS.every(([px, pz]) => {
+      const wx = x + px * fc + pz * fs, wz = z - px * fs + pz * fc;
+      return height(wx, wz) < SHIP_WATER && allow(Math.floor(wx + half), Math.floor(wz + half));
+    });
+    if (!fits(at.x, at.z)) continue;          // no such water within reach: she fell back to the rays
+    placed++;
+    // The nearest such cell, measured in whole cells from the mooring's.
+    const d2 = (x, z) => (Math.floor(x + half) - mx) ** 2 + (Math.floor(z + half) - mz) ** 2;
+    for (let gz = mz - 40; gz <= mz + 40; gz++) for (let gx = mx - 40; gx <= mx + 40; gx++) {
+      const x = gx - half + 0.5, z = gz - half + 0.5;
+      if ((gx - mx) ** 2 + (gz - mz) ** 2 < d2(at.x, at.z) && (gx - mx) ** 2 + (gz - mz) ** 2 <= 1600) assert.ok(!fits(x, z), `a nearer cell ${gx},${gz} takes her`);
+    }
+    // And a page that draws the island at an origin of its own lays her in the same cell.
+    const o = [608, -352];
+    const there = shipBerth({ ...m, x: m.x + o[0], z: m.z + o[1] }, (x, z) => height(x - o[0], z - o[1]), { half, origin: o, allow });
+    assert.equal(there.x - o[0], at.x);
+    assert.equal(there.z - o[1], at.z);
+  }
+  assert.ok(placed > 0, 'no mooring had any such water near it, so nothing was measured');
+});
+
+test('the ships\' water is the pirates\' half of the funnel, off the lane, past the quay\'s end', () => {
+  // A funnel due south from [50,20], its quay on the east bank rows 20..40.
+  const cells = [];
+  for (let z = 20; z <= 40; z++) for (let x = 60; x <= 62; x++) cells.push([x, z]);
+  const works = { v: 1, haven: { top: [50, 20], dir: [0, 64], w0: 1.5, open: 0.5, max: 12, from: 0 }, kade: { cells, level: 113, back: [1, 0], hold: [] } };
+  const allow = shipWaterOf(works);
+  assert.ok(allow(44, 50), 'west, six off the axis, past the quay');
+  assert.equal(allow(56, 50), false, 'the quay\'s own bank');
+  assert.equal(allow(48, 50), false, 'two off the axis is the channel\'s lane');
+  assert.equal(allow(46, 50), true, 'four off it is not');
+  assert.equal(allow(44, 40), false, 'alongside the quay');
+  assert.equal(allow(44, 41), true, 'one row past its end');
+  assert.equal(allow(30, 50), false, 'outside the funnel');
 });
