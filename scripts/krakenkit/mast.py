@@ -1,14 +1,15 @@
-"""The ship's mast standing in the hall: a tarred spar from the floor into the ceiling beams
-(y = 2.35, the two-storey hall), on a staved plinth and a square foot, with a yard across its front
-carrying a furled, torn sail, a planked crow's nest whose floor is walked on (top at 1.55) and two
-rope ladders up to it through hatches (back and west). After the keeper's concept drawing, its shapes without its
-cartoon swell: nothing bulbous, a little weathered.
+"""The ship's mast standing in the middle of the cave hall, on the pit: a tarred spar from the pit
+(y = 0) into the roof's ridge (y = 5.0), on a staved plinth and a square foot, with a yard across its
+front at 2.1 carrying a furled, torn sail, a planked crow's nest whose floor is walked on (top at
+2.74, 1.3 across) and two rope ladders up to it through hatches on +x and -x. After the keeper's
+concept drawing, its shapes without its cartoon swell: nothing bulbous, a little weathered.
 
 The nest is a place people stand: above its planks there is nothing inside the rail but the mast,
-and the rail is open on +z (its front), 0.5 wide round x = 0, where the rope bridge from the gallery
-comes in: the hall stands the mast turned a quarter, so its front faces the bridge. The yard stays
-along x, in front; the main ladder is at the back so it does not run under the bridge.
-Indoors triangles are not what limits a piece, so the mast is 16-sided and its bands are riveted.
+and the rail is open twice, 0.5 wide round x = 0 on +z and on -z, where a rope bridge comes in from
+each side of the hall (the hall stands the mast turned a quarter, so those are east and west). The
+sail and every loose rope end stay above 1.3, clear of whoever walks under it on the pit and of the
+camera following them. Indoors triangles are not what limits a piece, so the mast is 16-sided and
+its bands are riveted; at 5.0 tall it is 0.13 thick at the foot, or it read as a pole.
 """
 import math
 import bmesh
@@ -18,24 +19,25 @@ from geom import (TAU, PI, DARK, WOOD, OAK, IRON, ROPE, HULLW, BEAMX, DECKP, mat
 
 ASSET = 'civic_kraken_mast'
 
-TOP = 2.35                  # the hall's ceiling: the mast runs into its beams
+TOP = 5.0                   # the roof's ridge: the mast runs into it
 SPAR = material('plank:mast', 0x3a2618)
 SAIL = 'plain:sail'
-YARD_Y = 1.18
-NEST_Y = 1.55               # the top of the crow's nest's planks: a walkable floor
+YARD_Y = 2.1
+NEST_Y = 2.74               # the top of the crow's nest's planks: a walkable floor
 NEST_R = .65                # its outside, the rail included: 1.3 across, room for a walker (0.32) round the pole
 PLANK_R = .63               # where the planks stop and the rim begins
 DECK_T = .035               # the planks' thickness
-GAP = math.asin(.25 / .64)  # half the opening in the rail on +z, as an angle (0.5 wide at the rail)
+GAP = math.asin(.25 / .64)  # half of each opening in the rail (+z, -z), as an angle (0.5 wide at the rail)
+KNEE_Y = NEST_Y - .25       # where the knees under the nest meet the mast
 X = 1.125                   # the yard and its sail, stretched along x from the first, 1.6 long, design
 GASKETS = [g * X for g in (-.64, -.4, -.17, .17, .4, .64)]
 # The two holes the ladders come up through: (x0, x1, z0, z1).
-HATCHES = [(-.14, .14, -.42, -.2), (-.42, -.2, -.13, .13)]
+HATCHES = [(.2, .42, -.13, .13), (-.42, -.2, -.13, .13)]
 
 
 def R(y):
-    """The mast's radius at height y: 0.1 at the foot, 0.075 at the ceiling."""
-    return .1 - .025 * y / TOP
+    """The mast's radius at height y: 0.13 at the foot, 0.09 at the vault."""
+    return .13 - .04 * y / TOP
 
 
 def annulus(label, r0, r1, y0, y1, mat, seg=32, start=0.0, arc=None):
@@ -95,12 +97,12 @@ def foot():
     # Four short beams in a square, half-lapped at the corners, on four little feet.
     for sx in (-1, 1):
         for sz in (-1, 1):
-            span('mast foot', sx * .195 - .027, sx * .195 + .027, 0, .026, sz * .195 - .027, sz * .195 + .027, DARK, bevel=.003)
+            span('mast foot', sx * .2 - .025, sx * .2 + .025, 0, .026, sz * .2 - .025, sz * .2 + .025, DARK, bevel=.003)
     for s in (-1, 1):
-        span('mast frame', -.222, .222, .024, .07, s * .16 - .03, s * .16 + .03, BEAMX, bevel=.005)
-        span('mast frame', s * .16 - .03, s * .16 + .03, .022, .068, -.222, .222, BEAMX, bevel=.005)
+        span('mast frame', -.222, .222, .024, .07, s * .18 - .03, s * .18 + .03, BEAMX, bevel=.005)
+        span('mast frame', s * .18 - .03, s * .18 + .03, .022, .068, -.222, .222, BEAMX, bevel=.005)
         for t in (-1, 1):   # a treenail through each lap
-            disc('frame peg', (s * .16, .07, t * .16), .009, .004, OAK, sides=6)
+            disc('frame peg', (s * .18, .07, t * .18), .009, .004, OAK, sides=6)
     # The partners: a drum of vertical staves round the mast, bound with two riveted iron hoops.
     g = rng(52)
     n = 18
@@ -111,25 +113,25 @@ def foot():
         pts = []
         for a in (a0, a1):
             c, s = math.cos(a), math.sin(a)
-            pts += [(.095 * c, y0, .095 * s), (.212 * c, y0, .212 * s), (.095 * c, top, .095 * s), (.2 * c, top, .2 * s)]
+            pts += [(.125 * c, y0, .125 * s), (.24 * c, y0, .24 * s), (.125 * c, top, .125 * s), (.228 * c, top, .228 * s)]
         hull('mast stave', pts, HULLW)
     for hy in (.084, .136):
-        lathe('mast hoop', [(.218, hy), (.218, hy + .014)], IRON, sides=n, phase=TAU / n / 2)
+        lathe('mast hoop', [(.246, hy), (.246, hy + .014)], IRON, sides=n, phase=TAU / n / 2)
         for k in range(9):
             a = TAU * (k * 2 + 1) / n
-            ball('hoop rivet', (.219 * math.cos(a), hy + .007, .219 * math.sin(a)), .004, IRON, seg=5, rings=3)
+            ball('hoop rivet', (.247 * math.cos(a), hy + .007, .247 * math.sin(a)), .004, IRON, seg=5, rings=3)
     # Wedges driven in round the mast where it goes through.
     for k in range(10):
         a = TAU * k / 10
         hull('mast wedge', [(r * math.cos(a + d), y, r * math.sin(a + d))
-                            for r, y in ((.098, .16), (.126, .16), (.098, .2)) for d in (-.26, .26)], DARK)
-    coil((0, .168, 0), r0=.182, turns=1.6, layers=2, thick=.03)
+                            for r, y in ((.128, .16), (.158, .16), (.128, .2)) for d in (-.26, .26)], DARK)
+    coil((0, .168, 0), r0=.212, turns=1.6, layers=2, thick=.03)
 
 
 def spar():
-    ys = [.05, .6, 1.2, 1.8, TOP]
+    ys = [.05, .8, 1.6, 2.4, 3.2, TOP]
     lathe('mast', [(R(y), y) for y in ys], SPAR, sides=16)
-    for y in (.24, 1.08, 1.27, 1.95):
+    for y in (.24, 1.05, YARD_Y - .1, KNEE_Y - .035, 3.3, 4.1):
         iron_band(y)
     iron_band(TOP - .06, h=.06, rivets=16)
     # The fish: four battens fished on over a sprung stretch, bound with rope wooldings.
@@ -172,7 +174,7 @@ def yard():
         ball('parrel bead', (pr * math.cos(a), YARD_Y - .002, pr * math.sin(a)), .015, OAK, seg=8, rings=4)
     # The slings: short chains from the yard up to the band under the nest.
     for s in (-1, 1):
-        chain((s * .15, YARD_Y + .03, zy - .006), (s * R(1.27) * .9, 1.28, .035))
+        chain((s * .15, YARD_Y + .03, zy - .006), (s * R(KNEE_Y) * .9, KNEE_Y - .025, .035))
     return zy
 
 
@@ -194,7 +196,7 @@ def sail(zy):
         ring_tube('sail gasket', (gx, Y - .025, zy + .007), .058, .043, .0055, ROPE)
         # the reef knot on top, and its two ends
         ball('gasket knot', (gx, Y + .034, zy + .004), (.011, .008, .009), ROPE, seg=6, rings=3)
-    # What has come loose of it: a torn sheet hanging in front, no lower than 0.95.
+    # What has come loose of it: a torn sheet hanging in front, well above 1.3.
     g = rng(7)
     nu = 32
     fold = [g.uniform(-.007, .007) for _ in range(nu + 1)]
@@ -204,12 +206,12 @@ def sail(zy):
     sag = lambda u, v: dip(x0 + (x1 - x0) * u) * (1 - .35 * v) + .012 * v * math.sin(PI * u * 3) ** 2
     cloth(corner, nu, 4, sag, SAIL, thick=.006, ragged=.032, seed=11)
     # Loose ends of rope hanging off it, each with a knot at the bottom.
-    for x, y0, y1, bend in ((-.45, Y - .085, .98, .02), (.45, Y - .085, 1.0, -.015), (-.89, Y - .03, .96, .025),
-                            (-.22, Y - .1, 1.0, .01), (.19, Y - .085, .97, .018)):
+    for x, y0, y1, bend in ((-.45, Y - .085, 1.55, .02), (.45, Y - .085, 1.62, -.015), (-.89, Y - .03, 1.45, .025),
+                            (-.22, Y - .1, 1.65, .01), (.19, Y - .085, 1.5, .018)):
         pts = [(x + bend * math.sin(PI * t) * .6, y0 + (y1 - y0) * t, zy + .035 + bend * t) for t in (0, .2, .4, .6, .8, 1)]
         tube('loose rope', pts, .005, ROPE, sides=5)
         ball('rope knot', pts[-1], .008, ROPE, seg=6, rings=3)
-    lantern((.84, 1.02, zy), hang_to=YARD_Y - .02, s=1.1)
+    lantern((.84, Y - .16, zy), hang_to=YARD_Y - .02, s=1.1)
 
 
 def plank_piece(xa, xb, z0, z1, y0, y1):
@@ -264,31 +266,33 @@ def nest():
         span('nest trestletree', s * .45 - .02, s * .45 + .02, y0 - .05, y0, -.43, .43, BEAMX, bevel=.004)
     # Knees from the beams down to the mast, where neither ladder comes up.
     yk = y0 - .065
-    for a in (PI / 4, 3 * PI / 4, 5 * PI / 4, 7 * PI / 4, 0.0, 3 * PI / 2):
-        rk = R(1.3) - .012
-        curve = [(.54 - (.54 - (rk + .035)) * math.sin(t * PI / 2), yk - .025 - (yk - .025 - 1.3) * (1 - math.cos(t * PI / 2)))
+    for a in (PI / 4, 3 * PI / 4, 5 * PI / 4, 7 * PI / 4, PI / 2, 3 * PI / 2):
+        rk = R(KNEE_Y) - .012
+        curve = [(.54 - (.54 - (rk + .035)) * math.sin(t * PI / 2), yk - .025 - (yk - .025 - KNEE_Y) * (1 - math.cos(t * PI / 2)))
                  for t in [k / 5 for k in range(6)]]
-        prism('nest knee', [(rk, yk), (.57, yk), *curve, (rk, 1.3)], .032, DARK, M((0, 0, 0), turn=a))
-    # The rail: all the way round but for the gap on +z where the rope bridge comes in.
-    start, arc = PI / 2 + GAP, TAU - 2 * GAP
+        prism('nest knee', [(rk, yk), (.57, yk), *curve, (rk, KNEE_Y)], .032, DARK, M((0, 0, 0), turn=a))
+    # The rail: two arcs, round +x and round -x, leaving a gap on +z and on -z for the bridges.
     rb = .64
     cap = y + .265
-    nb = 36
-    for k in range(nb + 1):
-        a = start + arc * k / nb
-        c, s = math.cos(a), math.sin(a)
-        if k in (0, nb):
-            # the gap's two posts, stout, with eyes for the bridge's hand ropes and foot ropes
-            box('nest post', (rb * c, (y + cap) / 2 + .01, rb * s), (.042, cap - y + .02, .042), DARK, turn=-a, bevel=.004)
-            ball('nest post knob', (rb * c, cap + .03, rb * s), .024, DARK, seg=8, rings=4)
-            for ey in (y + .03, cap - .02):
-                torus('bridge eye', (rb * c, ey, rb * s + .026), .014, .004, IRON, seg=8, sides=4, tilt=PI / 2)
-        elif k % 4 == 0:
-            box('nest stanchion', (rb * c, (y + cap) / 2, rb * s), (.026, cap - y, .026), DARK, turn=-a)
-        else:
-            rod('nest baluster', (rb * c, y, rb * s), (rb * c, cap, rb * s), .0085, WOOD, sides=6)
-    annulus('nest rail', rb - .016, rb + .014, cap - .005, cap + .018, DARK, seg=64, start=start, arc=arc)
-    torus('nest rope rail', (0, y + .13, 0), rb, .0055, ROPE, seg=64, sides=4, arc=arc, start=start)
+    nb = 18
+    arc = PI - 2 * GAP
+    for start in (-PI / 2 + GAP, PI / 2 + GAP):
+        for k in range(nb + 1):
+            a = start + arc * k / nb
+            c, s = math.cos(a), math.sin(a)
+            if k in (0, nb):
+                # a gap's post, stout, with eyes for the bridge's hand rope and foot rope
+                box('nest post', (rb * c, (y + cap) / 2 + .01, rb * s), (.042, cap - y + .02, .042), DARK, turn=-a, bevel=.004)
+                ball('nest post knob', (rb * c, cap + .03, rb * s), .024, DARK, seg=8, rings=4)
+                for ey in (y + .03, cap - .02):
+                    torus('bridge eye', (rb * c, ey, rb * s + math.copysign(.026, s)), .014, .004, IRON,
+                          seg=8, sides=4, tilt=PI / 2)
+            elif k % 3 == 0:
+                box('nest stanchion', (rb * c, (y + cap) / 2, rb * s), (.026, cap - y, .026), DARK, turn=-a)
+            else:
+                rod('nest baluster', (rb * c, y, rb * s), (rb * c, cap, rb * s), .0085, WOOD, sides=6)
+        annulus('nest rail', rb - .016, rb + .014, cap - .005, cap + .018, DARK, seg=32, start=start, arc=arc)
+        torus('nest rope rail', (0, y + .13, 0), rb, .0055, ROPE, seg=32, sides=4, arc=arc, start=start)
 
 
 def ladder(label, bottom, top, half, step, r_side, r_rung, rung_mat, across, rung_sides=6):
@@ -311,15 +315,15 @@ def ladder(label, bottom, top, half, step, r_side, r_rung, rung_mat, across, run
 
 
 def ladders():
-    # Up the back, from a cleat on the floor to the back hatch, hung from a bar across it.
+    # Up the east side (+x), wooden rungs, from a cleat on the pit to the hatch, hung from a bar
+    # across it. It passes just behind the yard, which is in front of the mast.
     hx0, hx1, hz0, hz1 = HATCHES[0]
-    ladder('back ladder', (0, .012, -.46), (0, NEST_Y - .045, hz0 + .02), .075, .075, .0065, .008, WOOD, (1, 0))
-    rod('ladder bar', (hx0 + .01, NEST_Y - .05, hz0 + .02), (hx1 - .01, NEST_Y - .05, hz0 + .02), .008, IRON, sides=6)
-    span('ladder cleat', -.105, .105, 0, .02, -.475, -.445, DARK, bevel=.003)
+    ladder('ladder', (.46, .012, 0), (hx1 - .02, NEST_Y - .045, 0), .06, .075, .0065, .008, WOOD, (0, 1))
+    rod('ladder bar', (hx1 - .02, NEST_Y - .05, hz0 + .01), (hx1 - .02, NEST_Y - .05, hz1 - .01), .008, IRON, sides=6)
+    span('ladder cleat', .445, .475, 0, .02, -.09, .09, DARK, bevel=.003)
     for s in (-1, 1):
-        torus('ladder ring', (s * .075, .022, -.46), .011, .003, IRON, seg=8, sides=4, tilt=PI / 2)
-    # A thinner one with rope rungs up the west side (the side the side view is drawn from), to
-    # the other hatch.
+        torus('ladder ring', (.46, .022, s * .06), .011, .003, IRON, seg=8, sides=4, tilt=PI / 2, turn=PI / 2)
+    # A thinner one with rope rungs up the west side (the side the side view is drawn from).
     hx0, hx1, hz0, hz1 = HATCHES[1]
     ladder('side ladder', (-.46, .02, 0), (hx0 + .02, NEST_Y - .045, 0), .05, .085, .0048, .005, ROPE, (0, 1),
            rung_sides=5)
