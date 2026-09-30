@@ -124,6 +124,16 @@ function buildFigure(spec, gear, include = null) {
     // Blender's corner normals preserve soft faces and intentional hard equipment edges.
     if (part.normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(part.normals), 3));
     else g.computeVertexNormals();
+    // Four skin slots per vertex, shared by every merged piece. Static pieces stay
+    // on root bone zero; each limb uses its own three-bone Blender chain.
+    const indices = new Uint16Array(count * 4), weights = new Float32Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      indices.set([0, 1, 2, 0], i * 4);
+      const bend = part.skin?.[i * 2] || 0, end = part.skin?.[i * 2 + 1] || 0;
+      weights.set([Math.max(0, 1 - bend - end), bend, end, 0], i * 4);
+    }
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(indices, 4));
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(weights, 4));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     // A torch's flame is the one part of a settler that lights up after dark, through the
     // same per-vertex night mask a window uses (buildings.js) - no material of its own.

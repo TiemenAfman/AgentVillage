@@ -1246,7 +1246,12 @@ the same check.
 anchors and body groups in the Blender source. `export-settler.py` preserves corner
 normals when `avatar_smooth_normals` is enabled; do not recompute them after merging.
 `classic-avatar.js` gives the hero a smooth material while sharing the island's live
-shader uniforms. The Outfit thumbnail includes the shirt, vest, belt and pouch.
+shader uniforms. `rig-settler.py` adds three-bone chains with skin weights; the exporter
+writes `SETTLER_JOINTS` and per-corner weights. `avatar-gait.js` drives foot placement
+from actual displacement and owns land walk/run speeds. `walk.js` measures movement
+after collisions; `peers.js` measures interpolation in the relevant land/deck frame.
+The `/avatar-motion.html` workbench shows walk/run/idle and the live inventory.
+The Outfit thumbnail includes the shirt, vest, belt and pouch.
 Resident rebuilds preserve faces from their own blend rather than copying the player.
 See [Plans/DONE/ambachtelijke-reiziger.md](Plans/DONE/ambachtelijke-reiziger.md).
 

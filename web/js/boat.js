@@ -28,7 +28,7 @@ import { buildBoatGeometry, mesh, box } from './buildings.js';
 import * as models from './models.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
-export const BOAT_REVERSE = 2.8;    // pushing off a beach, not a way to travel - slower than a walk
+export const BOAT_REVERSE = 2.8;    // pushing off a beach, not a way to travel - well below cruising speed
 export const BOAT_ACCEL = 5.0;      // ~2 s to top speed: it is a hull, not a pedal
 export const BOAT_DRAG = 0.9;       // let go and it coasts ~4 s to a stop
 export const BOAT_TURN = 1.25;      // rad/s at speed

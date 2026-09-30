@@ -3,10 +3,11 @@
 // Here those same objects sit below four pivots so the old look can use real strides.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SETTLER_PARTS, SETTLER_RIG } from './settler-mesh.js';
+import { SETTLER_PARTS, SETTLER_RIG, SETTLER_JOINTS } from './settler-mesh.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { box, cylinder, cone, sphere } from './buildings.js';
 import { dancePose } from './dance.js';
+import { createGait, WALK_SPEED, RUN_SPEED } from './avatar-gait.js';
 
 const groupedParts = (group) => SETTLER_PARTS.filter((p) => p.group === group).map((p) => p.name);
 const LIMBS = Object.fromEntries(['leftLeg', 'rightLeg', 'leftArm', 'rightArm'].map((group) => [group, groupedParts(group)]));
@@ -270,6 +271,27 @@ export function createClassicAvatar(spec, material) {
   // symmetric, and three.js flips the winding for a negative determinant.
   object.scale.x = -1;
   const pieces = {};
+  const chains = {};
+  const gait = createGait(PIVOTS.leftLeg[1], SETTLER_JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
+    SETTLER_JOINTS.leftLeg.end[1]*PLAYER_SCALE);
+  let previousParent = null;
+  const parentAt = new THREE.Vector3(), lastParentAt = new THREE.Vector3();
+  function bindLimb(mesh, group) {
+    if (!chains[group]) {
+      const root = new THREE.Bone(), bend = new THREE.Bone(), end = new THREE.Bone();
+      root.name = group + ':root'; bend.name = group + ':bend'; end.name = group + ':end';
+      const origin = new THREE.Vector3(...PIVOTS[group]);
+      const knee = new THREE.Vector3(...SETTLER_JOINTS[group].bend).multiplyScalar(PLAYER_SCALE);
+      const ankle = new THREE.Vector3(...SETTLER_JOINTS[group].end).multiplyScalar(PLAYER_SCALE);
+      bend.position.copy(knee).sub(origin); end.position.copy(ankle).sub(knee);
+      root.add(bend); bend.add(end); mesh.add(root);
+      chains[group] = { root, bend, end, knee: knee.sub(origin), ankle: ankle.sub(origin),
+        skeleton: new THREE.Skeleton([root, bend, end]) };
+    }
+    object.updateMatrixWorld(true);
+    mesh.bind(chains[group].skeleton);
+    mesh.frustumCulled = false;
+  }
 
   // `parent` defaults to the top-level group and `groupAt`/`translateBy` to the piece's own
   // named pivot (PIVOTS[name]) - which is what every original piece (core, the four limbs,
@@ -283,10 +305,12 @@ export function createClassicAvatar(spec, material) {
     pivot.position.set(...groupAt);
     const geometry = avatarPlayerComponentGeometry(spec, names);
     geometry.translate(-translateBy[0], -translateBy[1], -translateBy[2]);
-    const mesh = new THREE.Mesh(geometry, material);
+    const group = SETTLER_PARTS.find((part) => names.includes(part.name) && part.skinGroup)?.skinGroup;
+    const mesh = group ? new THREE.SkinnedMesh(geometry, material) : new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     pivot.add(mesh);
     parent.add(pivot);
+    if (group) bindLimb(mesh, group);
     pieces[name] = { pivot, mesh, names, at: translateBy };
   }
 
@@ -560,8 +584,17 @@ export function createClassicAvatar(spec, material) {
     time += dt;
     const ride = pose.riding || null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride;
-    const phase = pose.phase;
-    const stride = moving ? Math.sin(phase) * (pose.running ? 0.82 : 0.5) : 0;
+    let distance = pose.distance;
+    if (!Number.isFinite(distance)) {
+      if (object.parent) {
+        parentAt.copy(object.parent.position);
+        distance = previousParent === object.parent ? Math.hypot(parentAt.x-lastParentAt.x, parentAt.z-lastParentAt.z) : 0;
+        lastParentAt.copy(parentAt); previousParent = object.parent;
+      } else distance = moving ? dt * (pose.running ? RUN_SPEED : WALK_SPEED) : 0;
+    }
+    const gaitPose = gait.update(Math.max(0,distance), pose, dt);
+    const phase = gaitPose.phase;
+    const stride = moving ? -gaitPose.feet[0].z * (6 + 2*gaitPose.run) : 0;
     const idle = moving ? 0 : Math.sin(time * 1.8) * 0.035;
     const airborne = pose.grounded ? 0 : 0.32;
     const crouch = pose.crouching ? -0.28 : 0;
@@ -573,7 +606,7 @@ export function createClassicAvatar(spec, material) {
       leftLeg: ride ? RIDE_LEG - pedal : sit || (stride + airborne + crouch),
       rightLeg: ride ? RIDE_LEG + pedal : sit || (-stride - airborne + crouch),
       // Held out in front rather than swinging with the stride - an item on a walking arm
-      // would windmill through the body otherwise, and there is no elbow to fold instead.
+      // would sweep equipment through the body. Free arms counter the opposite foot.
       leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
       rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? stride * 0.9 : -idle),
     };
@@ -698,6 +731,42 @@ export function createClassicAvatar(spec, material) {
         object.rotation.set(0, 0, 0);
       }
     }
+    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
+    for (const [i, side] of ['leftLeg', 'rightLeg'].entries()) {
+      const chain = chains[side];
+      const foot = gaitPose.feet[i];
+      if (locomotion) {
+        pieces[side].pivot.rotation.x = foot.hip;
+        chain.bend.rotation.x = foot.knee;
+        chain.end.rotation.x = foot.ankle;
+      } else {
+        chain.bend.rotation.x = ride ? .65 : pose.sitting ? 1.2 : !pose.grounded ? .55 : .12;
+        chain.end.rotation.x = -chain.bend.rotation.x*.55;
+      }
+    }
+    if (locomotion) {
+      object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
+      pieces.core.pivot.rotation.y = Math.sin(phase)*.025*gaitPose.blend;
+      pieces.core.pivot.rotation.x = .035*gaitPose.run*gaitPose.blend;
+      pieces.backpack.pivot.rotation.copy(pieces.core.pivot.rotation);
+      pieces.backpack.pivot.rotation.x += Math.sin(phase*2)*.015*gaitPose.blend;
+    } else {
+      pieces.core.pivot.rotation.set(0,0,0); pieces.backpack.pivot.rotation.set(0,0,0);
+    }
+    for (const side of ['leftArm','rightArm']) {
+      const chain = chains[side];
+      // Action poses already have authored hand targets. Preserve those targets;
+      // free arms flex naturally during locomotion and a little while at rest.
+      const action = holding[side] || drunk[side] || (swung && swing.side === side)
+        || ride || Number.isFinite(pose.pushing) || Number.isFinite(pose.reach);
+      const elbow = action ? 0 : (.10 + (.20+.65*gaitPose.run)*gaitPose.blend);
+      chain.bend.rotation.x = -elbow;
+      chain.end.rotation.x = elbow*.22;
+      const hand = handAttach[side];
+      hand.position.set(...HAND_ATTACH[side]);
+      hand.position.sub(chain.ankle).applyAxisAngle(new THREE.Vector3(1,0,0), chain.end.rotation.x).add(chain.ankle)
+        .sub(chain.knee).applyAxisAngle(new THREE.Vector3(1,0,0), chain.bend.rotation.x).add(chain.knee);
+    }
     // Cancel each arm pivot's own rotation on the item it carries: the attach point gives
     // the item the hand's position (correct - the grip moves with the arm), but a held
     // item should not also inherit the arm's tilt, or it lies over at whatever angle the
@@ -782,8 +851,9 @@ export function createClassicAvatar(spec, material) {
     for (const piece of Object.values(pieces)) piece.mesh.geometry.dispose();
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
     stream.geometry.dispose();
+    for (const chain of Object.values(chains)) chain.skeleton.dispose();
     if (material !== sourceMaterial) material.dispose();
   }
 
-  return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed, handOver };
+  return { object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver };
 }

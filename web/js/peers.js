@@ -444,8 +444,15 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       // And the limbs, from the same pose our own figure is given by walk.js. The raised
       // shield is whichever hand holds one, as walk.js decides it for us.
       const eq = p.look.equip;
+      // Measure interpolated displacement, in deck coordinates aboard a moving ship.
+      // This excludes the ship's travel and avoids steps when network samples stop.
+      const point = seat?.walkPoint || { x, z };
+      const frame = seat?.walkPoint ? p.deckTo?.boat : p.room;
+      const distance = p.walkAt && p.walkFrame === frame
+        ? Math.hypot(point.x-p.walkAt.x, point.z-p.walkAt.z) : 0;
+      p.walkAt = { x: point.x, z: point.z }; p.walkFrame = frame;
       p.avatar.update({
-        moving: moving && !lying && !sitting, running, grounded: !airborne,
+        moving: moving && !lying && !sitting, running, grounded: !airborne, distance: p.aboard ? 0 : distance,
         crouching, sitting, lying, swimming,
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
@@ -476,10 +483,10 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     // same point of her frame our own walk mode stands us on (main.js hullOf).
     if (hull.point) {
       const at = hull.point(lx, ly, lz);
-      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt() };
+      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt(), walkPoint: { x: lx, z: lz } };
     }
     toWorld({ x: hull.x, z: hull.z, fx: Math.sin(hull.yaw), fz: Math.cos(hull.yaw) }, lx, lz, deckAt);
-    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw };
+    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw, walkPoint: { x: lx, z: lz } };
   }
 
   // One frame of a peer on a bicycle. Everything the bike does is read off where the rider

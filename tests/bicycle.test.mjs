@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { RUN_SPEED } from '../web/js/avatar-gait.js';
 import { register } from 'node:module';
 import * as THREE from 'three';
 register('./support/shared-loader.mjs', import.meta.url);
@@ -23,11 +24,9 @@ const { BOAT_TOP } = await import('../web/js/boat.js');
 const { BICYCLE } = await import('../web/js/bicycle-mesh.js');
 delete globalThis.document;
 
-// The feet's speeds, read out of walk.js rather than copied (tests/boat.test.mjs explains why).
 const WALK_SOURCE = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
 const feetSpeed = (name) => Number(WALK_SOURCE.match(new RegExp(`^const ${name} = ([0-9.]+);`, 'm'))[1]);
-const WALK_SPEED = feetSpeed('WALK_SPEED');
-const RUN_SPEED = feetSpeed('RUN_SPEED');
+// Land cadence uses the shared gait speeds; vehicle travel keeps its own scale.
 
 const FRAME = 1 / 60;
 const MEADOW = () => 0.5;
@@ -39,10 +38,10 @@ const bike = () => bikeAt(0, 0, 0, 0.5);
 
 // ---- the way ------------------------------------------------------------------------
 
-test('a bike beats a run, a boat beats the bike, and backing it up is slower than a walk', () => {
+test('a bike beats a run, a boat beats the bike, and backing it up is slower than pedalling', () => {
   assert.ok(BIKE_TOP > RUN_SPEED, `a bike at ${BIKE_TOP} is no faster than a run at ${RUN_SPEED}`);
   assert.ok(BIKE_TOP < BOAT_TOP, `a bike at ${BIKE_TOP} outruns the boat at ${BOAT_TOP}`);
-  assert.ok(BIKE_REVERSE < WALK_SPEED);
+  assert.ok(BIKE_REVERSE < BIKE_TOP / 3);
 
   const b = ride(bike(), { pedal: 1 }, 5);
   assert.ok(Math.abs(b.v - BIKE_TOP) < 1e-9, `pedalling settled at ${b.v}`);

@@ -9,6 +9,7 @@ import { SWATCHES, DEFAULT_AVATAR, loadAvatar, saveAvatar, normalizeAvatar } fro
 import { createClassicAvatar } from './classic-avatar.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, iconKey, iconGeometry } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
+import { WALK_SPEED } from './avatar-gait.js';
 import { keyOf } from './keybinds.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
@@ -292,7 +293,7 @@ function makePreview(canvas) {
     if (!alive) return;
     raf = requestAnimationFrame(tick);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    classic.update({ moving: true, running: false, grounded: true, crouching: false,
+    classic.update({ moving: true, distance: dt * WALK_SPEED, running: false, grounded: true, crouching: false,
       sitting: false, lying: false, phase: now * 0.009 }, dt);
     renderer.render(scene, cam);
   }

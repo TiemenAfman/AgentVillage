@@ -31,8 +31,7 @@ const CAM_TILT = 0.25;
 // How far up a swimmer may look (camPitch, radians; negative is the camera below the head). About 63
 // degrees: enough to see the surface from the bed and the sky from the top of a stroke.
 const SWIM_PITCH_MIN = -1.1;
-const WALK_SPEED = 3.4;
-const RUN_SPEED = 6.6;
+import { WALK_SPEED, RUN_SPEED, CROUCH_SPEED } from './avatar-gait.js';
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
 // A finger's drag, turned the way the mouse turns: radians per px dragged (touchpad.js hands
@@ -78,7 +77,7 @@ const SWIM_SINK = 0.07;
 // It used to be Ctrl, which read well until you crouched and walked: that is ctrl+W, and
 // Chrome closes the tab on it without letting the page object. A letter has no such owner.
 const CROUCH_SCALE = 0.62;
-const CROUCH_SPEED = 1.7;
+
 const LIE_AFTER_MS = 2000;
 // Where the camera looks once the settler is flat out: the reclining figure only stands
 // about 0.18 clear of the towel, so a fifth of standing eye level is halfway up it.
@@ -1117,6 +1116,7 @@ export function createWalkMode({
     const frame = frameOf(b);
     const [lx, lz] = dirToLocal(frame, wx, wz);
     const d = state.deck;
+    const deckX = d.x, deckZ = d.z;
     // Out over the side at the head of a ladder: down it, rather than against the rail.
     if (d.grounded && state.moving) {
       const ladder = ladderDown(spec, d.x, d.z, lx);
@@ -1129,6 +1129,8 @@ export function createWalkMode({
     if (surface) stepHull(d, { x: lx, z: lz, jump: deckJump }, surface, dt, walking);
     else stepDeck(d, { x: lx, z: lz, jump: deckJump }, spec, dt, walking);
     deckJump = false;
+    frameDistance = Math.hypot(d.x-deckX, d.z-deckZ);
+    state.moving = frameDistance > 1e-6;
     // Facing: where you walk, and kept relative to the hull while you stand, so she can turn
     // under you without you spinning on the spot.
     if (state.moving) {
@@ -1470,7 +1472,9 @@ export function createWalkMode({
     return [-dx / d, dz / d];
   }
 
+  let frameDistance = 0;
   function update(dt) {
+    frameDistance = 0;
     if (!state.active && !state.parked) return null;
     if (state.parked) {
       keys.clear();
@@ -1646,12 +1650,15 @@ export function createWalkMode({
         [vx, vz] = [vx * c + vz * sn, vz * c - vx * sn];
       }
       // try the full step, then each axis on its own, so you slide along walls
-      const nx = state.pos.x + vx * speed, nz = state.pos.z + vz * speed;
+      const beforeX = state.pos.x, beforeZ = state.pos.z;
+      const nx = beforeX + vx * speed, nz = beforeZ + vz * speed;
       if (!blocked(nx, nz)) { state.pos.x = nx; state.pos.z = nz; }
       else if (!blocked(nx, state.pos.z)) state.pos.x = nx;
       else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
       state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
-      state.bob += dt * (run ? 13 : 9);
+      frameDistance = Math.hypot(state.pos.x-beforeX, state.pos.z-beforeZ);
+      if (!state.swimming) { state.moving = frameDistance > 1e-6; state.running = run && state.moving; }
+      state.bob += frameDistance * Math.PI * 2 / (run ? .40 : .29);
     } else {
       state.bob += dt * 1.5;
     }
@@ -1831,7 +1838,7 @@ export function createWalkMode({
     // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
     const stoop = state.crouching && !state.dive;
     classicAvatar.update({
-      moving: state.moving, running: state.running, grounded: state.grounded,
+      moving: state.moving, running: state.running, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
