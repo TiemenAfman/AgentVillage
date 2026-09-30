@@ -158,6 +158,12 @@ export const TABLES = [
   { id: 't5', x: -3.2, z: 4.7 }, { id: 't6', x: 1.8, z: 4.7 },
 ];
 export const HEARTH = { x: -8.75, z: 4.4 };                  // in the west rock, on the ground
+// The fire in it (hearth-fire.js): its foot on the logs between the andirons (dressing.py hearth():
+// from x -8.86 to -8.48, 0.13 either side of the middle), 0.5 across so it stays inside the opening
+// (0.42 either side) and 0.78 high: its tips (0.9 of that) go up past the hood's front edge at F + 0.66,
+// where the hood hides them going up the chimney, and stay under the arch's crown at F + 0.87 (shell.py
+// hearth()), so none shows over the opening.
+export const HEARTH_FIRE = { x: -8.67, z: 4.41, y: F + 0.02, w: 0.5, h: 0.78, bed: [0.2, 0.22] };
 export const SLOOPS = [{ x: -3.2, y: P + 2.6, z: 1.45 }, { x: 1.8, y: P + 2.6, z: 1.45 }];   // boats full of candles
 export const CHART = { x: 7.3, z: -5.2 };                    // on the captain's deck
 export const CHAIR = { x: 7.3, z: -6.1 };
@@ -208,7 +214,7 @@ export const KEEP_CLEAR = [
 // hemisphere (`ambience` in pirate-tavern.js) adds a little cool from above, and the corners stay out
 // of every lamp's reach. The sea arch's glow and the shafts through the skylights are its visible source.
 export const LIGHTS = [
-  { hex: 0xff6a2c, intensity: 3.2, dist: 6.5, at: [-8.3, G + 0.35, 4.4], flicker: true },         // the hearth
+  { hex: 0xff6a2c, intensity: 3.2, dist: 6.5, at: [-8.3, G + 0.35, 4.4], flicker: true, hearth: true }, // the hearth
   { hex: 0xffb070, intensity: 1.7, dist: 4.5, at: [0, B + 1.24, -5.85] },                          // the skull lamp
   { hex: 0x7a58ff, intensity: 1.5, dist: 4.8, at: [0, B + 0.8, -6.3] },                            // the niches
   { hex: 0xffa850, intensity: 4.2, dist: 8.5, at: [-3.2, P + 2.4, 1.45], flicker: true },          // the west sloop

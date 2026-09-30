@@ -967,6 +967,12 @@ pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and
 change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
 (`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
 count; the halos are read off every glowing part of the room's own geometry, never listed by hand.
+The Kraken's hearth burns `web/js/hearth-fire.js` (`def.flame`, numbers in `kraken-layout.js HEARTH_FIRE`;
+the tavern keeps its two cones on `fireAt`): a flame ray-marched through noise inside a box, embers, sparks
+and two halos, all additive and none of them a light, and the lamp in `LIGHTS` marked `hearth: true`
+flickers off `flame.flicker(t)`. It is a port of mattatz's THREE.Fire (MIT, notice in the file); the
+GPL-3.0 Tarnished House it was found in is not copied from, and that project's Dark Souls bonfire model
+(CC-BY, but FromSoftware's design) stays out of git. `tests/hearth-fire.test.mjs`.
 
 **The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the

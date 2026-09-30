@@ -20,6 +20,7 @@ import { buildRave } from './rave.js';
 import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
+import { createHearthFire } from './hearth-fire.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -512,10 +513,13 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const roofMesh = def.roof && def.roof.length ? new THREE.Mesh(mergeGeom(def.roof), material) : null;
   if (roofMesh) scene.add(roofMesh);
 
-  // The fire is its own mesh because it is pulsed, and geometry that gets scaled has to be
-  // built about the origin or it walks away from the hearth as it flickers. Only a room with
-  // a hearth has one.
-  const fire = def.fireAt ? new THREE.Mesh(mergeGeom([
+  // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
+  // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
+  // their own mesh because they are pulsed, and geometry that gets scaled has to be built about
+  // the origin or it walks away from the hearth as it flickers. Only a room with a hearth has one.
+  const flame = def.flame ? createHearthFire(def.flame) : null;
+  if (flame) scene.add(flame.object);
+  const fire = !flame && def.fireAt ? new THREE.Mesh(mergeGeom([
     cone(0.085, 0.24, 6, C.ember, { emissive: 1 }),
     cone(0.05, 0.155, 6, C.flame, { y: 0.035, emissive: 1 }),
   ]), material) : null;
@@ -564,7 +568,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const light = new THREE.PointLight(l.hex, l.intensity, l.dist, l.decay ?? 2);
     light.position.set(...l.at);
     scene.add(light);
-    return { light, base: l.intensity, flicker: !!l.flicker };
+    return { light, base: l.intensity, flicker: !!l.flicker, hearth: !!l.hearth };
   });
   // Glow round the flames and light shafts from the roof (room-glow.js): the room's bloom and its
   // volumetrics, drawn over what the lamps lit. The roof's own go with the roof when it is lifted.
@@ -753,7 +757,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
     if (fire) fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
-    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * flick;
+    // The hearth's own lamp breathes with its fire, not in step with the candles.
+    const burn = flame ? flame.flicker(t) : flick;
+    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * (l.hearth ? burn : flick);
+    if (flame) flame.update(t);
     if (halos) halos.update(t);
     if (roofHalos) roofHalos.update(t);
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
@@ -786,6 +793,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     shell.geometry.dispose();
     if (roofMesh) roofMesh.geometry.dispose();
     if (fire) fire.geometry.dispose();
+    if (flame) flame.dispose();
     for (const g of [halos, roofHalos, shafts]) if (g) g.dispose();
     if (show) show.dispose();
     pint.dispose();

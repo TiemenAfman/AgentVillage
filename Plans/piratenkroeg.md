@@ -275,6 +275,15 @@ de geometrie zelf gelezen, en bundels maanlicht onder de dakramen (`SKYLIGHTS`, 
 licht, dus het programma en de zeven lampen blijven zoals ze zijn. Echte bloom (UnrealBloomPass) zou postprocessing
 vendoren en een tweede renderpad naast het eiland vragen. Met de keeper live bijgesteld in de DevTools-Chrome.
 
+**Het haardvuur** (30 september, gevonden door de keeper in Tahsin Önemli's *Tarnished House*): geen twee kegels
+meer maar `web/js/hearth-fire.js` - een vlam die per pixel door ruis in een doos wordt geray-marcht, gloeiende
+sintels op de vuurbodem, vonken die de schoorsteen in gaan en twee halo's, allemaal additief en zonder eigen licht;
+de haardlamp (`hearth: true` in `LIGHTS`) flikkert mee op het ritme van het vuur. Maten in `HEARTH_FIRE`. Tarnished
+House is GPL-3.0, dus daar is niets uit overgenomen: de vlam is een port van het MIT-origineel waar die van hen op
+gebaseerd is (mattatz' THREE.Fire), met een eigen profiel - het MIT-plaatje is een traan op zijn punt en las in de
+haard als een zwevende bal - en een verschoven startpunt per pixel tegen de strepen van vaste stappen. Hun model
+(een Dark Souls-kampvuur, CC-BY maar het ontwerp van FromSoftware) komt niet in git.
+
 **De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
 `galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,
 `ribben`). Nieuwe beelden maakt Claude voortaan zelf met FLUX op de 4090 (`/blenderai`, `python -m blendai imagine

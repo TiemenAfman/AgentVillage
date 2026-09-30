@@ -257,7 +257,8 @@ export function buildPirateTavern({ FLOOR, rect }) {
       const [x0, x1, z0, z1] = K.SKYLIGHTS[f.sky];
       return { x0, x1, z0, z1, top: K.EAVES + 0.3, bottom: f.bottom, hex: f.hex, strength: f.strength, lean: f.lean };
     }),
-    fireAt: [K.HEARTH.x + 0.3, FLOOR + 0.03, K.HEARTH.z],
+    // The hearth burns the ray-marched fire (hearth-fire.js), not the tavern's two cones.
+    flame: { at: [K.HEARTH_FIRE.x, K.HEARTH_FIRE.y, K.HEARTH_FIRE.z], w: K.HEARTH_FIRE.w, h: K.HEARTH_FIRE.h, bed: [...K.HEARTH_FIRE.bed] },
     // The storeys and their stairs, as walk mode's surfaces (Plans/verdiepingen-binnen.md).
     surfaces: [...K.FLOORS, ...K.STAIRS],
     ceiling: K.CEILING,
