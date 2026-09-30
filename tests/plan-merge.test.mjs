@@ -26,7 +26,7 @@ function settled(n = 36) {
   placeAll(layout, model, opts);
   return { model, layout };
 }
-const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, grow: l.grow });
+const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, works: l.works || null, grow: l.grow });
 function register(layout, model) {
   const sup = new Super(groundOf(layout), layout.lattice, heldOf(layout));
   registerLand(sup, layout, districtOrder(model).ordOf, null);
@@ -246,7 +246,7 @@ test('a house goes to the commons only when its project is walled in', () => {
     placeAll(layout, model, { seed, size: 256 });
     const lodgers = Object.entries(layout.plots).filter(([id, p]) => id.startsWith('house:') && p.commons && !seen.has(id));
     if (!lodgers.length) continue;
-    const terrain = makeTerrain(seed, { size: layout.size, polders: layout.polders, fairway: layout.fairway, grow: layout.grow });
+    const terrain = makeTerrain(seed, { size: layout.size, polders: layout.polders, fairway: layout.fairway, works: layout.works || null, grow: layout.grow });
     const sup = new Super(terrain, layout.lattice, heldOf(layout));
     registerLand(sup, layout, districtOrder(model).ordOf, null);
     const used = new Set();

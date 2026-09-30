@@ -289,6 +289,112 @@ test('a drained polder sails with every list that raised its ground', () => {
   assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(hand))), hand);
 });
 
+test('a grown island sails with what its steps decided and with its earthworks', () => {
+  // All of it decides the ground and so the hash, like a polder's pools: a step's `water` with
+  // its lanes, ponds and funnel, and `works` (digs, fills, the harbour funnel). Left out of the
+  // whitelist the bundle still declares the hash while the ground it carries builds another, and
+  // the island is refused on arrival in the words for two machines running different code.
+  const fairway = { line: [[20, 30], [21, 30]], cells: [[19, 29], [20, 29], [21, 29], [20, 30], [21, 30], [22, 30]] };
+  const haven = { top: [-12, -2], dir: [0, 64], w0: 1.5, open: 0.25, max: 6 };
+  const step = (extra) => ({ r: 30, grid: SIZE, hold: [], relief: 1, ...extra });
+  const works = { v: 1, dig: [{ cells: [[40, 40], [41, 40]], hold: [[43, 41]] }], fill: [[10, 10], [11, 10]], haven: { top: [20, 30], dir: [0, 64], w0: 1.5, open: 0.25, max: 6, from: 0 } };
+  const ground = (grow, w) => makeTerrain(SEED, { size: SIZE, fairway, works: w, grow }).hash;
+  const plain = { base: 32, steps: [step({})] };
+  const wet = { base: 32, steps: [step({ water: 1, lane: [[-2, 20], [-1, 20]], ponds: [[5, -20]], haven })] };
+  assert.notEqual(ground(plain, null), ground(wet, null), 'the water step draws the same ground as none, so it proves nothing here');
+  assert.notEqual(ground(wet, null), ground(wet, works), 'the works move no corner, so they prove nothing here');
+
+  const v = village();
+  v.grow = wet;
+  v.fairway = fairway;
+  v.works = works;
+  v.island.terrainHash = ground(wet, works);
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.grow.steps[0], wet.steps[0], 'the step lost part of what it decided on the way out');
+  assert.deepEqual(packed.works, works, 'the works were not packed whole');
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+
+  // A step from before `water`, and an island without works, stay exactly what they were.
+  const w = village();
+  w.grow = plain;
+  w.fairway = fairway;
+  w.island.terrainHash = ground(plain, null);
+  const old = buildBundle({ config, village: w, keeper: 'Martijn' });
+  assert.equal('water' in old.grow.steps[0], false);
+  assert.equal('lane' in old.grow.steps[0], false);
+  assert.equal(old.works, null);
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(old))), old);
+
+  // And a rule this code does not draw is refused rather than drawn as something else.
+  assert.throws(() => parseBundle(mutated((x) => { x.grow = { base: 32, steps: [step({ water: 2 })] }; })), Error);
+});
+
+test('earthworks and a funnel this code cannot read are refused, not repaired', () => {
+  const fairway = { line: [[20, 30], [21, 30]], cells: [[19, 29], [20, 29], [21, 29], [20, 30], [21, 30], [22, 30]] };
+  const works = { v: 1, dig: [{ cells: [[40, 40]], hold: [] }], fill: [], haven: { top: [20, 30], dir: [0, 64], w0: 1.5, open: 0.25, max: 6, from: 0 } };
+  const wire = (change) => mutated((x) => {
+    x.fairway = fairway;
+    x.works = change(JSON.parse(JSON.stringify(works)));
+    x.island.terrainHash = makeTerrain(SEED, { size: SIZE, fairway, works: null }).hash;
+  });
+  // The well-formed record gets as far as the hash check (it moves ground the hash above does
+  // not have), which is a refusal of a different kind: it was read.
+  assert.throws(() => parseBundle(wire((w) => w)), /hashes/);
+  // Asked for and nothing to plan is a null that stays a null.
+  const none = village();
+  none.fairway = fairway;
+  none.works = { v: 1, haven: null };
+  none.island.terrainHash = makeTerrain(SEED, { size: SIZE, fairway, works: none.works }).hash;
+  const asked = buildBundle({ config, village: none, keeper: 'Martijn' });
+  assert.deepEqual(asked.works, { v: 1, haven: null });
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(asked))), asked);
+  for (const [what, change] of Object.entries({
+    'an unknown field': (w) => ({ ...w, pools: [] }),
+    'another version': (w) => ({ ...w, v: 2 }),
+    'no version': (w) => { delete w.v; return w; },
+    'a dig with a field it does not have': (w) => { w.dig[0].why = 'x'; return w; },
+    'a dug cell off the grid': (w) => { w.dig[0].cells = [[SIZE, 1]]; return w; },
+    'a funnel with a field it does not have': (w) => { w.haven.colour = 'red'; return w; },
+    'a funnel without from': (w) => { delete w.haven.from; return w; },
+    'a fractional w0': (w) => { w.haven.w0 = 1.3; return w; },
+    'an opening that is not in 64ths': (w) => { w.haven.open = 0.3; return w; },
+    'a funnel wider than any': (w) => { w.haven.max = 40; return w; },
+    'a funnel narrower at sea than at its head': (w) => { w.haven.max = 1; return w; },
+    'no direction': (w) => { w.haven.dir = [0, 0]; return w; },
+    'a head off the grid': (w) => { w.haven.top = [SIZE, 3]; return w; },
+  })) assert.throws(() => parseBundle(wire(change)), (err) => !/hashes/.test(err.message), `${what} was accepted`);
+});
+
+test('a stone quay sails whole, and one this code cannot draw is refused', () => {
+  // `works.kade` (fase 3 of Plans/quay-en-rivier.md) sets the ground under it and round it, so it
+  // decides the hash like a dig: a bundle that dropped it would draw another island.
+  const fairway = { line: [[20, 30], [21, 30]], cells: [[19, 29], [20, 29], [21, 29], [20, 30], [21, 30], [22, 30]] };
+  const cells = [];
+  for (let z = 10; z <= 20; z++) for (let x = 40; x <= 42; x++) cells.push([x, z]);
+  const works = { v: 1, dig: [{ cells: [[38, 12], [39, 12]], hold: [] }], haven: { top: [20, 30], dir: [0, 64], w0: 1.5, open: 0.25, max: 6, from: 0 }, kade: { cells, level: 113, back: [1, 0], hold: [[44, 12]] } };
+  const ground = (w) => makeTerrain(SEED, { size: SIZE, fairway, works: w }).hash;
+  assert.notEqual(ground(works), ground({ ...works, kade: null }), 'the quay moves no corner, so it proves nothing here');
+  const v = village();
+  v.fairway = fairway;
+  v.works = works;
+  v.island.terrainHash = ground(works);
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.works.kade, works.kade, 'the quay was not packed whole');
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+  const wire = (change) => mutated((x) => {
+    x.fairway = fairway;
+    x.works = change(JSON.parse(JSON.stringify(works)));
+    x.island.terrainHash = ground(works);
+  });
+  for (const [what, change] of Object.entries({
+    'a quay with a field it does not have': (w) => { w.kade.wall = 1; return w; },
+    'a quay at a height off the 256ths': (w) => { w.kade.level = 113.5; return w; },
+    'a quay with the land on a slant': (w) => { w.kade.back = [1, 1]; return w; },
+    'a quay with no cells': (w) => { w.kade.cells = []; return w; },
+    'a quay off the grid': (w) => { w.kade.cells = [[SIZE, 3]]; return w; },
+  })) assert.throws(() => parseBundle(wire(change)), (err) => !/hashes/.test(err.message), `${what} was accepted`);
+});
+
 test('parseBundle refuses a size it cannot draw', () => {
   for (const bad of [0, 1e9, '64', 64.5, null, NaN]) {
     assert.throws(() => parseBundle(mutated((w) => { w.island.gridSize = bad; })), Error, `gridSize ${String(bad)} was accepted`);

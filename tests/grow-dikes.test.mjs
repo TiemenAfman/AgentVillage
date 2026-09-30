@@ -13,7 +13,7 @@ import { parsePlan, runPlan } from '../lib/plan.mjs';
 import { village, clone, key } from './support/village.mjs';
 
 const SEED = 1337, SIZE = 128, CAP = 192;
-const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, grow: l.grow });
+const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, works: l.works || null, grow: l.grow });
 // What moves with the coast on purpose (tests/layout-grow.test.mjs): the quay and what
 // belongs to it, the lighthouse, the crane, and the bridge stone laid off the quay.
 const MOVERS = (id) => id.includes(':quay:') || ['civic:lighthouse', 'civic:crane', 'civic:bridge'].includes(id);

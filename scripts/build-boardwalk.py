@@ -45,7 +45,13 @@ def box(c, name, x, y, z, w, h, d, mat):
     o.dimensions = (w, d, h)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
-DECK = 1.24
+# The plank surface over the piles' feet. The island lays the deck at QUAY_DECK (0.44), so the feet
+# stand at 0.44 - DECK: -1.00, the deepest a lot of the quay's resort on the sea may be
+# (RESORT_PILE_FOOT in lib/layout.mjs, Plans/quay-op-zee.md). At 1.24 they stopped at -0.80, and a
+# house on the resort's deeper lots hung its piles short of the bed. One number for the whole set:
+# the island reads a set's `building_height` for every asset in it (models.heightOf), so the
+# boardwalk bays grow the same 0.2 of pile under water and their decks stay where they were.
+DECK = 1.44
 for variant in range(2):
     c = asset('prop_boardwalk_' + ('a' if variant == 0 else 'b'))
     for i in range(5):

@@ -2764,9 +2764,11 @@ function drawnPier(cells, terrain, from) {
 // The quay's branching boardwalk uses a Blender bay and an infill on each
 // shared edge. Separate x/z infills keep the plank grain aligned through corners
 // and crossings. Every piece still merges into one material and one draw call.
-export function buildDeckGeometry(cells, terrain, from) {
+// `extra` is more of the same material to go into the same geometry: the resort's raft and
+// parasols (`resortParts`), so they cost the island no draw call of their own.
+export function buildDeckGeometry(cells, terrain, from, extra = null) {
   const unique = new Map((cells || []).map((c) => [`${c[0]},${c[1]}`, c]));
-  const parts = [];
+  const parts = [...(extra || [])];
   for (const [gx, gz] of unique.values()) {
     const [x, z] = terrain.cellWorld(gx, gz);
     const lx = x - from[0], lz = z - from[1];
@@ -2783,6 +2785,36 @@ export function buildDeckGeometry(cells, terrain, from) {
     }
   }
   return parts.length ? merge(parts) : null;
+}
+
+// The resort's dressing (web/js/resort-dressing.js says where): a bathing raft of planks on four
+// drums, riding just clear of the swell, and striped parasols on the sand by the jetty's foot.
+// Primitives in the building material, handed to `buildDeckGeometry` as `extra`, so the whole
+// resort - boardwalk, raft and beach - is one geometry and one draw call. `groundAt(x, z)` is the
+// sand's height at a world point.
+const RAFT_Y = 0.12;              // over WAVE, the swell's own reach
+const PARASOL_STRIPES = [0xd9573f, 0xf2e6c8, 0x3f7fb3];
+export function resortParts(dressing, terrain, from, groundAt) {
+  if (!dressing) return [];
+  const parts = [];
+  if (dressing.raft) {
+    const [x, z] = terrain.cellWorld(dressing.raft[0], dressing.raft[1]);
+    const lx = x - from[0], lz = z - from[1];
+    for (const [dx, dz] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) {
+      parts.push(cylinder(0.11, 0.11, 0.22, 7, 0x9aa3a8, { x: lx + dx, y: RAFT_Y - 0.2, z: lz + dz }));
+    }
+    for (let i = 0; i < 5; i++) parts.push(box(0.9, 0.05, 0.16, i % 2 ? C.plank : 0xa1744e, { x: lx, y: RAFT_Y, z: lz - 0.36 + i * 0.18 }));
+    parts.push(cylinder(0.02, 0.02, 0.5, 5, C.white, { x: lx + 0.38, y: RAFT_Y + 0.05, z: lz + 0.38 }));
+  }
+  (dressing.parasols || []).forEach(([gx, gz], n) => {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const y = groundAt(x, z);
+    const lx = x - from[0] + (n % 2 ? 0.12 : -0.1), lz = z - from[1] + (n % 3 ? -0.08 : 0.1);
+    parts.push(cylinder(0.018, 0.018, 0.62, 5, C.white, { x: lx, y, z: lz }));
+    parts.push(cone(0.36, 0.16, 8, PARASOL_STRIPES[n % PARASOL_STRIPES.length], { x: lx, y: y + 0.52, z: lz }));
+    parts.push(box(0.2, 0.02, 0.42, PARASOL_STRIPES[(n + 1) % PARASOL_STRIPES.length], { x: lx + 0.28, y: y + 0.01, z: lz }));
+  });
+  return parts;
 }
 
 // How high a rail stands over the deck, and how far a deck rides above the water when

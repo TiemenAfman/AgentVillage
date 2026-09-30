@@ -11,7 +11,7 @@ import { makeTerrain } from '../shared/terrain.mjs';
 import { village, clone } from './support/village.mjs';
 
 const SEED = 1337;
-const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, grow: l.grow });
+const groundOf = (l) => makeTerrain(SEED, { size: l.size, polders: l.polders, fairway: l.fairway, works: l.works || null, grow: l.grow });
 const houses = (l) => Object.keys(l.plots).filter((id) => id.startsWith('house:')).length;
 
 function withQuay(n, quay = 3) {
@@ -42,7 +42,9 @@ function pairs(v, at = '', out = new Map()) {
   return out;
 }
 // Measured from the lattice anchor, which moves with everything, so rightly left alone.
-const SUPER = [/\.lobes\[\d+\]\.(seed|cells)/, /^\.town\.commons/, /^\.polders\[\d+\]\.(supers|seed)/, /^\.zones/, /^\.grow\./, /\.cell$/];
+// And the harbour funnel's `dir`, which is a direction and not a place (shared/terrain.mjs).
+// So is the stone quay's `back`, the side its land is on.
+const SUPER = [/\.lobes\[\d+\]\.(seed|cells)/, /^\.town\.commons/, /^\.polders\[\d+\]\.(supers|seed)/, /^\.zones/, /^\.grow\./, /\.cell$/, /^\.works\.haven\.dir$/, /^\.works\.kade\.back$/];
 
 test('a bigger grid moves every grid index by k and no super-cell, and names every field', () => {
   const before = settledWhole();
@@ -69,6 +71,13 @@ test('a bigger grid moves every grid index by k and no super-cell, and names eve
     assert.equal(after.plots[id].gx, p.gx + k, id);
     assert.equal(after.plots[id].gz, p.gz + k, id);
   }
+});
+
+test('a bigger grid moves the stone quay and what it held, and keeps its side and height', () => {
+  const layout = emptyLayout(SEED, 128);
+  layout.works = { v: 1, kade: { cells: [[40, 10], [41, 10], [42, 10]], level: 113, back: [1, 0], hold: [[44, 10]] } };
+  growCanvas(layout, 160);
+  assert.deepEqual(layout.works.kade, { cells: [[56, 26], [57, 26], [58, 26]], level: 113, back: [1, 0], hold: [[60, 26]] });
 });
 
 // A village the founding grid already holds in full, so the only thing that happens is the

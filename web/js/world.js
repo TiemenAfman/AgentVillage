@@ -10,10 +10,9 @@ import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, FIELD_REACH, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
 
-import { quayBasin, quayWaterField } from 'shared/quay-basin.mjs';
-import { buildQuayBasin } from './quay-basin.js';
+import { quayKade } from 'shared/quay-basin.mjs';
+import { buildQuayKade } from './quay-basin.js';
 import { createVolcanoDressing, lavaLines } from './lava.js';
-export { quayWaterField } from 'shared/quay-basin.mjs';
 
 const tmpColor = new THREE.Color();
 const tmpTint = new THREE.Color();
@@ -768,44 +767,38 @@ export function createLandscape({
   const plazaTexture = wearTexture.clone();
   plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
   plazaTexture.needsUpdate = true;
-  // The cut follows whole cells; the sloping bed meets the terrain at its edge.
-  const quayWaterTexture = new THREE.DataTexture(quayWaterField(village, size), size, size, THREE.RedFormat);
-  quayWaterTexture.magFilter = quayWaterTexture.minFilter = THREE.NearestFilter;
-  quayWaterTexture.needsUpdate = true;
   const bank = riverBankField(size, terrain.seed, terrain.riverBankCells, wearResolution);
   const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
   bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
   bankTexture.needsUpdate = true;
   const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   blankRiverSheet.needsUpdate = true;
-  ownTextures.push(wearTexture, plazaTexture, quayWaterTexture, bankTexture, blankRiverSheet);
+  ownTextures.push(wearTexture, plazaTexture, bankTexture, blankRiverSheet);
   const riverSheet = { value: blankRiverSheet };
   dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture,
-    { texture: bankTexture, sheet: riverSheet }, quayWaterTexture);
+    { texture: bankTexture, sheet: riverSheet });
   ownSheet('river-shingle', (tex) => { riverSheet.value = tex; });
   ground.receiveShadow = true;
   ground.name = groundName;
   // So the existing raycast finds it and hovering says whose island this is.
   if (pickId) ground.userData.id = pickId;
   group.add(ground);
-  let basinMesh = null;
+  // The harbour's stone quay (`works.kade`): the ground is the quay already, and this is its wall's
+  // face and stairs (web/js/quay-basin.js), one mesh. Built again when the village changes, since
+  // the stairs keep off whatever the water in front of the wall carries.
+  let kadeMesh = null;
   let basinVillage = village;
   function dressBasin(v) {
     basinVillage = v;
-    if (basinMesh) {
-      group.remove(basinMesh);
-      basinMesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+    if (kadeMesh) {
+      group.remove(kadeMesh);
+      kadeMesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+      kadeMesh = null;
     }
-    basinMesh = buildQuayBasin(quayBasin(v, terrain), terrain, {
-      groundGeometry: geo,
-      makeMaterial: () => {
-        const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, map: ground.material.map });
-        dressGroundWear(material, wearTexture, size, THREE, plazaTexture,
-          { texture: bankTexture, sheet: riverSheet }, null, true);
-        return material;
-      },
-    });
-    group.add(basinMesh);
+    const kade = quayKade(v, terrain);
+    if (!kade) return;
+    kadeMesh = buildQuayKade(kade, terrain);
+    group.add(kadeMesh);
   }
 
   // The bands, the season, the district tint and the meadow noise are all already in the
@@ -813,8 +806,6 @@ export function createLandscape({
   // an opinion about any of them.
   ownSheet('grass', (tex) => {
     ground.material.map = tex; ground.material.needsUpdate = true;
-    const bankMaterial = basinMesh?.children[0]?.material;
-    if (bankMaterial) { bankMaterial.map = tex; bankMaterial.needsUpdate = true; }
   });
 
   // ---- vegetation ----------------------------------------------------------
@@ -897,12 +888,6 @@ export function createLandscape({
 
   let own = decodeOwnership(village, size);
   let hues = village.districts.map((d) => d.hue);
-  const clearQuay = (v, into) => {
-    const mask = quayWaterField(v, size);
-    for (let k = 0; k < mask.length; k++) if (mask[k]) into.add(k);
-  };
-  clearQuay(village, clearedBase);
-  clearQuay(village, cleared);
   // Before the fields are planned, not after: clearedBase is what planFields reads to
   // decide where a patch may go.
   wallVerge(own.owner, clearedBase);
@@ -1104,6 +1089,7 @@ export function createLandscape({
   const trees = [];
   const treeCells = new Map();
   const pines = [], oaks = [], rocks = [], tufts = [], bushes = [];
+  const kadeCells = new Set((village.works?.kade?.cells || []).map(([gx, gz]) => gx + gz * size));
   // How much undergrowth there may be. Four thousand bushes is forty triangles apiece
   // either side of the shadow pass, which is the same order as a thousand extra trees -
   // so it gets a ceiling of its own rather than riding on the forest's.
@@ -1154,7 +1140,12 @@ export function createLandscape({
       continue;
     }
     if (h < 0.45 || terrain.isBeach(gx, gz)) {
-      if (h >= 0.05 && rng.chance(0.1)) rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.4, 0.9)]);
+      // Not on the stone quay (`works.kade`, at 0.44 - under this band's 0.45), which is paving.
+      // The draws are taken all the same, so no boulder or tree after it on the island moves.
+      if (h >= 0.05 && rng.chance(0.1)) {
+        const boulder = [wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.4, 0.9)];
+        if (!kadeCells.has(k)) rocks.push(boulder);
+      }
       continue;
     }
     if (cleared.has(k)) continue;
@@ -1330,6 +1321,8 @@ export function createLandscape({
     let i = 0;
     for (const [gx, gz] of terrain.coastCells) {
       if ((hash32(`coast:${gx},${gz}`) % 100) / 100 >= COAST_FILL) continue;
+      // A stone quay's edge is a wall, not a shelf of bedrock (`works.kade`).
+      if (kadeCells.has(gx + gz * size)) continue;
       const [wx, wz] = terrain.cellWorld(gx, gz);
       const jx = ((hash32(`cx:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
       const jz = ((hash32(`cz:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
@@ -1422,6 +1415,10 @@ export function createLandscape({
       for(let z=0;z<n;z++)for(let x=0;x<n;x++)out.push([town.square[0]+x,town.square[1]+z]);
     }
     for(const d of v.districts || [])for(const c of d.paved || [])out.push(c);
+    // The stone quay is paved like the square: its setts are painted into the ground here (the
+    // plaza sheet), it is kept clear of trees and fields by the same list, and its wall's face is
+    // web/js/quay-basin.js.
+    for(const c of v.works?.kade?.cells || [])out.push(c);
     return out;
   }
   function buildPaths(paths, squares = squareCells(wearVillage)) {
@@ -1592,10 +1589,6 @@ export function createLandscape({
     own = decodeOwnership(v, size);
     hues = v.districts.map((d) => d.hue);
     clearedBase = baseCleared(v);
-    clearQuay(v, clearedBase);
-    clearQuay(v, cleared);
-    quayWaterTexture.image.data = quayWaterField(v, size);
-    quayWaterTexture.needsUpdate = true;
 
     wallVerge(own.owner, clearedBase);
     roads = roadSet(v);
@@ -1649,7 +1642,6 @@ export function createLandscape({
     if (s !== currentSeason) {
       currentSeason = s;
       paintGround(s);
-      dressBasin(basinVillage);
       placeTrees(pines, pineMesh, s);
       placeTrees(oaks, oakMesh, s);
       placeBushes(s);
@@ -1837,9 +1829,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     if (opts.sea && !r) return naturalDepthAt(x, z);
     const t = r?.terrain || terrain;
     const local = r ? r.toLocal(x, z) : [x, z];
-    const basin = quayBasin(r?.village || village, t);
-    const height = basin?.contains(...local) ? basin.height(...local) : naturalDepthAt(x, z);
-    return waterColourDepth(height, local[0], local[1], t.half);
+    return waterColourDepth(naturalDepthAt(x, z), local[0], local[1], t.half);
   };
 
   // Built in a function rather than inline because the span is no longer settled once and

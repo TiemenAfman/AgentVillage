@@ -11,7 +11,7 @@ import { village, clone, stands, movedBetween } from './support/village.mjs';
 
 const SEED = 1337, SIZE = 128, BASE = 32;
 const opts = { seed: SEED, size: SIZE };
-const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway, grow: l.grow });
+const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway, works: l.works || null, grow: l.grow });
 const houses = (l) => Object.keys(l.plots).filter((id) => id.startsWith('house:')).length;
 const model = (n) => village(n, { projects: Math.max(1, Math.round(n / 3)) });
 

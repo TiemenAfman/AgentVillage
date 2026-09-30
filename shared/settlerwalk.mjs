@@ -33,7 +33,7 @@
 // One figure object is still shared between this file and the renderer rather than split
 // in two. main.js, facetoface.js and boating.mjs all reach into `figures` and read `f.pos`,
 // `f.look` and `f.spec` directly. Each half's fields are grouped and labelled below.
-import { quayBasin, quayDeckHeights } from './quay-basin.mjs';
+import { quayKade, quayDeckHeights } from './quay-basin.mjs';
 import { makeRng, hash32, clamp } from './rng.mjs';
 import { GATE_REACH } from './roads.mjs';
 
@@ -249,14 +249,13 @@ export function lerpAngle(a, b, t) {
 // after it and therefore wins a cell they share, which is the order createWalk's setDecks
 // has always used: a plank floor laid over a crossing is the surface you walk on.
 export function createStandHeight(terrain, village, decks = null) {
-  const basin = quayBasin(village, terrain);
+  const kade = quayKade(village, terrain);
   const at = new Map(decks || []);
   for (const [cell, y] of quayDeckHeights(village, terrain.size)) at.set(cell, y);
   return (x, z) => {
-    // The staircase first. It is the one surface that rises *within* a cell, so its tread
-    // has to beat whatever single flat height that cell is otherwise recorded at - and a
-    // quay's steps stand on deck cells by construction, since that is where they start.
-    const tread = basin?.rampHeight(x, z);
+    // The harbour's stone quay first: the top of its wall, over the cell in front of it that
+    // the ground draws as a slope, and its stairs, the one surface that rises *within* a cell.
+    const tread = kade ? kade.height(x, z) : null;
     if (tread != null) return tread;
     const gx = Math.round(x + terrain.half - 0.5), gz = Math.round(z + terrain.half - 0.5);
     const deck = at.get(gx + gz * terrain.size);

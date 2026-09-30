@@ -14,7 +14,7 @@ import { reachableFromSquare } from '../shared/roads.mjs';
 
 const SEED = 1337, SIZE = 128;
 const opts = { seed: SEED, size: SIZE };
-const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway }).hash;
+const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway, works: l.works || null }).hash;
 
 function settled(settlers = 36) {
   const model = village(settlers);
@@ -27,7 +27,7 @@ function settled(settlers = 36) {
 // A shore-touching blob of `n` candidate super-cells, grown four-connected from the first
 // candidate found walking out from the centre.
 function blob(layout, n) {
-  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway });
+  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway, works: layout.works || null });
   const lat = layout.lattice;
   const keep = new Set(((layout.fairway || {}).cells || []).map(key));
   const cand = (i, j) => polderCandidate(t, lat, i, j, keep);
@@ -84,7 +84,7 @@ test('a hand-drawn polder is land: walled, dated, hashed, and joined to the squa
   assert.deepEqual(r.diff.plots.otherMoved, []);
 
   // The new ground is land the island can use, and the way onto it reaches the square.
-  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway });
+  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway, works: layout.works || null });
   for (const c of p.cells) assert.ok(t.isBuildable(c[0], c[1]), `polder cell ${key(c)} is not buildable`);
   for (const c of p.pools) assert.ok(before.terrainHash && !makeTerrain(SEED, { size: SIZE, polders: before.polders, fairway: before.fairway }).isLand(c[0], c[1]), `pool ${key(c)} was not water`);
   const road = layout.paths.find((q) => q.id === 'road:polder:0');
@@ -148,7 +148,7 @@ test('refusals: land, two pieces, no shore, the town\'s own coast', () => {
 // "already land". A super-cell the coastline runs through is now a polder of its wet part.
 test('a hand-drawn polder may take a super-cell the coast runs through, and leaves its sand', () => {
   const { model, layout } = settled();
-  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway });
+  const t = makeTerrain(SEED, { size: SIZE, polders: layout.polders, fairway: layout.fairway, works: layout.works || null });
   const lat = layout.lattice;
   const keep = new Set(((layout.fairway || {}).cells || []).map(key));
   let mixed = null;

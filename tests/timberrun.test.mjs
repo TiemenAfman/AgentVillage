@@ -114,7 +114,7 @@ function island(settlers) {
   const layout = emptyLayout(seed, 128);
   placeAll(layout, model(settlers), { seed, size: 128 });
   placeAll(layout, model(settlers), { seed, size: 128 });
-  const terrain = makeTerrain(seed, { size: layout.size, polders: layout.polders || [], fairway: layout.fairway || null, grow: layout.grow || null });
+  const terrain = makeTerrain(seed, { size: layout.size, polders: layout.polders || [], fairway: layout.fairway || null, works: layout.works || null, grow: layout.grow || null });
   const rec = (id) => {
     const plot = layout.plots[id];
     if (!plot) return null;
