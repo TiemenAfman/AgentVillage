@@ -419,3 +419,45 @@ test('the hero uses smooth shading without changing the shared island material',
   assert.equal(sourceDisposed, false);
   source.dispose();
 });
+
+test('Blender limb weights produce bending knees, ankles, elbows and wrists', () => {
+  const material = new MeshBasicMaterial({ vertexColors:true });
+  const rig = createClassicAvatar(DEFAULT_AVATAR, material);
+  const pose = { moving:true, running:true, grounded:true, distance:.01, phase:0 };
+  for(let i=0;i<80;i++)rig.update(pose,1/60);
+  assert.deepEqual(Object.keys(rig.joints).sort(),['leftArm','leftLeg','rightArm','rightLeg']);
+  for(const chain of Object.values(rig.joints)){
+    assert.equal(chain.skeleton.bones.length,3);
+    assert.ok(Math.abs(chain.bend.rotation.x)>.1);
+    assert.ok(Math.abs(chain.end.rotation.x)>.01);
+  }
+  let skinned=0;
+  rig.object.updateMatrixWorld(true);
+  rig.object.traverse(o=>{
+    if(!o.isSkinnedMesh)return;
+    skinned++;o.skeleton.update();
+    const w=o.geometry.attributes.skinWeight;
+    for(let i=0;i<w.count;i++){
+      assert.ok(Math.abs(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)-1)<2e-6);
+      const p=new Vector3().fromBufferAttribute(o.geometry.attributes.position,i);
+      o.applyBoneTransform(i,p);assert.ok(p.toArray().every(Number.isFinite));
+    }
+  });
+  assert.ok(skinned>=8,'limbs and wearable leg armour must share skeletons');
+  rig.dispose();material.dispose();
+});
+
+test('deformed shoe soles stay above the floor through walk and run cycles', () => {
+ const material=new MeshBasicMaterial(),rig=createClassicAvatar(DEFAULT_AVATAR,material);
+ const legs=[];rig.object.traverse(o=>{if(o.isSkinnedMesh && o.skeleton===rig.joints.leftLeg.skeleton || o.isSkinnedMesh && o.skeleton===rig.joints.rightLeg.skeleton)legs.push(o);});
+ for(const running of [false,true])for(let frame=0;frame<180;frame++){
+  rig.update({moving:true,running,grounded:true,distance:(running?1.10:.65)/60},1/60);
+  rig.object.updateMatrixWorld(true);let lowest=Infinity;
+  for(const mesh of legs){mesh.skeleton.update();const a=mesh.geometry.attributes;
+   for(let i=0;i<a.position.count;i++){if(a.skinWeight.getZ(i)<.999)continue;const v=new Vector3().fromBufferAttribute(a.position,i);mesh.applyBoneTransform(i,v);v.applyMatrix4(mesh.matrixWorld);lowest=Math.min(lowest,v.y);}
+  }
+  assert.ok(lowest>-.004, 'sole penetrates the ground: '+lowest);
+  if(!running && frame>120)assert.ok(lowest<.004,'walking lost ground contact: '+lowest);
+ }
+ rig.dispose();material.dispose();
+});

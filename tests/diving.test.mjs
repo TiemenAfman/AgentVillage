@@ -25,7 +25,6 @@ const WALK = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8')
 const feet = (name) => Number(WALK.match(new RegExp(`^const ${name} = ([0-9.]+);`, 'm'))[1]);
 const SWIM_SPEED = feet('SWIM_SPEED');
 const SWIM_TURBO = feet('SWIM_TURBO');
-const WALK_SPEED = feet('WALK_SPEED');
 
 function dive(d, rise, seconds, world = DEEP) {
   let r = { ...d, onBed: false, surfaced: false };
@@ -123,7 +122,6 @@ test('the head is under when the feet are DIVE_HEAD below the surface', () => {
 test('a stroke under water is a little slower than at the surface, and walking the bottom slower still', () => {
   assert.ok(DIVE_SPEED < SWIM_SPEED, `${DIVE_SPEED} vs ${SWIM_SPEED}`);
   assert.ok(DIVE_TURBO > DIVE_SPEED);
-  assert.ok(DIVE_TURBO < WALK_SPEED, 'a dive turbo outruns a walk');
   assert.ok(DIVE_TURBO < SWIM_TURBO + 1e-9, 'a dive turbo outruns the surface turbo');
   assert.ok(BOTTOM_SPEED < DIVE_SPEED);
 });

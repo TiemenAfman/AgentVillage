@@ -151,7 +151,8 @@ open page refetches).
 
 **A house never moves by itself.** `data/layout.json` is append-only and is the only
 irreplaceable file under `data/`; `village.json` and `cache.json` rebuild themselves. The
-scanner never moves a plot; the keeper may, deliberately, through one door — `POST /api/plan`
+scanner never moves a plot - with two deliberate exceptions for the quay district's Cowork houses,
+`unsettleQuay` and the one move onto the resort on the sea (`moveToResort`, below); the keeper may, deliberately, through one door — `POST /api/plan`
 (`lib/plan.mjs`, applied in the same slot in `scan.mjs` as `clearRoads`, under the scan
 queue), which moves **whole hamlets** (lobes, with every house, shed and the land itself, by
 a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
@@ -325,6 +326,146 @@ step into `growRelief`'s hills and rivers, and a step without it draws the flat 
 did. New shapes mean a new version beside the old, never an edit to it. The river rule there -
 cut only in corners this step makes, never below their height before it - is what keeps
 "accretion never lowers anything" true ([Plans/DONE/eiland-laten-groeien.md](Plans/DONE/eiland-laten-groeien.md)).
+
+**A ring must not cut water off from the sea, and every edge people make is a profile** ([Plans/quay-en-rivier.md](Plans/quay-en-rivier.md)).
+`accrete` floods the sea once, before it raises anything, so a lagoon, a spit or a river mouth was ringed
+in by the new ground (live: seven ponds of 247 cells, and the fairway's seaward end closed by a two-cell
+spit), and everything the layout did to the ground was a stamp per cell that jumped from sea to meadow in
+one cell. The rule now: **an earthwork is a mask plus a profile by distance** (`workProfile`,
+`cornerDistance2` - an exact distance transform on the corner lattice - and `profileDig` = `min`,
+`profileKeep` = `min(ring, max(before, P))`, `profileFill` = inpainted from the rim with `max`, all in
+shared/terrain.mjs, trig-free, quantised to 1/256): bed `CHANNEL_H`, underwater bank, a 3-cell beach to
+BEACH_MAX, then a land bank until it meets the ground. A step with `water: WATER_VERSION` carries what it
+decided, written by `growStep` when it takes the step (makeTerrain's `settle` option asks `settleRing`,
+the answer comes back as `terrain.settled`): `lane` (cells joining water the channel or a river belongs
+to back to the sea, kept open), `ponds` (water it shut in that nothing belongs to, filled) and `haven` (a
+copy of the harbour funnel as it stood, kept open) - all LOCAL like `hold`. It used to work its lane out
+from whatever fairway was handed in, and a channel dug later then redrew an old ring (measured: 160 cells
+far from any channel flipped, under houses, hash re-recorded in the same pass). `WATER_VERSION` is still 1
+with this meaning (the old one never shipped); a step without `water` draws bit for bit as before
+(`tests/water-growth.test.mjs` pins recorded hashes, the live `03aefc04` and the new water-1 goldens).
+What the layout does to the ground itself is **`layout.works = { v, dig: [{ cells, hold }], fill, haven }`**
+(`checkWorks`), handed as `works` to every makeTerrain (`tests/works-everywhere.test.mjs` reads the source
+and fails on a call that hands over polders/fairway/grow without it), applied after the rings and the
+fairway's own stamp (never re-profiled: it is in the live hash), fill before dig, before the polders.
+Each dig carries its own `hold` (what stood within the profile's reach when it was dug; never lowered), so
+a later dig never lifts back ground an earlier one took from under a newer house. `repairFairway` (cut from
+`line[0]` to open water through ground below BEACH_MAX nothing stands on; a crane/lighthouse in the way is
+lifted by `liftCivics`), `fillRingPonds` (no longer waits for a fairway: `works.fill` undefined = not asked,
+`[]` = nothing to do) and `planHaven` (below) all run once at the start of `placeAll` and re-record the hash
+straight after. **`makeTerrain` refuses** an unknown field in a step or in `works`, a `works.v` it does not
+draw and a malformed funnel, as `checkGrow` refuses an unknown relief; `parseBundle` whitelists all of it
+strictly. The scan that first changes the hash through `works` keeps the old file as
+`layout.before-works-<ts>.json` (scan.mjs `backUpBeforeWorks`): **older code ignores `works`, hashes other
+ground and plans the town again from nothing** - a release and a checkout share `~/.promptholm` - and an
+older sea or page draws another island and refuses it / shows the skew banner. So this ships as a minor,
+and the open sea (stack 28, by hand) is redeployed before the live island publishes its new hash.
+
+**The harbour is a funnel no ring may close** (`works.haven = { top, dir, w0, open, max, from }`, fase 2).
+Narrow at the head of the inlet - `top` is `havenBridgeSite` (first crossing of the river above the
+channel's inland end at most 3 cells of water), `w0` half its width - and wider towards the sea by `open`
+per cell per side (so it is as wide as the bay where the channel meets it), up to `max` =
+`HAVEN_WIDEN` (3) times that half-width (never past `FUNNEL_MAX`), then straight on: a *ray*
+(`funnelHas`, one sqrt, whole-number `dir`), so `growCanvas` shifts `top` only and the funnel runs on
+through new sea. `dir` is derived per seed, never a compass point: bearings within `HAVEN_ARC` of the
+head-to-channel-mouth bearing, the one that keeps the quay's planks/shore/berths/crane/galleon berth within
+a cell of it across the fewest cells of land wins (`chooseHaven`). `planHaven` waits for the harbours
+(`layout.harbours != null`) and a channel that reaches the sea; a pass that just planned the harbours
+places the island again in the same scan (`havenPass` at the end of `placeAll`, at most twice: the
+stone quay below is due the pass after the funnel), so the funnel is
+planned at the start of a pass and the scan after is still a no-op. Planning digs the head once
+(`works.dig`: funnel sand below BEACH_MAX reached from the head, nothing standing on or beside it; a crane
+in the way is lifted) and copies nothing onto old steps; every later step gets `haven` and keeps it open
+with `profileKeep`, so a ring builds nothing in it, meets it with a beach either side and leaves its own
+natural sea floor (no trench of -2.5 where the old grid edge was). What already stands is never dug away.
+`keptWater`/`opPolder` keep the funnel and a ring round it as water, `fillRingPonds` never fills a pond
+touching it. The banks' roles are derived (`havenBank`/`havenBanks`: the quay's bank is the quay district's
+side of the axis, the other is the pirates' - read-only; nothing is reserved there by asking).
+
+**The harbour is real water with a stone quay; there is no basin overlay any more** (fase 3,
+`planKade` in lib/layout.mjs, [Plans/quay-en-rivier.md](Plans/quay-en-rivier.md)). Once the funnel is
+planned and there is a quay district with planks and land (`kadeDue`), `planKade` digs ONE more
+`works.dig` (the old overlay's parcel+ring, the rim to the channel, the funnel west of the axis over the
+old yard's rows, the yard's dock, an anchorage, a few rows of sand past the quay's end) and lays
+**`works.kade = { cells, level, back, hold }`** (shared/terrain.mjs `levelKade`, applied after the digs,
+before the polders; `checkKade` refuses anything else; `parseBundle` strict; `growCanvas` shifts
+`cells`/`hold`): every corner of its cells at `level`/256 (113 = BASIN_DECK), so its water-side row of
+corners IS the wall (set by the quay, never held), ground above it cut back with the works' land bank,
+ground behind it (along `back`) raised to meet it, `hold` untouched. `WORKS_VERSION` stayed 1 for the extra
+field only because no release ever carried `works`; from the first release a new earthwork is a new
+version. Geometry is in the funnel's own frame (`kadeFrame`: axis within ~27 degrees of a grid axis, else
+`kade: null`): wall one cell past the parcel's ring, quay 3 wide, from the parcel's first row to the last
+row where all three quay cells are dry (Hoogezand: x168-170, z267-313). What stands in the basin is held
+(digHold's rule) except the quay's houses (`p.quay`, on piles, drawn at BASIN_DECK), their paths and the
+quay harbour's approach: those stay road as **boardwalk** (`dugKeys`: a recorded path cell over dug water
+is forced PATH in placeAll's replay and `replayGrid`, and the quay's `deck` takes every such cell). The
+quay's ramp (shore + slip) stays land. `planKade` moves the yard itself to the pirates' bank (`yardSite`
+with `kadeBankOf`: every yard cell on the far side of the axis and outside `havenKeys(layout, 1)`) and
+lifts crane, warehouse/weigh house (if near) and ships; the loops place them again: crane on
+`kadeCraneCell` (the wall column's seaward end, jib over the water), warehouse/weigh house by `kadeSite`
+(3x3 BEHIND the quay, door step on its back row - `strandedAtSea` counts a step on the quay as "at the
+water", so a ring never moves it), ships by `kadeRedeSite` in lanes of the big ships' water. **The big
+ships' water** is `shipWaterOf(works)` in shared/quay.mjs (pirates' half of the funnel, >= `SHIP_LANE`
+off the axis, past the quay's seaward end - from `works` alone, so page, layout and bundle agree), and
+`shipBerth(m, height, water)` lays the galleon there with a per-cell search in whole numbers (nearest
+cell from the mooring's own cell, ties row-major; without `water` the old 16 rays, bit for bit). The quay
+is `road:kade` (all quay cells but the crane's, laid once, forced PATH after, like a causeway; plus
+`road:kade:approach` only if nothing reaches it). Beside a kade, `growStep` keeps the quay harbour's
+`road:harbour:<n>` and its approach when it re-plans the harbours (relaid from the ramp it finds water on
+every side). On the page the quay is ground painted as plaza (world.js `squareCells`), its wall is
+`buildQuayKade` (web/js/quay-basin.js: one mesh, face + coping over the foot cell, stairs in front of the
+face) and feet stand on `quayKade(village, terrain).height` (shared/quay-basin.mjs: the foot cell at
+`level`, the treads) in walk.js `groundAt`/`bedUnder` and settlerwalk `createStandHeight` - **so the open
+sea must be redeployed for the settlers' stand height**; `parcelWaterField`/`quayWaterField`, the ground
+shader's discard and the basin mesh are gone. Known gap: the bridge at `havenBridgeSite` is not built.
+The quay stands at `kadeHarbour` (the harbour whose planks lie in the funnel's ring: the quay district's
+own first - Hoogezand - else the one nearest the funnel's top); beside any harbour but the district's own,
+or a district parcel wider than `KADE_PARCEL.across`, it is laid past `KADE_PARCEL` (Hoogezand's parcel in
+the funnel's frame, from the ramp) along the run of dry rows through the ramp's row (>= `KADE_RUN_MIN`). A
+quay district's house in the quay's way is let through only if `resortSite` has a lot for every one of them
+(asked on the trial layout); any other building still refuses it. **While the island can still grow
+(`canGrow`), a refusal waits** (nothing recorded, `kadeWaiting` keyed on grid and harbours so `kadeDue` asks
+for no pointless pass) - an island founded small asked on a coast of forty and "no room" was final. After a
+growth step `placeAll` starts its `havenPass` count again, or a quay due after the ring re-planned the
+harbours was decided on the next scan. Measured with a seven-house quay district: 0 of 30 seeds founded on
+40 (150 settlers) and 2 of 40 founded on 96 (200 settlers) get a quay at all - the funnel is not within ~27
+degrees of a grid axis, no harbour lies in it, or the town's civics stand in the quay's strip. Open.
+
+**The quay's houses live on a resort on the sea; the harbour stays the quay's** (`layout.resort`,
+[Plans/quay-op-zee.md](Plans/quay-op-zee.md)). `planResort`, straight after `planKade` in every pass, once
+(`undefined` = not asked, `null` = no quay or no site, waits while `canGrow`), records `resortSite`'s pick -
+derived, never a cell: a beach foot on the quay's bank, a jetty to a boardwalk spine, 3x3 lots on the water
+either side (doors on the spine), a second spine behind a plank through a gap (a comb), a raft beyond,
+`{ foot, out, shape, jetty, deck, lots: [{gx,gz,rot}], raft, strand }` - and moves every house of the quay
+district onto the next free lot (`moveToResort`; plot gets `lot: n`, `lobe: -1`). Hoogezand: foot (191,311),
+jetty east to x196, 20 lots. Top-level on purpose: not in `works` (`checkWorks`/`parseBundle` would make
+older seas refuse the island for a record that moves no ground), not on `districts.quay` (`migrateParcels`
+keeps a district only as its planks, and lib/plan.mjs moves districts by super-cell). **Option A: the
+district's `pier`/`shore` do not move** - they are the quay's harbour, so `standingQuay`, `kadehaven`,
+`waterfront`, moorings, boat 0 and the galleon are untouched; moving them took all of that out to sea. The
+resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
+set's `DECK` is 1.44) and the district's `deck` (`resortCells(layout).drawn`: the shortest walk inside the
+deck from the jetty to every occupied lot's doorstep, grows with the district; `centre` is the jetty head).
+In the replay (placeAll and `replayGrid`, `markResort`) the drawn deck is PATH, the rest of the deck and
+every free lot RESERVED; `keptWater` and `fairwayHeld` hold the whole grown resort plus a ring
+(`resortKeep`). The way in is `road:quay:resort` (strand over the sand, forced back like a slipway, then
+routed to the square; `unsettleQuay` keeps it). A quay with a resort founds no parcel (district loop), a new
+Cowork house takes the next free lot (house loop) and past the last lodges on the commons (never waits for
+a ring, `guest` = lots < population), and `p.quay` is not set on a commons lodger. **A ring keeps it open**:
+`growStep` hands `resortWater` (grown resort + 1 cell, water cells) to `makeTerrain`'s settle as channel and
+as `settle.lane` (settleRing's `seed`), so it is written on the step as ordinary `lane` - no new step field,
+no WATER_VERSION bump, bit for bit the hash a field of its own gave (55c22da7 on Hoogezand's r 180 ring).
+`growCanvas` shifts the record; the planner refuses `move`/`parcel` of the quay once it has a resort
+(`onResort`). **QUAY_VERSION 3**: `migrateQuay` from 2 only asks `moveToResort` again (the move itself is
+`planResort`'s, so a new island and Hoogezand take one road), and **the pick-the-planks branch is `=== 1`,
+not `>= 1`** - a v2 layout through it would re-pick the planks, and `pickPier` answers (163,264) today on
+Hoogezand where they stand at (154,284). Older code on a v3 layout does take that branch (it only knows 2):
+a release only, never a patch. The scan that sets the resort keeps `layout.before-resort-<ts>.json`
+(scan.mjs `backUpBeforeResort`). On the page: `resort-dressing.js` finds the resort's piece of the deck
+(wet, houses on it, meets a beach) and puts a raft past the spine's tip and parasols on the sand into the
+same deck geometry (`resortParts`, no draw call of its own); `createQuayKade` gives the kade `fingers`, finger
+jetties where the houses stood, drawn in the wall's mesh (dressing: `BOATS_PER_HARBOUR` stays 3); `sailIn`
+sails a resort house to its own front deck.
 
 **`shared/` runs identically in Node and in the browser.** `shared/terrain.mjs` decides the
 ground both the scanner and the viewer use, so it sticks to plain arithmetic — no `sin`,
@@ -1282,7 +1423,12 @@ the same check.
 anchors and body groups in the Blender source. `export-settler.py` preserves corner
 normals when `avatar_smooth_normals` is enabled; do not recompute them after merging.
 `classic-avatar.js` gives the hero a smooth material while sharing the island's live
-shader uniforms. The Outfit thumbnail includes the shirt, vest, belt and pouch.
+shader uniforms. `rig-settler.py` adds three-bone chains with skin weights; the exporter
+writes `SETTLER_JOINTS` and per-corner weights. `avatar-gait.js` drives foot placement
+from actual displacement and owns land walk/run speeds. `walk.js` measures movement
+after collisions; `peers.js` measures interpolation in the relevant land/deck frame.
+The `/avatar-motion.html` workbench shows walk/run/idle and the live inventory.
+The Outfit thumbnail includes the shirt, vest, belt and pouch.
 Resident rebuilds preserve faces from their own blend rather than copying the player.
 See [Plans/DONE/ambachtelijke-reiziger.md](Plans/DONE/ambachtelijke-reiziger.md).
 
@@ -1448,8 +1594,8 @@ throughout: every reader of it (no fight, no dance, no drink, the sea's SWIMMING
 working, and `state.grounded` stays true too, so a diver is never AIRBORNE. `crouching` is exactly
 "C is held" (set on the press, dropped on the release), which is why keyboard, pad and a rebound key
 all come through it - and why the rig and the camera use `stoop = crouching && !dive`, since C is
-not a crouch down there. What a diver stands on is `bedUnder` (`sea.bedAt`, the *drawn* bed, then
-the quay's basin), never `groundAt`, whose meaning ("the surface or deck under the feet", also
+not a crouch down there. What a diver stands on is `bedUnder` (the stone quay's wall and stairs, then
+`sea.bedAt`, the *drawn* bed), never `groundAt`, whose meaning ("the surface or deck under the feet", also
 main.js's "can I step out here") does not change. Under a deck `ceilingAt` stops the rise; in the
 shallows (`SHALLOW`) the water lifts a body that is not pushed down, so a diver reaching a beach
 rises out of it instead of being snapped up when the bed comes dry. **A fall into deep water plunges** (`plungeSpeed` in diving.js, called where walk.js's airborne branch

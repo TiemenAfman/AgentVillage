@@ -48,7 +48,7 @@ function island(model = MODEL) {
   placeAll(layout, model, { seed: SEED, size: SIZE });
   return layout;
 }
-const terrainOf = (layout) => makeTerrain(SEED, { size: layout.size, polders: layout.polders || [], fairway: layout.fairway || null, grow: layout.grow || null });
+const terrainOf = (layout) => makeTerrain(SEED, { size: layout.size, polders: layout.polders || [], fairway: layout.fairway || null, works: layout.works || null, grow: layout.grow || null });
 const plan = (layout, ops, dryRun = true) => runPlan(layout, MODEL, parsePlan({ ops }), { seed: SEED, size: SIZE, dryRun });
 const copy = (o) => JSON.parse(JSON.stringify(o));
 

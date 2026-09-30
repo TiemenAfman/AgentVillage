@@ -15,7 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createStandHeight, createWalk } from '../shared/settlerwalk.mjs';
-import { BASIN_DECK, quayBasin } from '../shared/quay-basin.mjs';
+import { BASIN_DECK, quayKade } from '../shared/quay-basin.mjs';
 
 const GROUND = 1.6;
 const terrain = { size: 8, half: 4, worldHeight: () => GROUND };
@@ -33,13 +33,26 @@ test('a settler on the boardwalk stands on it, not in the water under it', () =>
   const stand = createStandHeight(terrain, village);
   for (const cell of village.districts[0].deck) {
     const [x, z] = at(...cell);
-    const basin = quayBasin(village, terrain);
-    // A staircase is allowed to be higher - it rises out of the deck - but never lower,
-    // and never the drowned ground the bug drew.
-    const y = stand(x, z);
-    assert.ok(y >= BASIN_DECK - 1e-9, `${cell} stands at ${y}, under the planks at ${BASIN_DECK}`);
-    if (basin.rampHeight(x, z) == null) assert.equal(y, BASIN_DECK, `${cell} is plain deck`);
+    // Never the drowned ground the bug drew.
+    assert.equal(stand(x, z), BASIN_DECK, `${cell} is plain deck`);
   }
+});
+
+test('a settler at the stone quay stands on its wall, and on its stairs', () => {
+  // The quay (`works.kade`) is ground; the cell in front of its wall slopes from the harbour's
+  // bed up to it, and the page covers that cell with the wall's top (shared/quay-basin.mjs).
+  const cells = [];
+  for (let z = 0; z < 8; z++) for (let x = 5; x <= 7; x++) cells.push([x, z]);
+  const v = { ...village, works: { v: 1, kade: { cells, level: 113, back: [1, 0], hold: [] } } };
+  const stand = createStandHeight(terrain, v);
+  const k = quayKade(v, terrain);
+  assert.equal(stand(...at(4, 1)), 113 / 256, 'on the wall, not on the slope under it');
+  for (const s of k.stairs) {
+    const x = s.face - 0.3 - terrain.half, z = s.a0 + 0.5 - terrain.half;
+    assert.equal(stand(x, z), k.height(x, z), 'on the stair');
+    assert.ok(stand(x, z) < k.level);
+  }
+  assert.equal(stand(...at(6, 1)), GROUND, 'the quay itself is the ground');
 });
 
 test('off the quay it is still just the ground', () => {

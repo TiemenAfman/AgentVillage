@@ -26,7 +26,7 @@ export const BIKE_TURBO = 1.3;       // 10.4 standing up
 export const BIKE_ACCEL = 4.5;       // ~1.8 s to cruising speed: legs, not an engine
 export const BIKE_BRAKE = 14.0;      // S with way on is the brakes: ~0.6 s from top speed
 export const BIKE_ROLL = 0.45;       // let go and it freewheels a few seconds before it stops
-export const BIKE_REVERSE = 1.4;     // S at a standstill walks it backwards, slower than a walk
+export const BIKE_REVERSE = 1.4;     // S at a standstill walks it backwards, well below pedalling speed
 export const BIKE_TURN = 2.4;        // rad/s at speed
 export const BIKE_TURN_MIN = 1.1;    // rad/s at rest: you shuffle it round with your feet down
 // A hill does something. Downhill it runs away with you a little and uphill it slows you,

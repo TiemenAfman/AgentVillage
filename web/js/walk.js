@@ -1,7 +1,7 @@
 // Walking the island on foot. A third-person camera behind a settler you steer with
 // WASD, terrain underfoot, buildings you cannot walk through, and a prompt when you
 // come close to something you can interact with.
-import { quayBasin } from 'shared/quay-basin.mjs';
+import { quayKade } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
 import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
@@ -31,8 +31,7 @@ const CAM_TILT = 0.25;
 // How far up a swimmer may look (camPitch, radians; negative is the camera below the head). About 63
 // degrees: enough to see the surface from the bed and the sky from the top of a stroke.
 const SWIM_PITCH_MIN = -1.1;
-const WALK_SPEED = 3.4;
-const RUN_SPEED = 6.6;
+import { WALK_SPEED, RUN_SPEED, CROUCH_SPEED } from './avatar-gait.js';
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
 // A finger's drag, turned the way the mouse turns: radians per px dragged (touchpad.js hands
@@ -78,7 +77,6 @@ const SWIM_SINK = 0.07;
 // It used to be Ctrl, which read well until you crouched and walked: that is ctrl+W, and
 // Chrome closes the tab on it without letting the page object. A letter has no such owner.
 const CROUCH_SCALE = 0.62;
-const CROUCH_SPEED = 1.7;
 // The treasure statue in both arms (Plans/schatkaarten.md): a walk at this share of the ordinary one,
 // no run (so no stamina spent either), no jump. Named because the gait's step rate follows it too.
 const CARRY_SPEED = 0.55;
@@ -88,6 +86,7 @@ const DIG_SECONDS = 2.5;
 const DIG_REACH = 0.6;
 // The same refusal is told once a second at most: a key held against a ladder asks every frame.
 const BLOCKED_TOAST_MS = 1000;
+
 const LIE_AFTER_MS = 2000;
 // Where the camera looks once the settler is flat out: the reclining figure only stands
 // about 0.18 clear of the towel, so a fifth of standing eye level is halfway up it.
@@ -884,12 +883,13 @@ export function createWalkMode({
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
   function groundAt(x, z, from = Infinity) {
+    // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
+    // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
+    // same answer the sea gives its settlers. So a swimmer meets a wall and climbs out by a stair.
     const region = ground?.regionAt?.(x, z);
-    const basin = region && quayBasin(region.village, region.terrain);
-    const local = region?.toLocal(x, z);
-    const ramp = basin && basin.rampHeight(...local);
-    if (ramp != null) return ramp;
-    let best = basin?.contains(...local) ? basin.height(...local) : heightUnder(x, z);
+    const kade = region && quayKade(region.village, region.terrain);
+    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    let best = wall != null ? wall : heightUnder(x, z);
     const reach = from + STEP_UP;
     for (const s of surfaces) {
       const y = surfaceY(s, x, z);
@@ -907,18 +907,13 @@ export function createWalkMode({
   // see and touch - the island mesh as it is drawn, the shoals, the banks and the trenches
   // (shared/seabed.mjs). Where the archipelago has none - a room, the workbench, a sea from
   // before it - it falls back to the height, so a diver simply finds the old flat floor. The
-  // quay's basin is its own floor (a sunken lane along the planks), as groundAt reads it.
+  // quay's wall and its stairs stand on that floor, as groundAt reads them.
   const bedOf = ground && ground.bedAt ? (x, z) => ground.bedAt(x, z) : heightUnder;
   function bedUnder(x, z) {
     const region = ground?.regionAt?.(x, z);
-    const basin = region && quayBasin(region.village, region.terrain);
-    if (basin) {
-      const local = region.toLocal(x, z);
-      const ramp = basin.rampHeight(...local);
-      if (ramp != null) return ramp;
-      if (basin.contains(...local)) return basin.height(...local);
-    }
-    return bedOf(x, z);
+    const kade = region && quayKade(region.village, region.terrain);
+    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    return wall != null ? wall : bedOf(x, z);
   }
 
   // The lowest surface above you, or Infinity under the open sky. This is the half that
@@ -1279,6 +1274,7 @@ export function createWalkMode({
     const frame = frameOf(b);
     const [lx, lz] = dirToLocal(frame, wx, wz);
     const d = state.deck;
+    const deckX = d.x, deckZ = d.z;
     // Out over the side at the head of a ladder: down it, rather than against the rail.
     if (d.grounded && state.moving) {
       const ladder = ladderDown(spec, d.x, d.z, lx);
@@ -1293,6 +1289,8 @@ export function createWalkMode({
     if (surface) stepHull(d, { x: lx, z: lz, jump: deckJump }, surface, dt, walking);
     else stepDeck(d, { x: lx, z: lz, jump: deckJump }, spec, dt, walking);
     deckJump = false;
+    frameDistance = Math.hypot(d.x-deckX, d.z-deckZ);
+    state.moving = frameDistance > 1e-6;
     // Facing: where you walk, and kept relative to the hull while you stand, so she can turn
     // under you without you spinning on the spot.
     if (state.moving) {
@@ -1646,7 +1644,9 @@ export function createWalkMode({
     return [-dx / d, dz / d];
   }
 
+  let frameDistance = 0;
   function update(dt) {
+    frameDistance = 0;
     if (!state.active && !state.parked) return null;
     if (state.parked) {
       keys.clear();
@@ -1833,12 +1833,15 @@ export function createWalkMode({
         [vx, vz] = [vx * c + vz * sn, vz * c - vx * sn];
       }
       // try the full step, then each axis on its own, so you slide along walls
-      const nx = state.pos.x + vx * speed, nz = state.pos.z + vz * speed;
+      const beforeX = state.pos.x, beforeZ = state.pos.z;
+      const nx = beforeX + vx * speed, nz = beforeZ + vz * speed;
       if (!blocked(nx, nz)) { state.pos.x = nx; state.pos.z = nz; }
       else if (!blocked(nx, state.pos.z)) state.pos.x = nx;
       else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
       state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
-      state.bob += dt * (run ? 13 : 9) * (state.carry ? CARRY_SPEED : 1);
+      frameDistance = Math.hypot(state.pos.x-beforeX, state.pos.z-beforeZ);
+      if (!state.swimming) { state.moving = frameDistance > 1e-6; state.running = run && state.moving; }
+      state.bob += frameDistance * Math.PI * 2 / (run ? .40 : .29);
     } else {
       state.bob += dt * 1.5;
     }
@@ -2018,7 +2021,7 @@ export function createWalkMode({
     // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
     const stoop = state.crouching && !state.dive;
     classicAvatar.update({
-      moving: state.moving, running: state.running, grounded: state.grounded,
+      moving: state.moving, running: state.running, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,

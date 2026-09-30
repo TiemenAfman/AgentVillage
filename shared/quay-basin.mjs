@@ -1,12 +1,19 @@
-import { makeSimplex2D, hash32 } from './rng.mjs';
-
-// A harbour basin is an overlay on the saved terrain, not a terrain migration.
-// Keep its floor and landings shared: the drawing, water depth and feet must agree,
-// while the island's terrain hash and every recorded house stay where they were.
-export const BASIN_FLOOR = -1.15;
+// The harbour's stone quay as the sea, the player and the drawing share it.
+//
+// The harbour used to be a basin drawn over the saved terrain (an overlay the terrain hash never
+// saw: `parcelWaterField`, `quayWaterField` and `createQuayBasin` lived here), and the layout, the
+// sea and the boats saw a hill where the page drew water. Since fase 3 of Plans/quay-en-rivier.md
+// the harbour is real water - one more `works.dig` - and the quay is ground (`works.kade`,
+// shared/terrain.mjs `levelKade`): a strip at the planks' height whose water side is a wall on a
+// row of corners. What is left for this file is the one thing the heightfield cannot say: the
+// wall's face. The cell in front of the quay (its foot) slopes from the harbour's bed up to the
+// quay, as every cell is the mean of four corners; the page covers it with a stone face on the
+// water side and a coping over the top (web/js/quay-basin.js), and so the foot is stood on at the
+// quay's height here, by feet and by settlers alike - and a swimmer meets a wall, not a beach.
+// Stairs go down the face into the water every so often, in front of it.
+//
+// No trig, no clock: shared/'s rule, and the sea reads it too.
 export const BASIN_DECK = 0.44;
-export const BANK_WIDTH = 2.8;
-const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // The sea must know the permanent decks even before a browser has measured them.
 // Shared with the page so an old placements snapshot cannot put feet underground.
@@ -26,172 +33,131 @@ export function quayDeckHeights(village, size) {
   return heights;
 }
 
-function parcelWaterField(village, size) {
-  const mask = new Uint8Array(size * size);
-  const lat = village?.island?.lattice;
-  if (!lat) return mask;
-  for (const d of village.districts || []) for (const l of d.lobes || []) {
-    const p = l.parcel;
-    if (!p) continue;
-    for (let j = 0; j < p.h; j++) for (let i = 0; i < p.w; i++) {
-      if (p.rows[j]?.[i] !== '1') continue;
-      const gx = lat.anchor[0] + (p.i0 + i) * lat.pitch;
-      const gz = lat.anchor[1] + (p.j0 + j) * lat.pitch;
-      for (let z = gz; z < gz + lat.pitch; z++) for (let x = gx; x < gx + lat.pitch; x++) {
-        if (x >= 0 && z >= 0 && x < size && z < size) mask[x + z * size] = d.kind === 'quay' ? 255 : 0;
-      }
-    }
-  }
-  return mask;
+// The stairs down the face: every STAIR_EVERY cells of wall, starting STAIR_FIRST in, a flight
+// STAIR_LEN cells long standing STAIR_DEPTH out from the face in the water, from one riser under
+// the quay down to STAIR_FOOT - just over the water, so a swimmer steps out onto it - in risers of
+// at most STAIR_RISE. Not where the water in front is somebody's: a deck, planks or a plot.
+export const STAIR_EVERY = 12;
+export const STAIR_FIRST = 4;
+export const STAIR_LEN = 2;
+export const STAIR_DEPTH = 0.6;
+export const STAIR_FOOT = 0.02;
+export const STAIR_RISE = 0.075;
+// The finger jetties (see `createQuayKade`): every FINGER_EVERY cells of wall from FINGER_FIRST in -
+// half a flight's spacing off the stairs - FINGER_LEN cells out, at most FINGER_MOST of them.
+export const FINGER_EVERY = 6;
+export const FINGER_FIRST = 7;
+export const FINGER_LEN = 4;
+export const FINGER_MOST = 5;
+
+// The tread `along` a flight (0 at its upper end, `STAIR_LEN` at its foot).
+export function stairHeight(s, along) {
+  const n = s.steps;
+  const k = Math.min(n - 1, Math.max(0, Math.floor((along / STAIR_LEN) * n + 1e-9)));
+  return s.top - (s.top - STAIR_FOOT) * (k + 1) / n;
 }
 
-// One full cell around the parcel, including diagonal corners. This is shoreline
-// clearance, not a change to ownership or a reason to move the saved plots.
-export function quayWaterField(village, size) {
-  const original = parcelWaterField(village, size), expanded = original.slice();
-  for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
-    if (!original[x + z * size]) continue;
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const nx = x + dx, nz = z + dz;
-      if (nx >= 0 && nz >= 0 && nx < size && nz < size) expanded[nx + nz * size] = 255;
-    }
-  }
-  return expanded;
-}
-
-export function createQuayBasin(village, terrain) {
+export function createQuayKade(village, terrain) {
+  const k = village?.works?.kade;
+  if (!k || !(k.cells || []).length) return null;
   const { size, half } = terrain;
-  const mask = quayWaterField(village, size);
-  const wet = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size && !!mask[gx + gz * size];
-  const edges = [], ramps = [];
-  const originalMask = parcelWaterField(village, size);
-  const deck = new Set((village?.districts || []).filter(d => d.kind === 'quay')
-    .flatMap(d => d.deck || []).map(([x, z]) => x + z * size));
-  // Only a road crossing the bank is an entrance; a doorstep beside it is not.
-  const entrances = new Set();
-  for (const path of village?.paths || []) {
-    const cells = path.cells || [];
-    for (let i = 1; i < cells.length; i++) {
-      let [a, b] = [cells[i - 1], cells[i]];
-      if (wet(...a) === wet(...b)) continue;
-      if (!wet(...a)) [a, b] = [b, a];
-      const dx = b[0] - a[0], dz = b[1] - a[1];
-      if (Math.abs(dx) + Math.abs(dz) === 1) entrances.add(`${a[0]},${a[1]}:${dx},${dz}`);
-    }
-  }
-  // Extend each landward entrance over the new cell; its ramp is both geometry
-  // and a shared walking surface, so the added strip cannot strand the boardwalk.
-  for (const key of [...deck]) {
-    const gx = key % size, gz = Math.floor(key / size);
-    if (!originalMask[key]) continue;
-    for (const [dx, dz] of N4) {
-      const nx = gx + dx, nz = gz + dz;
-      if (wet(nx, nz) && !originalMask[nx + nz * size]) deck.add(nx + nz * size);
-    }
-  }
-  const platforms = (village?.buildings || []).filter(b => b.harbour && b.plot?.quay)
-    .map(b => ({ x: b.plot.gx - half, z: b.plot.gz - half, w: b.plot.w, d: b.plot.d }));
-  for (let gz = 0; gz < size; gz++) for (let gx = 0; gx < size; gx++) {
-    if (!wet(gx, gz)) continue;
-    for (const [dx, dz] of N4) {
-      if (wet(gx + dx, gz + dz)) continue;
-      const x = gx - half + .5 + dx * .5, z = gz - half + .5 + dz * .5;
-      const edge = { x, z, dx, dz };
-      edges.push(edge);
-      if (entrances.has(`${gx},${gz}:${dx},${dz}`) && deck.has(gx + gz * size)
-        && terrain.worldHeight(x + dx * .5, z + dz * .5) > .05) {
-        const y = terrain.worldHeight(x, z);
-        let run = 1;
-        // Use the straight approach already laid, never a house plot beside it.
-        while (run < 5 && deck.has((gx - dx * run) + (gz - dz * run) * size)
-          && wet(gx - dx * run, gz - dz * run)) run++;
-        // Stop at that last board's centre, not its far bank: on a narrow inlet
-        // the far edge is land again and cannot be the low end of this ramp.
-        const length = Math.min(4, Math.max(1.5, Math.ceil(Math.abs(y - BASIN_DECK) / .45)), run - .5);
-        ramps.push({ ...edge, y, length, steps: Math.max(1, Math.ceil(Math.abs(y - BASIN_DECK) / .15)) });
-      }
-    }
-  }
-  const contains = (x, z) => wet(Math.floor(x + half), Math.floor(z + half));
-  const rampHeight = (x, z) => {
-    for (const r of ramps) {
-      const along = (x - r.x) * r.dx + (z - r.z) * r.dz;
-      const across = (x - r.x) * r.dz - (z - r.z) * r.dx;
-      if (along >= -r.length && along <= 0 && Math.abs(across) <= .38) {
-        return stairHeight(r, along);
-      }
-    }
-    return null;
-  };
-  const noise = makeSimplex2D(hash32(`quay-bank:${terrain.seed}`));
-  const bankDistance = (x, z) => {
-    let nearest = Infinity;
-    for (const e of edges) {
-      // Distance to the whole segment, including its ends: a corner then becomes
-      // one continuous slope instead of two overlapping strips of bank.
-      const along = (x - e.x) * e.dz - (z - e.z) * e.dx;
-      const t = Math.max(-.5, Math.min(.5, along));
-      const dx = x - e.x - e.dz * t, dz = z - e.z + e.dx * t;
-      nearest = Math.min(nearest, dx * dx + dz * dz);
-    }
-    return Math.sqrt(nearest);
-  };
-  // A grassy collar keeps the lip away from the cadastral rectangle. Its width
-  // wanders gently; both the cut and its shingle start from the same contour.
-  const lipDistance = (x, z) => Math.max(0, bankDistance(x, z) - .4 - noise(x * .42, z * .42) * .28);
-  const bankCoverage = (x, z) => {
-    const t = Math.min(1, lipDistance(x, z) / 1.65);
-    return t * t * (3 - 2 * t);
-  };
-  const height = (x, z) => {
-    const original = terrain.worldHeight(x, z);
-    if (!contains(x, z)) return original;
-    const width = BANK_WIDTH + noise(x * .65, z * .65) * .45;
-    const t = Math.min(1, lipDistance(x, z) / width);
-    // Round both the grassy lip and the submerged foot, like the river's cut.
-    const blend = t * t * (3 - 2 * t);
-    const bed = Math.min(BASIN_FLOOR, original);
-    let y = original + (bed - original) * blend;
-    // Fill beneath the stairs up to the uncut landing, rather than carving a
-    // hollow slot behind the top tread. Feather sideways into the bank.
-    for (const r of ramps) {
-      const along = (x - r.x) * r.dx + (z - r.z) * r.dz;
-      const across = Math.abs((x - r.x) * r.dz - (z - r.z) * r.dx);
-      if (along < -r.length || along > 0 || across > .85) continue;
-      const plank = BASIN_DECK + (r.y - BASIN_DECK) * (along / r.length + 1);
-      const feather = Math.max(0, (across - .38) / .47);
-      const cut = plank;
-      y = cut + (y - cut) * feather * feather * (3 - 2 * feather);
-    }
-    // The bank can curl around an existing house, but never rise through its
-    // platform. Feather the clearance outside the footprint to avoid a square pit.
-    for (const p of platforms) {
-      const dx = Math.max(p.x - x, 0, x - p.x - p.w);
-      const dz = Math.max(p.z - z, 0, z - p.z - p.d);
-      const t = Math.min(1, Math.sqrt(dx * dx + dz * dz) / .7);
-      // A platform near the edge must not leave a hole at the dry-land seam.
-      const seam = Math.min(1, bankDistance(x, z) / .7);
-      const cut = y + (Math.min(y, -.15) - y) * seam * seam * (3 - 2 * seam);
-      y = cut + (y - cut) * t * t * (3 - 2 * t);
-    }
-    return y;
-  };
-  return { mask, edges, ramps, contains, rampHeight, bankDistance, bankCoverage, height };
-}
+  const level = k.level / 256;
+  const [bx, bz] = k.back;
+  const wx = -bx, wz = -bz;                 // towards the water
+  const alongZ = wx !== 0;                   // the wall runs along z when the water is along x
+  const at = (gx, gz) => gx + gz * size;
+  const own = new Set(k.cells.map(([gx, gz]) => at(gx, gz)));
+  const inGrid = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
 
-// The sea, player and drawing use identical treads, rising at most .15 each.
-export function stairHeight(r, along) {
-  const step = Math.min(r.steps, Math.max(0, 1 + Math.floor((along / r.length + 1) * r.steps + 1e-9)));
-  return BASIN_DECK + (r.y - BASIN_DECK) * step / r.steps;
+  // The foot of the wall: the water-side neighbour of every quay cell on the wall.
+  const foot = [];
+  for (const [gx, gz] of k.cells) {
+    const fx = gx + wx, fz = gz + wz;
+    if (own.has(at(fx, fz)) || !inGrid(fx, fz)) continue;
+    // Where the face stands, across the wall: the foot's water-side edge, in grid units.
+    const face = wx < 0 ? fx : wx > 0 ? fx + 1 : wz < 0 ? fz : fz + 1;
+    foot.push({ gx: fx, gz: fz, along: alongZ ? fz : fx, across: alongZ ? fx : fz, face });
+  }
+  foot.sort((a, b) => a.across - b.across || a.along - b.along);
+  const footAt = new Map(foot.map((f) => [at(f.gx, f.gz), f]));
+
+  // Runs of the wall: foot cells next to each other along it.
+  const runs = [];
+  for (const f of foot) {
+    const run = runs[runs.length - 1];
+    if (run && run[run.length - 1].across === f.across && run[run.length - 1].along === f.along - 1) run.push(f);
+    else runs.push([f]);
+  }
+
+  // What the water in front of the wall already carries.
+  const taken = new Set();
+  for (const d of village.districts || []) for (const [gx, gz] of [...(d.deck || []), ...(d.pier || [])]) taken.add(at(gx, gz));
+  for (const b of village.buildings || []) {
+    const p = b.plot;
+    if (!p) continue;
+    for (let z = 0; z < p.d; z++) for (let x = 0; x < p.w; x++) taken.add(at(p.gx + x, p.gz + z));
+  }
+  for (const p of village.paths || []) for (const [gx, gz] of p.cells || []) taken.add(at(gx, gz));
+
+  const steps = Math.max(1, Math.ceil((level - STAIR_FOOT) / STAIR_RISE));
+  const stairs = [];
+  for (const run of runs) {
+    for (let i = STAIR_FIRST; i + STAIR_LEN <= run.length; i += STAIR_EVERY) {
+      const cells = run.slice(i, i + STAIR_LEN);
+      if (cells.some((f) => taken.has(at(f.gx + wx, f.gz + wz)) || !inGrid(f.gx + wx, f.gz + wz))) continue;
+      stairs.push({ a0: cells[0].along, face: cells[0].face, sign: alongZ ? wx : wz, top: level, steps, cells });
+    }
+  }
+
+  // Finger jetties off the wall into the harbour, where the quay district's houses stood before
+  // they moved to their resort on the sea (Plans/quay-op-zee.md, §5a): somewhere for the boats to
+  // lie. Dressing only - route (a) of the plan: BOATS_PER_HARBOUR is still three and the moorings
+  // are still the planks' - so nothing walks them and only the page draws them. Straight out from
+  // the foot, on water nobody else's with a cell of water either side, off the stairs' water, the
+  // planks and their berths.
+  const kept = new Set(taken);
+  for (const d of village.districts || []) {
+    for (const [gx, gz] of d.pier || []) for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) kept.add(at(gx + dx, gz + dz));
+  }
+  for (const s of stairs) for (const f of s.cells) for (let k = 1; k <= 2; k++) kept.add(at(f.gx + wx * k, f.gz + wz * k));
+  // A ground that cannot say where its water is (the flat stand-ins the wall's own tests hand in)
+  // gets no fingers rather than a guess.
+  const wet = typeof terrain.isWater === 'function' ? (gx, gz) => terrain.isWater(gx, gz) : () => false;
+  const free = (gx, gz) => inGrid(gx, gz) && wet(gx, gz) && !kept.has(at(gx, gz));
+  const side = alongZ ? [0, 1] : [1, 0];
+  const fingers = [];
+  for (const run of runs) {
+    for (let i = FINGER_FIRST; i < run.length && fingers.length < FINGER_MOST; i += FINGER_EVERY) {
+      const f = run[i];
+      const cells = [];
+      for (let n = 1; n <= FINGER_LEN; n++) cells.push([f.gx + wx * n, f.gz + wz * n]);
+      if (!cells.every(([gx, gz]) => free(gx, gz) && free(gx + side[0], gz + side[1]) && free(gx - side[0], gz - side[1]))) continue;
+      fingers.push({ along: f.along, face: f.face, cells });
+    }
+  }
+
+  // Where (x, z), local, stands: a tread, the top of the wall, or null for everywhere else.
+  const height = (x, z) => {
+    const X = x + half, Z = z + half;
+    const A = alongZ ? Z : X, C = alongZ ? X : Z;
+    for (const s of stairs) {
+      const out = (C - s.face) * s.sign;                // how far in front of the face
+      if (out < 0 || out > STAIR_DEPTH || A < s.a0 || A >= s.a0 + STAIR_LEN) continue;
+      return stairHeight(s, A - s.a0);
+    }
+    const f = footAt.get(at(Math.floor(X), Math.floor(Z)));
+    return f ? level : null;
+  };
+  return { level, back: [bx, bz], water: [wx, wz], alongZ, foot, runs, stairs, fingers, height };
 }
 
 const cache = new WeakMap();
-export function quayBasin(village, terrain) {
+export function quayKade(village, terrain) {
   if (!village) return null;
   let entry = cache.get(village);
   if (!entry || entry.terrain !== terrain) {
-    entry = { terrain, basin: createQuayBasin(village, terrain) };
+    entry = { terrain, kade: createQuayKade(village, terrain) };
     cache.set(village, entry);
   }
-  return entry.basin;
+  return entry.kade;
 }

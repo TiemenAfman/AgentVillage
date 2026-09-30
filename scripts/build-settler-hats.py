@@ -50,7 +50,7 @@ def build_hats(materials):
 
     def tube(name, points, radius, slot):
         data = bpy.data.curves.new(name, 'CURVE')
-        data.dimensions = '3D'; data.resolution_u = 4
+        data.dimensions = '3D'; data.resolution_u = 2
         data.bevel_depth = radius; data.bevel_resolution = 1
         spline = data.splines.new('BEZIER'); spline.bezier_points.add(len(points)-1)
         for point, co in zip(spline.bezier_points, points):
@@ -129,8 +129,8 @@ def build_hats(materials):
         (.462,.053,.050,-.004,.004),(.471,.034,.033,-.008,.006),(.474,.001,.001,-.011,.007)])
     band('Wool folded cuff',.415,.075,.069,.018,'hat')
     # Fine ribs belong to the cuff; no large contrasting piping across the head.
-    for i in range(24):
-        t=math.tau*i/24
+    for i in range(16):
+        t=math.tau*i/16
         tube('Wool cuff rib',[(.0752*math.cos(t),.0692*math.sin(t),.419),
             (.0757*math.cos(t),.0697*math.sin(t),.424),(.0752*math.cos(t),.0692*math.sin(t),.430)],.00055,'hat')
 
