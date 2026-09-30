@@ -117,6 +117,7 @@ export function districtColor(h, owner, hues) {
 // of those on it is a map with nothing on it.
 export const LANDMARKS = {
   'civic:lighthouse': 'Lighthouse', 'civic:townhall': 'Town hall', 'civic:tavern': 'Tavern',
+  'civic:piratetavern': 'Salty Kraken',
   'civic:market': 'Market', 'civic:school': 'School', 'civic:chapel': 'Chapel',
   'civic:windmill': 'Windmill', 'civic:castle': 'Castle', 'civic:watertower': 'Water tower',
   'civic:sawmill': 'Sawmill', 'civic:smithy': 'Smithy', 'civic:bakery': 'Bakery', 'civic:stable': 'Stable',

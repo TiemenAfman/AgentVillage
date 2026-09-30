@@ -1656,6 +1656,14 @@ function civic(parts, spec, rng) {
       for (const [name, at] of Object.entries(models.anchorsOf('tavern'))) anchors[name] = [...at];
       return { anchors, animated, height: models.heightOf('tavern') };
     }
+    case 'piratetavern': {
+      // The Salty Kraken, the pirates' pub (Plans/piratenkroeg.md), authored in
+      // assets/piratetavern/ facing the water (+z). It bakes no anchor.flag on purpose: every
+      // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
+      parts.push(...meshAsset('piratetavern'));
+      for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
+      return { anchors, animated, height: models.heightOf('piratetavern') };
+    }
     case 'chapel': {
       // A brick village church with a saddleback tower, modelled in
       // scripts/build-village.py. The branch below is the chapel the island drew before
@@ -2249,7 +2257,9 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // whole sixteen-long lot, the strip along the ship to the water included. Apart, the slipway is
 // one solid (nobody walks the ways - they have no deck level), the ship's parts fall inside it,
 // and the shed, the logs, the planks and the hearth are each walked round.
-const APART = new Set(['tables', 'shipyard', ...SHOPS, ...HARBOUR_HOUSES]);
+// The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
+// crate and bollard on the other closed with the walls into one block across the walk up to it.
+const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -2330,7 +2340,7 @@ function wantsPorch(spec) {
 // it stands on something, with the model's own foot course as a second step above it. On it
 // the tower covers 1.39 by 1.49, where the old one on its full step covered 1.32 by 1.34.
 const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' || spec.civicType === 'lighthouse' ? [0, 0]
-  : spec.civicType === 'tavern' || SHOPS.has(spec.civicType) || HARBOUR_HOUSES.has(spec.civicType) ? [0.06, 0.08]
+  : spec.civicType === 'tavern' || spec.civicType === 'piratetavern' || SHOPS.has(spec.civicType) || HARBOUR_HOUSES.has(spec.civicType) ? [0.06, 0.08]
     : [PORCH_OVER, PORCH_TREAD]);
 
 // The widest a shape reaches from its own centre, at any height. Head height is the line

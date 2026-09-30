@@ -7912,6 +7912,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
+    // The Salty Kraken's hearth, lit whenever the pirates are in, which is always.
+    || rec.spec.civicType === 'piratetavern'
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
     || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'

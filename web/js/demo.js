@@ -59,6 +59,8 @@ const CIVIC = [
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
+  // The pirates' pub, once the light burns (Plans/piratenkroeg.md).
+  ['piratetavern', 'Salty Kraken', '52'],
   // The trades, out beyond the shopping streets. The smith goes in at night: move the night
   // slider (Plans/DONE/zagerij.md, Plans/DONE/smidse.md, Plans/DONE/stal-en-veld.md).
   ['sawmill', 'Sawmill', '55'],
