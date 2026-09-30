@@ -120,6 +120,54 @@ kaartentafel, draait naar je toe als je hem aanspreekt; dezelfde spreek-interact
 bemanning. Niets aan het model veranderd: zijn ogen (losse oogbol-meshes onder een kohl-schaduw) leken van
 veraf dicht, maar de originele stand is goedgekeurd. Zie Risico's over de herkomst.
 
+## Ontwerpvraag voor Fable: het interieur als bake (30 september 2026)
+
+**Status: open, voor een Fable-sessie.** De zaal hierboven is gebouwd zoals het plan zei, uit JS-primitieven in
+`web/js/pirate-tavern.js` (commit `6787b64` op `claude/salty-kraken`), en de keeper keurde hem af: *"het is
+allemaal te cheap"*. Zijn punten, letterlijk en uitgelegd:
+
+- **"Veel pleistermuur, dat is niet pirate-y."** De muren zijn geteerde planken tot de heup en oker pleister
+  erboven; dat is de dorpstavern. Een piratenkroeg is hout: scheepsplanken, spanten, balken, touw.
+- **"De schedel aan de bar is echt een armatuur, geen muur."** In de referentie (Trader Sam's) is de schedel een
+  lamp, hangend of als wandlamp, met licht in de oogkassen. Nu is het een bolletje met een kroontje in een nis.
+- **"Ik mis treasure en alles."** De schat zit achter tralies in de kelder en op de erker; in de zaal zelf, waar
+  je binnenkomt, ligt bijna niets. Het moet overal liggen: kisten die openstaan met goud dat eroverheen stroomt,
+  hopen munten, kroezen en kandelaars van goud, juwelen.
+- En wat de screenshot van de achterbar liet zien: de achterbar is één doos van 3,6 breed; de nissen zijn platte,
+  fel gloeiende rechthoeken (ze lezen als schermpjes) met piepkleine dingen erin; de toog is een kale plank;
+  krukken en lantaarns zijn dunne cilinders.
+
+**Waarom het zo uitpakte:** primitieven zonder bevels, zeszijdige cilinders en gloeivlakken zijn het plafond van
+wat JS-dozen kunnen. Het exterieur (`scripts/build-piratetavern.py`) ziet er wél goed uit, omdat Blender echte
+vormen, bevels en detail geeft.
+
+**De vraag aan Fable:** ontwerp de aankleding van de zaal opnieuw, als bake, en laat de keeper renders goedkeuren
+voordat er iets de kamer in gaat. Denk aan:
+
+1. **Een eigen hero-set** voor het interieur (bijvoorbeeld `assets/piratetavern_room/`, asset `piratetavern_room`,
+   `scripts/build-piratetavern-room.py`), met een eigen budget in `HERO_BUDGETS` (`scripts/model-rules.mjs`; de
+   Batavia heeft 8000, het piratenschip 30000). Wat groot is en vaststaat - muren, achterbar, toog, haard,
+   plafond, trappen van het dek - mag één set zijn, zolang de kamer dezelfde plattegrond houdt.
+2. **Wat erin moet**, uit de referenties en de punten hierboven: scheepsplanken met spanten en zware balken in
+   plaats van pleister; een gesneden achterbar met echte boognissen (diepte, een gewelfde bovenkant, flessen op
+   planken, een zachte gloed ín de nis in plaats van een gloeiend vlak); een schedellamp (hangend boven de toog,
+   en/of twee wandlampen) met een kaars en gloeiende oogkassen; open schatkisten met goud dat eroverheen stroomt
+   (minstens één die je ziet als je binnenkomt), goudhopen, munten op toog en tafels, gouden kroezen en
+   kandelaars, juwelen; een stoere toog met een koperen voetrail en panelen; tonnen en kegs; netten, touw, een
+   anker, gekruiste sabels, een scheepswiel; de hangende sloep als kroonluchter.
+3. **De spelregels die blijven** (die liggen vast in de kamerdata en de tests, `tests/pirate-tavern-room.test.mjs`):
+   precies **zeven PointLights** (de shader-key van het gebouwmateriaal); niets **breder dan een hand** gloeit
+   vol (`INDOOR_GLOW`: vlakken ≤ 0.65, vlammen 1), goud glimt door de lampen, alleen edelstenen gloeien; de
+   stoelen, blockers, `areas`, het dek (hele cellen), de `talkers` en de bemanningsshow (`'sit'`, Spack Jarrow,
+   het `!`) blijven data in `pirate-tavern.js`. Alleen `parts` en `roof` (wat getekend wordt) gaan naar de bake.
+   Blockers blijven met de hand gegeven, niet afgemeten (de reden staat in de kop van `interior.js`).
+4. **De schaal**: een settler is 0.45, tafels 0.2 hoog, banken 0.135, krukken 0.19, plafond 1.9 (kelder 1.2,
+   snug 1.25). Zie "De zaal" en de plattegrond in het uitvoeringsplan.
+5. **Het proces**: renders naast de referentiebeelden, de keeper kiest, dan pas bakken en koppelen. De koppeling
+   zelf (bake importeren in `models.js`, `meshAsset` in `buildPirateTavern`, tests) mag een Opus-sessie doen.
+
+Ondertussen gaan de quests (fase D), de shanty (E) en de docs door; die hangen niet van het uiterlijk af.
+
 ## Fasen
 
 Bewust in deze volgorde, want alleen de server-kant raakt de haven (zie "De plek"):
