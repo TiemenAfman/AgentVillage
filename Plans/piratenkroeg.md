@@ -283,6 +283,12 @@ House is GPL-3.0, dus daar is niets uit overgenomen: de vlam is een port van het
 gebaseerd is (mattatz' THREE.Fire), met een eigen profiel - het MIT-plaatje is een traan op zijn punt en las in de
 haard als een zwevende bal - en een verschoven startpunt per pixel tegen de strepen van vaste stappen. Hun model
 (een Dark Souls-kampvuur, CC-BY maar het ontwerp van FromSoftware) komt niet in git.
+De vulling eronder is een kitstuk, `scripts/krakenkit/firebasket.py` (`civic_kraken_firebasket`, ~3100
+driehoeken): een smeedijzeren vuurkorf op vier palen met messing knoppen en gekrulde voeten, drie
+kruislings verkoolde eiken blokken met gloeiende haarscheurtjes, en as met snippers, houtskool en
+gloeiende kooltjes - naar de FLUX-referentie `refs/krakenkit/objecten/haard/haardvulling-flux-15-4palen-messing.png`
+(gekozen uit zestien, het hout op verzoek donkerder). De haardijzers en blokken in `dressing.py hearth()`
+zijn eruit.
 
 **De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
 `galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,

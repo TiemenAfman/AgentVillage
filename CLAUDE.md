@@ -970,7 +970,9 @@ count; the halos are read off every glowing part of the room's own geometry, nev
 The Kraken's hearth burns `web/js/hearth-fire.js` (`def.flame`, numbers in `kraken-layout.js HEARTH_FIRE`;
 the tavern keeps its two cones on `fireAt`): a flame ray-marched through noise inside a box, embers, sparks
 and two halos, all additive and none of them a light, and the lamp in `LIGHTS` marked `hearth: true`
-flickers off `flame.flicker(t)`. It is a port of mattatz's THREE.Fire (MIT, notice in the file); the
+flickers off `flame.flicker(t)`. It burns over the kit's `civic_kraken_firebasket` (`KIT.firebasket`: iron
+basket, charred logs with glowing cracks, ash and coals - no flame in the bake), `HEARTH_FIRE.y` on its ash
+and the flame `lift` over that; the old andirons and logs in `dressing.py hearth()` are gone. It is a port of mattatz's THREE.Fire (MIT, notice in the file); the
 GPL-3.0 Tarnished House it was found in is not copied from, and that project's Dark Souls bonfire model
 (CC-BY, but FromSoftware's design) stays out of git. `tests/hearth-fire.test.mjs`.
 

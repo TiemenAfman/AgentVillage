@@ -117,6 +117,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (const g of KIT.gunports) kit('civic_kraken_gunport', { x: g.x, y: FLOOR + 0.62, z: HALL.z1, ry: Math.PI });
   for (const c of KIT.sconces) kit('civic_kraken_skullsconce', c);
   kit('civic_kraken_skulllamp', KIT.skulllamp, roof);
+  kit('civic_kraken_firebasket', KIT.firebasket);
   const stools = KIT.stools;
   for (let i = 0; i < stools.n; i++) kit('civic_kraken_stool', { x: stools.x0 + i * stools.step, y: stools.y, z: stools.z });
   const nav = K.CREW_PLACES.navigator;
@@ -258,7 +259,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
       return { x0, x1, z0, z1, top: K.EAVES + 0.3, bottom: f.bottom, hex: f.hex, strength: f.strength, lean: f.lean };
     }),
     // The hearth burns the ray-marched fire (hearth-fire.js), not the tavern's two cones.
-    flame: { at: [K.HEARTH_FIRE.x, K.HEARTH_FIRE.y, K.HEARTH_FIRE.z], w: K.HEARTH_FIRE.w, h: K.HEARTH_FIRE.h, bed: [...K.HEARTH_FIRE.bed] },
+    flame: { at: [K.HEARTH_FIRE.x, K.HEARTH_FIRE.y, K.HEARTH_FIRE.z], lift: K.HEARTH_FIRE.lift, w: K.HEARTH_FIRE.w, h: K.HEARTH_FIRE.h, bed: [...K.HEARTH_FIRE.bed] },
     // The storeys and their stairs, as walk mode's surfaces (Plans/verdiepingen-binnen.md).
     surfaces: [...K.FLOORS, ...K.STAIRS],
     ceiling: K.CEILING,

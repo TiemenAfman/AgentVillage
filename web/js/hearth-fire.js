@@ -134,7 +134,9 @@ const FLAME_FRAG = /* glsl */ `
     float g = exp(-d * d) + 0.32 * (1.0 - smoothstep(r - 0.12, r, st.x));
     vec3 c = mix(vec3(0.36, 0.27, 0.07), vec3(0.36, 0.15, 0.02), smoothstep(0.1, 0.5, t));
     c = mix(c, vec3(0.3, 0.05, 0.0), smoothstep(0.5, 0.95, t));
-    return c * g * (1.0 - t * t);
+    // Thin at the very foot, where the logs are: at full strength there the flame was a yellow
+    // sheet over the whole basket and the charred wood it burns on was not to be seen.
+    return c * g * (1.0 - t * t) * mix(0.25, 1.0, smoothstep(0.0, 0.28, t));
   }
   vec3 sampleFire(vec3 p) {
     vec2 st = vec2(length(p.xz), p.y);
@@ -267,9 +269,10 @@ export function fireFlicker(t, seed = 0) {
     + 0.03 * Math.sin(t * 23.1 + seed * 0.7);
 }
 
-// `at` is the middle of the fire's foot (on the bed), `w` its width across (x and z), `h` its
-// height, `bed` the embers' half widths [x, z]; everything in the room's own units.
-export function createHearthFire({ at, w = 0.42, h = 0.58, bed = [0.2, 0.18], bright = 1 } = {}) {
+// `at` is the middle of the bed the embers lie on, `lift` how far over it the flame starts (among
+// the logs), `w` its width across (x and z), `h` its height, `bed` the embers' half widths [x, z];
+// everything in the room's own units.
+export function createHearthFire({ at, lift = 0, w = 0.42, h = 0.58, bed = [0.2, 0.18], bright = 1 } = {}) {
   const [x, y, z] = at;
   const seed = seedOf(x, z);
   const group = new THREE.Group();
@@ -288,7 +291,7 @@ export function createHearthFire({ at, w = 0.42, h = 0.58, bed = [0.2, 0.18], br
   const flameGeo = new THREE.BoxGeometry(1, 1, 1);
   const flame = new THREE.Mesh(flameGeo, flameMat);
   flame.scale.set(w, h, w);
-  flame.position.set(x, y + h / 2, z);
+  flame.position.set(x, y + lift + h / 2, z);
   // The march is in the box's own frame; the box never moves, but the group might be put somewhere.
   flame.onBeforeRender = () => { flameMat.uniforms.uInv.value.copy(flame.matrixWorld).invert(); };
   group.add(flame);
@@ -311,7 +314,7 @@ export function createHearthFire({ at, w = 0.42, h = 0.58, bed = [0.2, 0.18], br
     vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG,
     uniforms: {
       uTime: { value: 0 }, uScale: { value: 500 }, uSize: { value: 0.02 },
-      uBase: { value: new THREE.Vector3(x, y + 0.06, z) },
+      uBase: { value: new THREE.Vector3(x, y + lift + 0.04, z) },
       uReach: { value: new THREE.Vector3(bed[0] * 0.7, h * 1.35, bed[1] * 0.7) },
     },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -328,8 +331,8 @@ export function createHearthFire({ at, w = 0.42, h = 0.58, bed = [0.2, 0.18], br
 
   // The glow: a broad warm one filling the firebox, and a hot one low on the embers.
   const halos = createHalos([
-    { at: [x + w * 0.35, y + h * 0.4, z], hex: 0xff6a24, size: 1.5, strength: 0.32 },
-    { at: [x + w * 0.2, y + h * 0.15, z], hex: 0xffb24a, size: 0.6, strength: 0.42 },
+    { at: [x + w * 0.35, y + lift + h * 0.4, z], hex: 0xff6a24, size: 1.5, strength: 0.32 },
+    { at: [x + w * 0.2, y + lift + h * 0.15, z], hex: 0xffb24a, size: 0.6, strength: 0.42 },
   ]);
   group.add(halos.object);
 

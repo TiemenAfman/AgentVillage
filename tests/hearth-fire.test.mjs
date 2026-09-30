@@ -44,7 +44,12 @@ test('the flame stands in the firebox, under its arch', () => {
   assert.ok(Math.abs(f.z - K.HEARTH.z) + half < OPEN, 'inside the opening');
   // The shader draws the flame to a point at 0.9 of the box: the tips may go up the chimney behind
   // the hood, but never over the arch, where they would show above the opening.
-  assert.ok(f.y + f.h * 0.9 < CROWN, 'its tips under the arch\'s crown');
+  assert.ok(f.y + f.lift + f.h * 0.9 < CROWN, 'its tips under the arch\'s crown');
+  // The basket stands on the firebed under the fire, its ash's top (0.022 over its foot) where the
+  // embers lie.
+  assert.equal(K.KIT.firebasket.x, f.x);
+  assert.equal(K.KIT.firebasket.z, f.z);
+  assert.ok(Math.abs(K.KIT.firebasket.y + 0.022 - f.y) < 0.005, 'the embers lie on the basket\'s ash');
   for (const [i, b] of f.bed.entries()) assert.ok(b > 0 && b <= (i ? OPEN : f.w), 'a bed of embers inside the opening');
 });
 

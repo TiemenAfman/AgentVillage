@@ -122,6 +122,15 @@ export const JETTY = { x0: 6.0, x1: 7.6, z0: 4.2, z1: 4.6, y: G };
 // The iron bars in the cellar round the treasure, and their return to the north wall.
 export const CELLAR_BARS = { z: -8.1, x0: -7.0, x1: -5.5 };
 
+// The hearth in the west rock and the fire in it; the basket that holds the fire is KIT.firebasket.
+export const HEARTH = { x: -8.75, z: 4.4 };                  // in the west rock, on the ground
+// The fire in it (hearth-fire.js) over the fire basket (KIT.firebasket, scripts/krakenkit/firebasket.py):
+// `y` is the top of the basket's ash, where the embers lie, and the flame starts `lift` over that,
+// among the logs. 0.5 across so it stays inside the opening (0.42 either side) and 0.78 high: its tips
+// (0.9 of that) go up past the hood's front edge at F + 0.66, where the hood hides them going up the
+// chimney, and stay under the arch's crown at F + 0.87 (shell.py hearth()), so none shows over the opening.
+export const HEARTH_FIRE = { x: -8.67, z: 4.41, y: F + 0.027, lift: 0.04, w: 0.5, h: 0.78, bed: [0.2, 0.2] };
+
 // The ship's parts (web/js/krakenkit-mesh.js), where they stand.
 export const KIT = {
   stern: { x: 0, z: -6.85, y: B },                            // the back bar against the rock
@@ -147,6 +156,9 @@ export const KIT = {
   // The split rudder over the bar's front as the house's sign, west of the mast so the door sees it
   // (scripts/krakenkit/rudder.py: the blade's top 0.9 over its lowest splinter).
   rudder: { x: -2.7, z: -3.35, y: B + 2.45 - 0.9 },
+  // The hearth's fill (scripts/krakenkit/firebasket.py: 0.5 across, 0.4 deep), its front to the hall,
+  // standing on the firebed (shell.py's, whose top is F + 0.005) under HEARTH_FIRE.
+  firebasket: { x: HEARTH_FIRE.x, z: HEARTH_FIRE.z, y: G + 0.005, ry: Math.PI / 2 },
   sconces: [{ x: -8.97, z: -3.0, y: G + 0.8, ry: Math.PI / 2 }, { x: 8.97, z: -4.0, y: C + 0.4, ry: -Math.PI / 2 }],
 };
 
@@ -157,13 +169,6 @@ export const TABLES = [
   { id: 't3', x: -3.2, z: 2.6 }, { id: 't4', x: 1.8, z: 2.6 },
   { id: 't5', x: -3.2, z: 4.7 }, { id: 't6', x: 1.8, z: 4.7 },
 ];
-export const HEARTH = { x: -8.75, z: 4.4 };                  // in the west rock, on the ground
-// The fire in it (hearth-fire.js): its foot on the logs between the andirons (dressing.py hearth():
-// from x -8.86 to -8.48, 0.13 either side of the middle), 0.5 across so it stays inside the opening
-// (0.42 either side) and 0.78 high: its tips (0.9 of that) go up past the hood's front edge at F + 0.66,
-// where the hood hides them going up the chimney, and stay under the arch's crown at F + 0.87 (shell.py
-// hearth()), so none shows over the opening.
-export const HEARTH_FIRE = { x: -8.67, z: 4.41, y: F + 0.02, w: 0.5, h: 0.78, bed: [0.2, 0.22] };
 export const SLOOPS = [{ x: -3.2, y: P + 2.6, z: 1.45 }, { x: 1.8, y: P + 2.6, z: 1.45 }];   // boats full of candles
 export const CHART = { x: 7.3, z: -5.2 };                    // on the captain's deck
 export const CHAIR = { x: 7.3, z: -6.1 };
