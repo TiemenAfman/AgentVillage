@@ -198,14 +198,30 @@ export const KEEP_CLEAR = [
   { why: 'the ladders', x0: 6.7, x1: 7.5, z0: -3.1, z1: -2.1, y: C },
 ];
 
-// The seven lights (pirate-tavern.js; exactly seven, the tavern's number, see its top): warm candles
-// and lamps against the one cool light, the moon coming in over the pool under the sea arch.
+// The seven lights (pirate-tavern.js; exactly seven, the tavern's number, see its top), as a light
+// plan (Plans/piratenkroeg.md, "Licht"): warm practical light low down - the sloops over the tables,
+// the hearth the strongest and reddest, the skull lamp over the counter and the captain's lamp - at
+// about 2000 K and with reach enough to light the tables, the floor and the people round them, not a
+// ring round each flame; the niches' purple spilling onto the bar as the far focal point; one cool
+// light, the moon, high over the atrium under the skylights with a gentle falloff (decay 1), so it
+// finds the galleries, the beams and the rigging from above and leaves the floor to the lamps; the
+// hemisphere (`ambience` in pirate-tavern.js) adds a little cool from above, and the corners stay out
+// of every lamp's reach. The sea arch's glow and the shafts through the skylights are its visible source.
 export const LIGHTS = [
-  { hex: 0xff8c3a, intensity: 1.8, dist: 3.4, at: [-8.4, G + 0.3, 4.4], flicker: true },          // the hearth
-  { hex: 0xffc98a, intensity: 1.4, dist: 3.0, at: [0, B + 1.24, -5.85] },                          // the skull lamp
-  { hex: 0x8a5cff, intensity: 1.1, dist: 2.6, at: [0, B + 0.75, -6.55] },                          // the niches
-  { hex: 0xffd9a0, intensity: 1.7, dist: 4.6, at: [-3.2, P + 2.5, 1.45], flicker: true },          // the west sloop
-  { hex: 0xffd9a0, intensity: 1.7, dist: 4.6, at: [1.8, P + 2.5, 1.45], flicker: true },           // the east sloop
-  { hex: 0xffd9a0, intensity: 1.3, dist: 3.4, at: [7.4, C + 0.5, -4.4] },                          // the captain
-  { hex: 0x6ad0e8, intensity: 1.2, dist: 4.0, at: [7.4, G + 0.5, 4.4] },                           // the moon on the pool
+  { hex: 0xff6a2c, intensity: 3.2, dist: 6.5, at: [-8.3, G + 0.35, 4.4], flicker: true },         // the hearth
+  { hex: 0xffb070, intensity: 1.7, dist: 4.5, at: [0, B + 1.24, -5.85] },                          // the skull lamp
+  { hex: 0x7a58ff, intensity: 1.5, dist: 4.8, at: [0, B + 0.8, -6.3] },                            // the niches
+  { hex: 0xffa850, intensity: 4.2, dist: 8.5, at: [-3.2, P + 2.4, 1.45], flicker: true },          // the west sloop
+  { hex: 0xffa850, intensity: 4.2, dist: 8.5, at: [1.8, P + 2.4, 1.45], flicker: true },           // the east sloop
+  { hex: 0xffb068, intensity: 1.8, dist: 5.0, at: [7.4, C + 0.5, -4.4] },                          // the captain
+  { hex: 0x8fb0d8, intensity: 1.6, dist: 14, decay: 1, at: [-0.6, EAVES - 0.2, 0.6] },             // the moon, from above
+];
+
+// The two skylights in the roof (x0, x1, z0, z1; shell.py cuts the boards round them), and the
+// moonlight falling through them as broad, faint shafts (room-glow.js): leaning as if the moon
+// stood to the south-west, onto the pit's tables and the bar's edge.
+export const SKYLIGHTS = [[-5.1, -3.9, 1.95, 3.25], [3.0, 4.2, -4.05, -2.75]];
+export const SHAFTS = [
+  { sky: 0, bottom: P, hex: 0x9fc0e8, strength: 0.11, lean: [0.1, -0.06] },
+  { sky: 1, bottom: B, hex: 0x9fc0e8, strength: 0.096, lean: [0.1, -0.06] },
 ];

@@ -266,6 +266,15 @@ layout. De zaal zit op **391k van de 400k** driehoeken (`HERO_BUDGETS`); de gale
 kosten meer dan de huidige van de schil, dus bij het inbouwen moet er elders iets af (het touw van de luiktafels is
 2250 per tafel) of het budget omhoog, en de module is al 47 MB.
 
+**Licht** (30 september, naar het advies van de keeper: "donkere, filmische piratenkroeg bij nacht", niet feller
+maar in lagen). Het lichtplan staat in `LIGHTS` in de layout: warm en laag bij de sloepen, de haard (de sterkste,
+roodst, flikkert), de schedellamp en de kapitein; het paars van de nissen als brandpunt achterin; de maan hoog boven
+het atrium met een zachte afval (decay 1) plus een koele hemisphere als fill van boven; de hoeken buiten elk bereik.
+Bloom en god rays zitten in three.js, niet in de bake (`web/js/room-glow.js`): een halo rond elk gloeiend deel, uit
+de geometrie zelf gelezen, en bundels maanlicht onder de dakramen (`SKYLIGHTS`, `SHAFTS`). Additief en zonder eigen
+licht, dus het programma en de zeven lampen blijven zoals ze zijn. Echte bloom (UnrealBloomPass) zou postprocessing
+vendoren en een tweede renderpad naast het eiland vragen. Met de keeper live bijgesteld in de DevTools-Chrome.
+
 **De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
 `galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,
 `ribben`). Nieuwe beelden maakt Claude voortaan zelf met FLUX op de 4090 (`/blenderai`, `python -m blendai imagine

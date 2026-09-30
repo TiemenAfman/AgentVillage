@@ -19,6 +19,7 @@ import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
 import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
+import { createHalos, createShafts } from './room-glow.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -559,11 +560,18 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   scene.add(new THREE.HemisphereLight(amb.sky, amb.ground, amb.hemi));
   scene.add(new THREE.AmbientLight(amb.hex, amb.amb));
   const lamps = def.lights.map((l) => {
-    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, 2);
+    // decay 2 is a lamp's own falloff; a broad fill from high up (the Kraken's moon) asks for less.
+    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, l.decay ?? 2);
     light.position.set(...l.at);
     scene.add(light);
     return { light, base: l.intensity, flicker: !!l.flicker };
   });
+  // Glow round the flames and light shafts from the roof (room-glow.js): the room's bloom and its
+  // volumetrics, drawn over what the lamps lit. The roof's own go with the roof when it is lifted.
+  const halos = def.halos?.length ? createHalos(def.halos) : null;
+  const roofHalos = def.roofHalos?.length ? createHalos(def.roofHalos) : null;
+  const shafts = def.shafts?.length ? createShafts(def.shafts) : null;
+  for (const g of [halos, roofHalos, shafts]) if (g) scene.add(g.object);
 
   // A flat floor of its own, standing in for the island's terrain. Constant and above the
   // water line, or walk mode would call the whole room open sea.
@@ -735,6 +743,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     roofWanted = true;
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
+    if (roofHalos) roofHalos.object.visible = roofWanted;
+    if (shafts) shafts.object.visible = roofWanted;
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
@@ -744,6 +754,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
     if (fire) fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
     for (const l of lamps) if (l.flicker) l.light.intensity = l.base * flick;
+    if (halos) halos.update(t);
+    if (roofHalos) roofHalos.update(t);
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
     for (const f of figures) {
       if (f.tends) f.mesh.position[f.along] += (barmanX - f.mesh.position[f.along]) * Math.min(1, dt * 3.4);
@@ -774,6 +786,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     shell.geometry.dispose();
     if (roofMesh) roofMesh.geometry.dispose();
     if (fire) fire.geometry.dispose();
+    for (const g of [halos, roofHalos, shafts]) if (g) g.dispose();
     if (show) show.dispose();
     pint.dispose();
     snack.dispose();

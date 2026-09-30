@@ -43,6 +43,7 @@ import { SHANTY_SONG } from './sound.js';
 import { CREW } from 'shared/quests.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import * as K from './kraken-layout.js';
+import { halosOf } from './room-glow.js';
 import { PROPS, FOOT, EXTRA_BLOCKERS } from './kraken-dressing.js';
 
 const { LEVEL, HALL, CELLAR, WALL, DOOR_HALF } = K;
@@ -74,7 +75,14 @@ const NICHE = /niche glow/, PANE = / pane /;
 function place(out, asset, { x = 0, y = 0, z = 0, ry = 0 } = {}, keep = () => true) {
   const at = { x, y, z, ry };
   out.push(...meshAsset(asset, 0xffffff, { ...at, skip: (n) => !keep(n) || NICHE.test(n) || PANE.test(n) }));
-  out.push(...meshAsset(asset, 0xffffff, { ...at, emissive: 0.45, skip: (n) => !keep(n) || !PANE.test(n) }));
+  // A pane as broad as the sea arch's opening glowed the whole arch a flat blue at 0.45, the
+  // loudest thing in the room: past a unit across a pane is the night itself, and takes 0.18.
+  for (const g of meshAsset(asset, 0xffffff, { ...at, emissive: 0.45, skip: (n) => !keep(n) || !PANE.test(n) })) {
+    g.computeBoundingBox();
+    const s = g.boundingBox.getSize(new THREE.Vector3());
+    if (Math.max(s.x, s.y, s.z) > 1) g.attributes.aEmissive.array.fill(0.18);
+    out.push(g);
+  }
   for (const g of meshAsset(asset, 0xffffff, { ...at, emissive: 0.65, skip: (n) => !keep(n) || !NICHE.test(n) })) {
     g.computeBoundingBox();
     const { min, max } = g.boundingBox, pos = g.attributes.position, e = g.attributes.aEmissive;
@@ -242,6 +250,13 @@ export function buildPirateTavern({ FLOOR, rect }) {
   return {
     name: 'the Salty Kraken',
     parts, roof, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
+    // The glow round every flame and lit window, read off the parts themselves, and the moonlight
+    // through the skylights (room-glow.js; the light plan is kraken-layout.js LIGHTS).
+    halos: halosOf(parts), roofHalos: halosOf(roof),
+    shafts: K.SHAFTS.map((f) => {
+      const [x0, x1, z0, z1] = K.SKYLIGHTS[f.sky];
+      return { x0, x1, z0, z1, top: K.EAVES + 0.3, bottom: f.bottom, hex: f.hex, strength: f.strength, lean: f.lean };
+    }),
     fireAt: [K.HEARTH.x + 0.3, FLOOR + 0.03, K.HEARTH.z],
     // The storeys and their stairs, as walk mode's surfaces (Plans/verdiepingen-binnen.md).
     surfaces: [...K.FLOORS, ...K.STAIRS],
@@ -253,9 +268,13 @@ export function buildPirateTavern({ FLOOR, rect }) {
     spawn: { x: 0, z: HALL.z1 - 0.9 },
     doorway: { z: HALL.z1 + WALL, hx: DOOR_HALF + 0.02 },
     camera: { back: 2.6, up: 0.8, aim: 0.32 },
-    background: 0x0d0806,
-    fog: [10, 34],
-    ambience: { sky: 0x4a3a30, ground: 0x160c08, hemi: 0.32, hex: 0xffd6b0, amb: 0.16 },
+    // A night that is not black: the haze a touch cool so the far galleries fade into the moonlit
+    // dark instead of into soot, and a cool sky in the hemisphere as the moon's fill from above -
+    // it lights what faces up (decks, beams, the tops of the rigging) and leaves the undersides and
+    // the corners to the lamps, or to the dark.
+    background: 0x0b0a0f,
+    fog: [12, 40],
+    ambience: { sky: 0x44557a, ground: 0x1a0f0a, hemi: 0.7, hex: 0xffc898, amb: 0.08 },
     music: 'shanty',
     show: (opts) => createCrewShow({ ...opts, layout: { FLOOR, crew } }),
   };

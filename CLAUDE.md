@@ -964,7 +964,9 @@ moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
-change a floor or a prop there and rebake, never in two places.
+change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
+(`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
+count; the halos are read off every glowing part of the room's own geometry, never listed by hand.
 
 **The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
