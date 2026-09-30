@@ -1479,6 +1479,36 @@ function civic(parts, spec, rng) {
       parts.push(...meshAsset('statue'));
       return { anchors, animated, height: models.heightOf('statue') };
     }
+    case 'pirate':
+    case 'treasure': {
+      // The pirate's sea chest by the tavern door, and the golden treasure statue on the square
+      // (Plans/schatkaarten.md): one baked asset each, `civic_pirate` and `civic_treasure`, in
+      // the `treasure` set (scripts/build-treasure.py). The statue publishes `anchors.sign`, the
+      // middle of the blank iron panel on its plinth, which main.js letters with the count of
+      // treasures found (web/js/treasure-plaque.js).
+      //
+      // The branch below is a fallback and not a design, for the watertower's reason: a checkout
+      // whose baked set is missing still boots and still puts something on the plot.
+      const name = `civic_${spec.civicType}`;
+      if (models.hasAsset(name)) {
+        parts.push(...meshAsset(name));
+        Object.assign(anchors, meshAnchors(name));
+        return { anchors, animated, height: models.topOf(name) };
+      }
+      if (spec.civicType === 'pirate') {
+        // Small on purpose, like the bake (scripts/build-treasure.py): he stands behind the tavern,
+        // a corner you come upon, so the chest is ~0.72 of what it was and the mast 0.72 tall.
+        parts.push(box(0.40, 0.17, 0.25, C.darkWood, { y: 0.01 }));
+        parts.push(box(0.42, 0.04, 0.26, C.gold, { y: 0.085 }));
+        parts.push(cylinder(0.01, 0.01, 0.5, 5, C.darkWood, { x: 0.14, y: 0.2 }));
+        parts.push(box(0.2, 0.13, 0.009, 0x17161a, { x: 0.25, y: 0.58 }));
+        return { anchors, animated, height: 0.72 };
+      }
+      parts.push(box(0.74, 0.5, 0.74, C.stone, { sheet: 'stone' }));
+      parts.push(box(0.5, 0.32, 0.36, C.gold, { y: 0.5 }));
+      anchors.sign = [0, 0.3, 0.371];
+      return { anchors, animated, height: 0.9 };
+    }
     case 'lamp': {
       // The glass is emissive, so the square lights itself once the sun is down.
       let y = 0;
@@ -2250,6 +2280,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
   // round it would be a plinth under a letter box.
   'mailbox',
+  // The pirate's chest stands on the tavern's paving and the treasure statue has a plinth of its
+  // own, both baked with their footing: a step round either is a plinth under a plinth.
+  'pirate', 'treasure',
   // The gold pit is a slab with walls on it, open at the front so a barrow could be run in;
   // a step across that mouth is the one thing a silo is built not to have.
   'goldpit',

@@ -198,10 +198,11 @@ export function createUI(handlers) {
 
     if (valueEl) valueEl.textContent = `${value}m`;
   });
-  // The side panels on the right, one open at a time. The last two are the animals'
-  // (web/js/animal-dossier.js fills them and opens them through openSide below); everything
-  // that shut the first three - Escape, walking, planning, another panel opening - shuts them.
-  const SIDE = ['dossier', 'legend', 'phone', 'animal-dossier', 'animal-journal'];
+  // The side panels on the right, one open at a time. The two after the first three are the
+  // animals' (web/js/animal-dossier.js fills them and opens them through openSide below), the last is the
+  // quest log (web/js/quest-panel.js); everything that shut the first three - Escape, walking,
+  // planning, another panel opening - shuts them.
+  const SIDE = ['dossier', 'legend', 'phone', 'animal-dossier', 'animal-journal', 'quest-log'];
   // The menu behind Esc and the ☰, which is the settings too (sysmenu.js). Drawn afresh each
   // time it opens, and the keeper's islander asked who is out on the sea and how big the
   // island may grow - the Island tab's two lists - before it is.
@@ -800,7 +801,6 @@ export function createUI(handlers) {
   // against, so the panel cannot offer a number the frame would refuse.
   const GRAPHICS_ROWS = [
     ['viewDistance', 'View distance'],
-    ['objectDistance', 'Object distance'],
     ['npcDistance', 'NPC distance'],
     ['shadowDistance', 'Shadow distance'],
   ];

@@ -403,6 +403,37 @@ function withLadders(hull, spec) {
   return merged;
 }
 
+// What a hull carries besides its crew: the treasure statue, put on the deck by walk.js (putOnBoat)
+// and drawn as a child of the hull's object, so it pitches, rolls and bobs with her for nothing -
+// the same reason the ladders are welded into the hull rather than placed on it. `item` is the name
+// walk.js carries it under. The baked `prop_treasure_carry` is hung in later with registerCargo; until
+// then, and for an item nobody registered, this is a few boxes in gold on a plinth (~0.3 tall, the
+// Benchy being 0.68 wide) - a placeholder that reads as "something precious", not as a missing model.
+const CARGO_LOOKS = new Map();
+export function registerCargo(item, make) {
+  if (typeof make === 'function') CARGO_LOOKS.set(item, make);
+  else CARGO_LOOKS.delete(item);
+}
+const GOLD = 0xd9a821, GOLD_HI = 0xf3cf5c, PLINTH = 0x8a8a84;
+function placeholderCargo(material) {
+  const parts = [
+    box(0.22, 0.05, 0.22, PLINTH),
+    box(0.1, 0.16, 0.08, GOLD, { y: 0.05 }),
+    box(0.16, 0.05, 0.06, GOLD_HI, { y: 0.16 }),
+    box(0.07, 0.07, 0.07, GOLD_HI, { y: 0.21 }),
+  ];
+  const geometry = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  const m = new THREE.Mesh(geometry, material);
+  m.castShadow = true;
+  m.userData.ownsGeometry = true;
+  return m;
+}
+export function cargoMesh(item, material) {
+  const make = CARGO_LOOKS.get(item);
+  return make ? make(material) : placeholderCargo(material);
+}
+
 export function createBoat({ scene, material, kind = 'benchy' }) {
   const ship = kind === 'ship' && models.has(SHIP);
   // The Benchy, if it has been baked; the drawn hull otherwise. The same `models.has` guard
@@ -415,9 +446,32 @@ export function createBoat({ scene, material, kind = 'benchy' }) {
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
   scene.add(object);
   let heading = 0;
+  let cargo = null;
+  // Where the cargo stands, in the hull's frame (y above the waterline, like the deck itself): on the
+  // Benchy the foredeck, a step ahead of the pilot who stands in the middle; on the ship the main deck
+  // ahead of the wheel, on whatever the model has there.
+  const cargoAt = ship
+    ? { x: 0, y: (SHIP_SURFACE.floorIn(0, 1.5, 1.9) ?? 1.738) + DECK_Y, z: 1.5, scale: 3 }
+    : { x: 0, y: DECK_Y, z: BOW * 0.5, scale: 1 };
 
   return {
     object,
+    // The statue (or nothing) on the deck: a mesh from `cargoMesh`, hung on the hull's object so
+    // the swell carries it. A previous one comes off first; one we made ourselves (the placeholder)
+    // gives its geometry back, a baked one is shared and stays.
+    setCargo(next) {
+      if (cargo) {
+        object.remove(cargo);
+        if (cargo.userData.ownsGeometry && cargo.geometry) cargo.geometry.dispose();
+      }
+      cargo = next || null;
+      if (cargo) {
+        cargo.position.set(cargoAt.x, cargoAt.y, cargoAt.z);
+        cargo.scale.setScalar(cargoAt.scale);
+        object.add(cargo);
+      }
+    },
+    cargo: () => cargo,
     // Where the pilot stands in the hull's frame (null: the middle), how far back the camera
     // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side.
     helm: ship ? SHIP_HELM : null,
@@ -453,6 +507,8 @@ export function createBoat({ scene, material, kind = 'benchy' }) {
     },
 
     dispose() {
+      if (cargo && cargo.userData.ownsGeometry && cargo.geometry) cargo.geometry.dispose();
+      cargo = null;
       scene.remove(object);
       geometry.dispose();
     },

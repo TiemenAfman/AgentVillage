@@ -17,6 +17,7 @@ import { GOLDSMITH } from '../web/js/goldsmith-mesh.js';
 import { LIGHTHOUSE } from '../web/js/lighthouse-mesh.js';
 import { CLOCKTOWER } from '../web/js/clocktower-mesh.js';
 import { STATUE } from '../web/js/statue-mesh.js';
+import { TREASURE } from '../web/js/treasure-mesh.js';
 import { CASTLE } from '../web/js/castle-mesh.js';
 import { GREATCASTLE } from '../web/js/greatcastle-mesh.js';
 import { TAVERN } from '../web/js/tavern-mesh.js';
@@ -67,7 +68,7 @@ import { SHIPYARD } from '../web/js/shipyard-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -287,7 +288,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'treasure', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The Batavia, a hero like the galleon: the ship the village earns, modelled whole in
@@ -323,6 +324,8 @@ test('the register spans every set and answers by part name alone', () => {
     // Plans/DONE/goudmijn.md): the mine's hill is an asset of its own because it is lowered by its
     // datum (buildings.js MINE_DATUM) to bury its rim, and its cart and its ore are props.
     'civic_goldmine', 'civic_goldmine_hill', 'civic_goldpit', 'civic_goldsmith', 'civic_grocer', 'civic_library', 'civic_owlpost',
+    // The pirate's sea chest by the tavern door (scripts/build-treasure.py).
+    'civic_pirate',
     'civic_quarry', 'civic_quarry_yard', 'civic_quay_platform',
     // The sawmill is two, the barn and its yard; what turns is parts inside the yard
     // (scripts/build-sawmill.py, Plans/DONE/zagerij.md).
@@ -334,6 +337,9 @@ test('the register spans every set and answers by part name alone', () => {
     // The stable and its paddock (scripts/build-stable.py); the horse is fauna_horse.
     'civic_stable', 'civic_stable_yard', 'civic_sweetshop',
     'civic_tables', 'civic_tailor', 'civic_tearoom', 'civic_trainingfield', 'civic_trainingfield_yard',
+    // The one golden statue on the square (scripts/build-treasure.py); its carried copy, the spade
+    // and the dug sand are props below.
+    'civic_treasure',
     'civic_wandmaker', 'civic_warehouse', 'civic_watertower', 'civic_weighhouse',
     // The mill is two assets, because its sails turn and the tower does not.
     'civic_windmill', 'civic_windmill_sails',
@@ -371,7 +377,9 @@ test('the register spans every set and answers by part name alone', () => {
       // The sawmill's wagon and its load of timber (scripts/build-wagon.py, Plans/DONE/houtkar.md).
       'prop_wagon', 'prop_timber',
       // A shell and a starfish for the sand under the sea (scripts/build-sea.py).
-      'prop_shell', 'prop_starfish'].sort(),
+      'prop_shell', 'prop_starfish',
+      // The treasure set's props (scripts/build-treasure.py).
+      'prop_shovel', 'prop_treasure_carry', 'prop_treasure_mound'].sort(),
     'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school',
     // The shipyard, a hero: one building on a five by sixteen lot whose ship is part of it, each
     // stage a set of parts rather than an asset (scripts/build-shipyard.py, Plans/DONE/scheepswerf.md).

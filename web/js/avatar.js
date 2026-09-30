@@ -11,6 +11,7 @@ import { SETTLER_PARTS, SETTLER_COLORS, SETTLER_EYE_Y } from './settler-mesh.js'
 // dragging three.js into Node - see the header of shared/palette.mjs. Re-exported
 // because composing an avatar is this file's subject and everyone asks here.
 import { HAT_SHAPES, SWATCHES } from 'shared/palette.mjs';
+import { liveOf } from 'shared/equipment.mjs';
 export { HAT_SHAPES, SWATCHES };
 
 const KEY = 'promptholm.avatar';
@@ -45,13 +46,21 @@ export const DEFAULT_AVATAR = {
 // avatar.js's HELD_ITEM_GEOMETRY for where each shape comes from. 'torch' is the first one
 // that does something after dark: its flame glows (GLOWING below). 'beer' is the first one
 // its hand's mouse button uses instead of fighting with (Plans/DONE/bier-en-dronken.md).
-export const HAND_ITEMS = [
+const BASE_HAND_ITEMS = [
   { id: 'parasol', name: 'Parasol', icon: '⛱️' },
   { id: 'hammer', name: 'Hammer', icon: '🔨' },
   { id: 'sword', name: 'Sword', icon: '⚔️' },
   { id: 'shield', name: 'Shield', icon: '🛡️' },
   { id: 'torch', name: 'Torch', icon: '🔥' },
   { id: 'beer', name: 'Beer', icon: '🍺' },
+];
+// The unlockable pieces (shared/equipment.mjs) follow the ones that were always there. Only
+// the 'live' ones: a planned piece is data with nothing to draw, so it must not be an id the
+// look accepts. Ownership is not checked here - normalizeAvatar stays wide, see below - the
+// inventory's picker is what locks a tile (studio.js, unlocks.js).
+export const HAND_ITEMS = [
+  ...BASE_HAND_ITEMS,
+  ...liveOf('hand').map(({ id, name, icon }) => ({ id, name, icon })),
 ];
 
 // The seven hat shapes plus the one the player alone can wear. A helmet replaces a hat
@@ -61,7 +70,10 @@ export const HAND_ITEMS = [
 // which is how NPCs get a hat at all: adding 'helmet' there would hand some villager a
 // hatShape no baked mesh answers to. So it stays a player-only addition on top, used only
 // for the studio's picker and for validating spec.hatShape below.
-export const PLAYER_HAT_SHAPES = [...HAT_SHAPES, { id: 'helmet', name: 'Helmet' }];
+export const PLAYER_HAT_SHAPES = [
+  ...HAT_SHAPES, { id: 'helmet', name: 'Helmet' },
+  ...liveOf('head').map(({ id, name }) => ({ id, name })),
+];
 
 export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;

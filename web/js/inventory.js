@@ -32,7 +32,7 @@ export const NO_ITEM = { id: '', name: 'Empty' };   // short: a tile's label is 
 // in the browser, Euler angles in the icon's own frame.
 // A pint stands upright - it is the one item that is drawn the way it is held - turned so its
 // ear shows beside the glass.
-const ITEM_POSE = { sword: [0, 0, -0.55], hammer: [0, 0, -0.55], parasol: [0, 0, 0.45], torch: [0, 0, -0.55], shield: [0, -0.9, 0], beer: [0.25, -0.5, 0] };
+const ITEM_POSE = { sword: [0, 0, -0.55], hammer: [0, 0, -0.55], parasol: [0, 0, 0.45], torch: [0, 0, -0.55], shield: [0, -0.9, 0], beer: [0.25, -0.5, 0], shovel: [0, 0, -0.55] };
 
 // Left column top to bottom, then right. `equip` names a key in spec.equip, `field` a key on
 // spec itself; `dye` is the SWATCHES part the slot's dye button paints; `parts` (or `ghost`,

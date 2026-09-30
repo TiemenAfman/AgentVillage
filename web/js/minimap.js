@@ -28,6 +28,21 @@ export function projectToRadar(dx, dz, worldRadius, pixelRadius) {
   return { x: px, y: py, clamped };
 }
 
+// The treasure map's spot on the radar (Plans/schatkaarten.md, "Waar zie je je quests?"): a ring
+// of QUEST_RING world units round the place with an X in it, so it says "somewhere in here" and
+// not "dig exactly here" - finding the cross itself is the game. `dx`, `dz` are the spot's offset
+// from the player. Inside the radar's reach it is the ring at its true size (`ring` in pixels,
+// which grows as you sail up to it); beyond it there is no ring to draw and it is a pin on the
+// rim at its bearing (`inside` false), like a far island.
+export const QUEST_RING = 10;
+export function questOnRadar(dx, dz, worldRadius, pixelRadius) {
+  const p = projectToRadar(dx, dz, worldRadius, pixelRadius);
+  const ring = QUEST_RING * pixelRadius / worldRadius;
+  const dist = Math.hypot(dx, dz);
+  // The ring is drawn while any part of it is within reach; the X only once its middle is.
+  return { x: p.x, y: p.y, ring, inside: dist - QUEST_RING <= worldRadius, centred: !p.clamped };
+}
+
 // The same four bands web/js/horizon.js paints a distant island with (SAND/GRASS/ROCK,
 // same thresholds), plus a water gradient off the sea shader's own two colours
 // (web/js/world.js uDeep/uShallow) rather than an invented blue - so a puddle on the radar
@@ -107,6 +122,7 @@ export const LANDMARKS = {
   'civic:sawmill': 'Sawmill', 'civic:smithy': 'Smithy', 'civic:bakery': 'Bakery', 'civic:stable': 'Stable',
   'civic:clocktower': 'Clock tower', 'civic:board': 'Sprint board', 'civic:issues': "The island's own board",
   'civic:mailbox': 'Postbox',
+  'civic:pirate': "The pirate's chest", 'civic:treasure': 'Treasure statue',
   // The shops of the town's plan (Plans/DONE/knus-dorpscentrum.md): the places a walk into town is
   // for, which is exactly what a map of it should say.
   'civic:bakery': 'Bakery', 'civic:grocer': 'Grocer', 'civic:apothecary': 'Apothecary',
@@ -224,6 +240,23 @@ function landmarkIcon(ctx, kind, x, y) {
     ctx.fillStyle = 'rgba(244,236,224,.92)'; ctx.strokeStyle = 'rgba(12,14,18,.7)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, -4.5); ctx.lineTo(4.5, 0); ctx.lineTo(0, 4.5); ctx.lineTo(-4.5, 0); ctx.closePath();
     ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// The treasure's red cross, or a grey one while the map sleeps (the water it points at is
+// somebody's island now). Two strokes with a light outline, so it reads over sand and sea alike.
+function questCross(ctx, x, y, asleep, size = 6) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.lineCap = 'round';
+  for (const [w, c] of [[5, 'rgba(255,250,238,.92)'], [2.6, asleep ? '#8a8a86' : '#c0281c']]) {
+    ctx.lineWidth = w;
+    ctx.strokeStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(-size, -size); ctx.lineTo(size, size);
+    ctx.moveTo(size, -size); ctx.lineTo(-size, size);
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -451,6 +484,26 @@ export function createMinimap({ worldRadius = 130, dotSize = 4, terrainStep = 2 
     if (data.town) {
       const p = projectToRadar(data.town[0] - data.pos.x, data.town[1] - data.pos.z, worldRadius, pixelRadius);
       flagIcon(p.x, p.y);
+    }
+    // The treasure map in hand: a ring round the spot with the X inside it; a pin on the rim
+    // when it is out of reach. Grey while the map sleeps.
+    if (data.quest) {
+      const q = questOnRadar(data.quest.x - data.pos.x, data.quest.z - data.pos.z, worldRadius, pixelRadius);
+      const tint = data.quest.asleep ? '138,138,134' : '192,40,28';
+      if (q.inside) {
+        ctx.beginPath();
+        ctx.arc(cx + q.x, cy + q.y, q.ring, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${tint},.16)`;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = `rgba(${tint},.9)`;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (q.centred) questCross(ctx, cx + q.x, cy + q.y, data.quest.asleep, Math.max(3, Math.min(6, q.ring * 0.5)));
+      } else {
+        pin(q.x, q.y, dotSize * 0.85, `rgb(${tint})`, 1);
+      }
     }
 
     // The player, always dead centre, spun to face wherever the body is pointed. Forward is
@@ -983,6 +1036,19 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     for (const r of data.regions) {
       const [px, py] = fit.toPx(r.origin[0], r.origin[1] - r.half);
       if (r.name) label(px, py - 4, r.name, r.home);
+    }
+    // The treasure map in hand, on top of the islets it points among: a red cross and its square
+    // ("K7", the letters and numbers along the sheet's edge), grey while the map sleeps.
+    if (data.quest) {
+      const q = data.quest;
+      const [px, py] = fit.toPx(q.x, q.z);
+      questCross(ctx, px, py, q.asleep, 7);
+      label(px, py - 11, q.grid, false);
+      marks.push({
+        px, py, ring: 12,
+        title: q.asleep ? `Treasure map, square ${q.grid} (asleep)` : `Treasure map, square ${q.grid}`,
+        sub: q.asleep ? "the water there is somebody's now" : 'dig for it on the islet',
+      });
     }
     for (const b of data.boats || []) {
       if (!b || b.x == null) continue;

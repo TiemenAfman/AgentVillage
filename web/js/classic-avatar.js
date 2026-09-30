@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_PARTS } from './settler-mesh.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
-import { box, cylinder, cone, sphere } from './buildings.js';
+import { box, cylinder, cone, sphere, meshAsset, mergeParts } from './buildings.js';
+import * as models from './models.js';
 import { dancePose } from './dance.js';
 
 const LIMBS = {
@@ -126,7 +127,7 @@ const holdX = (item) => HOLD_ARM_X[item] ?? HOLD_ARM_X.default;
 const FP_HOLD_X = { default: -1.6, shield: -1.2, beer: -1.3 };
 // And how each item is turned in first person, on top of standing upright: a blade leaning
 // away with its point in towards the middle of the view, a shield turned to show its face.
-const FP_TILT = { sword: { x: 0.9, z: 0.35 }, hammer: { x: 0.5, z: 0.3 }, torch: { x: 0.3 }, shield: { yaw: 1.1 } };
+const FP_TILT = { sword: { x: 0.9, z: 0.35 }, hammer: { x: 0.5, z: 0.3 }, torch: { x: 0.3 }, shield: { yaw: 1.1 }, shovel: { x: 0.6, z: 0.3 } };
 const FP_HIDDEN = ['core', 'head', 'backpack', 'chestplate', 'leftLeg', 'rightLeg',
   'leftLegging', 'rightLegging', 'leftBoot', 'rightBoot'];
 // A held item's turn about the arm, in radians, mirrored for the left hand. The shield is
@@ -257,6 +258,47 @@ function beerGeometry() {
   ], false));
 }
 
+// The pirate's shovel (shared/equipment.mjs, the first unlockable piece; Plans/schatkaarten.md).
+// The grip is at the local origin like every item and the blade is the +y end, so it stands in
+// the fist blade-up as an ordinary held item and digging (dig() below) is what turns it over.
+// The blade's flat faces look along z: with the item tipped blade-down that is the face that
+// meets the soil. A crossbar handle at the butt, a shaft, a socket and a blade that narrows to
+// a point - six boxes, 72 triangles.
+const SHOVEL_WOOD = 0x8b5e3c, SHOVEL_IRON = 0x8a8f98;
+function shovelGeometry() {
+  return withSheet(mergeGeometries([
+    box(0.024, 0.34, 0.024, SHOVEL_WOOD, { y: 0.05 }),
+    box(0.09, 0.022, 0.022, SHOVEL_WOOD, { y: -0.12 }),
+    box(0.034, 0.045, 0.034, SHOVEL_IRON, { y: 0.225 }),
+    box(0.105, 0.075, 0.01, SHOVEL_IRON, { y: 0.285 }),
+    box(0.07, 0.03, 0.01, SHOVEL_IRON, { y: 0.3375 }),
+    box(0.03, 0.02, 0.01, SHOVEL_IRON, { y: 0.362 }),
+  ], false));
+}
+
+// What a pair of arms carries in front of the chest while somebody lugs the treasure statue
+// (setCarry below). A stand-in: a gilded block the size of the statue's plinth, named
+// 'carried' so the day prop_treasure_carry is baked it is one swap of this mesh's geometry
+// (avatar.carried is the group it hangs in). Centred on the origin; the rig places the group.
+const CARRIED_GOLD = 0xd9a33d, CARRIED_BASE = 0x6b4a2f;
+const CARRIED_HALF = 0.11;   // half the baked figure's 0.22
+export function carriedGeometry() {
+  // The baked figure (assets/treasure, prop_treasure_carry) once it is there. It stands on its own
+  // origin like every prop, and the group it hangs in is placed for a load centred on the origin, so
+  // it is lowered by half its height; the stand-in below is the fallback for a build without it.
+  if (models.hasAsset('prop_treasure_carry')) {
+    const g = mergeParts(meshAsset('prop_treasure_carry'));
+    g.translate(0, -CARRIED_HALF, 0);
+    if (!g.attributes.aSheet) g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    return g;
+  }
+  return withSheet(mergeGeometries([
+    box(0.15, 0.05, 0.12, CARRIED_BASE, { y: -0.075 }),
+    box(0.1, 0.1, 0.08, CARRIED_GOLD, { y: 0 }),
+    sphere(0.038, CARRIED_GOLD, { y: 0.085 }),
+  ], false));
+}
+
 // The sword and shield used to be built the same procedural way as the hammer above; both
 // are baked Blender parts now (see the header comment on EQUIPPABLE), re-centred on GRIP
 // the same way makePiece() re-centres a limb on its own pivot.
@@ -270,7 +312,7 @@ function heldPartGeometry(spec, names) {
 // a dozen primitives) that nothing here is worth caching; the baked ones go through
 // heldPartGeometry() instead, which needs the current spec to pick up a recolour. Both are
 // exported for the inventory's slot icons, which show the item on its own.
-const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry, pickaxe: pickaxeGeometry, rod: rodGeometry };
+const HELD_ITEM_PROCEDURAL = { parasol: parasolGeometry, hammer: hammerGeometry, beer: beerGeometry, cleaver: cleaverGeometry, pickaxe: pickaxeGeometry, rod: rodGeometry, shovel: shovelGeometry };
 export const HELD_ITEM_PARTS = { sword: SWORD, shield: SHIELD, torch: TORCH };
 
 export function heldItemGeometry(item, spec) {
@@ -328,6 +370,9 @@ export function createClassicAvatar(spec, material) {
   // the item itself, so it swings to wherever the hand is but stays upright the way
   // something actually held in a hand would, instead of tipping over with the arm.
   const handAttach = {}, heldMesh = { leftArm: null, rightArm: null }, holding = { leftArm: null, rightArm: null };
+  // What the hands are doing beyond holding: see dig() and setCarry() below. Declared here,
+  // ahead of the first setHeldItem, which reads `carrying`.
+  let digging = null, carrying = false;
   for (const side of ['leftArm', 'rightArm']) {
     const g = new THREE.Group();
     g.position.set(...HAND_ATTACH[side]);
@@ -335,6 +380,9 @@ export function createClassicAvatar(spec, material) {
     handAttach[side] = g;
   }
 
+  // The look the rig last wore: a shovel taken up for a dig is cut from it, and a change of
+  // look in the middle of a dig has to know what to put back.
+  let lookSpec = spec;
   function setHeldItem(side, item, forSpec) {
     if (heldMesh[side]) { handAttach[side].remove(heldMesh[side]); heldMesh[side].geometry.dispose(); heldMesh[side] = null; }
     holding[side] = item || null;
@@ -356,6 +404,8 @@ export function createClassicAvatar(spec, material) {
       mesh.add(light);
       mesh.userData.light = light;
     }
+    // Whatever the hands hold is out of sight while they carry something else.
+    mesh.visible = !carrying;
     handAttach[side].add(mesh);
     heldMesh[side] = mesh;
   }
@@ -388,6 +438,9 @@ export function createClassicAvatar(spec, material) {
   // (The sea counts one per 0.45 s, the length of the swing; one that cuts the last short
   // past its strike is drawn but not sent - see SWING_MS in net.js.)
   function attack(side = attackSide()) {
+    // The hands are busy with the shovel; a click is no blow (walk.js does not offer one
+    // either - this only keeps the arm from fighting the dig pose for the shoulder).
+    if (digging) return false;
     // A swing past its strike can be cut short by the next one; one still winding up or
     // striking plays out, or mashing the button would jitter the arm at the top.
     if (swing && swing.t / SWING_S < 0.6) return false;
@@ -520,6 +573,100 @@ export function createClassicAvatar(spec, material) {
   // How much of a whole drink went down since the last time this was asked.
   function swallowed() { const g = gulped; gulped = 0; return g; }
 
+  // Digging (Plans/schatkaarten.md, "Graven met een schep"). Not a blow and not a drink: a
+  // dig lasts, so - like a dance - it is a state somebody switches on with dig(true) and off
+  // again, and the rig repeats one stroke for as long as it is on. The stroke is DIG_S long:
+  // the blade goes into the ground (DIG_KEYS[1], 0.25 s), is lifted with its load and flung
+  // to the side (0.35 s, the throw at THROW_AT), and comes back to where it started. The
+  // whole body bows forward with it (`lean`, about the feet, the way a dancer's does) and the
+  // legs stand apart. `tilt` is the shovel's own turn about x in the body's frame - 0 blade
+  // up, pi blade down, to which the bow (`lean`) is added in the world: the numbers below put
+  // the blade 0.1 deep in the ground about 0.4 in front of the feet, and the load flat
+  // (tilt + lean = pi / 2) on the way up - and the rest is the arm's, driven by update() through damping quick
+  // enough to keep the 0.25 s plunge.
+  // The dig takes the shovel into the hand whether or not it is worn (`swapped` remembers
+  // what it displaced, `prev`, and puts it back the moment the dig stops): the player has to
+  // be able to dig with a sword equipped without opening the bag first.
+  const DIG_S = 0.6, THROW_AT = 0.45;
+  const DIG_START = { t: 0, x: -1.75, tilt: 0.74, z: 0.42, lean: 0.36 };
+  const DIG_KEYS = [
+    DIG_START,
+    { t: 0.25, x: -0.8, tilt: 2.14, z: 0.25, lean: 0.46 },     // the blade in the ground
+    { t: THROW_AT, x: -1.35, tilt: 1.15, z: 0.3, lean: 0.4 },   // lifted, the load flat on the blade
+    { ...DIG_START, t: DIG_S },                                  // flicked up and off, round again
+  ];
+  // The hand that is not on the shovel steadies the shaft: forward and in, holding nothing.
+  const DIG_OFF_ARM = -1.0, DIG_OFF_Z = 0.3;
+  const DIG_STANCE = { back: -0.22, front: 0.12 };
+  function digKey(t) {
+    const lerp = THREE.MathUtils.lerp;
+    let i = 0;
+    while (i < DIG_KEYS.length - 2 && t >= DIG_KEYS[i + 1].t) i++;
+    const a = DIG_KEYS[i], b = DIG_KEYS[i + 1], u = ease(Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))));
+    return { x: lerp(a.x, b.x, u), tilt: lerp(a.tilt, b.tilt, u), z: lerp(a.z, b.z, u), lean: lerp(a.lean, b.lean, u) };
+  }
+  let dirt = 0;                       // shovelfuls flung since digged() was last asked
+  let tiltNow = 0, tiltSide = null;   // the shovel's own turn, damped so it neither snaps in nor out
+  function takeShovel() {
+    const d = digging;
+    d.prev = holding[d.side];
+    d.swapped = d.prev !== 'shovel';
+    if (d.swapped) setHeldItem(d.side, 'shovel', lookSpec);
+  }
+  // Start (`on`) or stop digging with `side` ('leftArm' or 'rightArm'; by default the hand that
+  // already has a shovel, else a free one, else the right). True when this call started a dig;
+  // idempotent otherwise, so a frame loop can hand it the state every frame. Refused while the
+  // arms carry something (setCarry).
+  function dig(on = true, side) {
+    if (!on) {
+      if (!digging) return false;
+      const d = digging;
+      digging = null;
+      // The shovel goes back where it came from at once; the arm eases up on its own.
+      if (d.swapped) { setHeldItem(d.side, d.prev, lookSpec); tiltSide = null; tiltNow = 0; }
+      return false;
+    }
+    if (digging || carrying) return false;
+    digging = {
+      side: side || (holding.rightArm === 'shovel' ? 'rightArm' : holding.leftArm === 'shovel' ? 'leftArm'
+        : !holding.rightArm ? 'rightArm' : !holding.leftArm ? 'leftArm' : 'rightArm'),
+      t: 0, prev: null, swapped: false,
+    };
+    swing = null;
+    takeShovel();
+    tiltSide = digging.side;
+    return true;
+  }
+  // How many shovelfuls were flung since the last call: walk.js grows the pile and throws the
+  // dust once for each, so the sand follows the stroke the rig draws instead of a timer of its own.
+  function digged() { const n = dirt; dirt = 0; return n; }
+
+  // Carrying (the treasure statue, Plans/schatkaarten.md): both arms out in front and held high,
+  // the load between the fists, the body leaning back against the weight. Hands that hold
+  // something else let go of it out of sight (the item stays in the spec and comes back).
+  // `carried` is a group so the finished model can replace the stand-in's geometry without
+  // touching the rig; it hangs on the body's root, so it leans with it.
+  const CARRY_ARM = -1.42, CARRY_Z = 0.5, CARRY_LEAN = -0.1;
+  const CARRIED_AT = [0, 0.29 * PLAYER_SCALE, 0.145];
+  const carried = new THREE.Group();
+  carried.name = 'carried';
+  carried.position.set(...CARRIED_AT);
+  carried.visible = false;
+  const carriedMesh = new THREE.Mesh(carriedGeometry(), material);
+  carriedMesh.castShadow = true;
+  carried.add(carriedMesh);
+  object.add(carried);
+  // True when this call changed it. A dig in progress is put down first: the hands cannot do both.
+  function setCarry(on = true) {
+    on = !!on;
+    if (on === carrying) return false;
+    if (on) dig(false);
+    carrying = on;
+    carried.visible = on;
+    for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].visible = !on;
+    return true;
+  }
+
   // Where a drinking arm is, and the glass's orientation in the body's frame - worked out
   // for the right hand and mirrored for the left (X·q·X: y and z negated).
   // `rest`/`restZ` are what the arm would be doing had it not lifted the glass.
@@ -566,6 +713,10 @@ export function createClassicAvatar(spec, material) {
   let danceMix = 0;   // how far into a dance the body is, 0..1, so starting and stopping ease
   function update(pose, dt) {
     time += dt;
+    // A caller that has the state as a flag (peers.js decodes it from the pose bits) may hand
+    // it in here instead of calling dig()/setCarry() on the edge; left out, nothing changes.
+    if (pose.digging !== undefined && !!pose.digging !== !!digging) dig(!!pose.digging);
+    if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride;
     const phase = pose.phase;
@@ -604,7 +755,10 @@ export function createClassicAvatar(spec, material) {
     // hands is danced with. The limbs take it here; the bob, lean, twist and roll are the whole
     // body's and go on `object` below, the rig's root at the feet, since the limbs are not
     // children of the core. Not in first person: that pose is a view model nobody else sees.
-    const dancing = pose.dancing && !ride && !pose.sitting && !pose.lying && !pose.swimming && !fp ? pose.dancing : null;
+    // A dig cannot go on from a saddle, a bench, the ground or the water: put down, as a drink is.
+    if (digging && (ride || pose.sitting || pose.lying || pose.swimming)) dig(false);
+    const dug = digging, carryOn = carrying && !ride;
+    const dancing = pose.dancing && !ride && !pose.sitting && !pose.lying && !pose.swimming && !fp && !dug && !carryOn ? pose.dancing : null;
     const dance = dancing ? dancePose(dancing.move, dancing.beat, dancing.hype || 0) : null;
     if (dance) {
       // The legs take the lean back off, as the settlers' do, so they stay under the body.
@@ -619,6 +773,30 @@ export function createClassicAvatar(spec, material) {
       : typeof pose.blocking === 'object' ? ['leftArm', 'rightArm'].filter((side) => pose.blocking[side])
         : [blockSide()];
     for (const side of blocks) targets[side] = BLOCK_ARM_X;
+    // Arms turned in about their own axis (z) instead of straight ahead, when a pose wants it,
+    // and how far the whole body bows (positive: forward) - dig() and setCarry() above.
+    const armZ = { leftArm: null, rightArm: null };
+    let lean = 0, digPose = null;
+    if (dug) {
+      const was = dug.t;
+      dug.t += dt;
+      // The throw is the moment the stroke passes THROW_AT.
+      if (was < THROW_AT && dug.t >= THROW_AT) dirt++;
+      if (dug.t >= DIG_S) dug.t -= DIG_S;
+      digPose = digKey(dug.t);
+      const off = OTHER[dug.side], sign = dug.side === 'rightArm' ? -1 : 1;
+      targets[dug.side] = digPose.x;
+      armZ[dug.side] = sign * digPose.z;
+      if (!holding[off]) { targets[off] = DIG_OFF_ARM; armZ[off] = -sign * DIG_OFF_Z; }
+      targets.leftLeg = dug.side === 'rightArm' ? DIG_STANCE.front : DIG_STANCE.back;
+      targets.rightLeg = dug.side === 'rightArm' ? DIG_STANCE.back : DIG_STANCE.front;
+      lean = digPose.lean * (fp ? 0.3 : 1);
+    } else if (carryOn) {
+      targets.leftArm = targets.rightArm = CARRY_ARM;
+      armZ.leftArm = CARRY_Z;
+      armZ.rightArm = -CARRY_Z;
+      lean = CARRY_LEAN;
+    }
     // Both hands on the bars, whatever they are holding.
     if (ride) targets.leftArm = targets.rightArm = RIDE_ARM;
     // Both hands on the handles of a barrow or the rim of a cart (web/js/goldrun.js): the
@@ -685,12 +863,12 @@ export function createClassicAvatar(spec, material) {
       else if (ride && (name === 'leftLeg' || name === 'rightLeg')) pieces[name].pivot.rotation.x = target;
       // Twice as quick on the dance floor: at 15 a punch on the kick is still on its way up
       // when the next one comes.
-      else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance ? 30 : 15, dt);
+      else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance || (dug && name === dug.side) ? 30 : 15, dt);
     }
     pieces.leftArm.pivot.rotation.z = drunk.leftArm ? drunk.leftArm.z
-      : damp(pieces.leftArm.pivot.rotation.z, holding.leftArm ? 0 : (pose.running ? -0.12 : 0), 12, dt);
+      : damp(pieces.leftArm.pivot.rotation.z, armZ.leftArm ?? (holding.leftArm ? 0 : (pose.running ? -0.12 : 0)), armZ.leftArm === null ? 12 : 20, dt);
     pieces.rightArm.pivot.rotation.z = drunk.rightArm ? drunk.rightArm.z
-      : damp(pieces.rightArm.pivot.rotation.z, holding.rightArm ? 0 : (pose.running ? 0.12 : 0), 12, dt);
+      : damp(pieces.rightArm.pivot.rotation.z, armZ.rightArm ?? (holding.rightArm ? 0 : (pose.running ? 0.12 : 0)), armZ.rightArm === null ? 12 : 20, dt);
     pieces.core.pivot.position.y = Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
     // The body's share of the dance, eased in over a beat or so and back out when it stops.
     // Scaled by PLAYER_SCALE like every pivot here: dancePose's lifts are a settler's.
@@ -698,13 +876,18 @@ export function createClassicAvatar(spec, material) {
     if (dance) {
       object.position.y = dance.bob * PLAYER_SCALE * danceMix;
       object.rotation.set(dance.lean * danceMix, dance.twist * danceMix, dance.roll * danceMix);
-    } else if (object.position.y || object.rotation.x || object.rotation.y || object.rotation.z) {
+    } else if (lean || object.position.y || object.rotation.x || object.rotation.y || object.rotation.z) {
+      // The bow of a dig or a heavy carry is the target here, not 0; a body at rest settles at 0.
       object.position.y = damp(object.position.y, 0, 12, dt);
-      object.rotation.set(damp(object.rotation.x, 0, 12, dt), damp(object.rotation.y, 0, 12, dt), damp(object.rotation.z, 0, 12, dt));
-      if (Math.abs(object.position.y) + Math.abs(object.rotation.x) + Math.abs(object.rotation.y) + Math.abs(object.rotation.z) < 1e-4) {
+      object.rotation.set(damp(object.rotation.x, lean, lean ? 14 : 12, dt), damp(object.rotation.y, 0, 12, dt), damp(object.rotation.z, 0, 12, dt));
+      if (Math.abs(object.position.y) + Math.abs(object.rotation.x - lean) + Math.abs(object.rotation.y) + Math.abs(object.rotation.z) < 1e-4) {
         object.position.y = 0;
-        object.rotation.set(0, 0, 0);
+        object.rotation.set(lean, 0, 0);
       }
+    }
+    if (tiltSide) {
+      tiltNow = damp(tiltNow, dug ? digPose.tilt : 0, 30, dt);
+      if (!dug && Math.abs(tiltNow) <= 1e-3) { tiltNow = 0; tiltSide = null; }
     }
     // Cancel each arm pivot's own rotation on the item it carries: the attach point gives
     // the item the hand's position (correct - the grip moves with the arm), but a held
@@ -739,6 +922,15 @@ export function createClassicAvatar(spec, material) {
         continue;
       }
       const tilt = fp && !(swung && side === swing.side) ? FP_TILT[holding[side]] : null;
+      // The shovel's own turn while digging, and its way back to upright once the dig is over:
+      // a turn in the body's frame (0 blade up), so the arm's own is taken off it.
+      if (side === tiltSide && Math.abs(tiltNow) > 1e-3) {
+        // Through the arm's whole inverse, not the per-axis undo below: the arm is turned in
+        // about z as well while it digs, and the two turns do not commute.
+        unArm.copy(pieces[side].pivot.quaternion).invert();
+        mesh.quaternion.copy(unArm).multiply(tiltQ.setFromEuler(turn.set(tiltNow, 0, 0)));
+        continue;
+      }
       mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x + (tilt?.x || 0);
       mesh.rotation.z = -pieces[side].pivot.rotation.z + (side === 'rightArm' ? 1 : -1) * (tilt?.z || 0);
       // A shield turns to face forward while it blocks and back out to the side after;
@@ -772,6 +964,7 @@ export function createClassicAvatar(spec, material) {
   }
 
   function set(next) {
+    lookSpec = next;
     for (const piece of Object.values(pieces)) {
       const geometry = avatarPlayerComponentGeometry(next, piece.names);
       geometry.translate(-piece.at[0], -piece.at[1], -piece.at[2]);
@@ -784,13 +977,20 @@ export function createClassicAvatar(spec, material) {
     pieces.leftBoot.pivot.visible = pieces.rightBoot.pivot.visible = !!next.equip?.boots;
     setHeldItem('leftArm', next.equip?.leftHandItem || null, next);
     setHeldItem('rightArm', next.equip?.rightHandItem || null, next);
+    // A new look arriving in the middle of a dig (a peer changed their outfit) must not take
+    // the shovel out of their hands: what the look holds becomes what a stopped dig restores.
+    if (digging) takeShovel();
   }
 
   function dispose() {
     for (const piece of Object.values(pieces)) piece.mesh.geometry.dispose();
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
     stream.geometry.dispose();
+    carriedMesh.geometry.dispose();
   }
 
-  return { object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed, handOver };
+  return {
+    object, update, set, dispose, handAttach, attack, held: (side) => holding[side], drink, swallowed, handOver,
+    dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
+  };
 }

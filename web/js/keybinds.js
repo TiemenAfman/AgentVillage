@@ -26,6 +26,7 @@ export const ACTIONS = [
   ['plant', 'p', 'sow', null, BTN.RT], ['nextSeed', 'q', 'next seed', null, BTN.RB],
   ['give', 'g', 'give a beer', null, null], ['build', 'b', 'build (debug)', null, null],
   ['inventory', 'i', 'inventory', null, null], ['map', 'm', 'map', null, null],
+  ['quests', 'k', 'quest log', null, null],
 ];
 // A controller's own action, with no key: the previous seed. The sticks walk and look and are not
 // buttons; the settings list shows them as fixed text.

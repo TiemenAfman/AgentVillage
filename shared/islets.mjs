@@ -130,6 +130,24 @@ export function isletsNear(fleet, at, { range = ISLET_RANGE, extra = [] } = {}) 
   return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+// The islet an id names, furnished exactly as `isletsNear` hands it out - or null for anything
+// that is not the id of a lattice square holding one. The shape depends on nothing but the
+// square (`candidate`), so this works for an islet that has since fallen under somebody's
+// water too: what a treasure map remembers is the id, and the map has to be able to draw
+// the spot on it even while the fleet has taken the islet away (Plans/schatkaarten.md,
+// "Is het eilandje weg"). Whether it is *there* is `isletsNear`'s question, not this one's.
+// Only ids in their own canonical spelling are taken - `islet:01:2` is not `islet:1:2` and
+// would otherwise hash to a second islet in the same square.
+export function isletById(id) {
+  if (typeof id !== 'string') return null;
+  const m = /^islet:(-?\d{1,7}):(-?\d{1,7})$/.exec(id);
+  if (!m) return null;
+  const i = Number(m[1]), j = Number(m[2]);
+  if (`islet:${i}:${j}` !== id) return null;
+  const islet = candidate(i, j);
+  return islet ? furnish(islet) : null;
+}
+
 // The islet a lattice square holds, if it holds one - before the fleet is asked. Its place
 // in the square, its kind and its size all come out of one hash of the square.
 export function candidate(i, j) {

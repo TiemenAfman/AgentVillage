@@ -10,6 +10,9 @@ import { createClassicAvatar } from './classic-avatar.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, iconKey, iconGeometry } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
 import { keyOf } from './keybinds.js';
+import { byId, unlockOf } from 'shared/equipment.mjs';
+import { PLAYER_SWATCHES, PLAYER_SWATCH_PARTS } from 'shared/palette.mjs';
+import { isUnlocked } from './unlocks.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 // What a slot's dye button says it paints; the two flasks carry their own labels.
@@ -159,11 +162,19 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     const box = document.createElement('div');
     box.className = 'inv-pop';
     for (const opt of slot.options) {
+      // A piece somebody has not found yet stays in the picker as its own silhouette, saying
+      // where it comes from, and does nothing when clicked. The tile is the same size and
+      // paints the same icon (a CSS filter makes the silhouette), so finding the piece changes
+      // nothing about the layout. Not `disabled`: a disabled button swallows its tooltip.
+      const need = unlockOf(opt.id);
+      const locked = !!need && !isUnlocked(need);
       const tile = document.createElement('button');
-      tile.className = `inv-tile${opt.id === current ? ' on' : ''}`;
-      tile.title = opt.name;
-      tile.innerHTML = `<canvas class="inv-icon"></canvas><span>${opt.name}</span>`;
+      tile.className = `inv-tile${opt.id === current ? ' on' : ''}${locked ? ' locked' : ''}`;
+      tile.title = locked ? (byId(opt.id)?.hint || 'Not found yet') : opt.name;
+      if (locked) tile.setAttribute('aria-disabled', 'true');
+      tile.innerHTML = `<canvas class="inv-icon"></canvas><span>${locked ? (byId(opt.id)?.hint || 'Locked') : opt.name}</span>`;
       tile.addEventListener('click', () => {
+        if (locked) return;
         if (slot.field) spec[slot.field] = opt.id;
         else spec.equip = { ...spec.equip, [slot.equip]: opt.id || null };
         sync(); apply();
@@ -192,6 +203,25 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       tile.style.setProperty('--sw', hex(s.hex));
       tile.addEventListener('click', () => { spec[part] = s.hex; light(); sync(); apply(); });
       box.appendChild(tile);
+    }
+    // The colours the chests give, after the ones everybody has: a locked one is a dull disc that
+    // says where it comes from and does nothing when clicked (the hat picker's way, for dyes).
+    if (PLAYER_SWATCH_PARTS.includes(part)) {
+      for (const s of PLAYER_SWATCHES) {
+        const locked = !isUnlocked(s.id);
+        const tile = document.createElement('button');
+        tile.className = `inv-tile dye${locked ? ' locked' : ''}`;
+        tile.dataset.hex = s.hex;
+        tile.title = locked ? s.hint : s.name;
+        tile.setAttribute('aria-label', locked ? `${s.name} (locked)` : s.name);
+        if (locked) tile.setAttribute('aria-disabled', 'true');
+        tile.style.setProperty('--sw', locked ? '#34363b' : hex(s.hex));
+        tile.addEventListener('click', () => {
+          if (locked) return;
+          spec[part] = s.hex; light(); sync(); apply();
+        });
+        box.appendChild(tile);
+      }
     }
     light();
     pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });

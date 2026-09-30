@@ -57,8 +57,22 @@ test('lying, crouching, sitting, dancing and asleep go through the sea; nothing 
     assert.equal(ann.p.f, bit | POSE.MOVING);
   }
   assert.deepEqual([POSE.LYING, POSE.CROUCHING, POSE.SITTING, POSE.DANCING, POSE.ASLEEP], [256, 512, 1024, 2048, 4096]);
-  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 8192 | POSE.SITTING });
+  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 32768 | POSE.SITTING });
   assert.equal(ann.p.f, POSE.SITTING);
+});
+
+test('carrying and digging (Plans/schatkaarten.md) go through the sea as the two bits above asleep', () => {
+  const { join } = room();
+  const ann = join('aaaaaaaaaaaa');
+  for (const bit of [POSE.CARRYING, POSE.DIGGING]) {
+    ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: bit | POSE.MOVING });
+    assert.equal(ann.p.f, bit | POSE.MOVING);
+  }
+  assert.deepEqual([POSE.CARRYING, POSE.DIGGING], [8192, 16384]);
+  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: POSE.CARRYING | POSE.DIGGING | POSE.ASLEEP });
+  assert.equal(ann.p.f, POSE.CARRYING | POSE.DIGGING | POSE.ASLEEP, 'every bit in the mask survives together');
+  ann.say({ t: 'p', x: 1, y: 1, z: 1, yaw: 0, f: 65535 });
+  assert.equal(ann.p.f, 32767, 'the mask ends at DIGGING');
 });
 
 test('a swing and a sip are shown to everybody else, on the hand they were, and not echoed back', () => {
@@ -90,7 +104,7 @@ globalThis.WebSocket = class {
   send(text) { this.sent.push(JSON.parse(text)); }
   close() { this.readyState = 3; }
 };
-const { createNet, FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING } = await import('../web/js/net.js');
+const { createNet, FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING, FLAG_CARRYING, FLAG_DIGGING } = await import('../web/js/net.js');
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('a page says what it looks like on connect, how its body is, and which hand swung', async () => {
@@ -114,6 +128,17 @@ test('a page says what it looks like on connect, how its body is, and which hand
     assert.equal(danced.f & (FLAG_LYING | FLAG_CROUCHING | FLAG_SITTING | FLAG_DANCING), FLAG_DANCING);
     assert.deepEqual(Object.keys(danced).filter((k) => /move|beat/.test(k)), [], 'the dance itself went over the wire');
     walk.state.dancing = false;
+    // The statue in the arms and a dig in progress: one bit each. Aboard (`vehicle`) the statue is on
+    // the hull and no dig is going, so neither bit is ever sent from a boat.
+    walk.state.carry = 'statue';
+    walk.state.digging = { t: 0.5, total: 2.5 };
+    await wait(150);
+    const held = sock.sent.filter((m) => m.t === 'p').at(-1);
+    assert.equal(held.f & (FLAG_CARRYING | FLAG_DIGGING), FLAG_CARRYING | FLAG_DIGGING);
+    walk.state.vehicle = { id: 'boat:x' };
+    await wait(150);
+    assert.equal(sock.sent.filter((m) => m.t === 'p').at(-1).f & (FLAG_CARRYING | FLAG_DIGGING), 0, 'sent from a boat');
+    walk.state.vehicle = null; walk.state.carry = null; walk.state.digging = null;
     assert.ok(net.swing('rightArm'));
     assert.equal(sock.sent.filter((m) => m.t === 'swing').at(-1).side, 'rightArm');
     net.drink('leftArm');
@@ -128,9 +153,9 @@ test('a page says what it looks like on connect, how its body is, and which hand
 test('the numbers the page and the sea both write down agree', () => {
   // POSE is the sea's copy and net.js / peers.js the page's; three places, one set of bits.
   const peers = readFileSync(new URL('../web/js/peers.js', import.meta.url), 'utf8');
-  for (const [name, bit] of [['LYING', 256], ['CROUCHING', 512], ['SITTING', 1024], ['DANCING', 2048]]) {
+  for (const [name, bit] of [['LYING', 256], ['CROUCHING', 512], ['SITTING', 1024], ['DANCING', 2048], ['CARRYING', 8192], ['DIGGING', 16384]]) {
     assert.equal(POSE[name], bit);
     assert.match(peers, new RegExp(`const FLAG_${name} = ${bit};`), `peers.js has another ${name}`);
   }
-  assert.deepEqual([FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING], [256, 512, 1024, 2048]);
+  assert.deepEqual([FLAG_LYING, FLAG_CROUCHING, FLAG_SITTING, FLAG_DANCING, FLAG_CARRYING, FLAG_DIGGING], [256, 512, 1024, 2048, 8192, 16384]);
 });

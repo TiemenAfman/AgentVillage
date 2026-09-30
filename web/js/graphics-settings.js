@@ -24,10 +24,22 @@
 // render list rather than drawn and hidden, and they come out of the mist as you sail in.
 // A phone gets less again, because a phone draws a whole screen of it at a phone's GPU.
 export const GRAPHICS_TIERS = Object.freeze({
-  full: Object.freeze({ viewDistance: 1250, objectDistance: 2000, npcDistance: 1000, shadowDistance: 380 }),
-  modest: Object.freeze({ viewDistance: 800, objectDistance: 550, npcDistance: 300, shadowDistance: 160 }),
-  phone: Object.freeze({ viewDistance: 600, objectDistance: 380, npcDistance: 200, shadowDistance: 110 }),
+  full: Object.freeze({ viewDistance: 1250, npcDistance: 1000, shadowDistance: 380 }),
+  modest: Object.freeze({ viewDistance: 800, npcDistance: 300, shadowDistance: 160 }),
+  phone: Object.freeze({ viewDistance: 600, npcDistance: 200, shadowDistance: 110 }),
 });
+
+// Object Distance is not a slider: it is View Distance times what this kind of machine can
+// afford to draw of it. A desktop draws every house it can see (1.6: past the far plane), a
+// lighter machine cuts them nearer than it sees, which is what keeps it playable - so the
+// houses of a neighbour are in the haze and out of the render list, not drawn and hidden. One
+// slider for how far you see, and no way to set a number that leaves houses standing in clear
+// air or cut short in front of a horizon. The ratios are the old tier defaults over their View
+// Distance (2000/1250, 550/800, 380/600, rounded).
+export const OBJECT_RATIO = Object.freeze({ full: 1.6, modest: 0.7, phone: 0.65 });
+export function objectDistanceOf(viewDistance, tier = 'full') {
+  return Math.round(viewDistance * (OBJECT_RATIO[tier] ?? OBJECT_RATIO.full));
+}
 export const GRAPHICS_DEFAULTS = GRAPHICS_TIERS.full;
 
 // Which of the three a page is: the phone app first (it is also `modest`, and more so).
@@ -41,11 +53,23 @@ export function graphicsTier({ modest = false, phone = false } = {}) {
 // wider than SHADOW_SPAN[1] (half-widths 42 and 190, world.js): a slider below 84 or above 380
 // would move and change nothing.
 export const GRAPHICS_LIMITS = Object.freeze({
-  viewDistance: { min: 100, max: 2000, step: 10 },
-  objectDistance: { min: 50, max: 2000, step: 10 },
+  viewDistance: { min: 100, max: 20000, step: 10 },
   npcDistance: { min: 50, max: 1000, step: 10 },
   shadowDistance: { min: 85, max: 380, step: 5 },
 });
+
+// How far the haze is let out by View Distance, 0..1: nothing up to the desktop default (the
+// island's own haze, as it always was), and all of it - the fog closing at the far plane and
+// clear until four fifths of the way there - from HAZE_OPEN_AT up (the slider goes on past it,
+// and then only the far plane moves). Before this the far plane
+// moved and the fog, which main.js works out from the size of the island, did not, so a bigger
+// View Distance changed nothing anybody could see. Continuous, so a nudge past the default is a
+// nudge in the fog and not a jump.
+export const HAZE_OPEN_AT = 6000;
+export function hazeOpening(viewDistance) {
+  const from = GRAPHICS_TIERS.full.viewDistance, to = HAZE_OPEN_AT;
+  return Math.min(1, Math.max(0, (viewDistance - from) / (to - from)));
+}
 
 // What is stored is only what somebody set, never the whole four. The first two versions
 // (`promptholm.graphics`, `.v2`) saved all four on any change, so a page that had moved only

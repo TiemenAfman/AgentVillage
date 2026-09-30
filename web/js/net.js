@@ -51,6 +51,11 @@ export const FLAG_DANCING = 2048;
 // (walk.js park, Plans/DONE/karakter-blijft-staan.md). peers.js puts a Zzz over it and the sea
 // neither sweeps it as idle nor lets a guard at it. A sea on 0.6.x masks it off.
 export const FLAG_ASLEEP = 4096;
+// The treasure statue in both arms, and a shovel going into the sand (walk.js `carry` / `digging`,
+// Plans/schatkaarten.md). Relayed only, for peers.js; a sea from before them masks both away, so
+// nobody is drawn wrong, they just do not see it. Aboard neither is ever sent.
+export const FLAG_CARRYING = 8192;
+export const FLAG_DIGGING = 16384;
 
 // How much health we have, from the last thing the sea said about it. The sea keeps the
 // count (lib/health.mjs: only it knows that somebody has been hit, so only it may say what
@@ -409,6 +414,8 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.crouching && !s.lying ? FLAG_CROUCHING : 0)
       | (s.sitting ? FLAG_SITTING : 0)
       | (s.dancing ? FLAG_DANCING : 0)
+      | (s.carry && !s.vehicle ? FLAG_CARRYING : 0)
+      | (s.digging && !s.vehicle && !s.swimming ? FLAG_DIGGING : 0)
       | (s.parked && !s.moving ? FLAG_ASLEEP : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet

@@ -80,6 +80,19 @@ export const SWATCHES = {
   ],
 };
 
+// The colours a player finds in chests (Plans/schatkaarten.md; shared/treasure.mjs REWARD_COLORS
+// names the same ids). A list of their own and never rows of SWATCHES: the settlers draw their skin,
+// tunic, trim and hat with `rng.pick(SWATCHES[part])`, so one entry added there changes the face of
+// the whole population on every island. Each is a tile at the end of the tunic, trim and hat palettes
+// in the inventory (skin is not a dye), locked until unlocks.js has its `id`.
+export const PLAYER_SWATCH_PARTS = ['tunic', 'trim', 'hat'];
+export const PLAYER_SWATCHES = [
+  { id: 'captain-red', name: 'Captain red', hex: 0x9c2b27, hint: 'Found in a chest' },
+  { id: 'sea-green', name: 'Sea green', hex: 0x2e8b74, hint: 'A reward from the pirate' },
+  { id: 'kraken-purple', name: 'Kraken purple', hex: 0x5b3a8e, hint: 'Found in a chest' },
+  { id: 'gold-leaf', name: 'Gold leaf', hex: 0xe0b83c, hint: 'Found in a chest' },
+];
+
 // The look every settler of a style used to have, and still the look of the figure that
 // walk.js, interior.js and the model sheet ask for by style alone.
 export function styleLook(style, sailor = false) {
@@ -189,6 +202,17 @@ export const KEEPERS = {
   chapel: {
     post: 'priest', name: 'The priest', tours: true,
     dress: { presentation: 'man', outfit: 'trousers', hatShape: 'none', tunic: 0x18181c, trim: 0xe8e4da },
+  },
+  // The pirate keeps a sea chest, `civic:pirate`, on the tavern's pavement beside its door
+  // (Plans/schatkaarten.md): he is the one who sends a settler for the first buried treasure.
+  // Wide-brimmed and black for now; the tricorn comes with its own hat shape in the bake and
+  // replaces `hatShape` here. No `aside`: the chest already stands one cell along the tavern's
+  // front (lib/layout.mjs, "the pirate's sea chest"), and he stands out in front of it - the
+  // innkeeper is on the step, and a keeper pushed further along the front lands in the corner
+  // cell where the statue of the seventieth settler stands.
+  pirate: {
+    post: 'pirate', name: 'The pirate',
+    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'wide', hat: 0x17161a, tunic: 0x7a2426, trim: 0xc9a13b, build: 1.06 },
   },
 };
 

@@ -97,7 +97,8 @@ test('a building turned where it stands: nothing else moves, its road follows th
   const r = plan(layout, [{ op: 'civic', id: 'civic:tavern', gx: tavern.gx, gz: tavern.gz, rot }], false);
   assert.equal(r.ok, true, r.error || r.verdicts[0].reason);
   assert.deepEqual(r.diff.plots.otherMoved, []);
-  assert.deepEqual(r.diff.plots.moved.map((m) => m.id), ['civic:tavern']);
+  // The tavern and the pirate's chest by its door, which goes with it like the postbox with the hall.
+  assert.deepEqual(r.diff.plots.moved.map((m) => m.id).sort(), ['civic:pirate', 'civic:tavern']);
   assert.equal(layout.plots['civic:tavern'].rot, rot);
   assert.match(r.verdicts[0].notes[0], /turns to face/);
   assertSettled(layout);

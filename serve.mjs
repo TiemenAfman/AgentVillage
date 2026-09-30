@@ -34,6 +34,7 @@ import { loadPlacements, savePlacements } from './lib/placements.mjs';
 import { parsePlan, isSnapshotName, listSnapshots } from './lib/plan.mjs';
 import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs';
+import { loadTreasure, updateTreasure, viewOf as treasureView, TREASURE_ACTIONS } from './lib/treasure.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
@@ -1394,6 +1395,25 @@ if (req.url === '/api/command' && req.method === 'POST') {
     log(`built a boat at the ${done.side} harbour (${done.built} built there now)`);
     await rescan('boat');
     return json(res, 200, { ok: true, ...done });
+  }
+
+  // ---- the treasure statue ------------------------------------------------------------
+  // GET the state, POST `{ action }` to move it (lib/treasure.mjs). Not on PUBLIC_API, so
+  // it is the keeper's alone by deny-by-default: what a visitor sees is `village.treasure`
+  // in village.json and the bundle, read-only, and delivering the statue works only on your
+  // own island. Only a change a visitor can see (the statue placed, the count up) costs a
+  // rescan; lifting and dropping it are the carrier's and change no file but this one.
+  if (p === '/api/treasure') {
+    if (req.method === 'GET') return json(res, 200, { ...loadTreasure(), ...treasureView(loadTreasure()), actions: TREASURE_ACTIONS });
+    if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+    let body;
+    try { body = await readBody(req, 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const action = String((body || {}).action || '');
+    let done;
+    try { done = updateTreasure(action); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    if (done.changed) log(`treasure: ${action} (statue ${done.state.statue}, ${done.state.found} found)`);
+    if (done.viewChanged) await rescan('treasure');
+    return json(res, 200, { ok: true, changed: done.changed, ...done.state, ...done.view });
   }
 
   // ---- the postbox on the town hall pavement ------------------------------------

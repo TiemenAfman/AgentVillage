@@ -34,7 +34,11 @@ const WALK = 0.45;
 const DUSK = 0.55, DAWN = 0.45;
 const nightOf = (material) => material?.userData?.uniforms?.uNight?.value ?? 0;
 
-export function attachFisher(group, material, groundAt) {
+// `deckY` is set for a hut on the quay: its ground is cut away there (world.js), so the terrain
+// under it is the waterline or lower while everything drawn stands on the quay's deck - the
+// model's own floor, HARBOUR_DECK in the hut's frame. Measured off the terrain he stood sunk in
+// the quay's kerb with only his hat above it.
+export function attachFisher(group, material, groundAt, deckY = null) {
   const avatar = createClassicAvatar(FISHER_LOOK, material);
   avatar.object.scale.x = 1;       // unmirrored, like every villager whose tool was placed
   const figure = new THREE.Group();
@@ -44,7 +48,7 @@ export function attachFisher(group, material, groundAt) {
   figure.visible = false;
   group.add(figure);
   return {
-    group, figure, avatar, material, groundAt,
+    group, figure, avatar, material, groundAt, deckY,
     spot: null, mode: 'inside', pos: [...DOOR], phase: 0, wait: 0, bites: 0, time: 0, castAt: null,
   };
 }
@@ -52,6 +56,9 @@ export function attachFisher(group, material, groundAt) {
 // The water's edge in front of the hut, in the hut's frame, and the height of the ground there
 // and at the door, also in its frame.
 function measure(f) {
+  // On the deck he stands on the deck, a little way out of the door, and never at the water's edge
+  // the terrain would find: there is no terrain to find it in.
+  if (f.deckY != null) return { at: [X, Z_FROM], y: f.deckY, doorY: f.deckY };
   const g = f.group;
   g.updateMatrixWorld(true);
   const v = new THREE.Vector3();

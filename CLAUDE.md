@@ -415,7 +415,7 @@ is `camera.far` (`main.js applyViewDistance`, +150 because `setFogRange` closes 
 `FOG_CAP` = 0.95 of it, and never tied to the world's size; the sky dome is drawn *on* the
 far plane, `p.xyww` in world.js, so a near far plane never shows the black clear colour, and
 `world.setFar` keeps the fog-free sun and moon inside it); Object Distance is how far a
-house, prop or boat is still drawn - and the haze closes no further out than it; NPC
+house, prop or boat is still drawn (not a slider: View Distance times the tier's ratio, see below); NPC
 Distance is how far a *person* is still drawn; Shadow Distance is the ceiling on how wide
 the sun's shadow box may grow (`setShadowDistance` in world.js - not `shadow.camera.far`,
 which `followShadow` rewrites on every zoom). The sliders are in Settings → Graphics, per
@@ -428,9 +428,9 @@ handlers; it was handed to `createNet` once and every slider moved its label and
 (`tests/graphics-settings.test.mjs` reads the source for it). The plan is
 `Plans/DONE/graphics-afstanden.md`. Before touching any of them:
 
-- **A house comes out of the mist; it never appears.** `fogCeiling()` in main.js
-  (`fogCeilingOf` in fade.js) caps the haze at the nearer of the far plane and Object
-  Distance, and a record is taken out of the render list (`keepRecord` in
+- **A house comes out of the mist; it never appears - while Object Distance is beyond the haze.**
+  `cullCeiling()` in main.js (`fogCeilingOf` in fade.js) is the nearer of the far plane and Object
+  Distance; the haze itself (`fogCeiling()`) is the far plane's alone. A record is taken out of the render list (`keepRecord` in
   `web/js/record-cull.js`, `layers.mask = 0`) only `CULL_PAD` past Object Distance - so what
   is cut is always already the colour of the fog, and on the way in it thickens out of it.
   The sky dome's band along the horizon *is* the fog colour (`uFog`, written in
@@ -458,6 +458,26 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   That is what makes an older machine playable without the island looking cut short: the
   `modest` and `phone` tiers bring Object Distance in, and a neighbour's houses, mills and
   people are past the haze and not drawn at all.
+- **The haze is the island's, and View Distance opens it only past the default.** `applyFogRange`
+  works the fog out from the island's size, not from the far plane, so raising View Distance alone
+  moved the far plane and nothing anybody saw. `hazeOpening` (graphics-settings.js, 0 up to the
+  desktop's 1250, 1 from `HAZE_OPEN_AT` 6000 up; the slider goes to 20000 and past 6000 only the far plane moves) pulls `setFogRange`'s far end towards `FOG_CAP * far` and
+  its near end towards 0.8 of it - so the tiers below 1250 are untouched. Two more things follow the
+  far plane and have to: the ocean disc (`ocean.scale` in `setFar`, or its rim shows against the
+  dome once the fog is gone) and the clouds (`setCloudReach`, called with `scene.fog.far`: rings of
+  tiles beyond the 3 x 3, in a shadowless child mesh, capped at `CLOUD_RING_MAX`, and past those a coarse layer of the same clouds at `FAR_SCALE` times the size and
+  spacing - as much sea covered in a sixteenth of the clouds - out to `FAR_RING_MAX` rings of its tiles). `edgeReach`
+  (the haze closing in near the world's edge) is a few thousand at most and was the invisible
+  wall the fog stopped at whatever the slider said; the opening lifts it to the far plane. What the haze
+  used to hide shows once it is gone: the water's per-pixel ripples alias into a lattice of dots
+  past a few hundred units (`calm` in the water shader fades them out), and the ocean disc sits
+  0.2 under the patch, which the depth buffer cannot separate out there (`polygonOffset` on it).
+  **Object Distance is not a slider any more**: `objectDistanceOf` (graphics-settings.js) is View
+  Distance times the tier's `OBJECT_RATIO` (desktop 1.6, past the far plane; modest 0.7; phone 0.65),
+  written into `state.graphics.objectDistance` by `withObjectDistance` whenever View Distance moves.
+  The haze is the far plane's alone (`fogCeiling`); `cullCeiling` is what the cut of records,
+  neighbours and islets uses. A chosen Object Distance would have left houses standing in clear air
+  or cut them there, and the stipple fade that hides that costs every building its early depth test.
 - **The fog is by distance, not depth** (`web/js/radial-fog.js` patches three's `fog_vertex`
   chunk once, before anything compiles; every shader that fogs, the hand-written water, lava
   and weather ones too, goes through it). three's own fog was `-mvPosition.z`, and at the
@@ -1202,6 +1222,12 @@ weather in it is not a degraded island, it is the island. Nothing about a sky ev
 `ui.setSkew` or the terrain hash: an unrecognised word and an absent field are both clear,
 and the vocabulary is written out twice on purpose (the sea may not import `web/`, the page
 may not import `lib/`) with `tests/weather.test.mjs` holding the two copies together. The
+rain box lives under the cloud layer (`base` in weather.js `fall`: the clouds' underside less their `drop`, and from above the line of sight sets it down where it meets that layer) - riding the camera up put streaks over the clouds. The
+cloud layer hangs at `CLOUD_Y` (54-66, above the volcano's 41: at 24-33 the clouds drifted through the
+mountain) and the rain box spans from the clouds' underside to the water. There is no rain from the orbit camera (`fromSky` in createWeather): a box of drops seen from up there is a block that swings
+round with the camera, and a screen-space shower and a widened box were tried and looked worse than none.
+The sky dome is never greyed by the weather - only the light, the haze's reach and the stars.
+The
 haze is still decided in exactly one place: `applyFogRange` hands `hazeRange` a multiplier,
 and the floor in there is what keeps the furthest coast in the world on this side of the
 murk — the price being that thick fog is milder the wider the world is.
@@ -1251,6 +1277,22 @@ one slot and every swatch to one dye button; its popover (`web/js/popover.js`) l
 at `position: fixed` and catches Escape in the capture phase on `window`, so the first Escape
 closes the popover and only the second closes the panel - the studio's own Escape handler and
 `walk.js` both listen later in that same keydown.
+
+**What can be unlocked is one list, `shared/equipment.mjs`** ([Plans/schatkaarten.md](Plans/schatkaarten.md)):
+`{ id, slot, name, unlock, status: 'live' | 'planned', render? }`. `avatar.js` derives `HAND_ITEMS` and
+`PLAYER_HAT_SHAPES` from `liveOf(slot)`, so a *planned* piece is data only - not an id the look accepts,
+no tile - and a live one needs a drawing function (`render` = a key of `HELD_ITEM_PROCEDURAL` in
+classic-avatar.js; `tests/equipment.test.mjs` fails without). Pieces from before unlocking are not listed
+and count as owned (`unlockOf` gives null). Ownership is `web/js/unlocks.js` (localStorage
+`promptholm.unlocks`, per browser, never throws, newer-format content is left alone); `normalizeAvatar` and
+the sea's `lookOf` deliberately do not filter on it, only the picker does (`studio.js openPicker`: a locked
+tile is the same icon as a silhouette with the piece's `hint`, and its click does nothing). The rig side of
+the treasure hunt lives in classic-avatar.js: `dig(on, side?)` (a repeating 0.6 s stroke, takes the shovel
+into a free hand and gives the old item back; `digged()` counts flung shovelfuls, `digging()`) and
+`setCarry(on)` (both arms out, `carried` group holds the load; `carrying()`); `update(pose)` also honours
+`pose.digging` / `pose.carrying` flags, which is what peers.js should hand it from the pose bits. A dig
+turns the shovel with a quaternion (`unArm * Rx(tilt)`), not per-axis Euler undo: the arm is turned in about
+z while it digs and the two do not commute.
 
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
@@ -1355,10 +1397,9 @@ wheeled-out camera look up at a boat through the underside of the water. While `
 is opaque at depth. Both go over on `blend`, a smoothstep of a 0.8 s timer (`camDive`), never on
 the flag: the surface swimmer's camera hangs 2.3 up, and an exponential ease moved it 0.16 in one
 frame (`tests/diving-walk.test.mjs` holds the step small). **A swimmer may look far up, and the floor
-bends the aim instead of flattening it**: `pitchRange` opens to `SWIM_PITCH_MIN` (-1.1, about 63 degrees;
-on land it is -0.25, and `relaxPitch` eases the extra away over about a third of a second once the feet are
-out of the water), and `placeCamera` lifts the look-at point by however far `cameraFloor`/`applyCeiling`
-pushed the camera *up* (`lift`, swimmers only, never first person, never downward - the diver's ceiling keeps
+bends the aim instead of flattening it**: `pitchRange` opens to `SWIM_PITCH_MIN` (-1.1, about 63 degrees,
+in the water and on land alike - it was -0.25 on land, which left a walker no sky), and `placeCamera` lifts the look-at point by however far `cameraFloor`/`applyCeiling`
+pushed the camera *up* (`lift`, never first person, never downward - the diver's ceiling keeps
 its old view of the diver). So the lens still never sits half under the sea, and the mouse looking up still
 looks up: the body slides out of the bottom of the frame from about -0.6, which is the price of seeing the sky.
 
@@ -1569,7 +1610,8 @@ island (`overview`, `islandFrame()` in main.js - the boot framing) for `OVERVIEW
 at `OVERVIEW_RATE`, and stays there, circling, for as long as nothing is happening. `stepDirector` runs just before
 `controls.update()` in the orbit branch, and any input `poke()`s it: it stops where it stands.
 `?director=5` starts after five seconds. The fisherman is `web/js/fisher.js` (the smith's
-pattern, our own island only because he measures the water's edge off `groundAt`), with a
+pattern, our own island only because he measures the water's edge off `groundAt` - except a hut on the
+quay, whose ground is cut away: there he stands on the deck (`deckY`, `HARBOUR_DECK`), or he is sunk in the kerb), with a
 villager's `rod` in classic-avatar.js whose line is modelled for `FISH_ARM`, and a `reach` pose
 for one arm.
 
@@ -1591,32 +1633,49 @@ for the one reader that must leave it out: the Friday gathering (`gatherCells` i
 terracotta (a first version at twice that, in dark slate, stuck out and was rebaked), walked
 round part by part (`APART`) and set on the tavern's step. `TOWN_VERSION` laid an existing centre out again once.
 
-**The castle is the one square civic lot that is not three by three** ([Plans/DONE/groot-kasteel.md](Plans/DONE/groot-kasteel.md)):
-`CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
-`web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
-`scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
-one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
-bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
-the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
-`p.w` and `p.d` and never assume 3 - `doorCell`/`outsideDoor` take both, and `plotDoor` (below)
-is the door every reader asks. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
-block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
-commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
-cells only - never over a road, its own included, because a road laid later over another's
-cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
-the gate.
+**The pirate's chest and the treasure statue are two one-cell civics that no version gate covers**
+([Plans/schatkaarten.md](Plans/schatkaarten.md)): both are new plots appended to `layout.plots`, so no
+existing plot moves and none of the six gates is needed (an older code reads them as civics it
+does not know and leaves them alone). `civic:pirate` is placed like the postbox, once, on the first scan
+with a tavern and a free `SQUARE` cell one step *along the front* of its doorstep (`ALONG_FRONT` by the
+tavern's `rot`, the `aside` direction of `shared/settlerwalk.mjs`; never off an island, a starter stands its
+tavern at rot 2), and follows the tavern like the postbox follows the hall (`migrateTown`, `opCivic`). His
+keeper (`KEEPERS.pirate`) stands out in front of the chest with no `aside`: pushed sideways he lands
+in the corner cell of the seventieth settler's statue. The sea's starters carry the chest too
+(`starterBundle`, held to the town's rule by `tests/pirate.test.mjs`). Martijn wants the chest *behind* the tavern and
+smaller (the bake is: mast 0.72, flag a third of the cloth); the placement waits for the tavern being
+remade, design and measurements (incl. the migration and the keeper's post) are in
+[Plans/schatkaarten.md](Plans/schatkaarten.md) "Wacht op de nieuwe tavern". `civic:treasure` is placed when
+`model.treasure.placed` is true - scan.mjs puts `treasureView(loadTreasure())` on the *model*, so the
+planner's re-survey sees it too - on the first of `TREASURE_SPOTS` that is on the plaza's paving, unoccupied
+and no doorstep, and is sticky (a `treasure.json` that goes missing takes the statue out of village.json,
+never off its cell). Its plaque is `web/js/treasure-plaque.js` on the bake's `anchors.sign`, not
+`createNameplate` (a staked yard board); the number is `village.treasure.found`, told to the record by
+`applyVillage`.
 
-**Past a hundred the ladder goes to the sea, on the first lots that are not square**
-([Plans/DONE/mijlpalen-tot-tweehonderd.md](Plans/DONE/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
-to 200; three share civicType `ship`, so a rung may name its building (`civicId`, and
-`civicIdOf` in lib/village.mjs is the one copy - the model, scan.mjs and the placing loop all
-ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd rot: a ship is
-4 x 16 (`civic:ship`, `civic:ship:2`, `civic:ship:3`: no door, no road), the shipyard 5 x 16 with
-its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
-web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
-scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
-`outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
-which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
+**The hunt is played by `web/js/treasure.js`, drawn by `treasure-site.js`, and its state is in three places**
+([Plans/schatkaarten.md](Plans/schatkaarten.md)). `createTreasureHunt(deps)` holds the rules and touches
+neither the DOM nor the network - the book, the walker, the view and every answer of the island come in as
+functions, which is what lets `tests/treasure-hunt.test.mjs` play a whole hunt on a fake walker and
+`tests/treasure-walk.test.mjs` on the real one; main.js wires it in `startTreasureHunt`. State: the quest
+book (`promptholm.quests`, plus `card` in `promptholm.finds`, quest-log.js's), **our own keys in that same
+`promptholm.finds` object** (`bottleDay`, `dug` seeds, `statue` = where she lies once dug up; every write
+reads the whole object and writes it whole, as quest-log.js does for `card`), and the island's
+`data/treasure.json` (`POST /api/treasure`, keeper-only: `keeper()` = `!state.guest` and not the phone).
+The bottle comes only on a world day someone worked (`workDays` off `house.lastAt`), only with the shovel
+owned, never while the first hunt's map is in hand (`bottleAllowed`), one per day (`bottleDay`). The statue
+after the first dig is **not** derived from the map (dug up, the card is cleared): `finds.statue` keeps her
+island/islet/world spot so she stays on the sand across a reload, and `treasure.json` says `buried` until
+she is lifted. A page that loads and finds `lifted` sends `dropped` (`boot`), and `pagehide` sends it with
+`keepalive` when she is in the arms or on a boat: the unique statue is never lost, and only `placed` is final.
+The square is offered while she is in the arms as an interactable whose x/z are the *walker's own* inside
+`SQUARE_REACH` (distance 0), because the walker takes the nearest thing and the square is crowded; the boat's
+prompt is a getter on `walk.carrying()` ("lay the statue on the boat"). E at the X turns the body towards it
+before `walk.dig` (the hole is `DIG_REACH` 0.6 ahead of the feet; `DIG_TOLERANCE` decides if it is on the X).
+Late quest events are caught up (delivering also reports lifted and boarded), the book ignores one that is not
+its current step. Known gap: once the statue stands in the town, a second browser's first-hunt map digs an
+ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__state` on window.
+
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
 `hamletEntrances` in `web/js/hamlet-sign-placement.js`) finds where the road network crosses the edge of
@@ -1651,6 +1710,32 @@ orange arrow out, the side's name), with the draft's gates patched over the isla
 `tests/entrances.test.mjs`, `tests/hamlet-sign-placement.test.mjs`, `tests/plan-gate.test.mjs`
 ([Plans/DONE/ingangen-en-bruggen.md](Plans/DONE/ingangen-en-bruggen.md), [Plans/DONE/ingangen-verplaatsen.md](Plans/DONE/ingangen-verplaatsen.md)).
 
+**The castle is the one square civic lot that is not three by three** ([Plans/DONE/groot-kasteel.md](Plans/DONE/groot-kasteel.md)):
+`CASTLE_LOT` (7, two super-cells square with the lane between them) in `lib/layout.mjs`, and
+`web/js/buildings.js` draws a 7 as the great castle (`assets/greatcastle`,
+`scripts/build-greatcastle.py`) and anything narrower as the old `assets/castle` bake - never
+one scaled to the other: at 7/3 the gate was a cell wide and a storey and a half tall, and a
+bigger building gets more windows, not bigger ones (`tests/castle.test.mjs` holds the gate to
+the town hall's door). The volcano's guardhouse is the small one. Read a civic lot's size off
+`p.w` and `p.d` and never assume 3 - `doorCell`/`outsideDoor` take both, and `plotDoor` (below)
+is the door every reader asks. `castleSite` places a new one on the nearest free, flat (`CASTLE_RELIEF`) lattice
+block of town or nobody's land, never a civic lot, and `claimForTown` puts that land in the
+commons; `growCastle` grows a castle from before this where it stands, front kept, over FREE
+cells only - never over a road, its own included, because a road laid later over another's
+cells never recorded them - and otherwise leaves it the old size. No version gate: `w < 7` is
+the gate.
+
+**Past a hundred the ladder goes to the sea, on the first lots that are not square**
+([Plans/DONE/mijlpalen-tot-tweehonderd.md](Plans/DONE/mijlpalen-tot-tweehonderd.md)). Eleven rungs from 95
+to 200; three share civicType `ship`, so a rung may name its building (`civicId`, and
+`civicIdOf` in lib/village.mjs is the one copy - the model, scan.mjs and the placing loop all
+ask it). `lotOf` gives `{ w, d }` as at rot 0 and `stamped` swaps them at an odd rot: a ship is
+4 x 16 (`civic:ship`, `civic:ship:2`, `civic:ship:3`: no door, no road), the shipyard 5 x 16 with
+its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
+web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
+scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
+`outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
+which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
 (`coastSite`), so their door's step is water and the road finds the lot from its sides.
 `coastSite` takes a lot only if `civicRoad`, tried with the lot stood on the grid, begins
 within `GATE_REACH` of the door (`atDoor`: `houseGate`'s box, where a settler finds a road -
@@ -1741,7 +1826,10 @@ geometry; the bake still only allows 0 or 1.
   that draws several pieces (loop, helper called twice) not all changed alike. A line
   in a helper two models share (`noticeBoard`) changes both.
 
-Debug query params: `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
+Debug query params: `?hunt` (`__state`/`__camera` on window without the dive: walk with
+`document.getElementById('walk-btn').click()`, teleport with `__state.walk.state.pos.set(x, y, z)`, read
+`__state.hunt.sites()`; the browser pane runs no frames between screenshots, so take one to let time pass),
+`?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/DONE/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
 drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it), `?dive`
 (walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and

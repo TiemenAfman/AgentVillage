@@ -50,6 +50,11 @@ const FLAG_SITTING = 1024;
 const FLAG_DANCING = 2048;
 // Nobody at their keys: net.js FLAG_ASLEEP (Plans/DONE/karakter-blijft-staan.md), a Zzz over them.
 const FLAG_ASLEEP = 4096;
+// The treasure statue in both arms, and a shovel going into the sand: net.js's FLAG_CARRYING and
+// FLAG_DIGGING (Plans/schatkaarten.md). Each is one bit and the rig does the rest (avatar.setCarry,
+// avatar.dig) from our own clock, so nothing more crosses the wire.
+const FLAG_CARRYING = 8192;
+const FLAG_DIGGING = 16384;
 // A rider on the saddle, leaning over the bars as walk.js's own rider does (its RIDE_PITCH).
 const RIDE_PITCH = 0.28;
 // The rest of these poses are walk.js's numbers for our own figure, copied rather than
@@ -179,6 +184,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       dive: false,        // under the surface: drawn at the height they sent (see update)
       vy: 0,              // and their vertical speed, smoothed, for the pitch of the body
       moving: false,
+      carrying: false,    // what the rig has last been told (avatar.setCarry / avatar.dig)
+      digging: false,
       room: null,
       want: null,
       aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
@@ -378,6 +385,17 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const dancing = !!(f & FLAG_DANCING) && !moving && !airborne && !swimming && !lying && !sitting && !p.aboard;
       p.zzz.visible = !!(f & FLAG_ASLEEP) && !moving;
       if (p.zzz.visible) bobZzz(p.zzz, performance.now() / 1000);
+      // Both arms full, or a dig in progress. Aboard the statue stands on the hull (never in the
+      // arms) and a dig cannot go on there, in the water, on a bicycle or with the feet in motion -
+      // the same conditions walk.js enforces for our own body, so a stale bit from a sea that
+      // relayed it late never draws a shovel in a boat.
+      const carrying = !!(f & FLAG_CARRYING) && !swimming && !p.aboard && !p.deckTo && !(f & FLAG_RIDING);
+      const digging = !!(f & FLAG_DIGGING) && !moving && !airborne && !swimming && !lying && !sitting && !p.aboard && !p.deckTo && !(f & FLAG_RIDING);
+      // The rig starts a shovelful on `dig(true)` and finishes what it has begun on `dig(false)`,
+      // so it is told only when the answer changes. `?.` because the rig grows these with the
+      // avatar work: an older rig just does not show them.
+      if (carrying !== p.carrying) { p.carrying = carrying; if (p.avatar.setCarry) p.avatar.setCarry(carrying); }
+      if (digging !== p.digging) { p.digging = digging; if (p.avatar.dig) p.avatar.dig(digging); }
 
       // Standing on our own ground rather than on the height we were sent. If a visitor
       // generated the island from a different seed the two terrains disagree, and this is

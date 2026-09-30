@@ -742,10 +742,17 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .inv-tile .inv-icon { width: 52px; height: 52px; }
 .inv-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inv-tile:hover, .inv-tile.on { background: rgba(232,193,124,.12); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); }
+.inv-tile.locked { cursor: not-allowed; }
+.inv-tile.locked .inv-icon { filter: brightness(0) opacity(.55); }
+.inv-tile.locked span { white-space: normal; text-align: center; line-height: 1.2; }
+.inv-tile.locked:hover { background: rgba(255,255,255,.03); box-shadow: none; color: var(--inv-label); }
 .inv-tile.dye { width: 30px; height: 30px; padding: 0; border-radius: 50%; background: var(--sw);
   box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px rgba(255,255,255,.14); }
 .inv-tile.dye:hover { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px var(--inv-bronze); }
 .inv-tile.dye.on { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 3px var(--accent); }
+/* A colour not found yet (shared/palette.mjs PLAYER_SWATCHES): a dull disc with a question mark. */
+.inv-tile.dye.locked { justify-content: center; opacity: .8; cursor: not-allowed; }
+.inv-tile.dye.locked::after { content: "?"; color: rgba(255,255,255,.5); font: 700 13px var(--ui); }
 
 /* Narrow: the alcove on top, the two pillars laid flat beneath it, side by side. */
 @media (max-width: 720px) {
@@ -1380,3 +1387,29 @@ body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx
   pointer-events: none; z-index: 5; white-space: nowrap;
 }
 #director-caption[hidden] { display: none; }
+
+/* --- the quest log (web/js/quest-panel.js) and the pirate (web/js/pirate.js) -------------- */
+.ql-h { font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); margin: 16px 0 6px; }
+.ql-h:first-child { margin-top: 0; }
+.ql-quest h4 { font-family: var(--font); font-size: 15px; margin: 0 0 4px; }
+.ql-tag { font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
+.ql-text { margin: 0 0 8px; color: var(--ink-dim); font-style: italic; }
+.ql-steps { margin: 0 0 8px; padding-left: 20px; }
+.ql-steps li { padding: 2px 0; color: var(--ink-dim); }
+.ql-steps li.done { text-decoration: line-through; opacity: .6; }
+.ql-steps li.now { color: var(--ink); font-weight: 600; }
+.ql-note { margin: 6px 0; padding: 6px 9px; border-left: 3px solid #ffd24a; background: rgba(255, 210, 74, .08); }
+.ql-card { border: 1px solid var(--edge); border-radius: 8px; padding: 8px 10px; }
+.ql-card b { color: #ff8a70; }
+.ql-card.asleep b { color: var(--ink-dim); }
+.ql-card p { margin: 4px 0 0; }
+.ql-done { list-style: none; margin: 0; padding: 0; }
+.ql-done li { padding: 5px 0; border-top: 1px solid var(--edge); }
+.ql-done li:first-child { border-top: 0; }
+#quests-btn.ping::after { content: '!'; position: absolute; top: -5px; right: -3px; min-width: 14px; height: 14px; border-radius: 7px; background: #ffd24a; color: #2a1c08; font: 800 10px/14px var(--font); text-align: center; }
+#quests-btn { position: relative; }
+.handover-panel.pirate { width: min(460px, calc(100vw - 32px)); }
+.pi-say { font-family: Georgia, serif; font-size: 15px; line-height: 1.5; margin: 8px 0; }
+.pi-earned { margin: 8px 0; padding-left: 18px; color: var(--accent-2); }
+.pi-hint { margin: 8px 0; }
+.pi-actions { display: flex; gap: 8px; justify-content: flex-end; margin: 14px 0 0; }
