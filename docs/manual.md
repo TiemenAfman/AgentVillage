@@ -159,6 +159,37 @@ In any panel the same four mean what you would expect: **A** picks, **B** steps 
 do in a room simply do nothing. Nothing needs a controller: mouse and keyboard do
 everything on their own.
 
+## The Salty Kraken
+
+At 52 settlers the pirates find the harbour: the **Salty Kraken** goes up at the water, a crooked
+timber inn with a ship's prow and a kraken over its door, a Jolly Roger on the roof and a sign
+swinging from the corner. The pirate who sends you for the first buried treasure moves there too:
+his sea chest stands round the back of the pub, on the land side, and he stands in front of it.
+Below 52 he keeps to the village tavern, as before.
+
+Press **E** near the pub to step in. Inside is the bar with Old Meg behind it, a fire, three long
+tables, a rum cellar behind the bar, a snug with a cannon, and the captain's corner up two boards by
+the round window. Walk to a stool, a bench or a keg and press **E** to sit; press it again to order,
+and again for a plate of bitterballen. Walk out through the door to leave, or press Esc.
+
+The crew sit at the tables: **Captain Spack Jarrow** by the chart table, Quill the navigator, Bosun
+Tarr, Powder Annie, Sparrow and Salt Pete. They look up when you come near. Press **E** by one of
+them to talk. Whoever the story is waiting for has a **!** over their head (the quest chip on the
+sky's bar lights up too, and **K** opens the quest log):
+
+| Chapter | Who | What to do | Reward |
+|---|---|---|---|
+| A Round for the Crew | the Captain | order a drink at the Kraken's bar, then tell him | Kraken purple |
+| The Drowned Chart | Quill | dive two under off the coast (hold **C** in deep water) | Gold leaf |
+| Three Chests | Bosun Tarr | have three of the day's chests dug up | Captain red |
+
+They come after the pirate's own two, *The First Dig* and *Bring It Home*. The day's chest counts
+all the while, whether or not the story is waiting on somebody - the log lists it under *Also*.
+
+Inside there is music: a jukebox of three instrumental shanties - the Kraken's own jig, *Drunken
+Sailor* and the *Wellerman* - loud in the room, muffled through the walls on the quay, and gone a
+little further off. The crew nod along to it.
+
 ## Market gardening
 
 Once the village has earned its market stalls — ten settlers — one of them is a seed
@@ -1064,7 +1095,7 @@ anything that stood: they are new plots and nothing else.
 | Pigeon loft | Fetched things from the web |
 | Banner | Published an artifact |
 | Lightning rod | Repeated API errors |
-| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, sawmill, smithy, statue, stable, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 75 and 100 settlers |
+| Well, market, tavern, clock tower, tables, windmill, water tower, chapel, fountain, lighthouse, pirate tavern, sawmill, smithy, statue, stable, castle | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 52, 55, 60, 70, 75 and 100 settlers |
 | The shops round the square and along the four streets: bakery, grocer, apothecary, clothes shop, library, tea room, wand maker, butcher, sweet shop, cauldron maker, owl post | 12, 18, 22, 28, 33, 38, 42, 48, 65, 80 and 85 settlers |
 | A smith at the anvil, a baker working the oven with a peel | Nobody's agent: the smithy's and the bakery's own people, who work by day and go indoors at night |
 | A horse in a paddock and two hens by the stall doors | The stable's animals, scenery rather than somebody — not the named animals with a story (see [The animals](#the-animals)) |
@@ -1073,6 +1104,7 @@ anything that stood: they are new plots and nothing else.
 | The plank bridge and its stone | 90 settlers: the one rung that is not a building on a lot, and the only one that may be somewhere you have to walk out to find |
 | A timber derrick on the quayside with a crate hanging over the water | The harbour crane, at 165 settlers: the rung above the polder mill, on the quay or beside the kadehaven's slipway |
 | A red and white tower on the coast, the tallest thing on land | The lighthouse, at 50 settlers, on the stretch of coast farthest from the square. It is built to the settlers' measure - a door as high as the town hall's, a window on each of its eight storeys, a lantern room somebody could stand in - so it is tall by having more storeys, not bigger ones. After dark its lamp turns |
+| A crooked timber inn at the water under a Jolly Roger, a kraken over its door | The Salty Kraken, the pirates' pub, at 52 settlers: step in for the crew and their quests and a shanty - see [The Salty Kraken](#the-salty-kraken). The pirate and his sea chest move there, the chest round the back |
 | A shipyard on the coast, with a hull on its slipway | 95 settlers. The hull grows a stage every six or seven settlers - keel, bottom planking, frames, the whole hull - and is launched at 120, 158 and 192, to be masted afloat |
 | A three-masted ship at anchor off the harbour | The Batavia at 120 settlers, with the second and third ships beside her at 158 and 192 - see [When the village turns to the sea](#when-the-village-turns-to-the-sea) |
 | A warehouse and a weigh house with their fronts on the quay | 127 and 184 settlers, at the kadehaven |
@@ -1109,11 +1141,22 @@ will this.
 Switched on you get the sea where there is sea and the wind where there is not — walk inland
 and one fades into the other — with everything quieter and duller after dark. Over it: a
 settler whose session is running hammers at their own door, gulls over the quay in daylight,
-and a murmur out of the tavern when there is anybody at the tables. Only the nearest few of
-anything are ever heard, so a village of three hundred costs the same as a village of three.
+and a murmur out of the tavern when there is anybody at the tables. On a Saturday night the castle's
+rave thumps through its walls, and the Salty Kraken's shanties come out of the pub onto the quay,
+louder once you step in. Only the nearest few of anything are ever heard, so a village of three
+hundred costs the same as a village of three.
 
 It is all made up out of noise and arithmetic when you turn it on — there is not a single
-sound file on this island, and there is not meant to be one.
+sound file in the island itself, and there is not meant to be one.
+
+**Your own music** is the exception, and it stays yours. The island's home folder
+(`~/.promptholm` - on Windows `C:\Users\<you>\.promptholm`) has an `audio` folder with one folder per
+room: `kroeg` for the village tavern, `rave` for the castle's rave and `pirates` for the Salty
+Kraken. Put mp3, ogg, m4a, wav or flac files in one, and that room plays them whole, one after the
+other, in name order (start the names with 01, 02, ... to choose), loud inside and muffled outside -
+instead of its own music. An empty folder leaves the room as it was. New files are picked up the
+next time you walk into a room. Only your own browser plays them: the files never leave your
+machine, and visitors hear the island's own music.
 
 ## When the browser will not draw
 

@@ -1651,10 +1651,17 @@ tavern's `rot`, the `aside` direction of `shared/settlerwalk.mjs`; never off an 
 tavern at rot 2), and follows the tavern like the postbox follows the hall (`migrateTown`, `opCivic`). His
 keeper (`KEEPERS.pirate`) stands out in front of the chest with no `aside`: pushed sideways he lands
 in the corner cell of the seventieth settler's statue. The sea's starters carry the chest too
-(`starterBundle`, held to the town's rule by `tests/pirate.test.mjs`). Martijn wants the chest *behind* the tavern and
-smaller (the bake is: mast 0.72, flag a third of the cloth); the placement waits for the tavern being
-remade, design and measurements (incl. the migration and the keeper's post) are in
-[Plans/schatkaarten.md](Plans/schatkaarten.md) "Wacht op de nieuwe tavern". `civic:treasure` is placed when
+(`starterBundle`, held to the town's rule by `tests/pirate.test.mjs`). **From 52 settlers the chest moves once,
+behind the Salty Kraken** (`PUB_ID`, below): onto the first of `chestSpots(pub)` (`shared/treasure.mjs`, `[u, v]` off
+the lot's middle, behind and beside, never in front; `LOOK` held equal to `DOOR_DIR`) whose cell is bare land or
+paving on no road, doorstep or plot, with the keeper's cell in front of it dry ground and never a pier. It is
+*lifted* at the top of `placeAll`, before the plot replay, whenever the pub is earned and not yet standing or
+stands with the chest elsewhere, so the cell it leaves is bare this very scan; `placeChest` runs at the chest
+block and again after the `deferred` rungs (a pub founded with the island), and with no spot the chest goes
+back where it was at the same place in `layout.plots` (`putBackAt`), so a pub with no ground behind it costs no
+byte. `movedBetween` in `tests/support/village.mjs` forgives exactly that one move, on the scan the pub first
+stands. Below 52, and wherever the pub has no spot, the tavern rule above holds; `migrateTown` and `opCivic`
+carry the chest along with the tavern only while the tavern is its host. `civic:treasure` is placed when
 `model.treasure.placed` is true - scan.mjs puts `treasureView(loadTreasure())` on the *model*, so the
 planner's re-survey sees it too - on the first of `TREASURE_SPOTS` that is on the plaza's paving, unoccupied
 and no doorstep, and is sticky (a `treasure.json` that goes missing takes the statue out of village.json,
@@ -1684,6 +1691,39 @@ before `walk.dig` (the hole is `DIG_REACH` 0.6 ahead of the feet; `DIG_TOLERANCE
 Late quest events are caught up (delivering also reports lifted and boarded), the book ignores one that is not
 its current step. Known gap: once the statue stands in the town, a second browser's first-hunt map digs an
 ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__state` on window.
+
+**The Salty Kraken is a pub at the water, a third room, and the crew that tells the rest of the story**
+([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), a three by three
+in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` but not `QUAYSIDE`: its lot comes from **one function,
+`pirateTavernSite`**, which today only calls `harbourSite` and which the quay work (`fix/quay-en-rivier`)
+retargets to the pirate bank of the haven funnel - never change `harbourSite` for it, and hold no test to a
+distance from one harbour. A new civic plot, so a minor. Outside it is a hero bake (`assets/piratetavern`,
+3838 of 4000 with the sign's arm) with **no `anchor.flag`** - main.js hangs the district's flag on every one,
+and it flies its own Jolly Roger - and an `anchor.sign` where `web/js/piratesign.js` hangs the swinging sign at
+`PIRATE_SIGN_YAW` (the upper storey's two-degree twist). E answers from the lot's middle (`kind: 'tavern'`,
+`room: 'piratetavern'`), since its door's step is wet. Inside is `ROOMS.piratetavern`
+(`web/js/pirate-tavern.js`): four rectangles, the camera kept in the hall, the cellar or the oriel (`areas`, a
+low `ceiling` per area takes the lid off earlier), and **exactly seven PointLights**, the tavern's count, which
+is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onTalk`, a seat's first order to
+`onOrder`, both `createInterior` options. The crew are instanced settlers drawn with `anim: 'sit'`
+(`sitPose` in settler-figures.js, off `f.seat = { h, rest }`): drawing only, not in the wire's `ANIMS`, and
+`tests/sit-pose.test.mjs` holds feet out of the floor. Captain Spack Jarrow is a fetched GLB
+(`web/models/spack-jarrow.glb`, unaltered, `web/js/captain.js`) under the imp's rules: loaded on the first
+`enter()`, once, a failure said once, nothing waiting - a crew figure stands in until he lands. The room's
+dressing is primitives for now and is to be redesigned as a bake (Plans/piratenkroeg.md, "Ontwerpvraag voor
+Fable"): only `parts`/`roof` go, the seats, blockers, lights, talkers and show stay data.
+**The story goes on with the crew** (`shared/quests.mjs`): `CREW` (ids, names, idle lines), three chapters
+after *Bring It Home* on the events `drank { where }` and `dived { depth }`, a step's `least` and `times` (Three
+Chests counts the day's chest), and **repeatable quests count alongside the story** in `advance` - or an island
+with no pub would stop the day's chest for good. `businessWith(state)` is who the `!` hangs over (the log's
+`talk` is that id now, not a boolean); `QUEST_STATE_V` stayed 1, so an old book goes on at the captain.
+`web/js/pirate.js` is one window for every giver (`createQuestGiver`; `createPirate` opens it on him).
+**Music in rooms**: `web/js/sound.js` has two computed songs on one bed (`makeSong`, `steerSong`,
+`songClock`, `clockOf(room.music)`) - the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
+on the same 0.6 s count so the crew nod through the loop; 44.1 kHz, 13.5 MB, made only near the pub) - and
+**the keeper's own tracks**: `HOME/audio/{kroeg,rave,pirates}` (`lib/music.mjs`, `/api/music`, not on
+`PUBLIC_API`), played whole one after the other through a media element main.js hands in (`makeElement`), so
+sound.js itself still fetches nothing. `audio/` is gitignored for a worktree, whose HOME is the checkout.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
@@ -1744,8 +1784,8 @@ its gate where the model has it (`YARD_GATE`, the baked `anchor.door`, turned by
 web/js/shipyard.js's own quarter turns). `plotDoor(id, p)` is the one reading of a door -
 scan.mjs's `door`, the civic roads, the planner's doorsteps and `stranded` - so never ask
 `outsideDoor(..., p.w)` of a lot that may not be square - and never `p.w >= 3` as "has a door",
-which counts the ships. The warehouse, weigh house and fisherman's hut open on the sea
-(`coastSite`), so their door's step is water and the road finds the lot from its sides.
+which counts the ships. The warehouse, weigh house, fisherman's hut and the Salty Kraken open on the
+sea (`coastSite`), so their door's step is water and the road finds the lot from its sides.
 `coastSite` takes a lot only if `civicRoad`, tried with the lot stood on the grid, begins
 within `GATE_REACH` of the door (`atDoor`: `houseGate`'s box, where a settler finds a road -
 a `path:` further off is a road on paper). It puts the trial cells back to what they were, not

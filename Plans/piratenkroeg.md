@@ -1,6 +1,6 @@
 # De piratenkroeg: "The Salty Kraken"
 
-**🚧 Status: plan van 30 september 2026, in uitvoering.** Ontworpen in een planning-sessie (Fable 5.1);
+**🚧 Status: plan van 30 september 2026; gebouwd op `claude/salty-kraken`, twee punten open (zie "Stand van zaken").** Ontworpen in een planning-sessie (Fable 5.1);
 het stap-voor-stap uitvoeringsplan met alle bestandsverwijzingen staat in
 `~/.claude/plans/ik-wil-een-nieuwe-synchronous-seahorse.md` en wordt door een Opus-sessie uitgevoerd. Dit
 document is het *waarom* en de besluiten. **De plek is gewijzigd** (zie "De plek: de piratenoever" hieronder):
@@ -120,6 +120,32 @@ kaartentafel, draait naar je toe als je hem aanspreekt; dezelfde spreek-interact
 bemanning. Niets aan het model veranderd: zijn ogen (losse oogbol-meshes onder een kohl-schaduw) leken van
 veraf dicht, maar de originele stand is goedgekeurd. Zie Risico's over de herkomst.
 
+## Stand van zaken (30 september 2026)
+
+Gebouwd op `claude/salty-kraken` (niet gepusht; mergen doet de keeper):
+
+- **Exterieur**: de hero-bake (`scripts/build-piratetavern.py`, 3838 van 4000 driehoeken met de arm van het bord),
+  zonder `anchor.flag`, met `anchor.sign` waar het schommelende uithangbord van `feat/piratesign` aan hangt.
+- **Kamer en bemanning**: `ROOMS.piratetavern` (`web/js/pirate-tavern.js`), zeven lampen, de bemanning zittend
+  (`'sit'`, alleen tekenkant), Captain Spack Jarrow als opgehaald GLB (`web/js/captain.js`).
+- **Quests**: de drie hoofdstukken, herhaalbare quests parallel, één spreekvenster voor elke gever.
+- **Muziek**: een berekende jukebox (de eigen jig, *Drunken Sailor*, *Wellerman*, instrumentaal; de melodieën zijn
+  traditioneel, de arrangementen eigen werk). *Bosun Bill* en *Grogg Mayles* uit Sea of Thieves zijn composities van
+  Rare en mogen er niet in. Daarom de **eigen muziek van de keeper**: `~/.promptholm/audio/{kroeg,rave,pirates}`
+  speelt hele nummers na elkaar af, alleen op de eigen pagina (`lib/music.mjs`), en komt nooit in de repo.
+- **Server**: trede 52, `civic:piratetavern` uit `pirateTavernSite` (vandaag `harbourSite`), de kist die één keer
+  naar achter de kroeg verhuist. Gemeten op een kopie van het live eiland: kroeg op (143,63), kist van (183,176)
+  naar (143,66), verder beweegt niets, de tweede scan is byte-identiek.
+
+Open:
+
+1. **Het interieur** als bake: de ontwerpvraag hieronder, voor Fable.
+2. **De plek op de piratenoever**: de quay-sessie richt `pirateTavernSite` daarop bij het mergen van
+   `fix/quay-en-rivier`, met een regel die het kavel afleidt (het vrije waterfront-3x3 op de piratenoever met een
+   weg, het dichtst bij de haven; op Hoogezand (136,282), dat de keeper goed vindt), geen vaste cel.
+3. Klein: de *Wellerman* is uit het hoofd uitgeschreven; een foute noot is een regel in `TUNES` (`web/js/sound.js`).
+   De keeper vond de berekende muziek dof; wie eigen nummers heeft, zet ze in de map.
+
 ## Ontwerpvraag voor Fable: het interieur als bake (30 september 2026)
 
 **Status: open, voor een Fable-sessie.** De zaal hierboven is gebouwd zoals het plan zei, uit JS-primitieven in
@@ -154,7 +180,9 @@ voordat er iets de kamer in gaat. Denk aan:
    en/of twee wandlampen) met een kaars en gloeiende oogkassen; open schatkisten met goud dat eroverheen stroomt
    (minstens één die je ziet als je binnenkomt), goudhopen, munten op toog en tafels, gouden kroezen en
    kandelaars, juwelen; een stoere toog met een koperen voetrail en panelen; tonnen en kegs; netten, touw, een
-   anker, gekruiste sabels, een scheepswiel; de hangende sloep als kroonluchter.
+   anker, gekruiste sabels, een scheepswiel; de hangende sloep als kroonluchter; en - idee van de keeper - een
+   **piratenjukebox** als voorwerp in de zaal, waar de muziek (de berekende jukebox of de eigen nummers uit
+   `~/.promptholm/audio/pirates`) zichtbaar uit komt.
 3. **De spelregels die blijven** (die liggen vast in de kamerdata en de tests, `tests/pirate-tavern-room.test.mjs`):
    precies **zeven PointLights** (de shader-key van het gebouwmateriaal); niets **breder dan een hand** gloeit
    vol (`INDOOR_GLOW`: vlakken ≤ 0.65, vlammen 1), goud glimt door de lampen, alleen edelstenen gloeien; de

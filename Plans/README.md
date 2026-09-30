@@ -54,10 +54,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   gebouwd: een settler doet wat zijn sessie doet, in plaats van altijd te hameren.
 - 🚧 [schatkaarten.md](schatkaarten.md) — plan van 29 september 2026, nog niet gebouwd: iets te
   vinden op de eilandjes.
-- 🚧 [piratenkroeg.md](piratenkroeg.md) — plan van 30 september 2026, in uitvoering: de Salty Kraken, een
-  tweede kroeg op de piratenoever van de haventrechter (trede 52) met een piratenbemanning aan tafel die de
-  quests geeft, de piraat en zijn kist ervoor, een shanty en een eigen bake. De plaatsing komt als laatste,
-  afgestemd met de quay-sessie (`quay-en-rivier.md`, op `fix/quay-en-rivier`).
+- 🚧 [piratenkroeg.md](piratenkroeg.md) — de Salty Kraken, gebouwd op `claude/salty-kraken`: een tweede kroeg
+  aan het water (trede 52) met een piratenbemanning aan tafel die de quests geeft, de kist van de piraat erachter,
+  een jukebox met shanties (en eigen muziek per kamer in `~/.promptholm/audio`) en een eigen bake met uithangbord.
+  Open: het interieur als bake (ontwerpvraag voor Fable) en de plek op de piratenoever, die de quay-sessie
+  (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt.
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
