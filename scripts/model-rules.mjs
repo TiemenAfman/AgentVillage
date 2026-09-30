@@ -71,6 +71,12 @@ export const BUDGETS = [
   ['addon_', 150],
   ['roof_', 300],
   ['house_', 600],
+  // The Salty Kraken's kit (scripts/build-krakenkit.py): the ship's parts its hall is furnished
+  // with - a stern for a back bar, a mast, a hull for a counter. Each stands once, in a room drawn
+  // with nobody's island in the scene and only while somebody is inside, looked at from a stool's
+  // distance: the keeper's call (30 September 2026) was that indoors the triangle count must not
+  // be what limits the design, so this is a ceiling against a runaway bake, not a budget to design to.
+  ['civic_kraken_', 40000],
   ['civic_', 1500],
   // An animal: a horse in its paddock, a few sheep on a field, hens by a hut. Tens of them at
   // most - thirty at a thousand is 30k, under what the three hundred houses cost - each in a

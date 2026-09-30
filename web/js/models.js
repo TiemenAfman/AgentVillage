@@ -28,6 +28,7 @@ import { CASTLE } from './castle-mesh.js';
 import { GREATCASTLE } from './greatcastle-mesh.js';
 import { TAVERN } from './tavern-mesh.js';
 import { PIRATETAVERN } from './piratetavern-mesh.js';
+import { KRAKENKIT } from './krakenkit-mesh.js';
 import { COTTAGE } from './cottage-mesh.js';
 import { HOUSE } from './house-mesh.js';
 import { MANOR } from './manor-mesh.js';
@@ -74,7 +75,7 @@ import { HARBOURHOUSES } from './harbourhouses-mesh.js';
 import { WORKSHOPS } from './workshops-mesh.js';
 import { SHIPYARD } from './shipyard-mesh.js';
 
-const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the

@@ -41,3 +41,6 @@ data/placements.json
 /dist/
 # Scratch measurements a session leaves in tests/ while it works; never part of the suite.
 tests/.tmp-*
+
+# Python bytecode from the Blender build scripts that import each other (scripts/krakenkit/).
+__pycache__/
