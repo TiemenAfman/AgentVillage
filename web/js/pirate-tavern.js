@@ -620,7 +620,8 @@ export function buildPirateTavern({ FLOOR, rect }) {
 
 // ------------------------------------------------------------------ the crew at their tables
 const SPB = 60 / SHANTY_SONG.bpm;
-const LOOP_S = SHANTY_SONG.bars * SHANTY_SONG.beatsPerBar * SPB;
+// The jukebox's loop: every tune in it runs at the same count, so one beat carries through them all.
+const LOOP_S = SHANTY_SONG.counts * SPB;
 const LOOK_R = 1.0;          // how near you have to be for one of them to turn and look
 const LOOK_SPAN = 0.75;      // and how far round in the seat they will turn to do it
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));

@@ -390,12 +390,6 @@ function gullBuffer(ctx) {
 // `build` is the first bar without a kick.
 export const RAVE_SONG = { bpm: 132, bars: 16, build: 12 };
 
-// The Salty Kraken's shanty (Plans/piratenkroeg.md): 6/8 at 100 dotted crotchets, sixteen bars of
-// two counts, the chorus from bar `chorus`. Its loop is 19.2 s - under twenty on purpose, since
-// tests/sound.test.mjs knows the rave's buffer by its length - and web/js/pirate-tavern.js nods
-// the crew along to it off this one copy.
-export const SHANTY_SONG = { bpm: 100, bars: 16, beatsPerBar: 2, chorus: 8 };
-
 // Everything is written into the loop modulo its length, so a tail that runs past the last
 // bar lands on the first one and the loop has no seam to fold: the crash on the drop and the
 // kick's decay are the same samples either way round. Mono, like every placed voice, even
@@ -587,30 +581,92 @@ const RAVE_LOUD = 0.62;
 const RAVE_OUT = 0.3;
 const RAVE_RANGE = 34;
 
-// --- the shanty ------------------------------------------------------------
+// --- the shanties ----------------------------------------------------------
 //
-// The Salty Kraken's (Plans/piratenkroeg.md): sixteen bars of 6/8 in A dorian at 100 dotted
-// crotchets, a verse twice and a chorus twice, played by the room - boots stamping on every
-// count with the knock of the floor under them, a tankard clinked on the table every other bar,
-// hands clapping the second count of the chorus, a bass drone under an accordion going oom-pah
-// in the verse and held with the bellows swelling in the chorus, and a fiddle on the tune.
-// Computed like the rave, a bar a step, modulo the loop so it has no seam, and made the first
-// time the Kraken is within earshot. 19.2 s: under the rave's twenty, which tests/sound.test.mjs
-// knows the rave's buffer by.
+// The Salty Kraken's jukebox (Plans/piratenkroeg.md): three tunes played by the room one after
+// the other on one loop - the Kraken's own jig, and two real shanties whose tunes are
+// traditional and nobody's (Drunken Sailor, the Wellerman; the arrangements are ours, and they
+// are instrumental: the crew hum the chorus, they do not sing words). Boots stamping on every
+// count with the knock of the floor under them, a tankard clinked every other bar, hands on the
+// backbeat of a chorus, a bass under an accordion going oom-pah in the verse and held with the
+// bellows swelling in the chorus, a fiddle on the tune, and the crew's "ooh" under it.
+//
+// Every tune runs at the same count, 0.6 s (a dotted crotchet of the jig, a crotchet of the
+// others), so the crew nod on one beat through the whole loop whatever is playing
+// (pirate-tavern.js reads `counts`). Made like the rave, a bar a step, modulo the loop so it has
+// no seam, and only the first time the Kraken is within earshot. At 44.1 kHz rather than the
+// placed voices' 22: a fiddle is what the ear hears the sample rate on.
+const SONG_SR = 44100;
+
+// A melody note is semitones over the tune's `key` (the fiddle's register); `H` holds the note
+// before, `R` is a rest. A bar is `beatsPerBar * sub` slots. `harmony` is a chord name per bar.
+const H = 'h', R = 'r';
+const TUNES = [
+  {
+    id: 'kraken', name: 'The Salty Kraken', beatsPerBar: 2, sub: 3, chorus: 8, key: 220,
+    harmony: ['Am', 'Am', 'G', 'Am', 'Am', 'Am', 'G', 'Am', 'C', 'G', 'Am', 'Am', 'C', 'G', 'D', 'Am'],
+    melody: [
+      [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, H, R],
+      [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, H, R],
+      [7, 10, 15, 15, 14, 12], [10, H, 7, 5, H, 2], [0, 3, 7, 12, H, 10], [7, H, H, 7, R, R],
+      [7, 10, 15, 15, 14, 12], [10, H, 14, 14, 12, 10], [9, H, 5, 9, 12, 9], [7, H, H, 0, H, R],
+    ],
+  },
+  {
+    // "What shall we do with a drunken sailor", in D dorian; the chorus is "Way hay and up she rises".
+    id: 'drunken-sailor', name: 'Drunken Sailor', beatsPerBar: 2, sub: 2, chorus: 8, key: 293.66,
+    harmony: ['Dm', 'Dm', 'C', 'C', 'Dm', 'Dm', 'Am', 'Dm', 'Dm', 'Dm', 'C', 'C', 'Dm', 'Dm', 'Am', 'Dm'],
+    melody: [
+      [7, 7, 7, 7], [7, 0, 3, 7], [5, 5, 5, 5], [5, -2, 2, 5],
+      [7, 7, 7, 7], [7, 9, 10, 12], [10, 7, 5, 2], [0, H, 0, H],
+      [7, H, 7, H], [7, 0, 3, 7], [5, H, 5, H], [5, -2, 2, 5],
+      [7, H, 7, H], [7, 9, 10, 12], [10, 7, 5, 2], [0, H, 0, R],
+    ],
+  },
+  {
+    // "There once was a ship that put to sea", in D minor; the chorus is "Soon may the Wellerman
+    // come". The traditional tune, not any recording's arrangement of it.
+    id: 'wellerman', name: 'Wellerman', beatsPerBar: 4, sub: 2, chorus: 8, key: 293.66,
+    harmony: ['Dm', 'Dm', 'Bb', 'Dm', 'Dm', 'Dm', 'Bb', 'Dm', 'Bb', 'F', 'Dm', 'Bb', 'F', 'A', 'Bb', 'Dm'],
+    melody: [
+      [-5, H, 0, 0, 0, H, 3, H], [7, 7, 7, H, 7, H, H, R], [7, 8, H, 8, 5, 8, H, 7], [7, 3, H, 3, 2, 0, H, R],
+      [-5, H, 0, 0, 0, H, 3, H], [7, 7, 7, H, 7, H, H, R], [8, 8, H, 7, 5, 3, 2, H], [0, H, H, H, R, R, R, R],
+      [8, H, 8, 5, 8, H, 8, 7], [7, H, H, H, 3, 3, 3, 3], [5, 3, H, 2, H, 0, H, R], [8, H, 8, 5, 8, H, 8, 7],
+      [7, H, H, H, 7, 5, H, 3], [H, 2, H, 0, H, H, H, R], [12, H, 10, H, 8, H, 7, H], [0, H, H, H, R, R, R, R],
+    ],
+  },
+];
+// Root (the bass) and three chord tones round the accordion's middle, in Hz.
+const CHORDS = {
+  Am: [55, [220, 261.63, 329.63]], G: [49, [196, 246.94, 293.66]], C: [65.41, [261.63, 329.63, 392]],
+  D: [73.42, [220, 293.66, 369.99]], Dm: [73.42, [220, 293.66, 349.23]], Bb: [58.27, [233.08, 293.66, 349.23]],
+  F: [87.31, [220, 261.63, 349.23]], A: [55, [220, 277.18, 329.63]],
+};
+
+// The one copy of the loop's shape: web/js/pirate-tavern.js nods the crew off `bpm` and `counts`.
+export const SHANTY_SONG = (() => {
+  let from = 0;
+  const songs = TUNES.map((t) => {
+    const s = { id: t.id, name: t.name, bars: t.melody.length, beatsPerBar: t.beatsPerBar, chorus: t.chorus, from };
+    from += s.bars * s.beatsPerBar;
+    return s;
+  });
+  return { bpm: 100, songs, counts: from };
+})();
+
 function* shantySong(ctx) {
-  const sr = HIT_SR;
-  const { bpm, bars, beatsPerBar, chorus } = SHANTY_SONG;
-  const count = 60 / bpm, eighth = count / 3, E = beatsPerBar * 3;
-  const n = Math.round(sr * count * beatsPerBar * bars);
+  const sr = SONG_SR;
+  const count = 60 / SHANTY_SONG.bpm;
+  const n = Math.round(sr * count * SHANTY_SONG.counts);
   const mix = new Float32Array(n);
   const rng = makeRng('shanty');
-  const at = (bar, e) => Math.round((bar * E + e) * eighth * sr);
+  const pole = (hz) => 1 - Math.exp(-2 * Math.PI * hz / sr);
   const put = (src, i0, gain) => { for (let i = 0; i < src.length; i++) mix[(i0 + i) % n] += src[i] * gain; };
   const env = (len, fn) => { const a = new Float32Array(Math.floor(len * sr)); for (let i = 0; i < a.length; i++) a[i] = fn(i / sr, i); return a; };
   const att = (t, s = 0.002) => Math.min(1, t / s);
 
-  // The one-shots. A stamp is a boot on boards: a low thud that drops from 70 to 45 Hz, and
-  // the knock of the plank under it a hair later.
+  // The one-shots. A stamp is a boot on boards: a low thud dropping from 70 to 45 Hz, and the
+  // knock of the plank under it a hair later.
   let ph = 0;
   const stamp = env(0.09, (t) => {
     ph += (45 + 25 * Math.exp(-t / 0.02)) / sr;
@@ -628,103 +684,126 @@ function* shantySong(ctx) {
   const clinkSrc = noise(Math.floor(0.06 * sr), rng);
   const clinkA = resonate(clinkSrc, sr, 2800, 18), clinkB = resonate(clinkSrc, sr, 4100, 22);
   const clink = env(0.06, (t, i) => (clinkA[i] + clinkB[i] * 0.7) * Math.exp(-t / 0.018));
-
-  // The harmony: the verse on A minor with a G on its third bar, the chorus C G Am Am | C G D Am.
-  const VERSE = [[55, 'Am'], [55, 'Am'], [49, 'G'], [55, 'Am']];
-  const CHORUS = [[65.41, 'C'], [49, 'G'], [55, 'Am'], [55, 'Am'], [65.41, 'C'], [49, 'G'], [73.42, 'D'], [55, 'Am']];
-  const CHORDS = { Am: [220, 261.63, 329.63], G: [196, 246.94, 293.66], C: [261.63, 329.63, 392], D: [220, 293.66, 369.99] };
-  const harmony = (bar) => (bar < chorus ? VERSE[bar % 4] : CHORUS[(bar - chorus) % 8]);
-  // The tune, six quavers a bar in semitones over A3; -2 holds the note before, -1 is a rest.
-  const MELODY = [
-    [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, -2, -1],
-    [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, -2, -1],
-    [7, 10, 15, 15, 14, 12], [10, -2, 7, 5, -2, 2], [0, 3, 7, 12, -2, 10], [7, -2, -2, 7, -1, -1],
-    [7, 10, 15, 15, 14, 12], [10, -2, 14, 14, 12, 10], [9, -2, 5, 9, 12, 9], [7, -2, -2, 0, -2, -1],
-  ];
   yield;
 
-  // The accordion's two poles (about 1.2 kHz) and its reeds, kept from bar to bar so a held
-  // chord does not restart its phase at every barline.
-  const eL = eighth * sr, stabL = Math.floor(eighth * 0.8 * sr), bellows = Math.floor(0.03 * sr);
-  const inc = new Float64Array(9), ps = new Float64Array(9);
-  for (let v = 0; v < 9; v++) ps[v] = rng.next() - 0.5;
-  let a1 = 0, a2 = 0;
-  for (let bar = 0; bar < bars; bar++) {
-    const sung = bar >= chorus;
-    const [root, name] = harmony(bar);
-    const chord = CHORDS[name];
-    for (const e of [0, 3]) {
-      put(stamp, at(bar, e), sung ? 0.8 : 0.65);
-      put(knock, at(bar, e) + Math.floor(0.004 * sr), 0.25);
-    }
-    if (sung) put(clap, at(bar, 3), 0.32);
-    if (bar % 2 === 1) put(clink, at(bar, 4), 0.2);
-    // The bass: a saw through two poles near 280 Hz on each count, longer and softer-edged in
-    // the chorus, where it carries the chord across the bar.
-    for (const e of [0, 3]) {
-      let p = 0, y1 = 0, y2 = 0;
-      const L = Math.floor(eighth * (sung ? 2.9 : 2.2) * sr), i0 = at(bar, e), inc0 = root / sr;
-      const decay = sung ? 0.35 : 0.18;
-      for (let i = 0; i < L; i++) {
-        const t = i / sr;
-        p += inc0; if (p >= 0.5) p -= 1;
-        const x = 2 * p * Math.exp(-t / decay) * att(t, 0.004);
-        y1 += 0.08 * (x - y1); y2 += 0.08 * (y1 - y2);
-        mix[(i0 + i) % n] += y2 * 0.9;
+  // What is kept from bar to bar, so a held chord or a hum does not restart at every barline:
+  // the accordion's reed phases and its two poles, the crew's voices and their formants.
+  const reedInc = new Float64Array(9), reedPh = new Float64Array(9);
+  for (let v = 0; v < 9; v++) reedPh[v] = rng.next() - 0.5;
+  let r1 = 0, r2 = 0;
+  const voiceInc = new Float64Array(3), voicePh = new Float64Array(3);
+  for (let v = 0; v < 3; v++) voicePh[v] = rng.next() - 0.5;
+  // Two formants for "ooh" (about 330 and 800 Hz), as state-variable band-passes stepped here.
+  const f1 = 2 * Math.sin(Math.PI * 330 / sr), f2 = 2 * Math.sin(Math.PI * 800 / sr);
+  let l1 = 0, b1 = 0, l2 = 0, b2 = 0;
+  const reedPole = pole(2200), bassPole = pole(280), fiddlePole = pole(3200);
+  const bellows = Math.floor(0.03 * sr);
+
+  const notes = [];
+  for (const [ti, tune] of TUNES.entries()) {
+    const song = SHANTY_SONG.songs[ti];
+    const slot = count / tune.sub, slots = tune.beatsPerBar * tune.sub, sL = slot * sr;
+    const at = (bar, k) => Math.round(((song.from + bar * tune.beatsPerBar) * count + k * slot) * sr);
+    for (let bar = 0; bar < song.bars; bar++) {
+      const sung = bar >= tune.chorus;
+      const [root, chord] = CHORDS[tune.harmony[bar]];
+      const b0 = at(bar, 0), len = at(bar + 1, 0) - b0;
+      // The room: a boot on every count, the chorus clapping its backbeat, a clink now and then.
+      for (let c = 0; c < tune.beatsPerBar; c++) {
+        const i0 = at(bar, c * tune.sub);
+        put(stamp, i0, (sung ? 0.8 : 0.65) * (c === 0 ? 1 : 0.85));
+        put(knock, i0 + Math.floor(0.004 * sr), 0.25);
+        if (sung && c % 2 === 1) put(clap, i0, 0.32);
       }
-    }
-    // The accordion: three reeds a note, a hair apart. Pah-pah on the off quavers of the verse;
-    // in the chorus held through the bar, swelling to the middle of it, with a breath of the
-    // bellows at every barline - which is also what keeps a change of chord from clicking.
-    for (let v = 0; v < 9; v++) inc[v] = chord[Math.floor(v / 3)] * (1 + (v % 3 - 1) * 0.006) / sr;
-    const b0 = at(bar, 0), len = at(bar + 1, 0) - b0;
-    for (let i = 0; i < len; i++) {
-      let s = 0;
-      for (let o = 0; o < 9; o++) { let q = ps[o] + inc[o]; if (q >= 0.5) q -= 1; ps[o] = q; s += q; }
-      a1 += 0.29 * (s - a1); a2 += 0.29 * (a1 - a2);
-      let g;
+      if (bar % 2 === 1) put(clink, at(bar, slots - 2), 0.2);
+      // The bass on each count: a saw through two poles near 280 Hz, longer in the chorus.
+      for (let c = 0; c < tune.beatsPerBar; c++) {
+        let p = 0, y1 = 0, y2 = 0;
+        const L = Math.floor(count * (sung ? 0.97 : 0.75) * sr), i0 = at(bar, c * tune.sub);
+        const f = c % 2 === 1 && !sung ? root * 1.5 : root;   // oom-pah: the fifth on the off count
+        const decay = sung ? 0.35 : 0.18;
+        for (let i = 0; i < L; i++) {
+          const t = i / sr;
+          p += f / sr; if (p >= 0.5) p -= 1;
+          const x = 2 * p * Math.exp(-t / decay) * att(t, 0.004);
+          y1 += bassPole * (x - y1); y2 += bassPole * (y1 - y2);
+          mix[(i0 + i) % n] += y2 * 0.9;
+        }
+      }
+      // The accordion: three reeds a note, a musette's hair apart, half saw and half square,
+      // which is the reedy middle a saw alone does not have. Pah-pah on the off slots of the
+      // verse; in the chorus held through the bar, swelling to its middle, with a breath of
+      // the bellows at every barline - which is also what keeps a change of chord from clicking.
+      for (let v = 0; v < 9; v++) reedInc[v] = chord[Math.floor(v / 3)] * (1 + (v % 3 - 1) * 0.008) / sr;
+      const stabL = Math.floor(sL * 0.8);
+      for (let i = 0; i < len; i++) {
+        let s = 0;
+        for (let o = 0; o < 9; o++) {
+          let q = reedPh[o] + reedInc[o]; if (q >= 0.5) q -= 1; reedPh[o] = q;
+          s += q + (q < 0 ? -0.25 : 0.25);
+        }
+        r1 += reedPole * (s - r1); r2 += reedPole * (r1 - r2);
+        let g;
+        if (sung) {
+          g = (0.8 + 0.2 * Math.sin(Math.PI * i / len)) * Math.min(1, i / bellows, (len - i) / bellows) * 0.06;
+        } else {
+          const k = Math.floor(i / sL), w = i - Math.floor(k * sL);
+          g = k % tune.sub !== 0 && w < stabL
+            ? Math.min(1, w / (0.006 * sr), (stabL - w) / (0.01 * sr)) * Math.exp(-w / sr / 0.12) * 0.075 : 0;
+        }
+        mix[(b0 + i) % n] += r2 * g;
+      }
+      // A long bar (the Wellerman's is 2.4 s) is two steps, or it is a frame and a bit on this laptop.
+      if (len > 1.5 * sr) yield;
+      // The crew, in the chorus only: three voices an octave under the chord, humming "ooh",
+      // with a slow vibrato each and the same breath at the barline as the bellows.
       if (sung) {
-        g = (0.8 + 0.2 * Math.sin(Math.PI * i / len)) * Math.min(1, i / bellows, (len - i) / bellows) * 0.075;
-      } else {
-        const e = Math.floor(i / eL), w = i - Math.floor(e * eL);
-        g = (e === 1 || e === 2 || e === 4 || e === 5) && w < stabL
-          ? Math.min(1, w / (0.006 * sr), (stabL - w) / (0.01 * sr)) * Math.exp(-w / sr / 0.12) * 0.09 : 0;
+        for (let v = 0; v < 3; v++) voiceInc[v] = chord[v] / 2 / sr;
+        for (let i = 0; i < len; i++) {
+          const t = (b0 + i) / sr;
+          let s = 0;
+          for (let v = 0; v < 3; v++) {
+            let q = voicePh[v] + voiceInc[v] * (1 + 0.006 * Math.sin(2 * Math.PI * (4.6 + v * 0.7) * t + v)); if (q >= 0.5) q -= 1; voicePh[v] = q;
+            s += q;
+          }
+          l1 += f1 * b1; b1 += f1 * (s - l1 - 0.25 * b1);
+          l2 += f2 * b2; b2 += f2 * (s - l2 - 0.3 * b2);
+          const g = Math.min(1, i / (0.08 * sr), (len - i) / bellows) * 0.11;
+          mix[(b0 + i) % n] += (b1 + 0.5 * b2) * g;
+        }
       }
-      mix[(b0 + i) % n] += a2 * g;
+      // The fiddle's notes for this bar, rendered after the bars.
+      for (let k = 0; k < slots; k++) {
+        const s = tune.melody[bar][k];
+        if (s === H) { if (notes.length) notes[notes.length - 1].q++; continue; }
+        if (s !== R) notes.push({ i0: at(bar, k), sL, f: tune.key * Math.pow(2, s / 12), q: 1, gain: sung ? 0.19 : 0.16 });
+      }
+      yield;
     }
-    yield;
   }
 
-  // The fiddle: the tune as notes, each from its quaver to the next thing that is not a hold,
-  // a saw with vibrato coming in after a tenth of a second, through two poles at 2.5 kHz.
-  const notes = [];
-  for (let bar = 0; bar < bars; bar++) {
-    for (let e = 0; e < E; e++) {
-      const s = MELODY[bar][e];
-      if (s === -2) { if (notes.length) notes[notes.length - 1].q++; continue; }
-      if (s >= 0) notes.push({ bar, e, s, q: 1 });
-    }
-  }
+  // The fiddle: each note from its slot to the next that is not a hold, a saw with vibrato
+  // coming in after a tenth of a second and a breath of bow noise, through two poles near 3 kHz.
   for (let k = 0; k < notes.length; k++) {
-    const { bar, e, s, q } = notes[k];
-    const f = 220 * Math.pow(2, s / 12), i0 = at(bar, e), L = Math.floor(q * eL * 0.96);
-    const gain = bar >= chorus ? 0.2 : 0.16;
+    const { i0, sL, f, q, gain } = notes[k];
+    const L = Math.floor(q * sL * 0.96);
     let p = rng.next() - 0.5, y1 = 0, y2 = 0;
     for (let i = 0; i < L; i++) {
       const t = i / sr;
       const vib = t > 0.1 ? 0.004 * Math.min(1, (t - 0.1) / 0.1) * Math.sin(2 * Math.PI * 5.5 * t) : 0;
       p += f * (1 + vib) / sr; if (p >= 0.5) p -= 1;
       const a = Math.min(1, t / 0.025, (L - i) / (0.04 * sr));
-      y1 += 0.51 * (2 * p - y1); y2 += 0.51 * (y1 - y2);
+      const x = 2 * p + (rng.next() - 0.5) * 0.08;
+      y1 += fiddlePole * (x - y1); y2 += fiddlePole * (y1 - y2);
       mix[(i0 + i) % n] += y2 * a * gain;
     }
-    if (k % 16 === 15) yield;
+    if (k % 24 === 23) yield;
   }
   yield;
 
   const out = new Float32Array(n);
-  for (let q = 0; q < 4; q++) {
-    for (let i = Math.floor(n * q / 4); i < Math.floor(n * (q + 1) / 4); i++) out[i] = Math.tanh(mix[i] * 1.2);
+  for (let q = 0; q < 6; q++) {
+    for (let i = Math.floor(n * q / 6); i < Math.floor(n * (q + 1) / 6); i++) out[i] = Math.tanh(mix[i] * 1.2);
     yield;
   }
   const chs = [out];

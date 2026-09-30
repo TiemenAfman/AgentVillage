@@ -330,9 +330,10 @@ test('the rave is made the first time it is within earshot, and is one source in
 
 test('the rave loops without a seam, loud and inside the rails', async () => {
   const { RAVE_SONG } = await import('../web/js/sound.js');
-  const music = ctx.buffers.find((b) => b.duration > 20);
-  assert.ok(music, 'the test above made it');
   const bars = RAVE_SONG.bars * 4 * 60 / RAVE_SONG.bpm;
+  // Known by its length - the Salty Kraken's jukebox is longer than twenty seconds too.
+  const music = ctx.buffers.find((b) => Math.abs(b.duration - bars) < 0.001);
+  assert.ok(music, 'the test above made it');
   assert.ok(Math.abs(music.duration - bars) < 0.001, `${RAVE_SONG.bars} bars, exactly (${music.duration} s)`);
   assert.equal(music.numberOfChannels, 1);
   const d = music.getChannelData(0);
@@ -372,7 +373,7 @@ test('the shanty is made near the Kraken, muffled on the quay and whole inside, 
   look.shanty = { inside: false, dist: 8 };
   sound.update(1 / 6);
   assert.equal(sound.stats().shanty.making, true, 'written a bar a frame');
-  for (let i = 0; i < 90; i++) sound.update(1 / 60);
+  for (let i = 0; i < 200; i++) sound.update(1 / 60);
   const out = sound.stats().shanty;
   assert.ok(out && out.playing, 'heard from the quay');
   assert.ok(out.want > 0 && out.want < 0.22, `through the walls it is a tune, not the room (${out.want})`);
@@ -400,12 +401,17 @@ test('the shanty is made near the Kraken, muffled on the quay and whole inside, 
   ctx.currentTime = 0;
 });
 
-test('the shanty loops without a seam, its chorus fuller than its verse', async () => {
+test('the jukebox loops without a seam, every tune on one count, each chorus fuller than its verse', async () => {
   const { SHANTY_SONG } = await import('../web/js/sound.js');
-  const secs = SHANTY_SONG.bars * SHANTY_SONG.beatsPerBar * 60 / SHANTY_SONG.bpm;
-  assert.ok(secs < 20, 'under the rave\'s twenty, which the rave test knows its buffer by');
+  const count = 60 / SHANTY_SONG.bpm;
+  const secs = SHANTY_SONG.counts * count;
+  assert.deepEqual(SHANTY_SONG.songs.map((s) => s.id), ['kraken', 'drunken-sailor', 'wellerman']);
+  let from = 0;
+  for (const s of SHANTY_SONG.songs) { assert.equal(s.from, from, `${s.id} follows the one before`); from += s.bars * s.beatsPerBar; }
+  assert.equal(from, SHANTY_SONG.counts);
   const music = ctx.buffers.find((b) => Math.abs(b.duration - secs) < 0.001);
-  assert.ok(music, `${SHANTY_SONG.bars} bars, exactly (${secs} s)`);
+  assert.ok(music, `${SHANTY_SONG.counts} counts, exactly (${secs} s)`);
+  assert.equal(music.sampleRate, 44100, 'a fiddle wants the full rate');
   assert.equal(music.numberOfChannels, 1);
   const d = music.getChannelData(0);
   let sum = 0, peak = 0, worst = 0;
@@ -419,9 +425,11 @@ test('the shanty loops without a seam, its chorus fuller than its verse', async 
   assert.ok(peak <= 1, `it clips at ${peak}`);
   assert.ok(rms > 0.08, `a shanty that quiet is nobody singing (rms ${rms})`);
   assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the loop point jumps');
-  const barLen = d.length / SHANTY_SONG.bars;
-  const energy = (bar) => { let e = 0; for (let i = bar * barLen; i < (bar + 1) * barLen; i++) e += d[Math.floor(i)] ** 2; return e; };
-  assert.ok(energy(SHANTY_SONG.chorus + 2) > energy(2), 'the chorus is the whole room');
+  const perCount = d.length / SHANTY_SONG.counts;
+  for (const s of SHANTY_SONG.songs) {
+    const energy = (bar) => { let e = 0; const a = (s.from + bar * s.beatsPerBar) * perCount; for (let i = a; i < a + s.beatsPerBar * perCount; i++) e += d[Math.floor(i)] ** 2; return e; };
+    assert.ok(energy(s.chorus + 1) > energy(1), `${s.name}: the chorus is the whole room`);
+  }
 });
 
 // --- 3. the noises themselves ---------------------------------------------
