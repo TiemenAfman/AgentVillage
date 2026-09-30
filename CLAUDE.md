@@ -1819,6 +1819,12 @@ anvil, whose `at` is where the smith strikes) and `anchor.door`, and a passive s
 player rig (`createClassicAvatar`) with a hammer, nobody's agent - driven by `web/js/smithy.js`
 off `uNight` (Plans/DONE/smidse.md). A glow that dims at runtime sets `aEmissive` below 1 on its
 geometry; the bake still only allows 0 or 1.
+Something hung off a wall cannot have its origin on its fixing: every asset's lowest point must be
+y = 0. `assets/piratesign` (the Salty Kraken's sign, `web/js/piratesign.js`) is the pattern: wall at
+x = 0, arm along +x, y = 0 at the board's foot, and `anchor.sign` on the wall fixing, which the
+module subtracts (`pirateSignFrame`) so a building names only its facade point and a yaw. Merging
+baked slots by hand, go through `mergeParts` from buildings.js, never `mergeGeometries`: only
+sheeted slots carry `aSheet`, and the bare merge returns null.
 
 ## The two workbench pages
 
