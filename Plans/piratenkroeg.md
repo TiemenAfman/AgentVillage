@@ -284,10 +284,33 @@ bedoeling geplaatst. De maten staan in `web/js/kraken-layout.js`; schets 6 in de
 
 **Tweede ronde referentiebladen** (30 september, voor de zaal met verdiepingen): tot er een tekening is, staat er een
 eenvoudige plaatshouder van de juiste maat, elk in een eigen functie in `scripts/krakenroom/shell.py` of `dressing.py`,
-zodat hij los vervangen kan worden. Bestandsnamen in `refs\krakenkit\objecten\`: `sloep` (kroonluchter),
-`schatkist`, `kanon`, `scheepstrap`, `haard`, `rotsboog`, `kapiteinsstoel`, `kaartentafel`, `globe`, `telescoop`,
-`hangmat`, `anker`, `jolly-roger`, `stuurwiel`, `touwbrug`, `deur`. De prompts staan in de sessie van 30 september;
-ze gebruiken het stijlblok hierboven plus de regel tegen cartoon.
+zodat hij los vervangen kan worden. De referenties zijn op 30 september 's avonds gemaakt met `/perchance`
+(studio-render in plaats van concept art: driekwart van iets boven, echte materialen, effen grijs, cartoon en
+contourlijnen in de negatieve prompt; de klikpagina's met de exacte prompts staan als `_renders*.html` naast de
+beelden). Alles in `refs\krakenkit\objecten\`; `-alt` is een tweede keuze die de keeper ook goed vond:
+
+| Beeld | Plaatshouder | Wat we eruit halen |
+|---|---|---|
+| `schatkist` (+`-alt`) | `ph_chest_open` | bolle deksel met rood fluweel, ijzeren banden, munten over de voorrand |
+| `goudbult`, `goudbult-hoog` | `hoard`, `k_hoard*` (`geom.heap`) | losse, scheef liggende munten in terrassen met een rafelige rand en uitloop over de planken, in plaats van één gladde klomp; de hoge als schat voor het midden (kegel met kroon, een kist weggezakt in de voet), zonder de kaarsen die de generator erin zette en minder strak dan zijn muntkolommen. De edelstenen blijven zoals ze zijn |
+| `kanon` | `ph_cannon` | loop met ringen, kogels, touwwerk; het onderstel is een veldkanon, bij het bouwen de lage scheepsaffuit op vier kleine schijven houden |
+| `kaartentafel` (+`-alt`) | `ph_chart_table` | gedraaide poten met regel, kaart, kompas, zandloper; `-alt` heeft een ijzeren rand om het blad |
+| `kapiteinsstoel` (+`-alt`) | `ph_captain_chair` | troon met schedel en rood fluweel; `-alt` is lichter |
+| `globe` | `ph_globe` | meridiaan- en horizonring op een gedraaide voet |
+| `telescoop` | `ph_telescope` | houten buis met messing ringen op een driepoot |
+| `roeiboot` (+`-alt`) | `ph_rowboat` | overnaadse romp met blauwgroene band, riemen, lantaarn op de steven, landvast |
+| `hangmat` | `ph_hammock` | doek tussen twee spreidhouten, waaier van lijnen naar een ring |
+| `stuurwiel` | `ph_wheel` | acht spaken met handvatten, messing naaf; zonder de voet, het hangt aan de schoorsteen |
+| `anker` (+`-alt`) | `ph_anchor` | beide zijn goed zoals ze zijn, ook de korte schacht: rechtop aan de muur, liggend met touw op de vloer |
+| `jolly-roger` | `ph_jolly_roger` | gerafelde losse lap aan een stokje (de eerste pogingen spijkerden hem steeds op een plank) |
+| `scheepstrap` | `shell.ships_ladder` | steile trap met ijzeren beslag; de tweede leuning zelf toevoegen |
+| `rotsboog` | `shell.sea_arch` | brokkelige rots met mos aan de voet, lantaarn aan een ketting |
+| `deur` | `shell.door`, `door_leaf` | eiken planken onder een boog, hengsels, kijkluikje, trekring, stenen omlijsting |
+| `haard/` | `shell.hearth`, `dressing.hearth` | FLUX-varianten van de vulling; afgerond in een eigen sessie |
+| `sloep-kroonluchter`, `touwbrug` | kit (`sloop.py`, `walkway.py`) | uit de eerste ronde, al gebouwd |
+
+`hangmat-afgekeurd` en `scheepstrap-afgekeurd` zijn de mislukte eerste pogingen, bewaard als voorbeeld van wat er
+fout ging.
 
 **Nog in de kamer te verwerken** (uit de gesprekken): de grotkroeg van schets 2 (rots noord en west, rotsplafond
 over het noorden, bassin met steiger en roeiboot in het zuidoosten met maanlicht door een rotsboog, galerij
