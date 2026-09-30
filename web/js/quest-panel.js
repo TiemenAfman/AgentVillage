@@ -8,6 +8,15 @@
 // storage is escaped on the way out, because storage is a place anybody can edit.
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Who is waiting, in the log's words: the view's `talk` is a giver's id ('pirate', a CREW id).
+export const WAITS = {
+  pirate: 'The pirate at his sea chest is waiting for you.',
+  captain: 'Captain Spack Jarrow is waiting for you in the Salty Kraken.',
+  navigator: 'Quill the navigator is waiting for you in the Salty Kraken.',
+  bosun: 'Bosun Tarr is waiting for you in the Salty Kraken.',
+};
+const waitLine = (who) => WAITS[who] || 'Somebody is waiting for you.';
+
 // The map in hand, in words: the chart's square, and whether the water it points at is still
 // nobody's. An asleep map is grey on the chart and says why here.
 export function renderCard(card) {
@@ -30,11 +39,16 @@ export function renderLog(view) {
       <h4>${esc(a.title)}${a.repeat ? ` <span class="ql-tag">${a.times ? `done ${esc(a.times)}×` : 'repeats'}</span>` : ''}</h4>
       <p class="ql-text">${esc(a.text)}</p>
       <ol class="ql-steps">${a.steps.map((s) => `<li class="${s.done ? 'done' : s.current ? 'now' : ''}">${esc(s.goal)}</li>`).join('')}</ol>
-      ${a.talk ? '<p class="ql-note">The pirate at the tavern is waiting for you.</p>' : ''}
+      ${a.talk ? `<p class="ql-note">${esc(waitLine(a.talk))}</p>` : ''}
       ${a.rewards.length ? `<p class="muted ql-reward">Reward: ${a.rewards.map(esc).join(', ')}</p>` : ''}
     </section>`);
   } else {
     parts.push('<p class="muted">Nothing left to ask. The pirate has told you all he had.</p>');
+  }
+  // The repeatable quests counting alongside the story (shared/quests.mjs advance).
+  if (view.repeating && view.repeating.length) {
+    parts.push('<h3 class="ql-h">Also</h3>');
+    parts.push(`<ul class="ql-done">${view.repeating.map((q) => `<li><b>${esc(q.title)}</b> <span class="muted">${q.times ? `done ${esc(q.times)}×` : esc(q.goal)}</span></li>`).join('')}</ul>`);
   }
   parts.push('<h3 class="ql-h">Treasure map</h3>', renderCard(view.card));
   if (view.done.length) {
@@ -59,9 +73,9 @@ export function createQuestPanel({ ui, log, onClose = null }) {
     if (body && panel && !panel.hidden) body.innerHTML = renderLog(log.view());
     if (chip) {
       chip.classList.toggle('on', !!(panel && !panel.hidden));
-      // A dot on the chip while the pirate has something to say, the way the exclamation mark
+      // A dot on the chip while anybody the story waits on has something to say, the way the exclamation mark
       // over his head does: the one place a player looking at the sky sees it too.
-      chip.classList.toggle('ping', log.pirateHasBusiness());
+      chip.classList.toggle('ping', !!log.businessWith());
     }
   }
 

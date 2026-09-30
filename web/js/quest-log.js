@@ -14,7 +14,7 @@
 //                      other's keys. Broken contents are an empty object, never an error.
 import {
   QUESTS, advance, parseQuestState, activeStep, completedQuests, unlocksOf, timesDone,
-  pirateHasBusiness,
+  pirateHasBusiness, businessWith, giverOf,
 } from 'shared/quests.mjs';
 import { REWARD_COLORS, REWARD_HATS, REWARD_ITEMS, SHOVEL } from 'shared/treasure.mjs';
 import { WORLD_HALF } from 'shared/regions.mjs';
@@ -111,6 +111,13 @@ export function linesFor(gained, after) {
   } else if (gained.stepDone) {
     const cur = activeStep(after);
     if (cur) out.push(`${cur.quest.title}: ${cur.step.goal}`);
+  }
+  // A repeatable quest counted beside a step of the story (a chest dug for Three Chests): said too,
+  // or the day's treasure would go by without a word. On its own it is the questDone line above.
+  for (const id of gained.repeated || []) {
+    if (id === gained.questDone) continue;
+    const q = activeQuestById(id);
+    if (q) out.push(`${q.title}: done ${timesDone(after, id)}×`);
   }
   if (gained.cards && gained.cards.length) out.push(gained.cards.length === 1 ? 'The pirate gave you a treasure map' : 'The pirate gave you treasure maps');
   if (gained.unlocks && gained.unlocks.length) out.push(`Unlocked: ${list(gained.unlocks.map(unlockName))}`);
@@ -213,6 +220,9 @@ export function createQuestLog({ storage = defaultStorage(), unlock = null, card
     sync,
     applyEvent,
     onTalked: (who) => api.applyEvent({ type: 'talked', with: who }),
+    // A drink had in a room (`where` is its ROOMS name), and a dive that went `depth` under.
+    onDrank: (where) => api.applyEvent({ type: 'drank', where }),
+    onDived: (depth) => api.applyEvent({ type: 'dived', depth }),
     onDug(kind) { const r = api.applyEvent({ type: 'dug', kind }); clearCard(); return r; },
     onLifted: (kind = 'statue') => api.applyEvent({ type: 'lifted', kind }),
     onBoarded: (kind = 'statue') => api.applyEvent({ type: 'boarded', kind }),
@@ -227,6 +237,8 @@ export function createQuestLog({ storage = defaultStorage(), unlock = null, card
       return true;
     },
     pirateHasBusiness: () => pirateHasBusiness(state),
+    // Who the story is waiting on for a word ('pirate', a CREW id), or null.
+    businessWith: () => businessWith(state),
     // Everything the log panel and the pirate's window draw, in one plain object.
     view: () => viewOf(state, held),
     // Forget everything (a debug reset). The unlocks stay: they belong to the look.
@@ -258,9 +270,17 @@ export function viewOf(state, card) {
       say: cur.step.text,
       steps: cur.quest.steps.map((s, i) => ({ goal: s.goal, done: i < cur.index, current: i === cur.index })),
       rewards: rewardsOf(cur.quest),
-      // Waiting on a word with the pirate: what the exclamation mark over him asks.
-      talk: pirateHasBusiness(state),
+      // Who the story waits on for a word ('pirate', or one of the Kraken's crew), or null:
+      // what the exclamation mark over a head asks. Every reader only asks whether it is set.
+      talk: businessWith(state),
+      // Whose quest it is, for the words of somebody who is not the one being waited on.
+      giver: giverOf(cur.quest),
     } : null,
+    // The repeatable quests counting alongside the story, when the story is what is active and
+    // past its first dig - before that there are no bottles to find (treasure.js bottleAllowed).
+    repeating: cur && !cur.quest.repeat && parseQuestState(state).done.length ? QUESTS.filter((q) => q.repeat).map((q) => ({
+      id: q.id, title: q.title, goal: q.steps[0].goal, times: timesDone(state, q.id),
+    })) : [],
     done: completedQuests(state).map((q) => ({ id: q.id, title: q.title, text: q.text, rewards: rewardsOf(q) })),
     card: card ? {
       grid: card.grid,

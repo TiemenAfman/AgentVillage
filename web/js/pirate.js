@@ -1,5 +1,6 @@
-// The pirate at the tavern door: his words for wherever your quest stands, and the one button
-// that moves it on (Accept, or Hand it over). A keeper's piece, like the mayor's register, but
+// The pirate at his sea chest, and the Salty Kraken's crew inside (Plans/piratenkroeg.md): their
+// words for wherever your quest stands, and the one button that moves it on (Accept, or Hand it
+// over). One window for every giver - `createQuestGiver` - and `createPirate` is it opened on him. A keeper's piece, like the mayor's register, but
 // with a choice in it - ui.setSpeech has no buttons - so it is a small window of its own in the
 // town hall's mould (web/js/townhall.js): a `.handover` scrim, `open` / `close` / `isOpen`, and
 // the feet paused for as long as it is up (main.js openPirate).
@@ -13,14 +14,19 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 // pressed - the data holds his reply to it (the step's own text), not the question.
 const ASK = 'Well, matey?';
 const NOTHING_LEFT = "Ye've heard every tale I have, matey. The sea keeps the rest.";
+const NOTHING_FOR_YOU = "Nothin' for ye today, matey. Ask around.";
+// The pirate's, while the story is with the crew: true below 52 settlers too, when there is no
+// Kraken yet, so it says where the pub will be rather than that it is there.
+export const PIRATE_IDLE = "The crew o' the Salty Kraken want a word with ye, matey. Their pub stands by the harbour once the lighthouse burns.";
 
-// `view` is quest-log.js's view(). `{ title, lines, hint, button }`: `button` is the label of
-// the one action he offers (null when he has nothing for you right now), `hint` a quiet line
-// under the words saying what he is waiting for.
-export function pirateSpeech(view) {
+// `view` is quest-log.js's view(); `who` whose words these are ('pirate', or a CREW id), `idle`
+// what they say when the story has nothing for them. `{ title, lines, hint, button }`: `button`
+// is the label of the one action offered (null when there is nothing for you right now), `hint`
+// a quiet line under the words saying what the story is waiting for.
+export function giverSpeech(view, who = 'pirate', idle = null) {
   const a = view && view.active;
-  if (!a) return { title: 'The pirate', lines: [NOTHING_LEFT], hint: null, button: null };
-  if (a.talk) {
+  if (!a) return { title: who === 'pirate' ? 'The pirate' : null, lines: [NOTHING_LEFT], hint: null, button: null };
+  if (a.talk === who) {
     return {
       title: a.title,
       // A quest opens with its pitch; a later word with him (handing it over) opens with a
@@ -30,8 +36,12 @@ export function pirateSpeech(view) {
       button: a.index === 0 ? 'Accept' : 'Hand it over',
     };
   }
-  return { title: a.title, lines: [a.say], hint: a.goal, button: null };
+  // Their own quest, on a step that is not a word with them; and the day's chest is the pirate's
+  // trade, whoever else there is.
+  if (a.giver === who || (a.repeat && who === 'pirate')) return { title: a.title, lines: [a.say], hint: a.goal, button: null };
+  return { title: null, lines: [idle || NOTHING_FOR_YOU], hint: a.goal, button: null };
 }
+export const pirateSpeech = (view) => giverSpeech(view, 'pirate', PIRATE_IDLE);
 
 // What he says after the button, from the step that was current when it was pressed and the
 // lines the book gave back (the toast lines): his reply first, then what it earned.
@@ -43,16 +53,18 @@ export function pirateReply(before, result) {
 
 // root  where to put the window (document.body)
 // log   createQuestLog()'s return, for view()
-// talk  () => the book's result for a `talked: pirate` event; main.js runs it through the
-//       same path every other quest event takes (unlocks, the map, the chart)
 // onClose  () => after it closed, by whatever means: hands the feet and the camera back
-export function createPirate(root, { log, talk, onClose = null }) {
+// open(target): `target = { who, name, idle, talk }` - who is spoken to, the name over the window,
+// their idle line, and `talk`, () => the book's result for a `talked: who` event (main.js runs it
+// through the same path every other quest event takes: unlocks, the map, the chart).
+export function createQuestGiver(root, { log, onClose = null }) {
   const el = document.createElement('div');
   el.className = 'handover';
   el.hidden = true;
   root.appendChild(el);
-  // Set after the button: his reply stays on screen until the window closes.
+  // Set after the button: the reply stays on screen until the window closes.
   let replied = null;
+  let target = { who: 'pirate', name: 'The pirate', idle: PIRATE_IDLE, talk: () => null };
 
   function onKey(e) {
     if (el.hidden) return;
@@ -70,7 +82,7 @@ export function createPirate(root, { log, talk, onClose = null }) {
   addEventListener('keydown', onKey);
 
   function render() {
-    const s = pirateSpeech(log.view());
+    const s = giverSpeech(log.view(), target.who, target.idle);
     // After the button: his reply and what it earned, then - as long as he has no further
     // business with you right now - what he says about the next step.
     const lines = replied ? replied.lines : s.lines;
@@ -79,8 +91,8 @@ export function createPirate(root, { log, talk, onClose = null }) {
     el.innerHTML = `
       <div class="handover-panel pirate">
         <button class="x" id="pi-close" aria-label="Close">✕</button>
-        <h3>The pirate</h3>
-        <p class="ho-sum pi-quest">${esc(replied ? replied.title : s.title)}</p>
+        <h3>${esc(target.name)}</h3>
+        ${(replied ? replied.title : s.title) ? `<p class="ho-sum pi-quest">${esc(replied ? replied.title : s.title)}</p>` : ''}
         ${lines.map((l) => `<p class="pi-say">“${esc(l)}”</p>`).join('')}
         ${replied && replied.earned.length ? `<ul class="pi-earned">${replied.earned.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
         ${next ? `<p class="pi-say">“${esc(next)}”</p>` : ''}
@@ -96,13 +108,14 @@ export function createPirate(root, { log, talk, onClose = null }) {
     if (go) go.addEventListener('click', () => {
       const before = log.view().active;
       let result = null;
-      try { result = talk(); } catch { /* the book is not the window's to fix */ }
+      try { result = target.talk(); } catch { /* the book is not the window's to fix */ }
       replied = pirateReply(before, result);
       render();
     });
   }
 
-  function open() {
+  function open(to) {
+    if (to) target = { ...target, ...to };
     replied = null;
     el.hidden = false;
     render();
@@ -118,4 +131,10 @@ export function createPirate(root, { log, talk, onClose = null }) {
   }
 
   return { open, close, isOpen: () => !el.hidden, dispose: () => { removeEventListener('keydown', onKey); el.remove(); } };
+}
+
+// The pirate at his chest: the giver's window, always opened on him.
+export function createPirate(root, { log, talk, onClose = null }) {
+  const g = createQuestGiver(root, { log, onClose });
+  return { ...g, open: () => g.open({ who: 'pirate', name: 'The pirate', idle: PIRATE_IDLE, talk }) };
 }

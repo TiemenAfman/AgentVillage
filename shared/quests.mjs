@@ -24,9 +24,16 @@ export const QUEST_STATE_V = 1;
 //   lifted     picked the statue up: { kind: 'statue' }
 //   boarded    put it on the boat:   { kind: 'statue' }
 //   delivered  stood it in the town: { kind: 'statue' }
-export const QUEST_EVENTS = ['talked', 'dug', 'lifted', 'boarded', 'delivered'];
+//   drank      had a drink:          { where: 'piratetavern' } (the room it was ordered in)
+//   dived      went under:           { depth } - units under the surface, once a dive
+// `with` in a talked event is who was spoken to: 'pirate' at his sea chest, or one of the
+// Salty Kraken's CREW ids below.
+export const QUEST_EVENTS = ['talked', 'dug', 'lifted', 'boarded', 'delivered', 'drank', 'dived'];
 
-// A step waits for one event whose type is `on` and that carries every key of `match`.
+// A step waits for one event whose type is `on` and that carries every key of `match`, and, if
+// it says so, at least `least` (`{ depth: 2 }`: ev.depth >= 2) and `times` of it altogether (a
+// repeatable quest's one step that the same event completes has come round that often - how
+// Three Chests counts the daily chests).
 // `grant` (unlock ids, and `card` for a map to hand over) is given when the step is done,
 // `reward` when the whole quest is: the shovel has to come with the first step, since the
 // next one is digging. `text` is what the pirate says while the step is current, `goal` the
@@ -37,7 +44,7 @@ export const QUESTS = [
     title: 'The First Dig',
     text: "Ye want a share o' the plunder? Take me shovel, matey. The map be marked, and somethin' big lies buried out there.",
     steps: [
-      { on: 'talked', match: { with: 'pirate' }, goal: 'Talk to the pirate at the tavern',
+      { on: 'talked', match: { with: 'pirate' }, goal: 'Talk to the pirate at his sea chest',
         text: "Aye, ye look like a digger. Here be me shovel and a map. Go on, dig!",
         grant: { unlock: [SHOVEL], card: 'first-hunt' } },
       { on: 'dug', match: { kind: 'statue' }, goal: 'Dig up the buried treasure',
@@ -60,6 +67,50 @@ export const QUESTS = [
         text: "Ha! Now that be a sight. Here, a colour fit for a captain." },
     ],
     reward: { unlock: ['sea-green'] },
+  },
+  // The Salty Kraken's chapters (Plans/piratenkroeg.md): each is one pirate's, and the mark hangs
+  // over whoever the current step names.
+  {
+    id: 'a-round-for-the-crew',
+    title: 'A Round for the Crew',
+    text: "So ye found the Kraken. A crew drinks together or it be no crew at all. Get one in at the bar, and then we'll talk.",
+    steps: [
+      { on: 'talked', match: { with: 'captain' }, goal: 'Speak to Captain Spack Jarrow in the Salty Kraken',
+        text: "Sit ye down. Old Meg pours the best grog this side o' the reef - go on, order one. For me, savvy?" },
+      { on: 'drank', match: { where: 'piratetavern' }, goal: 'Order a drink at the bar of the Salty Kraken',
+        text: "Dry work, talkin'. The bar be that way, and Meg don't bite. Much." },
+      { on: 'talked', match: { with: 'captain' }, goal: 'Tell the Captain you have had your drink',
+        text: "Ha! Now ye smell like one o' us. Purple as a drowned man's lips - wear it well." },
+    ],
+    reward: { unlock: ['kraken-purple'] },
+  },
+  {
+    id: 'the-drowned-chart',
+    title: 'The Drowned Chart',
+    text: "I lost a chart overboard off the harbour mouth, where the water runs deep. Too deep for these old lungs. Not for yours.",
+    steps: [
+      { on: 'talked', match: { with: 'navigator' }, goal: 'Speak to Quill the navigator in the Salty Kraken',
+        text: "Off the coast where the water turns dark. Swim out, hold C, and go down - two fathoms, no less." },
+      { on: 'dived', least: { depth: 2 }, goal: 'Dive two fathoms under off the coast',
+        text: "Deeper, matey. The chart lies where the light gives out." },
+      { on: 'talked', match: { with: 'navigator' }, goal: 'Tell Quill what you found down there',
+        text: "No chart? Aye - there never was one. I wanted to know ye'd go. Gold leaf, for a diver's coat." },
+    ],
+    reward: { unlock: ['gold-leaf'] },
+  },
+  {
+    id: 'three-chests',
+    title: 'Three Chests',
+    text: "The bottles keep comin' and the chests keep waitin'. Dig three of 'em and I'll call ye crew.",
+    steps: [
+      { on: 'talked', match: { with: 'bosun' }, goal: 'Speak to Bosun Tarr in the Salty Kraken',
+        text: "Every day this village works, the sea sends a bottle to the beach. Read the map, dig the chest. Three, mind." },
+      { on: 'dug', match: { kind: 'chest' }, times: 3, goal: 'Have three chests dug up to your name',
+        text: "Keep diggin'. The sea ain't done with ye yet." },
+      { on: 'talked', match: { with: 'bosun' }, goal: 'Report to Bosun Tarr',
+        text: "Three chests! Captain's red, that is - and don't let the Captain see ye in it before he's had his grog." },
+    ],
+    reward: { unlock: ['captain-red'] },
   },
   {
     id: 'treasure-of-the-day',
@@ -108,6 +159,10 @@ export const CREW_IDS = CREW.map((c) => c.id);
 
 const questById = new Map(QUESTS.map((q) => [q.id, q]));
 const ONCE = QUESTS.filter((q) => !q.repeat);
+// The repeatable quests: one step each (tests/quests.test.mjs holds that), counted whatever the
+// story is doing - or an island with no Salty Kraken would stop the chest of the day for good as
+// soon as the story waited on somebody in it.
+const REPEATS = QUESTS.filter((q) => q.repeat);
 const KNOWN_UNLOCK = new Set(UNLOCK_IDS);
 
 const emptyState = () => ({ v: QUEST_STATE_V, done: [], step: 0, repeats: {} });
@@ -116,6 +171,10 @@ const emptyState = () => ({ v: QUEST_STATE_V, done: [], step: 0, repeats: {} });
 // story is told. Null when there is nothing left at all.
 function activeOf(done) {
   return QUESTS.find((q) => q.repeat || !done.includes(q.id)) || null;
+}
+// The story's quest a state is on - never a repeatable one - or null once it is all told.
+function storyOf(done) {
+  return ONCE.find((q) => !done.includes(q.id)) || null;
 }
 
 // Anything into a valid state, never throwing: a JSON string, an object from storage, or
@@ -188,46 +247,78 @@ export function unlocksOf(state) {
   return [...out].filter((u) => KNOWN_UNLOCK.has(u));
 }
 
-// Whether the pirate has something for the player right now - a step waiting on a word with
-// him - which is what the exclamation mark over his head asks.
-export function pirateHasBusiness(state) {
+// Who has something for the player right now - the `with` of a step waiting on a word - or null:
+// what the exclamation mark over a head asks, outside at the chest and inside the Kraken.
+export function businessWith(state) {
   const cur = activeStep(state);
-  return !!cur && cur.step.on === 'talked' && cur.step.match && cur.step.match.with === 'pirate';
+  return cur && cur.step.on === 'talked' && cur.step.match && cur.step.match.with ? cur.step.match.with : null;
+}
+export function pirateHasBusiness(state) {
+  return businessWith(state) === 'pirate';
+}
+// Whose quest it is: the one the first word in it is with.
+export function giverOf(quest) {
+  const s = quest && quest.steps.find((st) => st.on === 'talked' && st.match && st.match.with);
+  return s ? s.match.with : null;
 }
 
-const matches = (step, ev) => {
+// Whether `ev` does `step`. `after` is the state with this event's repeats already counted, for
+// a `times` step to read.
+const matches = (step, ev, after = null) => {
   if (step.on !== ev.type) return false;
   for (const k of Object.keys(step.match || {})) if (ev[k] !== step.match[k]) return false;
+  for (const k of Object.keys(step.least || {})) {
+    if (typeof ev[k] !== 'number' || !(ev[k] >= step.least[k])) return false;
+  }
+  if (step.times != null) {
+    const q = REPEATS.find((r) => matches(r.steps[0], ev));
+    if (!q || !after || !((after.repeats[q.id] || 0) >= step.times)) return false;
+  }
   return true;
 };
 
 // Feed one event to a state. Returns `{ state, gained }`; the state is a new object and the
 // input is never touched. An event that is not what the current step waits for changes
-// nothing - saying it early is not remembered, and saying it late is not needed.
+// nothing - saying it early is not remembered, and saying it late is not needed - except that a
+// repeatable quest counts whenever its step is done, whatever the story is waiting for.
 //
 //   gained.unlocks     ids newly unlocked by this event (the toast, and the tile to open)
 //   gained.cards       maps to hand over ('first-hunt'), from a step's `grant.card`
-//   gained.stepDone    { quest, index } of the step this event completed, or null
-//   gained.questDone   id of the quest it finished, or null
+//   gained.stepDone    { quest, index } of the step this event completed, or null; a repeatable
+//                      that was all this event moved reads as its step 0 done
+//   gained.questDone   id of the quest it finished, or null (a repeatable, likewise)
+//   gained.repeated    ids of the repeatable quests this event counted once more
 //   gained.next        the quest that is active now, or null
 export function advance(state, event) {
   const before = parseQuestState(state);
-  const gained = { unlocks: [], cards: [], stepDone: null, questDone: null, next: null };
+  const gained = { unlocks: [], cards: [], stepDone: null, questDone: null, repeated: [], next: null };
   const ev = typeof event === 'string' ? { type: event } : event;
   const quest = activeOf(before.done);
   gained.next = quest ? quest.id : null;
   if (!quest || !ev || typeof ev !== 'object' || !QUEST_EVENTS.includes(ev.type)) return { state: before, gained };
-  const step = quest.steps[before.step];
-  if (!matches(step, ev)) return { state: before, gained };
 
-  const after = { ...before, done: [...before.done], repeats: { ...before.repeats }, step: before.step + 1 };
-  gained.stepDone = { quest: quest.id, index: before.step };
-  if (step.grant && step.grant.card) gained.cards.push(step.grant.card);
-  if (after.step >= quest.steps.length) {
-    after.step = 0;
-    gained.questDone = quest.id;
-    if (quest.repeat) after.repeats[quest.id] = (after.repeats[quest.id] || 0) + 1;
-    else after.done.push(quest.id);
+  const after = { ...before, done: [...before.done], repeats: { ...before.repeats } };
+  for (const q of REPEATS) {
+    if (!matches(q.steps[0], ev)) continue;
+    after.repeats[q.id] = (after.repeats[q.id] || 0) + 1;
+    gained.repeated.push(q.id);
+  }
+  const story = storyOf(before.done);
+  const step = story ? story.steps[before.step] : null;
+  if (step && matches(step, ev, after)) {
+    after.step = before.step + 1;
+    gained.stepDone = { quest: story.id, index: before.step };
+    if (step.grant && step.grant.card) gained.cards.push(step.grant.card);
+    if (after.step >= story.steps.length) {
+      after.step = 0;
+      gained.questDone = story.id;
+      after.done.push(story.id);
+    }
+  } else if (gained.repeated.length) {
+    gained.stepDone = { quest: gained.repeated[0], index: 0 };
+    gained.questDone = gained.repeated[0];
+  } else {
+    return { state: before, gained };
   }
   const was = new Set(unlocksOf(before));
   gained.unlocks = unlocksOf(after).filter((u) => !was.has(u));

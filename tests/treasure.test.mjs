@@ -258,6 +258,6 @@ test('nothing in the treasure can differ between two engines', () => {
     const m = src.match(banned);
     assert.equal(m, null, `shared/${file} uses ${m && m[0]} - see the rule at the top of shared/rng.mjs`);
     assert.ok(!/Date\.now|performance\.now|new Date/.test(src), `${file} must not read a clock`);
-    assert.ok(!/from '\.\.\/(web|lib)\//.test(src) && !/three/.test(src), `${file} must not reach into the browser or the islander`);
+    assert.ok(!/from '\.\.\/(web|lib)\//.test(src) && !/from ['"]three/.test(src), `${file} must not reach into the browser or the islander`);
   }
 });

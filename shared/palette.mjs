@@ -87,10 +87,10 @@ export const SWATCHES = {
 // in the inventory (skin is not a dye), locked until unlocks.js has its `id`.
 export const PLAYER_SWATCH_PARTS = ['tunic', 'trim', 'hat'];
 export const PLAYER_SWATCHES = [
-  { id: 'captain-red', name: 'Captain red', hex: 0x9c2b27, hint: 'Found in a chest' },
+  { id: 'captain-red', name: 'Captain red', hex: 0x9c2b27, hint: 'A reward from the bosun, or a chest' },
   { id: 'sea-green', name: 'Sea green', hex: 0x2e8b74, hint: 'A reward from the pirate' },
-  { id: 'kraken-purple', name: 'Kraken purple', hex: 0x5b3a8e, hint: 'Found in a chest' },
-  { id: 'gold-leaf', name: 'Gold leaf', hex: 0xe0b83c, hint: 'Found in a chest' },
+  { id: 'kraken-purple', name: 'Kraken purple', hex: 0x5b3a8e, hint: 'A reward from the Captain, or a chest' },
+  { id: 'gold-leaf', name: 'Gold leaf', hex: 0xe0b83c, hint: 'A reward from the navigator, or a chest' },
 ];
 
 // The look every settler of a style used to have, and still the look of the figure that

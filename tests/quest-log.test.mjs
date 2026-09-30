@@ -51,7 +51,9 @@ test('a new book starts on the first quest, holds no map and keeps nothing until
   const v = log.view();
   assert.equal(v.active.id, 'first-dig');
   assert.equal(v.active.index, 0);
-  assert.equal(v.active.talk, true);
+  assert.equal(v.active.talk, 'pirate');
+  assert.equal(v.active.giver, 'pirate');
+  assert.deepEqual(v.repeating, [], 'no day\'s chest to speak of before the first dig');
   assert.deepEqual(v.done, []);
   assert.equal(v.card, null);
   assert.equal(storage.m.size, 0);
@@ -102,16 +104,29 @@ test('the whole chain through the page-facing calls, each step saying its next g
   assert.match(log.onLifted().lines[0], /Put the statue on your boat/);
   assert.match(log.onBoarded().lines[0], /Stand the statue in your town/);
   assert.match(log.onDelivered().lines[0], /Tell the pirate/);
-  assert.equal(log.view().active.talk, true);
+  assert.equal(log.view().active.talk, 'pirate');
   const done = log.onTalked('pirate');
   assert.equal(done.gained.questDone, 'bring-it-home');
   assert.deepEqual(unlocked, ['shovel', 'sea-green']);
   const v = log.view();
   assert.deepEqual(v.done.map((q) => q.id), ['first-dig', 'bring-it-home']);
   assert.deepEqual(v.done[1].rewards, ['Sea green']);
-  assert.equal(v.active.id, 'treasure-of-the-day');
-  assert.equal(v.active.repeat, true);
-  assert.equal(v.active.talk, false);
+  // The story goes on into the Salty Kraken, and the day's chest counts alongside it.
+  assert.equal(v.active.id, 'a-round-for-the-crew');
+  assert.equal(v.active.repeat, false);
+  assert.equal(v.active.talk, 'captain');
+  assert.equal(log.businessWith(), 'captain');
+  assert.deepEqual(v.repeating.map((q) => q.id), ['treasure-of-the-day']);
+  assert.match(log.onTalked('captain').lines[0], /Order a drink at the bar of the Salty Kraken/);
+  assert.equal(log.onDrank('tavern').lines.length, 0, 'the village tavern is not the Kraken');
+  assert.match(log.onDrank('piratetavern').lines[0], /Tell the Captain/);
+  const round = log.onTalked('captain');
+  assert.equal(round.gained.questDone, 'a-round-for-the-crew');
+  assert.ok(round.lines.some((l) => /Unlocked: Kraken purple/.test(l)));
+  assert.equal(log.businessWith(), 'navigator');
+  log.onTalked('navigator');
+  assert.equal(log.onDived(1.2).lines.length, 0);
+  assert.match(log.onDived(2.4).lines[0], /Tell Quill/);
 });
 
 test('a chest dug in the repeatable quest counts and clears the map', () => {
@@ -121,7 +136,21 @@ test('a chest dug in the repeatable quest counts and clears the map', () => {
   const r = log.onDug('chest');
   assert.equal(r.gained.questDone, 'treasure-of-the-day');
   assert.equal(log.card(), null);
-  assert.equal(log.view().active.times, 1);
+  // Counted beside the story, which still waits on the captain.
+  assert.equal(log.view().active.id, 'a-round-for-the-crew');
+  assert.equal(log.view().repeating[0].times, 1);
+  assert.match(r.lines[0], /Quest done: Treasure of the Day/);
+});
+
+test('a chest that is also a step of Three Chests says both', () => {
+  const { log } = book();
+  log.onTalked('pirate'); log.onDug('statue'); log.onLifted(); log.onBoarded(); log.onDelivered(); log.onTalked('pirate');
+  for (const ev of [{ type: 'talked', with: 'captain' }, { type: 'drank', where: 'piratetavern' }, { type: 'talked', with: 'captain' },
+    { type: 'talked', with: 'navigator' }, { type: 'dived', depth: 2 }, { type: 'talked', with: 'navigator' }, { type: 'talked', with: 'bosun' }]) log.applyEvent(ev);
+  log.onDug('chest'); log.onDug('chest');
+  const third = log.onDug('chest');
+  assert.ok(third.lines.some((l) => /Three Chests: Report to Bosun Tarr/.test(l)), third.lines.join('|'));
+  assert.ok(third.lines.some((l) => /Treasure of the Day: done 3×/.test(l)), third.lines.join('|'));
 });
 
 test('the map is owed, not lost: no fleet yet means none now and one as soon as there is', () => {

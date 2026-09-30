@@ -11,7 +11,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 assert.equal(globalThis.document, undefined);
 const { createQuestLog } = await import('../web/js/quest-log.js');
 const { renderLog, renderCard } = await import('../web/js/quest-panel.js');
-const { pirateSpeech, pirateReply } = await import('../web/js/pirate.js');
+const { pirateSpeech, pirateReply, giverSpeech, PIRATE_IDLE } = await import('../web/js/pirate.js');
 const { markScale, MARK_LIFT } = await import('../web/js/quest-mark.js');
 const { questOnRadar, QUEST_RING, projectToRadar } = await import('../web/js/minimap.js');
 const { ACTIONS, keysOf, canon } = await import('../web/js/keybinds.js');
@@ -33,13 +33,13 @@ test('the log names the quest, its steps with the current one marked, and the pi
   const log = book();
   const html = renderLog(log.view());
   assert.match(html, /The First Dig/);
-  assert.match(html, /<li class="now">Talk to the pirate at the tavern<\/li>/);
-  assert.match(html, /The pirate at the tavern is waiting/);
+  assert.match(html, /<li class="now">Talk to the pirate at his sea chest<\/li>/);
+  assert.match(html, /The pirate at his sea chest is waiting/);
   assert.match(html, /Reward: Shovel/);
   assert.match(html, /No map in your pocket/);
   log.onTalked('pirate');
   const later = renderLog(log.view());
-  assert.match(later, /<li class="done">Talk to the pirate at the tavern<\/li>/);
+  assert.match(later, /<li class="done">Talk to the pirate at his sea chest<\/li>/);
   assert.match(later, /<li class="now">Dig up the buried treasure<\/li>/);
   assert.doesNotMatch(later, /is waiting/);
   assert.match(later, new RegExp(`Square ${CARD.grid}`));
@@ -51,8 +51,14 @@ test('finished quests are listed with their rewards, and the repeatable one says
   const html = renderLog(log.view());
   assert.match(html, /<b>The First Dig<\/b>/);
   assert.match(html, /<b>Bring It Home<\/b>[^<]*<span class="muted">Sea green/);
-  assert.match(html, /Treasure of the Day/);
-  assert.match(html, /repeats/);
+  // The story goes into the Kraken; the day's chest counts beside it, under Also.
+  assert.match(html, /A Round for the Crew/);
+  assert.match(html, /Captain Spack Jarrow is waiting for you in the Salty Kraken/);
+  assert.match(html, /<h3 class="ql-h">Also<\/h3>[\s\S]*Treasure of the Day/);
+  log.onDug('chest');
+  assert.match(renderLog(log.view()), /Treasure of the Day<\/b> <span class="muted">done 1×/);
+  // Somebody the log has no words for is still somebody.
+  assert.match(renderLog({ ...log.view(), active: { ...log.view().active, talk: 'cook' } }), /Somebody is waiting for you/);
 });
 
 test('a sleeping map says why, and the grid square is on the card either way', () => {
@@ -94,6 +100,20 @@ test('the pirate pitches the quest and offers Accept; later he asks and offers H
   const last = pirateSpeech(log.view());
   assert.equal(last.button, 'Hand it over');
   assert.equal(last.hint, 'Tell the pirate it is done');
+  log.onTalked('pirate');
+  // With the story in the Kraken he sends you in; the captain has the Accept now.
+  const out = pirateSpeech(log.view());
+  assert.equal(out.button, null);
+  assert.equal(out.lines[0], PIRATE_IDLE);
+  const cap = giverSpeech(log.view(), 'captain', 'Savvy?');
+  assert.equal(cap.button, 'Accept');
+  assert.match(cap.lines[0], /So ye found the Kraken/);
+  const cook = giverSpeech(log.view(), 'cook', 'Fish stew.');
+  assert.equal(cook.button, null);
+  assert.deepEqual(cook.lines, ['Fish stew.']);
+  log.onTalked('captain');
+  // The captain's own quest on a step that is not a word with him: he reminds you.
+  assert.match(giverSpeech(log.view(), 'captain', 'Savvy?').lines[0], /Dry work/);
 });
 
 test('with nothing to hand over he only reminds you, and has no button', () => {
@@ -194,13 +214,17 @@ test('the pirate is one of the page\'s panels and a keeper who speaks through hi
   assert.match(main, /it\.post === 'pirate'/);
   assert.match(main, /createPirate\(document\.body/);
   assert.match(main, /talk: \(\) => state\.quests\.onTalked\('pirate'\)/);
+  // And the Kraken's crew, through the same window opened on each of them.
+  assert.match(main, /const PANELS = \(\) => \[[^\]]*state\.crewTalk[^\]]*\]/);
+  assert.match(main, /createQuestGiver\(document\.body/);
+  assert.match(main, /onTalk: \(it\) => openCrewTalk\(it\)/);
 });
 
 test('the book hands its unlocks to unlocks.js and the treasure side has one door to report through', () => {
   const main = src('web/js/main.js');
   assert.match(main, /import \{ unlock \} from '\.\/unlocks\.js'/);
   assert.match(main, /createQuestLog\(\{\s*unlock,/);
-  for (const m of ['dug', 'lifted', 'boarded', 'delivered']) assert.match(main, new RegExp(`${m}: \\(`), m);
+  for (const m of ['dug', 'lifted', 'boarded', 'delivered', 'drank', 'dived']) assert.match(main, new RegExp(`${m}: \\(`), m);
   assert.match(main, /state\.questEvents = questEvents/);
 });
 

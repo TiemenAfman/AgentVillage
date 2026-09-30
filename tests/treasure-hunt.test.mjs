@@ -156,7 +156,8 @@ function page({ keeper = true, now = NOON, village = villageOf(), answer = null 
     },
   };
 }
-// The pirate's story up to the day's bottles.
+// The whole story up to the day's bottles: the pirate's two chapters and the Salty Kraken's three
+// (Plans/piratenkroeg.md), the last of which counts three of the day's chests.
 function storyTold(p) {
   p.log.applyEvent({ type: 'talked', with: 'pirate' });
   p.log.applyEvent({ type: 'dug', kind: 'statue' });
@@ -165,6 +166,10 @@ function storyTold(p) {
   p.log.applyEvent({ type: 'boarded', kind: 'statue' });
   p.log.applyEvent({ type: 'delivered', kind: 'statue' });
   p.log.applyEvent({ type: 'talked', with: 'pirate' });
+  for (const ev of [{ type: 'talked', with: 'captain' }, { type: 'drank', where: 'piratetavern' }, { type: 'talked', with: 'captain' },
+    { type: 'talked', with: 'navigator' }, { type: 'dived', depth: 2 }, { type: 'talked', with: 'navigator' },
+    { type: 'talked', with: 'bosun' }, { type: 'dug', kind: 'chest' }, { type: 'dug', kind: 'chest' }, { type: 'dug', kind: 'chest' },
+    { type: 'talked', with: 'bosun' }]) p.log.applyEvent(ev);
   assert.equal(p.log.view().active.id, 'treasure-of-the-day');
   p.hunt.refresh();
 }

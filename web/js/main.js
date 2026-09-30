@@ -68,7 +68,7 @@ import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
-import { createPirate } from './pirate.js';
+import { createPirate, createQuestGiver } from './pirate.js';
 import { createQuestLog } from './quest-log.js';
 import { createQuestPanel } from './quest-panel.js';
 import { createQuestMark } from './quest-mark.js';
@@ -1769,7 +1769,7 @@ async function fetchGold() {
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
 const PANELS = () => [state.board, state.chat, state.market, state.mailbox,
-  state.townHall, state.pirate, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
+  state.townHall, state.pirate, state.crewTalk, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
@@ -2187,8 +2187,10 @@ function enterInterior(room, at) {
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
         onLeave: () => leaveInterior(),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
-        onDrink: (side) => { if (state.net) state.net.drink(side); },
+        onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
+        onTalk: (it) => openCrewTalk(it),
+        onOrder: (r) => questEvents.drank(r),
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -2563,7 +2565,33 @@ const questEvents = {
   lifted: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onLifted(kind)) : null),
   boarded: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onBoarded(kind)) : null),
   delivered: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onDelivered(kind)) : null),
+  // A drink had in a room (the Salty Kraken's first chapter), and a dive that went deep enough.
+  drank: (where) => (state.quests ? reportQuest(state.quests.onDrank(where)) : null),
+  dived: (depth) => (state.quests ? reportQuest(state.quests.onDived(depth)) : null),
 };
+
+// Speaking to one of the Salty Kraken's crew (web/js/pirate-tavern.js `talkers`): the giver's
+// window, with the room's walk paused while it is up. No faceUp - that is for the sea's figures;
+// the crew show turns the pirate to you itself.
+function openCrewTalk(member) {
+  if (!state.inside || !state.crewTalk || state.crewTalk.isOpen()) return;
+  state.inside.setPaused(true);
+  const idle = member.idle && member.idle.length ? member.idle[Math.floor(Math.random() * member.idle.length)] : null;
+  state.crewTalk.open({ who: member.who, name: member.name, idle, talk: () => state.quests.onTalked(member.who) });
+}
+
+// The dive the navigator asks for: once a dive, the first moment the walker is this far under.
+const DIVE_DEPTH = 2;
+let divedDeep = false;
+function questDive() {
+  const ws = state.mode === 'walk' && !state.inside && state.walk ? state.walk.state : null;
+  if (!ws || !ws.dive) { divedDeep = false; return; }
+  const depth = -ws.pos.y;
+  if (!divedDeep && ws.diving && depth >= DIVE_DEPTH) {
+    divedDeep = true;
+    questEvents.dived(Math.round(depth * 100) / 100);
+  }
+}
 
 // Every islet in the world with its id, in the world's frame - what the treasure maps pick
 // from and ask whether they still lie in free water. Once per fleet and berth, like mapIslets
@@ -6540,7 +6568,11 @@ function frame(nowMs) {
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
   if (state.inside) {
-    const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
+    const w = state.inside.update(dt, {
+      clock: state.sound ? state.sound.raveClock() : null,
+      // Who the story waits on, for the mark over one of the Kraken's crew.
+      business: state.quests ? state.quests.businessWith() : null,
+    });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
@@ -6578,6 +6610,7 @@ function frame(nowMs) {
   state.vitals.setHealth(state.net ? state.net.health() : 1);
   // And the air: the page's own sum, the sea's word correcting it (stepBreath above).
   stepBreath(nowMs);
+  questDive();
   // The beer wears off wherever you are, but only blurs the view from your own eyes: the sky
   // is not the settler's.
   stepTipsy(state.tipsy, dt);
@@ -7284,6 +7317,13 @@ async function boot() {
     onClose: () => {
       const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
       if (!faceToFace.end(walkOn)) walkOn();
+    },
+  });
+  state.crewTalk = createQuestGiver(document.body, {
+    log: state.quests,
+    onClose: () => {
+      if (state.inside) state.inside.setPaused(false);
+      else if (state.walk) state.walk.setPaused(false);
     },
   });
 
