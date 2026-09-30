@@ -12,12 +12,15 @@
 // Adding a room is one entry in ROOMS.
 import * as THREE from 'three';
 import { box, cylinder, cone, sphere, dome, mergeParts } from './buildings.js';
+import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
 import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
 import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
+import { createHalos, createShafts } from './room-glow.js';
+import { createHearthFire } from './hearth-fire.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -451,6 +454,13 @@ const ROOMS = {
 
 export const ROOM_KINDS = Object.keys(ROOMS);
 
+// The baked sets a room is drawn from that are not loaded at boot (models.js LAZY). A room is built
+// only once they are in: `prepareRoom` starts them (when somebody walks up to the door) and says when
+// they have landed, `roomReady` says whether they have.
+const ROOM_SETS = { piratetavern: ['krakenkit', 'piratetavern_room'] };
+export const roomReady = (room) => (ROOM_SETS[room] || []).every(models.setLoaded);
+export const prepareRoom = (room) => Promise.all((ROOM_SETS[room] || []).map(models.loadSet));
+
 // ---------------------------------------------------------------- what you order
 // A pint, and a plate of bitterballen with a blob of mustard. Both are built about the origin
 // and moved by their mesh, because they come and go.
@@ -503,10 +513,13 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const roofMesh = def.roof && def.roof.length ? new THREE.Mesh(mergeGeom(def.roof), material) : null;
   if (roofMesh) scene.add(roofMesh);
 
-  // The fire is its own mesh because it is pulsed, and geometry that gets scaled has to be
-  // built about the origin or it walks away from the hearth as it flickers. Only a room with
-  // a hearth has one.
-  const fire = def.fireAt ? new THREE.Mesh(mergeGeom([
+  // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
+  // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
+  // their own mesh because they are pulsed, and geometry that gets scaled has to be built about
+  // the origin or it walks away from the hearth as it flickers. Only a room with a hearth has one.
+  const flame = def.flame ? createHearthFire(def.flame) : null;
+  if (flame) scene.add(flame.object);
+  const fire = !flame && def.fireAt ? new THREE.Mesh(mergeGeom([
     cone(0.085, 0.24, 6, C.ember, { emissive: 1 }),
     cone(0.05, 0.155, 6, C.flame, { y: 0.035, emissive: 1 }),
   ]), material) : null;
@@ -551,11 +564,18 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   scene.add(new THREE.HemisphereLight(amb.sky, amb.ground, amb.hemi));
   scene.add(new THREE.AmbientLight(amb.hex, amb.amb));
   const lamps = def.lights.map((l) => {
-    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, 2);
+    // decay 2 is a lamp's own falloff; a broad fill from high up (the Kraken's moon) asks for less.
+    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, l.decay ?? 2);
     light.position.set(...l.at);
     scene.add(light);
-    return { light, base: l.intensity, flicker: !!l.flicker };
+    return { light, base: l.intensity, flicker: !!l.flicker, hearth: !!l.hearth };
   });
+  // Glow round the flames and light shafts from the roof (room-glow.js): the room's bloom and its
+  // volumetrics, drawn over what the lamps lit. The roof's own go with the roof when it is lifted.
+  const halos = def.halos?.length ? createHalos(def.halos) : null;
+  const roofHalos = def.roofHalos?.length ? createHalos(def.roofHalos) : null;
+  const shafts = def.shafts?.length ? createShafts(def.shafts) : null;
+  for (const g of [halos, roofHalos, shafts]) if (g) scene.add(g.object);
 
   // A flat floor of its own, standing in for the island's terrain. Constant and above the
   // water line, or walk mode would call the whole room open sea.
@@ -588,6 +608,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const CAM = def.camera || { back: 2.3, up: 1.0, aim: 0.3 };
   const AREAS = def.areas || [{ x0: -HALF_W, x1: HALF_W, z0: -HALF_D, z1: HALF_D }];
   const MARGIN = 0.2;
+  const FLOORS = def.surfaces || [];
   const MIN_BACK = 0.5;                // never closer than this, so `lookAt` keeps its aim
   // Which room a point is in, or the nearest one if it is in a doorway between two.
   function areaAt(x, z) {
@@ -627,6 +648,14 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // the aim point keeps it from swinging under and staring at the rafters.
     const yNear = p.y + CAM.aim + 0.18;
     v.y = Math.max(yNear, v.y + (1 - t) * len * 0.8);
+    // Under a floor of the room's own - a gallery, the storey over the pit (Plans/verdiepingen-binnen.md)
+    // - the camera stays under it, whether it is you or the camera that is below it: from above it
+    // would show the boards of the floor you are walking under, and nothing of you.
+    for (const f of FLOORS) {
+      if (f.y == null || f.y <= p.y + 0.3) continue;
+      const over = (x, z) => x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1;
+      if ((over(v.x, v.z) || over(p.x, p.z)) && v.y > f.y - 0.06) v.y = Math.max(p.y + CAM.aim, f.y - 0.06);
+    }
     // Once it is up through the ceiling, the ceiling is in the way of the only view there is -
     // this room's own ceiling, where a part of it is lower than the rest (the Kraken's cellar).
     roofWanted = v.y < (a.ceiling != null ? FLOOR + a.ceiling : ROOF_AT) - 0.04;
@@ -658,6 +687,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // floor of each cell and picks the one you belong to, which is how a bridge carries you
   // over a river and how this carries you over the boards; the platform was built to whole
   // cells so the step up lands exactly on its edge.
+  // Its floors and stairs, when it has storeys (Plans/verdiepingen-binnen.md).
+  if (def.surfaces) walk.setSurfaces(def.surfaces);
   if (def.stage) {
     const levels = new Map();
     const cell = (v) => Math.round(v + HALF_CELLS - 0.5);
@@ -716,6 +747,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     roofWanted = true;
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
+    if (roofHalos) roofHalos.object.visible = roofWanted;
+    if (shafts) shafts.object.visible = roofWanted;
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
@@ -724,7 +757,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
     if (fire) fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
-    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * flick;
+    // The hearth's own lamp breathes with its fire, not in step with the candles.
+    const burn = flame ? flame.flicker(t) : flick;
+    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * (l.hearth ? burn : flick);
+    if (flame) flame.update(t);
+    if (halos) halos.update(t);
+    if (roofHalos) roofHalos.update(t);
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
     for (const f of figures) {
       if (f.tends) f.mesh.position[f.along] += (barmanX - f.mesh.position[f.along]) * Math.min(1, dt * 3.4);
@@ -755,6 +793,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     shell.geometry.dispose();
     if (roofMesh) roofMesh.geometry.dispose();
     if (fire) fire.geometry.dispose();
+    if (flame) flame.dispose();
+    for (const g of [halos, roofHalos, shafts]) if (g) g.dispose();
     if (show) show.dispose();
     pint.dispose();
     snack.dispose();

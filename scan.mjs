@@ -93,6 +93,43 @@ async function runDeleteRoads(o) {
 
 const CODEX_SCAN = Object.freeze({ name: 'Codex', seed: 7331 });
 
+// The layout as it was, kept beside it whenever this scan's earthworks (`layout.works`: a dig,
+// a fill, the harbour funnel) change the island's hash - `layout.before-works-<ts>.json`, next
+// to the planner's before-plan snapshots. Those changes are rare and one-time, and they are the
+// ones an older copy of this code cannot draw: it ignores `works`, finds another hash and plans
+// the town again from nothing (a release and a checkout share one island in ~/.promptholm). The
+// copy is the way back. Never throws: a scan that could not back up still saves.
+export function backUpBeforeWorks(file, before, layout, now = new Date()) {
+  if (JSON.stringify(layout.works ?? null) === before.works || layout.terrainHash === before.hash) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    const d = new Date(now), p = (n) => String(n).padStart(2, '0');
+    const name = `layout.before-works-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+    const to = path.join(path.dirname(file), name);
+    if (!fs.existsSync(to)) fs.copyFileSync(file, to);
+  } catch (err) {
+    console.warn(`[scan] could not keep the layout before its earthworks: ${err.message}`);
+  }
+}
+
+// The layout as it stood before the quay's houses moved to their resort on the sea (lib/layout.mjs
+// `planResort`, Plans/quay-op-zee.md): the one scan that sets `layout.resort` down moves every
+// house of the quay district, which "a house never moves by itself" otherwise forbids, so the
+// layout it moved them from is kept beside it, as `backUpBeforeWorks` keeps the one before the
+// first earthworks. Only on that scan - a resort already on record, or none found, writes nothing.
+export function backUpBeforeResort(file, hadResort, layout, now = new Date()) {
+  if (hadResort || !layout.resort) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    const d = new Date(now), p = (n) => String(n).padStart(2, '0');
+    const name = `layout.before-resort-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+    const to = path.join(path.dirname(file), name);
+    if (!fs.existsSync(to)) fs.copyFileSync(file, to);
+  } catch (err) {
+    console.warn(`[scan] could not keep the layout before the quay moved to its resort: ${err.message}`);
+  }
+}
+
 async function runScan(o) {
   const t0 = Date.now();
   ensureData();
@@ -148,6 +185,8 @@ async function runScan(o) {
   // not about the ground, and buildVillage has to hear it before it counts the hamlets.
   const layout = loadLayout(files.layout, config.seed, config.gridSize || 64, { minSize: o.codex ? null : config.minGridSize });
   let size = layout.size;
+  const worksBefore = { works: JSON.stringify(layout.works ?? null), hash: layout.terrainHash };
+  const hadResort = !!layout.resort;
   // `layout.ladder` is the other: the most settlers the village has ever had at once, which
   // the model counts its milestones in (Plans/DONE/tenten-vertrekken.md). Read on every survey
   // rather than captured once, so a plan's re-survey sees the one written back below.
@@ -251,7 +290,11 @@ async function runScan(o) {
   const village = assemble({ config, model, layout, terrain, size, all: o.all, boats: o.codex ? {} : builtBoats() });
   writeJsonAtomic(files.village, village);
   saveCache(files.cache, cache);
-  if (o.persistLayout) saveLayout(files.layout, layout);
+  if (o.persistLayout) {
+    backUpBeforeWorks(files.layout, worksBefore, layout);
+    backUpBeforeResort(files.layout, hadResort, layout);
+    saveLayout(files.layout, layout);
+  }
 
   const result = {
     settlers: model.stats.settlers, apprentices: model.stats.apprentices,
@@ -658,6 +701,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     fairway: layout.fairway
       ? { ...layout.fairway, at: FAIRWAY_AT, unlockedAt: iso(model.arrivals[FAIRWAY_AT - 1] || null) }
       : null,
+    // What the layout did to the ground itself - digs, fills and the harbour funnel
+    // (shared/terrain.mjs `checkWorks`). Not dated like the fairway: it is mending, not a
+    // rung, and the chronicle draws it on every day as it draws `grow` (web/js/history.js).
+    works: layout.works || null,
     // How the island has grown. Every page and the sea build the ground from it, exactly as
     // they do from the polders, so it travels as the layout keeps it.
     grow: layout.grow || null,

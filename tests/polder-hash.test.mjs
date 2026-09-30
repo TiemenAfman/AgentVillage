@@ -39,7 +39,7 @@ const SIZE = 64;
 // first polder - and it is what turned "the bare island" from a fact into a moment. There
 // is no reason to think it is the last, and a test that spells the list out does not fail
 // when a third arrives: it goes on passing, against an island nobody is planning.
-const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway }).hash;
+const groundOf = (l) => makeTerrain(SEED, { size: SIZE, polders: l.polders, fairway: l.fairway, works: l.works || null }).hash;
 
 // A village of `settlers` spread over twelve projects, which past POLDER_AT is more land
 // than a 64-grid has - the shortage polders exist for. Only the fields `placeAll` reads
@@ -127,7 +127,7 @@ test('the hash the wrong ordering would write re-plans the island', () => {
   // The coast before the polder - and *with* the channel, because the wrong ordering would
   // still have dredged before it took the hash. Anything else makes the control wrong in
   // two ways and proves the weaker of them.
-  wrong.terrainHash = makeTerrain(SEED, { size: SIZE, polders: [], fairway: layout.fairway }).hash;
+  wrong.terrainHash = makeTerrain(SEED, { size: SIZE, polders: [], fairway: layout.fairway, works: layout.works || null }).hash;
   placeAll(wrong, village(POLDER_AT + 10), { seed: SEED, size: SIZE });
 
   const moved = movedBetween(settled, stands(wrong));

@@ -5,6 +5,9 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
+- ✅ [verfijnde-hoedjes.md](DONE/verfijnde-hoedjes.md) — zeven opnieuw gemodelleerde hoofddeksels.
+
 - ✅ [ambachtelijke-reiziger.md](DONE/ambachtelijke-reiziger.md) — concept 3 in het spel en de inventory, met gladde vormen en passende uitrusting.
 
 - ✅ [hoofdpersoon-varianten.md](DONE/hoofdpersoon-varianten.md) — drie verfijnde Blender-concepten met renders ter vergelijking.
@@ -32,6 +35,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+
 - 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
   wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als
   tabel met primaire toets, secundaire toets en controllerknop per actie (grijs zonder controller,
@@ -57,8 +61,24 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [piratenkroeg.md](piratenkroeg.md) — de Salty Kraken, gebouwd op `claude/salty-kraken`: een tweede kroeg
   aan het water (trede 52) met een piratenbemanning aan tafel die de quests geeft, de kist van de piraat erachter,
   een jukebox met shanties (en eigen muziek per kamer in `~/.promptholm/audio`) en een eigen bake met uithangbord.
-  Open: het interieur als bake (ontwerpvraag voor Fable) en de plek op de piratenoever, die de quay-sessie
+  Open: het interieur (een grotkroeg uit scheepsdelen, `scripts/krakenkit/`, in aanbouw op
+  `claude/salty-kraken-interieur`) en de plek op de piratenoever, die de quay-sessie
   (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt.
+- 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de
+  Salty Kraken): vloeren en hellingen als rechthoeken (`surfaces`), blockers met een hoogte, en een camera die
+  onder een vloer blijft.
+- 🚧 [quay-en-rivier.md](quay-en-rivier.md) — plan van 29 september 2026: de vaargeul is door de
+  groeiring van open zee afgesneden, er zitten ringplassen ingesloten en de quay is een rechthoekig
+  bassin in een heuvel. Groei breekt geen water meer (fase 1), een vaste haven-sectie in de
+  riviermonding als trechter (fase 2), één haven met een stenen kade aan de oostkant en de werf en de grote
+  schepen op de piratenoever (fase 3), en migratie van de live-island (fase 4). Fase 0 t/m 3 zijn gebouwd,
+  niet gecommit; open: de brug, de plek van de piratenkroeg en fase 4.
+- 🚧 [quay-op-zee.md](quay-op-zee.md) — plan van 30 september 2026: het quay-district (The Quay) gaat de
+  haven uit en komt als recreatie-oord op zee aan de kade-kant te liggen, zodat de haven vrij is voor boten.
+  Bouwt voort op quay-en-rivier fase 3. Gebouwd (niet gecommit): variant A in de baai oost van het
+  kade-eind (`layout.resort`, afgeleid door `resortSite`), de pier blijft bij de kade (optie A),
+  `QUAY_VERSION` 3, langere palen, een ring houdt het oord open. Open: kade op nieuwe eilanden is zeldzaam,
+  de open zee redeployen, de echte island migreren.
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in

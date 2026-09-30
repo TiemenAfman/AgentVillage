@@ -198,6 +198,157 @@ voordat er iets de kamer in gaat. Denk aan:
 
 Ondertussen gaan de quests (fase D), de shanty (E) en de docs door; die hangen niet van het uiterlijk af.
 
+### Eerste bake en bijsturing (30 september 2026)
+
+`scripts/build-piratetavern-room.py` bakte de zaal als set `piratetavern_room` (82k driehoeken, nog niet
+gekoppeld): scheepsplanken met spanten, de achterbar met drie boognissen, schedellampen, schat, jukebox. De
+keeper, met zes referentiebeelden (piratenhol in een grot, een scheepsinterieur met trappen en bruggen, een
+schatkamer vol kisten): *"een grote kale vierkante ruimte"*. Een schuilplaats is planken, touw, schedels,
+kisten, tonnen - en ladders, trappen en hoogteverschil.
+
+Besluiten:
+
+| Vraag | Besluit | Waarom |
+|---|---|---|
+| Stijl | **Een kroeg in een grot**: rots achter de bar en langs de haard, overhangend als plafond boven het noordelijke deel; het hout (balken, galerijen, erker, deurwand) is erin gebouwd. | Vier van de zes referenties; en de rots breekt de doos op zonder de plattegrond te veranderen. |
+| Hoogte | **Twee galerijen als decor**: een balkon boven de kelderingang met een trap langs de westwand, en een galerij in de zuidoosthoek met een ladder (de jukebox in de nis eronder). Nog niet beloopbaar. | Walk mode kent één verhoging van hele cellen; een trap is nog geen dek. Beloopbaar maken is een aparte stap. |
+| Vol | Stapels kisten en tonnen langs de wanden, touw en zeildoek tussen de balken, kaarsen met dikke druipers, goud als een laag over de vloer in plaats van losse munten. | De zaal was 9 bij 7 voor settlers van 0.45 en stond netjes tegen de muren. |
+| Licht | Nog steeds zeven lampen, één koel (maanlicht door het ronde raam) tegen de warme. | Het contrast warm-kaars tegen koel-water in de referenties. |
+| Budget | ~~Terug naar orde 40k.~~ **Geen beperking** (keeper, later die dag): de kamer is alleen geladen als je binnen bent, en het ontwerp mag er niet door worden ingeperkt. Plafond per kitstuk 40000 (`model-rules.mjs`) als vangnet tegen een op hol geslagen bake. | Detail is wat de referenties beloven. |
+| Scheepsdelen | **Herkenbare stukken schip als meubilair**, elk een eigen object in `scripts/krakenkit/` (set `krakenkit`, assets `civic_kraken_*`, budget 6000 per stuk): het hek als achterbar, een mast met ra en kraaiennest, de toog als stuk romp, tonkrukken. De keeper maakt per object een 2D-referentieblad (voor- en zijaanzicht) met een beeldmodel; elk wordt los gebouwd en gerenderd (`scripts/preview-krakenkit.py`) en daarna samen gebakken (`scripts/build-krakenkit.py`). | Een schip binnen zegt meteen "piraten" en breekt de doos beter dan rotsbulten; los per stuk kan het parallel en per stuk worden goedgekeurd. |
+| Rotspilaren | **Geschrapt.** | De camera (`clampCam` in interior.js) houdt alleen de rechthoek van de zaal aan, niet wat erin staat: een pilaar tussen camera en speler verbergt de speler. Hoogte komt van boven het hoofd. |
+| Kogelinslag | **Twee**: een kanonskogel vast in een wand met stervormige barsten (op de houten zuidwand of in de rots), en een doorgeslagen gat in de muur naast de kelderingang waardoor je een glimp van de kelder ziet. Deel van de kamer, geen los object. | Een klein verhaal in de muur; referentie van de keeper (een kogel in de pleister achter een gat in de steen). |
+
+### Referenties, prompts en de stand van de kit
+
+**Beelden** staan buiten git in `D:\git\Martijn\AgentVillage\refs\krakenkit\` (lokaal, `/refs/` staat in
+`.git/info/exclude`; er zitten foto's van anderen tussen, die horen niet in de publieke repo): `sfeer/` (de
+piratenholen en grotten, de schatkamer, Trader Sam's achterbar als scheepshek, een toog met tonkrukken, de
+kogelinslag met doorkijkgat), `objecten/` (de 2D-referentiebladen per object) en `renders/` (de eerste 82k-bake
+met zijn `.blend` en script, de schets van de grotkroeg). Nog niet op schijf, want midden in een beurt geplakt:
+de referentiebladen van het **hek**, de **mast** en de **kanonpoort** - die moet de keeper nog in `objecten/`
+zetten.
+
+**Prompts** voor een referentieblad (het stijlblok gaat voor elke objectprompt; maten in meters, een settler is
+1,8 m):
+
+> Game asset reference sheet: the same object shown twice side by side, left an orthographic FRONT view, right
+> an orthographic SIDE view, no perspective, same scale, aligned on one ground line. Stylized low-poly, flat
+> shaded, chunky simple shapes with small bevels, no fine texture or grain, clear silhouette. Dark oak and tarred
+> wood, brass and gold trim, iron fittings. Even flat lighting, plain neutral grey background. No people, no
+> text, no letters, no watermark.
+
+Minder cartoon: *"No outlines, no cel shading. Rendered as a 3D stylized low-poly game model with realistic
+proportions, weathered and slightly crooked wood, muted colours."* De objectprompts zelf (hek, mast, toog,
+tonkruk, kanonpoort, boegbeeld, trap met reling, lantaarn, schedellamp, open schatkist, jukebox) beschrijven
+wat erop moet en de maat; de uitgewerkte versies staan in de sessie van 30 september.
+
+**De kit** (`scripts/krakenkit/<object>.py`, stand 30 september 's avonds). Vaste stukken zijn een asset die
+pirate-tavern.js op `KIT` in de layout zet; stukken met een wisselende maat zijn functies die de zaal (`shell.py`,
+`dressing.py`) aanroept, met een voorbeeldasset voor de preview:
+
+| Object | Asset / functie | Stand |
+|---|---|---|
+| Hek als achterbar | `civic_kraken_stern` | 5788; detailronde nog te doen |
+| Mast met ra en kraaiennest | `civic_kraken_mast` | 18438, 5 hoog tot in de nok |
+| Toog als stuk romp | `civic_kraken_counter` | 12262 |
+| Tonkruk, kanonpoort, boegbeeld, schedellampen, jukebox | `_stool`, `_gunport`, `_figurehead`, `_skulllamp`, `_skullsconce`, `_jukebox` | gebouwd |
+| Kaarsensloep (kroonluchter) | `civic_kraken_sloop` | 12260; hangt twee keer boven de kuil |
+| Gebroken boeg | `civic_kraken_bow` | 14124; op 0,8 uit de noordgevel, boegbeeld op de steven, schedellamp aan zijn voet |
+| Stuurwiel-kroon | `civic_kraken_wheel` | 14402; plat boven de kuil |
+| Roer als uithangbord | `civic_kraken_rudder` | 5602; boven de voorkant van de bar |
+| Luiktafel | `hatch.hatch_top()`, `civic_kraken_hatch` | op de zes tafels (~4500 per blad, de helft het touw) |
+| Galerijdek | `deck.deck_section()`, `deck.stump_post()` | gebouwd, **nog niet in shell.py** |
+| Loopplank en touwbrug | `walkway.gangplank()`, `walkway.rope_bridge()` | gebouwd, **nog niet in shell.py** |
+| Spant en ribben | `frames.truss()`, `frames.rib()`, `frames.rib_arch()` | gebouwd, **nog niet in shell.py** |
+
+Een kitstuk begint op y = 0 bij zijn laagste punt; waar de zaal iets aan vastmaakt (vlammen, ketting, balk) staat als
+constante in de module (`FLAME_Y`, `RING_TOP`, `BEAM_Y` ...) en, waar JS het nodig heeft, nog eens in `KIT` in de
+layout. De zaal zit op **391k van de 400k** driehoeken (`HERO_BUDGETS`); de galerijen, trappen en het dak uit de kit
+kosten meer dan de huidige van de schil, dus bij het inbouwen moet er elders iets af (het touw van de luiktafels is
+2250 per tafel) of het budget omhoog, en de module is al 47 MB.
+
+**Licht** (30 september, naar het advies van de keeper: "donkere, filmische piratenkroeg bij nacht", niet feller
+maar in lagen). Het lichtplan staat in `LIGHTS` in de layout: warm en laag bij de sloepen, de haard (de sterkste,
+roodst, flikkert), de schedellamp en de kapitein; het paars van de nissen als brandpunt achterin; de maan hoog boven
+het atrium met een zachte afval (decay 1) plus een koele hemisphere als fill van boven; de hoeken buiten elk bereik.
+Bloom en god rays zitten in three.js, niet in de bake (`web/js/room-glow.js`): een halo rond elk gloeiend deel, uit
+de geometrie zelf gelezen, en bundels maanlicht onder de dakramen (`SKYLIGHTS`, `SHAFTS`). Additief en zonder eigen
+licht, dus het programma en de zeven lampen blijven zoals ze zijn. Echte bloom (UnrealBloomPass) zou postprocessing
+vendoren en een tweede renderpad naast het eiland vragen. Met de keeper live bijgesteld in de DevTools-Chrome.
+
+**Het haardvuur** (30 september, gevonden door de keeper in Tahsin Önemli's *Tarnished House*): geen twee kegels
+meer maar `web/js/hearth-fire.js` - een vlam die per pixel door ruis in een doos wordt geray-marcht, gloeiende
+sintels op de vuurbodem, vonken die de schoorsteen in gaan en twee halo's, allemaal additief en zonder eigen licht;
+de haardlamp (`hearth: true` in `LIGHTS`) flikkert mee op het ritme van het vuur. Maten in `HEARTH_FIRE`. Tarnished
+House is GPL-3.0, dus daar is niets uit overgenomen: de vlam is een port van het MIT-origineel waar die van hen op
+gebaseerd is (mattatz' THREE.Fire), met een eigen profiel - het MIT-plaatje is een traan op zijn punt en las in de
+haard als een zwevende bal - en een verschoven startpunt per pixel tegen de strepen van vaste stappen. Hun model
+(een Dark Souls-kampvuur, CC-BY maar het ontwerp van FromSoftware) komt niet in git.
+De vulling eronder is een kitstuk, `scripts/krakenkit/firebasket.py` (`civic_kraken_firebasket`, ~3100
+driehoeken): een smeedijzeren vuurkorf op vier palen met messing knoppen en gekrulde voeten, drie
+kruislings verkoolde eiken blokken met gloeiende haarscheurtjes, en as met snippers, houtskool en
+gloeiende kooltjes - naar de FLUX-referentie `refs/krakenkit/objecten/haard/haardvulling-flux-15-4palen-messing.png`
+(gekozen uit zestien, het hout op verzoek donkerder). De haardijzers en blokken in `dressing.py hearth()`
+zijn eruit.
+
+**De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
+`galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,
+`ribben`). Nieuwe beelden maakt Claude voortaan zelf met FLUX op de 4090 (`/blenderai`, `python -m blendai imagine
+"..." --style raw --batch 4`); de prompts beginnen met "Stylized game prop art:", vragen een driekwart- en een
+zijaanzicht naast elkaar (een vooraanzicht lukt de generator slecht) en de stijlregel tegen cartoon.
+
+**Groter, als cascade rond een atrium** (30 september, later): de keeper vond de zaal van 9 x 7 met twee verdiepingen
+boven elkaar te klein en te laag, en wees op het richtpunt: dat is geen stapel verdiepingen maar een **cascade van
+terrassen rond een open midden**. Besluiten: een grot van **18 x 14** onder een **rotsgewelf van 5**; de kuil
+(+0,6) als atrium met zes tafels, twee sloepen als kroonluchter en de mast in het midden; het barterras (+1,5) met als
+voorkant de zijkant van een scheepsromp naar de kuil; het kapiteinsdek (+2,1) boven het ruim in het oosten; een
+uitkijk en een galerij op de rots (+3,0); twee touwbruggen over het atrium naar het kraaiennest; de grond (0) als
+laagste terras met de kelder, de haard, het kanon, de deur en het bassin. Niets lager dan de grond (walk mode leest
+alles onder 0,06 als water). "Een mooi ruim beeld dat niet veel decoratie per niveau vergt": minder props, met
+bedoeling geplaatst. De maten staan in `web/js/kraken-layout.js`; schets 6 in de refs.
+
+**Tweede ronde referentiebladen** (30 september, voor de zaal met verdiepingen): tot er een tekening is, staat er een
+eenvoudige plaatshouder van de juiste maat, elk in een eigen functie in `scripts/krakenroom/shell.py` of `dressing.py`,
+zodat hij los vervangen kan worden. De referenties zijn op 30 september 's avonds gemaakt met `/perchance`
+(studio-render in plaats van concept art: driekwart van iets boven, echte materialen, effen grijs, cartoon en
+contourlijnen in de negatieve prompt; de klikpagina's met de exacte prompts staan als `_renders*.html` naast de
+beelden). Alles in `refs\krakenkit\objecten\`; `-alt` is een tweede keuze die de keeper ook goed vond:
+
+| Beeld | Plaatshouder | Wat we eruit halen |
+|---|---|---|
+| `schatkist` (+`-alt`) | `ph_chest_open` | bolle deksel met rood fluweel, ijzeren banden, munten over de voorrand |
+| `goudbult`, `goudbult-hoog` | `hoard`, `k_hoard*` (`geom.heap`) | losse, scheef liggende munten in terrassen met een rafelige rand en uitloop over de planken, in plaats van één gladde klomp; de hoge als schat voor het midden (kegel met kroon, een kist weggezakt in de voet), zonder de kaarsen die de generator erin zette en minder strak dan zijn muntkolommen. De edelstenen blijven zoals ze zijn |
+| `kanon` | `ph_cannon` | loop met ringen, kogels, touwwerk; het onderstel is een veldkanon, bij het bouwen de lage scheepsaffuit op vier kleine schijven houden |
+| `kaartentafel` (+`-alt`) | `ph_chart_table` | gedraaide poten met regel, kaart, kompas, zandloper; `-alt` heeft een ijzeren rand om het blad |
+| `kapiteinsstoel` (+`-alt`) | `ph_captain_chair` | troon met schedel en rood fluweel; `-alt` is lichter |
+| `globe` | `ph_globe` | meridiaan- en horizonring op een gedraaide voet |
+| `telescoop` | `ph_telescope` | houten buis met messing ringen op een driepoot |
+| `roeiboot` (+`-alt`) | `ph_rowboat` | overnaadse romp met blauwgroene band, riemen, lantaarn op de steven, landvast |
+| `hangmat` | `ph_hammock` | doek tussen twee spreidhouten, waaier van lijnen naar een ring |
+| `stuurwiel` | `ph_wheel` | acht spaken met handvatten, messing naaf; zonder de voet, het hangt aan de schoorsteen |
+| `anker` (+`-alt`) | `ph_anchor` | beide zijn goed zoals ze zijn, ook de korte schacht: rechtop aan de muur, liggend met touw op de vloer |
+| `jolly-roger` | `ph_jolly_roger` | gerafelde losse lap aan een stokje (de eerste pogingen spijkerden hem steeds op een plank) |
+| `scheepstrap` | `shell.ships_ladder` | steile trap met ijzeren beslag; de tweede leuning zelf toevoegen |
+| `rotsboog` | `shell.sea_arch` | brokkelige rots met mos aan de voet, lantaarn aan een ketting |
+| `deur` | `shell.door`, `door_leaf` | eiken planken onder een boog, hengsels, kijkluikje, trekring, stenen omlijsting |
+| `haard/` | `shell.hearth`, `dressing.hearth` | FLUX-varianten van de vulling; afgerond in een eigen sessie |
+| `sloep-kroonluchter`, `touwbrug` | kit (`sloop.py`, `walkway.py`) | uit de eerste ronde, al gebouwd |
+
+`hangmat-afgekeurd` en `scheepstrap-afgekeurd` zijn de mislukte eerste pogingen, bewaard als voorbeeld van wat er
+fout ging.
+
+**Nog in de kamer te verwerken** (uit de gesprekken): de grotkroeg van schets 2 (rots noord en west, rotsplafond
+over het noorden, bassin met steiger en roeiboot in het zuidoosten met maanlicht door een rotsboog, galerij
+boven het water, balkon met trap boven de kelder, jukebox tussen de zuidramen), de kogelinslag en het
+doorkijkgat, een L-vormige toog als die de zaal beter breekt, stapels kisten en tonnen, touw en zeildoek, kaarsen
+met dikke druipers, goud als een laag op de vloer.
+
+**Het uiterlijk**: meer vorm (budget per kitstuk 15000) en schaduw in de vertexkleuren (`geom.bake_ao`, ambient
+occlusion uit Cycles). De Blender-previews tonen de plankstructuur van het eiland niet, dus het oordeel valt in
+het spel. Is het daar te kaal, dan is de volgende stap texturen (een GLB zoals de kapitein, met een eigen
+materiaal onder de zeven lampen) - meer werk en een risico op stijlbreuk met de rest van het eiland.
+
 ## Het exterieur: een galjoen dat op een rots is gelopen (30 september 2026)
 
 **Status: gebouwd op `claude/salty-kraken-exterieur` (vanaf `claude/salty-kraken`), niet gemerged; wacht op het

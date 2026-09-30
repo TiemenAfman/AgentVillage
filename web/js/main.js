@@ -23,7 +23,7 @@ import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
 import { decodeCrowd, decodeRides, decodeHeld } from 'shared/settlerwire.mjs';
 import { drawnSignature } from './islandsig.js';
-import { quaysOf, mooringsFor, shipBerth, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
+import { quaysOf, mooringsFor, shipBerth, shipWater, BOATS_PER_HARBOUR } from 'shared/quay.mjs';
 import { clamp } from 'shared/rng.mjs';
 import { AIR_S, SWIMMING, submerged, stepAir } from 'shared/breath.mjs';
 import { createWorld } from './world.js';
@@ -37,7 +37,7 @@ import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry,
+  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry, resortParts,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
@@ -46,6 +46,7 @@ import { createRecordBatch, pickedId } from './record-batch.js';
 import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
+import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
@@ -53,7 +54,7 @@ import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
-import { createInterior, INDOOR_GLOW } from './interior.js';
+import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -2223,6 +2224,16 @@ function keepRaveHours() {
 
 function enterInterior(room, at) {
   if (state.inside || state.mode !== 'walk') return;
+  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
+  // they are in. Usually they are, having been started as you walked up to the door.
+  if (!roomReady(room)) {
+    state.ui.toast('The door sticks a moment...');
+    prepareRoom(room).then(() => enterInterior(room, at), (e) => {
+      console.error('that room could not be loaded', e);
+      state.ui.toast('That door does not open yet.');
+    });
+    return;
+  }
   let inside = rooms.get(room);
   if (!inside) {
     try {
@@ -3303,10 +3314,11 @@ function freeBerth(theirHalf) {
 // screen, which the terrain hash on the next line reports as two machines running
 // different code. `volcano` is the third of those and the bluntest: the sea's own island
 // (shared/volcano.mjs) is a different heightfield from the same seed, and without the flag
-// it would be drawn as an ordinary island and flagged as skew.
-function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, grow = null, volcano = false, terrainHash = null, name = null, village = null, origin = null }) {
+// it would be drawn as an ordinary island and flagged as skew. `works` (the layout's digs,
+// fills and harbour funnel) is ground too, on the same terms.
+function joinIsland({ id, rev = 0, seed, gridSize, polders = [], fairway = null, works = null, grow = null, volcano = false, terrainHash = null, name = null, village = null, origin = null }) {
   if (state.sea.get(id)) return state.sea.get(id);
-  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway, grow, volcano });
+  const terrain = makeTerrain(seed, { size: gridSize, polders, fairway, works, grow, volcano });
   if (terrainHash && terrain.hash !== terrainHash) {
     // A warning here and not a refusal, the same as buildScene does for our own island
     // (main.js:1560): the two sides disagree about shared/terrain.mjs, which means one of
@@ -3651,7 +3663,9 @@ function showMinimap(on) {
 // at their moorings on a restart.
 //
 // The galleon does not lie at her berth but out from it in deep water (`shipBerth`, in
-// shared/quay.mjs now, because lib/layout.mjs keeps the rede clear of where she lies).
+// shared/quay.mjs now, because lib/layout.mjs keeps the rede clear of where she lies) - and on
+// an island with a stone quay, in the big ships' water on the pirates' side (`shipWater`, from
+// the island's own `works`, so every page and the layout lay her in the same cell).
 function boatsFor(region) {
   const v = region === state.region ? state.village : region.village;
   const out = [];
@@ -3660,7 +3674,7 @@ function boatsFor(region) {
     if (!b) {
       const ship = kindOf(m.id) === 'galleon';
       const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
-      const at = ship ? shipBerth(m, state.sea.height) : m;
+      const at = ship ? shipBerth(m, state.sea.height, shipWater(v.works, region.terrain.half, region.origin || [0, 0])) : m;
       craft.place(at.x, at.z, m.yaw);
       b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
       if (ship) { b.berth = { x: m.x, z: m.z }; b.shipAt = at; }
@@ -4004,6 +4018,7 @@ async function doSyncFleet() {
       gridSize: bundle.grid ? bundle.grid.size : bundle.island.gridSize,
       polders: bundle.polders || [],
       fairway: bundle.fairway || null,
+      works: bundle.works || null,
       grow: bundle.grow || null,
       volcano: bundle.island.volcano === true,
       terrainHash: bundle.island.terrainHash || null,
@@ -4985,7 +5000,7 @@ function rebuild(rec, spec) {
 
 // --------------------------------------------------------------- scene build
 function buildScene(village) {
-  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null, grow: village.grow || null, open: !!village.island.open });
+  const terrain = makeTerrain(village.island.seed, { size: village.grid.size, polders: village.polders, fairway: village.fairway || null, works: village.works || null, grow: village.grow || null, open: !!village.island.open });
   if (village.island.terrainHash && terrain.hash !== village.island.terrainHash) {
     console.warn(`terrain mismatch: viewer ${terrain.hash}, scanner ${village.island.terrainHash}`);
     // Our own island, against our own scanner: the page is newer or older than the server
@@ -5505,12 +5520,15 @@ function syncHamlets(village) {
     if (d.deck && d.deck.length && d.center) {
       const key = `deck:${d.id}`;
       live.add(key);
-      const sig = d.deck.map((c) => `${c[0]},${c[1]}`).join(';');
+      // The quay's resort on the sea brings its raft and its parasols into the same geometry
+      // (resort-dressing.js: worked out from the deck and the houses, nothing on the wire).
+      const dressing = d.kind === 'quay' ? resortDressing(d, village.buildings, terrain, village.paths) : null;
+      const sig = d.deck.map((c) => `${c[0]},${c[1]}`).join(';') + (dressing ? `|${JSON.stringify(dressing)}` : '');
       const have = hamletSigns.get(key);
       if (have?.sig !== sig) {
         if (have) { hamletGroup.remove(have.group); have.dispose(); hamletSigns.delete(key); }
         const [px, pz] = terrain.cellWorld(d.center[0], d.center[1]);
-        const g = buildDeckGeometry(d.deck, terrain, [px, pz]);
+        const g = buildDeckGeometry(d.deck, terrain, [px, pz], resortParts(dressing, terrain, [px, pz], groundAt));
         if (g) {
           const pm = new THREE.Mesh(g, buildingMat);
           pm.position.set(px, 0, pz);
@@ -5746,7 +5764,9 @@ function layLandscape(shot) {
     shownPolders = shot.polders;
     shownFairway = shot.fairway || null;
     const v = state.village;
-    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), fairway: shownFairway, grow: v.grow || null });
+    // The earthworks are drawn on every day, like `grow`: they mend what a ring broke rather
+    // than being a rung of the ladder (web/js/history.js dates only the polders and the fairway).
+    const next = makeTerrain(v.island.seed, { size: v.grid.size, polders: v.polders.slice(0, shot.polders), fairway: shownFairway, works: v.works || null, grow: v.grow || null });
     state.terrain = next;
     // The region holds the terrain it was placed with, and the water patch now reads its
     // depths through the archipelago - so a coast that moves has to move here too, or the
@@ -5772,9 +5792,10 @@ function layLandscape(shot) {
   syncHamlets(shot.village);
 }
 
-// What the heightfield is made of, as one string: the polders' three lists and the channel.
+// What the heightfield is made of, as one string: the polders' three lists, the channel, the
+// layout's earthworks (whole: a new funnel or dig changes the ground) and the growth.
 // Compared between two villages to know whether the ground has to be built again.
-const groundSig = (v) => JSON.stringify([(v.polders || []).map((p) => [p.cells, p.pools, p.dike]), v.fairway ? v.fairway.cells : null, v.grow || null]);
+const groundSig = (v) => JSON.stringify([(v.polders || []).map((p) => [p.cells, p.pools, p.dike]), v.fairway ? v.fairway.cells : null, v.works || null, v.grow || null]);
 
 function applyLandscape(force = false) {
   if (!state.world || !state.village) return;
@@ -6206,7 +6227,12 @@ async function walkIn(rec) {
 
 async function sailIn(rec, district) {
   const t = state.terrain;
-  const end = district.pier[district.pier.length - 1];
+  // A house on the resort (Plans/quay-op-zee.md) is sailed to its own front deck, out at sea -
+  // the harbour's planks are the quay's, and a settler coming ashore there would walk off
+  // through the town to a house they had just sailed past.
+  const own = rec.spec.plot?.quay && rec.spec.door;
+  const end = own || district.pier[district.pier.length - 1];
+  if (!end) { await popIn(rec); return; }
   const [ex, ez] = t.cellWorld(end[0], end[1]);
   const dirX = ex, dirZ = ez;
   const len = Math.hypot(dirX, dirZ) || 1;
@@ -6636,6 +6662,9 @@ function frame(nowMs) {
   } else if (state.mode === 'walk') {
     wrapEye();
     const w = state.walk.update(dt);
+    // A door within reach whose room is drawn from sets loaded on demand starts loading them, so
+    // that by the time E is pressed they are in (interior.js prepareRoom).
+    if (w && w.near && w.near.room && !roomReady(w.near.room)) prepareRoom(w.near.room).catch(() => {});
     state.ui.setWalkPrompt(promptFor(w && w.near));
     touchHud(w && w.near, state.walk);
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));

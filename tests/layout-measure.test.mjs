@@ -64,24 +64,40 @@ const fresh = path.join(work, 'fresh.json');
 await scanOnce(fresh, path.join(work, 'fresh-village.json'));
 const F = readJson(fresh);
 
+// With a resort on the sea (Plans/quay-op-zee.md) the quay's deck is two pieces: the harbour's
+// boardwalk at the stone quay and the resort's jetty and spines out at sea, each joined to the
+// island's roads where it meets the land (the resort at its jetty's foot, `road:quay:resort`).
+// Without one it is one piece, as it always was.
 test('the quay is one connected deck and every harbour house stands on it', () => {
   const quay = village.districts.find((d) => d.kind === 'quay');
   if (!quay) return;
   const cells = [...(quay.deck || []), ...(quay.pier || [])];
   assert.ok(cells.length, 'the quay has a deck');
   const all = new Set(cells.map((c) => `${c[0]},${c[1]}`));
-  const seen = new Set(), q = [cells[0]];
-  while (q.length) {
-    const [x, z] = q.shift(), key = `${x},${z}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const n = `${x + dx},${z + dz}`;
-      if (all.has(n) && !seen.has(n)) q.push([x + dx, z + dz]);
+  const roads = new Set(layout2.paths.flatMap((p) => p.cells).map((c) => `${c[0]},${c[1]}`));
+  const pieces = [];
+  const seen = new Set();
+  for (const c of cells) {
+    if (seen.has(`${c[0]},${c[1]}`)) continue;
+    const piece = [], q = [c];
+    while (q.length) {
+      const [x, z] = q.shift(), key = `${x},${z}`;
+      if (seen.has(key)) continue;
+      seen.add(key); piece.push([x, z]);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = `${x + dx},${z + dz}`;
+        if (all.has(n) && !seen.has(n)) q.push([x + dx, z + dz]);
+      }
     }
+    pieces.push(piece);
   }
-  assert.equal(seen.size, all.size, 'the pier, streets and front decks touch');
+  assert.ok(pieces.length <= (layout2.resort ? 2 : 1), `the pier, streets and front decks touch (${pieces.length} pieces)`);
+  for (const piece of pieces) {
+    const joined = piece.some(([x, z]) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => roads.has(`${x + dx},${z + dz}`)));
+    assert.ok(joined, `a piece of the quay's deck at ${piece[0]} meets no road`);
+  }
   for (const b of village.buildings.filter((b) => b.harbour)) {
+    if ((layout2.plots[b.id] || {}).commons) continue;          // lodging on the commons, on land
     assert.equal(b.plot.quay, true, `${b.id} is marked as standing over quay water`);
   }
 });
@@ -106,6 +122,9 @@ const paved = new Set();
 for (const p of L.paths) for (const c of p.cells) paved.add(key(c));
 for (const c of (L.town.paved || [])) paved.add(key(c));
 for (const b of (L.bridges || [])) for (const c of b.cells) paved.add(key(c));
+// And a district's deck, which shared/roads.mjs walks like road: the quay's houses on the resort
+// open onto its boardwalk, which is not a path (Plans/quay-op-zee.md).
+for (const d of Object.values(L.districts || {})) for (const c of d.deck || []) paved.add(key(c));
 
 const bbox = (cells) => {
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;

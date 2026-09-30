@@ -29,7 +29,7 @@ function settled(seed, settlers = 36) {
 // every cell the square can reach, and at each cell a look straight out across the water.
 // Returns the road and the deck it should get, or null if this island has nowhere to try.
 function crossing(layout, seed) {
-  const t = makeTerrain(seed, { size: SIZE, polders: layout.polders, fairway: layout.fairway });
+  const t = makeTerrain(seed, { size: SIZE, polders: layout.polders, fairway: layout.fairway, works: layout.works || null });
   const grid = replayGrid(t, layout);
   const open = reachableFromSquare({ paths: layout.paths, bridges: layout.bridges, island: { town: layout.town }, districts: [] }, SIZE);
   const ground = (x, z) => t.inGrid(x, z) && t.isLand(x, z) && [FREE, PATH, SQUARE].includes(grid.get(x, z));

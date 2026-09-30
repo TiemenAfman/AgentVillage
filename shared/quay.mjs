@@ -15,6 +15,7 @@
 // terrain.mjs writes out DIRS16 for the same reason. The galleon's berth (`shipBerth`, at
 // the bottom) turns a hull too, and does it the same way.
 import { CRAFTS } from './crafts.mjs';
+import { funnelHas } from './terrain.mjs';
 
 // The four ways water can lie off a coast cell, and the heading that points along each.
 // yaw is the island's own convention (walk.js:615-617): forward is (sin yaw, cos yaw), so
@@ -424,13 +425,44 @@ const SHIP_POINTS = (() => {
   return [[0, 0], ...probes, ...probes.map(([x, z]) => [x, -z])];
 })();
 
-export function shipBerth(m, height) {
+// `water` (optional, `shipWater` below) confines her to the big ships' water of an island with a
+// stone quay: every point of her hull has to float AND lie in a cell `water.allow` passes. The
+// sixteen rays do not find that water - it is a strip a few cells wide on the far side of the
+// channel, and measured on Hoogezand every ray out of the mooring missed it (the window for her
+// middle is 3.6 by 4.3 cells) - so she is laid on the middle of the nearest cell that takes her,
+// nearest by the square of the distance in whole cells from the mooring's own cell, a tie to the
+// first in rows then columns. Whole numbers all the way, so a page and the layout pick the same
+// cell whatever `origin` the island has. When no cell within SHIP_SEARCH takes her she falls back
+// to the rays, so a galleon always has somewhere to lie.
+export function shipBerth(m, height, water = null) {
   const heading = HEADINGS.find(([yaw]) => yaw === m.yaw);
   // A heading that is not one of the four is not a mooring this file made, and there is no
   // turning a hull to it without the trigonometry this file may not use.
   if (!heading) return m;
   const [fx, fz] = heading[1];
   const clear = (x, z) => SHIP_POINTS.every(([px, pz]) => height(x + px * fz + pz * fx, z - px * fx + pz * fz) < SHIP_WATER);
+  if (water) {
+    const { half, allow } = water;
+    const [ox, oz] = water.origin || [0, 0];
+    const cx = (x) => Math.floor(x - ox + half), cz = (z) => Math.floor(z - oz + half);
+    const fits = (x, z) => SHIP_POINTS.every(([px, pz]) => {
+      const wx = x + px * fz + pz * fx, wz = z - px * fx + pz * fz;
+      return height(wx, wz) < SHIP_WATER && allow(cx(wx), cz(wz));
+    });
+    if (fits(m.x, m.z)) return m;
+    const gx0 = cx(m.x), gz0 = cz(m.z), R = SHIP_SEARCH;
+    let best = null, bk = Infinity;
+    for (let gz = gz0 - R; gz <= gz0 + R; gz++) {
+      for (let gx = gx0 - R; gx <= gx0 + R; gx++) {
+        const d2 = (gx - gx0) * (gx - gx0) + (gz - gz0) * (gz - gz0);
+        if (d2 > R * R || d2 >= bk) continue;
+        const x = gx - half + 0.5 + ox, z = gz - half + 0.5 + oz;
+        if (!fits(x, z)) continue;
+        best = { x, z }; bk = d2;
+      }
+    }
+    if (best) return best;
+  }
   if (clear(m.x, m.z)) return m;
   for (let d = 1; d <= SHIP_SEARCH; d += 1) {
     for (let k = 0; k < 16; k++) {
@@ -439,4 +471,38 @@ export function shipBerth(m, height) {
     }
   }
   return m;
+}
+
+// ---- the big ships' water ---------------------------------------------------------------
+// On an island with a stone quay (Plans/quay-en-rivier.md, fase 3: `works.kade` beside the
+// harbour funnel `works.haven`) the big ships - the galleon and the ships on the rede - lie on
+// the pirates' half of the funnel: the far side of its axis from the quay, at least SHIP_LANE
+// cells off the axis (the channel is five across, so boats running in and out keep their lane),
+// and out past the quay's seaward end, so a ship never lies alongside the quay's own boats.
+// Worked out from `works` alone - the funnel and the quay's cells, which lie on the quay's bank
+// by construction - so a page, the layout and a neighbour's copy of the bundle agree without a
+// field of its own. Whole numbers but for one sqrt, as funnelHas is. Null without a quay.
+export const SHIP_LANE = 4;
+export function shipWaterOf(works) {
+  const h = works && works.haven, k = works && works.kade;
+  if (!h || !k || !(k.cells || []).length) return null;
+  const [dx, dz] = h.dir, L = Math.sqrt(dx * dx + dz * dz);
+  if (!L) return null;
+  const [tx, tz] = h.top;
+  const side = (gx, gz) => Math.sign((gx - tx) * dz - (gz - tz) * dx);
+  const quay = side(k.cells[0][0], k.cells[0][1]);
+  if (!quay) return null;
+  let end = -Infinity;
+  for (const [gx, gz] of k.cells) end = Math.max(end, (gx - tx) * dx + (gz - tz) * dz);
+  return (gx, gz) => {
+    if (side(gx, gz) !== -quay || (gx - tx) * dx + (gz - tz) * dz <= end) return false;
+    if (Math.abs((gx - tx) * dz - (gz - tz) * dx) < SHIP_LANE * L) return false;
+    return funnelHas(h, gx, gz);
+  };
+}
+// What shipBerth's `water` wants for an island of `half` whose middle is at `origin` in the
+// caller's frame, or null on an island with no stone quay.
+export function shipWater(works, half, origin = [0, 0]) {
+  const allow = shipWaterOf(works);
+  return allow ? { half, origin, allow } : null;
 }

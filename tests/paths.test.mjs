@@ -17,24 +17,18 @@ register('./support/shared-loader.mjs', import.meta.url);
 // world.js reaches buildings.js for the tier table, and buildings.js asks for its texture
 // sheets the moment it loads. The same stub the tavern test uses, for the same reason.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { roadGraph, smoothLane, offCurve, quayWaterField } = await import('../web/js/world.js');
+const { roadGraph, smoothLane, offCurve } = await import('../web/js/world.js');
 delete globalThis.document;
 
-test('the quay water mask leaves one cell of shoreline clearance around its parcel', () => {
-  const size = 8;
-  const village = {
-    island: { lattice: { anchor: [0, 0], pitch: 2 }, town: null },
-    districts: [
-      { kind: 'quay', lobes: [{ parcel: { i0: 1, j0: 1, w: 1, h: 1, rows: ['1'] } }] },
-      { kind: 'hamlet', lobes: [{ parcel: { i0: 2, j0: 1, w: 1, h: 1, rows: ['1'] } }] },
-    ],
-  };
-  const mask = quayWaterField(village, size);
-  const wet = [];
-  for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
-    if (mask[x + z * size]) wet.push([x, z]);
-  }
-  assert.deepEqual(wet, Array.from({ length: 4 }, (_, z) => Array.from({ length: 4 }, (_, x) => [x + 1, z + 1])).flat());
+// The quay's water mask (`quayWaterField`, the basin overlay's shoreline clearance) is gone with
+// the overlay: the harbour is real water since fase 3 of Plans/quay-en-rivier.md. The stone quay
+// is paved as plaza in world.js `squareCells`, and roadGraph below makes it tiles.
+test('the stone quay is paving: its cells are plaza tiles, not lanes', () => {
+  const quay = [];
+  for (let z = 10; z < 20; z++) for (let x = 20; x < 23; x++) quay.push([x, z]);
+  const graph = roadGraph([{ id: 'road:kade', cells: quay }], quay, SIZE);
+  assert.equal(graph.chains.length, 0, 'no lane is drawn across the quay');
+  assert.equal(graph.tiles.filter((t) => t.kind === 'plaza').length, quay.length);
 });
 
 // The number world.js draws with. Written out here rather than exported, so that raising
