@@ -815,6 +815,16 @@ lowered so the surface is at 0.50 m of it, instead of the settlers' `WADE_Y`), `
 SkeletonUtils is a new vendored file: a checkout that has not run `npm install` (or
 `node scripts/vendor.mjs`) since then gets the logged failure, not imps.
 
+**A room's own sets load at its door, never at boot** (the second exception): `models.js` `LAZY` holds the
+Salty Kraken's hall (`piratetavern_room`, 34 MB) and its ship's parts (`krakenkit`), imported on demand by
+`loadSet`; `interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which, main.js starts
+them as soon as that room's door is within reach and `enterInterior` waits for them ("The door sticks a
+moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
+island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
+pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
+`web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
+change a floor or a prop there and rebake, never in two places.
+
 **The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
 boat's stamina pool), so a second kind of vehicle in it would make them all lie. F (pad Y)
