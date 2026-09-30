@@ -8,6 +8,14 @@
 // themselves - the room's light count (and so its program) stays the tavern's.
 import * as THREE from 'three';
 
+// These write the value they want on the screen. Drawn straight to the canvas that is what lands;
+// through post.js's composer the frame is linear until OutputPass turns it into screen colour, and a
+// raw value would be turned too (the shafts came out three times as bright). So the value is taken
+// back to linear first and handed to three's own output conversion, which is a no-op pair on the
+// screen and exactly one conversion through the composer.
+const OUT = ['gl_FragColor = sRGBTransferEOTF(gl_FragColor);', '#include <colorspace_fragment>'].join('\n');
+const withOut = (src) => src.replace('#include <room_glow_out>', OUT);
+
 // ---- halos: a soft round glow round every flame, lamp and lit window ---------------------------
 // One THREE.Points for all of them, so a hall full of candles is one draw call. A halo is sized in
 // room units, so it shrinks with distance like the flame it sits on; `uScale` turns a unit into
@@ -36,6 +44,7 @@ const HALO_FRAG = /* glsl */ `
     // A tight core and a long soft skirt: the look of bloom round a small bright source.
     float g = exp(-r * r * 9.0) * 0.55 + exp(-r * r * 2.6) * 0.45;
     gl_FragColor = vec4(vTint * g * (1.0 - r), 1.0);
+    #include <room_glow_out>
   }`;
 
 export function createHalos(list) {
@@ -55,7 +64,7 @@ export function createHalos(list) {
   g.setAttribute('size', new THREE.BufferAttribute(size, 1));
   g.setAttribute('phase', new THREE.BufferAttribute(phase, 1));
   const mat = new THREE.ShaderMaterial({
-    vertexShader: HALO_VERT, fragmentShader: HALO_FRAG,
+    vertexShader: HALO_VERT, fragmentShader: withOut(HALO_FRAG),
     uniforms: { uScale: { value: 500 }, uTime: { value: 0 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
@@ -156,13 +165,14 @@ export function createShafts(list) {
         vColor = color;
         gl_Position = projectionMatrix * mv;
       }`,
-    fragmentShader: /* glsl */ `
+    fragmentShader: withOut(/* glsl */ `
       varying vec3 vColor;
       varying float vFace;
       void main() {
         float soft = vFace;
         gl_FragColor = vec4(vColor * soft, 1.0);
-      }`,
+        #include <room_glow_out>
+      }`),
     vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
   });

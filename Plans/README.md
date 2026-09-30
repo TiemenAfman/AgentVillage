@@ -64,6 +64,8 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   Open: het interieur (een grotkroeg uit scheepsdelen, `scripts/krakenkit/`, in aanbouw op
   `claude/salty-kraken-interieur`) en de plek op de piratenoever, die de quay-sessie
   (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt.
+- 🚧 [bloom-en-aa.md](bloom-en-aa.md) — bloom en anti-aliasing als instelling (Settings → Graphics): three's
+  postprocessing gevendord, bloom eerst alleen in kamers, AA MSAA / SMAA / uit.
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de
   Salty Kraken): vloeren en hellingen als rechthoeken (`surfaces`), blockers met een hoogte, en een camera die
   onder een vloer blijft.

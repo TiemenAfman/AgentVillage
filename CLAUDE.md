@@ -966,7 +966,13 @@ pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
 change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
 (`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
-count; the halos are read off every glowing part of the room's own geometry, never listed by hand.
+count; the halos are read off every glowing part of the room's own geometry, never listed by hand. Real bloom
+and SMAA are `web/js/post.js` (three's postprocessing, vendored by `scripts/vendor.mjs`), the one render in main.js
+(`postFx.render`) and in demo.js: a composer only where bloom is on (rooms, Settings → Graphics, `promptholm.post.v1`),
+a plain `renderer.render` everywhere else, and under bloom the room hides its halos (`setBloom`). Not on the island yet:
+a composer draws linear and converts once in OutputPass, and the sky dome, the water and other shaders that write screen
+colour themselves would be converted twice ([Plans/bloom-en-aa.md](Plans/bloom-en-aa.md)). A ShaderMaterial that is to
+look the same both ways ends in `sRGBTransferEOTF` + `colorspace_fragment`, as room-glow.js does.
 
 **The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
