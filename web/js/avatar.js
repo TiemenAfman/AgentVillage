@@ -133,6 +133,9 @@ function buildFigure(spec, gear, include = null) {
     const colors = new Float32Array(position.length);
     for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    // Blender's corner normals preserve soft faces and intentional hard equipment edges.
+    if (part.normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(part.normals), 3));
+    else g.computeVertexNormals();
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     // A torch's flame is the one part of a settler that lights up after dark, through the
     // same per-vertex night mask a window uses (buildings.js) - no material of its own.
@@ -142,7 +145,6 @@ function buildFigure(spec, gear, include = null) {
   });
   const geometry = mergeGeometries(parts, false);
   parts.forEach((part) => part.dispose());
-  geometry.computeVertexNormals();
   return geometry;
 }
 

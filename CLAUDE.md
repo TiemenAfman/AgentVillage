@@ -1267,6 +1267,15 @@ loopback socket, a known `Host` and a matching `Origin`, and never reads
 `X-Forwarded-For`. The ceiling is `PROMPTHOLM_MAX_AGENTS` (4). Put any new write route behind
 the same check.
 
+**The player and inventory use the selected smooth traveller (concept 3).**
+`scripts/build-settler.py` reuses the concept helpers, fits equipment and stores rig
+anchors and body groups in the Blender source. `export-settler.py` preserves corner
+normals when `avatar_smooth_normals` is enabled; do not recompute them after merging.
+`classic-avatar.js` gives the hero a smooth material while sharing the island's live
+shader uniforms. The Outfit thumbnail includes the shirt, vest, belt and pouch.
+Resident rebuilds preserve faces from their own blend rather than copying the player.
+See [Plans/DONE/ambachtelijke-reiziger.md](Plans/DONE/ambachtelijke-reiziger.md).
+
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
 evicting the oldest, which after enough visits to a panel is the island's own. The inventory
@@ -1810,6 +1819,12 @@ anvil, whose `at` is where the smith strikes) and `anchor.door`, and a passive s
 player rig (`createClassicAvatar`) with a hammer, nobody's agent - driven by `web/js/smithy.js`
 off `uNight` (Plans/DONE/smidse.md). A glow that dims at runtime sets `aEmissive` below 1 on its
 geometry; the bake still only allows 0 or 1.
+Something hung off a wall cannot have its origin on its fixing: every asset's lowest point must be
+y = 0. `assets/piratesign` (the Salty Kraken's sign, `web/js/piratesign.js`) is the pattern: wall at
+x = 0, arm along +x, y = 0 at the board's foot, and `anchor.sign` on the wall fixing, which the
+module subtracts (`pirateSignFrame`) so a building names only its facade point and a yaw. Merging
+baked slots by hand, go through `mergeParts` from buildings.js, never `mergeGeometries`: only
+sheeted slots carry `aSheet`, and the bare merge returns null.
 
 ## The two workbench pages
 
@@ -1982,8 +1997,15 @@ serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 `tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
 the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
 as soon as there is a release, not only once the sea is updated; `install_update` fetches the
-APK and hands it to Android's installer through the FileProvider. Both are app commands, so
-they need no entry in `capabilities/default.json` (only plugin calls do).
+APK into the app's cache and hands it to Android's installer through **our own Kotlin**,
+`InstallerPlugin.kt` beside `MainActivity.kt` in `gen/android/app/src/main/java/com/promptholm/sea/`
+(a `@TauriPlugin` class in the app module, registered from `lib.rs` by name with
+`register_android_plugin`; a content:// URI from the manifest's FileProvider, `cache-path` in
+`res/xml/file_paths.xml`, so the file has to be in the cache). Not the opener plugin's
+`open_path`: on Android that hands a bare path to `ACTION_VIEW`, nothing answers, and up to
+0.7.0 the button fetched the whole APK and then fell back to the browser, whose download sat at
+100% and never installed. Both are app commands, so they need no entry in
+`capabilities/default.json` (only plugin calls from the page do).
 
 ## Layout of the source
 

@@ -106,3 +106,12 @@ test('an icon goes stale on exactly the colours its parts read', () => {
   assert.notEqual(iconKey(sword, DEFAULT_AVATAR), iconKey(sword, { ...DEFAULT_AVATAR, trim: 0x111111 }));
   assert.equal(iconKey(sword, DEFAULT_AVATAR), iconKey(sword, { ...DEFAULT_AVATAR, hat: 0x111111 }));
 });
+
+test('the outfit thumbnail includes the chosen waistcoat, pouch and shirt sleeves', () => {
+  const names = slot('tunic').parts;
+  for (const part of ['Fitted waistcoat', 'Fitted waistcoat.001', 'Belt pouch', 'Tailored linen tunic', 'Left continuous sleeve', 'Right continuous sleeve']) {
+    assert.ok(names.includes(part), part);
+  }
+  assert.ok(!names.includes('Backpack'), 'removable pack must stay in its own slot');
+  assert.ok(!names.includes('Head'), 'outfit must not contain the face');
+});

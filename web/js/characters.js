@@ -20,7 +20,7 @@ controls.enablePan = false;
 controls.minDistance = .9;
 controls.maxDistance = 3;
 controls.update();
-const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
+const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: false });
 const entries = [
   ['Jij', 'Reiziger · volledige uitrusting', avatarPlayerGeometry(DEFAULT_AVATAR), 1],
   ['Dorpswerker', 'Werkjas & schort', figureGeometry('sonnet', { look: { ...styleLook('sonnet'), hatShape: 'cap', hat: 0x5c8a4a } }), 1],

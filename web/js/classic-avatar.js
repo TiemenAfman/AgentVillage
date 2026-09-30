@@ -3,25 +3,18 @@
 // Here those same objects sit below four pivots so the old look can use real strides.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SETTLER_PARTS } from './settler-mesh.js';
+import { SETTLER_PARTS, SETTLER_RIG } from './settler-mesh.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { box, cylinder, cone, sphere, meshAsset, mergeParts } from './buildings.js';
 import * as models from './models.js';
 import { dancePose } from './dance.js';
 
-const LIMBS = {
-  leftLeg: ['Left boot', 'Left trousers', 'Left stocking cuff'],
-  rightLeg: ['Right boot', 'Right trousers', 'Right stocking cuff'],
-  leftArm: ['Left sleeve', 'Left cuff', 'Left hand'],
-  rightArm: ['Right sleeve', 'Right cuff', 'Right hand'],
-};
+const groupedParts = (group) => SETTLER_PARTS.filter((p) => p.group === group).map((p) => p.name);
+const LIMBS = Object.fromEntries(['leftLeg', 'rightLeg', 'leftArm', 'rightArm'].map((group) => [group, groupedParts(group)]));
 const MOVING = new Set(Object.values(LIMBS).flat());
 // Every gear-variant part. Its own piece so equip.backpack can hide it without touching
 // the torso it used to be merged into.
-const BACKPACK = [
-  'Shoulder strap', 'Strap over shoulder', 'Shoulder strap.001', 'Strap over shoulder.001',
-  'Canvas backpack', 'Backpack flap', 'Pack clasp', 'Bedroll', 'Bedroll tie', 'Bedroll tie.001',
-];
+const BACKPACK = groupedParts('backpack');
 // The baked "Hammer handle"/"Hammer head" (Plans/uitrusting-en-vasthouden.md) used to be
 // core - always drawn, parked by the hip whether or not it made sense - which is not where
 // a tool that is picked up and put down belongs. Dropped from every geometry group below
@@ -63,22 +56,11 @@ const EQUIPPABLE = new Set([
 // The head and whatever hat is on it: its own piece so first person (walk.js) can take it
 // away - the camera sits inside it. Every hat is a variant of its own and the face is the
 // run of body parts from the neck up, so neither list has to be kept in step by hand.
-const FACE = new Set(['Neck', 'Head', 'Hair cap', 'Face', 'Round nose', 'Smile left', 'Smile right',
-  ...['ear', 'eye', 'eyebrow', 'sideburn'].flatMap((p) => [`Left ${p}`, `Right ${p}`])]);
-const HEAD = SETTLER_PARTS.filter((p) => !EQUIPPABLE.has(p.name)
-  && (FACE.has(p.name) || (p.variant !== 'body' && p.variant !== 'gear'))).map((p) => p.name);
+const HEAD = groupedParts('head');
 const CORE = SETTLER_PARTS.map(({ name }) => name)
   .filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name) && !HEAD.includes(name));
-const PIVOTS = {
-  leftLeg: [-0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
-  rightLeg: [0.052 * PLAYER_SCALE, 0.14 * PLAYER_SCALE, 0],
-  leftArm: [-0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
-  rightArm: [0.105 * PLAYER_SCALE, 0.285 * PLAYER_SCALE, 0],
-  // The neck, half way up the baked 'Neck' part (0.315-0.357 on the scaled model): where the
-  // head tips back in the beer relay. Nothing else turns it, so first person, which only
-  // hides it, does not notice where it hangs.
-  head: [0, 0.3 * PLAYER_SCALE, 0],
-};
+const PIVOTS = Object.fromEntries(Object.entries(SETTLER_RIG)
+  .filter(([name]) => name !== 'grip').map(([name, point]) => [name, point.map((v) => v * PLAYER_SCALE)]));
 // The hips' height over the soles: where a rider's legs turn, which is what walk.js puts on
 // the saddle.
 export const HIP_Y = PIVOTS.leftLeg[1];
@@ -94,23 +76,12 @@ const RIDE_ARM = -1.15;
 // own offset - the same translate makePiece already does to its mesh, done once here by
 // hand rather than by loading the part just to throw its geometry away. Not the item's own
 // origin, only where an attach point for one belongs.
+// Rig measurements come from the same Blender source as the hand and fitted equipment.
+const GRIP = SETTLER_RIG.grip.map((v) => v * PLAYER_SCALE);
 const HAND_ATTACH = {
-  rightArm: [
-    0.131 * PLAYER_SCALE - PIVOTS.rightArm[0],
-    0.19 * PLAYER_SCALE - PIVOTS.rightArm[1],
-    0.018 * PLAYER_SCALE - PIVOTS.rightArm[2],
-  ],
+  rightArm: GRIP.map((v, i) => v - PIVOTS.rightArm[i]),
 };
-// "Left hand" is the mirror of "Right hand" on X and nothing else (checked against the raw
-// model: -0.131, 0.19, 0.018) - the arms and their pivots are symmetric, so deriving it
-// keeps the two hands from drifting apart if the model ever changes.
 HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
-
-// The sword and shield are modelled in build-settler.py with their grip at this same
-// point - "Right hand"'s own raw position - so re-centring their baked geometry here (not
-// modelling them at the origin the way the procedural parasol and hammer still are) is
-// what lets classic-avatar.js hand either one to either fist through the same handAttach.
-const GRIP = [0.131 * PLAYER_SCALE, 0.19 * PLAYER_SCALE, 0.018 * PLAYER_SCALE];
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -322,6 +293,16 @@ export function heldItemGeometry(item, spec) {
 }
 
 export function createClassicAvatar(spec, material) {
+  // The island shares a flat building material. Give this rig smooth shading while
+  // retaining its shader hooks and live night/fade uniforms; never mutate the world.
+  const sourceMaterial = material;
+  if (material.flatShading) {
+    material = material.clone();
+    material.flatShading = false;
+    material.userData = sourceMaterial.userData;
+    material.onBeforeCompile = sourceMaterial.onBeforeCompile;
+    material.customProgramCacheKey = sourceMaterial.customProgramCacheKey.bind(sourceMaterial);
+  }
   const object = new THREE.Group();
   // The bake names its hands the wrong way round: "Right hand" is at +x, and a figure facing
   // +z has its right hand at -x - so the Right hand slot and the right mouse button have
@@ -705,6 +686,17 @@ export function createClassicAvatar(spec, material) {
         pose = { x: lerp(topX, rest, e), z: lerp(upZ, restZ, e), q: TIPPED.clone().slerp(UPRIGHT, e) };
       }
     }
+    // The authored drinking keys were solved on the earlier, broader rig. Retarget
+    // their glass positions, easing from the new hand at rest to the same rim path.
+    const reach = pose.reach ?? (d.t < g0 ? ease(d.t / g0)
+      : d.t < g1 ? 1 : 1 - ease(Math.min(1, (d.t - g1) / (prof.s - g1))));
+    const mirror = side === 'rightArm' ? 1 : -1;
+    const canonicalPivot = new THREE.Vector3(mirror * .105, .285, 0).multiplyScalar(PLAYER_SCALE);
+    const canonicalHand = new THREE.Vector3(mirror * (.131 - .105), .19 - .285, .018).multiplyScalar(PLAYER_SCALE);
+    const rotation = quatOf(pose.x, 0, pose.z);
+    const offset = canonicalPivot.sub(new THREE.Vector3(...PIVOTS[side])).applyQuaternion(rotation.invert())
+      .add(canonicalHand).sub(new THREE.Vector3(...HAND_ATTACH[side])).multiplyScalar(reach);
+    pose.slide = (pose.slide || new THREE.Vector3()).add(offset);
     if (side === 'leftArm') { pose.q.y = -pose.q.y; pose.q.z = -pose.q.z; }
     return pose;
   }
@@ -987,6 +979,7 @@ export function createClassicAvatar(spec, material) {
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].geometry.dispose();
     stream.geometry.dispose();
     carriedMesh.geometry.dispose();
+    if (material !== sourceMaterial) material.dispose();
   }
 
   return {

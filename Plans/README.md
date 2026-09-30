@@ -5,6 +5,10 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [ambachtelijke-reiziger.md](DONE/ambachtelijke-reiziger.md) — concept 3 in het spel en de inventory, met gladde vormen en passende uitrusting.
+
+- ✅ [hoofdpersoon-varianten.md](DONE/hoofdpersoon-varianten.md) — drie verfijnde Blender-concepten met renders ter vergelijking.
+
 - ✅ [graphics-afstanden.md](DONE/graphics-afstanden.md) — vier losse schuifregelaars (View, Object, NPC
   en Shadow Distance) in plaats van één `camera.far` op 1400. Huizen komen door de mist
   tevoorschijn: de nevel (nu op afstand, niet diepte) sluit nooit verder dan Object Distance, en

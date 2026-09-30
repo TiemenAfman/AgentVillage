@@ -1,4 +1,4 @@
-"""Build the residents from the same Blender face language, with working clothes."""
+"""Rebuild working clothes while preserving the residents' own Blender faces."""
 import bpy
 import math
 import runpy
@@ -7,7 +7,9 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'assets/settler'
-bpy.ops.wm.open_mainfile(filepath=str(OUT / 'promptholm-settler.blend'))
+# The refined player has different proportions and rig groups. Resident faces stay
+# in their own source so rebuilding their clothing cannot import the hero's rig.
+bpy.ops.wm.open_mainfile(filepath=str(OUT / 'promptholm-villager.blend'))
 scene = bpy.context.scene
 scene['avatar_mesh_name'] = 'villager-mesh.js'
 scene['avatar_eye_y'] = .350 + (.383-.363)*.94
@@ -24,11 +26,7 @@ for obj in list(scene.objects):
     obj.hide_set(False)
     obj.hide_render = False
     obj['avatar_variant'] = 'head' if obj['avatar_slot'] == 'skin' else 'detail'
-    # A smaller, rounder face on a shorter neck distinguishes the residents.
-    obj.location.x *= .94
-    obj.location.y *= .94
-    obj.location.z = .350 + (obj.location.z-.363)*.94
-    obj.scale *= .94
+    # Already in resident coordinates; do not shrink the preserved face on each rebuild.
 
 def xyz(p): return (p[0],-p[2],p[1])
 def finish(name, slot, variant):
