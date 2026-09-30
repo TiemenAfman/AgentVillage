@@ -62,6 +62,8 @@ const el = (id) => document.getElementById(id);
 // the icon with it. The word is the aria-label too, because it is shown only when Names on
 // the buttons is on and the window is wide enough. `title` for a chip whose meaning turns
 // with its word (Walk / Fly up): with icons only, the tooltip is the one place the name is.
+const CLOCK_SUN = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></svg>';
+const CLOCK_MOON = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
 function setLabel(id, text, title) {
   const b = el(id);
   const lbl = b.querySelector('.lbl');
@@ -129,7 +131,11 @@ export function createUI(handlers) {
     // The glyph itself stays '‹' - collapsed flips it 180deg in CSS rather than swapping
     // characters, so it keeps pointing at the menu it would bring back.
     el('nav-collapse-btn').classList.toggle('collapsed', navCollapsed);
-    el('nav-collapse-btn').title = navCollapsed ? 'Show the menu' : 'Hide the menu';
+    const fold = el('nav-collapse-btn');
+    // The keys go on working while the buttons are folded away, and the tooltip says so.
+    fold.title = navCollapsed ? 'Show the buttons' : 'Hide the buttons (their keys keep working)';
+    fold.setAttribute('aria-label', navCollapsed ? 'Show the buttons' : 'Hide the buttons');
+    fold.setAttribute('aria-expanded', String(!navCollapsed));
   }
   applyNavCollapsed();
   el('nav-collapse-btn').addEventListener('click', () => {
@@ -137,6 +143,35 @@ export function createUI(handlers) {
     try { localStorage.setItem(NAV_KEY, navCollapsed ? '1' : '0'); } catch { /* fine, just not remembered */ }
     applyNavCollapsed();
   });
+  // The bar is a toolbar (role in index.html): one Tab stop, the arrows move along it. A chip that
+  // is hidden until something is true (Plan, Say, Animals) is skipped and joins when it shows.
+  {
+    const bar = el('nav-chips');
+    const stops = () => [...bar.querySelectorAll('button.chip')].filter((b) => !b.hidden);
+    let cur = null;
+    const rove = () => {
+      const all = stops();
+      if (!all.includes(cur)) cur = all[0] || null;
+      bar.querySelectorAll('button.chip').forEach((b) => { b.tabIndex = b === cur ? 0 : -1; });
+    };
+    bar.addEventListener('focusin', (e) => { if (e.target.matches && e.target.matches('button.chip')) { cur = e.target; rove(); } });
+    bar.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const all = stops();
+      const at = all.indexOf(document.activeElement);
+      if (at < 0) return;
+      let to = null;
+      if (e.key === 'ArrowRight') to = all[(at + 1) % all.length];
+      else if (e.key === 'ArrowLeft') to = all[(at - 1 + all.length) % all.length];
+      else if (e.key === 'Home') to = all[0];
+      else if (e.key === 'End') to = all[all.length - 1];
+      if (!to) return;
+      e.preventDefault(); e.stopPropagation();
+      to.focus();
+    });
+    if (typeof MutationObserver !== 'undefined') new MutationObserver(rove).observe(bar, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    rove();
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') SIDE.forEach(close);
     // Space belongs to the player on foot, where it jumps. Restarting the history from
@@ -269,9 +304,13 @@ export function createUI(handlers) {
   function setClock(hour, seasonName, lens = false) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
     const chip = el('clock-chip');
-    chip.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · local' : ''}`;
+    // Called every frame: once() keeps an unchanged chip from being rewritten (and its hover with it).
+    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · preview' : ''}`;
+    once('clock-chip', `${h >= 6 && h < 20 ? CLOCK_SUN : CLOCK_MOON}<span>${text}</span>`);
     chip.classList.toggle('lens', lens);
-    chip.title = lens ? 'A time of day on this screen only - the sea keeps its own. Click to go on.' : 'Time of day on the island';
+    chip.title = lens
+      ? 'A preview of the hour on this screen only - the sea keeps its own clock. Click (or H) for the next hour, and back to live after 22:00.'
+      : 'Time of day on the island. Click (or H) to preview 07:00, 12:00, 18:30 or 22:00 on this screen only.';
   }
 
   // --- now building --------------------------------------------------------
@@ -1237,7 +1276,10 @@ export function createUI(handlers) {
     // read from high up and so are always on when you leave the sky.
     el('labels').hidden = !!on;
     el('walk-btn').classList.toggle('on', !!on);
-    setLabel('walk-btn', on ? 'Fly up' : 'Walk', on ? 'Fly up into the sky' : 'Walk the island on foot');
+    setLabel('walk-btn', on ? 'Fly up' : 'Walk', on ? 'Fly up into the sky (Esc, twice)' : 'Walk the island on foot (Enter)');
+    // Enter is a key from the sky only, so the badge goes while you are down here.
+    el('walk-btn').dataset.key = on ? '' : '↵';
+    el('walk-btn').setAttribute('aria-keyshortcuts', on ? 'Escape' : 'Enter');
     if (on) { hideSide(); renderWalkKeys(); }
     syncSidebar();
   }
@@ -1251,6 +1293,8 @@ export function createUI(handlers) {
     // P is a letter from the sky only (main.js ORBIT_KEYS), so Done names none.
     setLabel('plan-btn', planning ? 'Done' : 'Plan',
       planning ? 'Done: leave the planner' : 'The island from above: move hamlets, zone ground (P)');
+    el('plan-btn').dataset.key = planning ? '' : 'P';
+    if (planning) el('plan-btn').removeAttribute('aria-keyshortcuts'); else el('plan-btn').setAttribute('aria-keyshortcuts', 'P');
     if (planning) hideSide();
     syncSidebar();
   }

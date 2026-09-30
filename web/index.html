@@ -120,23 +120,28 @@
          phone, the Show toggles - moved into the menu behind the ☰ and Esc (#sysmenu). The
          icons carry the chips; the word (.lbl) shows only with Names on the buttons on
          (body.chip-names) and a window over 1100px, and is always the title and aria-label. -->
-    <div class="chips" id="nav-chips">
-      <button class="chip nav" id="found-btn" title="Start a new session on the island (N)" aria-label="New settler"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M19 6v6M16 9h6"/></svg><span class="lbl">New settler</span></button>
-      <button class="chip nav" id="walk-btn" title="Walk the island on foot" aria-label="Walk"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="4.5" r="2"/><path d="M9 21l3-7 3 3v4"/><path d="M7 12l2.5-4.5L13 7l3 4 3 1"/><path d="M12 14l-.5-5"/></svg><span class="lbl">Walk</span></button>
-      <button class="chip nav" id="plan-btn" title="The island from above: move hamlets, zone ground (P)" aria-label="Plan" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4l16 16z"/><path d="M8 16v-4.5l4.5 4.5z"/></svg><span class="lbl">Plan</span></button>
-      <button class="chip nav" id="build-btn" title="Put something on the island" aria-label="Build"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5l5 5-2.5 2.5-5-5z"/><path d="M11.5 9.5L4 17l3 3 7.5-7.5"/><path d="M13 5l2.5-2 5 5-2 2.5"/></svg><span class="lbl">Build</span></button>
-      <button class="chip nav" id="say-btn" title="Say something to everybody on the island" aria-label="Say" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-5 4v-4H4z"/></svg><span class="lbl">Say</span></button>
+    <div class="chips" id="nav-box">
+    <div class="nav-group" id="nav-chips" role="toolbar" aria-orientation="horizontal" aria-label="Island actions">
+      <button class="chip nav" id="found-btn" aria-keyshortcuts="N" title="Start a new session on the island (N)" aria-label="New settler" data-key="N"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M19 6v6M16 9h6"/></svg><span class="lbl">New settler</span></button>
+      <button class="chip nav" id="walk-btn" aria-keyshortcuts="Enter" title="Walk the island on foot (Enter)" aria-label="Walk" data-key="↵"><svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="4.5" r="2"/><path d="M9 21l3-7 3 3v4"/><path d="M7 12l2.5-4.5L13 7l3 4 3 1"/><path d="M12 14l-.5-5"/></svg><svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V6M6 12l6-6 6 6M6 3h12"/></svg><span class="lbl">Walk</span></button>
+      <button class="chip nav" id="plan-btn" aria-keyshortcuts="P" title="The island from above: move hamlets, zone ground (P)" aria-label="Plan" hidden data-key="P"><svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/></svg><svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="lbl">Plan</span></button>
+      <button class="chip nav" id="build-btn" aria-keyshortcuts="B" title="Put something on the island (B)" aria-label="Build" data-key="B"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5l5 5-2.5 2.5-5-5z"/><path d="M11.5 9.5L4 17l3 3 7.5-7.5"/><path d="M13 5l2.5-2 5 5-2 2.5"/></svg><span class="lbl">Build</span></button>
+      <button class="chip nav" id="say-btn" aria-keyshortcuts="T" title="Say something to everybody on the island (T)" aria-label="Say" hidden data-key="T"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-5 4v-4H4z"/></svg><span class="lbl">Say</span></button>
       <span class="chips-sep" aria-hidden="true"></span>
-      <button class="chip nav" id="map-btn" title="The chart of the whole world (M)" aria-label="Map"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span class="lbl">Map</span></button>
-      <button class="chip nav" id="avatar-btn" title="Compose the settler you walk as (I)" aria-label="Inventory"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 0 1 12 0v10H6z"/><path d="M9 20v-5h6v5M10 5V3h4v2"/></svg><span class="lbl">Inventory</span></button>
+      <button class="chip nav" id="map-btn" aria-keyshortcuts="M" title="The chart of the whole world (M)" aria-label="Map" data-key="M"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span class="lbl">Map</span></button>
+      <button class="chip nav" id="avatar-btn" aria-keyshortcuts="I" title="Compose the settler you walk as (I)" aria-label="Inventory" data-key="I"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 11a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v8a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"/><path d="M9.5 8V6.5a2.5 2.5 0 0 1 5 0V8"/><path d="M9.5 14.5h5v4h-5z"/></svg><span class="lbl">Inventory</span></button>
       <!-- The island's animal journal (web/js/animal-dossier.js). Hidden until the island has
            an animal, and only ever shown to the keeper: /api/animals is loopback only. -->
-      <button class="chip nav" id="animals-btn" title="The island's animals, and what they have been up to" aria-label="Animals" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="10.5" r="1.8"/><circle cx="17.5" cy="10.5" r="1.8"/><circle cx="9.8" cy="6" r="1.8"/><circle cx="14.2" cy="6" r="1.8"/><path d="M12 12c-3 0-5 3.2-5 5.6 0 1.6 1.6 2.4 5 2.4s5-.8 5-2.4c0-2.4-2-5.6-5-5.6z"/></svg><span class="lbl">Animals</span></button>
-      <button class="chip nav" id="reset-btn" title="Frame the whole island (O)" aria-label="Overview"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.5"/></svg><span class="lbl">Overview</span></button>
+      <button class="chip nav" id="animals-btn" aria-keyshortcuts="J" title="The island's animals, and what they have been up to (J)" aria-label="Animals" hidden data-key="J"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="10.5" r="1.8"/><circle cx="17.5" cy="10.5" r="1.8"/><circle cx="9.8" cy="6" r="1.8"/><circle cx="14.2" cy="6" r="1.8"/><path d="M12 12c-3 0-5 3.2-5 5.6 0 1.6 1.6 2.4 5 2.4s5-.8 5-2.4c0-2.4-2-5.6-5-5.6z"/></svg><span class="lbl">Animals</span></button>
+      <button class="chip nav" id="reset-btn" aria-keyshortcuts="O" title="Frame the whole island (O)" aria-label="Overview" data-key="O"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path d="M8 15c1-2.7 2.5-3.8 4-3.8s3 1.1 4 3.8z"/></svg><span class="lbl">Overview</span></button>
+      <span class="chips-sep" aria-hidden="true"></span>
     </div>
-    <button class="chip" id="nav-collapse-btn" title="Hide the menu">‹</button>
-    <button class="chip" id="clock-chip" title="Time of day on the island">—</button>
-    <button class="chip" id="sysmenu-btn" title="Menu (Esc)" aria-label="Menu" aria-haspopup="dialog"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <button class="chip" id="nav-collapse-btn" title="Hide the buttons (their keys keep working)" aria-label="Hide the buttons" aria-controls="nav-chips" aria-expanded="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg></button>
+    </div>
+    <div class="chips" id="sys-chips">
+    <button class="chip" id="clock-chip" title="Time of day on the island" aria-label="Time of day" data-key="H" aria-keyshortcuts="H">—</button>
+    <button class="chip" id="sysmenu-btn" title="Menu (Esc)" aria-label="Menu" aria-haspopup="dialog" aria-keyshortcuts="Escape"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
   </div>
   <!-- Shown only while something is switched off, so an island with houses hidden says so;
        the same three toggles are always in the menu. -->
@@ -189,7 +194,7 @@
         <div class="chips wrap"><button class="chip" id="legend-btn" title="What everything on the island means (L)">Open the legend</button></div>
         <p class="muted">The legend stands beside the island rather than over it, so you can look from one to the other.</p>
         <h3 class="sec">Keys</h3>
-        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
+        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>H</kbd> preview the hour · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
         <p class="muted sysmenu-keys">On foot: the first <kbd>Esc</kbd> frees the mouse, the second takes you up into the sky. The rest is under Controls.</p>
       </section>
     </div>

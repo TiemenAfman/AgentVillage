@@ -1864,8 +1864,15 @@ serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 `tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
 the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
 as soon as there is a release, not only once the sea is updated; `install_update` fetches the
-APK and hands it to Android's installer through the FileProvider. Both are app commands, so
-they need no entry in `capabilities/default.json` (only plugin calls do).
+APK into the app's cache and hands it to Android's installer through **our own Kotlin**,
+`InstallerPlugin.kt` beside `MainActivity.kt` in `gen/android/app/src/main/java/com/promptholm/sea/`
+(a `@TauriPlugin` class in the app module, registered from `lib.rs` by name with
+`register_android_plugin`; a content:// URI from the manifest's FileProvider, `cache-path` in
+`res/xml/file_paths.xml`, so the file has to be in the cache). Not the opener plugin's
+`open_path`: on Android that hands a bare path to `ACTION_VIEW`, nothing answers, and up to
+0.7.0 the button fetched the whole APK and then fell back to the browser, whose download sat at
+100% and never installed. Both are app commands, so they need no entry in
+`capabilities/default.json` (only plugin calls from the page do).
 
 ## Layout of the source
 
