@@ -87,8 +87,9 @@ daarvoor heeft: opgehaald zoals de lava-imp (`web/js/imp.js`) - `web/models/spac
 de eerste stap de kroeg in, nooit bij boot, één keer, een mislukte load één keer gemeld en niets dat erop
 wacht; tot hij er is staat een gewone bemanningsfiguur op zijn plek. 0.55 hoog, op de erker naast de
 kaartentafel, draait naar je toe als je hem aanspreekt; dezelfde spreek-interactable als de rest van de
-bemanning. Eén retouche: **zijn ogen gaan open** (in de gezichtstexture staan ze dicht) - in de texture
-geschilderd en opnieuw als GLB geëxporteerd, verder niets aan het model. Zie Risico's over de herkomst.
+bemanning. Eén retouche: **zijn ogen** - losse oogbol-meshes die onder de kohl-schaduw van veraf dicht leken -
+zijn een kwart vergroot, iets omhoog gedraaid en naar voren gezet, en het model is opnieuw als GLB
+geëxporteerd; verder niets aan het model. Zie Risico's over de herkomst.
 
 ## Fasen
 
