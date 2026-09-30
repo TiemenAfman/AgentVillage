@@ -33,8 +33,45 @@ Voeg het door Tiemen gekozen Sketchfab-model als tweede personage toe naast de h
 
 ## Status
 
-Plan opgeslagen vóór implementatie. Eerst de officiële download verkrijgen; de technische integratie volgt na inspectie van de echte bronbestanden.
+Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
 
-### Downloadstatus
+- **Bron.** De download staat ongewijzigd in `assets/adventurer/source-link.glb`. De metadata in
+  het bestand noemt **A_CAT564** als maker (CC BY 4.0), niet de uploader die hierboven staat;
+  `assets/adventurer/CREDITS.md` noemt beide, met de lijst wijzigingen. Het is een fanmodel van
+  een bestaand Nintendo-personage: de CC-licentie dekt het model, niet het personage zelf, en de
+  aanpassingen hieronder zijn ook daarom gedaan.
+- **Blender.** `scripts/build-adventurer.py` bouwt alles opnieuw uit de GLB naar
+  `island-adventurer.blend` en `web/js/adventurer-mesh.js` (via `export-adventurer.py`);
+  twee keer bakken geeft dezelfde bytes. Schaal 0,285 × 0,92 (haar tot 0,45, iets boven de
+  Reiziger), armen 43° omlaag uit de A-pose, 124 botten teruggebracht tot drie gewrichten per
+  ledemaat, textuur als hoekkleur (gezicht één keer onderverdeeld: 33,5k driehoeken in totaal,
+  700 kB gzip naast de 550 kB van de Reiziger).
+- **Eigen uiterlijk.** Tuniek egaal leisteenblauw (embleem weg), haar donkerbruin, broek zand,
+  riemen, armbeschermer en handschoenen bruin leer met gewoon messing; oren klein en rond en
+  paardenstaart en bakkebaarden korter, via de eigen oor-, staart- en bakkebaardbotten; zwaard,
+  schild, schede en oorbel weggelaten.
+- **Uitrusting.** Hoeden op de maat van het hoofd (een maat ruimer, over het haar), rugzak en
+  borstplaat vanaf de schouders tegen de rug, schouderstukken kleiner, beenstukken langs het
+  been, sabatons laag. Handvoorwerpen zijn in beide handen die van de Reiziger.
+- **Runtime.** `web/js/player-bodies.js` is de tabel; `normalizeAvatar` houdt `character` bij
+  (onbekend of ontbrekend = Reiziger, dus oude opgeslagen looks openen op de Reiziger);
+  `createClassicAvatar` wisselt het hele rig in dezelfde ouder; walk.js en peers.js lezen
+  heup- en ooghoogte van het rig. De zee geeft `character` door als slug (`lookOf`); geen
+  protocolversie, geen eilanddata. **De open zee moet opnieuw uitgerold worden** voordat
+  anderen iemand als Avonturier zien; tot dan tekent iedereen de Reiziger.
+- **Inventory.** Bovenaan twee portretten (Traveller, Adventurer); kiezen trekt direct aan,
+  Never mind zet ook het lichaam terug. Huid- en outfitverf verdwijnen bij de Avonturier, want
+  zijn lijf is geschilderd, niet geverfd. Alle andere keuzes gaan mee naar het andere lichaam.
+- **Bewegingsstudio.** `/avatar-motion.html` laat beide naast elkaar lopen en rennen, met
+  *Dichtbij* per personage; de inventory kleedt het gekozen lichaam aan.
+- **Tests.** `tests/characters.test.mjs` (keuze en terugval, oude opslag, onderdelen van de
+  bake, grondcontact bij lopen en rennen, wisselen in dezelfde ouder, alle inventory-iconen op
+  beide lichamen, verf, de zee, credits); de hele suite slaagt op `plan-scan` na, die in de
+  volle run op `scan.lock` wacht en los slaagt.
 
-De officiële download-API is gecontroleerd en geeft HTTP 401: Authentication credentials were not provided. Het bronmodel is nog niet beschikbaar. De eerstvolgende stap is het door Tiemen via Sketchfab gedownloade archief ontvangen, inclusief textures. Er zijn nog geen wijzigingen aan spelcode of modellen gedaan.
+### Nog open
+
+- Op het eiland zelf (walk.js: fiets, zwemmen, zitten, eerste persoon) is het nog niet in een
+  echte sessie bekeken; de bewegingsstudio en de tests wel.
+- Per lichaam aparte kledingkeuzes bewaren is niet nodig gebleken: alles past op beide.
+- De maker op de modelpagina nog eens naast de metadata leggen.

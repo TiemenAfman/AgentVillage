@@ -2,16 +2,16 @@
 <html lang="nl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>Reiziger · Bewegingsstudio</title>
+<title>Reiziger en Avonturier · Bewegingsstudio</title>
 <link rel="stylesheet" href="css/ui.css"><link rel="stylesheet" href="css/panels.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/","shared/":"./shared/"}}</script>
 <style>
 body{margin:0;background:#253a34;color:#f2e9d3;font:15px system-ui}#motion{display:block;width:100vw;height:100vh}.motion-controls{position:fixed;left:28px;top:24px;max-width:400px;background:#162a25ee;padding:24px;border-radius:18px;box-shadow:0 15px 50px #0003}.motion-controls h1{font-size:24px;margin:0 0 8px}.motion-controls p{color:#bed0c5;line-height:1.5;margin:0 0 20px}.motion-controls button{border:1px solid #8ba699;background:#324f43;color:#fff3d9;border-radius:8px;padding:10px 14px;cursor:pointer;margin:0 4px 8px 0;font:inherit}.motion-controls button[aria-pressed=true]{background:#d2b575;color:#1d3028;border-color:#d2b575}.motion-controls label{display:block;margin-top:10px}.motion-controls small{display:block;margin-top:14px;color:#a7bcb0}#motion-note{position:fixed;bottom:22px;left:28px;color:#e0e9df;background:#162a25dc;border-radius:10px;padding:12px 16px}
 </style></head><body>
 <canvas id="motion"></canvas>
-<section class="motion-controls"><h1>De nieuwe reiziger</h1><p>Soepele gewrichten, rustigere verhoudingen en passen die de verplaatsing volgen.</p>
+<section class="motion-controls"><h1>Reiziger en Avonturier</h1><p>Twee lichamen op dezelfde loop- en renbeweging: de passen volgen de verplaatsing. Kies in de inventory wie je aankleedt.</p>
 <div><button data-gait="idle" aria-pressed="false">Stilstaan</button><button data-gait="walk" aria-pressed="true">Lopen</button><button data-gait="run" aria-pressed="false">Rennen</button></div>
-<button id="motion-inventory">Inventory</button><button id="motion-view">Zijaanzicht</button>
+<button id="motion-inventory">Inventory</button><button id="motion-view">Zijaanzicht</button><button id="motion-close">Dichtbij</button>
 <label><input type="checkbox" id="motion-bones"> Gewrichten tonen</label>
 <small>De markeringen op de grond maken het voetcontact zichtbaar.</small></section>
 <div id="motion-note">Lopen · knieën, enkels, ellebogen en polsen bewegen mee</div>

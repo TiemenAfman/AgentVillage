@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
-import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
+import { createClassicAvatar } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
@@ -520,7 +520,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.bike.place(x, y, z, yaw);
     p.bike.pose(r);
     p.bike.object.updateMatrixWorld(true);
-    seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP_Y, RIDER.saddle[2]);
+    seat.set(RIDER.saddle[0], RIDER.saddle[1] - p.avatar.hipY, RIDER.saddle[2]);
     p.bike.object.localToWorld(seat);
     p.mesh.position.copy(seat);
     p.mesh.rotation.set(RIDE_PITCH - r.pitch, yaw, r.lean);

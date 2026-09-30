@@ -6,7 +6,9 @@
 // whose avatar this is.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SETTLER_PARTS, SETTLER_COLORS, SETTLER_EYE_Y } from './settler-mesh.js';
+import { SETTLER_EYE_Y } from './settler-mesh.js';
+import { CHARACTERS, DEFAULT_CHARACTER, PART_COLORS, characterId, characterOf } from './player-bodies.js';
+export { CHARACTERS, DEFAULT_CHARACTER, characterId, characterOf };
 // The wardrobe moved to shared/ so the walk can ask how tall somebody is without
 // dragging three.js into Node - see the header of shared/palette.mjs. Re-exported
 // because composing an avatar is this file's subject and everyone asks here.
@@ -17,7 +19,9 @@ const KEY = 'promptholm.avatar';
 
 // Blender-authored figure, kept within the existing walking clearance.
 export const PLAYER_SCALE = 1.12;
+// The Traveller's; a body's own is eyeOf(spec).
 export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
+export const eyeOf = (spec) => characterOf(spec?.character).eyeY * PLAYER_SCALE;
 
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
@@ -28,6 +32,9 @@ export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
 
 // The wide-brimmed, straw-hatted settler the player has always been.
 export const DEFAULT_AVATAR = {
+  // Which body (web/js/player-bodies.js). A look saved before there was a choice has none, and
+  // opens on the Traveller it was made on.
+  character: DEFAULT_CHARACTER,
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
   // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
   // derived from the rest of the look. The backpack defaults on, so nobody's look changes
@@ -68,6 +75,7 @@ export function normalizeAvatar(spec = {}) {
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
   const shape = PLAYER_HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
   return {
+    character: characterId(spec.character),
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
     trim: num(spec.trim, d.trim),
@@ -109,7 +117,7 @@ const GLOWING = new Set(['flame', 'ember']);
 // them into the same single vertex-coloured mesh used by the studio and walk mode.
 function buildFigure(spec, gear, include = null) {
   const s = normalizeAvatar(spec);
-  const parts = SETTLER_PARTS.filter((p) => p.variant === 'body'
+  const parts = characterOf(s.character).parts.filter((p) => p.variant === 'body'
     || (gear && p.variant === 'gear') || p.variant === s.hatShape
     // 'held' parts (the torch) are never part of an outfit, only drawn when named.
     || (include && p.variant === 'held'))
@@ -117,9 +125,11 @@ function buildFigure(spec, gear, include = null) {
     const g = new THREE.BufferGeometry();
     const position = new Float32Array(part.positions);
     const count = position.length / 3;
-    const color = new THREE.Color(s[part.slot] ?? SETTLER_COLORS[part.slot]);
-    const colors = new Float32Array(position.length);
-    for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
+    const color = new THREE.Color(s[part.slot] ?? PART_COLORS[part.slot]);
+    // A body sampled from a texture (the Adventurer) carries its colour per corner and is
+    // not dyed; every wardrobe piece is one flat slot colour.
+    const colors = part.colors ? new Float32Array(part.colors) : new Float32Array(position.length);
+    if (!part.colors) for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));
     // Blender's corner normals preserve soft faces and intentional hard equipment edges.
     if (part.normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(part.normals), 3));

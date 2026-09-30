@@ -4,11 +4,13 @@
 // exactly one dye button, which is how a piece added to DEFAULT_AVATAR tomorrow cannot
 // quietly miss the screen. It cannot live in avatar.js either: it needs classic-avatar.js's
 // part lists, and that file imports avatar.js.
-import { SETTLER_PARTS } from './settler-mesh.js';
-import { PLAYER_HAT_SHAPES, HAND_ITEMS, avatarPlayerComponentGeometry } from './avatar.js';
+import { PLAYER_HAT_SHAPES, HAND_ITEMS, CHARACTERS, avatarPlayerComponentGeometry, characterOf } from './avatar.js';
 import { PIECE_PARTS, HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
 
-const PART_SLOT = Object.fromEntries(SETTLER_PARTS.map((p) => [p.name, p.slot]));
+const SETTLER_PARTS = characterOf().parts;
+// Every body's parts: the gear shares its names (and slots) across bodies, the bodies' own parts
+// are named apart, so one table answers for all of them.
+const PART_SLOT = Object.fromEntries(CHARACTERS.flatMap((c) => c.parts.map((p) => [p.name, p.slot])));
 // The four spec fields that are colours - the same four SWATCHES has rows for. Every other
 // slot a part can carry (steel, brass, pack...) is fixed, so a part on one of those never
 // goes stale when the wearer changes their mind.
@@ -21,6 +23,24 @@ export const hatParts = (shape) => SETTLER_PARTS.filter((p) => p.variant === sha
 const HEAD_PARTS = SETTLER_PARTS.filter((p) => p.group === 'head' && p.variant === 'body').map((p) => p.name);
 // The selected traveller's whole outfit: linen shirt, fitted vest, belt and pouch.
 const TUNIC_PARTS = SETTLER_PARTS.filter((p) => p.group === 'outfit' || (p.group?.endsWith('Arm') && p.slot !== 'skin')).map((p) => p.name);
+// The same three lists for every other body (Plans/tweede-avonturier.md), keyed by character
+// id. The Traveller's are the ones on the slots themselves (and in the tests); another body's
+// pieces have other names - the Adventurer has gloves where the Traveller has bare hands.
+const BODY_PARTS = Object.fromEntries(CHARACTERS.map(({ id, parts }) => {
+  const body = parts.filter((p) => p.variant === 'body');
+  const names = (pred) => body.filter(pred).map((p) => p.name);
+  const hand = (side) => names((p) => p.group === side && /hand|thumb|glove/i.test(p.name));
+  return [id, {
+    head: names((p) => p.group === 'head'),
+    tunic: id === 'traveller' ? TUNIC_PARTS
+      : names((p) => p.group === 'outfit' || (p.group?.endsWith('Arm') && !/skin|glove/i.test(p.name))),
+    lefthand: hand('leftArm'), righthand: hand('rightArm'),
+    // Which colour slots any of this body's parts read: a dye nothing reads (the Adventurer's
+    // skin and cloth are sampled from its texture, not dyed) is hidden while it is worn.
+    dyes: new Set(parts.map((p) => p.slot)),
+  }];
+}));
+export const dyeApplies = (dye, character) => BODY_PARTS[characterOf(character).id].dyes.has(dye);
 export const NO_ITEM = { id: '', name: 'Empty' };   // short: a tile's label is one line wide
 
 // A held item lies diagonal in its slot the way an RPG icon does, rather than standing on
@@ -53,21 +73,33 @@ export const INVENTORY_FLASKS = [
 // One tile of a slot's picker: the look of choosing `optionId` for it. An icon is either a
 // list of baked parts (plus the hat shape they belong to, when they are a hat) or a hand
 // item; `id` names it for the staleness key below.
-export function optionIcon(slot, optionId) {
+// `character` is whose body the icon is drawn on; every icon of a body piece carries it in its
+// id, because a hat fitted to the Adventurer is not the Traveller's hat in the same well.
+export function optionIcon(slot, optionId, character) {
+  const c = characterOf(character).id, own = BODY_PARTS[c];
   if (slot.field === 'hatShape') {
     return optionId === 'none'
-      ? { id: `${slot.id}:none`, parts: HEAD_PARTS }
-      : { id: `${slot.id}:${optionId}`, parts: hatParts(optionId), shape: optionId };
+      ? { id: `${c}:${slot.id}:none`, parts: c === 'traveller' ? HEAD_PARTS : own.head, character: c }
+      : { id: `${c}:${slot.id}:${optionId}`, parts: hatParts(optionId), shape: optionId, character: c };
   }
-  if (!optionId) return { id: `${slot.id}:ghost`, parts: slot.ghost };
+  if (!optionId) return { id: `${c}:${slot.id}:ghost`, parts: c === 'traveller' ? slot.ghost : own[slot.id], character: c };
   return { id: `${slot.id}:${optionId}`, item: optionId, pose: ITEM_POSE[optionId] };
+}
+
+// A body's portrait for the inventory's choice of character: the bare head - the whole figure
+// in a well that size was a matchstick, and a face is what tells the two apart.
+export function characterIcon(character) {
+  const c = characterOf(character).id;
+  return { id: `character:${c}`, parts: BODY_PARTS[c].head, character: c };
 }
 
 // What a slot draws right now.
 export function slotIcon(slot, spec) {
-  if (slot.field) return optionIcon(slot, spec[slot.field]);
-  if (slot.options) return optionIcon(slot, spec.equip?.[slot.equip] || '');
-  return { id: slot.id, parts: slot.parts };
+  const c = characterOf(spec.character).id;
+  if (slot.field) return optionIcon(slot, spec[slot.field], c);
+  if (slot.options) return optionIcon(slot, spec.equip?.[slot.equip] || '', c);
+  const parts = slot.id === 'tunic' ? BODY_PARTS[c].tunic : slot.parts;
+  return { id: `${c}:${slot.id}`, parts, character: c };
 }
 
 // Which spec colours an icon's geometry actually reads - derived from the parts' own colour
@@ -88,5 +120,6 @@ export function iconKey(icon, spec) {
 // here: without that, a tile for a hat you are not wearing has no parts to merge at all.
 export function iconGeometry(icon, spec) {
   if (icon.item) return heldItemGeometry(icon.item, spec);
-  return avatarPlayerComponentGeometry(icon.shape ? { ...spec, hatShape: icon.shape } : spec, icon.parts);
+  const on = icon.character ? { ...spec, character: icon.character } : spec;
+  return avatarPlayerComponentGeometry(icon.shape ? { ...on, hatShape: icon.shape } : on, icon.parts);
 }

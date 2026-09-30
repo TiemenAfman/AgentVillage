@@ -3,18 +3,14 @@
 // Here those same objects sit below four pivots so the old look can use real strides.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SETTLER_PARTS, SETTLER_RIG, SETTLER_JOINTS } from './settler-mesh.js';
-import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
+import { avatarPlayerComponentGeometry, PLAYER_SCALE, characterOf } from './avatar.js';
 import { box, cylinder, cone, sphere } from './buildings.js';
 import { dancePose } from './dance.js';
 import { createGait, WALK_SPEED, RUN_SPEED } from './avatar-gait.js';
-
-const groupedParts = (group) => SETTLER_PARTS.filter((p) => p.group === group).map((p) => p.name);
-const LIMBS = Object.fromEntries(['leftLeg', 'rightLeg', 'leftArm', 'rightArm'].map((group) => [group, groupedParts(group)]));
-const MOVING = new Set(Object.values(LIMBS).flat());
 // Every gear-variant part. Its own piece so equip.backpack can hide it without touching
-// the torso it used to be merged into.
-const BACKPACK = groupedParts('backpack');
+// the torso it used to be merged into. The same names on every body: the Adventurer's gear is
+// the Traveller's refitted (scripts/build-adventurer.py).
+const BACKPACK = characterOf().parts.filter((p) => p.group === 'backpack').map((p) => p.name);
 // The baked "Hammer handle"/"Hammer head" (Plans/uitrusting-en-vasthouden.md) used to be
 // core - always drawn, parked by the hip whether or not it made sense - which is not where
 // a tool that is picked up and put down belongs. Dropped from every geometry group below
@@ -53,17 +49,42 @@ const EQUIPPABLE = new Set([
   ...BACKPACK, ...HAMMER, ...CHESTPLATE, ...LEFT_LEGGING, ...RIGHT_LEGGING,
   ...LEFT_SABATON, ...RIGHT_SABATON, ...SWORD, ...SHIELD, ...TORCH,
 ]);
-// The head and whatever hat is on it: its own piece so first person (walk.js) can take it
-// away - the camera sits inside it. Every hat is a variant of its own and the face is the
-// run of body parts from the neck up, so neither list has to be kept in step by hand.
-const HEAD = groupedParts('head');
-const CORE = SETTLER_PARTS.map(({ name }) => name)
-  .filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name) && !HEAD.includes(name));
-const PIVOTS = Object.fromEntries(Object.entries(SETTLER_RIG)
-  .filter(([name]) => name !== 'grip').map(([name, point]) => [name, point.map((v) => v * PLAYER_SCALE)]));
-// The hips' height over the soles: where a rider's legs turn, which is what walk.js puts on
-// the saddle.
-export const HIP_Y = PIVOTS.leftLeg[1];
+// Everything below that is measured off a body rather than chosen by hand, worked out once per
+// body (web/js/player-bodies.js) - the Traveller and the Adventurer share every part *name* for
+// their gear, so the lists above hold for both, but not one joint position.
+const BODIES = new Map();
+function bodyOf(character) {
+  const c = characterOf(character);
+  if (BODIES.has(c.id)) return BODIES.get(c.id);
+  const groupedParts = (group) => c.parts.filter((p) => p.group === group).map((p) => p.name);
+  const LIMBS = Object.fromEntries(['leftLeg', 'rightLeg', 'leftArm', 'rightArm'].map((group) => [group, groupedParts(group)]));
+  const MOVING = new Set(Object.values(LIMBS).flat());
+  // The head and whatever hat is on it: its own piece so first person (walk.js) can take it
+  // away - the camera sits inside it. Every hat is a variant of its own and the face is the
+  // run of body parts from the neck up, so neither list has to be kept in step by hand.
+  const HEAD = groupedParts('head');
+  const PIVOTS = Object.fromEntries(Object.entries(c.rig)
+    .filter(([name]) => name !== 'grip').map(([name, point]) => [name, point.map((v) => v * PLAYER_SCALE)]));
+  // Where "Right hand" sits, measured in the bake (the rig's grip) and carried through the
+  // same PLAYER_SCALE the pivots already are, minus the rightArm pivot's own offset - the same
+  // translate makePiece already does to its mesh. Not the item's own origin, only where an
+  // attach point for one belongs.
+  const GRIP = c.rig.grip.map((v) => v * PLAYER_SCALE);
+  const HAND_ATTACH = { rightArm: GRIP.map((v, i) => v - PIVOTS.rightArm[i]) };
+  HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
+  const body = {
+    id: c.id, parts: c.parts, joints: c.joints, LIMBS, HEAD, PIVOTS, GRIP, HAND_ATTACH,
+    BACKPACK: groupedParts('backpack'),
+    CORE: c.parts.map(({ name }) => name)
+      .filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name) && !HEAD.includes(name)),
+    // The hips' height over the soles: where a rider's legs turn, which is what walk.js puts
+    // on the saddle.
+    hipY: PIVOTS.leftLeg[1],
+    eye: c.eyeY * PLAYER_SCALE,
+  };
+  BODIES.set(c.id, body);
+  return body;
+}
 // A rider (web/js/bicycle.js). The legs hang forward to the bottom bracket and go round with
 // the crank, one half a turn behind the other; the arms reach for the grips. Tuned by eye in
 // /demo against the baked bike - a rigid leg with no knee cannot follow the pedal exactly, and
@@ -71,17 +92,6 @@ export const HIP_Y = PIVOTS.leftLeg[1];
 const RIDE_LEG = -0.42;
 const RIDE_SWING = 0.3;
 const RIDE_ARM = -1.15;
-// Where "Right hand" sits, measured off its own raw geometry (bounding-box centre) and
-// carried through the same PLAYER_SCALE the pivots already are, minus the rightArm pivot's
-// own offset - the same translate makePiece already does to its mesh, done once here by
-// hand rather than by loading the part just to throw its geometry away. Not the item's own
-// origin, only where an attach point for one belongs.
-// Rig measurements come from the same Blender source as the hand and fitted equipment.
-const GRIP = SETTLER_RIG.grip.map((v) => v * PLAYER_SCALE);
-const HAND_ATTACH = {
-  rightArm: GRIP.map((v, i) => v - PIVOTS.rightArm[i]),
-};
-HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -231,9 +241,13 @@ function beerGeometry() {
 
 // The sword and shield used to be built the same procedural way as the hammer above; both
 // are baked Blender parts now (see the header comment on EQUIPPABLE), re-centred on GRIP
-// the same way makePiece() re-centres a limb on its own pivot.
+// the same way makePiece() re-centres a limb on its own pivot. Always the Traveller's: a sword
+// is the same sword in whichever hand holds it, and only where that hand is differs per body
+// (HAND_ATTACH). The Adventurer's bake carries refitted copies of these parts too, stretched
+// with the torso they were packed beside, which is no shape for a blade.
 function heldPartGeometry(spec, names) {
-  const geometry = avatarPlayerComponentGeometry(spec, names);
+  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null }, names);
+  const { GRIP } = bodyOf();
   geometry.translate(-GRIP[0], -GRIP[1], -GRIP[2]);
   return geometry;
 }
@@ -251,7 +265,10 @@ export function heldItemGeometry(item, spec) {
   return null;
 }
 
-export function createClassicAvatar(spec, material) {
+// One body's rig. createClassicAvatar below is what everybody holds; it builds one of these
+// and builds a new one when the look changes body.
+function buildRig(spec, material) {
+  const { id: character, parts: PARTS, joints: JOINTS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye } = bodyOf(spec?.character);
   // The island shares a flat building material. Give this rig smooth shading while
   // retaining its shader hooks and live night/fade uniforms; never mutate the world.
   const sourceMaterial = material;
@@ -272,8 +289,8 @@ export function createClassicAvatar(spec, material) {
   object.scale.x = -1;
   const pieces = {};
   const chains = {};
-  const gait = createGait(PIVOTS.leftLeg[1], SETTLER_JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
-    SETTLER_JOINTS.leftLeg.end[1]*PLAYER_SCALE);
+  const gait = createGait(PIVOTS.leftLeg[1], JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
+    JOINTS.leftLeg.end[1]*PLAYER_SCALE);
   let previousParent = null;
   const parentAt = new THREE.Vector3(), lastParentAt = new THREE.Vector3();
   function bindLimb(mesh, group) {
@@ -281,8 +298,8 @@ export function createClassicAvatar(spec, material) {
       const root = new THREE.Bone(), bend = new THREE.Bone(), end = new THREE.Bone();
       root.name = group + ':root'; bend.name = group + ':bend'; end.name = group + ':end';
       const origin = new THREE.Vector3(...PIVOTS[group]);
-      const knee = new THREE.Vector3(...SETTLER_JOINTS[group].bend).multiplyScalar(PLAYER_SCALE);
-      const ankle = new THREE.Vector3(...SETTLER_JOINTS[group].end).multiplyScalar(PLAYER_SCALE);
+      const knee = new THREE.Vector3(...JOINTS[group].bend).multiplyScalar(PLAYER_SCALE);
+      const ankle = new THREE.Vector3(...JOINTS[group].end).multiplyScalar(PLAYER_SCALE);
       bend.position.copy(knee).sub(origin); end.position.copy(ankle).sub(knee);
       root.add(bend); bend.add(end); mesh.add(root);
       chains[group] = { root, bend, end, knee: knee.sub(origin), ankle: ankle.sub(origin),
@@ -305,7 +322,7 @@ export function createClassicAvatar(spec, material) {
     pivot.position.set(...groupAt);
     const geometry = avatarPlayerComponentGeometry(spec, names);
     geometry.translate(-translateBy[0], -translateBy[1], -translateBy[2]);
-    const group = SETTLER_PARTS.find((part) => names.includes(part.name) && part.skinGroup)?.skinGroup;
+    const group = PARTS.find((part) => names.includes(part.name) && part.skinGroup)?.skinGroup;
     const mesh = group ? new THREE.SkinnedMesh(geometry, material) : new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     pivot.add(mesh);
@@ -317,7 +334,7 @@ export function createClassicAvatar(spec, material) {
   makePiece('core', CORE);
   makePiece('head', HEAD, { parent: pieces.core.pivot });
   for (const [name, names] of Object.entries(LIMBS)) makePiece(name, names);
-  makePiece('backpack', BACKPACK);
+  makePiece('backpack', BACK);
   makePiece('chestplate', CHESTPLATE);
   makePiece('leftLegging', LEFT_LEGGING, { parent: pieces.leftLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.leftLeg });
   makePiece('rightLegging', RIGHT_LEGGING, { parent: pieces.rightLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.rightLeg });
@@ -855,5 +872,41 @@ export function createClassicAvatar(spec, material) {
     if (material !== sourceMaterial) material.dispose();
   }
 
-  return { object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver };
+  return { object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
+    character, hipY, eye };
+}
+
+// The rig everybody holds: the player (walk.js), every peer (peers.js), the inventory's alcove
+// and every villager. It keeps one body's rig inside and, when a look changes body, builds the
+// other one and swaps its root into the same parent - so a caller that put `object` in a group
+// once, as walk.js and peers.js do, keeps drawing it without knowing. Read `object`,
+// `handAttach` and `joints` off the rig when you use them rather than keeping them: they are
+// the new body's after a swap.
+export function createClassicAvatar(spec, material) {
+  let rig = buildRig(spec, material);
+  function set(next) {
+    if (characterOf(next?.character).id === rig.character) { rig.set(next); return; }
+    const old = rig;
+    rig = buildRig(next, material);
+    const parent = old.object.parent;
+    if (parent) { parent.add(rig.object); parent.remove(old.object); }
+    rig.object.visible = old.object.visible;
+    old.dispose();
+  }
+  return {
+    get object() { return rig.object; },
+    get handAttach() { return rig.handAttach; },
+    get joints() { return rig.joints; },
+    get character() { return rig.character; },
+    get hipY() { return rig.hipY; },
+    get eye() { return rig.eye; },
+    update: (pose, dt) => rig.update(pose, dt),
+    set,
+    dispose: () => rig.dispose(),
+    attack: (side) => rig.attack(side),
+    held: (side) => rig.held(side),
+    drink: (side) => rig.drink(side),
+    swallowed: () => rig.swallowed(),
+    handOver: (side, away) => rig.handOver(side, away),
+  };
 }
