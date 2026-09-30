@@ -588,6 +588,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const CAM = def.camera || { back: 2.3, up: 1.0, aim: 0.3 };
   const AREAS = def.areas || [{ x0: -HALF_W, x1: HALF_W, z0: -HALF_D, z1: HALF_D }];
   const MARGIN = 0.2;
+  const FLOORS = def.surfaces || [];
   const MIN_BACK = 0.5;                // never closer than this, so `lookAt` keeps its aim
   // Which room a point is in, or the nearest one if it is in a doorway between two.
   function areaAt(x, z) {
@@ -627,6 +628,14 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // the aim point keeps it from swinging under and staring at the rafters.
     const yNear = p.y + CAM.aim + 0.18;
     v.y = Math.max(yNear, v.y + (1 - t) * len * 0.8);
+    // Under a floor of the room's own - a gallery, the storey over the pit (Plans/verdiepingen-binnen.md)
+    // - the camera stays under it, whether it is you or the camera that is below it: from above it
+    // would show the boards of the floor you are walking under, and nothing of you.
+    for (const f of FLOORS) {
+      if (f.y == null || f.y <= p.y + 0.3) continue;
+      const over = (x, z) => x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1;
+      if ((over(v.x, v.z) || over(p.x, p.z)) && v.y > f.y - 0.06) v.y = Math.max(p.y + CAM.aim, f.y - 0.06);
+    }
     // Once it is up through the ceiling, the ceiling is in the way of the only view there is -
     // this room's own ceiling, where a part of it is lower than the rest (the Kraken's cellar).
     roofWanted = v.y < (a.ceiling != null ? FLOOR + a.ceiling : ROOF_AT) - 0.04;
@@ -658,6 +667,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // floor of each cell and picks the one you belong to, which is how a bridge carries you
   // over a river and how this carries you over the boards; the platform was built to whole
   // cells so the step up lands exactly on its edge.
+  // Its floors and stairs, when it has storeys (Plans/verdiepingen-binnen.md).
+  if (def.surfaces) walk.setSurfaces(def.surfaces);
   if (def.stage) {
     const levels = new Map();
     const cell = (v) => Math.round(v + HALF_CELLS - 0.5);

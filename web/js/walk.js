@@ -859,6 +859,20 @@ export function createWalkMode({
   // storey, or you would step off the ground straight onto your own roof.
   const STEP_UP = 0.45;
 
+  // A room's floors and stairs as rectangles rather than cells (Plans/verdiepingen-binnen.md):
+  // a cell is four metres, and a balcony is half of one deep and a stair a whole storey in one.
+  // `{ x0, x1, z0, z1, y }` is a floor; `{ ..., y0, y1, axis: 'x' | 'z' }` a slope rising from y0
+  // at the x0 (or z0) end to y1 at the other, which is how a stair is walked - drawn as treads,
+  // stood on as a ramp, so every step up is a frame's worth and a stair down is simply followed.
+  // Only a room hands any over; the island and the sea keep to `levels`.
+  let surfaces = [];
+  function surfaceY(s, x, z) {
+    if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return null;
+    if (s.y != null) return s.y;
+    const t = s.axis === 'x' ? (x - s.x0) / (s.x1 - s.x0) : (z - s.z0) / (s.z1 - s.z0);
+    return s.y0 + (s.y1 - s.y0) * t;
+  }
+
   function levelsIn(x, z) {
     const key = cellKey(x, z);
     // Null out at sea: there is nothing there to be on a level of, and `levels.get(null)`
@@ -876,9 +890,13 @@ export function createWalkMode({
     const ramp = basin && basin.rampHeight(...local);
     if (ramp != null) return ramp;
     let best = basin?.contains(...local) ? basin.height(...local) : heightUnder(x, z);
+    const reach = from + STEP_UP;
+    for (const s of surfaces) {
+      const y = surfaceY(s, x, z);
+      if (y != null && y <= reach && y > best) best = y;
+    }
     const above = levelsIn(x, z);
     if (!above) return best;
-    const reach = from + STEP_UP;
     for (const y of above) if (y <= reach && y > best) best = y;
     return best;
   }
@@ -939,12 +957,19 @@ export function createWalkMode({
   // One solid, grown by a body's radius: a circle for what is round (`r`, see ROUND in
   // buildings.js), the rectangle for everything else.
   function inside(b, x, z, pad) {
+    // A blocker with a height (`y0`..`y1`, a room's upper floor: Plans/verdiepingen-binnen.md) is a
+    // wall only to a body whose feet-to-head span meets it - the table below does not close the
+    // gallery over it. `blocked` asks that (`atHeight`, which knows the feet); without the two
+    // it is a wall at every height, as every blocker always was.
     if (b.r) {
       const dx = x - b.x, dz = z - b.z, reach = b.r + pad;
       return dx * dx + dz * dz < reach * reach;
     }
     return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
   }
+
+  const BODY_H = 0.45;
+  const atHeight = (b, feet) => b.y0 == null || (feet < b.y1 && feet + BODY_H > b.y0);
 
   // The blockers that are a ship's side (a Batavia at anchor: buildings.js shipSolids) are
   // kept apart as well, for the boats. Feet and swimmers meet every blocker as a wall at any
@@ -963,7 +988,7 @@ export function createWalkMode({
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
     if (placing && groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
-    for (const b of state.blockers) if (inside(b, x, z, BODY_R)) return true;
+    for (const b of state.blockers) if (inside(b, x, z, BODY_R) && atHeight(b, from)) return true;
     for (const b of state.peerBlockers) {
       const dx = x - b.x, dz = z - b.z;
       const reach = (b.r + BODY_R) * (b.r + BODY_R);
@@ -2102,6 +2127,8 @@ export function createWalkMode({
     // diver two units down would be offered the dock's boat, and E would climb into it.
     // Surface first (swimming up to a hull from the water still boards it, as it always did).
     if (!state.dive) for (const it of state.interactables) {
+      // One with a height (a seat, a pirate on a gallery) is out of reach from the floor below it.
+      if (it.floor != null && Math.abs(it.floor - state.pos.y) > 0.5) continue;
       const dx = it.x - state.pos.x, dz = it.z - state.pos.z;
       const d = Math.hypot(dx, dz);
       if (d < (it.r || 2.6) && d < bestD) { bestD = d; near = it; }
@@ -2132,6 +2159,7 @@ export function createWalkMode({
   // What stands above the terrain, per cell, lowest first. main.js merges the layout's
   // bridges with the ones somebody built before handing it over.
   function setLevels(map) { levels = map || new Map(); }
+  function setSurfaces(list) { surfaces = list || []; }
 
   // Is there room here for something wider than a person? Walk mode already knows what
   // cannot be walked through, so "can a vegetable bed go where I am standing" is that
@@ -2141,7 +2169,7 @@ export function createWalkMode({
     return true;
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

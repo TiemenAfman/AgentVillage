@@ -57,8 +57,12 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [piratenkroeg.md](piratenkroeg.md) — de Salty Kraken, gebouwd op `claude/salty-kraken`: een tweede kroeg
   aan het water (trede 52) met een piratenbemanning aan tafel die de quests geeft, de kist van de piraat erachter,
   een jukebox met shanties (en eigen muziek per kamer in `~/.promptholm/audio`) en een eigen bake met uithangbord.
-  Open: het interieur als bake (ontwerpvraag voor Fable) en de plek op de piratenoever, die de quay-sessie
+  Open: het interieur (een grotkroeg uit scheepsdelen, `scripts/krakenkit/`, in aanbouw op
+  `claude/salty-kraken-interieur`) en de plek op de piratenoever, die de quay-sessie
   (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt.
+- 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de
+  Salty Kraken): vloeren en hellingen als rechthoeken (`surfaces`), blockers met een hoogte, en een camera die
+  onder een vloer blijft.
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
