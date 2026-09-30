@@ -32,6 +32,7 @@
 // the one of them who is a model of his own (captain.js).
 import * as THREE from 'three';
 import { box, cylinder, cone, sphere, dome, meshAsset } from './buildings.js';
+import * as models from './models.js';
 import { createFigures, settlerLook } from './settler-figures.js';
 import { createQuestMark, MARK_LIFT } from './quest-mark.js';
 import { captainModel } from './captain.js';
@@ -92,6 +93,22 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const parts = [], roof = [], blockers = [], seats = [], lights = [], figures = [];
   const add = (...g) => parts.push(...g);
   const addRoof = (...g) => roof.push(...g);
+  // A ship's part the hall is furnished with (scripts/build-krakenkit.py), standing at x, z on the
+  // floor. Its glows broader than a hand are drawn turned down, as INDOOR_GLOW asks: a niche's back
+  // brightest low down and fading towards its vault - the soft light in the niche the keeper asked
+  // for, not a lit panel - and a window's night at a steady 0.45.
+  const NICHE = /niche glow/, PANE = / pane /;
+  function kit(asset, { x = 0, y = FLOOR, z = 0, ry = 0 } = {}) {
+    const at = { x, y, z, ry };
+    add(...meshAsset(asset, 0xffffff, { ...at, skip: (n) => NICHE.test(n) || PANE.test(n) }));
+    add(...meshAsset(asset, 0xffffff, { ...at, emissive: 0.45, skip: (n) => !PANE.test(n) }));
+    for (const g of meshAsset(asset, 0xffffff, { ...at, emissive: 0.65, skip: (n) => !NICHE.test(n) })) {
+      g.computeBoundingBox();
+      const { min, max } = g.boundingBox, pos = g.attributes.position, e = g.attributes.aEmissive;
+      for (let i = 0; i < e.count; i++) e.array[i] = 0.65 * (1 - 0.7 * (pos.getY(i) - min.y) / Math.max(max.y - min.y, 1e-6));
+      add(g);
+    }
+  }
 
   // ---- the shell ---------------------------------------------------------------------------
   // A wall is tarred planks to the waist and old plaster over them; every segment is a blocker
@@ -220,11 +237,9 @@ export function buildPirateTavern({ FLOOR, rect }) {
   // Shortened at its west end so there is a way round it into the cellar.
   const BAR_X = -0.9, BAR_HX = 1.7, BAR_Z = -2.55, BAR_HZ = 0.13, BAR_H = 0.28;
   const COUNTER_Y = FLOOR + BAR_H + 0.03;
-  add(box(BAR_HX * 2, BAR_H, BAR_HZ * 2, C.darkWood, { x: BAR_X, y: FLOOR, z: BAR_Z, sheet: 'plank' }));
-  add(box(BAR_HX * 2 + 0.08, 0.03, BAR_HZ * 2 + 0.08, C.wood, { x: BAR_X, y: FLOOR + BAR_H, z: BAR_Z }));
+  // The counter is a piece of a ship's hull (civic_kraken_counter), exactly the old counter's size.
+  kit('civic_kraken_counter', { x: BAR_X, z: BAR_Z });
   blockers.push(rect(BAR_X, BAR_Z, BAR_HX, BAR_HZ));
-  for (let i = -5; i <= 5; i++) add(box(0.05, BAR_H - 0.05, 0.02, C.board, { x: BAR_X + i * 0.31, y: FLOOR + 0.025, z: BAR_Z + BAR_HZ }));
-  add(cylinder(0.014, 0.014, BAR_HX * 2, 6, C.brass, { x: BAR_X + BAR_HX, y: FLOOR + 0.08, z: BAR_Z + BAR_HZ + 0.055, rz: Math.PI / 2 }));
   // A keg with a tap on the counter's east end, a drip tray, tankards, coins and a dice cup.
   const kegAt = (x, y, z, o = {}) => {
     add(cylinder(0.06, 0.06, 0.16, 8, C.oak, { x, y, z, ...o }));
@@ -237,63 +252,18 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (let i = 0; i < 6; i++) add(cylinder(0.012, 0.012, 0.004, 8, C.gold, { x: BAR_X - 0.2 + i * 0.03, y: COUNTER_Y + i * 0.004, z: BAR_Z - 0.03 }));
   add(cylinder(0.022, 0.026, 0.05, 8, C.darkWood, { x: BAR_X - 0.8, y: COUNTER_Y, z: BAR_Z - 0.05 }));
 
-  // The back bar: a tall dresser against the north wall with three arched niches glowing purple,
-  // teal and purple, bottles on its shelves.
-  const SHELF_Z = -HALF_D + 0.1;
-  add(box(3.6, 0.95, 0.2, C.darkWood, { x: BAR_X + 0.2, y: FLOOR, z: SHELF_Z, sheet: 'plank' }));
-  blockers.push(rect(BAR_X + 0.2, SHELF_Z, 1.8, 0.1));
-  for (const sy of [0.3, 0.55]) add(box(3.5, 0.02, 0.22, C.wood, { x: BAR_X + 0.2, y: FLOOR + sy, z: SHELF_Z + 0.02 }));
+  // The back bar is a galleon's stern (civic_kraken_stern): three arched niches glowing purple, teal
+  // and purple between rope columns with skull candles, cabin windows over them, the kraken on the
+  // taffrail. Where the old dresser stood, a hand deeper.
   const BOTTLES = [C.bottleGreen, C.bottleBrown, C.rum, C.bottleGreen, C.rum, C.bottleBrown];
-  for (let i = 0; i < 32; i++) {
-    const row = i >= 16 ? 1 : 0;
-    const bx = BAR_X - 1.5 + (i % 16) * 0.22 + row * 0.08;
-    if (Math.abs(bx - (BAR_X + 0.2)) < 0.28 && row) continue;
-    const by = FLOOR + (row ? 0.57 : 0.32);
-    add(cylinder(0.014, 0.018, 0.08, 6, BOTTLES[i % BOTTLES.length], { x: bx, y: by, z: SHELF_Z + 0.03 }));
-    add(cylinder(0.006, 0.006, 0.03, 5, C.darkWood, { x: bx, y: by + 0.08, z: SHELF_Z + 0.03 }));
-  }
-  const NICHES = [[BAR_X - 0.9, C.purple], [BAR_X + 0.2, C.teal], [BAR_X + 1.3, C.purple]];
-  for (const [nx, hex] of NICHES) {
-    const NY = FLOOR + 0.95;
-    add(box(0.34, 0.36, 0.06, C.black, { x: nx, y: NY, z: -HALF_D + 0.02 }));
-    add(cylinder(0.17, 0.17, 0.06, 12, C.black, { x: nx, y: NY + 0.36, z: -HALF_D - 0.01, rx: Math.PI / 2 }));
-    add(box(0.28, 0.3, 0.012, hex, { x: nx, y: NY + 0.03, z: -HALF_D + 0.055, emissive: 0.65 }));
-    add(box(0.36, 0.03, 0.1, C.wood, { x: nx, y: NY - 0.02, z: -HALF_D + 0.04 }));
-    for (const s of [-1, 1]) add(box(0.03, 0.4, 0.05, C.darkWood, { x: nx + s * 0.185, y: NY, z: -HALF_D + 0.04 }));
-  }
-  // In the middle niche a skull in a crown; in the others a ship in a bottle and an open jewel box.
-  const SK = [BAR_X + 0.2, FLOOR + 1.06, -HALF_D + 0.12];
-  add(sphere(0.05, C.bone, { x: SK[0], y: SK[1], z: SK[2] }));
-  add(box(0.05, 0.03, 0.04, C.bone, { x: SK[0], y: SK[1] - 0.06, z: SK[2] + 0.01 }));
-  for (const s of [-1, 1]) add(sphere(0.013, C.black, { x: SK[0] + s * 0.02, y: SK[1], z: SK[2] + 0.042 }));
-  add(cylinder(0.042, 0.04, 0.03, 8, C.goldHi, { x: SK[0], y: SK[1] + 0.035, z: SK[2] }));
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    add(cone(0.01, 0.025, 4, C.goldHi, { x: SK[0] + Math.cos(a) * 0.036, y: SK[1] + 0.065, z: SK[2] + Math.sin(a) * 0.036 }));
-  }
-  add(sphere(0.008, C.ruby, { x: SK[0], y: SK[1] + 0.05, z: SK[2] + 0.04, emissive: 0.5 }));
-  const SHIP = [BAR_X - 0.9, FLOOR + 1.0, -HALF_D + 0.12];
-  add(cylinder(0.035, 0.035, 0.16, 8, C.bottleGreen, { x: SHIP[0] + 0.08, y: SHIP[1] + 0.035, z: SHIP[2], rz: Math.PI / 2 }));
-  add(box(0.08, 0.02, 0.025, C.wood, { x: SHIP[0], y: SHIP[1] + 0.02, z: SHIP[2] }));
-  add(box(0.003, 0.05, 0.003, C.darkWood, { x: SHIP[0], y: SHIP[1] + 0.04, z: SHIP[2] }));
-  add(box(0.035, 0.03, 0.002, C.linen, { x: SHIP[0], y: SHIP[1] + 0.045, z: SHIP[2] }));
-  const JB = [BAR_X + 1.3, FLOOR + 0.99, -HALF_D + 0.12];
-  add(box(0.1, 0.05, 0.06, C.wood, { x: JB[0], y: JB[1], z: JB[2] }));
-  add(box(0.1, 0.05, 0.008, C.wood, { x: JB[0], y: JB[1] + 0.05, z: JB[2] - 0.03, rx: -0.5 }));
-  [C.ruby, C.emerald, C.sapphire, C.ruby, C.emerald, C.goldHi].forEach((hex, i) => {
-    add(sphere(0.012, hex, { x: JB[0] - 0.035 + i * 0.014, y: JB[1] + 0.055, z: JB[2] + (i % 2 ? 0.01 : -0.01), emissive: hex === C.goldHi ? 0 : 0.5 }));
-  });
-  // The oil lamp hung in front of the middle niche.
-  addRoof(cylinder(0.005, 0.005, 0.3, 4, C.iron, { x: BAR_X + 0.2, y: FLOOR + 1.5, z: -HALF_D + 0.3 }));
-  addRoof(sphere(0.03, C.glass, { x: BAR_X + 0.2, y: FLOOR + 1.47, z: -HALF_D + 0.3, emissive: 1 }));
+  kit('civic_kraken_stern', { x: BAR_X + 0.2, z: -HALF_D + 0.15 });
+  blockers.push(rect(BAR_X + 0.2, -HALF_D + 0.15, 1.8, 0.15));
 
   // Five stools along the bar, facing it.
   const stoolZ = BAR_Z + BAR_HZ + 0.32;
   for (let i = 0; i < 5; i++) {
     const sx = -2.3 + i * 0.725;
-    add(cylinder(0.022, 0.028, SEAT_H - 0.03, 7, C.darkWood, { x: sx, y: FLOOR, z: stoolZ }));
-    add(cylinder(0.085, 0.078, 0.03, 10, C.wood, { x: sx, y: FLOOR + SEAT_H - 0.03, z: stoolZ }));
-    add(cylinder(0.062, 0.062, 0.012, 8, C.iron, { x: sx, y: FLOOR + 0.06, z: stoolZ }));
+    kit('civic_kraken_stool', { x: sx, z: stoolZ });
     seats.push({
       id: `stool:${i}`, kind: 'seat', label: 'a bar stool', x: sx, z: stoolZ, y: FLOOR + SEAT_H, yaw: Math.PI, r: 0.42,
       beer: [sx - 0.07, COUNTER_Y, BAR_Z + 0.04], snack: [sx + 0.08, COUNTER_Y, BAR_Z + 0.045],
@@ -435,9 +405,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const DECK = FLOOR + STAGE_H;
   // Quill's stool, at the chart table.
   const NAV = CREW_SEATS.navigator;
-  add(cylinder(0.022, 0.028, SEAT_H - 0.03, 7, C.darkWood, { x: NAV.x, y: DECK, z: NAV.z }));
-  add(cylinder(0.085, 0.078, 0.03, 10, C.wood, { x: NAV.x, y: DECK + SEAT_H - 0.03, z: NAV.z }));
-  add(cylinder(0.062, 0.062, 0.012, 8, C.iron, { x: NAV.x, y: DECK + 0.06, z: NAV.z }));
+  kit('civic_kraken_stool', { x: NAV.x, y: DECK, z: NAV.z });
   // The chart table: a chart, a compass, a silver candlestick and two gold goblets.
   const CT = { x: 4.15, z: -2.5 };
   add(box(0.64, 0.028, 0.42, C.oak, { x: CT.x, y: DECK + 0.2, z: CT.z }));
@@ -528,8 +496,14 @@ export function buildPirateTavern({ FLOOR, rect }) {
   blockers.push(rect(-2.85, 3.2, 0.14, 0.14));
 
   // ---- walls, windows and what hangs on them ---------------------------------------------------
-  // Two fishing nets flat on the east wall, south of the oriel, with glass floats.
-  for (const [nz, n] of [[0.7, 7], [2.2, 6]]) {
+  // A ship's mast between the bar and the tables (civic_kraken_mast), through the ceiling, its yard
+  // and furled sail over everybody's head and a crow's nest under the beams.
+  kit('civic_kraken_mast', { x: -1.1, z: -0.95 });
+  blockers.push({ x: -1.1, z: -0.95, r: 0.3 });
+  // A mermaid figurehead on the east wall, high enough to walk under (civic_kraken_figurehead).
+  kit('civic_kraken_figurehead', { x: HALF_W, y: FLOOR + 0.75, z: 0.7, ry: -Math.PI / 2 });
+  // A fishing net flat on the east wall, south of the oriel, with glass floats.
+  for (const [nz, n] of [[2.2, 6]]) {
     for (let i = 0; i < n; i++) {
       for (const s of [-1, 1]) add(box(0.006, 1.0, 0.006, C.net, { x: HALF_W - 0.015, y: FLOOR + 0.5, z: nz - 0.45 + i * 0.15, rx: s * Math.PI / 4 }));
     }
@@ -545,12 +519,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
   add(cylinder(0.32, 0.32, 0.03, 16, C.night, { x: SW[0], y: SW[1], z: SW[2] - 0.03, rx: Math.PI / 2, emissive: 0.5 }));
   add(cylinder(0.36, 0.36, 0.035, 16, C.darkWood, { x: SW[0], y: SW[1], z: SW[2] - 0.01, rx: Math.PI / 2 }));
   for (const a of [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4]) add(box(0.012, 0.64, 0.012, C.iron, { x: SW[0], y: SW[1] - 0.32, z: SW[2] - 0.05, rz: a }));
-  for (const wx of [-1.4, -2.2]) {
-    add(box(0.34, 0.38, 0.03, C.night, { x: wx, y: FLOOR + 0.7, z: HALF_D - 0.012, emissive: 0.4 }));
-    add(box(0.38, 0.04, 0.05, C.darkWood, { x: wx, y: FLOOR + 0.69, z: HALF_D - 0.03 }));
-    add(box(0.04, 0.4, 0.05, C.darkWood, { x: wx, y: FLOOR + 0.69, z: HALF_D - 0.03 }));
-    add(box(0.38, 0.04, 0.05, C.darkWood, { x: wx, y: FLOOR + 1.07, z: HALF_D - 0.03 }));
-  }
+  for (const wx of [-1.4, -2.2]) kit('civic_kraken_gunport', { x: wx, y: FLOOR + 0.62, z: HALF_D, ry: Math.PI });
   for (const px of [3.4, 4.0]) {
     add(cylinder(0.1, 0.1, 0.03, 10, C.brass, { x: px, y: FLOOR + 0.9, z: HALF_D - 0.02, rx: Math.PI / 2 }));
     add(cylinder(0.075, 0.075, 0.034, 10, C.night, { x: px, y: FLOOR + 0.9, z: HALF_D - 0.025, rx: Math.PI / 2, emissive: 0.4 }));
