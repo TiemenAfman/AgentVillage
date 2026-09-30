@@ -241,19 +241,46 @@ proportions, weathered and slightly crooked wood, muted colours."* De objectprom
 tonkruk, kanonpoort, boegbeeld, trap met reling, lantaarn, schedellamp, open schatkist, jukebox) beschrijven
 wat erop moet en de maat; de uitgewerkte versies staan in de sessie van 30 september.
 
-**De kit** (`scripts/krakenkit/<object>.py`, alles nog niet gecommit, stand 30 september):
+**De kit** (`scripts/krakenkit/<object>.py`, stand 30 september 's avonds). Vaste stukken zijn een asset die
+pirate-tavern.js op `KIT` in de layout zet; stukken met een wisselende maat zijn functies die de zaal (`shell.py`,
+`dressing.py`) aanroept, met een voorbeeldasset voor de preview:
 
-| Object | Asset | Stand |
+| Object | Asset / functie | Stand |
 |---|---|---|
-| Hek als achterbar | `civic_kraken_stern` | gebouwd, 5788 driehoeken; detailronde nog te doen |
-| Mast met ra en kraaiennest | `civic_kraken_mast` | gebouwd, 4168; detailronde nog te doen |
-| Toog als stuk romp | `civic_kraken_counter` | tweede ronde bezig: poorten en wiel op de hoogte gemeten, vier poorten, meer detail |
-| Tonkruk | `civic_kraken_stool` | gebouwd, 426 (zes keer in de zaal) |
-| Kanonpoort als raam | `civic_kraken_gunport` | gebouwd, 820; het luik bedekt de bovenkant van het venster - steiler of korter als de keeper meer lucht wil |
-| Boegbeeld (zeemeermin) | `civic_kraken_figurehead` | bezig; valt het tegen, dan Trellis via `/blenderai` |
-| Schedellamp hangend + wand | `civic_kraken_skulllamp`, `_skullsconce` | bezig |
-| Lantaarn | `civic_kraken_lantern` | voorbeeldmodule |
-| Nog te tekenen | - | trap met reling, open schatkist, jukebox |
+| Hek als achterbar | `civic_kraken_stern` | 5788; detailronde nog te doen |
+| Mast met ra en kraaiennest | `civic_kraken_mast` | 18438, 5 hoog tot in de nok |
+| Toog als stuk romp | `civic_kraken_counter` | 12262 |
+| Tonkruk, kanonpoort, boegbeeld, schedellampen, jukebox | `_stool`, `_gunport`, `_figurehead`, `_skulllamp`, `_skullsconce`, `_jukebox` | gebouwd |
+| Kaarsensloep (kroonluchter) | `civic_kraken_sloop` | 12260; hangt twee keer boven de kuil |
+| Gebroken boeg | `civic_kraken_bow` | 14124; op 0,8 uit de noordgevel, boegbeeld op de steven, schedellamp aan zijn voet |
+| Stuurwiel-kroon | `civic_kraken_wheel` | 14402; plat boven de kuil |
+| Roer als uithangbord | `civic_kraken_rudder` | 5602; boven de voorkant van de bar |
+| Luiktafel | `hatch.hatch_top()`, `civic_kraken_hatch` | op de zes tafels (~4500 per blad, de helft het touw) |
+| Galerijdek | `deck.deck_section()`, `deck.stump_post()` | gebouwd, **nog niet in shell.py** |
+| Loopplank en touwbrug | `walkway.gangplank()`, `walkway.rope_bridge()` | gebouwd, **nog niet in shell.py** |
+| Spant en ribben | `frames.truss()`, `frames.rib()`, `frames.rib_arch()` | gebouwd, **nog niet in shell.py** |
+
+Een kitstuk begint op y = 0 bij zijn laagste punt; waar de zaal iets aan vastmaakt (vlammen, ketting, balk) staat als
+constante in de module (`FLAME_Y`, `RING_TOP`, `BEAM_Y` ...) en, waar JS het nodig heeft, nog eens in `KIT` in de
+layout. De zaal zit op **391k van de 400k** driehoeken (`HERO_BUDGETS`); de galerijen, trappen en het dak uit de kit
+kosten meer dan de huidige van de schil, dus bij het inbouwen moet er elders iets af (het touw van de luiktafels is
+2250 per tafel) of het budget omhoog, en de module is al 47 MB.
+
+**De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
+`galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,
+`ribben`). Nieuwe beelden maakt Claude voortaan zelf met FLUX op de 4090 (`/blenderai`, `python -m blendai imagine
+"..." --style raw --batch 4`); de prompts beginnen met "Stylized game prop art:", vragen een driekwart- en een
+zijaanzicht naast elkaar (een vooraanzicht lukt de generator slecht) en de stijlregel tegen cartoon.
+
+**Groter, als cascade rond een atrium** (30 september, later): de keeper vond de zaal van 9 x 7 met twee verdiepingen
+boven elkaar te klein en te laag, en wees op het richtpunt: dat is geen stapel verdiepingen maar een **cascade van
+terrassen rond een open midden**. Besluiten: een grot van **18 x 14** onder een **rotsgewelf van 5**; de kuil
+(+0,6) als atrium met zes tafels, twee sloepen als kroonluchter en de mast in het midden; het barterras (+1,5) met als
+voorkant de zijkant van een scheepsromp naar de kuil; het kapiteinsdek (+2,1) boven het ruim in het oosten; een
+uitkijk en een galerij op de rots (+3,0); twee touwbruggen over het atrium naar het kraaiennest; de grond (0) als
+laagste terras met de kelder, de haard, het kanon, de deur en het bassin. Niets lager dan de grond (walk mode leest
+alles onder 0,06 als water). "Een mooi ruim beeld dat niet veel decoratie per niveau vergt": minder props, met
+bedoeling geplaatst. De maten staan in `web/js/kraken-layout.js`; schets 6 in de refs.
 
 **Tweede ronde referentiebladen** (30 september, voor de zaal met verdiepingen): tot er een tekening is, staat er een
 eenvoudige plaatshouder van de juiste maat, elk in een eigen functie in `scripts/krakenroom/shell.py` of `dressing.py`,

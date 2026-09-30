@@ -31,8 +31,9 @@ vloer boven je hoofd.
 
 - Treden: `STEP_UP` is 0.45, dus een helling mag per frame willekeurig steil zijn, maar een trap van 0.8 over 1.2
   is 34 graden en loopt natuurlijk. Een touwladder wordt een steile helling van ongeveer 60 graden.
-- Plafond: de kroeg gaat van 1.9 naar 2.35 (schets 4), met vloeren op 0.2 (barterras), 0.8 (1e) en 1.55 (2e).
-- Een settler is 0.45: onder de 1e verdieping is 0.74 vrij, dus je kunt eronder lopen.
+- De kroeg is later een cascade rond een atrium geworden (18 x 14, gewelf 5, terrassen op 0.6, 1.5, 2.1 en 3.0;
+  `Plans/piratenkroeg.md`). Een massief terras is voor wie lager staat een muur (`solid` in de layout, een blocker tot
+  een stap onder de rand); een dek op palen heeft ruimte eronder.
 
 ## Tests
 

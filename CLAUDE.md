@@ -1887,8 +1887,13 @@ sheeted slots carry `aSheet`, and the bare merge returns null.
 **The Salty Kraken's kit is one module per object** (`scripts/krakenkit/<object>.py`: `ASSET =
 'civic_kraken_<object>'` and `build()`, on `geom.py`'s bmesh helpers rather than one Blender object per
 primitive, which at a few thousand coins was minutes of operator calls). `scripts/preview-krakenkit.py --
-<object>` builds and renders one without baking, so several can be worked on at once; `scripts/build-krakenkit.py
-[-- <objects>]` bakes the set. `geom.bake_ao` bakes Cycles ambient occlusion into the vertex colours (the
+<object>` builds and renders one without baking, so several can be worked on at once; `scripts/build-krakenkit.py`
+bakes the set - always whole: given a list of objects it writes a module with only those and drops the rest.
+A piece whose size varies (a gallery deck, a gangplank, a truss) is a module of functions the room's own scripts
+call (`deck.py`, `walkway.py`, `frames.py`, `hatch.py`), plus a showcase `ASSET` so the preview has something to
+render; a fixed piece is placed by pirate-tavern.js at `KIT` in the layout. Every piece starts at y = 0 at its
+lowest point, so what the room hangs it by (flames, a chain's top, a beam) is a module constant (`FLAME_Y`,
+`RING_TOP`, `BEAM_Y`), repeated in `KIT` where the JS needs it. `geom.bake_ao` bakes Cycles ambient occlusion into the vertex colours (the
 exporter reads a colour attribute instead of the material's colour), which is where a painted reference's
 depth comes from with no textures. Two things were needed to make a second bake the same bytes: Cycles on
 **one thread** (the sample order varied), and **`canonical()`** on every primitive in `emit` - bmesh's
